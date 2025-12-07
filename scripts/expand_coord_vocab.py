@@ -24,12 +24,10 @@ def build_coord_tokens(num_bins: int, include_wildcard: bool = True) -> List[str
     """
     Build coordinate tokens for Qwen3-VL norm1000 quantization.
 
-    Qwen3-VL normalizes coordinates to [0, 1000] range using:
-    bin = round(pixel / image_dim * 1000)
-
-    This requires tokens for bins 0 through 1000 (inclusive), giving 1001 tokens.
+    Qwen3-VL normalizes coordinates to [0, 1000] with round(). In practice we
+    cap at 0..999 here per experiment needs; adjust --num-bins if you want 1000.
     """
-    # Generate tokens from 0 to num_bins (inclusive) to cover [0, 1000] range
+    # Generate tokens from 0 to num_bins (inclusive)
     tokens = [f"<|coord_{i}|>" for i in range(0, num_bins + 1)]
     if include_wildcard:
         tokens = ["<|coord_*|>"] + tokens
@@ -44,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         "--src",
         type=Path,
         default=Path(
-            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct"
+            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct"
         ),
         help="Path to the base checkpoint directory.",
     )
@@ -52,16 +50,16 @@ def parse_args() -> argparse.Namespace:
         "--dst",
         type=Path,
         default=Path(
-            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp"
+            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct-coordexp"
         ),
         help="Path to save the expanded checkpoint.",
     )
     parser.add_argument(
         "--num-bins",
         type=int,
-        default=1000,
+        default=999,
         help="Maximum bin value (generates tokens from coord_0 to coord_N, inclusive). "
-        "For Qwen3-VL norm1000, use 1000 to get bins [0, 1000] (1001 tokens).",
+        "Default 999 matches the current coord-token experiments; set 1000 if you want the upper-edge bin.",
     )
     parser.add_argument(
         "--no-wildcard",
@@ -76,6 +74,8 @@ def main() -> None:
     include_wildcard = not args.no_wildcard
 
     coord_tokens = build_coord_tokens(args.num_bins, include_wildcard)
+    if args.num_bins < 1000:
+        print(f"[!] Warning: coord_1000 will NOT be added (num_bins={args.num_bins})")
 
     print(f"[+] Loading tokenizer from {args.src}")
     tokenizer = AutoTokenizer.from_pretrained(args.src, trust_remote_code=True)

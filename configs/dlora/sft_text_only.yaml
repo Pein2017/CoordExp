@@ -1,0 +1,37 @@
+extends: sft_base.yaml
+
+training:
+  learning_rate: 2.0e-4
+  vit_lr: 1.0e-4
+  aligner_lr: 4.0e-4
+  num_train_epochs: 4
+  optimizer: multimodal  # No coord_offset optimizer needed for pure string data
+  output_dir: ./output/12-4/text_only
+  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only
+  logging_dir: ./tb/12-4/text_only
+  save_strategy: steps
+  eval_steps: 100
+  save_delay_steps: 2000
+  save_total_limit: 2
+  logging_steps: 10
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 4
+  effective_batch_size: 128
+
+
+custom:
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  object_ordering: sorted  # sorted | random (for ablation)
+  # Disable curriculum when augmentation is off to avoid runtime error
+  augmentation_curriculum: null
+  # ABLATION: Use norm1000 to match coord token quantization range (0-999) for fair comparison
+  emit_norm: norm1000
+  # ABLATION: Disable coord tokens - use pure numeric coordinates instead of <|coord_*|> tokens
+  coord_tokens:
+    enabled: false  # Use numeric coordinates instead of <|coord_*|> tokens
+    skip_bbox_norm: false  # Re-enable bbox normalization since we're using numeric coords
+  # ABLATION: Disable coord_offset adapter (no need to tune lm_head/token_embedding for pure strings)
+  coord_offset:
+    enabled: false
+

@@ -44,6 +44,7 @@ from .preprocessors import (
 )
 from .fusion import FusionConfig, build_fused_jsonl
 from .unified_fusion_dataset import FusionCaptionDataset, UnifiedFusionDataset
+from .wrappers.packed_caption import PackedCaptionDataset, build_packed_dataset
 
 __all__ = [
     # Primary dataset
@@ -51,6 +52,8 @@ __all__ = [
     "DenseCaptionDataset",
     "FusionCaptionDataset",
     "UnifiedFusionDataset",
+    "PackedCaptionDataset",
+    "build_packed_dataset",
     # Utilities
     "load_jsonl",
     "extract_object_points",

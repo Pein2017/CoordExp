@@ -1,39 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Centralized mission definitions for BBU quality control tasks.
+"""Placeholder mission definitions for general/public detection.
 
-This module provides canonical mission names and focus descriptions used across
-both Stage-A (image-level summarization) and Stage-B (group-level judgment).
+Legacy BBU/RRU mission labels have been removed. Keep a minimal interface so
+callers depending on mission validation do not break.
 """
 
 from __future__ import annotations
 
 from typing import Dict, List
 
-# Canonical mission names (from actual data directory structure)
+# Single generic mission to keep downstream code functional
 SUPPORTED_MISSIONS: List[str] = [
-    "BBU安装方式检查（正装）",
-    "BBU接地线检查",
-    "BBU线缆布放要求",
-    "挡风板安装检查",
+    "general_detection",
 ]
 
-# Stage-A mission focus (appended to user prompt for context)
-# These are short hints to help the model focus on relevant objects
+# Minimal focus hints (English, general-purpose)
 STAGE_A_MISSION_FOCUS: Dict[str, str] = {
-    "BBU安装方式检查（正装）": "关注BBU设备、安装螺丝及其符合性",
-    "BBU接地线检查": "关注机柜处/地排处接地螺丝、电线捆扎情况",
-    "BBU线缆布放要求": "关注BBU端/ODF端光纤插头、光纤保护措施和弯曲半径",
-    "挡风板安装检查": "关注BBU设备及挡风板需求与配置符合性",
+    "general_detection": "Detect and describe all visible objects with correct geometry.",
 }
 
-# Stage-B mission focus (检查要点 for group-level judgment)
-# These are detailed requirements used in Stage-B system prompt
 STAGE_B_MISSION_FOCUS: Dict[str, str] = {
-    "BBU安装方式检查（正装）": "至少需要检测到BBU设备，BBU安装螺丝且需要符合要求",
-    "BBU接地线检查": "至少需要检测到机柜处接地螺丝和地排处接地螺丝且需要符合要求，还需要检测到电线且需要捆扎整齐",
-    "BBU线缆布放要求": "至少需要检测到BBU端光纤插头和ODF端光纤插头且需要符合要求，还需要检测到光纤且有保护措施和弯曲半径合理",
-    "挡风板安装检查": "至少需要检测到BBU设备并根据情况判断是否需要安装挡风板。若需要安装，则判断是否符合要求",
+    "general_detection": "Verify all required objects are detected with accurate geometry; no domain-specific rules.",
 }
 
 

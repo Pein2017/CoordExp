@@ -17,19 +17,59 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
-## Project Overview
-CoordExp is a research-first fork that extends Qwen3-VL for open-vocabulary detection and grounding using coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant (Hungarian/OT) matching. Goal: improve grounding accuracy/precision and training efficiency via fully differentiable geometry loss, avoiding heavy RL while keeping the native SFT pipeline. We will benchmark across public and common detection datasets, aiming for SOTA by fine-tuning Qwen3-VL with CoordExp.
+## Purpose & Mission
+- Act as an embedded collaborator evolving CoordExp from its telecom QC heritage into a general detection/grounding research platform.
+- Aim for SOTA results and a paper-ready story for ICLR/CVPR/ECCV; keep everything reproducible and auditable.
+
+## Background & Legacy
+- Repo is partially copied from the prior telecom quality-control project: Qwen3-VL SFT + LoRA with data/vision preprocessing, chat template orchestration, and inference already proven.
+- Infrastructure (training, preprocessing, inference) is battle-tested—reuse first, then extend.
+
+## Project Overview (CoordExp)
+- Research-first fork that extends Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant (Hungarian/OT) matching.
+- Goal: improve grounding accuracy/precision and training efficiency via fully differentiable geometry loss while keeping the native SFT pipeline.
+- Benchmark across public/common detection datasets to reach SOTA open-vocabulary detection and grounding.
+
+## Current Priorities
+- Generalize the legacy pipeline beyond telecom to broad detection/grounding benchmarks; validate geometry-aware decoding and matching.
+- Iterate via YAML configs first; minimize code churn unless the design demands it.
+- Keep compatibility with layouts/configs used in `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
+- Anchor direction and narrative in `progress/idea.md`; keep artifacts paper-ready.
+
+## Standard Workflow Outline (adapted from Qwen3-VL)
+1) Data intake/normalization: prepare detection/grounding datasets with consistent geometry and chat templates; validate boxes before training.
+2) Experiment config/fusion: edit YAML in `configs/` (seeds, LoRA/full FT, coord vocab choices, dataset mixes) and keep configs under version control.
+3) Train/finetune: run `src/sft.py` via the `ms` env; favor config-driven hooks for CoordExp losses/matching.
+4) Evaluate & ground: run evaluation/inference passes on held-out sets; capture qualitative grounding visuals when touching geometry or vocab.
+5) Documentation/governance: when behavior or contracts change, update `docs/` and follow OpenSpec proposal flow for material changes.
+
+## Codebase Layout
+- `src/` — training/inference code (datasets, config, trainers, callbacks, utils, `sft.py`).
+- `configs/` — YAML experiment configs; default surface for new knobs.
+- `scripts/` — small utilities (coord vocab expansion/verification); keep thin wrappers only.
+- `docs/` — authoritative guidance; sync when workflows/configs change.
+- `openspec/` — change management specs; start here for proposals.
+- `progress/` — evolving ideas and direction (`progress/idea.md`).
+- `patent/` — patent draft/background.
 
 ## Relationship to Qwen3-VL
-- Reuse the existing Qwen3-VL training stack (data preprocess, chat templates, ms-swift trainer wiring).
+- Reuse the Qwen3-VL training stack (data preprocess, chat templates, ms-swift trainer wiring).
 - Add CoordExp modules (coord vocab, expectation decoding, set matching losses) without forking core HF modeling; prefer lightweight wrappers/adapters.
 - Maintain compatibility with configs/layout used in `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
 
 ## Environment
 - Use `ms` conda env (`/root/miniconda3/envs/ms`) for all Python.
 - `transformers` path: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers`.
-- `ms-swift` available at `/data/ms-swift`.
+- `ms-swift` available at `/data/home/xiaoyan/AIteam/data/ms-swift`.
 - Run commands from repo root `/data/home/xiaoyan/AIteam/data/CoordExp` unless stated.
+- **Serena MCP**: **Strongly encouraged for code exploration** — use semantic search, symbol navigation, and code understanding tools for exploring the codebase, finding functions/classes, understanding relationships, and making precise edits. Available via MCP server; project configured at `.serena/project.yml`. Activate with "activate the project Qwen3-VL" or by path. Project-specific memories stored in `.serena/memories/`. **Do not use Serena MCP for pure document retrieval or reading** — it doesn't benefit document/text reading tasks; use standard file reading tools instead.
+
+## Development Approach
+- **Code exploration**: Prefer Serena MCP tools (semantic search, symbol navigation, find_referencing_symbols) for understanding code structure, relationships, and making targeted edits. Use standard file reading only when you need full file contents.
+- Keep `sft.py` entry and trainer flow unchanged; plug CoordExp loss + matching via config and modular hooks.
+- Avoid editing HF `modeling_qwen3_vl.py`; extend via adapters/monkeypatch only if necessary.
+- Preserve chat template and serialization compatibility with base detection tasks.
+- Follow OpenSpec proposal workflow (`@/openspec/AGENTS.md`) for features or other non-trivial changes.
 
 ## Design Principles
 - Configuration-first: prefer YAML in `configs/` to new CLI flags.
@@ -39,17 +79,19 @@ CoordExp is a research-first fork that extends Qwen3-VL for open-vocabulary dete
 - Reuse over custom: prefer ms-swift/transformers primitives before new code.
 - Fail fast & test small: add minimal probes/visual checks for new coord logic.
 
-## Development Approach
-- Keep `sft.py` entry and trainer flow unchanged; plug CoordExp loss + matching via config and modular hooks.
-- Avoid editing HF `modeling_qwen3_vl.py`; extend via adapters/monkeypatch only if necessary.
-- Preserve chat template and serialization compat with base detection tasks.
-- When adding features or non-trivial changes, consult `@/openspec/AGENTS.md` for proposal workflow.
+## Common Rules & Preferences (borrowed from Qwen3-VL)
+- Keep docs in lockstep with code: touch mapped docs when you change behavior/configs.
+- Deterministic runs: seed everything and log seeds in new entrypoints.
+- Geometry & grounding: never drop or reorder geometry silently; reuse helpers in `src/datasets/` for canonicalization/quantization.
+- Logging: use project logger utilities; include remediation hints in errors.
+- Third-party deps: prefer existing ms-swift/transformers; justify new deps and record behavioral impact.
+- Validate before merge: run existing tests or targeted probes when altering datasets/geometry or decoding logic.
 
 ## Scope & Non-Goals
 - In-scope: coord vocab design, expectation decoding, set matching losses, rollout-based consistency, evaluation for grounding.
 - Out-of-scope (unless explicitly approved): large architecture forks, bespoke RL loops, custom vision backbones.
 
-## Quick Pointers
-- Source lives in `src/`; configs in `configs/`.
-- Patent draft/background: `patent/draft.md`.
-- Prefer incremental, well-commented changes; keep scripts thin and delegate logic to modules.
+## Important
+- Interrupt for clarification whenever requirements are ambiguous or assumptions feel shaky.
+- Run all Python scripts with the `ms` conda environment.
+- Keep paper-readiness in mind: preserve experiment metadata, configs, and qualitative examples.

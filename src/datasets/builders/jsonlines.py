@@ -5,6 +5,8 @@ import json
 import os
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Tuple
 
+from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
+
 from ..contracts import ConversationRecord, validate_conversation_record
 from ..geometry import normalize_points
 from ..utils import extract_object_points
@@ -30,6 +32,7 @@ class JSONLinesBuilder(BaseBuilder):
         emit_norm: Literal["none", "norm100", "norm1000"],
         mode: Literal["dense", "summary"] = "dense",
         json_format: Literal["standard"] = "standard",
+        coord_tokens_enabled: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -37,6 +40,7 @@ class JSONLinesBuilder(BaseBuilder):
         self.emit_norm = emit_norm
         self.mode = mode
         self.json_format = json_format
+        self.coord_tokens_enabled = bool(coord_tokens_enabled)
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
         """Extract and validate summary from record.
@@ -135,12 +139,19 @@ class JSONLinesBuilder(BaseBuilder):
                 "desc": self._sanitize_desc(obj.get("desc"), idx)
             }
             if geom_type and points:
+                text_points = self._select_text_points(obj, geom_type, points)
+                numeric_points = self._select_numeric_points(obj, geom_type, points)
+                obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
                 # For line objects, emit line_points before line for better causality
                 if geom_type == "line":
-                    payload["line_points"] = len(points) // 2
-                    payload[geom_type] = self._format_points(points, width, height)
+                    payload["line_points"] = len(text_points) // 2
+                    payload[geom_type] = self._format_points(
+                        text_points, width, height
+                    )
                 else:
-                    payload[geom_type] = self._format_points(points, width, height)
+                    payload[geom_type] = self._format_points(
+                        text_points, width, height
+                    )
             grouped_objects[f"object_{idx}"] = payload
         return grouped_objects
 
@@ -182,7 +193,13 @@ class JSONLinesBuilder(BaseBuilder):
             geom_type, points = extract_object_points(obj)
             if not geom_type or not points:
                 continue
-            objects_out["bbox"].append(points)
+            cached_numeric = obj.get("_coord_numeric_cache", {}).get(geom_type)
+            points_for_meta = (
+                cached_numeric
+                if cached_numeric is not None
+                else self._select_numeric_points(obj, geom_type, points)
+            )
+            objects_out["bbox"].append(points_for_meta)
             objects_out["image_id"].append(image_id)
             desc = obj.get("desc")
             if desc:
@@ -191,10 +208,35 @@ class JSONLinesBuilder(BaseBuilder):
     def _format_points(
         self, points: List[float], width: float, height: float
     ) -> List[int | float]:
+        if self.coord_tokens_enabled:
+            return list(points)
         if self.emit_norm == "none":
             return [float(v) for v in points]
         normalized = normalize_points(points, width, height, self.emit_norm)
         return [int(v) for v in normalized]
+
+    def _select_text_points(
+        self, obj: Mapping[str, Any], geom_type: str, points: List[Any]
+    ) -> List[Any]:
+        if not self.coord_tokens_enabled:
+            return points
+        token_map = obj.get("_coord_tokens") if isinstance(obj, Mapping) else None
+        if isinstance(token_map, Mapping) and geom_type in token_map:
+            return list(token_map[geom_type])
+        if sequence_has_coord_tokens(points):
+            return list(points)
+        return points
+
+    def _select_numeric_points(
+        self, obj: Mapping[str, Any], geom_type: str, points: List[Any]
+    ) -> List[Any]:
+        if self.coord_tokens_enabled:
+            numeric_map = obj.get("_coord_token_ints") if isinstance(obj, Mapping) else None
+            if isinstance(numeric_map, Mapping) and geom_type in numeric_map:
+                return list(numeric_map[geom_type])
+            if sequence_has_coord_tokens(points):
+                return tokens_to_ints(points, require_even=True)
+        return points
 
     def _render_json_text(self, payload: Mapping[str, Any]) -> str:
         text_payload = self._prepare_text_payload(payload)

@@ -11,9 +11,8 @@ from swift.utils import get_dist_setting
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
-    USER_PROMPT_JSON,
     USER_PROMPT_SUMMARY,
-    build_dense_system_prompt,
+    get_template_prompts,
 )
 from .schema import PromptOverrides, SaveDelayConfig, TrainingConfig
 
@@ -140,10 +139,15 @@ class ConfigLoader:
         prompts_config = config.get("prompts", {}) or {}
         if not isinstance(prompts_config, dict):
             raise TypeError("prompts section must be a mapping if provided")
+        if prompts_config:
+            raise ValueError(
+                "YAML prompt overrides are disabled. Edit src/config/prompts.py instead."
+            )
 
         use_summary = False
         custom_section = config.get("custom")
-        json_format_hint: Optional[str] = None
+        ordering_hint: str = "sorted"
+        coord_mode: str = "coord_tokens"
         if custom_section is not None:
             if not isinstance(custom_section, dict):
                 raise TypeError(
@@ -157,21 +161,29 @@ class ConfigLoader:
                 use_summary = ConfigLoader._coerce_bool(
                     custom_section["use_summary"], "custom.use_summary"
                 )
-            json_format_hint_raw = custom_section.get("json_format")
-            if json_format_hint_raw is not None:
-                json_format_hint = str(json_format_hint_raw)
+            ordering_hint_raw = custom_section.get("object_ordering")
+            if ordering_hint_raw is not None:
+                ordering_hint = str(ordering_hint_raw).lower()
+                if ordering_hint not in {"sorted", "random"}:
+                    raise ValueError(
+                        "custom.object_ordering must be 'sorted' or 'random' when provided"
+                    )
+            coord_tokens_cfg = custom_section.get("coord_tokens", {})
+            if isinstance(coord_tokens_cfg, dict):
+                coord_mode = "coord_tokens" if coord_tokens_cfg.get("enabled", False) else "numeric"
 
         if use_summary:
             default_system = SYSTEM_PROMPT_SUMMARY
             default_user = USER_PROMPT_SUMMARY
             output_variant = "summary"
         else:
-            default_system = build_dense_system_prompt(json_format_hint)
-            default_user = USER_PROMPT_JSON
+            default_system, default_user = get_template_prompts(
+                ordering=ordering_hint, coord_mode=coord_mode
+            )
             output_variant = "dense"
 
-        system_prompt = prompts_config.get("system", default_system)
-        user_prompt = prompts_config.get("user", default_user)
+        system_prompt = default_system
+        user_prompt = default_user
 
         return PromptOverrides(
             system=str(system_prompt) if system_prompt is not None else None,
@@ -235,6 +247,18 @@ class ConfigLoader:
             save_last_epoch = ConfigLoader._coerce_bool(
                 save_last_epoch_raw, "training.save_last_epoch"
             )
+
+        # Remove packing-only knobs before TrainArguments init; they are consumed in sft.py
+        _packing_keys = {
+            "packing",
+            "packing_length",
+            "packing_buffer",
+            "packing_min_fill_ratio",
+            "packing_drop_last",
+            "packing_allow_single_long",
+            "eval_packing",
+        }
+        packing_overrides = {k: training_section.pop(k) for k in list(training_section.keys()) if k in _packing_keys}
 
         # Auto-calculate gradient_accumulation_steps from effective_batch_size
         effective_batch_size = training_section.pop("effective_batch_size", None)
@@ -361,6 +385,13 @@ class ConfigLoader:
                 "Unable to attach llm_kd_weight to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
+        try:
+            setattr(train_args, "coord_offset_config", config.custom.coord_offset)
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Unable to attach coord_offset_config to TrainArguments; ensure ms-swift exposes this attribute."
+            ) from exc
+
         inner_args = getattr(train_args, "training_args", None)
         if inner_args is None:
             raise RuntimeError(
@@ -387,6 +418,20 @@ class ConfigLoader:
             raise RuntimeError(
                 "Unable to attach llm_kd_weight to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
+
+        try:
+            setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
+            ) from exc
+
+        # Surface packing overrides for downstream consumption (optional)
+        if packing_overrides:
+            try:
+                setattr(train_args, "_packing_overrides", packing_overrides)
+            except Exception:
+                pass
 
         return train_args
 

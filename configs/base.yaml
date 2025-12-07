@@ -66,8 +66,7 @@ data:
 custom:
   json_format: standard
   emit_norm: norm1000
-  train_jsonl: data/bbu_full_768_poly-need_review/train.jsonl
-  val_jsonl: data/bbu_full_768_poly-need_review/val.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.jsonl
   dump_conversation_path: output/conversation_text.txt
-
 

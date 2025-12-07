@@ -1,4 +1,8 @@
-"""Dataset wrapper registry for fusion configs."""
+"""Dataset wrapper registry for fusion configs.
+
+Legacy `bbu`/`rru` entries remain for backward compatibility with old configs,
+but the project now targets general/public detection datasets.
+"""
 
 from __future__ import annotations
 

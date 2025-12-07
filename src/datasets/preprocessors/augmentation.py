@@ -1,7 +1,14 @@
 """Augmentation preprocessor - decoupled from dataset logic"""
 
 import random
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple
+
+from src.coord_tokens.codec import (
+    ints_to_tokens,
+    normalized_from_ints,
+    sequence_has_coord_tokens,
+    tokens_to_ints,
+)
 
 from .base import BasePreprocessor
 from ..utils import extract_geometry
@@ -25,6 +32,7 @@ class AugmentationPreprocessor(BasePreprocessor):
         rng: Optional[random.Random] = None,
         bypass_prob: float = 0.0,
         curriculum_state: Optional[MutableMapping[str, Any]] = None,
+        coord_tokens_enabled: bool = False,
         **kwargs: Any,
     ):
         """Initialize augmentation preprocessor.
@@ -41,6 +49,7 @@ class AugmentationPreprocessor(BasePreprocessor):
         self.bypass_prob = float(bypass_prob)
         self.curriculum_state = curriculum_state
         self._curriculum_last_step: int | None = None
+        self.coord_tokens_enabled = bool(coord_tokens_enabled)
 
     def preprocess(self, row: ConversationRecord) -> Optional[ConversationRecord]:
         """Apply augmentations to a record.
@@ -92,10 +101,18 @@ class AugmentationPreprocessor(BasePreprocessor):
 
         # Extract geometries
         per_obj_geoms: List[Dict[str, Any]] = []
+        tokenized_flags: List[bool] = []
         for obj in objs:
             g = extract_geometry(obj)
-            if g:
+            if not g:
+                continue
+            if self.coord_tokens_enabled:
+                g_num, had_tokens = self._geom_tokens_to_ints(obj, g)
+                per_obj_geoms.append(g_num)
+                tokenized_flags.append(had_tokens)
+            else:
                 per_obj_geoms.append(g)
+                tokenized_flags.append(False)
 
         # Apply augmentations using unified pipeline API only
         if Compose is None or not isinstance(self.augmenter, Compose):
@@ -122,9 +139,17 @@ class AugmentationPreprocessor(BasePreprocessor):
                     or obj.get("line") is not None
                 ):
                     g = per_obj_geoms_new[j]
+                    had_tokens = tokenized_flags[j]
                     j += 1
                     # Update with new geometry, clear others
-                    self._update_geometry_field(obj, g)
+                    self._update_geometry_field(
+                        obj,
+                        self._restore_tokens_if_needed(
+                            obj,
+                            g,
+                            had_tokens,
+                        ),
+                    )
         else:
             # Crop was applied - filter objects and update completeness
             filtered_objects: List[Dict[str, Any]] = []
@@ -160,10 +185,18 @@ class AugmentationPreprocessor(BasePreprocessor):
                 obj_idx = obj_idx_with_geom[orig_idx]
                 obj = objs[obj_idx]
                 new_geom = per_obj_geoms_new[idx_in_kept]
+                had_tokens = tokenized_flags[orig_idx]
                 cov = coverages[idx_in_kept] if idx_in_kept < len(coverages) else 1.0
 
                 # Update geometry field (single field only)
-                self._update_geometry_field(obj, new_geom)
+                self._update_geometry_field(
+                    obj,
+                    self._restore_tokens_if_needed(
+                        obj,
+                        new_geom,
+                        had_tokens,
+                    ),
+                )
 
                 # Update completeness field if below threshold
                 if cov < completeness_threshold:
@@ -298,6 +331,58 @@ class AugmentationPreprocessor(BasePreprocessor):
                     setattr(op, param_name, coerced)
                 except Exception:
                     continue
+
+    # -------------------- coord-token helpers --------------------
+
+    @staticmethod
+    def _geom_tokens_to_ints(
+        obj: MutableMapping[str, Any],
+        geom: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], bool]:
+        """Convert geometry values to ints if they contain coord tokens; return numeric geom and flag."""
+
+        def _convert(values: List[Any]) -> Tuple[List[int], bool]:
+            if sequence_has_coord_tokens(values):
+                ints = tokens_to_ints(values, require_even=True)
+                return ints, True
+            # Fall back to cached ints if present
+            cached = obj.get("_coord_token_ints")
+            if isinstance(cached, Mapping):
+                geom_key_local = next(iter(geom.keys()))
+                cached_vals = cached.get(geom_key_local)
+                if isinstance(cached_vals, list):
+                    try:
+                        ints = [int(v) for v in cached_vals]
+                        return ints, True
+                    except Exception:
+                        pass
+            # Otherwise attempt numeric cast
+            try:
+                ints = [int(round(float(v))) for v in values]
+                return ints, False
+            except Exception as exc:
+                raise ValueError(f"Failed to coerce geometry values to ints: {exc}") from exc
+
+        geom_key, values = next(iter(geom.items()))
+        ints, had_tokens = _convert(list(values))
+        return {geom_key: ints}, had_tokens
+
+    @staticmethod
+    def _restore_tokens_if_needed(
+        obj: MutableMapping[str, Any],
+        geom: Dict[str, Any],
+        had_tokens: bool,
+    ) -> Dict[str, Any]:
+        """Round to nearest int and convert back to coord tokens when needed."""
+        if not had_tokens or not geom:
+            return geom
+        geom_key, values = next(iter(geom.items()))
+        ints = [int(round(float(v))) for v in values]
+        tokens = ints_to_tokens(ints)
+        obj.setdefault("_coord_tokens", {})[geom_key] = tokens
+        obj.setdefault("_coord_token_ints", {})[geom_key] = ints
+        obj.setdefault("_coord_token_norm", {})[geom_key] = normalized_from_ints(ints)
+        return {geom_key: tokens}
 
     def _update_geometry_field(
         self, obj: Dict[str, Any], new_geom: Dict[str, Any]

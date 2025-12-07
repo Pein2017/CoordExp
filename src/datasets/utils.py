@@ -2,7 +2,8 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+import re
+from typing import Any, Dict, List, Sequence, Tuple
 
 
 def load_jsonl(jsonl_path: str, *, resolve_relative: bool = False) -> List[Dict[str, Any]]:
@@ -39,22 +40,88 @@ def load_jsonl(jsonl_path: str, *, resolve_relative: bool = False) -> List[Dict[
     return records
 
 
-def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[float]]:
+def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
     """Extract geometry type and points from an object.
 
-    Args:
-    obj: Object dictionary containing geometry (bbox_2d, poly, or line)
-
-    Returns:
-        Tuple of (geometry_type, points_list)
+    Accepts numeric points or coord tokens; falls back to raw values when
+    float conversion is not possible.
     """
+
+    def _coerce(value: Any, key: str) -> List[Any]:
+        if value is None:
+            return []
+        if not isinstance(value, Sequence):
+            raise ValueError(f"{key} must be a sequence, got {type(value)!r}")
+        try:
+            return [float(v) for v in value]
+        except (TypeError, ValueError):
+            return list(value)
+
     if "bbox_2d" in obj:
-        return "bbox_2d", list(map(float, obj["bbox_2d"]))
+        return "bbox_2d", _coerce(obj["bbox_2d"], "bbox_2d")
     if "poly" in obj:
-        return "poly", list(map(float, obj["poly"]))
+        return "poly", _coerce(obj["poly"], "poly")
     if "line" in obj:
-        return "line", list(map(float, obj["line"]))
+        return "line", _coerce(obj["line"], "line")
     return "", []
+
+
+_TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
+
+
+def _coord_value_to_float(value: Any) -> float | None:
+    """Best-effort conversion of coord token or numeric to float."""
+    if isinstance(value, (int, float)):
+        try:
+            return float(value)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        m = _TOKEN_RE.fullmatch(value.strip())
+        if m:
+            try:
+                return float(int(m.group(1)))
+            except Exception:
+                return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+    return None
+
+
+def sort_objects_by_topleft(objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return objects sorted top-to-bottom then left-to-right using geometry."""
+
+    def anchor(obj: Dict[str, Any]) -> Tuple[float, float]:
+        geom_type, points = extract_object_points(obj)
+        if not points or not geom_type:
+            return (float("inf"), float("inf"))
+        xs: List[float] = []
+        ys: List[float] = []
+        pts_iter = list(points)
+        if geom_type == "bbox_2d" and len(pts_iter) >= 4:
+            # bbox ordering assumed [x1, y1, x2, y2]
+            x1 = _coord_value_to_float(pts_iter[0])
+            y1 = _coord_value_to_float(pts_iter[1])
+            if x1 is not None:
+                xs.append(x1)
+            if y1 is not None:
+                ys.append(y1)
+        else:
+            for i, v in enumerate(pts_iter):
+                val = _coord_value_to_float(v)
+                if val is None:
+                    continue
+                if i % 2 == 0:
+                    xs.append(val)
+                else:
+                    ys.append(val)
+        if not xs or not ys:
+            return (float("inf"), float("inf"))
+        return (min(ys), min(xs))
+
+    return sorted(list(objects), key=anchor)
 
 
 def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[float]]:
@@ -96,4 +163,5 @@ __all__ = [
     "extract_object_points",
     "extract_geometry",
     "is_same_record",
+    "sort_objects_by_topleft",
 ]

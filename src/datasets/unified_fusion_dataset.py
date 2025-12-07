@@ -14,6 +14,8 @@ from typing import Any, Literal, MutableMapping, Optional, cast
 
 from torch.utils.data import get_worker_info
 
+from src.config.schema import CoordTokensConfig
+from src.coord_tokens.validator import annotate_coord_tokens
 from ..config.prompts import USER_PROMPT_SUMMARY, get_template_prompts
 from .builders import JSONLinesBuilder
 from .contracts import validate_conversation_record
@@ -21,7 +23,7 @@ from .dense_caption import LAST_SAMPLE_DEBUG, BaseCaptionDataset
 from .fusion import FusionConfig
 from .fusion_types import DatasetSpec
 from .preprocessors import AugmentationPreprocessor, ObjectCapPreprocessor
-from .utils import load_jsonl
+from .utils import load_jsonl, sort_objects_by_topleft
 
 
 @dataclass(frozen=True)
@@ -58,18 +60,21 @@ class FusionCaptionDataset(BaseCaptionDataset):
         use_summary: bool,
         system_prompt_dense: Optional[str],
         system_prompt_summary: Optional[str],
+        coord_tokens: Optional[CoordTokensConfig] = None,
         seed: int = 42,
         shuffle: bool = True,
         sample_limit: Optional[int] = None,
         split: Literal["train", "eval"] = "train",
         target_eval_jsonl: Optional[str] = None,
         include_source_eval: bool = True,
+        object_ordering: Literal["sorted", "random"] = "sorted",
     ):
         self._fusion_config = fusion_config
         self._split: Literal["train", "eval"] = split
         self._augmenter = augmenter
         self.bypass_prob = float(bypass_prob)
         self.curriculum_state = curriculum_state
+        self.coord_tokens = coord_tokens or CoordTokensConfig()
         self._shuffle = bool(shuffle)
         self._include_source_eval = bool(include_source_eval)
         self._sample_limit = sample_limit
@@ -82,6 +87,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
         self._preprocessors_cap: dict[str, ObjectCapPreprocessor] = {}
         self.epoch_plan: dict[str, dict[str, Any]] = {}
         self._hard_sample_plan: dict[str, Any] | None = None
+        self.object_ordering: Literal["sorted", "random"] = object_ordering
 
         self._dataset_order = [
             fusion_config.target.name,
@@ -116,6 +122,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             fusion_config.target,
             default_user_prompt=user_prompt,
             default_system_prompt=default_system_prompt,
+            ordering=self.object_ordering,
         )
         self._policies[self._target_name] = _DatasetPolicy(
             spec=fusion_config.target,
@@ -132,6 +139,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
                 source,
                 default_user_prompt=user_prompt,
                 default_system_prompt=default_system_prompt,
+                ordering=self.object_ordering,
             )
             self._policies[source.name] = _DatasetPolicy(
                 spec=source,
@@ -182,9 +190,11 @@ class FusionCaptionDataset(BaseCaptionDataset):
             use_summary=use_summary,
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
+            coord_tokens=self.coord_tokens,
             seed=seed,
             dataset_name=self._target_name,
             allow_empty=True,
+            object_ordering=object_ordering,
         )
 
         # Build preprocessors after parent init sets base attributes.
@@ -200,6 +210,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
                     curriculum_state=(
                         self.curriculum_state if policy.curriculum_enabled else None
                     ),
+                    coord_tokens_enabled=self.coord_tokens.enabled,
                 )
             if policy.max_objects_per_image is not None:
                 self._preprocessors_cap[name] = ObjectCapPreprocessor(
@@ -257,8 +268,11 @@ class FusionCaptionDataset(BaseCaptionDataset):
         *,
         default_user_prompt: str,
         default_system_prompt: Optional[str],
+        ordering: Literal["sorted", "random"] = "sorted",
     ) -> _PromptResolution:
-        domain_system, domain_user = get_template_prompts(spec.template)
+        domain_system, domain_user = get_template_prompts(
+            spec.template, ordering=ordering
+        )
         user_prompt = spec.prompt_user or domain_user or default_user_prompt
         system_prompt = spec.prompt_system or domain_system or default_system_prompt
 
@@ -446,6 +460,19 @@ class FusionCaptionDataset(BaseCaptionDataset):
         else:
             objects_after = len(record.get("objects") or [])
 
+        # Apply ordering or randomization for ablations
+        objects_list = record.get("objects") or []
+        if isinstance(objects_list, list) and objects_list:
+            if self.object_ordering == "sorted":
+                record["objects"] = sort_objects_by_topleft(objects_list)
+            elif self.object_ordering == "random":
+                objs_copy = list(objects_list)
+                rng_local.shuffle(objs_copy)
+                record["objects"] = objs_copy
+
+        if self.coord_tokens.enabled:
+            annotate_coord_tokens(record)
+
         # Build conversation
         mode = self.mode
         prompts = policy.prompts
@@ -457,6 +484,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             emit_norm=self.emit_norm,
             mode=mode,
             json_format=self.json_format,
+            coord_tokens_enabled=self.coord_tokens.enabled,
         )
         merged = builder.build_many([record])
         conversation_messages = copy.deepcopy(merged.get("messages", []) or [])
@@ -555,6 +583,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             seed=self.seed,
             dataset_name=self._target_name,
             allow_empty=False,
+            object_ordering=self.object_ordering,
         )
 
 

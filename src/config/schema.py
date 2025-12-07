@@ -38,6 +38,144 @@ def _as_dict(value: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
 
 
 @dataclass(frozen=True)
+class TokenTypeMetricsConfig:
+    enabled: bool = False
+    include: tuple[str, ...] = ("lvis",)
+    exclude: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        inc = tuple(str(v).strip().lower() for v in self.include)
+        exc = tuple(str(v).strip().lower() for v in self.exclude)
+        object.__setattr__(self, "include", inc)
+        object.__setattr__(self, "exclude", exc)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TokenTypeMetricsConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("custom.token_type_metrics must be a mapping when provided")
+
+        enabled = bool(payload.get("enabled", False))
+        include_raw = payload.get("include", cls.include)
+        exclude_raw = payload.get("exclude", cls.exclude)
+
+        def _to_tuple(value: Any) -> tuple[str, ...]:
+            if value is None:
+                return ()
+            if isinstance(value, (list, tuple)):
+                return tuple(str(v).strip() for v in value)
+            return (str(value).strip(),)
+
+        include = _to_tuple(include_raw)
+        exclude = _to_tuple(exclude_raw)
+
+        return cls(enabled=enabled, include=include, exclude=exclude)
+
+
+@dataclass(frozen=True)
+class CoordTokensConfig:
+    enabled: bool = False
+    skip_bbox_norm: bool = True
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordTokensConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("coord_tokens section must be a mapping when provided")
+
+        enabled = bool(payload.get("enabled", False))
+        skip_bbox_norm = bool(payload.get("skip_bbox_norm", True))
+        return cls(
+            enabled=enabled,
+            skip_bbox_norm=skip_bbox_norm,
+        )
+
+
+@dataclass(frozen=True)
+class CoordOffsetConfig:
+    enabled: bool = False
+    ids: tuple[int, ...] = ()
+    embed_lr: Optional[float] = None
+    head_lr: Optional[float] = None
+    weight_decay: float = 0.0
+    dtype: Optional[str] = None  # "auto"/None defaults to model dtype
+
+    def __post_init__(self) -> None:
+        if self.weight_decay < 0:
+            raise ValueError("coord_offset.weight_decay must be >= 0")
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordOffsetConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("coord_offset section must be a mapping when provided")
+
+        enabled = bool(payload.get("enabled", False))
+
+        ids_raw = payload.get("ids")
+        ids: tuple[int, ...]
+        if ids_raw is None:
+            ids = ()
+        elif isinstance(ids_raw, (list, tuple, set)):
+            try:
+                ids = tuple(int(v) for v in ids_raw)
+            except Exception as exc:
+                raise ValueError("coord_offset.ids must be a list of integers") from exc
+        elif isinstance(ids_raw, Mapping):
+            start = ids_raw.get("start")
+            end = ids_raw.get("end")
+            try:
+                start_i = int(start)
+                end_i = int(end)
+            except Exception as exc:
+                raise ValueError(
+                    "coord_offset.ids mapping must provide integer start/end"
+                ) from exc
+            if end_i < start_i:
+                raise ValueError("coord_offset.ids.end must be >= start")
+            ids = tuple(range(start_i, end_i + 1))
+        else:
+            raise TypeError(
+                "coord_offset.ids must be a list, mapping with start/end, or omitted"
+            )
+
+        def _parse_lr(key: str) -> Optional[float]:
+            raw = payload.get(key)
+            if raw is None:
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"coord_offset.{key} must be numeric") from exc
+
+        embed_lr = _parse_lr("embed_lr")
+        head_lr = _parse_lr("head_lr")
+
+        weight_decay_raw = payload.get("weight_decay", 0.0)
+        try:
+            weight_decay = float(weight_decay_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("coord_offset.weight_decay must be numeric") from exc
+        if weight_decay < 0:
+            raise ValueError("coord_offset.weight_decay must be >= 0")
+
+        dtype_raw = payload.get("dtype")
+        dtype = str(dtype_raw) if dtype_raw is not None else None
+
+        return cls(
+            enabled=enabled,
+            ids=ids,
+            embed_lr=embed_lr,
+            head_lr=head_lr,
+            weight_decay=weight_decay,
+            dtype=dtype,
+        )
+
+
+@dataclass(frozen=True)
 class PromptOverrides:
     system: Optional[str] = None
     user: Optional[str] = None
@@ -223,6 +361,9 @@ class CustomConfig:
     user_prompt: str
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
+    object_ordering: Literal["sorted", "random"] = "sorted"
+    coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
+    coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
     augmentation: Optional[Mapping[str, Any]] = None
@@ -238,6 +379,7 @@ class CustomConfig:
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     hard_sample_mining: Optional["HardSampleMiningConfig"] = None
+    token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
     fusion_config: Optional[str] = None
 
@@ -249,6 +391,10 @@ class CustomConfig:
         if self.emit_norm not in {"none", "norm100", "norm1000"}:
             raise ValueError(
                 "custom.emit_norm must be one of {'none', 'norm100', 'norm1000'}"
+            )
+        if self.object_ordering not in {"sorted", "random"}:
+            raise ValueError(
+                "custom.object_ordering must be one of {'sorted', 'random'}"
             )
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
@@ -305,6 +451,7 @@ class CustomConfig:
             if use_summary_raw is None
             else _parse_bool(use_summary_raw, "custom.use_summary")
         )
+        coord_tokens_raw = data.pop("coord_tokens", None)
         system_prompt_summary = data.pop("system_prompt_summary", None)
         if "images_per_user_turn" in data:
             raise ValueError(
@@ -319,12 +466,15 @@ class CustomConfig:
         val_sample_limit = data.pop("val_sample_limit", None)
         dump_conversation_text = bool(data.pop("dump_conversation_text", False))
         dump_conversation_path = data.pop("dump_conversation_path", None)
+        object_ordering_raw = data.pop("object_ordering", "sorted")
         val_jsonl = data.pop("val_jsonl", None)
         fusion_config = data.pop("fusion_config", None)
         visual_kd_raw = data.pop("visual_kd", None)
         visual_kd = VisualKDConfig.from_mapping(visual_kd_raw)
         hsm_raw = data.pop("hard_sample_mining", None)
         hsm_cfg = HardSampleMiningConfig.from_mapping(hsm_raw)
+        token_type_metrics_raw = data.pop("token_type_metrics", None)
+        token_type_metrics = TokenTypeMetricsConfig.from_mapping(token_type_metrics_raw)
         json_format_raw = data.pop("json_format", None)
         if json_format_raw is None:
             raise ValueError("custom.json_format must be provided")
@@ -342,11 +492,24 @@ class CustomConfig:
                 "custom.emit_norm must be one of {'none', 'norm100', 'norm1000'}"
             )
 
+        coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
+        coord_offset_raw = data.pop("coord_offset", None)
+        coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
+
+        object_ordering = str(object_ordering_raw).lower()
+        if object_ordering not in {"sorted", "random"}:
+            raise ValueError(
+                "custom.object_ordering must be 'sorted' or 'random' when provided"
+            )
+
         return cls(
             train_jsonl=str(train_jsonl) if train_jsonl is not None else "",
             user_prompt=str(user_prompt) if user_prompt is not None else "",
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
+            object_ordering=cast(Literal["sorted", "random"], object_ordering),
+            coord_tokens=coord_tokens,
+            coord_offset=coord_offset,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
             augmentation=augmentation
@@ -371,6 +534,7 @@ class CustomConfig:
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
             hard_sample_mining=hsm_cfg,
+            token_type_metrics=token_type_metrics,
             extra=extra,
         )
 

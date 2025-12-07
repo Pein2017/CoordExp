@@ -1,0 +1,34 @@
+extends: sft_base.yaml
+
+training:
+  learning_rate: 2.0e-4
+  vit_lr: 1.0e-4
+  aligner_lr: 4.0e-4
+  num_train_epochs: 4
+  optimizer: multimodal_coord_offset
+  output_dir: ./output/12-4/coord_offset
+  run_name: epoch_4-dlora-lrs_2_1_4-sorted
+  logging_dir: ./tb/12-4/coord_offset
+  save_strategy: steps
+  eval_steps: 100
+  save_delay_steps: 200
+  save_total_limit: 2
+  save_delay_steps: 4000
+  logging_steps: 10
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 4
+  effective_batch_size: 128
+
+
+custom:
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.coord.jsonl
+  object_ordering: sorted  # sorted | random (for ablation)
+  # Disable curriculum when augmentation is off to avoid runtime error
+  augmentation_curriculum: null
+  coord_offset:
+    enabled: true
+    ids: { start: 151670, end: 152669 }  # excludes 151669 internally
+    embed_lr: 1.0e-3   # placeholder; tune per run
+    head_lr: 1.0e-3    # placeholder; tune per run
+    dtype: auto

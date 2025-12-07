@@ -4,6 +4,9 @@ import copy
 import random
 from typing import Any, Dict, List, Literal, MutableMapping, Optional, Sequence
 
+from src.config.schema import CoordTokensConfig
+from src.coord_tokens.validator import annotate_coord_tokens
+
 from torch.utils.data import Dataset, get_worker_info
 
 from src.config.prompts import USER_PROMPT_SUMMARY
@@ -11,7 +14,7 @@ from src.config.prompts import USER_PROMPT_SUMMARY
 from .builders import JSONLinesBuilder
 from .contracts import ConversationRecord, validate_conversation_record
 from .preprocessors import AugmentationPreprocessor, SequentialPreprocessor
-from .utils import load_jsonl
+from .utils import load_jsonl, sort_objects_by_topleft
 
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
@@ -42,6 +45,8 @@ class BaseCaptionDataset(Dataset):
         curriculum_state: Optional[MutableMapping[str, Any]] = None,
         dataset_name: Optional[str] = None,
         allow_empty: bool = False,
+        coord_tokens: Optional[CoordTokensConfig] = None,
+        object_ordering: Literal["sorted", "random"] = "sorted",
     ):
         self.use_summary = bool(use_summary)
         self.system_prompt_dense = system_prompt_dense
@@ -55,6 +60,8 @@ class BaseCaptionDataset(Dataset):
         self.mode: Literal["dense", "summary"] = (
             "summary" if self.use_summary else "dense"
         )
+        self.coord_tokens = coord_tokens or CoordTokensConfig()
+        self.object_ordering: Literal["sorted", "random"] = object_ordering
 
         if self.use_summary:
             if self.system_prompt_summary is None:
@@ -98,6 +105,7 @@ class BaseCaptionDataset(Dataset):
                     augmenter=augmenter,
                     bypass_prob=self.bypass_prob,
                     curriculum_state=curriculum_state,
+                    coord_tokens_enabled=self.coord_tokens.enabled,
                 )
             )
         if preprocessors:
@@ -200,6 +208,7 @@ class BaseCaptionDataset(Dataset):
             emit_norm=self.emit_norm,
             mode=mode,
             json_format=self.json_format,
+            coord_tokens_enabled=self.coord_tokens.enabled,
         )
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
@@ -224,6 +233,19 @@ class BaseCaptionDataset(Dataset):
                     "Preprocessor removed the record; dataset does not duplicate samples"
                 )
             record = processed
+
+        # Apply ordering or randomization of objects for ablations
+        objects_list = record.get("objects") or []
+        if isinstance(objects_list, list) and objects_list:
+            if self.object_ordering == "sorted":
+                record["objects"] = sort_objects_by_topleft(objects_list)
+            elif self.object_ordering == "random":
+                objs_copy = list(objects_list)
+                rng_local.shuffle(objs_copy)
+                record["objects"] = objs_copy
+
+        if self.coord_tokens.enabled:
+            annotate_coord_tokens(record)
 
         mode = self.mode
         builder = self._create_builder(mode)

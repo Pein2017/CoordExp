@@ -198,12 +198,12 @@ Index → Epoch-seeded permutation
 {
   "object_1": {
     "poly": [x1,y1,...,x4,y4],
-    "desc": "BBU设备/华为/显示完整/..."
+    "desc": "tool cabinet / front panel / clean"
   },
   "object_2": {
     "line_points": 4,
     "line": [x1,y1,...,x4,y4],
-    "desc": "光纤/有保护措施/..."
+    "desc": "fiber cable / protected / gentle bend"
   }
 }
 ```
@@ -303,8 +303,8 @@ training:
   learning_rate: 1e-4
 
 custom:
-  train_jsonl: data/bbu_full_768/train.jsonl
-  val_jsonl: data/bbu_full_768/val.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.jsonl
   emit_norm: norm1000               # none | norm100 | norm1000
   # 无需配置 group_key_prefix；输出已是单图 object_{n} 结构
 
@@ -380,14 +380,14 @@ Tip: keep `training.aligner_lr` (and optionally `training.vit_lr`) to control pe
 ```yaml
 # Dense-only (default behavior)
 custom:
-  train_jsonl: data/bbu_full_768/train.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
   use_summary: false
 ```
 
 ```yaml
 # Summary-only run
 custom:
-  train_jsonl: data/bbu_full_768/train.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
   use_summary: true
 ```
 

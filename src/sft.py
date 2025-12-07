@@ -6,7 +6,7 @@ import logging
 import math
 import os
 import re
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from multiprocessing import Manager
 from typing import Any
 
@@ -16,17 +16,25 @@ from swift.llm.train.sft import SwiftSft
 from swift.trainers import TrainerFactory
 from swift.utils import get_dist_setting
 
+from .data_collators import build_dataset_metrics_collator
 from .callbacks.hard_sample_mining import (
     HardSampleMiningCallback,
     HardSampleTracker,
     attach_hsm_compute_loss,
 )
+from .coord_tokens.template_adapter import apply_coord_template_adapter
+from .coord_tokens.offset_adapter import (
+    install_coord_offset_adapter,
+    reattach_coord_offset_hooks,
+)
 from .callbacks import FusionEpochCallback
 from .config import ConfigLoader, SaveDelayConfig
-from .datasets import BaseCaptionDataset, FusionConfig
+from .datasets import BaseCaptionDataset, FusionConfig, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
+from .metrics.dataset_metrics import AggregateTokenTypeMetricsMixin
 from .trainers import with_final_checkpoint
 from .utils import enable_verbose_logging, get_logger, set_log_level
+from .optim import register_coord_offset_optimizer
 
 
 def resolve_trainer_cls(train_args):
@@ -50,6 +58,53 @@ def resolve_trainer_cls(train_args):
 # Use the model's native chat_template (JSON/Jinja) shipped with the tokenizer
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class PackingRuntimeConfig:
+    enabled: bool = False
+    packing_length: int = 0
+    buffer_size: int = 512
+    min_fill_ratio: float = 0.65
+    drop_last: bool = True
+    allow_single_long: bool = True
+    eval_packing: bool = False
+
+
+def _parse_packing_config(
+    training_cfg: Any, template: Any, train_args: Any
+) -> PackingRuntimeConfig:
+    cfg = training_cfg or {}
+    enabled = bool(cfg.get("packing", False))
+    if not enabled:
+        return PackingRuntimeConfig(enabled=False)
+
+    default_length = getattr(template, "max_length", None) or getattr(
+        train_args, "max_model_len", None
+    )
+    packing_length = int(cfg.get("packing_length") or default_length or 0)
+    if packing_length <= 0:
+        raise ValueError(
+            "packing is enabled but no valid packing_length/template.max_length is set"
+        )
+
+    buffer_size = int(cfg.get("packing_buffer", 512) or 512)
+    min_fill_ratio = float(cfg.get("packing_min_fill_ratio", 0.65))
+    if not (0 < min_fill_ratio <= 1):
+        raise ValueError("packing_min_fill_ratio must be in (0,1]")
+    drop_last = bool(cfg.get("packing_drop_last", True))
+    allow_single_long = bool(cfg.get("packing_allow_single_long", True))
+    eval_packing = bool(cfg.get("eval_packing", False))
+
+    return PackingRuntimeConfig(
+        enabled=True,
+        packing_length=packing_length,
+        buffer_size=buffer_size,
+        min_fill_ratio=min_fill_ratio,
+        drop_last=drop_last,
+        allow_single_long=allow_single_long,
+        eval_packing=eval_packing,
+    )
 
 
 def parse_args():
@@ -131,6 +186,8 @@ def main():
     train_args, training_config = ConfigLoader.load_training_config(
         args.config, args.base_config
     )
+    # Ensure custom optimizer variant is available before trainer setup
+    register_coord_offset_optimizer()
     custom_config = training_config.custom
     hsm_cfg = custom_config.hard_sample_mining
     hsm_cfg = custom_config.hard_sample_mining
@@ -219,6 +276,38 @@ def main():
     rlhf_type = getattr(train_args, "rlhf_type", None)
     pipeline_cls = SwiftRLHF if rlhf_type else SwiftSft
     sft = pipeline_cls(train_args)
+    coord_cfg = custom_config.coord_tokens
+    if coord_cfg.enabled:
+        apply_coord_template_adapter(sft.template, coord_cfg)
+
+    coord_offset_cfg = getattr(custom_config, "coord_offset", None)
+    if coord_offset_cfg and coord_offset_cfg.enabled:
+        adapter = install_coord_offset_adapter(
+            sft.model,
+            coord_ids=coord_offset_cfg.ids or None,
+            dtype=coord_offset_cfg.dtype,
+        )
+        modules_to_save: list[str] = list(getattr(train_args, "modules_to_save", []) or [])
+        if adapter.module_name not in modules_to_save:
+            modules_to_save.append(adapter.module_name)
+            try:
+                setattr(train_args, "modules_to_save", modules_to_save)
+            except Exception:
+                logger.warning("Failed to attach coord_offset module to modules_to_save on train_args")
+        # Sanity check against vocab size when available
+        vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
+        max_id = int(adapter.coord_ids.max().item())
+        if isinstance(vocab_size, int) and max_id >= vocab_size:
+            raise ValueError(
+                f"coord_offset id {max_id} exceeds model vocab_size={vocab_size}. "
+                "Adjust coord_offset.ids to fit the loaded tokenizer."
+            )
+        logger.info(
+            f"Coord-offset adapter enabled: ids={adapter.coord_ids.numel()}, "
+            f"embed_lr={coord_offset_cfg.embed_lr or getattr(train_args, 'learning_rate', None)}, "
+            f"head_lr={coord_offset_cfg.head_lr or getattr(train_args, 'learning_rate', None)}, "
+            f"dtype={coord_offset_cfg.dtype or 'auto'}"
+        )
     logger.info(f"Model: {train_args.model}")
     logger.info(f"Training type: {train_args.train_type}")
     if rlhf_type:
@@ -359,9 +448,11 @@ def main():
             use_summary=use_summary,
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
             seed=dataset_seed,
             sample_limit=train_sample_limit,
             split="train",
+            object_ordering=custom_config.object_ordering,
         )
         fusion_callback = FusionEpochCallback(dataset)
     else:
@@ -378,8 +469,47 @@ def main():
             use_summary=use_summary,
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
             seed=dataset_seed,
+            object_ordering=custom_config.object_ordering,
         )
+    packing_cfg = _parse_packing_config(
+        training_config.training, sft.template, train_args
+    )
+    if packing_cfg.enabled:
+        orig_bs = getattr(train_args, "per_device_train_batch_size", None)
+        if orig_bs != 1:
+            logger.warning(
+                "packing enabled: forcing per_device_train_batch_size=1 (was %s)",
+                orig_bs,
+            )
+            try:
+                train_args.per_device_train_batch_size = 1
+                if getattr(train_args, "training_args", None) is not None:
+                    train_args.training_args.per_device_train_batch_size = 1
+            except Exception:
+                logger.warning("Failed to set per_device_train_batch_size on train_args")
+
+        dataset = build_packed_dataset(
+            dataset,
+            template=sft.template,
+            packing_length=packing_cfg.packing_length,
+            buffer_size=packing_cfg.buffer_size,
+            min_fill_ratio=packing_cfg.min_fill_ratio,
+            drop_last=packing_cfg.drop_last,
+            allow_single_long=packing_cfg.allow_single_long,
+        )
+        if fusion_callback is not None:
+            fusion_callback.dataset = dataset
+        logger.info(
+            "Packing enabled: length=%s buffer=%s min_fill=%.2f drop_last=%s allow_single_long=%s",
+            packing_cfg.packing_length,
+            packing_cfg.buffer_size,
+            packing_cfg.min_fill_ratio,
+            packing_cfg.drop_last,
+            packing_cfg.allow_single_long,
+        )
+
     logger.info(f"Training dataset size: {len(dataset)}")
 
     # Calculate total_steps and initialize curriculum_state if needed
@@ -605,12 +735,14 @@ def main():
                 use_summary=use_summary,
                 system_prompt_dense=system_prompt_dense,
                 system_prompt_summary=system_prompt_summary,
+                coord_tokens=custom_config.coord_tokens,
                 seed=dataset_seed,
                 shuffle=False,
                 sample_limit=val_sample_limit,
                 split="eval",
                 target_eval_jsonl=target_val_path,
                 include_source_eval=True,
+                object_ordering=custom_config.object_ordering,
             )
             logger.info(f"Validation dataset size: {len(eval_dataset)}")
         elif has_source_val:
@@ -635,9 +767,29 @@ def main():
                 use_summary=use_summary,
                 system_prompt_dense=system_prompt_dense,
                 system_prompt_summary=system_prompt_summary,
+                coord_tokens=custom_config.coord_tokens,
                 seed=dataset_seed,
+                object_ordering=custom_config.object_ordering,
             )
             logger.info(f"Validation dataset size: {len(eval_dataset)}")
+
+    if packing_cfg.enabled and packing_cfg.eval_packing and eval_dataset is not None:
+        eval_dataset = build_packed_dataset(
+            eval_dataset,
+            template=sft.template,
+            packing_length=packing_cfg.packing_length,
+            buffer_size=packing_cfg.buffer_size,
+            min_fill_ratio=packing_cfg.min_fill_ratio,
+            drop_last=False,
+            allow_single_long=packing_cfg.allow_single_long,
+        )
+        logger.info(
+            "Packing enabled for eval: length=%s buffer=%s min_fill=%.2f drop_last=False allow_single_long=%s",
+            packing_cfg.packing_length,
+            packing_cfg.buffer_size,
+            packing_cfg.min_fill_ratio,
+            packing_cfg.allow_single_long,
+        )
 
     hsm_tracker = None
     hsm_callback = None
@@ -662,12 +814,33 @@ def main():
     sft.model = sft.prepare_model(
         train_args, sft.model, template=sft.template, train_dataset=dataset
     )
+    # After PEFT wrapping, reattach coord-offset hooks to active modules so offsets train/save correctly
+    if coord_offset_cfg and coord_offset_cfg.enabled:
+        try:
+            reattached = reattach_coord_offset_hooks(sft.model)
+            if reattached is None:
+                logger.warning("coord_offset_adapter not found after prepare_model; hooks not reattached")
+            else:
+                logger.info("Reattached coord_offset hooks on wrapped model")
+        except Exception as exc:
+            logger.warning(f"Failed to reattach coord_offset hooks after prepare_model: {exc}")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
     logger.info("Setting up trainer...")
-    data_collator = sft._get_data_collator()
+    base_collator = sft._get_data_collator()
+    token_type_cfg = getattr(custom_config, "token_type_metrics", None)
+    data_collator = build_dataset_metrics_collator(
+        sft.template, base_collator, token_type_cfg=token_type_cfg
+    )
     trainer_cls = resolve_trainer_cls(train_args)
+    if token_type_cfg and getattr(token_type_cfg, "enabled", False):
+        if not issubclass(trainer_cls, AggregateTokenTypeMetricsMixin):
+            trainer_cls = type(
+                f"{trainer_cls.__name__}WithAggTokenTypes",
+                (AggregateTokenTypeMetricsMixin, trainer_cls),
+                {},
+            )
 
     # Add SaveDelayCallback if save_delay_steps is configured
     callbacks = sft.callbacks.copy() if sft.callbacks else []
