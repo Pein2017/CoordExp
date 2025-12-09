@@ -47,25 +47,8 @@ def scale_points(points: Sequence[float], sx: float, sy: float) -> List[float]:
     return out
 
 
-def normalize_points(
-    points: Sequence[float], width: float, height: float, space: str
-) -> List[int]:
-    """Normalize to integer grid (norm100 or norm1000) from pixel coords.
-
-    space: "norm100" or "norm1000"
-    """
-    if space not in {"norm100", "norm1000"}:
-        raise ValueError(f"space must be 'norm100' or 'norm1000', got {space}")
-    denom_x = width if width else 1.0
-    denom_y = height if height else 1.0
-    scale = 100 if space == "norm100" else 1000
-    out: List[int] = []
-    for i, v in enumerate(points):
-        if i % 2 == 0:
-            out.append(int(round(float(v) / denom_x * scale)))
-        else:
-            out.append(int(round(float(v) / denom_y * scale)))
-    return out
+#
+# normalize_points is intentionally removed: runtime normalization is disabled.
 
 
 def _matmul_affine(M: List[List[float]], x: float, y: float) -> Tuple[float, float]:

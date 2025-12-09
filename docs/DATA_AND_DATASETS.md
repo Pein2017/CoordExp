@@ -54,16 +54,15 @@ Each record in your training data follows this structure:
 
 ### Coordinate Normalization
 
-**On Disk** (source data):
-- Pixel coordinates with `width`/`height` metadata
-- Keep original resolution for maximum precision
+**Pipeline default (post-conversion):**
+- All public data JSONLs we ship/train on are pre-normalized to norm1000 `[0, 999]` for both numeric text and coord-token files. Pixel-space intermediates are temporary only.
+- Training should therefore set `custom.emit_norm: none` for numeric runs (no runtime scaling). Coord-token runs bypass numeric scaling entirely.
 
-**During Training**:
-- `custom.emit_norm` controls assistant text format:
-  - `none`: Pixel coordinates in JSON
-  - `norm100`: Normalized to [0, 100]
-  - `norm1000`: Integer grid with 1000 bins `[0, 999]` (name kept for compatibility)
-- Template automatically normalizes top-level `objects` to the selected norm (default `norm1000`) for grounding
+**If you bring your own pixel JSONL:**
+- You must either pre-normalize offline or set `custom.emit_norm: norm1000` to let the builder normalize; mixed coord systems are not supported.
+
+**Enforcement:**
+- Numeric runs with pre-normalized data are validated to be within `[0, 999]` and will raise if out-of-range.
 
 ### Modes: Dense vs Summary
 
@@ -156,49 +155,12 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 - **Public datasets (`public_data/`)**:
   - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
   - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. Cap polygon complexity during conversion (e.g., `--poly-max-points 12`) if you want oversized shapes turned into `bbox_2d`.
-- **Fusion tooling**:
-  - `scripts/fuse_datasets.py` plus `src/datasets/fusion.py` can pre-build fused JSONL based on a YAML config (target dataset + auxiliary sources). Useful when you want deterministic sampling instead of streaming fusion.
 - **Visualization**:
   - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
 - **Chat template inspection**:
   - `scripts/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
 
-## Multi-Dataset Fusion
-
-When you want a target detection dataset to consume auxiliary detection datasets (LVIS, COCO, Objects365, etc.), provide a `custom.fusion_config` (YAML/JSON). The unified fusion loader mixes:
-
-- **Targets (one or more)**: declare under `targets:`. Optional per-target `ratio` is self-scaled: `quota_i = round(len_i * ratio_i)` with `ratio_i` defaulting to `1.0` (ratio < 1 downsamples, ratio > 1 upsamples with replacement; ratio = 1 or unset keeps full coverage). Target indices are shuffled deterministically per epoch. Evaluation concatenates all target `val_jsonl` splits (no sources).
-- **Auxiliary sources**: each entry declares the dataset wrapper (e.g., `coco`, `lvis`, `objects365`) plus a `ratio`. Each epoch samples `round(ratio * N_target_total)` records **with replacement**, where `N_target_total` is the sum of target quotas for that epoch. Errors if the source pool is empty; shuffles deterministically using the fusion seed and optional per-dataset seed.
-- **Text-only sources**: you can add a chat-only auxiliary (`dataset: chat`, `template: chatml`) that points to a JSONL with pre-authored `messages` only (e.g., `public_data/coig_cqia/coig_cqia_merged.jsonl`). Chat sources skip augmentation/curriculum, reuse their own prompts, and are mixed by ratio like any other source.
-- **Per-dataset fields** (target and sources): `name`, `train_jsonl`, optional `val_jsonl`, `template`, optional `user_prompt`/`system_prompt` override, `augmentation_enabled`, `curriculum_enabled`, `max_objects_per_image`, optional `seed`. Sources default to **no augmentation/curriculum** and a **64 object cap**; targets inherit global augmentation/curriculum and can opt into a cap.
-- **Prompt priority**: `default < domain (wrapper template) < dataset-specific override`, applied to both system and user prompts per sample while keeping a single shared template instance.
-- **Object caps**: applied deterministically after augmentation and before encoding. Sources cap by default; targets may opt in via `max_objects_per_image`.
-- **Telemetry**: `last_sample_debug` exposes `dataset`, `prompt_source`, augmentation on/off, cap applied/limit, and input length for every sample; per-epoch `epoch_plan` reports counts and policy flags.
-- **No online smart-resize**: inputs are assumed pre-filtered/resized offline; resizing occurs only through augmentation ops when configured. If you need smart-resize, run it during conversion and provide the resized `train/val` JSONLs explicitly.
-
-Example fusion config:
-
-```yaml
-target:
-  dataset: lvis
-  params:
-    train_jsonl: /data/lvis/train.jsonl
-    val_jsonl: /data/lvis/val.jsonl
-sources:
-  - dataset: coco
-    ratio: 0.1
-    params:
-      train_jsonl: /data/coco/train.jsonl
-      user_prompt: "List objects in JSON."        # optional override
-      max_objects_per_image: 48                  # optional cap override
-      seed: 123                                  # optional per-source seed
-  - dataset: objects365
-    ratio: 0.05
-    params:
-      train_jsonl: /data/objects365/train.jsonl
-```
-
-Runtime loader: `custom.fusion_config` always uses `FusionCaptionDataset` (alias `UnifiedFusionDataset`) with a single shared template. For deterministic static mixes, you can still precompute fused JSONLs with `scripts/fuse_datasets.py --config <path>`.
+**Fusion status**: Multi-dataset fusion is temporarily disabled. Training currently assumes a single LVIS JSONL provided via `custom.train_jsonl` / `custom.val_jsonl`. Fusion helpers remain in the codebase for potential future use but are not wired into the runner.
 
 For the universal JSONL record contract shared by all domains, see `docs/DATA_JSONL_CONTRACT.md`.
 
@@ -361,7 +323,7 @@ Before training:
 - [ ] Image paths resolve correctly
 - [ ] Width/height metadata present
 - [ ] Summary field present (if using summary mode)
-- [ ] Coordinates in pixel space (not normalized)
+- [ ] Coordinates pre-normalized to `[0, 999]` (or plan to normalize offline before training)
 - [ ] No duplicate objects or malformed geometries
 - [ ] Test with `--debug` flag first
 

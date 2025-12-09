@@ -6,11 +6,11 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
 - **Practical training**: Stays in the standard SFT pipeline (ms-swift), no heavy RL; compatible with native chat templates.
-- **Dataset scale**: Designed to fuse multiple detection datasets to validate broad generalization.
+- **Dataset focus**: Currently single-source LVIS runs; multi-dataset fusion is paused.
 
 ## Repo layout
-- `src/` – training stack (datasets, fusion loader, callbacks, config loader, SFT entry `sft.py`)
-- `configs/` – YAMLs (base, LoRA variants, fusion presets)
+- `src/` – training stack (datasets, callbacks, config loader, SFT entry `sft.py`; fusion helpers are deprecated)
+- `configs/` – YAMLs (base, LoRA variants)
 - `scripts/` – model utilities (e.g., `expand_coord_vocab.py`)
 - `public_data/scripts/` – data utilities (converters, resize, coord-token conversion)
 - `patent/` – background draft for CoordExp method
@@ -32,7 +32,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --base_config configs/base.yaml
    ```
    - Set `custom.train_jsonl` / `custom.val_jsonl` in the YAMLs to your datasets.
-   - To train on fused datasets, point `custom.fusion_config` to a file in `configs/fusion/` or your own fusion YAML.
+   - Fusion configs are disabled for now; use single-source LVIS JSONL paths.
 
 ### Data prep: LVIS end-to-end (raw → resized JSONL → coord tokens → tiny)
 - After `public_data/scripts/download_lvis.py`, run:
@@ -51,7 +51,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 4) **Key config knobs**
 - `custom.emit_norm`: coordinate normalization mode (default `norm1000` uses a 0–999 integer grid; 1000 bins)
 - `custom.coord_tokens.*`: opt-in coord-token mode (`enabled`, `skip_bbox_norm`) to consume pre-quantized `<|coord_k|>` data without double normalization
-   - `custom.fusion_config`: enable multi-source training via fusion loader
+   - Fusion is temporarily disabled; ignore `custom.fusion_config` and rely on single-source JSONL paths.
    - `training.*`: ms-swift trainer settings (deepspeed, schedulers, etc.)
 
 ### Coord-offset tuning (opt-in)

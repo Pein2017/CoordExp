@@ -5,7 +5,7 @@ chat template and tokenizer.
 
 Example:
     python scripts/inspect_chat_template.py \\
-        --jsonl public_data/lvis/rescale_32_768_poly_max_20/train.jsonl \\
+        --jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \\
         --index 0
 """
 

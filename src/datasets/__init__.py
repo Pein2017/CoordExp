@@ -16,6 +16,10 @@ Main exports:
 - DenseCaptionDataset: Primary dataset class
 - Builders: JSONLinesBuilder
 - Preprocessors: DenseCaptionPreprocessor, AugmentationPreprocessor
+
+Note: Fusion helpers remain in the repository for archival purposes but are not
+currently exported or wired into the training pipeline while we focus on
+single-source LVIS training.
 """
 
 from .contracts import (
@@ -42,16 +46,12 @@ from .preprocessors import (
     DenseCaptionPreprocessor,
     AugmentationPreprocessor,
 )
-from .fusion import FusionConfig, build_fused_jsonl
-from .unified_fusion_dataset import FusionCaptionDataset, UnifiedFusionDataset
 from .wrappers.packed_caption import PackedCaptionDataset, build_packed_dataset
 
 __all__ = [
     # Primary dataset
     "BaseCaptionDataset",
     "DenseCaptionDataset",
-    "FusionCaptionDataset",
-    "UnifiedFusionDataset",
     "PackedCaptionDataset",
     "build_packed_dataset",
     # Utilities
@@ -74,8 +74,6 @@ __all__ = [
     # Builders
     "BaseBuilder",
     "JSONLinesBuilder",
-    "FusionConfig",
-    "build_fused_jsonl",
     # Preprocessors
     "BasePreprocessor",
     "DenseCaptionPreprocessor",

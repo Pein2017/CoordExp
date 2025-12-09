@@ -378,19 +378,19 @@ class CustomConfig:
     val_jsonl: Optional[str] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
-    hard_sample_mining: Optional["HardSampleMiningConfig"] = None
+    hard_sample_mining: Optional["HardSampleMiningConfig"] = None  # Deprecated: not wired; will error if provided
     token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
-    fusion_config: Optional[str] = None
+    fusion_config: Optional[str] = None  # Deprecated: fusion disabled
 
     def __post_init__(self) -> None:
         if not self.train_jsonl:
             raise ValueError("custom.train_jsonl must be provided")
         if not self.user_prompt:
             raise ValueError("custom.user_prompt must be provided")
-        if self.emit_norm not in {"none", "norm100", "norm1000"}:
+        if self.emit_norm != "none":
             raise ValueError(
-                "custom.emit_norm must be one of {'none', 'norm100', 'norm1000'}"
+                "Pre-normalized data is required; set custom.emit_norm: none (runtime normalization is disabled)."
             )
         if self.object_ordering not in {"sorted", "random"}:
             raise ValueError(
@@ -468,11 +468,21 @@ class CustomConfig:
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
         val_jsonl = data.pop("val_jsonl", None)
-        fusion_config = data.pop("fusion_config", None)
+        fusion_config_raw = data.pop("fusion_config", None)
+        if fusion_config_raw not in (None, "", False):
+            raise ValueError(
+                "custom.fusion_config is deprecated while the pipeline focuses on a single LVIS dataset. "
+                "Remove this field to continue."
+            )
+        fusion_config = None
         visual_kd_raw = data.pop("visual_kd", None)
         visual_kd = VisualKDConfig.from_mapping(visual_kd_raw)
         hsm_raw = data.pop("hard_sample_mining", None)
-        hsm_cfg = HardSampleMiningConfig.from_mapping(hsm_raw)
+        if hsm_raw is not None:
+            raise ValueError(
+                "custom.hard_sample_mining is deprecated and unsupported. Remove this section to continue."
+            )
+        hsm_cfg = None
         token_type_metrics_raw = data.pop("token_type_metrics", None)
         token_type_metrics = TokenTypeMetricsConfig.from_mapping(token_type_metrics_raw)
         json_format_raw = data.pop("json_format", None)
@@ -487,9 +497,9 @@ class CustomConfig:
         if not isinstance(emit_norm, str):
             raise TypeError("custom.emit_norm must be a string")
         emit_norm_value = emit_norm.strip()
-        if emit_norm_value not in {"none", "norm100", "norm1000"}:
+        if emit_norm_value != "none":
             raise ValueError(
-                "custom.emit_norm must be one of {'none', 'norm100', 'norm1000'}"
+                "Pre-normalized data is required; set custom.emit_norm: none (runtime normalization is disabled)."
             )
 
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
@@ -608,6 +618,7 @@ class TrainingConfig:
 
 @dataclass(frozen=True)
 class HardSampleMiningConfig:
+    """Deprecated configuration placeholder for hard sample mining."""
     enabled: bool = False
     start_epoch: int = 0
     hard_sample_size: int = 500

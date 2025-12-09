@@ -9,7 +9,7 @@ This document defines the universal JSONL format consumed by all CoordExp traini
 - `width` (int, required): Image width in pixels (original or post-resize if applied offline).
 - `height` (int, required): Image height in pixels.
 - `summary` (str, optional): Single-line English summary (if provided by the dataset). When present, it should be built from the raw `desc` strings; identical entries may be merged into `desc xN`. Missing objects or empty `desc` should fail during conversion.
-- `metadata` (object, optional): Free-form metadata; fusion injects `_fusion_source`, `_fusion_template`, `_fusion_domain` at load time.
+- `metadata` (object, optional): Free-form metadata for provenance (not automatically injected).
 
 ## Objects
 Each object MUST contain exactly one geometry field plus a non-empty `desc`.
@@ -19,6 +19,11 @@ Each object MUST contain exactly one geometry field plus a non-empty `desc`.
   - `poly`: flat list `[x1, y1, x2, y2, ...]` (even length, ≥6 values / ≥3 points). Optional `poly_points` (int) should equal `len(poly)/2` when present.
   - `line`: flat list `[x1, y1, ..., xn, yn]`. Optional `line_points` (int) should equal `len(line)/2` when present.
 - No additional geometry fields are allowed on the same object.
+
+### Geometry keys and coordinate space (canonical)
+- Accepted geometry keys are **only** `bbox_2d`, `poly`, or `line` (plus optional `line_points`/`poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
+- Coordinate space is either pixel (floating point) or normalized coord tokens `<|coord_k|>` where `k ∈ [0, 999]`. The loader infers pixel vs normalized using image `width`/`height`. Avoid mixing pixel floats and coord tokens in the same object.
+- When pre-tokenizing (`custom.coord_tokens.enabled: true`), keep geometry in tokens and set `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
 
 ## Invariants
 - Coordinates can be pixel-space numbers or pre-tokenized `<|coord_k|>` values (0–999). Width/height must be present so pixel values can be reconstructed for losses.

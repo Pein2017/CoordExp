@@ -103,7 +103,7 @@ custom:
       enabled: true
       weight: 0.01
       distance: cosine
-  emit_norm: norm1000
+  emit_norm: none
   dump_conversation_text: false
   # Augmentation pipeline (training only). Eval remains unchanged.
   # Soft augmentation: lower probabilities and less aggressive transforms

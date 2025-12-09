@@ -7,7 +7,7 @@ Modular, YAML-driven pipeline for fine-tuning Qwen3-VL on dense captioning tasks
 - **Reproducible**: Epoch-based seeding for dynamic multi-image pairing
 - **Geometry-aware**: Affine transformations preserve spatial accuracy
 - **JSON-lines first**: Grouped JSON output with geometry preserved
-- **Fusion-capable**: Supports multi-source fusion datasets via `fusion_config`.
+- **Single-source focus**: Multi-source fusion via `fusion_config` is deprecated; current runs use a single LVIS dataset.
 
 **Pipeline**: YAML Config → ConfigLoader → SwiftSft → BaseCaptionDataset (alias DenseCaptionDataset) → Training Loop
 
@@ -189,7 +189,7 @@ Index → Epoch-seeded permutation
 - Supported types: `bbox_2d` (4), `poly` (even-length list, currently 8), `line` (2N)
 - Default: exact points preserved in top-level `objects.bbox`; template scales any even-length list to norm1000.
 - Augmentation: affine transforms update points atomically; text unchanged; spatial accuracy preserved.
-- Useful ops: `normalize_points()`, `apply_affine()`
+- Useful ops: `apply_affine()` (runtime normalization disabled; data are pre-normalized)
 
 ### Message Formats
 
@@ -245,7 +245,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
 输出直接使用单图对象映射，`group_key_prefix` 配置项保持移除。
 - 顶层 `objects.ref/bbox/image_id` 保留为原始像素坐标，模板自动归一化为 norm1000
 - 不再有 section headers 或 `image_index` 字段
-- **Packing** (optional): `training.packing: true` to concatenate samples to `global_max_length`, eliminating padding waste
+- **Packing** (optional): `training.packing: true` to concatenate samples to `global_max_length`, eliminating padding waste. `packing_length` is deprecated; the wrapper uses the template/global max length.
   - ✅ Compatible with Qwen3-VL (`support_padding_free=True`)
   - ⚠️ Incompatible with `lazy_tokenize`; requires bin-packing preprocessing
   - Best for variable-length samples; ~90-95% GPU utilization
@@ -303,8 +303,8 @@ training:
   learning_rate: 1e-4
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl
   emit_norm: norm1000               # none | norm100 | norm1000
   # 无需配置 group_key_prefix；输出已是单图 object_{n} 结构
 
@@ -380,14 +380,14 @@ Tip: keep `training.aligner_lr` (and optionally `training.vit_lr`) to control pe
 ```yaml
 # Dense-only (default behavior)
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
   use_summary: false
 ```
 
 ```yaml
 # Summary-only run
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
   use_summary: true
 ```
 

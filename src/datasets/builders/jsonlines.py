@@ -8,9 +8,24 @@ from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Tuple
 from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
 
 from ..contracts import ConversationRecord, validate_conversation_record
-from ..geometry import normalize_points
 from ..utils import extract_object_points
 from .base import BaseBuilder
+
+MAX_NORM = 999
+
+
+def _assert_norm_range(points: Iterable[Any], geom_type: str) -> None:
+    for v in points:
+        try:
+            fv = float(v)
+        except Exception:
+            raise ValueError(
+                f"{geom_type} contains a non-numeric value: {v!r}; expected pre-normalized coords in [0, 999]."
+            ) from None
+        if fv < 0 or fv > MAX_NORM:
+            raise ValueError(
+                f"{geom_type} value {fv} out of expected [0, 999] range for pre-normalized data."
+            )
 
 
 class JSONLinesBuilder(BaseBuilder):
@@ -146,11 +161,11 @@ class JSONLinesBuilder(BaseBuilder):
                 if geom_type == "line":
                     payload["line_points"] = len(text_points) // 2
                     payload[geom_type] = self._format_points(
-                        text_points, width, height
+                        text_points, width, height, geom_type
                     )
                 else:
                     payload[geom_type] = self._format_points(
-                        text_points, width, height
+                        text_points, width, height, geom_type
                     )
             grouped_objects[f"object_{idx}"] = payload
         return grouped_objects
@@ -206,14 +221,12 @@ class JSONLinesBuilder(BaseBuilder):
                 objects_out["ref"].append(desc.split("/")[0])
 
     def _format_points(
-        self, points: List[float], width: float, height: float
+        self, points: List[float], width: float, height: float, geom_type: str
     ) -> List[int | float]:
         if self.coord_tokens_enabled:
             return list(points)
-        if self.emit_norm == "none":
-            return [float(v) for v in points]
-        normalized = normalize_points(points, width, height, self.emit_norm)
-        return [int(v) for v in normalized]
+        _assert_norm_range(points, geom_type)
+        return [int(float(v)) for v in points]
 
     def _select_text_points(
         self, obj: Mapping[str, Any], geom_type: str, points: List[Any]
@@ -233,9 +246,13 @@ class JSONLinesBuilder(BaseBuilder):
         if self.coord_tokens_enabled:
             numeric_map = obj.get("_coord_token_ints") if isinstance(obj, Mapping) else None
             if isinstance(numeric_map, Mapping) and geom_type in numeric_map:
-                return list(numeric_map[geom_type])
+                nums = list(numeric_map[geom_type])
+                _assert_norm_range(nums, geom_type)
+                return nums
             if sequence_has_coord_tokens(points):
-                return tokens_to_ints(points, require_even=True)
+                nums = tokens_to_ints(points, require_even=True)
+                _assert_norm_range(nums, geom_type)
+                return nums
         return points
 
     def _render_json_text(self, payload: Mapping[str, Any]) -> str:

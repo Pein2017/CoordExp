@@ -46,6 +46,11 @@ class PackedCaptionDataset(IterableDataset):
         self.min_fill_ratio = float(min_fill_ratio)
         self.drop_last = bool(drop_last)
         self.allow_single_long = bool(allow_single_long)
+        # Cached base length for telemetry only (do not expose __len__)
+        try:
+            self.length_hint = len(dataset)
+        except Exception:
+            self.length_hint = None
 
         # Enable packing flags on template for padding_free collator
         try:
@@ -65,13 +70,10 @@ class PackedCaptionDataset(IterableDataset):
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(f"Failed to forward set_epoch to base dataset: {exc}")
 
-    def __len__(self) -> int:
-        # Approximate: fall back to underlying dataset length when available.
-        try:
-            return len(self.dataset)
-        except Exception:
-            # IterableDataset without length; minimal positive fallback
-            return 1
+    # Intentionally no __len__: treat as pure IterableDataset to avoid
+    # ms-swift attaching BatchSamplerShard (PyTorch forbids batch_sampler with
+    # IterableDataset). Keep a length_hint derived from the base dataset when
+    # needed for telemetry.
 
     # ---- Core iterator ----------------------------------------------------
     def __iter__(self) -> Iterable[List[dict]]:

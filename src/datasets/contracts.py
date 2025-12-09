@@ -1,4 +1,10 @@
-"""Shared dataset contracts and validation helpers."""
+"""Shared dataset contracts and validation helpers.
+
+Notes:
+- All public CoordExp JSONLs (numeric text and coord tokens) are pre-normalized to
+  norm1000 (0–999). Validation/enforcement will raise if values fall outside the
+  expected range when normalization is assumed.
+"""
 
 from __future__ import annotations
 

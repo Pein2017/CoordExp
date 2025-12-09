@@ -1,0 +1,43 @@
+extends: ../base.yaml
+
+model:
+  model: output/12-4/coord_merged_ck1632
+
+training:
+  output_dir: ./output/tests/packed_tiny
+  run_name: tests_packed_tiny
+  num_train_epochs: 1
+  per_device_train_batch_size: 1        # packing expects one packed sample per device
+  per_device_eval_batch_size: 1
+  effective_batch_size: 8               # auto-computes grad_accum for 4 GPUs
+  packing: true
+  # packing_length deprecated; uses global_max_length/template.max_length
+  packing_buffer: 256
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  eval_packing: true
+  eval_strategy: steps
+  eval_steps: 1
+  save_strategy: "no"        # quote to avoid YAML bool -> HF SaveStrategy error
+  save_steps: 50
+  save_total_limit: 1
+  save_delay_steps: 0
+  logging_steps: 1
+  logging_dir: ./tb/tests/packed_tiny
+
+data:
+  dataset_num_proc: 4
+  dataloader_num_workers: 8
+
+custom:
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl
+  sample_limit: 512
+  val_sample_limit: 128
+  coord_tokens:
+    enabled: true            # emit <|coord_*|> tokens in JSONL and template
+    skip_bbox_norm: true     # avoid double-normalizing coord-token bboxes
+  token_type_metrics:
+    enabled: true
+    include: [bbu, lvis]
+    exclude: []

@@ -1,4 +1,8 @@
-"""Fusion helpers for multi-dataset dense-caption training."""
+"""Fusion helpers for multi-dataset dense-caption training (deprecated).
+
+Fusion is currently disabled in the training pipeline; these helpers are kept
+for potential future reinstatement.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
-from .fusion_types import AuxiliarySpec, DatasetSpec
-from .wrappers import build_dataset_spec
-from .utils import load_jsonl
+from src.common.io import load_jsonl
+from src.datasets.fusion_types import AuxiliarySpec, DatasetSpec
+from src.datasets.wrappers import build_dataset_spec
 
 
 @dataclass(frozen=True)

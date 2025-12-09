@@ -7,26 +7,33 @@ training:
   num_train_epochs: 4
   optimizer: multimodal  # No coord_offset optimizer needed for pure string data
   output_dir: ./output/12-4/text_only
-  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only
+  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only-pre-normalized-packing-eff_bs_12-max_length_20000
   logging_dir: ./tb/12-4/text_only
   save_strategy: steps
   eval_steps: 100
   save_delay_steps: 2000
   save_total_limit: 2
   logging_steps: 10
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 4
-  effective_batch_size: 128
+  # Packing yields one packed sample per device; effective_batch_size=12 with world_size=4
+  # and per-device=1 targets ~125 base samples/update with avg 10.4 samples per pack.
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  effective_batch_size: 12
+  # Packing knobs (mirrors tests/packed_tiny)
+  packing_buffer: 256
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  eval_packing: true
 
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
-  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
   object_ordering: sorted  # sorted | random (for ablation)
   # Disable curriculum when augmentation is off to avoid runtime error
   augmentation_curriculum: null
-  # ABLATION: Use norm1000 to match coord token quantization range (0-999) for fair comparison
-  emit_norm: norm1000
+  # Pre-normalized JSONLs; no runtime scaling
+  emit_norm: none
   # ABLATION: Disable coord tokens - use pure numeric coordinates instead of <|coord_*|> tokens
   coord_tokens:
     enabled: false  # Use numeric coordinates instead of <|coord_*|> tokens

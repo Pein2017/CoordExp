@@ -58,11 +58,14 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Maintain compatibility with configs/layout used in `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
 
 ## Environment
-- Use `ms` conda env (`/root/miniconda3/envs/ms`) for all Python.
+- Always invoke `/root/miniconda3/envs/ms/bin/python` (and `/root/miniconda3/envs/ms/bin/torchrun` or `/root/miniconda3/envs/ms/bin/swift`) directly; do not use `conda activate` or `conda run`.
 - `transformers` path: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers`.
 - `ms-swift` available at `/data/home/xiaoyan/AIteam/data/ms-swift`.
 - Run commands from repo root `/data/home/xiaoyan/AIteam/data/CoordExp` unless stated.
-- **Serena MCP**: **Strongly encouraged for code exploration** — use semantic search, symbol navigation, and code understanding tools for exploring the codebase, finding functions/classes, understanding relationships, and making precise edits. Available via MCP server; project configured at `.serena/project.yml`. Activate with "activate the project Qwen3-VL" or by path. Project-specific memories stored in `.serena/memories/`. **Do not use Serena MCP for pure document retrieval or reading** — it doesn't benefit document/text reading tasks; use standard file reading tools instead.
+- **Serena MCP**: Available via MCP server; project configured at `.serena/project.yml`. Activate with "activate the project Qwen3-VL" or by path. Project-specific memories stored in `.serena/memories/`. **Do not use Serena MCP for pure document retrieval or reading** — it doesn't benefit document/text reading tasks; use standard file reading tools instead.
+- **When to prefer Serena MCP**: Use MCP when you need semantic, symbol-level operations—finding symbols, references, or performing structured symbol edits—especially across large files. Skip MCP for straightforward file reads or document retrieval where `read_file`/`rg` is faster.
+- **MCP workflow for breadth then depth**: Start with symbol overviews (`find_symbol` / `get_symbols_overview`) to map large files, then pull specific bodies or references only where needed; pair with `rg` for quick presence/usage checks; fall back to `read_file` for prose/docs or when you truly need the whole file. Favor symbol edits for code changes; use plain reads for simple text.
+
 
 ## Development Approach
 - **Code exploration**: Prefer Serena MCP tools (semantic search, symbol navigation, find_referencing_symbols) for understanding code structure, relationships, and making targeted edits. Use standard file reading only when you need full file contents.
@@ -73,6 +76,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Design Principles
 - Configuration-first: prefer YAML in `configs/` to new CLI flags.
+- Prefer defining runtime arguments at the top of entry scripts (e.g., `scripts/infer.sh`, `scripts/train.sh`) instead of adding new CLI flags; avoid new CLI arguments when possible.
 - Explicit over implicit: validate early, no silent defaults; clear errors with remediation.
 - Type-safe, frozen configs where possible; small public interfaces and clean imports.
 - Geometry-aware data handling; visualize/validate when touching boxes or quantization.
@@ -93,5 +97,4 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Important
 - Interrupt for clarification whenever requirements are ambiguous or assumptions feel shaky.
-- Run all Python scripts with the `ms` conda environment.
 - Keep paper-readiness in mind: preserve experiment metadata, configs, and qualitative examples.

@@ -74,6 +74,6 @@ Outputs:
 - Resized images exist and match paths in JSONL.
 - Tiny splits load without errors.
 
-## Handoff to training/fusion
+## Handoff to training
 - Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
-- For fusion, use these as targets/sources in `custom.fusion_config` (see docs/UNIFIED_FUSION_DATASET.md).
+- Multi-dataset fusion is disabled; ignore `fusion_config` in older configs.

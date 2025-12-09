@@ -33,7 +33,7 @@ class BaseCaptionDataset(Dataset):
         base_records: Sequence[Any],
         template: Any,
         user_prompt: str,
-        emit_norm: Literal["none", "norm100", "norm1000"],
+        emit_norm: Literal["none"],
         json_format: Literal["standard"],
         augmenter: Optional[Any] = None,
         preprocessor: Optional[Any] = None,
@@ -52,7 +52,7 @@ class BaseCaptionDataset(Dataset):
         self.system_prompt_dense = system_prompt_dense
         self.system_prompt_summary = system_prompt_summary
         self.user_prompt = user_prompt
-        self.emit_norm: Literal["none", "norm100", "norm1000"] = emit_norm
+        self.emit_norm: Literal["none"] = emit_norm
         self.json_format: Literal["standard"] = json_format
         self.bypass_prob = float(bypass_prob)
         self.seed = int(seed)

@@ -1,14 +1,18 @@
+"""Deprecated hard-sample mining callback (not used).
+
+This module remains for archival/reference only. The training pipeline no longer
+wires HardSampleMiningCallback or its config. Do not enable in new runs.
+"""
+
 from __future__ import annotations
 
-import math
 import types
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import torch
 import torch.distributed as dist
 from torch import nn
-from torch.utils.data import DataLoader
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 
 from ..config.schema import HardSampleMiningConfig

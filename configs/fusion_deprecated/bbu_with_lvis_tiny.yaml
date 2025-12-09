@@ -1,0 +1,14 @@
+# Deprecated fusion config (fusion is disabled; kept for reference only).
+# Do not use this file in new runs.
+target:
+  name: bbu
+  train_jsonl: old_data/bbu_full_768_poly-need_review/coord_train_tiny.jsonl
+  val_jsonl: old_data/bbu_full_768_poly-need_review/coord_val_tiny.jsonl
+  template: bbu_dense
+
+sources:
+  - name: lvis
+    train_jsonl: public_data/lvis/rescale_32_768_poly_max_12/train_tiny.jsonl
+    ratio: 0.08
+    template: aux_dense
+    max_objects_per_image: 5

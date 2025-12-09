@@ -1,4 +1,8 @@
-"""Training callback that resamples auxiliary quotas when an epoch begins."""
+"""Deprecated fusion callback retained for archival purposes.
+
+This callback resampled auxiliary quotas for fusion datasets. Fusion-based
+training is currently disabled while we focus on single-source LVIS runs.
+"""
 
 from __future__ import annotations
 

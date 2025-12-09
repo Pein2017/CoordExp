@@ -17,19 +17,13 @@ from swift.trainers import TrainerFactory
 from swift.utils import get_dist_setting
 
 from .data_collators import build_dataset_metrics_collator
-from .callbacks.hard_sample_mining import (
-    HardSampleMiningCallback,
-    HardSampleTracker,
-    attach_hsm_compute_loss,
-)
 from .coord_tokens.template_adapter import apply_coord_template_adapter
 from .coord_tokens.offset_adapter import (
     install_coord_offset_adapter,
     reattach_coord_offset_hooks,
 )
-from .callbacks import FusionEpochCallback
 from .config import ConfigLoader, SaveDelayConfig
-from .datasets import BaseCaptionDataset, FusionConfig, build_packed_dataset
+from .datasets import BaseCaptionDataset, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
 from .metrics.dataset_metrics import AggregateTokenTypeMetricsMixin
 from .trainers import with_final_checkpoint
@@ -82,7 +76,14 @@ def _parse_packing_config(
     default_length = getattr(template, "max_length", None) or getattr(
         train_args, "max_model_len", None
     )
-    packing_length = int(cfg.get("packing_length") or default_length or 0)
+
+    # Deprecate explicit packing_length: prefer global_max_length -> template.max_length
+    if "packing_length" in cfg:
+        logger.warning(
+            "training.packing_length is deprecated; using template/global_max_length=%s instead",
+            default_length,
+        )
+    packing_length = int(default_length or 0)
     if packing_length <= 0:
         raise ValueError(
             "packing is enabled but no valid packing_length/template.max_length is set"
@@ -189,18 +190,10 @@ def main():
     # Ensure custom optimizer variant is available before trainer setup
     register_coord_offset_optimizer()
     custom_config = training_config.custom
-    hsm_cfg = custom_config.hard_sample_mining
-    hsm_cfg = custom_config.hard_sample_mining
     # Append run_name to output_dir and logging_dir to form final paths
     try:
         run_name = getattr(train_args, "run_name", None)
         training_args = getattr(train_args, "training_args", None)
-
-        if hsm_cfg and hsm_cfg.enabled and training_args is not None:
-            try:
-                setattr(training_args, "remove_unused_columns", False)
-            except Exception:
-                pass
 
         # Resolve and update output_dir
         base_output_dir = getattr(train_args, "output_dir", None)
@@ -399,8 +392,8 @@ def main():
     # Build training dataset
     logger.info(f"Loading training dataset: {train_jsonl}")
     # Require minimal explicit keys; others have sane defaults
-    if not custom_config.user_prompt or not custom_config.emit_norm:
-        raise ValueError("custom.user_prompt and custom.emit_norm must be provided")
+    if not custom_config.user_prompt:
+        raise ValueError("custom.user_prompt must be provided (emit_norm is fixed to 'none')")
 
     # Extract mode control parameters
     use_summary = bool(custom_config.use_summary)
@@ -430,52 +423,38 @@ def main():
 
     dataset_seed = 42
     dataset: Any
-    fusion_callback: FusionEpochCallback | None = None
-    fusion_config_obj: FusionConfig | None = None
-    if custom_config.fusion_config:
-        fusion_config_obj = FusionConfig.from_file(custom_config.fusion_config)
-        from .datasets.unified_fusion_dataset import FusionCaptionDataset
 
-        dataset = FusionCaptionDataset(
-            fusion_config=fusion_config_obj,
-            base_template=sft.template,
-            user_prompt=custom_config.user_prompt,
-            emit_norm=custom_config.emit_norm,
-            json_format=custom_config.json_format,
-            augmenter=augmenter,
-            bypass_prob=bypass_prob,
-            curriculum_state=curriculum_state,
-            use_summary=use_summary,
-            system_prompt_dense=system_prompt_dense,
-            system_prompt_summary=system_prompt_summary,
-            coord_tokens=custom_config.coord_tokens,
-            seed=dataset_seed,
-            sample_limit=train_sample_limit,
-            split="train",
-            object_ordering=custom_config.object_ordering,
+    if custom_config.fusion_config:
+        raise ValueError(
+            "custom.fusion_config is deprecated; multi-dataset fusion is disabled while we focus on single LVIS training. "
+            "Remove custom.fusion_config to continue."
         )
-        fusion_callback = FusionEpochCallback(dataset)
-    else:
-        dataset = BaseCaptionDataset.from_jsonl(
-            train_jsonl,
-            template=sft.template,
-            user_prompt=custom_config.user_prompt,
-            emit_norm=custom_config.emit_norm,
-            json_format=custom_config.json_format,
-            augmenter=augmenter,
-            bypass_prob=bypass_prob,
-            curriculum_state=curriculum_state,
-            sample_limit=train_sample_limit,
-            use_summary=use_summary,
-            system_prompt_dense=system_prompt_dense,
-            system_prompt_summary=system_prompt_summary,
-            coord_tokens=custom_config.coord_tokens,
-            seed=dataset_seed,
-            object_ordering=custom_config.object_ordering,
-        )
+
+    dataset = BaseCaptionDataset.from_jsonl(
+        train_jsonl,
+        template=sft.template,
+        user_prompt=custom_config.user_prompt,
+        emit_norm=custom_config.emit_norm,
+        json_format=custom_config.json_format,
+        augmenter=augmenter,
+        bypass_prob=bypass_prob,
+        curriculum_state=curriculum_state,
+        sample_limit=train_sample_limit,
+        use_summary=use_summary,
+        system_prompt_dense=system_prompt_dense,
+        system_prompt_summary=system_prompt_summary,
+        coord_tokens=custom_config.coord_tokens,
+        seed=dataset_seed,
+        object_ordering=custom_config.object_ordering,
+    )
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
+    base_dataset_len = None
+    try:
+        base_dataset_len = len(dataset)
+    except Exception:
+        base_dataset_len = None
     if packing_cfg.enabled:
         orig_bs = getattr(train_args, "per_device_train_batch_size", None)
         if orig_bs != 1:
@@ -490,6 +469,29 @@ def main():
             except Exception:
                 logger.warning("Failed to set per_device_train_batch_size on train_args")
 
+        # Ensure max_steps is finite when using iterable packed dataset
+        max_steps = getattr(train_args, "max_steps", None)
+        if max_steps is None or max_steps <= 0:
+            if base_dataset_len is not None:
+                grad_acc = getattr(train_args, "gradient_accumulation_steps", 1) or 1
+                _, _, world_size, _ = get_dist_setting()
+                world_size = max(world_size, 1)
+                est = math.ceil(base_dataset_len / (grad_acc * world_size))
+                train_args.max_steps = est
+                if getattr(train_args, "training_args", None) is not None:
+                    train_args.training_args.max_steps = est
+                logger.warning(
+                    "packing enabled with iterable dataset: auto-setting max_steps=%s (base_len=%s, grad_acc=%s, world_size=%s)",
+                    est,
+                    base_dataset_len,
+                    grad_acc,
+                    world_size,
+                )
+            else:
+                raise ValueError(
+                    "packing enabled: max_steps must be set to a positive value when dataset length is unknown"
+                )
+
         dataset = build_packed_dataset(
             dataset,
             template=sft.template,
@@ -499,8 +501,6 @@ def main():
             drop_last=packing_cfg.drop_last,
             allow_single_long=packing_cfg.allow_single_long,
         )
-        if fusion_callback is not None:
-            fusion_callback.dataset = dataset
         logger.info(
             "Packing enabled: length=%s buffer=%s min_fill=%.2f drop_last=%s allow_single_long=%s",
             packing_cfg.packing_length,
@@ -510,7 +510,11 @@ def main():
             packing_cfg.allow_single_long,
         )
 
-    logger.info(f"Training dataset size: {len(dataset)}")
+    try:
+        train_len = len(dataset)
+    except Exception:
+        train_len = base_dataset_len
+    logger.info(f"Training dataset size (reported/approx): {train_len}")
 
     # Calculate total_steps and initialize curriculum_state if needed
     if curriculum_scheduler is not None:
@@ -531,11 +535,12 @@ def main():
                 num_train_epochs is not None
                 and per_device_train_batch_size is not None
                 and gradient_accumulation_steps is not None
+                and base_dataset_len is not None
             ):
                 _, _, world_size, _ = get_dist_setting()
                 if world_size <= 0:
                     world_size = 1
-                len_dataset = len(dataset)
+                len_dataset = base_dataset_len
                 total_train_batch_size = (
                     per_device_train_batch_size
                     * gradient_accumulation_steps
@@ -548,7 +553,7 @@ def main():
             else:
                 raise ValueError(
                     "Cannot calculate total_steps for curriculum scheduler. "
-                    "Need either max_steps or (num_train_epochs, per_device_train_batch_size, gradient_accumulation_steps)"
+                    "Need either max_steps or (num_train_epochs, per_device_train_batch_size, gradient_accumulation_steps) with known dataset length"
                 )
             curriculum_scheduler.set_total_steps(total_steps)
             logger.info(f"Curriculum scheduler: set total_steps={total_steps}")
@@ -624,7 +629,12 @@ def main():
 
     # Optional: dump conversation text-only (no tokens, no images) and full tokens
     dump_conv = bool(custom_config.dump_conversation_text or args.debug)
-    if dump_conv and len(dataset) > 0:
+    try:
+        dataset_nonempty = len(dataset) > 0
+    except Exception:
+        dataset_nonempty = (base_dataset_len or 0) > 0
+
+    if dump_conv and dataset_nonempty:
         try:
             template = dataset.template
             template.set_mode("pt")
@@ -709,69 +719,25 @@ def main():
     # Build validation dataset if provided
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
-    if fusion_config_obj:
-        target_val_path = val_jsonl or (
-            str(fusion_config_obj.target.val_jsonl)
-            if fusion_config_obj.target.val_jsonl is not None
-            else None
+    if val_jsonl:
+        logger.info(f"Loading validation dataset: {val_jsonl}")
+        eval_dataset = BaseCaptionDataset.from_jsonl(
+            val_jsonl,
+            template=sft.template,
+            user_prompt=custom_config.user_prompt,
+            emit_norm=custom_config.emit_norm,
+            json_format=custom_config.json_format,
+            augmenter=None,  # No augmentation for validation
+            bypass_prob=0.0,  # Explicit: no bypass for validation
+            sample_limit=val_sample_limit,
+            use_summary=use_summary,
+            system_prompt_dense=system_prompt_dense,
+            system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
+            seed=dataset_seed,
+            object_ordering=custom_config.object_ordering,
         )
-        has_source_val = any(src.val_jsonl is not None for src in fusion_config_obj.sources)
-        if target_val_path:
-            logger.info(
-                "Loading fusion validation dataset: "
-                f"target={target_val_path or 'none'}, sources_with_val={has_source_val}"
-            )
-            from .datasets.unified_fusion_dataset import FusionCaptionDataset
-
-            eval_dataset = FusionCaptionDataset(
-                fusion_config=fusion_config_obj,
-                base_template=sft.template,
-                user_prompt=custom_config.user_prompt,
-                emit_norm=custom_config.emit_norm,
-                json_format=custom_config.json_format,
-                augmenter=None,  # No augmentation for validation
-                bypass_prob=0.0,
-                curriculum_state=None,
-                use_summary=use_summary,
-                system_prompt_dense=system_prompt_dense,
-                system_prompt_summary=system_prompt_summary,
-                coord_tokens=custom_config.coord_tokens,
-                seed=dataset_seed,
-                shuffle=False,
-                sample_limit=val_sample_limit,
-                split="eval",
-                target_eval_jsonl=target_val_path,
-                include_source_eval=True,
-                object_ordering=custom_config.object_ordering,
-            )
-            logger.info(f"Validation dataset size: {len(eval_dataset)}")
-        elif has_source_val:
-            logger.info(
-                "Skipping fusion validation dataset: source val_jsonl present but no target val_jsonl provided"
-            )
-    else:
-        eval_path_fallback = val_jsonl
-        if fusion_config_obj and fusion_config_obj.target.val_jsonl and not eval_path_fallback:
-            eval_path_fallback = str(fusion_config_obj.target.val_jsonl)
-        if eval_path_fallback:
-            logger.info(f"Loading validation dataset: {eval_path_fallback}")
-            eval_dataset = BaseCaptionDataset.from_jsonl(
-                eval_path_fallback,
-                template=sft.template,
-                user_prompt=custom_config.user_prompt,
-                emit_norm=custom_config.emit_norm,
-                json_format=custom_config.json_format,
-                augmenter=None,  # No augmentation for validation
-                bypass_prob=0.0,  # Explicit: no bypass for validation
-                sample_limit=val_sample_limit,
-                use_summary=use_summary,
-                system_prompt_dense=system_prompt_dense,
-                system_prompt_summary=system_prompt_summary,
-                coord_tokens=custom_config.coord_tokens,
-                seed=dataset_seed,
-                object_ordering=custom_config.object_ordering,
-            )
-            logger.info(f"Validation dataset size: {len(eval_dataset)}")
+        logger.info(f"Validation dataset size: {len(eval_dataset)}")
 
     if packing_cfg.enabled and packing_cfg.eval_packing and eval_dataset is not None:
         eval_dataset = build_packed_dataset(
@@ -789,22 +755,6 @@ def main():
             packing_cfg.buffer_size,
             packing_cfg.min_fill_ratio,
             packing_cfg.allow_single_long,
-        )
-
-    hsm_tracker = None
-    hsm_callback = None
-    if hsm_cfg and hsm_cfg.enabled:
-        target_dataset_name = (
-            dataset._target_name
-            if hasattr(dataset, "_target_name")
-            else getattr(dataset, "dataset_name", "dataset")
-        )
-        hsm_tracker = HardSampleTracker(hsm_cfg.ema_decay)
-        hsm_callback = HardSampleMiningCallback(
-            tracker=hsm_tracker,
-            config=hsm_cfg,
-            dataset=dataset,
-            target_dataset=target_dataset_name,
         )
 
     # Sample printing disabled to avoid dumping labels/ids
@@ -844,8 +794,6 @@ def main():
 
     # Add SaveDelayCallback if save_delay_steps is configured
     callbacks = sft.callbacks.copy() if sft.callbacks else []
-    if fusion_callback is not None:
-        callbacks.append(fusion_callback)
     if curriculum_scheduler is not None and curriculum_state is not None:
         from .callbacks.augmentation_curriculum import (
             AugmentationCurriculumCallback,
@@ -857,8 +805,6 @@ def main():
                 curriculum_state=curriculum_state,
             )
         )
-    if hsm_callback is not None:
-        callbacks.append(hsm_callback)
     save_delay_cfg = getattr(train_args, "save_delay_config", None)
     from .callbacks import SaveDelayCallback
 
@@ -901,11 +847,6 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
-
-    if hsm_cfg and hsm_cfg.enabled and hsm_tracker is not None:
-        attach_hsm_compute_loss(trainer, hsm_tracker, hsm_cfg)
-        if hsm_callback is not None:
-            hsm_callback.trainer = trainer
 
     # Patch DeepSpeed __del__ to avoid noisy cleanup errors (safe no-op)
     try:

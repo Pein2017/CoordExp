@@ -21,8 +21,8 @@ training:
 
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20/train.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20/val.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl
   object_ordering: sorted  # sorted | random (for ablation)
   # Disable curriculum when augmentation is off to avoid runtime error
   augmentation_curriculum: null

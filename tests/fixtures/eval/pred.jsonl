@@ -1,0 +1,3 @@
+{"index": 0, "pred": [{"type": "bbox_2d", "points": [10, 10, 30, 30], "desc": "box", "score": 0.9}], "width": 100, "height": 100}
+{"index": 1, "pred": [{"type": "poly", "points": [10, 10, 30, 10, 30, 30, 10, 30], "desc": "square", "score": 0.95}], "width": 100, "height": 100}
+{"index": 2, "pred": [{"type": "poly", "points": [40, 40, 70, 40, 70, 70, 40, 70], "desc": "crate", "score": 0.92}], "width": 100, "height": 100}

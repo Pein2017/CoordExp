@@ -2,7 +2,7 @@
 
 This document introduces the **public data** submodule under `public_data/` at the repo root.
 
-The goal of this module is to provide **geometry-aware, tested pipelines** for turning public detection/segmentation datasets (starting with **LVIS**, expanding to COCO/Objects365/OpenImages) into JSONL files that match the CoordExp training contract and can be used as **primary or auxiliary datasets** in training and fusion.
+The goal of this module is to provide **geometry-aware, tested pipelines** for turning public detection/segmentation datasets (starting with **LVIS**, expanding to COCO/Objects365/OpenImages) into JSONL files that match the CoordExp training contract and can be used as **primary datasets** in training. Multi-dataset fusion is currently disabled.
 
 ---
 
@@ -29,7 +29,7 @@ At the project level, `public_data/` plays three roles:
 - **Geometry bridge**: exposes `bbox_2d` and N-point polygon (`poly` + `poly_points`) geometries in **pixel space**, ready for downstream normalization to `norm1000` in templates.
 - **Quality gate**: provides tests and validation scripts to catch schema / geometry issues before training.
 
-In training configs under `configs/`, these JSONL files are referenced via `custom.train_jsonl` / `custom.val_jsonl`. For multi-dataset fusion, see `src/datasets/fusion.py` and `docs/DATA_AND_DATASETS.md`.
+In training configs under `configs/`, these JSONL files are referenced via `custom.train_jsonl` / `custom.val_jsonl`. Multi-dataset fusion is disabled for now; ignore `fusion_config` references in older docs.
 
 ---
 
@@ -48,7 +48,7 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
 ## Smart-resize (shared preprocessor)
 
 - `public_data/scripts/convert_lvis.py --smart-resize` invokes the shared `SmartResizePreprocessor` (pixel budget + grid alignment) to rewrite images and geometry. Outputs default to `public_data/lvis/resized_<factor>_<blocks>/`.
-- Datasets loaded by `DenseCaptionDataset` or the fusion loader resolve relative image paths against the JSONL parent and can optionally apply the same smart-resize guard via env (`SMART_RESIZE_GUARD=true`, `SMART_RESIZE_GUARD_OUTPUT_DIR=<dir>`), keeping paths portable regardless of the working directory.
+- Datasets loaded by `DenseCaptionDataset` resolve relative image paths against the JSONL parent and can optionally apply the same smart-resize guard via env (`SMART_RESIZE_GUARD=true`, `SMART_RESIZE_GUARD_OUTPUT_DIR=<dir>`), keeping paths portable regardless of the working directory.
 
 ---
 

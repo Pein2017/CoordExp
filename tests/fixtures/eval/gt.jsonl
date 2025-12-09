@@ -1,0 +1,3 @@
+{"images": ["img1.jpg"], "objects": [{"bbox_2d": [10, 10, 30, 30], "desc": "box"}], "width": 100, "height": 100}
+{"images": ["img2.jpg"], "objects": [{"poly": [10, 10, 30, 10, 30, 30, 10, 30], "desc": "square"}], "width": 100, "height": 100}
+{"images": ["img3.jpg"], "objects": [{"bbox_2d": [40, 40, 70, 70], "desc": "crate"}], "width": 100, "height": 100}

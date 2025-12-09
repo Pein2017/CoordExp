@@ -1,5 +1,9 @@
 """Unified fusion dataset that concatenates JSONL files and uses a single template.
 
+Deprecated: fusion-based training is currently disabled while we focus on
+single-source LVIS runs. This implementation is retained for potential future
+use but is not wired into the active pipeline.
+
 This avoids template cloning issues by using one dataset with one template.
 Records are tagged with their source dataset for prompt selection.
 """
@@ -52,7 +56,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
         fusion_config: FusionConfig,
         base_template: Any,
         user_prompt: str,
-        emit_norm: Literal["none", "norm100", "norm1000"],
+        emit_norm: Literal["none"],
         json_format: Literal["standard"],
         augmenter: Optional[Any],
         bypass_prob: float,
@@ -270,8 +274,9 @@ class FusionCaptionDataset(BaseCaptionDataset):
         default_system_prompt: Optional[str],
         ordering: Literal["sorted", "random"] = "sorted",
     ) -> _PromptResolution:
+        coord_mode = "coord_tokens" if getattr(self.coord_tokens, "enabled", False) else "numeric"
         domain_system, domain_user = get_template_prompts(
-            spec.template, ordering=ordering
+            ordering=ordering, coord_mode=coord_mode
         )
         user_prompt = spec.prompt_user or domain_user or default_user_prompt
         system_prompt = spec.prompt_system or domain_system or default_system_prompt

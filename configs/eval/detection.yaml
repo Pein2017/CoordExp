@@ -1,0 +1,17 @@
+# Offline detection evaluator configuration (CoordExp)
+gt_jsonl: "path/to/gt.jsonl"
+pred_jsonl: "path/to/pred.jsonl"
+out_dir: "eval_out"
+
+# Coord handling
+mode: "coord"               # coord -> norm1000 GT+pred; text -> pixel GT/pred
+use_segm: true              # include segmentation metrics when polygons exist
+unknown_policy: "bucket"    # "bucket" -> map to unknown, "drop" -> drop unknown desc
+strict_parse: false         # abort on first parse error
+
+# Metrics
+iou_thrs: []                # empty -> COCO defaults
+
+# Diagnostics / overlays
+overlay: false
+overlay_k: 12
