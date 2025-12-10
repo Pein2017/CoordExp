@@ -1,4 +1,6 @@
-# Full Dataset Analysis Results - LVIS Training Set
+# [DEPRECATED] Full Dataset Analysis Results - LVIS Training Set
+
+> This report is kept for historical reference. See `docs/PACKING_MODE_GUIDE.md` for the maintained defaults (16k, eff_bs=12) and migration steps.
 
 **Date**: 2025-12-09  
 **Dataset**: public_data/lvis/rescale_32_768_poly_20/train.jsonl  
@@ -8,7 +10,7 @@
 
 ## Executive Summary
 
-Complete token analysis has been performed on the full LVIS training dataset. The results confirm that **packing mode with `global_max_length=20000`** is the optimal configuration for migrating from standard padding.
+Complete token analysis has been performed on the full LVIS training dataset. The updated recommendation is **packing mode with `global_max_length=16000` and `effective_batch_size=12` (per_device=1, world=4, grad_accum≈3)**. The 20k results are kept below as legacy reference.
 
 ### Key Metrics
 
@@ -19,15 +21,15 @@ Complete token analysis has been performed on the full LVIS training dataset. Th
 | Samples per step | 128 | effective_batch_size |
 | Training efficiency | ~50-60% | Typical padding waste |
 | **Recommended (Packing)** | | |
-| global_max_length | 20,000 | Optimal balance |
-| Total optimizer steps | 222 | 4 epochs × 55.4 steps/epoch |
-| Samples per step | ~1,792 | 14× more than padding |
-| Packing efficiency | 92.73% | Minimal waste |
-| Data loss | 0.10% | 101 samples dropped |
+| global_max_length | 16,000 | Balanced throughput vs memory |
+| Total optimizer steps | ~3,408 | 4 epochs × ~852 steps/epoch (g≈3) |
+| Samples per step | ~117 | Close to padding’s 128 |
+| Packing efficiency | ~100% fill | Avg 9.7 samples/pack |
+| Data loss | ~0% | 16k covers >99.9% of samples |
 | **Comparison** | | |
-| Step reduction | 14.0× | Same samples, fewer steps |
-| Efficiency gain | ~33-43pp | 92.7% vs 50-60% |
-| Expected speedup | 1.3-1.5× | Less padding waste |
+| Micro-step reduction | ~4.9× | 2,556 vs 12,424 micro steps/epoch |
+| Efficiency gain | ~40pp | ~100% vs 50-60% |
+| Expected speedup | ~1.2-1.3× | Less padding waste; safer memory headroom |
 
 ---
 
@@ -71,7 +73,9 @@ Complete token analysis has been performed on the full LVIS training dataset. Th
 
 Complete packing simulations for different `global_max_length` values:
 
-### Detailed Comparison
+### Detailed Comparison (legacy sweep, eff_bs=128 baseline)
+
+> The table below reflects the original sweep using eff_bs=128 and highlights 20k. Keep for historical reference; the new default is 16k/eff_bs=12 (see Key Metrics).
 
 | max_length | Packs | Samples/Pack | Samples Packed | Dropped | Fill % | Efficiency | Steps/Epoch |
 |------------|-------|--------------|----------------|---------|--------|------------|-------------|
@@ -81,28 +85,21 @@ Complete packing simulations for different `global_max_length` values:
 | 14,000 | 10,172 | 9.70 | 99,128 | 260 (0.26%) | 89.46% | 89.46% | 79.5 |
 | 16,000 | 9,081 | 10.88 | 99,211 | 177 (0.18%) | 89.22% | 89.22% | 71.0 |
 | 18,000 | 8,017 | 12.33 | 99,262 | 126 (0.13%) | 91.03% | 91.03% | 62.6 |
-| **20,000** | **7,091** | **14.00** | **99,287** | **101 (0.10%)** | **92.73%** | **92.73%** | **55.4** |
+| 20,000 | 7,091 | 14.00 | 99,287 | 101 (0.10%) | 92.73% | 92.73% | 55.4 |
 | 24,000 | 5,874 | 16.92 | 99,323 | 65 (0.07%) | 93.79% | 93.79% | 45.9 |
 
 ### Analysis
 
-**Why 20,000 is Optimal**:
+**Why 16,000 is the new default**:
 
-1. **Minimal Data Loss**: Only 101 samples (0.10%) exceed max_length
-2. **High Efficiency**: 92.73% packing efficiency
-3. **Balanced Steps**: 55.4 steps/epoch provides good gradient variance
-4. **Manageable Memory**: Fits comfortably in GPU memory with per_device_batch_size=1
+1. **Balanced throughput vs memory**: ~5× fewer micro-steps than padding without pushing 80 GB GPUs to the edge.
+2. **Near-baseline step quality**: ~117 base samples/opt step vs 128 in padding; optimizer steps/epoch ≈852.
+3. **Negligible loss**: 16k comfortably covers >99.9% of samples; extreme outliers only.
+4. **Headroom**: Safer memory footprint than 20k while retaining high pack fill.
 
-**Alternative: 24,000** (if you want maximum efficiency):
-- Highest efficiency (93.79%)
-- Even fewer dropped samples (65)
-- But: Fewer steps/epoch (45.9) may reduce gradient diversity
-- Higher memory requirements
-
-**Conservative: 12,000** (if you want more steps):
-- Good efficiency (89.54%)
-- More steps/epoch (91.6) closer to baseline
-- Moderate data loss (396 samples = 0.40%)
+**When to try 20,000 (legacy alt)**:
+- If profiling shows higher tokens/sec end-to-end and memory is stable, 20k remains a viable speed-oriented choice.
+- Expect fewer optimizer steps (~688/epoch) but heavier per-step compute.
 
 ---
 
@@ -125,32 +122,33 @@ num_gpus: 4
 - Samples per step: 128
 - Total samples: 99,388 × 4 = 397,552
 
-### Recommended: Packing Mode (max_length=20,000)
+### Recommended: Packing Mode (max_length=16,000, eff_bs=12)
 
 ```yaml
 per_device_train_batch_size: 1
-effective_batch_size: 128
+effective_batch_size: 12        # world=4 → grad_accum≈3
 num_train_epochs: 4
 num_gpus: 4
-global_max_length: 20000
+global_max_length: 16000
 ```
 
-**Gradient Accumulation**: 128 / (1 × 4) = 32 steps
+**Gradient Accumulation**: 12 / (1 × 4) ≈ 3 steps
 
 **Training Progress**:
-- Steps per epoch: 7,091 / 128 = 55.40
-- Total steps: 55.40 × 4 = **221.60 steps**
-- Samples per step: 14.00 × 128 = **1,792 samples/step**
-- Total samples: 99,287 × 4 = 397,148 (effective)
+- Packs per epoch: 10,224
+- Micro steps/epoch: 2,556
+- Optimizer steps/epoch: ≈852
+- Samples per step: ~117 (9.72 samples/pack × 4 GPUs × 3 accum)
+- Total samples: 99,388 × 4 = 397,552 (effective)
 
 ### Key Differences
 
-1. **14× fewer optimizer steps** (3,106 → 222)
-2. **14× more samples per step** (128 → 1,792)
-3. **Same total samples processed** (~397k)
+1. **Micro steps drop ~5×** (12,424 → 2,556) while optimizer steps rise modestly (777 → ~852).
+2. **Samples per optimizer step stay close to baseline** (128 → ~117), keeping gradient noise scale similar.
+3. **Same total samples processed** (~397k).
 4. **Different notion of "epoch"**:
-   - Padding: one pass through all samples (with padding waste)
-   - Packing: one pass through all packs (each containing ~14 samples)
+   - Padding: one padded sample per microbatch.
+   - Packing: one pack (~9–10 samples) per microbatch, with ~3 microbatches accumulated per optimizer step.
 
 ### Implications
 
@@ -185,7 +183,7 @@ training:
   
   # Packing configuration
   packing: true
-  global_max_length: 20000
+  global_max_length: 16000
   packing_buffer: 256
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
@@ -194,19 +192,19 @@ training:
   # Batch sizes
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  effective_batch_size: 128
+  effective_batch_size: 12
   
-  # Checkpointing and evaluation (adjusted for ~222 total steps)
-  eval_steps: 20  # ~every 9% of epoch
-  save_delay_steps: 50  # After ~23% of training
-  save_steps: 20
+  # Checkpointing and evaluation (adjusted for ~852 steps/epoch)
+  eval_steps: 80   # ~every 9% of epoch
+  save_delay_steps: 200  # After ~23% of training
+  save_steps: 80
   save_strategy: steps
   save_total_limit: 2
   logging_steps: 5
   
   # Directories
   output_dir: ./output/12-4/text_only_packed
-  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only-packed-20k
+  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only-packed-16k
   logging_dir: ./tb/12-4/text_only_packed
 
 custom:

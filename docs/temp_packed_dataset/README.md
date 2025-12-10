@@ -1,4 +1,6 @@
-# Packing Mode Migration Analysis - Complete Results
+# [DEPRECATED] Packing Mode Migration Analysis - Complete Results
+
+> This folder is scheduled for removal. Please use `docs/PACKING_MODE_GUIDE.md` for the maintained summary and defaults (16k max length, eff_bs=12).
 
 **Generated**: 2025-12-09  
 **Dataset**: LVIS rescale_32_768_poly_20 (99,388 training samples)  
@@ -8,22 +10,22 @@
 
 ## Quick Start
 
-**TL;DR**: Use the following configuration for packing mode:
+**TL;DR (updated default)**: Use the following configuration for packing mode:
 
 ```yaml
 training:
   packing: true
-  global_max_length: 20000
+  global_max_length: 16000
   per_device_train_batch_size: 1
-  effective_batch_size: 128
+  effective_batch_size: 12   # world=4 ⇒ grad_accum≈3
   num_train_epochs: 4
 ```
 
 Expected results:
-- 92.73% packing efficiency (vs ~50-60% padding)
-- 30-50% training speedup
-- 0.10% data loss (101 samples out of 99,388)
-- 14× more samples per optimizer step
+- ~100% pack fill; ~9.7 samples/pack on average (post-merge lengths)
+- ≈5× fewer micro-steps than padding; ≈10% more optimizer steps than padding (higher step quality, safer memory)
+- No truncation for the p99 tail; only extreme outliers would hit 16k cap
+- ~117 base samples per optimizer step (close to padding’s 128)
 
 ---
 
@@ -161,15 +163,19 @@ Expected results:
 
 **Distribution**: Heavily right-skewed with many short samples and few long outliers - **ideal for packing**.
 
-### Packing Results (global_max_length=20000)
+### Packing Results (updated default: global_max_length=16000, eff_bs=12, per_device=1, world=4)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total packs | 7,091 | Sequences after packing |
-| Avg samples/pack | 14.00 | High packing density |
-| Packing efficiency | 92.73% | Minimal waste |
-| Samples dropped | 101 (0.10%) | Negligible data loss |
-| Fill ratio | 92.73% | Avg tokens used per pack |
+| Total packs | 10,224 | Sequences after packing |
+| Avg samples/pack | 9.72 | Post-merge text lengths |
+| Pack fill ratio | ~100% | Minimal slack; no drop needed |
+| Micro steps/epoch | 2,556 | = packs ÷ (world×per_device) |
+| Optimizer steps/epoch | 852 | grad_accum≈3 (eff_bs=12) |
+| Base samples/opt step | ~117 | Close to padding’s 128 |
+| Data loss | ~0% | 16k covers >99.9% of samples |
+
+Legacy 20k results remain in this document for reference only.
 
 ### Training Dynamics
 

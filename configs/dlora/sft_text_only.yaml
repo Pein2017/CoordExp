@@ -1,5 +1,8 @@
 extends: sft_base.yaml
 
+# Override base length for packing; merged vision tokens included in template max length.
+global_max_length: 16000
+
 training:
   learning_rate: 2.0e-4
   vit_lr: 1.0e-4
@@ -7,7 +10,7 @@ training:
   num_train_epochs: 4
   optimizer: multimodal  # No coord_offset optimizer needed for pure string data
   output_dir: ./output/12-4/text_only
-  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only-pre-normalized-packing-eff_bs_12-max_length_20000
+  run_name: epoch_4-dlora-lrs_2_1_4-sorted-text_only-pre-normalized-packing-eff_bs_12-max_length_16000
   logging_dir: ./tb/12-4/text_only
   save_strategy: steps
   eval_steps: 100
@@ -15,7 +18,7 @@ training:
   save_total_limit: 2
   logging_steps: 10
   # Packing yields one packed sample per device; effective_batch_size=12 with world_size=4
-  # and per-device=1 targets ~125 base samples/update with avg 10.4 samples per pack.
+  # and per-device=1 targets ~117 base samples/update with avg ~9.7 samples per pack (post-merge).
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   effective_batch_size: 12
@@ -41,4 +44,3 @@ custom:
   # ABLATION: Disable coord_offset adapter (no need to tune lm_head/token_embedding for pure strings)
   coord_offset:
     enabled: false
-

@@ -1,3 +1,5 @@
+# Codex Agent
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
@@ -17,84 +19,73 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
-## Purpose & Mission
-- Act as an embedded collaborator evolving CoordExp from its telecom QC heritage into a general detection/grounding research platform.
-- Aim for SOTA results and a paper-ready story for ICLR/CVPR/ECCV; keep everything reproducible and auditable.
-
-## Background & Legacy
-- Repo is partially copied from the prior telecom quality-control project: Qwen3-VL SFT + LoRA with data/vision preprocessing, chat template orchestration, and inference already proven.
-- Infrastructure (training, preprocessing, inference) is battle-tested—reuse first, then extend.
-
-## Project Overview (CoordExp)
-- Research-first fork that extends Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant (Hungarian/OT) matching.
-- Goal: improve grounding accuracy/precision and training efficiency via fully differentiable geometry loss while keeping the native SFT pipeline.
-- Benchmark across public/common detection datasets to reach SOTA open-vocabulary detection and grounding.
+## Mission & Context
+- Evolve CoordExp from telecom QC roots into a general grounding/detection research stack; keep runs reproducible and paper-ready (ICLR/CVPR/ECCV).
+- Anchor direction in `progress/idea.md`; prefer reproducible configs over ad-hoc scripts.
 
 ## Current Priorities
-- Generalize the legacy pipeline beyond telecom to broad detection/grounding benchmarks; validate geometry-aware decoding and matching.
-- Iterate via YAML configs first; minimize code churn unless the design demands it.
-- Keep compatibility with layouts/configs used in `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
-- Anchor direction and narrative in `progress/idea.md`; keep artifacts paper-ready.
+- Broaden datasets beyond telecom; validate coord-token + expectation decoding and order-invariant matching.
+- Iterate via YAML in `configs/` first; keep compatibility with `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
+- Maintain single-dataset training (fusion deprecated) while packing becomes the default efficiency lever.
 
-## Standard Workflow Outline (adapted from Qwen3-VL)
-1) Data intake/normalization: prepare detection/grounding datasets with consistent geometry and chat templates; validate boxes before training.
-2) Experiment config/fusion: edit YAML in `configs/` (seeds, LoRA/full FT, coord vocab choices, dataset mixes) and keep configs under version control.
-3) Train/finetune: run `src/sft.py` via the `ms` env; favor config-driven hooks for CoordExp losses/matching.
-4) Evaluate & ground: run evaluation/inference passes on held-out sets; capture qualitative grounding visuals when touching geometry or vocab.
-5) Documentation/governance: when behavior or contracts change, update `docs/` and follow OpenSpec proposal flow for material changes.
+## Codebase Map
+- `src/` core: `sft.py` entry, `config/loader.py` (YAML merge + prompt resolve), datasets/augment/collators, coord token adapters, callbacks, trainers, eval/infer.
+- `configs/` experiments (dlora, eval, tests, packing defaults).
+- `scripts/` thin utilities (inspect chat template, convert/verify coord tokens, run/eval/vis).
+- `docs/` authoritative guides (data contract, preprocessing, packing guide, evaluator).
+- `openspec/` change governance; `progress/` ideas/roadmap; `patent/` background.
 
-## Codebase Layout
-- `src/` — training/inference code (datasets, config, trainers, callbacks, utils, `sft.py`).
-- `configs/` — YAML experiment configs; default surface for new knobs.
-- `scripts/` — small utilities (coord vocab expansion/verification); keep thin wrappers only.
-- `docs/` — authoritative guidance; sync when workflows/configs change.
-- `openspec/` — change management specs; start here for proposals.
-- `progress/` — evolving ideas and direction (`progress/idea.md`).
-- `patent/` — patent draft/background.
+## Run Environment
+- Use `/root/miniconda3/envs/ms/bin/python|torchrun|swift` directly; no `conda activate/run`.
+- Run commands from repo root `/data/home/xiaoyan/AIteam/data/CoordExp`.
+- `ms-swift` at `/data/home/xiaoyan/AIteam/data/ms-swift`; HF transformers in the ms env.
 
-## Relationship to Qwen3-VL
-- Reuse the Qwen3-VL training stack (data preprocess, chat templates, ms-swift trainer wiring).
-- Add CoordExp modules (coord vocab, expectation decoding, set matching losses) without forking core HF modeling; prefer lightweight wrappers/adapters.
-- Maintain compatibility with configs/layout used in `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
+## Tools & Navigation
+- Serena MCP: great for symbol search/edits; avoid for plain docs (use `rg`/`cat`). Project lives at `.serena/project.yml`; memories in `.serena/memories/`.
+- Prefer MCP breadth → depth: `get_symbols_overview` / `find_symbol` then targeted reads or edits.
 
-## Environment
-- Always invoke `/root/miniconda3/envs/ms/bin/python` (and `/root/miniconda3/envs/ms/bin/torchrun` or `/root/miniconda3/envs/ms/bin/swift`) directly; do not use `conda activate` or `conda run`.
-- `transformers` path: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers`.
-- `ms-swift` available at `/data/home/xiaoyan/AIteam/data/ms-swift`.
-- Run commands from repo root `/data/home/xiaoyan/AIteam/data/CoordExp` unless stated.
-- **Serena MCP**: Available via MCP server; project configured at `.serena/project.yml`. Activate with "activate the project Qwen3-VL" or by path. Project-specific memories stored in `.serena/memories/`. **Do not use Serena MCP for pure document retrieval or reading** — it doesn't benefit document/text reading tasks; use standard file reading tools instead.
-- **When to prefer Serena MCP**: Use MCP when you need semantic, symbol-level operations—finding symbols, references, or performing structured symbol edits—especially across large files. Skip MCP for straightforward file reads or document retrieval where `read_file`/`rg` is faster.
-- **MCP workflow for breadth then depth**: Start with symbol overviews (`find_symbol` / `get_symbols_overview`) to map large files, then pull specific bodies or references only where needed; pair with `rg` for quick presence/usage checks; fall back to `read_file` for prose/docs or when you truly need the whole file. Favor symbol edits for code changes; use plain reads for simple text.
+## Config Workflow (YAML-first)
+- CLI is minimal: `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`.
+- Inheritance via `extends`/`inherit`; cycles fail fast. Prompt overrides in YAML are **disabled**—edit `src/config/prompts.py`.
+- Required: `custom.train_jsonl` (or `custom.jsonl`) and `custom.user_prompt`; `ROOT_IMAGE_DIR` auto-set from the train JSONL dir if unset.
+- `custom.use_summary` toggles summary mode; ordering controlled by `custom.object_ordering` (`sorted`/`random`).
+- `custom.coord_tokens.enabled` applies the template adapter; if data are pre-tokenized, set `custom.coord_tokens.skip_bbox_norm: true`.
+- KD guards: enabling GKD or visual KD requires `rlhf.teacher_model`; vocab sizes must match teacher/student.
+- `effective_batch_size` auto-computes `gradient_accumulation_steps`; packing keys are stripped before TrainArguments and re-consumed in `sft.py`.
 
+## Data Contract & Prep
+- Follow `docs/DATA_JSONL_CONTRACT.md`: exactly one geometry per object (`bbox_2d|poly|line`), width/height required, paths relative to JSONL dir.
+- Pixel coords are canonical; template normalizes to norm1000 at encode time. If using coord tokens in JSONL, keep `width/height` and enable `skip_bbox_norm` to avoid double scaling.
+- Validate/preview with `scripts/inspect_chat_template.py` and dataset validators in `src/datasets/`.
 
-## Development Approach
-- **Code exploration**: Prefer Serena MCP tools (semantic search, symbol navigation, find_referencing_symbols) for understanding code structure, relationships, and making targeted edits. Use standard file reading only when you need full file contents.
-- Keep `sft.py` entry and trainer flow unchanged; plug CoordExp loss + matching via config and modular hooks.
-- Avoid editing HF `modeling_qwen3_vl.py`; extend via adapters/monkeypatch only if necessary.
-- Preserve chat template and serialization compatibility with base detection tasks.
-- Follow OpenSpec proposal workflow (`@/openspec/AGENTS.md`) for features or other non-trivial changes.
+## Training Loop Guardrails (sft.py)
+- Always call `sft.prepare_model(...)` (already done in entrypoint) before trainer to ensure LoRA/PEFT wrapping; otherwise full weights train/save.
+- Coord-offset adapter: enable via `custom.coord_offset`; ids must fit tokenizer vocab; module is added to `modules_to_save` and hooks are reattached after PEFT wrap.
+- Fusion is **deprecated**; `custom.fusion_config` will error—use single JSONL source.
+- Packing: enabling forces `per_device_train_batch_size=1` and requires finite `max_steps`; `_parse_packing_config` uses template/global_max_length. Eval packing is opt-in (`training.eval_packing`).
+- Save-delay: `training.save_delay_steps|epochs` or structured `save_delay_config`; checkpoints blocked until the delay passes.
+- Augmentation: YAML-built pipeline (ops registered via `datasets/augmentation/ops`); curriculum requires the augmenter and a computable `total_steps`.
+- Health checks (`--debug`) dump conversation text and image token counts; `custom.dump_conversation_text` writes to output_dir.
 
-## Design Principles
-- Configuration-first: prefer YAML in `configs/` to new CLI flags.
-- Prefer defining runtime arguments at the top of entry scripts (e.g., `scripts/infer.sh`, `scripts/train.sh`) instead of adding new CLI flags; avoid new CLI arguments when possible.
-- Explicit over implicit: validate early, no silent defaults; clear errors with remediation.
-- Type-safe, frozen configs where possible; small public interfaces and clean imports.
-- Geometry-aware data handling; visualize/validate when touching boxes or quantization.
-- Reuse over custom: prefer ms-swift/transformers primitives before new code.
-- Fail fast & test small: add minimal probes/visual checks for new coord logic.
+## Packing Defaults (see `docs/PACKING_MODE_GUIDE.md`)
+- Default target: `global_max_length: 16000`, `per_device_train_batch_size: 1`, `effective_batch_size: 12`, `packing_buffer: 256`, `packing_min_fill_ratio: 0.7`, `eval_packing: true`.
+- Packing replaces padding; adjust `eval_steps/save_steps` (~80) and `save_delay_steps` (~200) for 4-epoch runs on 4×A100.
 
-## Common Rules & Preferences (borrowed from Qwen3-VL)
-- Keep docs in lockstep with code: touch mapped docs when you change behavior/configs.
-- Deterministic runs: seed everything and log seeds in new entrypoints.
-- Geometry & grounding: never drop or reorder geometry silently; reuse helpers in `src/datasets/` for canonicalization/quantization.
-- Logging: use project logger utilities; include remediation hints in errors.
-- Third-party deps: prefer existing ms-swift/transformers; justify new deps and record behavioral impact.
-- Validate before merge: run existing tests or targeted probes when altering datasets/geometry or decoding logic.
+## Design Principles & Do/Don't
+- Config-first; avoid new CLI flags. Prefer YAML knobs and small adapters/wrappers over editing HF model files (`modeling_qwen3_vl.py` is off-limits).
+- Preserve geometry: never drop/reorder coords; use helpers in `src/datasets/geometry.py`; training uses `do_resize=false`.
+- Keep chat-template compatibility with Qwen3-VL; avoid custom token hacks outside coord tokens/offset adapters.
+- Deterministic runs (seed everything), clear validation/errors, minimal comments; ASCII only unless file already uses Unicode.
+- Update docs alongside behavior changes; follow OpenSpec for any capability/contract shifts.
 
-## Scope & Non-Goals
-- In-scope: coord vocab design, expectation decoding, set matching losses, rollout-based consistency, evaluation for grounding.
-- Out-of-scope (unless explicitly approved): large architecture forks, bespoke RL loops, custom vision backbones.
+## Evaluation & Inference
+- Use `scripts/eval.sh` / `scripts/evaluate_detection.py` with YAML-driven configs; `configs/eval/detection.yaml` is the template.
+- Inference helpers: `scripts/run_infer.py`, `scripts/vis.sh`, `scripts/run_vis_coord.sh`; keep adapters loaded via `--adapters` or merged weights as appropriate.
 
-## Important
-- Interrupt for clarification whenever requirements are ambiguous or assumptions feel shaky.
-- Keep paper-readiness in mind: preserve experiment metadata, configs, and qualitative examples.
+## Scope
+- In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.
+- Out (unless approved): large architecture forks, bespoke RL loops, custom vision backbones.
+
+## Working Style
+- Ask for clarification when assumptions feel shaky; keep experiment metadata/artifacts paper-ready (configs, logs, qualitative vis).
+
