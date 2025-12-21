@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, List, Mapping, Sequence
 
 import torch
@@ -66,6 +67,74 @@ def expectation_decode(
     return expected
 
 
+def resolve_top_k(top_k: float | int, coord_vocab: int) -> int:
+    """Resolve top_k fraction/count to an integer in [1, coord_vocab]."""
+
+    try:
+        top_k_val = float(top_k)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("top_k must be numeric") from exc
+    if top_k_val <= 0:
+        raise ValueError("top_k must be > 0")
+    if top_k_val < 1:
+        k = int(math.ceil(top_k_val * coord_vocab))
+    else:
+        k = int(top_k_val)
+    if k < 1:
+        k = 1
+    if k > coord_vocab:
+        k = coord_vocab
+    return k
+
+
+def topk_expectation_decode(
+    logits: torch.Tensor,
+    coord_token_ids: Sequence[int] | torch.Tensor,
+    *,
+    top_k: float | int = 0.1,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Expectation decode over coord tokens using top-k logits.
+
+    Args:
+        logits: [..., vocab]
+        coord_token_ids: ordered coord token ids for bins 0..999
+        top_k: fraction (0<k<1) or integer count
+        temperature: softmax temperature (>0)
+
+    Returns:
+        Tensor of shape logits[..., 0] (one value per position) in [0,1].
+    """
+
+    if temperature <= 0:
+        raise ValueError("temperature must be > 0")
+
+    if isinstance(coord_token_ids, torch.Tensor):
+        coord_ids = coord_token_ids.to(device=logits.device)
+    else:
+        coord_ids = torch.tensor(coord_token_ids, device=logits.device)
+
+    if coord_ids.numel() == 0:
+        return torch.zeros(logits.shape[:-1], device=logits.device, dtype=logits.dtype)
+
+    coord_logits = logits.index_select(-1, coord_ids)
+    if temperature != 1.0:
+        coord_logits = coord_logits / float(temperature)
+
+    coord_vocab = coord_logits.shape[-1]
+    k = resolve_top_k(top_k, coord_vocab)
+
+    topk_logits, topk_idx = torch.topk(coord_logits, k, dim=-1)
+    probs = topk_logits.softmax(dim=-1)
+
+    coord_values = torch.arange(
+        coord_vocab, device=logits.device, dtype=logits.dtype
+    )
+    topk_values = coord_values[topk_idx]
+    expected = (probs * topk_values).sum(dim=-1) / 1000.0
+    return expected
+
+
 def coord_targets_from_tokens(
     tokens: Sequence[Any],
     *,
@@ -95,5 +164,7 @@ __all__ = [
     "coord_position_mask",
     "restrict_logits_to_coords",
     "expectation_decode",
+    "resolve_top_k",
+    "topk_expectation_decode",
     "coord_targets_from_tokens",
 ]

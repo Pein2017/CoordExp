@@ -18,8 +18,8 @@ usage() {
 PYTHON_BIN="/root/miniconda3/envs/ms/bin/python"
 SWIFT_BIN="/root/miniconda3/envs/ms/bin/swift"
 
-ADAPTERS="output/12-4/text_only/v0-20251206-025652/epoch_4-dlora-lrs_2_1_4-sorted-text_only/checkpoint-1632"
-OUTPUT_DIR="output/12-4/text_only_merged_ck1632"
+ADAPTERS="output/12-4/coord_offset/v1-20251213-105815/epoch_4-dlora-lrs_2_1_4-sorted-coord_offset-packing-eff_bs_128-max_length_16000/checkpoint-777"
+OUTPUT_DIR="output/12-4/coord_offset_merged_ck777"
 GPU_DEVICES="${3:-0}"
 
 if [[ -z "$ADAPTERS" || -z "$OUTPUT_DIR" ]]; then

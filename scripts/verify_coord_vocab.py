@@ -71,23 +71,27 @@ def main() -> None:
     else:
         print(f"[✗] Wildcard token '{wildcard_token}' NOT found in vocabulary")
 
-    # Check for critical coordinate tokens (including coord_0 which was missing before)
+    # Check for critical coordinate tokens (0–999 is the canonical experiment range;
+    # coord_1000 is optional and may be absent if we only add 1000 bins.)
     sample_tokens = [
         "<|coord_0|>",  # Critical: left/top edge (pixel = 0)
         "<|coord_1|>",
         "<|coord_100|>",
         "<|coord_500|>",
-        "<|coord_999|>",
-        "<|coord_1000|>",  # Critical: right/bottom edge (pixel = image_dim)
+        "<|coord_999|>",  # Canonical far edge bin in our experiments
+    ]
+    optional_tokens = [
+        "<|coord_1000|>",  # Optional: right/bottom edge bin if 1001 tokens are added
     ]
     found_count = 0
-    for token in sample_tokens:
+    for token in sample_tokens + optional_tokens:
         if token in tokenizer.get_vocab():
             token_id = tokenizer.convert_tokens_to_ids(token)
             print(f"[✓] Token '{token}' found (ID: {token_id})")
             found_count += 1
         else:
-            print(f"[✗] Token '{token}' NOT found")
+            prefix = "[!]" if token in optional_tokens else "[✗]"
+            print(f"{prefix} Token '{token}' NOT found")
 
     # Verify range completeness
     print("\n[+] Checking coordinate token range completeness...")
@@ -116,16 +120,25 @@ def main() -> None:
             f"    - Total coordinate tokens (excluding wildcard): {len(coord_tokens_in_vocab)}"
         )
 
-        # Check if we have the full [0, 1000] range
-        if first_coord == "<|coord_0|>" and last_coord == "<|coord_1000|>":
+        # Check if we have a contiguous coord range.
+        if first_coord == "<|coord_0|>" and last_coord == "<|coord_999|>":
+            if len(coord_tokens_in_vocab) == 1000:
+                print("[✓] Full range [0, 999] is present (1000 tokens)")
+            else:
+                print(
+                    f"[!] Range endpoints [0, 999] but count is {len(coord_tokens_in_vocab)} (expected 1000)"
+                )
+        elif first_coord == "<|coord_0|>" and last_coord == "<|coord_1000|>":
             if len(coord_tokens_in_vocab) == 1001:
                 print("[✓] Full range [0, 1000] is present (1001 tokens)")
             else:
                 print(
-                    f"[!] Range endpoints correct but count is {len(coord_tokens_in_vocab)} (expected 1001)"
+                    f"[!] Range endpoints [0, 1000] but count is {len(coord_tokens_in_vocab)} (expected 1001)"
                 )
         elif first_coord == "<|coord_1|>" and last_coord == "<|coord_1000|>":
-            print("[✗] Missing coord_0! Range is [1, 1000] instead of [0, 1000]")
+            print(
+                "[✗] Missing coord_0! Range is [1, 1000] instead of [0, 999] or [0, 1000]"
+            )
             print("    This means coordinates at pixel=0 cannot be represented.")
         else:
             print(f"[!] Unexpected range: {first_coord} to {last_coord}")

@@ -94,6 +94,65 @@ class CoordTokensConfig:
 
 
 @dataclass(frozen=True)
+class CoordLossConfig:
+    enabled: bool = False
+    l1_weight: float = 0.0
+    giou_weight: float = 0.0
+    coord_ce_weight: float = 1.0
+    non_coord_ce_weight: float = 1.0
+    top_k: float = 0.1
+    temperature: float = 1.0
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordLossConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("coord_loss section must be a mapping when provided")
+
+        enabled = bool(payload.get("enabled", False))
+
+        def _parse_float(key: str, default: float) -> float:
+            raw = payload.get(key, default)
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"coord_loss.{key} must be numeric") from exc
+
+        l1_weight = _parse_float("l1_weight", cls.l1_weight)
+        giou_weight = _parse_float("giou_weight", cls.giou_weight)
+        coord_ce_weight = _parse_float("coord_ce_weight", cls.coord_ce_weight)
+        non_coord_ce_weight = _parse_float(
+            "non_coord_ce_weight", cls.non_coord_ce_weight
+        )
+        top_k = _parse_float("top_k", cls.top_k)
+        temperature = _parse_float("temperature", cls.temperature)
+
+        if l1_weight < 0:
+            raise ValueError("coord_loss.l1_weight must be >= 0")
+        if giou_weight < 0:
+            raise ValueError("coord_loss.giou_weight must be >= 0")
+        if coord_ce_weight < 0:
+            raise ValueError("coord_loss.coord_ce_weight must be >= 0")
+        if non_coord_ce_weight < 0:
+            raise ValueError("coord_loss.non_coord_ce_weight must be >= 0")
+        if top_k <= 0:
+            raise ValueError("coord_loss.top_k must be > 0")
+        if temperature <= 0:
+            raise ValueError("coord_loss.temperature must be > 0")
+
+        return cls(
+            enabled=enabled,
+            l1_weight=l1_weight,
+            giou_weight=giou_weight,
+            coord_ce_weight=coord_ce_weight,
+            non_coord_ce_weight=non_coord_ce_weight,
+            top_k=top_k,
+            temperature=temperature,
+        )
+
+
+@dataclass(frozen=True)
 class CoordOffsetConfig:
     enabled: bool = False
     ids: tuple[int, ...] = ()
@@ -364,6 +423,7 @@ class CustomConfig:
     object_ordering: Literal["sorted", "random"] = "sorted"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
+    coord_loss: CoordLossConfig = field(default_factory=CoordLossConfig)
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
     augmentation: Optional[Mapping[str, Any]] = None
@@ -373,6 +433,7 @@ class CustomConfig:
     sample_limit: Optional[Any] = None
     train_sample_limit: Optional[Any] = None
     val_sample_limit: Optional[Any] = None
+    val_sample_with_replacement: bool = False
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
@@ -398,8 +459,19 @@ class CustomConfig:
             )
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
+        if not isinstance(self.val_sample_with_replacement, bool):
+            raise TypeError("custom.val_sample_with_replacement must be a boolean value")
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        if (
+            self.val_sample_with_replacement
+            and self.val_sample_limit is None
+            and self.sample_limit is None
+        ):
+            raise ValueError(
+                "custom.val_sample_with_replacement requires custom.val_sample_limit "
+                "or custom.sample_limit to specify the eval sample size"
+            )
 
     @classmethod
     def from_mapping(
@@ -446,10 +518,16 @@ class CustomConfig:
             )
 
         use_summary_raw = data.pop("use_summary", None)
+        val_sample_with_replacement_raw = data.pop(
+            "val_sample_with_replacement", False
+        )
         use_summary = (
             False
             if use_summary_raw is None
             else _parse_bool(use_summary_raw, "custom.use_summary")
+        )
+        val_sample_with_replacement = _parse_bool(
+            val_sample_with_replacement_raw, "custom.val_sample_with_replacement"
         )
         coord_tokens_raw = data.pop("coord_tokens", None)
         system_prompt_summary = data.pop("system_prompt_summary", None)
@@ -505,6 +583,8 @@ class CustomConfig:
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
+        coord_loss_raw = data.pop("coord_loss", None)
+        coord_loss = CoordLossConfig.from_mapping(coord_loss_raw)
 
         object_ordering = str(object_ordering_raw).lower()
         if object_ordering not in {"sorted", "random"}:
@@ -520,6 +600,7 @@ class CustomConfig:
             object_ordering=cast(Literal["sorted", "random"], object_ordering),
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
+            coord_loss=coord_loss,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
             augmentation=augmentation
@@ -535,6 +616,7 @@ class CustomConfig:
             sample_limit=sample_limit,
             train_sample_limit=train_sample_limit,
             val_sample_limit=val_sample_limit,
+            val_sample_with_replacement=val_sample_with_replacement,
             dump_conversation_text=dump_conversation_text,
             dump_conversation_path=str(dump_conversation_path)
             if dump_conversation_path is not None

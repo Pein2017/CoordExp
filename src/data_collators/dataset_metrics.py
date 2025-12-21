@@ -2,7 +2,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import torch
 
-from src.config.schema import TokenTypeMetricsConfig
+from src.config.schema import CoordLossConfig, TokenTypeMetricsConfig
+from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
 from src.utils.logger import get_logger
 
@@ -25,6 +26,7 @@ def build_dataset_metrics_collator(
     template: Any,
     base_collator: Callable[[List[Dict[str, Any]]], Dict[str, Any]] | None = None,
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
+    coord_loss_cfg: Optional[CoordLossConfig] = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     """Wrap the template collator to attach dataset labels and token types.
 
@@ -32,6 +34,19 @@ def build_dataset_metrics_collator(
     """
 
     collate_fn = base_collator or template.data_collator
+    coord_loss_enabled = bool(coord_loss_cfg and coord_loss_cfg.enabled)
+    coord_token_ids: List[int] = []
+    coord_token_mask: Optional[torch.Tensor] = None
+    tokenizer = getattr(template, "tokenizer", None)
+    if coord_loss_enabled and tokenizer is not None:
+        coord_token_ids = get_coord_token_ids(tokenizer)
+        vocab_size = getattr(tokenizer, "vocab_size", None)
+        if vocab_size is None:
+            vocab_size = max(coord_token_ids) + 1 if coord_token_ids else 0
+        coord_token_mask = torch.zeros(int(vocab_size), dtype=torch.bool)
+        for idx in coord_token_ids:
+            if 0 <= idx < coord_token_mask.numel():
+                coord_token_mask[idx] = True
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         is_packed_batch = len(batch) > 0 and isinstance(batch[0], (list, tuple))
@@ -77,6 +92,14 @@ def build_dataset_metrics_collator(
             dataset_labels=dataset_labels,
             template=template,
             cfg=token_type_cfg,
+            packed=is_packed_batch,
+        )
+        _maybe_attach_coord_features(
+            collated=collated,
+            raw_batch=batch if is_packed_batch else flat_for_labels,
+            coord_loss_cfg=coord_loss_cfg,
+            coord_token_ids=coord_token_ids,
+            coord_token_mask=coord_token_mask,
             packed=is_packed_batch,
         )
         return collated
@@ -240,3 +263,118 @@ def _maybe_attach_token_types(
 
     if token_type_list:
         collated["token_types"] = torch.stack(token_type_list, dim=0)
+
+
+def _flatten_coord_values(points: Any) -> List[Any]:
+    if points is None:
+        return []
+    if isinstance(points, (str, bytes)):
+        return [points]
+    if not isinstance(points, (list, tuple)):
+        return []
+    flat: List[Any] = []
+    for item in points:
+        if isinstance(item, (list, tuple)):
+            flat.extend(list(item))
+        else:
+            flat.append(item)
+    return flat
+
+
+def _extract_coord_spans_from_payload(payload: Any) -> tuple[List[Dict[str, Any]], int]:
+    spans: List[Dict[str, Any]] = []
+    total = 0
+    if not isinstance(payload, Mapping):
+        return spans, total
+    for _, obj in payload.items():
+        if not isinstance(obj, Mapping):
+            continue
+        geom_type = None
+        geom_points = None
+        for key in ("bbox_2d", "poly", "line"):
+            if key in obj and obj[key] is not None:
+                geom_type = key
+                geom_points = obj[key]
+                break
+        if geom_type is None or geom_points is None:
+            continue
+        coords = _flatten_coord_values(geom_points)
+        if not coords:
+            continue
+        coord_len = len(coords)
+        spans.append({"geom_type": geom_type, "start": total, "coord_len": coord_len})
+        total += coord_len
+    return spans, total
+
+
+def _maybe_attach_coord_features(
+    *,
+    collated: Dict[str, Any],
+    raw_batch: Sequence[Any],
+    coord_loss_cfg: Optional[CoordLossConfig],
+    coord_token_ids: Sequence[int],
+    coord_token_mask: Optional[torch.Tensor],
+    packed: bool,
+) -> None:
+    if coord_loss_cfg is None or not coord_loss_cfg.enabled:
+        return
+
+    labels = collated.get("labels")
+    if labels is None or not isinstance(labels, torch.Tensor):
+        return
+
+    if coord_token_ids:
+        max_label = int(labels.max().item()) if labels.numel() else 0
+        mask = coord_token_mask
+        if mask is None or max_label >= mask.numel():
+            vocab_size = max(max_label + 1, max(coord_token_ids) + 1)
+            mask = torch.zeros(int(vocab_size), dtype=torch.bool)
+            for idx in coord_token_ids:
+                if 0 <= idx < mask.numel():
+                    mask[idx] = True
+        mask = mask.to(labels.device)
+        labels_safe = labels
+        if labels_safe.min().item() < 0:
+            labels_safe = labels_safe.clamp(min=0)
+        coord_positions = mask[labels_safe] & (labels != -100)
+        loss_scale = torch.full(
+            labels.shape,
+            float(coord_loss_cfg.non_coord_ce_weight),
+            device=labels.device,
+            dtype=torch.float,
+        )
+        loss_scale[coord_positions] = float(coord_loss_cfg.coord_ce_weight)
+        loss_scale = loss_scale.masked_fill(labels == -100, 0.0)
+        collated["loss_scale"] = loss_scale
+
+    coord_spans_batch: List[List[Dict[str, Any]]] = []
+    if packed:
+        for pack in raw_batch:
+            pack_spans: List[Dict[str, Any]] = []
+            offset = 0
+            if not isinstance(pack, (list, tuple)):
+                pack = [pack]
+            for sample in pack:
+                if not isinstance(sample, Mapping):
+                    continue
+                spans, total = _extract_coord_spans_from_payload(
+                    sample.get("assistant_payload")
+                )
+                for span in spans:
+                    updated = dict(span)
+                    updated["start"] = int(updated.get("start", 0)) + offset
+                    pack_spans.append(updated)
+                offset += int(total)
+            coord_spans_batch.append(pack_spans)
+    else:
+        for sample in raw_batch:
+            if not isinstance(sample, Mapping):
+                coord_spans_batch.append([])
+                continue
+            spans, _ = _extract_coord_spans_from_payload(
+                sample.get("assistant_payload")
+            )
+            coord_spans_batch.append(spans)
+
+    if coord_spans_batch:
+        collated["coord_spans"] = coord_spans_batch

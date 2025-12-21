@@ -84,6 +84,7 @@ src/
 - Auto-sets `ROOT_IMAGE_DIR` to the directory of `custom.train_jsonl` when not provided.
 - Applies tuner/adapters with `sft.prepare_model(...)` before trainer creation.
 - Supports optional sample limiting: `custom.sample_limit`, `custom.train_sample_limit`, `custom.val_sample_limit`.
+- For eval-only resampling, set `custom.val_sample_with_replacement: true` and provide a size via `custom.val_sample_limit` (or `custom.sample_limit`).
 
 ### Required custom.* keys
 - **custom.user_prompt**: string used by `JSONLinesBuilder` for the user turn.

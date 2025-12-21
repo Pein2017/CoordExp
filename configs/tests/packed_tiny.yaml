@@ -41,3 +41,11 @@ custom:
     enabled: true
     include: [bbu, lvis]
     exclude: []
+  coord_loss:
+    enabled: false
+    l1_weight: 1.0
+    giou_weight: 1.0
+    coord_ce_weight: 1.0
+    non_coord_ce_weight: 1.0
+    top_k: 0.1
+    temperature: 1.0

@@ -73,28 +73,6 @@ Each record in your training data follows this structure:
   "object_2": {"line_points": 4, "line": [50, 60, 80, 120, 130, 180, 180, 220], "desc": "..."}
 }
 ```
-
-**Summary Mode**:
-```
-"单行汇总文本"
-```
-Requires `summary` field in every record.
-Enable by setting `custom.use_summary: true` in the training config. Mixed dense/summary sampling is **not** implemented; the dataset runs in whichever mode `use_summary` selects.
-
-### Summary Field Standard
-
-Format requirements (aligned with training/inference prompts):
-- Single sentence, English only; no newlines.
-- Group strictly by the raw `desc` text; do not rewrite/canonicalize.
-- Merge identical desc into `desc xN` when helpful; otherwise keep individual entries.
-- Ordering is free, but stable (e.g., shorter desc first) is recommended.
-- No geometry or coordinate arrays in summary strings.
-- Conversion is fail-fast: empty desc or missing objects should raise during build.
-
-**Example**: `tool cabinet x1, cable bundle x2, warning label x1`
-
----
-
 ## Dataset Pipeline
 
 ### Critical Configuration Requirement
@@ -187,11 +165,6 @@ For the universal JSONL record contract shared by all domains, see `docs/DATA_JS
 }
 ```
 
-**Summary Mode**:
-```python
-# Assistant message: single summary string
-"tool cabinet x1, cable bundle x2, warning label x1"
-```
 
 **Key Behavior**:
 - Attaches top-level `objects` with pixel coords (for template normalization)
@@ -333,6 +306,27 @@ Before training:
 - Works on padded and packed batches: token types are computed per sample pre-pack and concatenated; if alignment fails the metrics are skipped (training continues).
 - Metrics are aggregate-only: logs `agg_loss`, `agg_token_acc`, and per-type `{desc,coord,format}` accuracy/entropy; no per-dataset buckets.
 - NaN-safe: batches with zero supervised tokens are skipped.
+
+### Coord auxiliary loss (SFT pretraining)
+
+Enable `custom.coord_loss` to add L1 + GIoU supervision on coord tokens during SFT (no detection head).
+
+```yaml
+custom:
+  coord_loss:
+    enabled: true
+    l1_weight: 1.0
+    giou_weight: 1.0
+    coord_ce_weight: 1.0
+    non_coord_ce_weight: 1.0
+    top_k: 0.1
+    temperature: 1.0
+```
+
+Notes:
+- L1 is per coord token in normalized [0,1] space; GIoU applies to `bbox_2d` and to `poly` via min/max bbox; `line` uses L1 only.
+- Coord vs non-coord CE weights are applied via `loss_scale` when enabled.
+- Logged metrics (train/eval parity): `coord_loss/total`, `coord_loss/l1`, `coord_loss/giou`, `coord_loss/coord_ce` (eval uses `eval_` prefix).
 
 ---
 

@@ -23,9 +23,9 @@ from .coord_tokens.offset_adapter import (
     reattach_coord_offset_hooks,
 )
 from .config import ConfigLoader, SaveDelayConfig
-from .datasets import BaseCaptionDataset, build_packed_dataset
+from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
-from .metrics.dataset_metrics import AggregateTokenTypeMetricsMixin
+from .metrics.dataset_metrics import AggregateTokenTypeMetricsMixin, CoordAuxLossMixin
 from .trainers import with_final_checkpoint
 from .utils import enable_verbose_logging, get_logger, set_log_level
 from .optim import register_coord_offset_optimizer
@@ -106,6 +106,20 @@ def _parse_packing_config(
         allow_single_long=allow_single_long,
         eval_packing=eval_packing,
     )
+
+
+def _parse_sample_size(value: Any, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        size = value
+    elif isinstance(value, str) and value.isdigit():
+        size = int(value)
+    else:
+        raise ValueError(f"{field_name} must be an int or digit string, got {value!r}")
+    if size <= 0:
+        raise ValueError(f"{field_name} must be > 0, got {size}")
+    return size
 
 
 def parse_args():
@@ -384,10 +398,25 @@ def main():
         if custom_config.val_sample_limit is not None
         else shared_sample_limit
     )
+    val_sample_with_replacement = bool(
+        getattr(custom_config, "val_sample_with_replacement", False)
+    )
+    val_sample_size = None
+    if val_sample_with_replacement:
+        val_sample_size = _parse_sample_size(
+            val_sample_limit, "custom.val_sample_limit"
+        )
+        if val_sample_size is None:
+            raise ValueError(
+                "custom.val_sample_with_replacement requires custom.val_sample_limit "
+                "or custom.sample_limit to specify the eval sample size"
+            )
     if train_sample_limit:
         logger.info(f"Train sample limit: {train_sample_limit}")
-    if val_sample_limit:
+    if val_sample_limit and not val_sample_with_replacement:
         logger.info(f"Val sample limit: {val_sample_limit}")
+    elif val_sample_with_replacement:
+        logger.info(f"Val sample size per eval (with replacement): {val_sample_size}")
 
     # Build training dataset
     logger.info(f"Loading training dataset: {train_jsonl}")
@@ -721,6 +750,7 @@ def main():
     val_jsonl = custom_config.val_jsonl
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
+        eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
         eval_dataset = BaseCaptionDataset.from_jsonl(
             val_jsonl,
             template=sft.template,
@@ -729,7 +759,7 @@ def main():
             json_format=custom_config.json_format,
             augmenter=None,  # No augmentation for validation
             bypass_prob=0.0,  # Explicit: no bypass for validation
-            sample_limit=val_sample_limit,
+            sample_limit=eval_sample_limit,
             use_summary=use_summary,
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
@@ -737,7 +767,18 @@ def main():
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
         )
-        logger.info(f"Validation dataset size: {len(eval_dataset)}")
+        base_eval_len = len(eval_dataset)
+        if val_sample_with_replacement:
+            eval_dataset = RandomSampleDataset(
+                eval_dataset, sample_size=val_sample_size, seed=dataset_seed + 11
+            )
+            logger.info(
+                "Validation dataset size: %s (sampled with replacement from %s)",
+                len(eval_dataset),
+                base_eval_len,
+            )
+        else:
+            logger.info(f"Validation dataset size: {base_eval_len}")
 
     if packing_cfg.enabled and packing_cfg.eval_packing and eval_dataset is not None:
         eval_dataset = build_packed_dataset(
@@ -780,17 +821,25 @@ def main():
     logger.info("Setting up trainer...")
     base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
+    coord_loss_cfg = getattr(custom_config, "coord_loss", None)
     data_collator = build_dataset_metrics_collator(
-        sft.template, base_collator, token_type_cfg=token_type_cfg
+        sft.template,
+        base_collator,
+        token_type_cfg=token_type_cfg,
+        coord_loss_cfg=coord_loss_cfg,
     )
     trainer_cls = resolve_trainer_cls(train_args)
+    mixins = []
+    if coord_loss_cfg and getattr(coord_loss_cfg, "enabled", False):
+        mixins.append(CoordAuxLossMixin)
     if token_type_cfg and getattr(token_type_cfg, "enabled", False):
-        if not issubclass(trainer_cls, AggregateTokenTypeMetricsMixin):
-            trainer_cls = type(
-                f"{trainer_cls.__name__}WithAggTokenTypes",
-                (AggregateTokenTypeMetricsMixin, trainer_cls),
-                {},
-            )
+        mixins.append(AggregateTokenTypeMetricsMixin)
+    if mixins:
+        trainer_cls = type(
+            f"{trainer_cls.__name__}WithMetrics",
+            tuple(mixins + [trainer_cls]),
+            {},
+        )
 
     # Add SaveDelayCallback if save_delay_steps is configured
     callbacks = sft.callbacks.copy() if sft.callbacks else []
@@ -847,6 +896,11 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
+    if coord_loss_cfg is not None:
+        try:
+            setattr(trainer, "coord_loss_cfg", coord_loss_cfg)
+        except Exception:
+            pass
 
     # Patch DeepSpeed __del__ to avoid noisy cleanup errors (safe no-op)
     try:

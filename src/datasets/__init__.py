@@ -47,6 +47,7 @@ from .preprocessors import (
     AugmentationPreprocessor,
 )
 from .wrappers.packed_caption import PackedCaptionDataset, build_packed_dataset
+from .wrappers.random_sample import RandomSampleDataset
 
 __all__ = [
     # Primary dataset
@@ -54,6 +55,7 @@ __all__ = [
     "DenseCaptionDataset",
     "PackedCaptionDataset",
     "build_packed_dataset",
+    "RandomSampleDataset",
     # Utilities
     "load_jsonl",
     "extract_object_points",

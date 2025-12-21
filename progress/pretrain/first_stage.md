@@ -85,12 +85,9 @@ Mapping:
 
 #### 4.2 Structural Tokens
 
-Depending on whether Qwen3-VL already contains something equivalent, we may add:
+We **do not** introduce custom wrapper tokens like `<obj_start>` / `<obj_end>` in Phase 1.
 
-* `<obj_start>`
-* `<obj_end>`
-
-These tokens mark object boundaries in the output sequence. They are treated as text tokens and supervised with standard CE.
+Object boundaries are instead determined by the **sequence template** itself (e.g., JSON-like keys such as `"object_1"`, `"object_2"`, or simple line breaks between objects), and all such structural characters are treated as regular text tokens supervised with standard CE.
 
 ---
 
@@ -109,11 +106,11 @@ For Phase 1, we can keep the prompt fixed and short, focusing on making the mode
 
 #### 5.2 Target Sequence Format
 
-For a sorted list of objects `[obj_1, ..., obj_M]`, the target sequence (assistant side) for training might look like:
+For a sorted list of objects `[obj_1, ..., obj_M]`, the target sequence (assistant side) for training might look like a simple per-line format without extra wrapper tokens:
 
 ```text
-<obj_start> desc_1_tokens <|coord_x1_1|> <|coord_y1_1|> <|coord_x2_1|> <|coord_y2_1|> <obj_end>
-<obj_start> desc_2_tokens <|coord_x1_2|> <|coord_y1_2|> <|coord_x2_2|> <|coord_y2_2|> <obj_end>
+desc_1_tokens <|coord_x1_1|> <|coord_y1_1|> <|coord_x2_1|> <|coord_y2_1|>
+desc_2_tokens <|coord_x1_2|> <|coord_y1_2|> <|coord_x2_2|> <|coord_y2_2|>
 ...
 ```
 
@@ -133,7 +130,7 @@ For Phase 1 we assume:
 
 ### 6. Loss Variants for Ablation
 
-The global principle here is to **factorize changes** so that each loss component can be toggled independently. We define explicit **experiment groups** and associated flags.
+The global principle here is to **focus ablations on coordinate supervision**. We keep standard CE on text/format tokens as baseline SFT, and vary only how we supervise the **coordinate positions**.
 
 #### 6.1 Common Notation
 
@@ -156,104 +153,87 @@ Total geometric loss:
 L_{\text{coord}} = \sum_{i=1}^M \ell_{\text{coord}}(b̂_i, b_i).
 ]
 
----
+We always include a **text/format CE** term:
 
-#### 6.2 Group A: CE-Only Baseline (Discrete Coordinate Prediction)
+[
+L_{\text{text-desc}} =
+-\sum_{t \in \text{desc_positions}} \log p_\theta(y_t | x, y_{<t}).
+]
 
-**Purpose**: baseline that mimics common V-LLM detection approaches where coordinates are trained as discrete tokens only.
-
-* Loss:
-  [
-  L_A = -\sum_{t=1}^T \log p_\theta(y_t | x, y_{<t})
-  ]
-  i.e., **standard autoregressive CE over all tokens**, including coordinate tokens.
-* No CoordExp-based geometric loss is used during training.
-* For evaluation:
-
-  * Coordinates are decoded as argmax indices:
-
-    * `k* = argmax_k p(coord_k | ...)`
-    * coordinate value = `k* / 1000` (k* ∈ [0,999]; max ≈ 0.999).
-
-Flags:
-
-* `use_coordexp_loss = False`
-* `use_coord_ce = True`
-* `use_geom_loss = False`
+and ablate what happens on `coord_positions`.
 
 ---
 
-#### 6.3 Group B: CoordExp + Geometric Loss Only (No CE on Coordinates)
+#### 6.2 Group Coord-CE: Pure Coordinate CE (No Geometric Loss)
 
-**Purpose**: isolate the effect of continuous geometric supervision without CE on coordinate tokens.
+**Purpose**: baseline where coordinates are supervised **only as discrete tokens**; no auxiliary geometric loss is applied.
 
-* Text loss: CE only on non-coordinate positions:
+* Text loss (always on):
   [
   L_{\text{text-desc}} =
   -\sum_{t \in \text{desc_positions}} \log p_\theta(y_t | x, y_{<t}).
   ]
-* Coordinate positions:
-
-  * No CE, i.e. **no discrete-signal supervision** on which `<|coord_k|>` should be chosen.
-  * Instead, we:
-
-    1. Restrict logits to `V_coord` at each coord position.
-    2. Apply softmax to get `p_k`.
-    3. Decode `b̂_i` via CoordExp for each object.
-    4. Compute geometric loss:
-       [
-       L_{\text{coord}} = \sum_i \ell_{\text{coord}}(b̂_i, b_i).
-       ]
+* Coordinate CE:
+  [
+  L_{\text{coord-CE}} =
+  -\sum_{t \in \text{coord_positions}} \log p_\theta(y_t | x, y_{<t}).
+  ]
+* No CoordExp-based geometric loss:
+  [
+  L_{\text{coord}} = 0.
+  ]
 * Total loss:
   [
-  L_B = L_{\text{text-desc}} + \lambda_{\text{coord}} L_{\text{coord}}.
+  L_{\text{Coord-CE}} = L_{\text{text-desc}} + \lambda_{\text{coord-CE}} L_{\text{coord-CE}}.
   ]
 
 Flags:
 
-* `use_coordexp_loss = True`
-* `use_coord_ce = False`
-* `use_geom_loss = True`
+* `use_coord_ce = True`
+* `use_coordexp_loss = False`
+* `use_geom_loss = False`
 
-This group tests whether **continuous, distance-sensitive gradients** for coordinates alone (without token-level CE at coordinate positions) already improve detection quality.
+This corresponds to the **“pure coord with CE”** setting.
 
 ---
 
-#### 6.4 Group C: Hybrid CE + CoordExp + Geometric Loss
+#### 6.3 Group Coord-CE+Geo: Coordinate CE + L1+GIoU
 
-**Purpose**: check if combining discrete CE and continuous geometric loss provides extra stability or performance.
+**Purpose**: test whether adding continuous geometric supervision on top of discrete coord CE improves localization.
 
-* Text loss: as in Group B:
+* Text loss (same as above):
   [
-  L_{\text{text-desc}} = -\sum_{t \in \text{desc_positions}} \log p_\theta(y_t | x, y_{<t}).
+  L_{\text{text-desc}} =
+  -\sum_{t \in \text{desc_positions}} \log p_\theta(y_t | x, y_{<t}).
   ]
-* Coordinate CE:
-
-  * CE at coordinate positions, targeting the quantized `<|coord_k|>`:
-    [
-    L_{\text{coord-CE}} =
-    -\sum_{t \in \text{coord_positions}} \log p_\theta(y_t | x, y_{<t}).
-    ]
+* Coordinate CE (same definition as Group Coord-CE):
+  [
+  L_{\text{coord-CE}} =
+  -\sum_{t \in \text{coord_positions}} \log p_\theta(y_t | x, y_{<t}).
+  ]
 * CoordExp geometric loss:
-
-  * Same as Group B:
-    [
-    L_{\text{coord}} = \sum_i \ell_{\text{coord}}(b̂_i, b_i).
-    ]
+  1. Restrict logits at each coord position to `V_coord`.
+  2. Softmax → `p_k`.
+  3. CoordExp decode `b̂_i` for each object.
+  4. Compute:
+     [
+     L_{\text{coord}} = \sum_{i=1}^M \ell_{\text{coord}}(b̂_i, b_i).
+     ]
 * Total loss:
   [
-  L_C = L_{\text{text-desc}}
-  + \lambda_1 L_{\text{coord-CE}}
-  + \lambda_2 L_{\text{coord}}.
+  L_{\text{Coord-CE+Geo}} =
+  L_{\text{text-desc}}
+  + \lambda_{\text{coord-CE}} L_{\text{coord-CE}}
+  + \lambda_{\text{coord}} L_{\text{coord}}.
   ]
 
 Flags:
 
-* `use_coordexp_loss = True`
 * `use_coord_ce = True`
+* `use_coordexp_loss = True`
 * `use_geom_loss = True`
 
-This group explores whether CE at coordinate positions helps early convergence or harms the smoothness of geometric optimization.
+This corresponds to **“pure coord with CE + L1-loss + GIoU loss”**: coordinates receive both discrete and continuous supervision.
 
 ---
 
@@ -286,7 +266,7 @@ The Phase 1 implementation should provide:
 
        * `coord_positions`
        * `desc_positions`
-       * object segmentation (`<obj_start>`, `<obj_end>` boundaries)
+       * object segmentation (per-object coord spans in the linearized sequence)
      * map between object index and coordinate token positions.
 4. **Training loop changes**
 

@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -264,7 +265,9 @@ def _prepare_pred_objects(
             continue
 
         # Pixel-ready by default; allow norm1000 if tokens or hint present.
-        coord_mode = "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
+        coord_mode = (
+            "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
+        )
         pts_px = denorm_and_clamp(points, width, height, coord_mode=coord_mode)
 
         if gtype == "poly":
@@ -793,11 +796,13 @@ def evaluate_and_save(
     )
 
     if options.overlay:
+        root_dir_env = os.environ.get("ROOT_IMAGE_DIR")
+        base_dir = Path(root_dir_env) if root_dir_env else pred_path.parent
         overlay_dir = options.output_dir / "overlays"
         _draw_overlays(
             gt_samples,
             pred_samples,
-            base_dir=gt_path.parent,
+            base_dir=base_dir,
             out_dir=overlay_dir,
             k=options.overlay_k,
         )

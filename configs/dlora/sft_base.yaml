@@ -25,7 +25,7 @@ training:
   num_train_epochs: 30
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 4
-  effective_batch_size: 128
+  effective_batch_size: 32
   optimizer: multimodal
   learning_rate: 4.0e-4
   vit_lr: 2.0e-4
@@ -59,6 +59,10 @@ deepspeed:
 
 custom:
   emit_norm: none
+  # Common defaults for child configs
+  object_ordering: sorted  # sorted | random (for ablation)
+  augmentation_curriculum: null  # Disable curriculum when augmentation is off to avoid runtime error
+  
   coord_tokens:
     enabled: true          # accept <|coord_*|> geometries in JSONL
     skip_bbox_norm: true   # avoid double-normalizing bbox when tokens already quantized

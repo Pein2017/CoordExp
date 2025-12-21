@@ -33,7 +33,7 @@ Each object MUST contain exactly one geometry field plus a non-empty `desc`.
 - Optional fields (e.g., `summary`, `poly_points`, `line_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
 - **Coord-token mode (opt-in)**: When `custom.coord_tokens.enabled` is true, geometry may be pre-quantized as `<|coord_k|>` tokens (0–999). Set `custom.coord_tokens.skip_bbox_norm: true` to avoid double normalization when feeding tokenized records.
 
-## Example (with optional summary)
+## Example
 ```json
 {
   "images": ["images/0001.jpg"],
@@ -41,7 +41,6 @@ Each object MUST contain exactly one geometry field plus a non-empty `desc`.
     {"poly": ["<|coord_12|>", "<|coord_34|>", "<|coord_56|>", "<|coord_34|>", "<|coord_56|>", "<|coord_78|>", "<|coord_12|>", "<|coord_78|>"], "poly_points": 4, "desc": "yellow box"},
     {"bbox_2d": ["<|coord_100|>", "<|coord_120|>", "<|coord_180|>", "<|coord_200|>"], "desc": "tool cabinet"}
   ],
-  "summary": "tool cabinet x1, yellow box x1",
   "width": 768,
   "height": 512
 }

@@ -1,0 +1,49 @@
+extends: sft_base.yaml
+
+# Override base length for packing; merged vision tokens included in template max length.
+global_max_length: 16000
+
+model:
+  model: output/12-4/coord_offset_merged_ck777
+
+training:
+  # Override base training settings
+  weight_decay: 0.0001
+  learning_rate: 8.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  num_train_epochs: 3
+  optimizer: multimodal  # coord_loss does not require coord_offset optimizer
+  output_dir: ./output/12-19/coord_loss
+  run_name: epoch_3-dlora-lrs_8_2_5-coord_loss-packing-eff_bs_32-max_length_16000 
+  logging_dir: ./tb/12-19/coord_loss
+  save_strategy: steps
+  eval_steps: 50
+  save_delay_steps: 1000
+  # Packing yields one packed sample per device; effective_batch_size=128 with world_size=4
+  # and per-device=1 targets ~117 base samples/update with avg ~9.7 samples per pack (post-merge).
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 2
+  effective_batch_size: 32
+  # Packing knobs (mirrors tests/packed_tiny)
+  packing_buffer: 256
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  eval_packing: true
+
+custom:
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl
+  val_sample_limit: 1000
+  val_sample_with_replacement: false
+  token_type_metrics:
+    enabled: true
+  coord_loss:
+    enabled: true
+    # Suggested starting weights; tune per run
+    l1_weight: 1.0
+    giou_weight: 1.0
+    coord_ce_weight: 1.0
+    non_coord_ce_weight: 1.0
+    top_k: 0.1
+    temperature: 1.0

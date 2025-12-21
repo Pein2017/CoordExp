@@ -21,7 +21,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Mission & Context
 - Evolve CoordExp from telecom QC roots into a general grounding/detection research stack; keep runs reproducible and paper-ready (ICLR/CVPR/ECCV).
-- Anchor direction in `progress/idea.md`; prefer reproducible configs over ad-hoc scripts.
+- Anchor direction in `progress/full_idea.md`; prefer reproducible configs over ad-hoc scripts.
 
 ## Current Priorities
 - Broaden datasets beyond telecom; validate coord-token + expectation decoding and order-invariant matching.
