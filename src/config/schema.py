@@ -102,6 +102,11 @@ class CoordLossConfig:
     non_coord_ce_weight: float = 1.0
     top_k: float = 0.1
     temperature: float = 1.0
+    poly_mask_size: int = 64
+    poly_sigma_mask: float = 1.5 / 64.0
+    poly_tau_inside: float = 0.08
+    poly_beta_dist: float = 100.0
+    poly_smooth_weight: float = 0.05
 
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordLossConfig":
@@ -119,6 +124,13 @@ class CoordLossConfig:
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"coord_loss.{key} must be numeric") from exc
 
+        def _parse_int(key: str, default: int) -> int:
+            raw = payload.get(key, default)
+            try:
+                return int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"coord_loss.{key} must be an integer") from exc
+
         l1_weight = _parse_float("l1_weight", cls.l1_weight)
         giou_weight = _parse_float("giou_weight", cls.giou_weight)
         coord_ce_weight = _parse_float("coord_ce_weight", cls.coord_ce_weight)
@@ -127,6 +139,16 @@ class CoordLossConfig:
         )
         top_k = _parse_float("top_k", cls.top_k)
         temperature = _parse_float("temperature", cls.temperature)
+        poly_mask_size = _parse_int("poly_mask_size", cls.poly_mask_size)
+        if "poly_sigma_mask" in payload:
+            poly_sigma_mask = _parse_float("poly_sigma_mask", cls.poly_sigma_mask)
+        else:
+            poly_sigma_mask = 1.5 / float(poly_mask_size)
+        poly_tau_inside = _parse_float("poly_tau_inside", cls.poly_tau_inside)
+        poly_beta_dist = _parse_float("poly_beta_dist", cls.poly_beta_dist)
+        poly_smooth_weight = _parse_float(
+            "poly_smooth_weight", cls.poly_smooth_weight
+        )
 
         if l1_weight < 0:
             raise ValueError("coord_loss.l1_weight must be >= 0")
@@ -140,6 +162,16 @@ class CoordLossConfig:
             raise ValueError("coord_loss.top_k must be > 0")
         if temperature <= 0:
             raise ValueError("coord_loss.temperature must be > 0")
+        if poly_mask_size <= 0:
+            raise ValueError("coord_loss.poly_mask_size must be > 0")
+        if poly_sigma_mask <= 0:
+            raise ValueError("coord_loss.poly_sigma_mask must be > 0")
+        if poly_tau_inside <= 0:
+            raise ValueError("coord_loss.poly_tau_inside must be > 0")
+        if poly_beta_dist <= 0:
+            raise ValueError("coord_loss.poly_beta_dist must be > 0")
+        if poly_smooth_weight < 0:
+            raise ValueError("coord_loss.poly_smooth_weight must be >= 0")
 
         return cls(
             enabled=enabled,
@@ -149,6 +181,11 @@ class CoordLossConfig:
             non_coord_ce_weight=non_coord_ce_weight,
             top_k=top_k,
             temperature=temperature,
+            poly_mask_size=poly_mask_size,
+            poly_sigma_mask=poly_sigma_mask,
+            poly_tau_inside=poly_tau_inside,
+            poly_beta_dist=poly_beta_dist,
+            poly_smooth_weight=poly_smooth_weight,
         )
 
 
@@ -316,7 +353,7 @@ class SaveDelayConfig:
         epochs = payload.get("epochs")
         return cls.from_raw(steps, epochs)
 
-
+# warnings: this is deprecated and not used
 @dataclass(frozen=True)
 class VisualKDTargetConfig:
     enabled: bool = False
@@ -329,7 +366,7 @@ class VisualKDTargetConfig:
         if self.distance not in {"mse", "cosine"}:
             raise ValueError("visual_kd.*.distance must be one of {mse, cosine}")
 
-
+# warnings: this is deprecated and not used
 @dataclass(frozen=True)
 class VisualKDConfig:
     enabled: bool
@@ -698,6 +735,7 @@ class TrainingConfig:
             extra=extra,
         )
 
+# warnings: this is deprecated and not used
 @dataclass(frozen=True)
 class HardSampleMiningConfig:
     """Deprecated configuration placeholder for hard sample mining."""

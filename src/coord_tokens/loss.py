@@ -118,8 +118,13 @@ def topk_expectation_decode(
         return torch.zeros(logits.shape[:-1], device=logits.device, dtype=logits.dtype)
 
     coord_logits = logits.index_select(-1, coord_ids)
+    if not torch.isfinite(coord_logits).all().item():
+        coord_logits = torch.nan_to_num(
+            coord_logits, nan=-1e4, posinf=1e4, neginf=-1e4
+        )
     if temperature != 1.0:
         coord_logits = coord_logits / float(temperature)
+    coord_logits = coord_logits.clamp(min=-1e4, max=1e4)
 
     coord_vocab = coord_logits.shape[-1]
     k = resolve_top_k(top_k, coord_vocab)
@@ -132,7 +137,8 @@ def topk_expectation_decode(
     )
     topk_values = coord_values[topk_idx]
     expected = (probs * topk_values).sum(dim=-1) / 1000.0
-    return expected
+    expected = torch.nan_to_num(expected, nan=0.0, posinf=1.0, neginf=0.0)
+    return expected.clamp(0.0, 1.0)
 
 
 def coord_targets_from_tokens(

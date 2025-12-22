@@ -1,30 +1,31 @@
 extends: sft_base.yaml
 
-# Override base length for packing; merged vision tokens included in template max length.
-global_max_length: 2048
+# Match sft_coord_loss packing length; keep smoke run short via max_steps.
+global_max_length: 1024
 
 model:
   model: output/12-4/coord_offset_merged_ck777
 
 training:
   # Override base training settings
-  learning_rate: 1.0e-4
-  vit_lr: 5.0e-5
-  aligner_lr: 1.0e-4
-  num_train_epochs: 2
+  weight_decay: 0.0001
+  learning_rate: 8.0e-6
+  vit_lr: 2.0e-6
+  aligner_lr: 4.0e-6
+  num_train_epochs: 1
+  max_steps: 3
   optimizer: multimodal  # coord_loss does not require coord_offset optimizer
-  output_dir: ./output/12-19/coord_loss
-  run_name: debug
-  logging_dir: ./tb/12-19/coord_loss
+  output_dir: ./output/debug/coord_loss_smoke
+  run_name: debug-sft_coord_loss-smoke
+  logging_dir: ./tb/debug/coord_loss_smoke
   save_strategy: "no"
   logging_steps: 1
   eval_steps: 1
-  save_delay_steps: 2000
   # Packing yields one packed sample per device; effective_batch_size=128 with world_size=4
   # and per-device=1 targets ~117 base samples/update with avg ~9.7 samples per pack (post-merge).
-  per_device_train_batch_size: 2
+  per_device_train_batch_size: 1
   per_device_eval_batch_size: 2
-  effective_batch_size: 32
+  effective_batch_size: 16
   # Packing knobs (mirrors tests/packed_tiny)
   packing_buffer: 256
   packing_min_fill_ratio: 0.7
@@ -32,8 +33,11 @@ training:
   eval_packing: true
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_max_20_old/train_tiny.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_max_20_old/val_tiny.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train_tiny.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val_tiny.coord.jsonl
+  token_type_metrics:
+    enabled: true
+    include: ["dataset", "default", "lvis"]
   coord_loss:
     enabled: true
     # Suggested starting weights; tune per run
@@ -43,3 +47,8 @@ custom:
     non_coord_ce_weight: 1.0
     top_k: 0.1
     temperature: 1.0
+    poly_mask_size: 64
+    poly_sigma_mask: 0.0234375  # 1.5 / 64
+    poly_tau_inside: 0.08
+    poly_beta_dist: 100.0
+    poly_smooth_weight: 0.05

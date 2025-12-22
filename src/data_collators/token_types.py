@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 import torch
 from transformers import PreTrainedTokenizerBase
 
+from src.coord_tokens.codec import is_coord_token
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -45,7 +46,10 @@ def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
             write(text, TokenType.COORD if context == "coord" else TokenType.FORMAT)
         elif isinstance(value, str):
             text = json.dumps(value, ensure_ascii=False)
-            write(text, TokenType.DESC if context == "desc" else TokenType.FORMAT)
+            if context == "coord" and is_coord_token(value):
+                write(text, TokenType.COORD)
+            else:
+                write(text, TokenType.DESC if context == "desc" else TokenType.FORMAT)
         elif isinstance(value, list):
             write("[", TokenType.FORMAT)
             for idx, item in enumerate(value):

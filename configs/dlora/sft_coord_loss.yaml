@@ -1,7 +1,7 @@
 extends: sft_base.yaml
 
 # Override base length for packing; merged vision tokens included in template max length.
-global_max_length: 16000
+global_max_length: 2048
 
 model:
   model: output/12-4/coord_offset_merged_ck777
@@ -14,9 +14,9 @@ training:
   aligner_lr: 5.0e-5
   num_train_epochs: 3
   optimizer: multimodal  # coord_loss does not require coord_offset optimizer
-  output_dir: ./output/12-19/coord_loss
-  run_name: epoch_3-dlora-lrs_8_2_5-coord_loss-packing-eff_bs_32-max_length_16000 
-  logging_dir: ./tb/12-19/coord_loss
+  output_dir: ./output/12-21/coord_loss_breakdown
+  run_name: epoch_3-dlora-lrs_8_2_5-coord_loss-breakdown-packing-eff_bs_32-max_length_16000
+  logging_dir: ./tb/12-21/coord_loss_breakdown
   save_strategy: steps
   eval_steps: 50
   save_delay_steps: 1000
@@ -47,3 +47,8 @@ custom:
     non_coord_ce_weight: 1.0
     top_k: 0.1
     temperature: 1.0
+    poly_mask_size: 64
+    poly_sigma_mask: 0.0234375  # 1.5 / 64
+    poly_tau_inside: 0.08
+    poly_beta_dist: 100.0
+    poly_smooth_weight: 0.05

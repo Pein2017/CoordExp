@@ -300,11 +300,12 @@ Before training:
 - [ ] No duplicate objects or malformed geometries
 - [ ] Test with `--debug` flag first
 
-### Token-type metrics (desc/coord/format)
+### Token-type metrics (coord vs text)
 
 - Enable with `custom.token_type_metrics.enabled: true`; defaults to `include: ["lvis"]`, `exclude: []`.
 - Works on padded and packed batches: token types are computed per sample pre-pack and concatenated; if alignment fails the metrics are skipped (training continues).
-- Metrics are aggregate-only: logs `agg_loss`, `agg_token_acc`, and per-type `{desc,coord,format}` accuracy/entropy; no per-dataset buckets.
+- Metrics are aggregate-only: logs `token_acc`, `token_acc_top5`, `text_token_acc`, `coord_token_acc`, `coord_token_acc_top5`; no per-dataset buckets.
+- If token-type alignment fails, coord/text masks fall back to coord-token ids.
 - NaN-safe: batches with zero supervised tokens are skipped.
 
 ### Coord auxiliary loss (SFT pretraining)
@@ -324,9 +325,9 @@ custom:
 ```
 
 Notes:
-- L1 is per coord token in normalized [0,1] space; GIoU applies to `bbox_2d` and to `poly` via min/max bbox; `line` uses L1 only.
+- L1 is per coord token in normalized [0,1] space; GIoU applies to `bbox_2d`; `poly` uses soft mask-IoU loss; `line` uses L1 only.
 - Coord vs non-coord CE weights are applied via `loss_scale` when enabled.
-- Logged metrics (train/eval parity): `coord_loss/total`, `coord_loss/l1`, `coord_loss/giou`, `coord_loss/coord_ce` (eval uses `eval_` prefix).
+- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_ce` (mean CE on coord tokens), `desc_ce` (mean CE on non-coord tokens), `l1`, `giou`, `poly_mask`, `poly_smooth`.
 
 ---
 

@@ -212,12 +212,16 @@ def _maybe_attach_token_types(
                     target_len,
                     pack_label,
                 )
-                concat_types = torch.full(
-                    (target_len,),
-                    TokenType.IGNORE,
-                    dtype=torch.long,
-                    device=labels_tensor.device,
-                )
+                if concat_types.shape[0] < target_len:
+                    pad = torch.full(
+                        (target_len - concat_types.shape[0],),
+                        TokenType.IGNORE,
+                        dtype=torch.long,
+                        device=labels_tensor.device,
+                    )
+                    concat_types = torch.cat([concat_types, pad], dim=0)
+                else:
+                    concat_types = concat_types[:target_len]
             token_type_rows.append(concat_types)
 
         if token_type_rows:
