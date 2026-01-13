@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def test_single_token_encoding(tokenizer, token: str) -> tuple[bool, list[int], str]:
+def check_single_token_encoding(tokenizer, token: str) -> tuple[bool, list[int], str]:
     """
     Test if a token is encoded as a single token.
 
@@ -174,7 +174,7 @@ def main() -> None:
         if token not in tokenizer.get_vocab():
             continue
 
-        is_single, token_ids, decoded = test_single_token_encoding(tokenizer, token)
+        is_single, token_ids, decoded = check_single_token_encoding(tokenizer, token)
 
         if is_single:
             single_token_count += 1
@@ -217,7 +217,7 @@ def main() -> None:
         all_multi_examples = []
 
         for token, token_id in found_tokens:
-            is_single, token_ids, decoded = test_single_token_encoding(tokenizer, token)
+            is_single, token_ids, decoded = check_single_token_encoding(tokenizer, token)
             if is_single:
                 all_single += 1
             else:

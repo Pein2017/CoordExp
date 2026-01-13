@@ -667,22 +667,101 @@ def _prepare_all(
     )
 
 
-def evaluate_detection(
-    pred_path: Path,
-    *,
+def _prepare_all_separate(
+    gt_records: List[Dict[str, Any]],
+    pred_records: List[Dict[str, Any]],
     options: EvalOptions,
-) -> Dict[str, Any]:
-    counters = EvalCounters()
-    pred_records = load_jsonl(pred_path, counters)
-    (
+    counters: EvalCounters,
+) -> Tuple[
+    List[Sample],
+    List[Tuple[int, List[Dict[str, Any]]]],
+    Dict[str, int],
+    Dict[str, Any],
+    List[Dict[str, Any]],
+    bool,
+    List[Dict[str, Any]],
+]:
+    gt_samples: List[Sample] = []
+    for idx, rec in enumerate(
+        tqdm(gt_records, desc="GT", unit="img", disable=len(gt_records) < 10)
+    ):
+        sample = _prepare_gt_record(rec, idx, counters, strict=options.strict_parse)
+        if sample:
+            gt_samples.append(sample)
+        elif options.strict_parse:
+            raise ValueError(f"Failed to prepare GT for index {idx}")
+
+    pred_map: Dict[int, Dict[str, Any]] = {}
+    for i, rec in enumerate(pred_records):
+        image_id = rec.get("index", i)
+        pred_map[int(image_id)] = rec
+
+    pred_samples: List[Tuple[int, List[Dict[str, Any]]]] = []
+    invalid_preds: Dict[int, List[Dict[str, Any]]] = {}
+    for sample in tqdm(gt_samples, desc="Pred", unit="img", disable=len(gt_samples) < 10):
+        rec = pred_map.get(sample.image_id, {})
+        preds, invalid = _prepare_pred_objects(
+            rec,
+            width=sample.width,
+            height=sample.height,
+            options=options,
+            counters=counters,
+        )
+        pred_samples.append((sample.image_id, preds))
+        if invalid:
+            invalid_preds[sample.image_id] = invalid
+
+    include_unknown = options.unknown_policy == "bucket"
+    categories = _build_categories(gt_samples, include_unknown=include_unknown)
+    coco_gt_dict = _to_coco_gt(
+        gt_samples, categories, add_box_segmentation=options.use_segm
+    )
+    results = _to_coco_preds(
+        pred_samples, categories, options=options, counters=counters
+    )
+    run_segm = options.use_segm and any("segmentation" in r for r in results)
+    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
+    return (
         gt_samples,
         pred_samples,
         categories,
         coco_gt_dict,
         results,
         run_segm,
-        _,
-    ) = _prepare_all(pred_records, options, counters)
+        per_image,
+    )
+
+
+def evaluate_detection(
+    gt_path: Path,
+    pred_path: Path | None = None,
+    *,
+    options: EvalOptions,
+) -> Dict[str, Any]:
+    counters = EvalCounters()
+    if pred_path is None:
+        pred_records = load_jsonl(gt_path, counters)
+        (
+            gt_samples,
+            pred_samples,
+            categories,
+            coco_gt_dict,
+            results,
+            run_segm,
+            _,
+        ) = _prepare_all(pred_records, options, counters)
+    else:
+        gt_records = load_jsonl(gt_path, counters)
+        pred_records = load_jsonl(pred_path, counters)
+        (
+            gt_samples,
+            pred_samples,
+            categories,
+            coco_gt_dict,
+            results,
+            run_segm,
+            _,
+        ) = _prepare_all_separate(gt_records, pred_records, options, counters)
 
     coco_gt = COCO()
     coco_gt.dataset = copy.deepcopy(coco_gt_dict)

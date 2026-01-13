@@ -8,11 +8,22 @@ Tests annotation parsing and format conversion without requiring images.
 import os
 import sys
 import tempfile
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from public_data.converters.base import ConversionConfig
 from public_data.converters.lvis_converter import LVISConverter
+
+
+def _get_train_annotation_path() -> str:
+    public_data_dir = Path(__file__).resolve().parents[1]
+    ann_path = public_data_dir / "lvis" / "raw" / "annotations" / "lvis_v1_train.json"
+    if not ann_path.exists():
+        pytest.skip(f"Missing LVIS annotations at {ann_path}")
+    return str(ann_path.resolve())
 
 
 def test_annotation_loading():
@@ -21,7 +32,7 @@ def test_annotation_loading():
     print("Test 1: LVIS Annotation Loading")
     print("=" * 60)
 
-    annotation_path = "./lvis/raw/annotations/lvis_v1_train.json"
+    annotation_path = _get_train_annotation_path()
 
     # Create minimal config (images don't need to exist for this test)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -34,6 +45,10 @@ def test_annotation_loading():
 
         converter = LVISConverter(config, use_polygon=False)
         annotations = converter.load_annotations()
+
+        assert "images" in annotations
+        assert "annotations" in annotations
+        assert "categories" in annotations
 
         print(f"  ✓ Loaded {len(annotations['images'])} images")
         print(f"  ✓ Loaded {len(annotations['annotations'])} annotations")
@@ -49,7 +64,7 @@ def test_annotation_loading():
         for freq, count in sorted(freq_dist.items()):
             print(f"    {freq}: {count} categories")
 
-        return True
+        assert len(annotations["images"]) > 0
 
 
 def test_bbox_conversion():
@@ -58,7 +73,7 @@ def test_bbox_conversion():
     print("Test 2: BBox Conversion (Mock Images)")
     print("=" * 60)
 
-    annotation_path = "./lvis/raw/annotations/lvis_v1_train.json"
+    annotation_path = _get_train_annotation_path()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = os.path.join(tmpdir, "test_bbox.jsonl")
@@ -77,6 +92,7 @@ def test_bbox_conversion():
 
         # Load annotations
         data = converter.load_annotations()
+        assert data is not None
 
         # Test a few samples manually
         print("\n  Testing first 3 image annotations:")
@@ -102,7 +118,7 @@ def test_bbox_conversion():
                     sample_count += 1
 
         print(f"\n  ✓ Successfully converted {sample_count}/3 samples")
-        return True
+        assert sample_count >= 0
 
 
 def test_polygon_conversion():
@@ -111,7 +127,7 @@ def test_polygon_conversion():
     print("Test 3: Polygon Conversion (N-point → poly)")
     print("=" * 60)
 
-    annotation_path = "./lvis/raw/annotations/lvis_v1_train.json"
+    annotation_path = _get_train_annotation_path()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         config = ConversionConfig(
@@ -125,6 +141,7 @@ def test_polygon_conversion():
 
         converter = LVISConverter(config, use_polygon=True)
         data = converter.load_annotations()
+        assert data is not None
 
         # Find samples with segmentation
         print("\n  Analyzing segmentation polygons:")
@@ -168,7 +185,7 @@ def test_polygon_conversion():
             count = polygon_stats["point_distribution"][key]
             print(f"      {key}: {count}")
 
-        return True
+        assert polygon_stats["total"] >= 0
 
 
 def test_qwen3vl_format_compliance():
@@ -281,8 +298,8 @@ def test_qwen3vl_format_compliance():
 
     bbox_valid = validate_sample(sample_bbox, "bbox-only sample")
     poly_valid = validate_sample(sample_polygon, "polygon sample")
-
-    return bbox_valid and poly_valid
+    assert bbox_valid
+    assert poly_valid
 
 
 def main():
@@ -303,8 +320,8 @@ def main():
 
     for name, test_func in tests:
         try:
-            result = test_func()
-            results[name] = "✓ PASS" if result else "✗ FAIL"
+            test_func()
+            results[name] = "✓ PASS"
         except Exception as e:
             print(f"\n  ✗ Test failed with exception: {e}")
             import traceback

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import copy
 import random
-from typing import Any, Dict, List, Literal, MutableMapping, Optional, Sequence
-
-from src.config.schema import CoordTokensConfig
-from src.coord_tokens.validator import annotate_coord_tokens
+from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
 from torch.utils.data import Dataset, get_worker_info
 
 from src.config.prompts import USER_PROMPT_SUMMARY
+from src.config.schema import CoordTokensConfig
+from src.coord_tokens.validator import annotate_coord_tokens
 
 from .builders import JSONLinesBuilder
 from .contracts import ConversationRecord, validate_conversation_record
@@ -157,6 +156,17 @@ class BaseCaptionDataset(Dataset):
             )
             kwargs.pop("use_detailed_caption", None)
             kwargs.pop("output_variant", None)  # Backward compat
+        if kwargs.get("dataset_name") is None:
+            from pathlib import Path
+
+            path = Path(jsonl_path)
+            parts = {p.lower() for p in path.parts}
+            for candidate in ("lvis", "coco", "refcoco", "refcoco+", "refcocog", "vg"):
+                if candidate in parts:
+                    kwargs["dataset_name"] = candidate.replace("+", "plus")
+                    break
+            if kwargs.get("dataset_name") is None:
+                kwargs["dataset_name"] = path.stem
         return BaseCaptionDataset(
             base_records=records,
             template=template,

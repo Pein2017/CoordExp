@@ -36,11 +36,39 @@ from src.coord_tokens.codec import int_to_token, is_coord_token, token_to_int
 MAX_VALUE = 999
 
 
-def _clamp_and_scale(value: float, denom: float) -> int:
-    """Clamp pixel value to [0, denom-1] and scale to [0, MAX_VALUE]."""
-    denom_span = max(1e-6, float(denom) - 1.0)
-    v_clamped = max(0.0, min(float(value), float(denom) - 1.0))
-    return int(round(v_clamped / denom_span * MAX_VALUE))
+def _scale_pixel_to_bin(value: float, denom: float) -> int:
+    denom_f = float(denom)
+    if denom_f <= 0:
+        raise AssertionError(f"Invalid denom: {denom_f}")
+    v = float(value)
+    out = int(round(v / denom_f * 1000.0))
+    if not (0 <= out <= 1000):
+        raise AssertionError(f"Scaled coord {out} out of [0, 1000] from value {value}")
+    return out
+
+
+def convert_list(values: Sequence, *, width: float, height: float, assume_normalized: bool = False) -> List[str]:
+    if width <= 0 or height <= 0:
+        raise AssertionError(f"Invalid width/height: {width}, {height}")
+
+    out: List[str] = []
+    for idx, v in enumerate(values):
+        if is_coord_token(v):
+            value = token_to_int(str(v))
+        else:
+            if assume_normalized:
+                value = int(round(float(v)))
+            else:
+                is_x = idx % 2 == 0
+                denom = float(width) if is_x else float(height)
+                value = _scale_pixel_to_bin(float(v), denom)
+
+        if not (0 <= value <= MAX_VALUE):
+            raise AssertionError(
+                f"Normalized coord {value} out of [0, {MAX_VALUE}] from value {v}"
+            )
+        out.append(int_to_token(value))
+    return out
 
 
 def normalize_list(
@@ -65,7 +93,7 @@ def normalize_list(
             else:
                 is_x = idx % 2 == 0
                 denom = float(width) if is_x else float(height)
-                value = _clamp_and_scale(float(v), denom)
+                value = _scale_pixel_to_bin(float(v), denom)
 
         if not (0 <= value <= MAX_VALUE):
             raise AssertionError(
