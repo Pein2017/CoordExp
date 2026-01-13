@@ -17,7 +17,7 @@ from src.eval.detection import EvalOptions, evaluate_and_save
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="CoordExp detection evaluator (COCO-style)."
+        description="CoordExp detection evaluator (COCO + F1-ish set matching)."
     )
     parser.add_argument(
         "--pred_jsonl", required=True, type=Path, help="Predictions JSONL path."
@@ -27,6 +27,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("eval_out"),
         type=Path,
         help="Output directory (overwrites).",
+    )
+    parser.add_argument(
+        "--metrics",
+        choices=["coco", "f1ish", "both"],
+        default="coco",
+        help="Which metric suite to run: COCOeval, F1-ish (greedy set matching), or both.",
     )
     parser.add_argument(
         "--unknown-policy",
@@ -41,13 +47,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--semantic-model",
         default="sentence-transformers/all-MiniLM-L6-v2",
-        help="HF model id used for semantic desc matching (only for --unknown-policy semantic).",
+        help=(
+            "HF model id used for semantic desc matching: "
+            "(1) unknown-policy semantic mapping in COCO mode, and "
+            "(2) semantic-on-matched scoring in F1-ish mode."
+        ),
     )
     parser.add_argument(
         "--semantic-threshold",
         type=float,
         default=0.6,
-        help="Cosine similarity threshold for semantic mapping (only for --unknown-policy semantic).",
+        help=(
+            "Cosine similarity threshold for semantic matching (used by both COCO unknown-policy "
+            "semantic mapping and F1-ish semantic scoring)."
+        ),
     )
     parser.add_argument(
         "--semantic-fallback",
@@ -58,13 +71,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--semantic-device",
         default="auto",
-        help="Device for semantic matcher: auto|cpu|cuda[:N] (only for --unknown-policy semantic).",
+        help="Device for semantic matcher: auto|cpu|cuda[:N].",
     )
     parser.add_argument(
         "--semantic-batch-size",
         type=int,
         default=64,
-        help="Batch size for semantic embedding encoding (only for --unknown-policy semantic).",
+        help="Batch size for semantic embedding encoding.",
+    )
+    parser.add_argument(
+        "--f1ish-iou-thrs",
+        type=float,
+        nargs="+",
+        default=[0.3, 0.5],
+        help=(
+            "IoU thresholds for F1-ish greedy matching (e.g., --f1ish-iou-thrs 0.3 0.5). "
+            "When multiple are provided, 0.5 (if present) is treated as the primary threshold "
+            "for `matches.jsonl` naming."
+        ),
     )
     parser.add_argument(
         "--strict-parse",
@@ -106,10 +130,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     options = EvalOptions(
+        metrics=str(args.metrics),
         unknown_policy=args.unknown_policy,
         strict_parse=bool(args.strict_parse),
         use_segm=bool(args.use_segm),
         iou_thrs=args.iou_thrs,
+        f1ish_iou_thrs=[float(x) for x in (args.f1ish_iou_thrs or [])],
         output_dir=args.out_dir,
         overlay=bool(args.overlay),
         overlay_k=int(args.overlay_k),

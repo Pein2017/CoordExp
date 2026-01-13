@@ -5,7 +5,7 @@ Features:
 - Ingests standardized ``pred.jsonl`` (pixel-space ``gt`` / ``pred`` objects) or legacy GT JSONL.
 - Converts geometries to COCO-format GT and prediction artifacts (bbox + segm for polygons).
 - Lines are tolerated structurally but excluded from metrics.
-- Runs COCOeval (bbox + segm) and emits metrics plus robustness counters.
+- Runs COCOeval (bbox + segm) and/or a set-matching "F1-ish" metric and emits metrics plus robustness counters.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import numpy as np
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+from pycocotools import mask as maskUtils
 from tqdm import tqdm
 
 from src.common.geometry import (
@@ -113,6 +114,116 @@ def _encode_texts_mean_pool(
             pooled = F.normalize(pooled, p=2, dim=1)
             all_vecs.append(pooled.detach().cpu().numpy())
     return np.concatenate(all_vecs, axis=0) if all_vecs else np.zeros((0, 0))
+
+
+def _fmt_iou_thr(iou_thr: float) -> str:
+    return f"{float(iou_thr):.2f}"
+
+
+def _bbox_iou(a: List[float], b: List[float]) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return float(inter / union) if union > 0.0 else 0.0
+
+
+def _bbox_to_rect_poly(bbox_xyxy: List[float]) -> List[float]:
+    x1, y1, x2, y2 = bbox_xyxy
+    return [x1, y1, x2, y1, x2, y2, x1, y2]
+
+
+def _object_has_poly(obj: Dict[str, Any]) -> bool:
+    if obj.get("type") == "poly":
+        return True
+    segm = obj.get("segmentation")
+    return isinstance(segm, list) and bool(segm)
+
+
+def _object_segmentation(obj: Dict[str, Any]) -> List[List[float]]:
+    if obj.get("type") == "poly":
+        pts = obj.get("points") or []
+        return [cast(List[float], pts)]
+    segm = obj.get("segmentation")
+    if isinstance(segm, list) and segm and isinstance(segm[0], list):
+        return cast(List[List[float]], segm)
+    return [_bbox_to_rect_poly(cast(List[float], obj["bbox"]))]
+
+
+def _segm_iou(
+    a: Dict[str, Any],
+    b: Dict[str, Any],
+    *,
+    width: int,
+    height: int,
+) -> float:
+    """Segmentation IoU between objects (supports bbox↔poly via rectangle segmentation)."""
+    try:
+        seg_a = _object_segmentation(a)
+        seg_b = _object_segmentation(b)
+        rle_a = maskUtils.frPyObjects(seg_a, height, width)
+        rle_b = maskUtils.frPyObjects(seg_b, height, width)
+        if isinstance(rle_a, list):
+            rle_a = maskUtils.merge(rle_a)
+        if isinstance(rle_b, list):
+            rle_b = maskUtils.merge(rle_b)
+        ious = maskUtils.iou([rle_a], [rle_b], [0])
+        return float(ious[0][0]) if ious.size else 0.0
+    except Exception:
+        return 0.0
+
+
+def _object_iou_auto(
+    pred_obj: Dict[str, Any],
+    gt_obj: Dict[str, Any],
+    *,
+    width: int,
+    height: int,
+) -> float:
+    """Auto-select IoU type: segm when either side has poly, else bbox."""
+    if _object_has_poly(pred_obj) or _object_has_poly(gt_obj):
+        return _segm_iou(pred_obj, gt_obj, width=width, height=height)
+    return _bbox_iou(cast(List[float], pred_obj["bbox"]), cast(List[float], gt_obj["bbox"]))
+
+
+def _greedy_match_by_iou(
+    preds: List[Dict[str, Any]],
+    gts: List[Dict[str, Any]],
+    *,
+    iou_thr: float,
+    width: int,
+    height: int,
+) -> List[Tuple[int, int, float]]:
+    """Greedy 1:1 assignment by IoU with deterministic tie-breaking."""
+    candidates: List[Tuple[float, int, int]] = []
+    thr = float(iou_thr)
+    for pred_idx, pred in enumerate(preds):
+        for gt_idx, gt in enumerate(gts):
+            iou = _object_iou_auto(pred, gt, width=width, height=height)
+            if iou >= thr:
+                candidates.append((float(iou), int(pred_idx), int(gt_idx)))
+    candidates.sort(key=lambda t: (-t[0], t[1], t[2]))
+
+    matched_preds: set[int] = set()
+    matched_gts: set[int] = set()
+    matches: List[Tuple[int, int, float]] = []
+    for iou, pred_idx, gt_idx in candidates:
+        if pred_idx in matched_preds or gt_idx in matched_gts:
+            continue
+        matched_preds.add(pred_idx)
+        matched_gts.add(gt_idx)
+        matches.append((pred_idx, gt_idx, float(iou)))
+    return matches
 
 
 def _build_semantic_desc_mapping(
@@ -295,11 +406,13 @@ class EvalCounters:
 
 @dataclass
 class EvalOptions:
+    metrics: str = "coco"  # coco | f1ish | both
     unknown_policy: str = "semantic"  # bucket | drop | semantic
     strict_parse: bool = False
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")
     iou_thrs: Optional[List[float]] = None  # None -> COCO defaults
+    f1ish_iou_thrs: List[float] = field(default_factory=lambda: [0.3, 0.5])
     output_dir: Path = Path("eval_out")
     overlay: bool = False
     overlay_k: int = 12
@@ -784,6 +897,8 @@ def _prepare_all(
     pred_records: List[Dict[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
+    *,
+    prepare_coco: bool,
 ) -> Tuple[
     List[Sample],
     List[Tuple[int, List[Dict[str, Any]]]],
@@ -856,6 +971,19 @@ def _prepare_all(
             if invalid:
                 invalid_preds[sample.image_id] = invalid
 
+    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
+
+    if not prepare_coco:
+        return (
+            gt_samples,
+            pred_samples,
+            {},
+            {},
+            [],
+            False,
+            per_image,
+        )
+
     include_unknown = _include_unknown_category(options)
     categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
@@ -865,7 +993,6 @@ def _prepare_all(
         pred_samples, categories, options=options, counters=counters
     )
     run_segm = options.use_segm and any("segmentation" in r for r in results)
-    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
     return (
         gt_samples,
         pred_samples,
@@ -882,6 +1009,8 @@ def _prepare_all_separate(
     pred_records: List[Dict[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
+    *,
+    prepare_coco: bool,
 ) -> Tuple[
     List[Sample],
     List[Tuple[int, List[Dict[str, Any]]]],
@@ -921,6 +1050,19 @@ def _prepare_all_separate(
         if invalid:
             invalid_preds[sample.image_id] = invalid
 
+    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
+
+    if not prepare_coco:
+        return (
+            gt_samples,
+            pred_samples,
+            {},
+            {},
+            [],
+            False,
+            per_image,
+        )
+
     include_unknown = _include_unknown_category(options)
     categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
@@ -930,7 +1072,6 @@ def _prepare_all_separate(
         pred_samples, categories, options=options, counters=counters
     )
     run_segm = options.use_segm and any("segmentation" in r for r in results)
-    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
     return (
         gt_samples,
         pred_samples,
@@ -949,6 +1090,7 @@ def evaluate_detection(
     options: EvalOptions,
 ) -> Dict[str, Any]:
     counters = EvalCounters()
+    want_coco = str(options.metrics).lower() in {"coco", "both"}
     if pred_path is None:
         pred_records = load_jsonl(gt_path, counters)
         (
@@ -959,7 +1101,7 @@ def evaluate_detection(
             results,
             run_segm,
             _,
-        ) = _prepare_all(pred_records, options, counters)
+        ) = _prepare_all(pred_records, options, counters, prepare_coco=want_coco)
     else:
         gt_records = load_jsonl(gt_path, counters)
         pred_records = load_jsonl(pred_path, counters)
@@ -971,15 +1113,18 @@ def evaluate_detection(
             results,
             run_segm,
             _,
-        ) = _prepare_all_separate(gt_records, pred_records, options, counters)
+        ) = _prepare_all_separate(gt_records, pred_records, options, counters, prepare_coco=want_coco)
 
-    coco_gt = COCO()
-    coco_gt.dataset = copy.deepcopy(coco_gt_dict)
-    coco_gt.createIndex()
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
+    if want_coco:
+        coco_gt = COCO()
+        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
 
-    metrics, per_class = _run_coco_eval(
-        coco_gt, results, options=options, run_segm=run_segm
-    )
+        metrics, per_class = _run_coco_eval(
+            coco_gt, results, options=options, run_segm=run_segm
+        )
 
     summary = {
         "metrics": metrics,
@@ -993,18 +1138,20 @@ def evaluate_detection(
 def write_outputs(
     out_dir: Path,
     *,
-    coco_gt: Dict[str, Any],
-    coco_preds: List[Dict[str, Any]],
+    coco_gt: Dict[str, Any] | None,
+    coco_preds: List[Dict[str, Any]] | None,
     summary: Dict[str, Any],
     per_image: List[Dict[str, Any]],
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "coco_gt.json").write_text(
-        json.dumps(coco_gt, ensure_ascii=False), encoding="utf-8"
-    )
-    (out_dir / "coco_preds.json").write_text(
-        json.dumps(coco_preds, ensure_ascii=False), encoding="utf-8"
-    )
+    if coco_gt is not None:
+        (out_dir / "coco_gt.json").write_text(
+            json.dumps(coco_gt, ensure_ascii=False), encoding="utf-8"
+        )
+    if coco_preds is not None:
+        (out_dir / "coco_preds.json").write_text(
+            json.dumps(coco_preds, ensure_ascii=False), encoding="utf-8"
+        )
     metrics_payload = {
         "metrics": summary.get("metrics", {}),
         "counters": summary.get("counters", {}),
@@ -1012,11 +1159,12 @@ def write_outputs(
     (out_dir / "metrics.json").write_text(
         json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    (out_dir / "per_class.csv").write_text(
-        "category,AP\n"
-        + "\n".join(f"{k},{v}" for k, v in summary.get("per_class", {}).items()),
-        encoding="utf-8",
-    )
+    if coco_gt is not None and coco_preds is not None:
+        (out_dir / "per_class.csv").write_text(
+            "category,AP\n"
+            + "\n".join(f"{k},{v}" for k, v in summary.get("per_class", {}).items()),
+            encoding="utf-8",
+        )
     (out_dir / "per_image.json").write_text(
         json.dumps(per_image, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -1050,6 +1198,9 @@ def evaluate_and_save(
     options: EvalOptions,
 ) -> Dict[str, Any]:
     counters = EvalCounters()
+    metrics_mode = str(options.metrics).lower()
+    want_coco = metrics_mode in {"coco", "both"}
+    want_f1ish = metrics_mode in {"f1ish", "both"}
     pred_records = load_jsonl(pred_path, counters)
     (
         gt_samples,
@@ -1059,15 +1210,19 @@ def evaluate_and_save(
         results,
         run_segm,
         per_image,
-    ) = _prepare_all(pred_records, options, counters)
+    ) = _prepare_all(pred_records, options, counters, prepare_coco=want_coco)
 
-    coco_gt = COCO()
-    coco_gt.dataset = copy.deepcopy(coco_gt_dict)
-    coco_gt.createIndex()
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
 
-    metrics, per_class = _run_coco_eval(
-        coco_gt, results, options=options, run_segm=run_segm
-    )
+    if want_coco:
+        coco_gt = COCO()
+        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
+
+        metrics, per_class = _run_coco_eval(
+            coco_gt, results, options=options, run_segm=run_segm
+        )
 
     summary = {
         "metrics": metrics,
@@ -1076,10 +1231,19 @@ def evaluate_and_save(
         "categories": categories,
     }
 
+    if want_f1ish:
+        f1ish_summary = evaluate_f1ish(
+            gt_samples,
+            pred_samples,
+            per_image,
+            options=options,
+        )
+        summary["metrics"].update(f1ish_summary["metrics"])
+
     write_outputs(
         options.output_dir,
-        coco_gt=coco_gt_dict,
-        coco_preds=results,
+        coco_gt=coco_gt_dict if want_coco else None,
+        coco_preds=results if want_coco else None,
         summary=summary,
         per_image=per_image,
     )
@@ -1097,3 +1261,299 @@ def evaluate_and_save(
         )
 
     return summary
+
+
+def _f1ish_filter_gt_objects(sample: Sample) -> List[Dict[str, Any]]:
+    # Line geometries are excluded from F1-ish matching/metrics.
+    return [obj for obj in sample.objects if obj.get("type") != "line"]
+
+
+def _compute_prf_from_counts(tp: int, fp: int, fn: int) -> Tuple[float, float, float]:
+    tp_f = float(tp)
+    fp_f = float(fp)
+    fn_f = float(fn)
+    p = tp_f / (tp_f + fp_f) if (tp_f + fp_f) > 0.0 else 1.0
+    r = tp_f / (tp_f + fn_f) if (tp_f + fn_f) > 0.0 else 1.0
+    f1 = (2.0 * p * r / (p + r)) if (p + r) > 0.0 else 0.0
+    return float(p), float(r), float(f1)
+
+
+def _select_primary_f1ish_iou_thr(iou_thrs: List[float]) -> float:
+    thrs = [float(t) for t in (iou_thrs or [])]
+    if not thrs:
+        return 0.5
+    if any(abs(t - 0.5) < 1e-9 for t in thrs):
+        return 0.5
+    return max(thrs)
+
+
+def _try_build_semantic_embeddings(
+    unique_norm_texts: List[str],
+    *,
+    options: EvalOptions,
+) -> Dict[str, np.ndarray]:
+    if not unique_norm_texts:
+        return {}
+    model_name = str(options.semantic_model or "").strip()
+    if not model_name:
+        return {}
+    device = options.semantic_device or "auto"
+    bs = max(1, int(options.semantic_batch_size))
+
+    try:
+        vecs = _encode_texts_mean_pool(
+            unique_norm_texts, model_name=model_name, device=device, batch_size=bs
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "F1-ish semantic embeddings unavailable (model='%s'): %s", model_name, exc
+        )
+        return {}
+
+    if vecs.size == 0 or vecs.shape[0] != len(unique_norm_texts):
+        return {}
+
+    out: Dict[str, np.ndarray] = {}
+    for i, text in enumerate(unique_norm_texts):
+        out[text] = vecs[i]
+    return out
+
+
+def evaluate_f1ish(
+    gt_samples: List[Sample],
+    pred_samples: List[Tuple[int, List[Dict[str, Any]]]],
+    per_image: List[Dict[str, Any]],
+    *,
+    options: EvalOptions,
+) -> Dict[str, Any]:
+    """Compute F1-ish (set matching) metrics and emit match diagnostics."""
+    iou_thrs_in = options.f1ish_iou_thrs or [0.3, 0.5]
+    iou_thrs = sorted({float(t) for t in iou_thrs_in})
+    primary_thr = _select_primary_f1ish_iou_thr(iou_thrs)
+
+    pred_lookup = {img_id: preds for img_id, preds in pred_samples}
+    per_image_lookup = {row.get("image_id"): row for row in per_image}
+
+    matches_by_thr: Dict[str, Dict[int, List[Tuple[int, int, float]]]] = {}
+    unique_norm_texts: set[str] = set()
+
+    for thr in iou_thrs:
+        thr_key = _fmt_iou_thr(thr)
+        matches_by_thr[thr_key] = {}
+
+    # Pass 1: location matching (collect pairs + texts to embed)
+    for sample in gt_samples:
+        preds = pred_lookup.get(sample.image_id, [])
+        gts = _f1ish_filter_gt_objects(sample)
+        width = int(sample.width)
+        height = int(sample.height)
+
+        for thr in iou_thrs:
+            thr_key = _fmt_iou_thr(thr)
+            matches = _greedy_match_by_iou(
+                preds, gts, iou_thr=thr, width=width, height=height
+            )
+            matches_by_thr[thr_key][sample.image_id] = matches
+            for pred_idx, gt_idx, _iou in matches:
+                pred_desc = _normalize_desc(str(preds[pred_idx].get("desc", "")))
+                gt_desc = _normalize_desc(str(gts[gt_idx].get("desc", "")))
+                unique_norm_texts.add(pred_desc)
+                unique_norm_texts.add(gt_desc)
+
+    # Build semantic embedding cache once (if available)
+    norm_texts_sorted = sorted(t for t in unique_norm_texts if t is not None)
+    emb = _try_build_semantic_embeddings(norm_texts_sorted, options=options)
+    sem_thr = float(options.semantic_threshold)
+    use_embeddings = bool(emb)
+
+    # Accumulators
+    metrics_out: Dict[str, float] = {}
+
+    for thr in iou_thrs:
+        thr_key = _fmt_iou_thr(thr)
+
+        sum_tp = 0
+        sum_fp = 0
+        sum_fn = 0
+        sum_sem_ok = 0
+        sum_sem_bad = 0
+
+        sum_tp_full = 0
+        sum_fp_full = 0
+        sum_fn_full = 0
+
+        precisions: List[float] = []
+        recalls: List[float] = []
+        f1s: List[float] = []
+
+        precisions_full: List[float] = []
+        recalls_full: List[float] = []
+        f1s_full: List[float] = []
+
+        matches_records: List[Dict[str, Any]] = []
+
+        for sample in gt_samples:
+            preds = pred_lookup.get(sample.image_id, [])
+            gts = _f1ish_filter_gt_objects(sample)
+            matches = matches_by_thr[thr_key].get(sample.image_id, [])
+
+            matched_pred = {pred_idx for pred_idx, _, _ in matches}
+            matched_gt = {gt_idx for _, gt_idx, _ in matches}
+
+            tp_loc = len(matches)
+            fp_loc = max(0, len(preds) - len(matched_pred))
+            fn_loc = max(0, len(gts) - len(matched_gt))
+
+            sem_ok = 0
+            sem_bad = 0
+            match_rows: List[Dict[str, Any]] = []
+            for pred_idx, gt_idx, iou in matches:
+                pred_desc_raw = str(preds[pred_idx].get("desc", ""))
+                gt_desc_raw = str(gts[gt_idx].get("desc", ""))
+                pred_desc = _normalize_desc(pred_desc_raw)
+                gt_desc = _normalize_desc(gt_desc_raw)
+
+                exact_ok = bool(pred_desc) and (pred_desc == gt_desc)
+                sim: float | None = None
+                if use_embeddings and pred_desc in emb and gt_desc in emb:
+                    sim = float(emb[pred_desc] @ emb[gt_desc])
+                ok = bool(exact_ok or (sim is not None and sim >= sem_thr))
+                if ok:
+                    sem_ok += 1
+                else:
+                    sem_bad += 1
+
+                match_rows.append(
+                    {
+                        "pred_idx": int(pred_idx),
+                        "gt_idx": int(gt_idx),
+                        "iou": float(iou),
+                        "pred_desc": pred_desc_raw,
+                        "gt_desc": gt_desc_raw,
+                        "sem_sim": float(sim) if sim is not None else None,
+                        "sem_ok": bool(ok),
+                        "pred_bbox": preds[pred_idx].get("bbox"),
+                        "gt_bbox": gts[gt_idx].get("bbox"),
+                        "pred_type": preds[pred_idx].get("type"),
+                        "gt_type": gts[gt_idx].get("type"),
+                    }
+                )
+
+            sum_tp += tp_loc
+            sum_fp += fp_loc
+            sum_fn += fn_loc
+            sum_sem_ok += sem_ok
+            sum_sem_bad += sem_bad
+
+            tp_full = sem_ok
+            fp_full = fp_loc + sem_bad
+            fn_full = fn_loc + sem_bad
+
+            sum_tp_full += tp_full
+            sum_fp_full += fp_full
+            sum_fn_full += fn_full
+
+            p_i, r_i, f1_i = _compute_prf_from_counts(tp_loc, fp_loc, fn_loc)
+            precisions.append(p_i)
+            recalls.append(r_i)
+            f1s.append(f1_i)
+
+            p_f, r_f, f1_f = _compute_prf_from_counts(tp_full, fp_full, fn_full)
+            precisions_full.append(p_f)
+            recalls_full.append(r_f)
+            f1s_full.append(f1_f)
+
+            image_row = per_image_lookup.get(sample.image_id)
+            if image_row is not None:
+                f1ish_field = image_row.setdefault("f1ish", {})
+                f1ish_field[thr_key] = {
+                    "tp_loc": int(tp_loc),
+                    "fp_loc": int(fp_loc),
+                    "fn_loc": int(fn_loc),
+                    "matched_sem_ok": int(sem_ok),
+                    "matched_sem_bad": int(sem_bad),
+                    "sem_acc_on_matched": float(sem_ok / tp_loc) if tp_loc > 0 else 1.0,
+                    "tp_full": int(tp_full),
+                    "fp_full": int(fp_full),
+                    "fn_full": int(fn_full),
+                }
+
+            is_primary = abs(float(thr) - float(primary_thr)) < 1e-9
+            if is_primary or len(iou_thrs) > 1:
+                matches_records.append(
+                    {
+                        "image_id": int(sample.image_id),
+                        "file_name": sample.file_name,
+                        "width": int(sample.width),
+                        "height": int(sample.height),
+                        "iou_thr": float(thr),
+                        "gt_count": int(len(gts)),
+                        "pred_count": int(len(preds)),
+                        "tp_loc": int(tp_loc),
+                        "fp_loc": int(fp_loc),
+                        "fn_loc": int(fn_loc),
+                        "matches": match_rows,
+                        "unmatched_pred_indices": [
+                            int(i) for i in range(len(preds)) if i not in matched_pred
+                        ],
+                        "unmatched_gt_indices": [
+                            int(i) for i in range(len(gts)) if i not in matched_gt
+                        ],
+                    }
+                )
+
+        p_micro, r_micro, f1_micro = _compute_prf_from_counts(sum_tp, sum_fp, sum_fn)
+        p_macro = float(np.mean(precisions)) if precisions else 0.0
+        r_macro = float(np.mean(recalls)) if recalls else 0.0
+        f1_macro = float(np.mean(f1s)) if f1s else 0.0
+
+        p_full_micro, r_full_micro, f1_full_micro = _compute_prf_from_counts(
+            sum_tp_full, sum_fp_full, sum_fn_full
+        )
+        p_full_macro = float(np.mean(precisions_full)) if precisions_full else 0.0
+        r_full_macro = float(np.mean(recalls_full)) if recalls_full else 0.0
+        f1_full_macro = float(np.mean(f1s_full)) if f1s_full else 0.0
+
+        prefix = f"f1ish@{thr_key}_"
+        metrics_out.update(
+            {
+                f"{prefix}tp_loc": float(sum_tp),
+                f"{prefix}fp_loc": float(sum_fp),
+                f"{prefix}fn_loc": float(sum_fn),
+                f"{prefix}precision_loc_micro": float(p_micro),
+                f"{prefix}recall_loc_micro": float(r_micro),
+                f"{prefix}f1_loc_micro": float(f1_micro),
+                f"{prefix}precision_loc_macro": float(p_macro),
+                f"{prefix}recall_loc_macro": float(r_macro),
+                f"{prefix}f1_loc_macro": float(f1_macro),
+                f"{prefix}matched_sem_ok": float(sum_sem_ok),
+                f"{prefix}matched_sem_bad": float(sum_sem_bad),
+                f"{prefix}sem_acc_on_matched": float(sum_sem_ok / sum_tp) if sum_tp > 0 else 1.0,
+                f"{prefix}tp_full": float(sum_tp_full),
+                f"{prefix}fp_full": float(sum_fp_full),
+                f"{prefix}fn_full": float(sum_fn_full),
+                f"{prefix}precision_full_micro": float(p_full_micro),
+                f"{prefix}recall_full_micro": float(r_full_micro),
+                f"{prefix}f1_full_micro": float(f1_full_micro),
+                f"{prefix}precision_full_macro": float(p_full_macro),
+                f"{prefix}recall_full_macro": float(r_full_macro),
+                f"{prefix}f1_full_macro": float(f1_full_macro),
+            }
+        )
+
+        # Emit matches artifacts
+        out_dir = options.output_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        is_primary = abs(float(thr) - float(primary_thr)) < 1e-9
+        if is_primary:
+            matches_path = out_dir / "matches.jsonl"
+        else:
+            matches_path = out_dir / f"matches@{thr_key}.jsonl"
+        if is_primary or len(iou_thrs) > 1:
+            with matches_path.open("w", encoding="utf-8") as f:
+                for row in matches_records:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    return {
+        "metrics": metrics_out,
+    }

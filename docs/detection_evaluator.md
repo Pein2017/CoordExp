@@ -1,6 +1,6 @@
 # Detection Evaluator (CoordExp)
 
-Minimal offline evaluator to compute COCO-style metrics from CoordExp JSONL.
+Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching metric from CoordExp JSONL.
 
 ## Inputs
 - `pred_jsonl`: Pixel-space predictions produced by `scripts/run_infer.py` (unified engine); **must include inline `gt`** per line.
@@ -13,6 +13,7 @@ Minimal offline evaluator to compute COCO-style metrics from CoordExp JSONL.
 - Categories use exact desc strings; unknowns bucket to `unknown` by default (configurable to drop).
 - Scores are fixed at 1.0 (greedy decoding outputs have no reliable confidence); any provided `score` fields are ignored.
 - COCOeval runs for bbox and segm (when polygons exist). TODO: polygon GIoU hook.
+- Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
 - GPU is required (CUDA must be available) for the CLI and the training callback.
 
 ## CLI
@@ -20,10 +21,21 @@ Minimal offline evaluator to compute COCO-style metrics from CoordExp JSONL.
 python scripts/evaluate_detection.py \
   --pred_jsonl <path> \
   --out_dir eval_out \
-  [--unknown-policy bucket|drop] [--strict-parse] [--no-segm] \
-  [--iou-thrs 0.5 0.75] [--overlay --overlay-k 12]
+  [--metrics coco|f1ish|both] \
+  [--unknown-policy bucket|drop|semantic] \
+  [--semantic-model <hf-id>] [--semantic-threshold 0.6] [--semantic-device auto] \
+  [--f1ish-iou-thrs 0.3 0.5] \
+  [--strict-parse] [--no-segm] [--iou-thrs 0.5 0.75] \
+  [--overlay --overlay-k 12]
 ```
-Artifacts: `metrics.json` (metrics + counters), `per_class.csv`, `per_image.json`, `coco_gt.json`, `coco_preds.json`, optional `overlays/` when enabled.
+Artifacts (always): `metrics.json` (metrics + counters), `per_image.json`, optional `overlays/` when enabled.
+
+Artifacts (when COCO is enabled via `--metrics coco|both`): `per_class.csv`, `coco_gt.json`, `coco_preds.json`.
+
+Artifacts (when F1-ish is enabled via `--metrics f1ish|both`):
+- `matches.jsonl` for the primary IoU threshold (0.5 if present in `--f1ish-iou-thrs`, else the max threshold).
+- Optional `matches@<thr>.jsonl` for additional IoU thresholds (formatted with two decimals, e.g. `matches@0.30.jsonl`).
+- `per_image.json` gains a stable `f1ish` field keyed by IoU threshold strings (e.g. `"0.50"`), containing per-image TP/FP/FN and semantic-on-matched counts.
 
 ## Staged workflow
 1) Run unified inference to get `pred.jsonl` (pixel-space, with inline gt):
