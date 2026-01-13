@@ -211,8 +211,13 @@ class InferenceEngine:
         )
         if self.gen_cfg.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
-        if self.generator is not None:
-            gen_kwargs["generator"] = self.generator
+        # NOTE: Do not pass `generator=` into `model.generate()`.
+        #
+        # Some upstream / remote-code model implementations (incl. some Qwen3-VL
+        # checkpoints) treat unknown kwargs as `model_kwargs` and raise:
+        #   "The following `model_kwargs` are not used by the model: ['generator']"
+        #
+        # We still seed torch/CUDA globally in `_seed()` for deterministic sampling.
 
         with torch.inference_mode():
             gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
