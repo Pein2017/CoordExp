@@ -23,13 +23,29 @@ REPPEN="${REPPEN:-1.05}"
 SEED="${SEED:-}"
 
 # Evaluation defaults
-UNKNOWN_POLICY="${UNKNOWN_POLICY:-bucket}"    # bucket | drop
+UNKNOWN_POLICY="${UNKNOWN_POLICY:-semantic}"  # bucket | drop | semantic
 STRICT_PARSE="${STRICT_PARSE:-0}"             # 1 to enable --strict-parse
 USE_SEGM="${USE_SEGM:-1}"                     # 0 to disable segmentation metrics
 IOU_THRS="${IOU_THRS:-}"
 OVERLAY="${OVERLAY:-1}"                       # 1 to enable overlay rendering
 OVERLAY_K="${OVERLAY_K:-12}"
 NUM_WORKERS="${NUM_WORKERS:-0}"
+
+# Optional semantic desc matching (only used when UNKNOWN_POLICY=semantic)
+SEMANTIC_MODEL="${SEMANTIC_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+SEMANTIC_THRESHOLD="${SEMANTIC_THRESHOLD:-0.6}"
+SEMANTIC_FALLBACK="${SEMANTIC_FALLBACK:-bucket}"  # bucket | drop
+SEMANTIC_DEVICE="${SEMANTIC_DEVICE:-}"            # auto|cpu|cuda[:N]
+SEMANTIC_BATCH_SIZE="${SEMANTIC_BATCH_SIZE:-64}"
+
+if [[ -z "$SEMANTIC_DEVICE" ]]; then
+  # Prefer the same device as inference when it's a CUDA device; otherwise auto.
+  if [[ "${DEVICE:-}" == cuda* ]]; then
+    SEMANTIC_DEVICE="$DEVICE"
+  else
+    SEMANTIC_DEVICE="auto"
+  fi
+fi
 
 PRED_JSONL="$OUTPUT_BASE_DIR/pred.jsonl"
 SUMMARY_JSON="$OUTPUT_BASE_DIR/summary.json"
@@ -98,6 +114,16 @@ CMD_EVAL=(
   --num-workers "$NUM_WORKERS"
 )
 
+if [[ "$UNKNOWN_POLICY" == "semantic" ]]; then
+  CMD_EVAL+=(
+    --semantic-model "$SEMANTIC_MODEL"
+    --semantic-threshold "$SEMANTIC_THRESHOLD"
+    --semantic-fallback "$SEMANTIC_FALLBACK"
+    --semantic-device "$SEMANTIC_DEVICE"
+    --semantic-batch-size "$SEMANTIC_BATCH_SIZE"
+  )
+fi
+
 if [[ "$STRICT_PARSE" =~ ^(1|true|yes)$ ]]; then
   CMD_EVAL+=(--strict-parse)
 fi
@@ -120,4 +146,3 @@ echo
 PYTHONPATH="$REPO_ROOT" "${CMD_EVAL[@]}"
 
 echo "Finished evaluation — metrics saved in $EVAL_OUT_DIR"
-

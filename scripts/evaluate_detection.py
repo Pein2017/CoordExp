@@ -30,9 +30,41 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--unknown-policy",
+        choices=["bucket", "drop", "semantic"],
+        default="semantic",
+        help=(
+            "How to handle predicted desc that are not an exact match to any GT desc: "
+            "'bucket' -> map to 'unknown'; 'drop' -> discard; "
+            "'semantic' -> map to nearest GT desc by embedding similarity."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-model",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="HF model id used for semantic desc matching (only for --unknown-policy semantic).",
+    )
+    parser.add_argument(
+        "--semantic-threshold",
+        type=float,
+        default=0.6,
+        help="Cosine similarity threshold for semantic mapping (only for --unknown-policy semantic).",
+    )
+    parser.add_argument(
+        "--semantic-fallback",
         choices=["bucket", "drop"],
         default="bucket",
-        help="Bucket unknown desc into 'unknown' (default) or drop them.",
+        help="Fallback for semantic mapping misses (only for --unknown-policy semantic).",
+    )
+    parser.add_argument(
+        "--semantic-device",
+        default="auto",
+        help="Device for semantic matcher: auto|cpu|cuda[:N] (only for --unknown-policy semantic).",
+    )
+    parser.add_argument(
+        "--semantic-batch-size",
+        type=int,
+        default=64,
+        help="Batch size for semantic embedding encoding (only for --unknown-policy semantic).",
     )
     parser.add_argument(
         "--strict-parse",
@@ -82,6 +114,11 @@ def main() -> None:
         overlay=bool(args.overlay),
         overlay_k=int(args.overlay_k),
         num_workers=int(args.num_workers),
+        semantic_model=str(args.semantic_model),
+        semantic_threshold=float(args.semantic_threshold),
+        semantic_fallback=str(args.semantic_fallback),
+        semantic_device=str(args.semantic_device),
+        semantic_batch_size=int(args.semantic_batch_size),
     )
 
     summary = evaluate_and_save(args.pred_jsonl, options=options)

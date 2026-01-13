@@ -13,11 +13,12 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -35,6 +36,182 @@ from src.eval.parsing import GEOM_KEYS
 from src.utils import get_logger
 
 logger = get_logger(__name__)
+
+_DEFAULT_SEMANTIC_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def _include_unknown_category(options: "EvalOptions") -> bool:
+    if options.unknown_policy == "bucket":
+        return True
+    if options.unknown_policy == "semantic" and options.semantic_fallback == "bucket":
+        return True
+    return False
+
+
+def _normalize_desc(desc: str) -> str:
+    """Normalize LVIS-like category strings for semantic matching."""
+    s = str(desc or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("_", " ").replace("/", " ")
+    s = s.replace("(", " ").replace(")", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _resolve_semantic_device(device: str) -> str:
+    d = (device or "auto").strip().lower()
+    if d == "auto":
+        try:
+            import torch
+
+            return "cuda:0" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            return "cpu"
+    return d
+
+
+def _encode_texts_mean_pool(
+    texts: List[str],
+    *,
+    model_name: str,
+    device: str,
+    batch_size: int,
+) -> "np.ndarray":
+    """Encode texts into L2-normalized embeddings using mean pooling."""
+    import torch
+    import torch.nn.functional as F
+    from transformers import AutoModel, AutoTokenizer
+
+    resolved_device = _resolve_semantic_device(device)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    model.to(resolved_device)
+    model.eval()
+
+    all_vecs: List["np.ndarray"] = []
+    with torch.inference_mode():
+        for i in range(0, len(texts), max(1, int(batch_size))):
+            batch = texts[i : i + max(1, int(batch_size))]
+            inputs = tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=64,
+                return_tensors="pt",
+            )
+            inputs = {k: v.to(resolved_device) for k, v in inputs.items()}
+            out = model(**inputs)
+            last = out.last_hidden_state  # [B, T, D]
+            mask = inputs.get("attention_mask")
+            if mask is None:
+                pooled = last.mean(dim=1)
+            else:
+                mask_f = mask.unsqueeze(-1).to(last.dtype)
+                pooled = (last * mask_f).sum(dim=1) / mask_f.sum(dim=1).clamp(min=1.0)
+            pooled = F.normalize(pooled, p=2, dim=1)
+            all_vecs.append(pooled.detach().cpu().numpy())
+    return np.concatenate(all_vecs, axis=0) if all_vecs else np.zeros((0, 0))
+
+
+def _build_semantic_desc_mapping(
+    pred_samples: List[Tuple[int, List[Dict[str, Any]]]],
+    categories: Dict[str, int],
+    *,
+    options: "EvalOptions",
+    counters: "EvalCounters",
+) -> Dict[str, Tuple[Optional[str], float, int]]:
+    """Return mapping: pred_desc -> (best_gt_desc|None, score, count)."""
+    from collections import Counter
+
+    unknown_counts: Counter[str] = Counter()
+    for _, preds in pred_samples:
+        for pred in preds:
+            desc = (pred.get("desc") or "").strip()
+            if not desc:
+                continue
+            if desc not in categories:
+                unknown_counts[desc] += 1
+
+    if not unknown_counts:
+        return {}
+
+    # Candidates are GT category strings (exclude synthetic 'unknown').
+    candidate_names = [k for k in categories.keys() if k and k != "unknown"]
+    if not candidate_names:
+        return {}
+
+    pred_names = list(unknown_counts.keys())
+    pred_norm = [_normalize_desc(s) for s in pred_names]
+    cand_norm = [_normalize_desc(s) for s in candidate_names]
+
+    model_name = options.semantic_model or _DEFAULT_SEMANTIC_MODEL
+    device = options.semantic_device or "auto"
+    bs = max(1, int(options.semantic_batch_size))
+
+    try:
+        pred_emb = _encode_texts_mean_pool(pred_norm, model_name=model_name, device=device, batch_size=bs)
+        cand_emb = _encode_texts_mean_pool(cand_norm, model_name=model_name, device=device, batch_size=bs)
+    except Exception as exc:  # noqa: BLE001
+        # Semantic matching is an explicit evaluation policy. If we can't load the
+        # embedding model, fail loudly so the run doesn't silently degrade into
+        # `unknown` bucketing.
+        raise RuntimeError(
+            "Semantic desc matching requested, but failed to load the embedding model "
+            f"'{model_name}'. Ensure the model is available in the local HF cache or "
+            "that you have network/proxy access for download. "
+            "If you want to disable semantic matching, run with "
+            "`--unknown-policy bucket` or `--unknown-policy drop`."
+        ) from exc
+
+    if pred_emb.size == 0 or cand_emb.size == 0:
+        return {}
+
+    # Cosine similarity via dot product (embeddings already normalized).
+    sim = pred_emb @ cand_emb.T  # [P, C]
+    best_idx = cast("np.ndarray", np.argmax(sim, axis=1))
+    best_score = cast("np.ndarray", np.max(sim, axis=1))
+
+    mapping: Dict[str, Tuple[Optional[str], float, int]] = {}
+    for i, pred_desc in enumerate(pred_names):
+        j = int(best_idx[i])
+        score = float(best_score[i])
+        best_name = candidate_names[j] if 0 <= j < len(candidate_names) else None
+        mapping[pred_desc] = (best_name, score, int(unknown_counts[pred_desc]))
+
+    # Write a small report for inspection.
+    try:
+        options.output_dir.mkdir(parents=True, exist_ok=True)
+        report = {
+            "semantic_model": model_name,
+            "semantic_threshold": float(options.semantic_threshold),
+            "semantic_fallback": str(options.semantic_fallback),
+            "unique_unknown_desc": len(pred_names),
+            "unknown_total_preds": int(sum(unknown_counts.values())),
+            "rows": [
+                {
+                    "pred_desc": d,
+                    "count": c,
+                    "best_gt_desc": best,
+                    "score": s,
+                    "mapped": bool(best is not None and s >= float(options.semantic_threshold)),
+                }
+                for d, (best, s, c) in sorted(
+                    mapping.items(),
+                    key=lambda kv: (-(kv[1][2]), -(kv[1][1])),
+                )[: min(200, len(mapping))]
+            ],
+        }
+        (options.output_dir / "semantic_desc_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001
+        counters.semantic_report_failed += 1
+        logger.warning("Failed to write semantic report: %s", exc)
+
+    return mapping
+
 
 
 def load_jsonl(
@@ -108,6 +285,9 @@ class EvalCounters:
     empty_pred: int = 0
     unknown_desc: int = 0
     unknown_dropped: int = 0
+    semantic_mapped: int = 0
+    semantic_unmapped: int = 0
+    semantic_report_failed: int = 0
 
     def to_dict(self) -> Dict[str, int]:
         return self.__dict__.copy()
@@ -115,7 +295,7 @@ class EvalCounters:
 
 @dataclass
 class EvalOptions:
-    unknown_policy: str = "bucket"  # bucket | drop
+    unknown_policy: str = "semantic"  # bucket | drop | semantic
     strict_parse: bool = False
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")
@@ -125,6 +305,11 @@ class EvalOptions:
     overlay_k: int = 12
     open_vocab_recall: bool = False  # class-agnostic recall
     num_workers: int = 0  # parallelize pred parsing/denorm on CPU
+    semantic_model: str = _DEFAULT_SEMANTIC_MODEL
+    semantic_threshold: float = 0.6
+    semantic_fallback: str = "bucket"  # bucket | drop
+    semantic_device: str = "auto"
+    semantic_batch_size: int = 64
 
 
 @dataclass
@@ -399,20 +584,45 @@ def _to_coco_preds(
     counters: EvalCounters,
 ) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
-    include_unknown = options.unknown_policy == "bucket"
+    include_unknown = _include_unknown_category(options)
     unknown_id = categories.get("unknown")
+
+    semantic_map: Dict[str, Tuple[Optional[str], float, int]] = {}
+    if options.unknown_policy == "semantic":
+        semantic_map = _build_semantic_desc_mapping(
+            pred_samples, categories, options=options, counters=counters
+        )
 
     for image_id, preds in pred_samples:
         for pred in preds:
             desc = (pred.get("desc") or "").strip()
             cat_id = categories.get(desc)
             if cat_id is None:
-                if include_unknown and unknown_id is not None:
-                    cat_id = unknown_id
-                    counters.unknown_desc += 1
+                if options.unknown_policy == "semantic" and semantic_map:
+                    best_name, score, _ = semantic_map.get(desc, (None, 0.0, 0))
+                    if best_name is not None and score >= float(options.semantic_threshold):
+                        cat_id = categories.get(best_name)
+                        if cat_id is not None:
+                            counters.semantic_mapped += 1
+                    if cat_id is None:
+                        counters.semantic_unmapped += 1
+                        if options.semantic_fallback == "drop":
+                            counters.unknown_dropped += 1
+                            continue
+                        # fallback == bucket
+                        if include_unknown and unknown_id is not None:
+                            cat_id = unknown_id
+                            counters.unknown_desc += 1
+                        else:
+                            counters.unknown_dropped += 1
+                            continue
                 else:
-                    counters.unknown_dropped += 1
-                    continue
+                    if include_unknown and unknown_id is not None:
+                        cat_id = unknown_id
+                        counters.unknown_desc += 1
+                    else:
+                        counters.unknown_dropped += 1
+                        continue
             x1, y1, x2, y2 = pred["bbox"]
             w = x2 - x1
             h = y2 - y1
@@ -646,7 +856,7 @@ def _prepare_all(
             if invalid:
                 invalid_preds[sample.image_id] = invalid
 
-    include_unknown = options.unknown_policy == "bucket"
+    include_unknown = _include_unknown_category(options)
     categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
@@ -711,7 +921,7 @@ def _prepare_all_separate(
         if invalid:
             invalid_preds[sample.image_id] = invalid
 
-    include_unknown = options.unknown_policy == "bucket"
+    include_unknown = _include_unknown_category(options)
     categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
