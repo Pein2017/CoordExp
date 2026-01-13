@@ -23,7 +23,7 @@ training:
   output_dir: ./output/12-3/coord
   run_name: epoch_30-dlora-lrs_4_2_8-sft_base
   num_train_epochs: 30
-  per_device_train_batch_size: 2
+  per_device_train_batch_size: 1
   per_device_eval_batch_size: 4
   effective_batch_size: 32
   optimizer: multimodal

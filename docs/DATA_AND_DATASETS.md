@@ -318,6 +318,7 @@ custom:
     enabled: true
     l1_weight: 1.0
     giou_weight: 1.0
+    poly_mask_weight: 1.0  # defaults to giou_weight when omitted
     coord_ce_weight: 1.0
     non_coord_ce_weight: 1.0
     top_k: 0.1
@@ -325,9 +326,10 @@ custom:
 ```
 
 Notes:
-- L1 is per coord token in normalized [0,1] space; GIoU applies to `bbox_2d`; `poly` uses soft mask-IoU loss; `line` uses L1 only.
-- Coord vs non-coord CE weights are applied via `loss_scale` when enabled.
+- Aux losses are token-averaged over supervised tokens (stable under packing): L1 uses per-coord sums in normalized [0,1] space; GIoU applies to `bbox_2d`; `poly` uses soft mask-IoU loss; `line` uses L1 only.
+- Coord vs non-coord CE weights are applied via ms-swift `loss_scale` when weights differ from 1.0. This uses the per-token CE path (Liger kernel CE is not used in this mode).
 - Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_ce` (mean CE on coord tokens), `desc_ce` (mean CE on non-coord tokens), `l1`, `giou`, `poly_mask`, `poly_smooth`.
+- Stability note: coord-aux losses should run in fp32 (expectation decode + L1/GIoU/IoU accumulators). bf16/bf16-softmax on coord logits can produce NaNs after the first optimizer step (symptom: eval_loss becomes NaN and token acc drops to 0). The current implementation promotes coord decode to fp32 to avoid this.
 
 ---
 

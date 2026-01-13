@@ -1,32 +1,33 @@
 extends: sft_base.yaml
 
 # Override base length for packing; merged vision tokens included in template max length.
-global_max_length: 2048
+global_max_length: 16000
 
 model:
   model: output/12-4/coord_offset_merged_ck777
 
 training:
   # Override base training settings
+  logging_steps: 10
   weight_decay: 0.0001
-  learning_rate: 8.0e-5
-  vit_lr: 2.0e-5
-  aligner_lr: 5.0e-5
-  num_train_epochs: 3
+  learning_rate: 8.0e-4
+  vit_lr: 2.0e-4
+  aligner_lr: 5.0e-4
+  num_train_epochs: 2
   optimizer: multimodal  # coord_loss does not require coord_offset optimizer
-  output_dir: ./output/12-21/coord_loss_breakdown
-  run_name: epoch_3-dlora-lrs_8_2_5-coord_loss-breakdown-packing-eff_bs_32-max_length_16000
-  logging_dir: ./tb/12-21/coord_loss_breakdown
+  output_dir: ./output/12-24/coord_loss
+  run_name: epoch_2-dlora-lrs_80_20_50-coord_loss-eff_bs_32-max_length_16000-packing_buffer_512
+  logging_dir: ./tb/12-24/coord_loss
   save_strategy: steps
-  eval_steps: 50
-  save_delay_steps: 1000
+  eval_steps: 40
+  save_delay_steps: 500
   # Packing yields one packed sample per device; effective_batch_size=128 with world_size=4
   # and per-device=1 targets ~117 base samples/update with avg ~9.7 samples per pack (post-merge).
   per_device_train_batch_size: 1
-  per_device_eval_batch_size: 2
+  per_device_eval_batch_size: 1
   effective_batch_size: 32
   # Packing knobs (mirrors tests/packed_tiny)
-  packing_buffer: 256
+  packing_buffer: 512
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
   eval_packing: true
@@ -38,11 +39,46 @@ custom:
   val_sample_with_replacement: false
   token_type_metrics:
     enabled: true
+  # Coordinate expectation diagnostics (localization-oriented; independent of top-k token hits).
+  coord_expectation_metrics:
+    enabled: true
+    temperature: 1.0
+    # Two tolerances are kept (smallest + largest) to avoid redundant logs.
+    tolerances: [2, 8]
+    # Sub-sample coord positions per step for speed under long packing.
+    max_positions: 4096
+  # Log + dump offending samples when loss spikes / logits go non-finite.
+  # Dumps into `<output_dir>/<run_name>/instability_dumps/`.
+  instability_monitor:
+    enabled: true
+    max_meta_samples: 16
+    ema_decay: 0.98
+    spike_factor: 8.0
+    abs_loss_threshold: 0.2
+    min_supervised_tokens: 64
+    dump_samples: true
+    early_stop:
+      enabled: true
+      on_reasons: ["zero_token_acc"]
+    guard:
+      enabled: true
+      guard_in_eval: false
+      guard_on_nonfinite: true
+      guard_on_spike: true
+      guard_on_zero_acc: true
+      min_token_acc: 0.01
+      max_abs_logit: 200.0
+  # Mirror logs into output_dir for quick review.
+  log_file:
+    enabled: true
+    filename: train.log
+    capture_stdout: false
+    capture_stderr: false
   coord_loss:
     enabled: true
     # Suggested starting weights; tune per run
-    l1_weight: 1.0
-    giou_weight: 1.0
+    l1_weight: 0.1
+    giou_weight: 0.1
     coord_ce_weight: 1.0
     non_coord_ce_weight: 1.0
     top_k: 0.1

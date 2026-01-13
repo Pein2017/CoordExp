@@ -5,6 +5,7 @@ global_max_length: 20000
 model:
   torch_dtype: bfloat16
   attn_impl: flash_attention_2
+  # attn_impl: sdpa
 
 template:
   template: qwen3_vl

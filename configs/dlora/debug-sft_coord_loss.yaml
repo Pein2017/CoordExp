@@ -1,31 +1,32 @@
 extends: sft_base.yaml
 
-# Match sft_coord_loss packing length; keep smoke run short via max_steps.
-global_max_length: 1024
+# Debug/tiny dataset smoke: keep packed length short for speed and FlashAttention2 stability.
+global_max_length: 2048
 
 model:
   model: output/12-4/coord_offset_merged_ck777
+  attn_impl: flash_attention_2
 
 training:
   # Override base training settings
   weight_decay: 0.0001
-  learning_rate: 8.0e-6
-  vit_lr: 2.0e-6
-  aligner_lr: 4.0e-6
+  learning_rate: 8.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 4.0e-5
   num_train_epochs: 1
-  max_steps: 3
+  # max_steps: 3
   optimizer: multimodal  # coord_loss does not require coord_offset optimizer
-  output_dir: ./output/debug/coord_loss_smoke
-  run_name: debug-sft_coord_loss-smoke
-  logging_dir: ./tb/debug/coord_loss_smoke
+  output_dir: ./output/smoke/
+  run_name: smoke-debug-sft_coord_loss-tiny-len4096
+  logging_dir: ./tb/smoke/debug_sft_coord_loss_tiny_len4096
   save_strategy: "no"
   logging_steps: 1
-  eval_steps: 1
+  eval_steps: 10
   # Packing yields one packed sample per device; effective_batch_size=128 with world_size=4
   # and per-device=1 targets ~117 base samples/update with avg ~9.7 samples per pack (post-merge).
   per_device_train_batch_size: 1
-  per_device_eval_batch_size: 2
-  effective_batch_size: 16
+  per_device_eval_batch_size: 1
+  effective_batch_size: 32
   # Packing knobs (mirrors tests/packed_tiny)
   packing_buffer: 256
   packing_min_fill_ratio: 0.7
@@ -38,12 +39,48 @@ custom:
   token_type_metrics:
     enabled: true
     include: ["dataset", "default", "lvis"]
+  # Logs/dumps the exact batch metadata when loss spikes or logits go non-finite.
+  # Uses `base_idx`/`sample_id` to let you locate the offending JSONL record quickly.
+  instability_monitor:
+    enabled: true
+    max_meta_samples: 16
+    ema_decay: 0.98
+    spike_factor: 8.0
+    abs_loss_threshold: 0.2
+    min_supervised_tokens: 64
+    dump_samples: true
+    early_stop:
+      enabled: true
+      on_reasons: ["zero_token_acc"]
+    guard:
+      enabled: true
+      guard_in_eval: false
+      guard_on_nonfinite: true
+      guard_on_spike: true
+      guard_on_zero_acc: true
+      min_token_acc: 0.01
+      max_abs_logit: 200.0
+  # Mirror python logging (and optionally stdout/stderr) to output_dir for quick review.
+  log_file:
+    enabled: true
+    filename: train.log
+    capture_stdout: false
+    capture_stderr: false
+  # Distributional coord-token metrics (no generation): evaluates coord logits as a distribution
+  # so near-by bins (e.g., coord_12 vs coord_13) get partial credit.
+  coord_expectation_metrics:
+    enabled: true
+    temperature: 1.0
+    max_positions: 4096
+    # Keep metrics minimal/non-redundant: tolerance mass is the main "soft accuracy".
+    # (Code also auto-prunes to at most 2 tolerances.)
+    tolerances: [2]
   coord_loss:
     enabled: true
     # Suggested starting weights; tune per run
-    l1_weight: 1.0
-    giou_weight: 1.0
-    coord_ce_weight: 1.0
+    l1_weight: 0.01
+    giou_weight: 0.01
+    coord_ce_weight: 1
     non_coord_ce_weight: 1.0
     top_k: 0.1
     temperature: 1.0
@@ -51,4 +88,4 @@ custom:
     poly_sigma_mask: 0.0234375  # 1.5 / 64
     poly_tau_inside: 0.08
     poly_beta_dist: 100.0
-    poly_smooth_weight: 0.05
+    poly_smooth_weight: 0.01
