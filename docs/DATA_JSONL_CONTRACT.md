@@ -20,6 +20,11 @@ Each object MUST contain exactly one geometry field plus a non-empty `desc`.
   - `line`: flat list `[x1, y1, ..., xn, yn]`. Optional `line_points` (int) should equal `len(line)/2` when present.
 - No additional geometry fields are allowed on the same object.
 
+Note (current practice, 2026-01-13): although `line` is part of the contract for completeness,
+it is currently unused in CoordExp training/eval datasets and experiments. Most pipelines assume
+only `bbox_2d` or `poly`. If you plan to introduce `line`, treat it as a deliberate extension and
+update downstream tools (evaluator/visualization/training) accordingly.
+
 ### Geometry keys and coordinate space (canonical)
 - Accepted geometry keys are **only** `bbox_2d`, `poly`, or `line` (plus optional `line_points`/`poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
 - Coordinate space is either pixel (floating point) or normalized coord tokens `<|coord_k|>` where `k ∈ [0, 999]`. The loader infers pixel vs normalized using image `width`/`height`. Avoid mixing pixel floats and coord tokens in the same object.
