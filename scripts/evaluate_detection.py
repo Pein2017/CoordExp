@@ -91,6 +91,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--f1ish-pred-scope",
+        choices=["annotated", "all"],
+        default="annotated",
+        help=(
+            "Which predictions count for F1-ish FP: "
+            "'annotated' ignores predictions whose desc is not semantically close to any GT desc "
+            "in the image; 'all' counts all predictions (strict)."
+        ),
+    )
+    parser.add_argument(
         "--strict-parse",
         action="store_true",
         help="Abort on first parse/validation error.",
@@ -136,6 +146,7 @@ def main() -> None:
         use_segm=bool(args.use_segm),
         iou_thrs=args.iou_thrs,
         f1ish_iou_thrs=[float(x) for x in (args.f1ish_iou_thrs or [])],
+        f1ish_pred_scope=str(args.f1ish_pred_scope),
         output_dir=args.out_dir,
         overlay=bool(args.overlay),
         overlay_k=int(args.overlay_k),

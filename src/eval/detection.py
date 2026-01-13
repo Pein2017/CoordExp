@@ -413,6 +413,10 @@ class EvalOptions:
     iou_types: Tuple[str, ...] = ("bbox", "segm")
     iou_thrs: Optional[List[float]] = None  # None -> COCO defaults
     f1ish_iou_thrs: List[float] = field(default_factory=lambda: [0.3, 0.5])
+    # F1-ish prediction scope:
+    # - "annotated": ignore predictions whose desc is not semantically close to any GT desc in the image
+    # - "all": count all predictions (strict; penalizes "extra" open-vocab objects as FP)
+    f1ish_pred_scope: str = "annotated"  # annotated | all
     output_dir: Path = Path("eval_out")
     overlay: bool = False
     overlay_k: int = 12
@@ -1326,45 +1330,116 @@ def evaluate_f1ish(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
-    """Compute F1-ish (set matching) metrics and emit match diagnostics."""
+    """Compute F1-ish (set matching) metrics and emit match diagnostics.
+
+    Notes on prediction scope:
+    - In ``f1ish_pred_scope=annotated`` (default), predictions whose desc is not semantically
+      close to any GT desc in the image are ignored (not counted as FP).
+    - In ``f1ish_pred_scope=all``, all predictions are counted (strict; extra open-vocab
+      objects become FP).
+    """
     iou_thrs_in = options.f1ish_iou_thrs or [0.3, 0.5]
     iou_thrs = sorted({float(t) for t in iou_thrs_in})
     primary_thr = _select_primary_f1ish_iou_thr(iou_thrs)
 
+    pred_scope = str(options.f1ish_pred_scope or "annotated").strip().lower()
+    if pred_scope not in {"annotated", "all"}:
+        logger.warning("Unknown f1ish_pred_scope='%s'; defaulting to 'annotated'", pred_scope)
+        pred_scope = "annotated"
+
     pred_lookup = {img_id: preds for img_id, preds in pred_samples}
     per_image_lookup = {row.get("image_id"): row for row in per_image}
 
-    matches_by_thr: Dict[str, Dict[int, List[Tuple[int, int, float]]]] = {}
     unique_norm_texts: set[str] = set()
 
+    # Collect texts for semantic matching/filtering. This is also used by the
+    # per-match semantic scoring below.
+    for sample in gt_samples:
+        gts = _f1ish_filter_gt_objects(sample)
+        for gt in gts:
+            gt_desc = _normalize_desc(str(gt.get("desc", "")))
+            if gt_desc:
+                unique_norm_texts.add(gt_desc)
+        for pred in pred_lookup.get(sample.image_id, []):
+            pred_desc = _normalize_desc(str(pred.get("desc", "")))
+            if pred_desc:
+                unique_norm_texts.add(pred_desc)
+
+    # Build semantic embedding cache once (if available)
+    norm_texts_sorted = sorted(unique_norm_texts)
+    emb = _try_build_semantic_embeddings(norm_texts_sorted, options=options)
+    sem_thr = float(options.semantic_threshold)
+    use_embeddings = bool(emb)
+
+    def _pred_in_gt_label_space(pred_desc: str, gt_descs: List[str]) -> bool:
+        if pred_scope == "all":
+            return True
+        if not pred_desc or not gt_descs:
+            return False
+        if pred_desc in set(gt_descs):
+            return True
+        if not use_embeddings:
+            return False
+        pred_vec = emb.get(pred_desc)
+        if pred_vec is None:
+            return False
+        best = -1.0
+        for gt_desc in gt_descs:
+            gt_vec = emb.get(gt_desc)
+            if gt_vec is None:
+                continue
+            best = max(best, float(pred_vec @ gt_vec))
+        return best >= sem_thr
+
+    # Pre-filter predictions based on the requested scope. This is independent of IoU
+    # threshold and can be reused across all thresholds.
+    gts_by_image: Dict[int, List[Dict[str, Any]]] = {}
+    preds_eval_by_image: Dict[int, List[Dict[str, Any]]] = {}
+    preds_eval_orig_idx_by_image: Dict[int, List[int]] = {}
+    preds_ignored_orig_idx_by_image: Dict[int, List[int]] = {}
+
+    for sample in gt_samples:
+        gts = _f1ish_filter_gt_objects(sample)
+        gts_by_image[sample.image_id] = gts
+
+        gt_descs_set: set[str] = set()
+        for gt in gts:
+            d = _normalize_desc(str(gt.get("desc", "")))
+            if d:
+                gt_descs_set.add(d)
+        gt_descs = sorted(gt_descs_set)
+
+        preds_total = pred_lookup.get(sample.image_id, [])
+        preds_eval: List[Dict[str, Any]] = []
+        preds_eval_orig_idx: List[int] = []
+        preds_ignored_orig_idx: List[int] = []
+        for idx, pred in enumerate(preds_total):
+            pred_desc = _normalize_desc(str(pred.get("desc", "")))
+            if _pred_in_gt_label_space(pred_desc, gt_descs):
+                preds_eval.append(pred)
+                preds_eval_orig_idx.append(int(idx))
+            else:
+                preds_ignored_orig_idx.append(int(idx))
+        preds_eval_by_image[sample.image_id] = preds_eval
+        preds_eval_orig_idx_by_image[sample.image_id] = preds_eval_orig_idx
+        preds_ignored_orig_idx_by_image[sample.image_id] = preds_ignored_orig_idx
+
+    # Location matching per threshold.
+    matches_by_thr: Dict[str, Dict[int, List[Tuple[int, int, float]]]] = {}
     for thr in iou_thrs:
         thr_key = _fmt_iou_thr(thr)
         matches_by_thr[thr_key] = {}
 
-    # Pass 1: location matching (collect pairs + texts to embed)
     for sample in gt_samples:
-        preds = pred_lookup.get(sample.image_id, [])
-        gts = _f1ish_filter_gt_objects(sample)
+        preds_eval = preds_eval_by_image.get(sample.image_id, [])
+        gts = gts_by_image.get(sample.image_id, [])
         width = int(sample.width)
         height = int(sample.height)
-
         for thr in iou_thrs:
             thr_key = _fmt_iou_thr(thr)
-            matches = _greedy_match_by_iou(
-                preds, gts, iou_thr=thr, width=width, height=height
+            matches_by_thr[thr_key][sample.image_id] = _greedy_match_by_iou(
+                preds_eval, gts, iou_thr=thr, width=width, height=height
             )
-            matches_by_thr[thr_key][sample.image_id] = matches
-            for pred_idx, gt_idx, _iou in matches:
-                pred_desc = _normalize_desc(str(preds[pred_idx].get("desc", "")))
-                gt_desc = _normalize_desc(str(gts[gt_idx].get("desc", "")))
-                unique_norm_texts.add(pred_desc)
-                unique_norm_texts.add(gt_desc)
-
-    # Build semantic embedding cache once (if available)
-    norm_texts_sorted = sorted(t for t in unique_norm_texts if t is not None)
-    emb = _try_build_semantic_embeddings(norm_texts_sorted, options=options)
-    sem_thr = float(options.semantic_threshold)
-    use_embeddings = bool(emb)
 
     # Accumulators
     metrics_out: Dict[str, float] = {}
@@ -1377,6 +1452,9 @@ def evaluate_f1ish(
         sum_fn = 0
         sum_sem_ok = 0
         sum_sem_bad = 0
+        sum_pred_total = 0
+        sum_pred_eval = 0
+        sum_pred_ignored = 0
 
         sum_tp_full = 0
         sum_fp_full = 0
@@ -1393,16 +1471,23 @@ def evaluate_f1ish(
         matches_records: List[Dict[str, Any]] = []
 
         for sample in gt_samples:
-            preds = pred_lookup.get(sample.image_id, [])
-            gts = _f1ish_filter_gt_objects(sample)
+            preds_total = pred_lookup.get(sample.image_id, [])
+            preds = preds_eval_by_image.get(sample.image_id, [])
+            preds_eval_orig = preds_eval_orig_idx_by_image.get(sample.image_id, [])
+            preds_ignored_orig = preds_ignored_orig_idx_by_image.get(sample.image_id, [])
+            gts = gts_by_image.get(sample.image_id, [])
             matches = matches_by_thr[thr_key].get(sample.image_id, [])
 
-            matched_pred = {pred_idx for pred_idx, _, _ in matches}
+            matched_pred = {pred_idx for pred_idx, _, _ in matches}  # pred_idx is in *eval* space
             matched_gt = {gt_idx for _, gt_idx, _ in matches}
 
             tp_loc = len(matches)
             fp_loc = max(0, len(preds) - len(matched_pred))
             fn_loc = max(0, len(gts) - len(matched_gt))
+
+            sum_pred_total += len(preds_total)
+            sum_pred_eval += len(preds)
+            sum_pred_ignored += len(preds_ignored_orig)
 
             sem_ok = 0
             sem_bad = 0
@@ -1412,6 +1497,11 @@ def evaluate_f1ish(
                 gt_desc_raw = str(gts[gt_idx].get("desc", ""))
                 pred_desc = _normalize_desc(pred_desc_raw)
                 gt_desc = _normalize_desc(gt_desc_raw)
+                pred_idx_orig = (
+                    int(preds_eval_orig[pred_idx])
+                    if 0 <= int(pred_idx) < len(preds_eval_orig)
+                    else int(pred_idx)
+                )
 
                 exact_ok = bool(pred_desc) and (pred_desc == gt_desc)
                 sim: float | None = None
@@ -1425,7 +1515,7 @@ def evaluate_f1ish(
 
                 match_rows.append(
                     {
-                        "pred_idx": int(pred_idx),
+                        "pred_idx": int(pred_idx_orig),
                         "gt_idx": int(gt_idx),
                         "iou": float(iou),
                         "pred_desc": pred_desc_raw,
@@ -1470,6 +1560,8 @@ def evaluate_f1ish(
                     "tp_loc": int(tp_loc),
                     "fp_loc": int(fp_loc),
                     "fn_loc": int(fn_loc),
+                    "pred_count_eval": int(len(preds)),
+                    "pred_count_ignored": int(len(preds_ignored_orig)),
                     "matched_sem_ok": int(sem_ok),
                     "matched_sem_bad": int(sem_bad),
                     "sem_acc_on_matched": float(sem_ok / tp_loc) if tp_loc > 0 else 1.0,
@@ -1480,6 +1572,11 @@ def evaluate_f1ish(
 
             is_primary = abs(float(thr) - float(primary_thr)) < 1e-9
             if is_primary or len(iou_thrs) > 1:
+                unmatched_pred_indices = [
+                    int(preds_eval_orig[i])
+                    for i in range(len(preds))
+                    if i not in matched_pred and i < len(preds_eval_orig)
+                ]
                 matches_records.append(
                     {
                         "image_id": int(sample.image_id),
@@ -1488,14 +1585,16 @@ def evaluate_f1ish(
                         "height": int(sample.height),
                         "iou_thr": float(thr),
                         "gt_count": int(len(gts)),
-                        "pred_count": int(len(preds)),
+                        "pred_count": int(len(preds_total)),
+                        "pred_count_eval": int(len(preds)),
+                        "pred_count_ignored": int(len(preds_ignored_orig)),
+                        "pred_scope": str(pred_scope),
                         "tp_loc": int(tp_loc),
                         "fp_loc": int(fp_loc),
                         "fn_loc": int(fn_loc),
                         "matches": match_rows,
-                        "unmatched_pred_indices": [
-                            int(i) for i in range(len(preds)) if i not in matched_pred
-                        ],
+                        "unmatched_pred_indices": unmatched_pred_indices,
+                        "ignored_pred_indices": [int(i) for i in preds_ignored_orig],
                         "unmatched_gt_indices": [
                             int(i) for i in range(len(gts)) if i not in matched_gt
                         ],
@@ -1520,6 +1619,9 @@ def evaluate_f1ish(
                 f"{prefix}tp_loc": float(sum_tp),
                 f"{prefix}fp_loc": float(sum_fp),
                 f"{prefix}fn_loc": float(sum_fn),
+                f"{prefix}pred_total": float(sum_pred_total),
+                f"{prefix}pred_eval": float(sum_pred_eval),
+                f"{prefix}pred_ignored": float(sum_pred_ignored),
                 f"{prefix}precision_loc_micro": float(p_micro),
                 f"{prefix}recall_loc_micro": float(r_micro),
                 f"{prefix}f1_loc_micro": float(f1_micro),
