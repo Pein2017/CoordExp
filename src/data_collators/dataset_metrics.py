@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+import json
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
@@ -27,6 +28,7 @@ def build_dataset_metrics_collator(
     base_collator: Callable[[List[Dict[str, Any]]], Dict[str, Any]] | None = None,
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
     coord_loss_cfg: Optional[CoordLossConfig] = None,
+    instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     """Wrap the template collator to attach dataset labels and token types.
 
@@ -40,13 +42,72 @@ def build_dataset_metrics_collator(
     tokenizer = getattr(template, "tokenizer", None)
     if coord_loss_enabled and tokenizer is not None:
         coord_token_ids = get_coord_token_ids(tokenizer)
-        vocab_size = getattr(tokenizer, "vocab_size", None)
-        if vocab_size is None:
-            vocab_size = max(coord_token_ids) + 1 if coord_token_ids else 0
+        vocab_size = len(tokenizer)
         coord_token_mask = torch.zeros(int(vocab_size), dtype=torch.bool)
         for idx in coord_token_ids:
             if 0 <= idx < coord_token_mask.numel():
                 coord_token_mask[idx] = True
+
+    instab_enabled = False
+    max_meta_samples = 16
+    if isinstance(instability_monitor_cfg, Mapping):
+        instab_enabled = bool(instability_monitor_cfg.get("enabled", False))
+        try:
+            max_meta_samples = int(instability_monitor_cfg.get("max_meta_samples", 16))
+        except Exception:
+            max_meta_samples = 16
+        max_meta_samples = max(0, max_meta_samples)
+
+    def _extract_sample_debug(sample: Mapping[str, Any]) -> Dict[str, Any]:
+        length = sample.get("length")
+        if length is None:
+            input_ids = sample.get("input_ids")
+            try:
+                length = int(len(input_ids)) if input_ids is not None else None
+            except Exception:
+                length = None
+        return {
+            "dataset": sample.get("dataset") or sample.get("dataset_name"),
+            "base_idx": sample.get("base_idx"),
+            "sample_id": sample.get("sample_id"),
+            "length": length,
+        }
+
+    def _build_instability_meta(
+        raw_batch: List[Dict[str, Any]],
+        *,
+        packed: bool,
+        max_samples: int,
+    ) -> List[Dict[str, Any]]:
+        packs: List[Sequence[Any]]
+        if packed:
+            packs = [
+                pack if isinstance(pack, (list, tuple)) else [pack] for pack in raw_batch
+            ]
+        else:
+            packs = [[row] for row in raw_batch]
+
+        out: List[Dict[str, Any]] = []
+        for pack in packs:
+            samples: List[Dict[str, Any]] = []
+            total_len = 0
+            for item in pack:
+                if not isinstance(item, Mapping):
+                    continue
+                if max_samples > 0 and len(samples) >= max_samples:
+                    continue
+                s = _extract_sample_debug(item)
+                if isinstance(s.get("length"), int):
+                    total_len += int(s["length"])
+                samples.append(s)
+            out.append(
+                {
+                    "num_samples": len(samples),
+                    "total_length": int(total_len),
+                    "samples": samples,
+                }
+            )
+        return out
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         is_packed_batch = len(batch) > 0 and isinstance(batch[0], (list, tuple))
@@ -56,8 +117,16 @@ def build_dataset_metrics_collator(
             dataset_labels = []
             flat_for_labels: List[Dict[str, Any]] = []
             for pack in batch:
-                labels_in_pack = {_resolve_label(sample) for sample in pack if isinstance(sample, Mapping)}
-                pack_label = "mixed" if len(labels_in_pack) > 1 else (labels_in_pack.pop() if labels_in_pack else "default")
+                labels_in_pack = {
+                    _resolve_label(sample)
+                    for sample in pack
+                    if isinstance(sample, Mapping)
+                }
+                pack_label = (
+                    "mixed"
+                    if len(labels_in_pack) > 1
+                    else (labels_in_pack.pop() if labels_in_pack else "default")
+                )
                 dataset_labels.append(pack_label)
                 flat_for_labels.append({"dataset": pack_label})
         else:
@@ -85,6 +154,18 @@ def build_dataset_metrics_collator(
 
         collated["dataset_labels"] = dataset_labels
         collated["dataset_segments"] = segments
+
+        if instab_enabled:
+            try:
+                meta = _build_instability_meta(
+                    batch, packed=is_packed_batch, max_samples=max_meta_samples
+                )
+                collated["instability_meta_json"] = json.dumps(
+                    meta, ensure_ascii=True, sort_keys=True
+                )
+            except Exception:
+                # Best-effort only; never block training.
+                pass
 
         _maybe_attach_token_types(
             collated=collated,
@@ -150,7 +231,9 @@ def _maybe_attach_token_types(
                     continue
                 label = _resolve_label(sample)
                 length = sample.get("length")
-                if length is None and isinstance(sample.get("labels"), (list, tuple, torch.Tensor)):
+                if length is None and isinstance(
+                    sample.get("labels"), (list, tuple, torch.Tensor)
+                ):
                     length = len(sample.get("labels"))
 
                 if not _label_included(label):
@@ -176,14 +259,18 @@ def _maybe_attach_token_types(
                 labels_row_t = (
                     labels_row
                     if isinstance(labels_row, torch.Tensor)
-                    else torch.tensor(labels_row, dtype=torch.long, device=labels_tensor.device)
+                    else torch.tensor(
+                        labels_row, dtype=torch.long, device=labels_tensor.device
+                    )
                 )
 
                 attn_row_raw = sample.get("attention_mask")
                 attn_row = (
                     attn_row_raw
                     if isinstance(attn_row_raw, torch.Tensor)
-                    else torch.tensor(attn_row_raw, dtype=torch.long, device=labels_tensor.device)
+                    else torch.tensor(
+                        attn_row_raw, dtype=torch.long, device=labels_tensor.device
+                    )
                     if attn_row_raw is not None
                     else None
                 )
@@ -200,7 +287,9 @@ def _maybe_attach_token_types(
                 per_sample_types.append(token_types.to(labels_tensor.device))
 
             if not per_sample_types:
-                token_type_rows.append(torch.full_like(labels_tensor[0], TokenType.IGNORE))
+                token_type_rows.append(
+                    torch.full_like(labels_tensor[0], TokenType.IGNORE)
+                )
                 continue
 
             concat_types = torch.cat(per_sample_types, dim=0)
@@ -212,16 +301,12 @@ def _maybe_attach_token_types(
                     target_len,
                     pack_label,
                 )
-                if concat_types.shape[0] < target_len:
-                    pad = torch.full(
-                        (target_len - concat_types.shape[0],),
-                        TokenType.IGNORE,
-                        dtype=torch.long,
-                        device=labels_tensor.device,
-                    )
-                    concat_types = torch.cat([concat_types, pad], dim=0)
-                else:
-                    concat_types = concat_types[:target_len]
+                concat_types = torch.full(
+                    (target_len,),
+                    TokenType.IGNORE,
+                    dtype=torch.long,
+                    device=labels_tensor.device,
+                )
             token_type_rows.append(concat_types)
 
         if token_type_rows:
@@ -234,13 +319,17 @@ def _maybe_attach_token_types(
     token_type_list: List[torch.Tensor] = []
     for idx, (raw, label) in enumerate(zip(raw_batch, dataset_labels)):
         if not isinstance(raw, Mapping):
-            token_type_list.append(torch.full_like(labels_tensor[idx], TokenType.IGNORE))
+            token_type_list.append(
+                torch.full_like(labels_tensor[idx], TokenType.IGNORE)
+            )
             continue
 
         included = _label_included(label)
         payload = raw.get("assistant_payload")
         if not included or payload is None:
-            token_type_list.append(torch.full_like(labels_tensor[idx], TokenType.IGNORE))
+            token_type_list.append(
+                torch.full_like(labels_tensor[idx], TokenType.IGNORE)
+            )
             continue
 
         labels_row: torch.Tensor = labels_tensor[idx]
@@ -327,29 +416,66 @@ def _maybe_attach_coord_features(
     if labels is None or not isinstance(labels, torch.Tensor):
         return
 
-    if coord_token_ids:
-        max_label = int(labels.max().item()) if labels.numel() else 0
-        mask = coord_token_mask
-        if mask is None or max_label >= mask.numel():
-            vocab_size = max(max_label + 1, max(coord_token_ids) + 1)
-            mask = torch.zeros(int(vocab_size), dtype=torch.bool)
-            for idx in coord_token_ids:
-                if 0 <= idx < mask.numel():
-                    mask[idx] = True
-        mask = mask.to(labels.device)
-        labels_safe = labels
-        if labels_safe.min().item() < 0:
-            labels_safe = labels_safe.clamp(min=0)
-        coord_positions = mask[labels_safe] & (labels != -100)
-        loss_scale = torch.full(
-            labels.shape,
-            float(coord_loss_cfg.non_coord_ce_weight),
-            device=labels.device,
-            dtype=torch.float,
-        )
-        loss_scale[coord_positions] = float(coord_loss_cfg.coord_ce_weight)
-        loss_scale = loss_scale.masked_fill(labels == -100, 0.0)
-        collated["loss_scale"] = loss_scale
+    coord_weight = float(coord_loss_cfg.coord_ce_weight)
+    non_coord_weight = float(coord_loss_cfg.non_coord_ce_weight)
+    use_loss_scale = coord_weight != 1.0 or non_coord_weight != 1.0
+    if use_loss_scale:
+        if coord_token_mask is None:
+            logger.warning(
+                "coord_loss CE weights requested but coord_token_mask is unavailable; "
+                "skipping loss_scale attachment"
+            )
+        else:
+            labels_safe = labels
+            if labels_safe.numel() == 0:
+                labels_safe = labels
+            elif labels_safe.min().item() < 0:
+                labels_safe = labels_safe.clamp(min=0)
+            coord_mask = coord_token_mask.to(device=labels.device)
+            max_label = int(labels_safe.max().item()) if labels_safe.numel() else 0
+            if max_label >= coord_mask.numel():
+                logger.warning(
+                    "coord_loss CE weights requested but labels exceed vocab size "
+                    "(max_label=%s, vocab=%s); skipping loss_scale attachment",
+                    max_label,
+                    coord_mask.numel(),
+                )
+            else:
+                coord_positions = coord_mask[labels_safe] & (labels != -100)
+                loss_scale = torch.zeros_like(labels, dtype=torch.float32)
+                loss_scale[coord_positions] = coord_weight
+                non_coord_positions = (labels != -100) & (~coord_positions)
+                loss_scale[non_coord_positions] = non_coord_weight
+                base_loss_scale = collated.get("loss_scale")
+                if isinstance(base_loss_scale, torch.Tensor):
+                    if base_loss_scale.shape == loss_scale.shape:
+                        loss_scale = loss_scale * base_loss_scale.to(
+                            device=loss_scale.device, dtype=loss_scale.dtype
+                        )
+                    else:
+                        logger.warning(
+                            "Skipping loss_scale merge: shape mismatch "
+                            "(base=%s, new=%s)",
+                            tuple(base_loss_scale.shape),
+                            tuple(loss_scale.shape),
+                        )
+                elif base_loss_scale is not None:
+                    try:
+                        base_tensor = torch.as_tensor(
+                            base_loss_scale, dtype=loss_scale.dtype, device=loss_scale.device
+                        )
+                        if base_tensor.shape == loss_scale.shape:
+                            loss_scale = loss_scale * base_tensor
+                        else:
+                            logger.warning(
+                                "Skipping loss_scale merge: shape mismatch "
+                                "(base=%s, new=%s)",
+                                tuple(base_tensor.shape),
+                                tuple(loss_scale.shape),
+                            )
+                    except Exception:
+                        logger.warning("Skipping loss_scale merge: unable to coerce base loss_scale")
+                collated["loss_scale"] = loss_scale
 
     coord_spans_batch: List[List[Dict[str, Any]]] = []
     if packed:

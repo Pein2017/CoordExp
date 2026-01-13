@@ -38,13 +38,17 @@ def _point_segment_distance(
     *,
     eps: float,
 ) -> torch.Tensor:
+    # NOTE: Distances can be exactly 0 for some grid points (e.g. when a vertex lies on
+    # a grid point), and `sqrt(0)` has an undefined / infinite gradient. Add epsilon
+    # inside the sqrt to keep backward stable.
     seg = v1 - v0
     seg_len2 = (seg * seg).sum(dim=-1).clamp_min(eps)
     diff = points[:, None, :] - v0[None, :, :]
     t = (diff * seg[None, :, :]).sum(dim=-1) / seg_len2[None, :]
     t = t.clamp(0.0, 1.0)
     proj = v0[None, :, :] + t[..., None] * seg[None, :, :]
-    return (points[:, None, :] - proj).pow(2).sum(dim=-1).sqrt()
+    sq = (points[:, None, :] - proj).pow(2).sum(dim=-1)
+    return (sq + eps).sqrt()
 
 
 def soft_polygon_mask(
@@ -70,9 +74,14 @@ def soft_polygon_mask(
             vertices, nan=0.0, posinf=1.0, neginf=0.0
         ).clamp(0.0, 1.0)
 
-    grid = get_soft_raster_grid(
-        int(mask_size), device=vertices.device, dtype=vertices.dtype
-    )
+    # `atan2(0, 0)` produces NaN gradients in PyTorch. We use a conservative epsilon
+    # and detach the angle contribution when the local (cross, dot) magnitude is too
+    # small, which avoids poisoning the whole step with NaNs/Infs.
+    eps_safe = float(eps)
+    if eps_safe < 1e-4:
+        eps_safe = 1e-4
+
+    grid = get_soft_raster_grid(int(mask_size), device=vertices.device, dtype=vertices.dtype)
     v0 = vertices
     v1 = torch.roll(vertices, shifts=-1, dims=0)
 
@@ -80,11 +89,15 @@ def soft_polygon_mask(
     b = v1[None, :, :] - grid[:, None, :]
     cross = a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0]
     dot = a[..., 0] * b[..., 0] + a[..., 1] * b[..., 1]
-    angles = torch.atan2(cross, dot + eps)
+    den = cross * cross + dot * dot
+    small = den <= (eps_safe * eps_safe)
+    cross_safe = torch.where(small, cross.detach(), cross)
+    dot_safe = torch.where(small, dot.detach(), dot)
+    angles = torch.atan2(cross_safe, dot_safe + eps_safe)
     winding = angles.sum(dim=1) / (2.0 * math.pi)
     inside = torch.sigmoid((winding.abs() - 0.5) / float(tau_inside))
 
-    dist = _point_segment_distance(grid, v0, v1, eps=eps)
+    dist = _point_segment_distance(grid, v0, v1, eps=eps_safe)
     soft_min = -torch.logsumexp(-float(beta_dist) * dist, dim=-1) / float(beta_dist)
 
     signed = (2.0 * inside - 1.0) * soft_min

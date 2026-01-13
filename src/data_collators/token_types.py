@@ -24,6 +24,57 @@ class TokenType:
     FORMAT = 3
 
 
+def _format_payload_for_text(payload: Any) -> Any:
+    """Match the JSON formatting used in dataset builders for assistant_text.
+
+    In dense mode, JSONLinesBuilder formats `poly`/`line` sequences as
+    list-of-pairs (e.g. [[x, y], ...]) for readability. The stored
+    `assistant_payload` is kept in the raw/flat representation.
+
+    Token-type alignment must mirror the serialized assistant_text, otherwise
+    token ids may not match supervised labels (especially for long polygons).
+    """
+
+    def looks_grouped_xy(values: Any) -> bool:
+        if not isinstance(values, list) or not values:
+            return False
+        for item in values:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                return False
+        return True
+
+    def group_xy(values: list[Any]) -> list[Any]:
+        if looks_grouped_xy(values):
+            # Ensure nested tuples become lists for stable JSON serialization.
+            return [list(pair) for pair in values]
+        if len(values) % 2 != 0:
+            return list(values)
+        grouped: list[Any] = []
+        for idx in range(0, len(values), 2):
+            grouped.append([values[idx], values[idx + 1]])
+        return grouped
+
+    if not isinstance(payload, dict):
+        return payload
+
+    formatted: dict[str, Any] = {}
+    for key, entry in payload.items():
+        if not isinstance(entry, dict):
+            formatted[str(key)] = entry
+            continue
+        formatted_entry: dict[str, Any] = {}
+        for field, value in entry.items():
+            if field in {"poly", "line"} and isinstance(value, list):
+                formatted_entry[field] = group_xy(value)
+            elif field == "bbox_2d" and isinstance(value, list):
+                formatted_entry[field] = list(value)
+            else:
+                formatted_entry[field] = value
+        formatted[str(key)] = formatted_entry
+
+    return formatted
+
+
 def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
     """Serialize payload to JSON text and collect typed character spans.
 
@@ -32,11 +83,14 @@ def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
 
     spans: List[Tuple[int, int, int]] = []
     parts: List[str] = []
+    cursor = 0
 
     def write(text: str, typ: int) -> None:
-        start = sum(len(p) for p in parts)
+        nonlocal cursor
+        start = cursor
         parts.append(text)
-        end = start + len(text)
+        cursor += len(text)
+        end = cursor
         if end > start:
             spans.append((start, end, typ))
 
@@ -121,6 +175,15 @@ def compute_token_types(
     if labels.dim() != 1:
         raise ValueError("labels must be 1D for a single sample")
 
+    supervised_mask = labels != -100
+    supervised_count = int(supervised_mask.sum().detach().item())
+    if supervised_count == 0:
+        return torch.full(
+            labels.shape, TokenType.IGNORE, dtype=torch.long, device=labels.device
+        )
+
+    payload = _format_payload_for_text(payload)
+
     text, spans = _dumps_with_types(payload)
     text, suffix_spans = _apply_suffix(text, suffix_tokens)
     spans = spans + suffix_spans
@@ -129,12 +192,25 @@ def compute_token_types(
         text,
         add_special_tokens=False,
         return_offsets_mapping=True,
+        truncation=True,
+        max_length=supervised_count,
     )
     offsets = enc.get("offset_mapping")
+    input_ids = enc.get("input_ids")
     if offsets is None:
         return None
+    if input_ids is None:
+        return None
+    if len(offsets) != len(input_ids):
+        return None
 
-    char_types = _char_types_from_spans(len(text), spans)
+    max_end = 0
+    for start, end in offsets:
+        if end is None:
+            continue
+        if end > max_end:
+            max_end = int(end)
+    char_types = _char_types_from_spans(max_end, spans)
     token_types: List[int] = []
     for start, end in offsets:
         if start is None or end is None:
@@ -143,7 +219,7 @@ def compute_token_types(
         if end <= start or start < 0:
             token_types.append(TokenType.FORMAT)
             continue
-        slice_types = char_types[start:end]
+        slice_types = char_types[start : min(end, len(char_types))]
         # Majority vote; fallback to first if empty
         if slice_types:
             counts = {t: slice_types.count(t) for t in set(slice_types)}
@@ -151,31 +227,46 @@ def compute_token_types(
         else:
             token_types.append(TokenType.FORMAT)
 
-    supervised_positions = [
-        idx for idx, flag in enumerate(labels.tolist()) if flag != -100
-    ]
-    supervised_count = len(supervised_positions)
-    if supervised_count == 0:
-        return torch.full_like(labels, TokenType.IGNORE)
+    supervised_ids = labels[supervised_mask].tolist()
 
-    if len(token_types) != supervised_count:
+    def _extra_supervised_ids_ok(extra: List[int]) -> bool:
+        if not extra:
+            return True
+        # Only tolerate a small tail of special tokens (e.g. eos) beyond payload text.
+        special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        if eos_id is not None:
+            special_ids.add(int(eos_id))
+        if len(extra) > 8:
+            return False
+        return all(int(v) in special_ids for v in extra)
+
+    aligned: List[int] | None = None
+    if len(token_types) == supervised_count:
+        if list(input_ids) == supervised_ids:
+            aligned = token_types
+    elif len(token_types) < supervised_count:
+        # Text shorter than supervision; allow a small special-token tail.
+        if supervised_ids[: len(token_types)] == list(input_ids) and _extra_supervised_ids_ok(
+            supervised_ids[len(token_types) :]
+        ):
+            aligned = token_types + [TokenType.FORMAT] * (supervised_count - len(token_types))
+
+    if aligned is None:
         logger.debug(
-            "Token-type length mismatch (text=%d, supervised=%d); padding/truncating to align.",
+            "Token-type alignment failed (tokenized=%d supervised=%d); skipping token-type metrics.",
             len(token_types),
             supervised_count,
         )
+        return None
 
-    # Align token_types to the supervised positions (assistant tokens only).
-    aligned = list(token_types[:supervised_count])
-    if len(aligned) < supervised_count:
-        aligned.extend([TokenType.FORMAT] * (supervised_count - len(aligned)))
-
-    full_types = [TokenType.IGNORE] * labels.shape[0]
-    for pos, typ in zip(supervised_positions, aligned):
-        if 0 <= pos < len(full_types):
-            full_types[pos] = typ
-
-    return torch.tensor(full_types, dtype=torch.long, device=labels.device)
+    full_types = torch.full(
+        labels.shape, TokenType.IGNORE, dtype=torch.long, device=labels.device
+    )
+    full_types[supervised_mask] = torch.as_tensor(
+        aligned, dtype=torch.long, device=labels.device
+    )
+    return full_types
 
 
 __all__ = ["TokenType", "compute_token_types"]

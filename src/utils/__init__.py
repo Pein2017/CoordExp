@@ -10,6 +10,8 @@ from .logger import (
     set_log_level,
     enable_verbose_logging,
     disable_verbose_logging,
+    enable_output_dir_file_logging,
+    FileLoggingConfig,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "set_log_level",
     "enable_verbose_logging",
     "disable_verbose_logging",
+    "enable_output_dir_file_logging",
+    "FileLoggingConfig",
 ]

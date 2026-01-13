@@ -59,9 +59,10 @@ def expectation_decode(
     """
 
     mask = coord_token_mask.to(device=logits.device, dtype=torch.bool)
-    coord_values = torch.arange(mask.numel(), device=logits.device, dtype=logits.dtype)
+    coord_values = torch.arange(mask.numel(), device=logits.device, dtype=torch.float32)
     coord_values = coord_values[mask]
     coord_logits = logits[..., mask]
+    coord_logits = coord_logits.float()
     probs = coord_logits.softmax(dim=-1)
     expected = (probs * coord_values).sum(dim=-1) / 1000.0
     return expected
@@ -118,6 +119,7 @@ def topk_expectation_decode(
         return torch.zeros(logits.shape[:-1], device=logits.device, dtype=logits.dtype)
 
     coord_logits = logits.index_select(-1, coord_ids)
+    coord_logits = coord_logits.float()
     if not torch.isfinite(coord_logits).all().item():
         coord_logits = torch.nan_to_num(
             coord_logits, nan=-1e4, posinf=1e4, neginf=-1e4
@@ -129,16 +131,24 @@ def topk_expectation_decode(
     coord_vocab = coord_logits.shape[-1]
     k = resolve_top_k(top_k, coord_vocab)
 
-    topk_logits, topk_idx = torch.topk(coord_logits, k, dim=-1)
-    probs = topk_logits.softmax(dim=-1)
+    if k >= coord_vocab:
+        probs = coord_logits.softmax(dim=-1)
+        coord_values = torch.arange(
+            coord_vocab, device=logits.device, dtype=coord_logits.dtype
+        )
+        expected = (probs * coord_values).sum(dim=-1) / 1000.0
+    else:
+        topk_logits, topk_idx = torch.topk(coord_logits, k, dim=-1)
+        probs = topk_logits.softmax(dim=-1)
 
-    coord_values = torch.arange(
-        coord_vocab, device=logits.device, dtype=logits.dtype
-    )
-    topk_values = coord_values[topk_idx]
-    expected = (probs * topk_values).sum(dim=-1) / 1000.0
+        coord_values = torch.arange(
+            coord_vocab, device=logits.device, dtype=coord_logits.dtype
+        )
+        topk_values = coord_values[topk_idx]
+        expected = (probs * topk_values).sum(dim=-1) / 1000.0
     expected = torch.nan_to_num(expected, nan=0.0, posinf=1.0, neginf=0.0)
-    return expected.clamp(0.0, 1.0)
+    expected = expected.clamp(0.0, 1.0)
+    return expected
 
 
 def coord_targets_from_tokens(

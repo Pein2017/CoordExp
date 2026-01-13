@@ -98,6 +98,7 @@ class CoordLossConfig:
     enabled: bool = False
     l1_weight: float = 0.0
     giou_weight: float = 0.0
+    poly_mask_weight: float = 0.0
     coord_ce_weight: float = 1.0
     non_coord_ce_weight: float = 1.0
     top_k: float = 0.1
@@ -133,6 +134,7 @@ class CoordLossConfig:
 
         l1_weight = _parse_float("l1_weight", cls.l1_weight)
         giou_weight = _parse_float("giou_weight", cls.giou_weight)
+        poly_mask_weight = _parse_float("poly_mask_weight", giou_weight)
         coord_ce_weight = _parse_float("coord_ce_weight", cls.coord_ce_weight)
         non_coord_ce_weight = _parse_float(
             "non_coord_ce_weight", cls.non_coord_ce_weight
@@ -154,6 +156,8 @@ class CoordLossConfig:
             raise ValueError("coord_loss.l1_weight must be >= 0")
         if giou_weight < 0:
             raise ValueError("coord_loss.giou_weight must be >= 0")
+        if poly_mask_weight < 0:
+            raise ValueError("coord_loss.poly_mask_weight must be >= 0")
         if coord_ce_weight < 0:
             raise ValueError("coord_loss.coord_ce_weight must be >= 0")
         if non_coord_ce_weight < 0:
@@ -177,6 +181,7 @@ class CoordLossConfig:
             enabled=enabled,
             l1_weight=l1_weight,
             giou_weight=giou_weight,
+            poly_mask_weight=poly_mask_weight,
             coord_ce_weight=coord_ce_weight,
             non_coord_ce_weight=non_coord_ce_weight,
             top_k=top_k,

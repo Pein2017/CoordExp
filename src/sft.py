@@ -25,9 +25,19 @@ from .coord_tokens.offset_adapter import (
 from .config import ConfigLoader, SaveDelayConfig
 from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
-from .metrics.dataset_metrics import AggregateTokenTypeMetricsMixin, CoordAuxLossMixin
+from .metrics.dataset_metrics import (
+    AggregateTokenTypeMetricsMixin,
+    CoordAuxLossMixin,
+    InstabilityMonitorMixin,
+)
 from .trainers import with_final_checkpoint
-from .utils import enable_verbose_logging, get_logger, set_log_level
+from .utils import (
+    FileLoggingConfig,
+    enable_output_dir_file_logging,
+    enable_verbose_logging,
+    get_logger,
+    set_log_level,
+)
 from .optim import register_coord_offset_optimizer
 
 
@@ -246,6 +256,26 @@ def main():
                         pass
     except Exception:
         # Non-fatal: fall back to directories as provided by YAML
+        pass
+
+    # Optional: mirror logs into output_dir for quick review (rank 0 only).
+    try:
+        file_log_raw = getattr(custom_config, "extra", {}).get("log_file")
+        if isinstance(file_log_raw, dict):
+            file_log_cfg = FileLoggingConfig(
+                enabled=bool(file_log_raw.get("enabled", True)),
+                filename=str(file_log_raw.get("filename", "train.log")),
+                capture_stdout=bool(file_log_raw.get("capture_stdout", False)),
+                capture_stderr=bool(file_log_raw.get("capture_stderr", False)),
+            )
+        else:
+            file_log_cfg = FileLoggingConfig(enabled=False)
+        log_path = enable_output_dir_file_logging(
+            getattr(train_args, "output_dir", "") or "", file_log_cfg
+        )
+        if log_path:
+            logger.info(f"File logging enabled: {log_path}")
+    except Exception:
         pass
 
     # Debug mode: print full configuration
@@ -539,6 +569,20 @@ def main():
             packing_cfg.allow_single_long,
         )
 
+    if packing_cfg.enabled and packing_cfg.eval_packing:
+        eval_bs = getattr(train_args, "per_device_eval_batch_size", None)
+        if eval_bs != 1:
+            logger.warning(
+                "eval_packing enabled: forcing per_device_eval_batch_size=1 (was %s)",
+                eval_bs,
+            )
+            try:
+                train_args.per_device_eval_batch_size = 1
+                if getattr(train_args, "training_args", None) is not None:
+                    train_args.training_args.per_device_eval_batch_size = 1
+            except Exception:
+                logger.warning("Failed to set per_device_eval_batch_size on train_args")
+
     try:
         train_len = len(dataset)
     except Exception:
@@ -822,14 +866,36 @@ def main():
     base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_loss_cfg = getattr(custom_config, "coord_loss", None)
+    instability_monitor_cfg = None
+    coord_expectation_metrics_cfg = None
+    try:
+        raw_instab = getattr(custom_config, "extra", {}).get("instability_monitor")
+        if isinstance(raw_instab, dict):
+            instability_monitor_cfg = raw_instab
+    except Exception:
+        instability_monitor_cfg = None
+    try:
+        raw_coord_expect = getattr(custom_config, "extra", {}).get(
+            "coord_expectation_metrics"
+        )
+        if isinstance(raw_coord_expect, dict):
+            coord_expectation_metrics_cfg = raw_coord_expect
+    except Exception:
+        coord_expectation_metrics_cfg = None
     data_collator = build_dataset_metrics_collator(
         sft.template,
         base_collator,
         token_type_cfg=token_type_cfg,
         coord_loss_cfg=coord_loss_cfg,
+        instability_monitor_cfg=instability_monitor_cfg,
     )
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
+    if (
+        isinstance(instability_monitor_cfg, dict)
+        and bool(instability_monitor_cfg.get("enabled", False))
+    ):
+        mixins.append(InstabilityMonitorMixin)
     if coord_loss_cfg and getattr(coord_loss_cfg, "enabled", False):
         mixins.append(CoordAuxLossMixin)
     if token_type_cfg and getattr(token_type_cfg, "enabled", False):
@@ -899,6 +965,26 @@ def main():
     if coord_loss_cfg is not None:
         try:
             setattr(trainer, "coord_loss_cfg", coord_loss_cfg)
+        except Exception:
+            pass
+    if instability_monitor_cfg is not None:
+        try:
+            setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
+        except Exception:
+            pass
+        # Provide JSONL paths so the monitor can dump offending records by base_idx.
+        try:
+            setattr(trainer, "instability_train_jsonl", str(train_jsonl))
+        except Exception:
+            pass
+        try:
+            if val_jsonl:
+                setattr(trainer, "instability_val_jsonl", str(val_jsonl))
+        except Exception:
+            pass
+    if coord_expectation_metrics_cfg is not None:
+        try:
+            setattr(trainer, "coord_expectation_metrics_cfg", coord_expectation_metrics_cfg)
         except Exception:
             pass
 

@@ -1,15 +1,17 @@
+import json
+import math
+import os
 from typing import Any, Mapping, Sequence
 
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from src.data_collators.token_types import TokenType
 from src.coord_tokens.codec import get_coord_token_ids
 from src.coord_tokens.loss import topk_expectation_decode
 from src.coord_tokens.soft_rasterizer import soft_polygon_mask
+from src.data_collators.token_types import TokenType
 from src.utils.logger import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -25,7 +27,9 @@ class AggregateTokenTypeMetricsMixin:
     label_field = "dataset_labels"
     segment_field = "dataset_segments"
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         _ = inputs.pop(self.label_field, None)
         _ = inputs.pop(self.segment_field, None)  # Optional legacy field
         labels_for_metrics = inputs.get("labels")
@@ -53,7 +57,11 @@ class AggregateTokenTypeMetricsMixin:
         if logits is None or labels is None or not isinstance(labels, torch.Tensor):
             return
 
-        mode = "train" if getattr(self, "model", None) is None or self.model.training else "eval"  # type: ignore[attr-defined]
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
         custom_metrics = getattr(self, "custom_metrics", None)
         if custom_metrics is None or mode not in custom_metrics:
             return
@@ -80,19 +88,118 @@ class AggregateTokenTypeMetricsMixin:
 
         with torch.no_grad():
             preds = logits_next.argmax(dim=-1)
-            seg_acc = (preds[mask] == labels_next[mask]).float().mean()
 
+            labels_masked = labels_next[mask]
+            preds_masked = preds[mask]
+
+            topk_indices = None
             flat_logits = logits_next[mask]
             if flat_logits.numel() > 0:
                 k = min(5, flat_logits.shape[-1])
-                topk = flat_logits.topk(k=k, dim=-1).indices
-                labels_flat = labels_next[mask].unsqueeze(-1)
-                top5_acc = (topk == labels_flat).any(dim=-1).float().mean()
+                topk_indices = flat_logits.topk(k=k, dim=-1).indices
+                top5_acc = (
+                    (topk_indices == labels_masked.unsqueeze(-1))
+                    .any(dim=-1)
+                    .float()
+                    .mean()
+                )
             else:
-                top5_acc = seg_acc
+                top5_acc = logits_next.new_tensor(0.0)
 
-        metrics["token_acc"].update(float(seg_acc.detach().item()))
         metrics["token_acc_top5"].update(float(top5_acc.detach().item()))
+
+        if token_types_next is not None:
+            types_masked = token_types_next[mask]
+            for name, type_id in (
+                ("desc", TokenType.DESC),
+                ("format", TokenType.FORMAT),
+                ("coord", TokenType.COORD),
+            ):
+                sel = types_masked == type_id
+                if not sel.any().item():
+                    continue
+                metrics[f"{name}_token_frac"].update(float(sel.float().mean().detach().item()))
+            for name, type_id in (
+                ("desc", TokenType.DESC),
+                ("format", TokenType.FORMAT),
+            ):
+                type_sel = types_masked == type_id
+                if not type_sel.any().item():
+                    continue
+                with torch.no_grad():
+                    acc = (
+                        (preds_masked[type_sel] == labels_masked[type_sel])
+                        .float()
+                        .mean()
+                    )
+                metrics[f"{name}_token_acc"].update(float(acc.detach().item()))
+
+                if topk_indices is None:
+                    continue
+                with torch.no_grad():
+                    top5 = (
+                        (topk_indices[type_sel] == labels_masked[type_sel].unsqueeze(-1))
+                        .any(dim=-1)
+                        .float()
+                        .mean()
+                    )
+                metrics[f"{name}_token_acc_top5"].update(float(top5.detach().item()))
+
+            coord_id_map = None
+            try:
+                coord_map_fn = getattr(self, "_get_coord_id_map", None)
+                if callable(coord_map_fn):
+                    coord_id_map = coord_map_fn(
+                        logits_next.shape[-1], logits_next.device
+                    )
+            except Exception:
+                coord_id_map = None
+
+            if coord_id_map is not None:
+                coord_sel = types_masked == TokenType.COORD
+                if coord_sel.any().item():
+                    with torch.no_grad():
+                        preds_safe = preds_masked.clamp(min=0)
+                        pred_bins = coord_id_map[preds_safe]
+                        pred_is_coord = pred_bins >= 0
+
+                        coord_pred_is_coord = pred_is_coord[coord_sel].float().mean()
+                    metrics["coord_top1_pred_is_coord_rate"].update(
+                        float(coord_pred_is_coord.detach().item())
+                    )
+
+                    with torch.no_grad():
+                        coord_pred_bins = pred_bins[coord_sel]
+                        coord_gt_bins = coord_id_map[
+                            labels_masked[coord_sel].clamp(min=0)
+                        ]
+                        valid = coord_pred_bins >= 0
+                        if valid.any().item():
+                            abs_err = (
+                                (coord_pred_bins[valid] - coord_gt_bins[valid])
+                                .abs()
+                                .float()
+                                .mean()
+                            )
+                            metrics["coord_top1_abs_err_norm"].update(
+                                float((abs_err / 1000.0).detach().item())
+                            )
+
+                        if topk_indices is not None:
+                            top5_hit = (topk_indices == labels_masked.unsqueeze(-1)).any(
+                                dim=-1
+                            )
+                            coord_hit = top5_hit[coord_sel]
+                            coord_miss = ~coord_hit
+                            if coord_miss.any().item():
+                                miss_noncoord = (
+                                    (~pred_is_coord[coord_sel])[coord_miss]
+                                    .float()
+                                    .mean()
+                                )
+                                metrics["coord_top5_miss_top1_noncoord_rate"].update(
+                                    float(miss_noncoord.detach().item())
+                                )
 
         # Token-type metrics (optional)
         if token_types_next is not None:
@@ -118,9 +225,56 @@ class AggregateTokenTypeMetricsMixin:
                     coord_acc = (coord_preds == coord_labels).float().mean()
                     k = min(5, coord_logits.shape[-1])
                     topk = coord_logits.topk(k=k, dim=-1).indices
-                    coord_top5 = (topk == coord_labels.unsqueeze(-1)).any(dim=-1).float().mean()
+                    coord_top5 = (
+                        (topk == coord_labels.unsqueeze(-1)).any(dim=-1).float().mean()
+                    )
                 metrics["coord_token_acc"].update(float(coord_acc.detach().item()))
-                metrics["coord_token_acc_top5"].update(float(coord_top5.detach().item()))
+                metrics["coord_token_acc_top5"].update(
+                    float(coord_top5.detach().item())
+                )
+                coord_id_map = None
+                try:
+                    coord_map_fn = getattr(self, "_get_coord_id_map", None)
+                    if callable(coord_map_fn):
+                        coord_id_map = coord_map_fn(
+                            logits_next.shape[-1], logits_next.device
+                        )
+                except Exception:
+                    coord_id_map = None
+                if coord_id_map is not None and isinstance(topk, torch.Tensor):
+                    with torch.no_grad():
+                        labels_safe = coord_labels
+                        if labels_safe.numel() > 0 and labels_safe.min().item() < 0:
+                            labels_safe = labels_safe.clamp(min=0)
+                        gt_bins = coord_id_map[labels_safe].to(dtype=torch.long)
+                        valid_gt = gt_bins >= 0
+                        if valid_gt.any().item():
+                            topk_bins = coord_id_map[topk].to(dtype=torch.long)
+                            gt_bins = gt_bins[valid_gt]
+                            topk_bins = topk_bins[valid_gt]
+                            any_coord = (topk_bins >= 0).any(dim=-1)
+                            metrics["coord_top5_any_coord_rate"].update(
+                                float(any_coord.float().mean().detach().item())
+                            )
+                            if any_coord.any().item():
+                                abs_err = (
+                                    topk_bins - gt_bins.unsqueeze(-1)
+                                ).abs()
+                                abs_err = torch.where(
+                                    topk_bins >= 0,
+                                    abs_err,
+                                    torch.full_like(abs_err, 1_000_000),
+                                )
+                                min_abs_err = abs_err.min(dim=-1).values
+                                min_abs_err = min_abs_err[any_coord].float().mean()
+                                metrics["coord_top5_min_abs_err_norm"].update(
+                                    float(
+                                        (min_abs_err / 1000.0)
+                                        .detach()
+                                        .cpu()
+                                        .item()
+                                    )
+                                )
 
         # Only split text vs coord; do not emit per-subtype metrics.
 
@@ -149,7 +303,11 @@ class AggregateTokenTypeMetricsMixin:
     def _sync_dataset_metrics(self) -> None:
         if not dist.is_available() or not dist.is_initialized():
             return
-        mode = "train" if getattr(self, "model", None) is None or self.model.training else "eval"  # type: ignore[attr-defined]
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
         custom_metrics = getattr(self, "custom_metrics", None)
         if custom_metrics is None or mode not in custom_metrics:
             return
@@ -184,7 +342,9 @@ class CoordAuxLossMixin:
 
     coord_spans_field = "coord_spans"
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         coord_spans = inputs.pop(self.coord_spans_field, None)
         labels_for_metrics = inputs.get("labels")
         loss_scale_for_metrics = inputs.get("loss_scale")
@@ -235,8 +395,8 @@ class CoordAuxLossMixin:
         outputs: Any,
         labels: Any,
         coord_spans: Any,
-        num_items_in_batch: int | None,
-        loss_scale: Any,
+        num_items_in_batch: int | None = None,
+        loss_scale: Any = None,
     ) -> torch.Tensor:
         coord_cfg = getattr(self, "coord_loss_cfg", None)
         if coord_cfg is None or not getattr(coord_cfg, "enabled", False):
@@ -257,9 +417,7 @@ class CoordAuxLossMixin:
         if not coord_token_ids:
             return loss
 
-        coord_id_map = self._get_coord_id_map(
-            logits_next.shape[-1], logits_next.device
-        )
+        coord_id_map = self._get_coord_id_map(logits_next.shape[-1], logits_next.device)
         if coord_id_map is None:
             return loss
 
@@ -282,14 +440,36 @@ class CoordAuxLossMixin:
             num_items_in_batch,
             loss_scale,
         )
+        if coord_cfg is not None and (
+            float(coord_cfg.coord_ce_weight) != 1.0
+            or float(coord_cfg.non_coord_ce_weight) != 1.0
+        ):
+            if loss_scale is None and not getattr(
+                self, "_coord_loss_warned_loss_scale", False
+            ):
+                logger.warning(
+                    "coord_loss CE weights set but loss_scale is missing; "
+                    "coord/text CE weighting will be skipped"
+                )
+                self._coord_loss_warned_loss_scale = True
 
-        l1_sum = logits_next.new_tensor(0.0)
-        bbox_giou_sum = logits_next.new_tensor(0.0)
-        poly_loss_sum = logits_next.new_tensor(0.0)
-        poly_smooth_sum = logits_next.new_tensor(0.0)
+        # NOTE: Base CE in ms-swift can be token-averaged (acc_strategy=token,
+        # average_tokens_across_devices=True). To keep aux losses stable across
+        # packing lengths and compatible with token averaging, we accumulate
+        # per-token sums and normalize with the same denominator where possible.
+        l1_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        bbox_giou_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        bbox_giou_token_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        poly_loss_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        poly_loss_token_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        poly_iou_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        poly_smooth_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
+        poly_smooth_token_sum = logits_next.new_tensor(0.0, dtype=torch.float32)
         coord_count = 0
         bbox_count = 0
         poly_count = 0
+        bbox_token_count = 0
+        poly_token_count = 0
 
         spans_batch = coord_spans if isinstance(coord_spans, Sequence) else None
         batch_size = labels_next.shape[0]
@@ -305,11 +485,9 @@ class CoordAuxLossMixin:
                 coord_token_ids,
                 top_k=coord_cfg.top_k,
                 temperature=coord_cfg.temperature,
-            )
+            ).float()
             target_ids = labels_next[row_idx, coord_positions]
-            target_vals = coord_id_map[target_ids].to(
-                dtype=logits_next.dtype
-            ) / 1000.0
+            target_vals = coord_id_map[target_ids].to(dtype=torch.float32) / 1000.0
 
             l1_sum = l1_sum + (pred_coords - target_vals).abs().sum()
             coord_count += int(coord_positions.numel())
@@ -372,49 +550,118 @@ class CoordAuxLossMixin:
                         beta_dist=coord_cfg.poly_beta_dist,
                     )
                     poly_loss_sum = poly_loss_sum + (1.0 - poly_iou)
-                    poly_smooth_sum = poly_smooth_sum + self._poly_smoothness(
-                        pred_poly
+                    poly_iou_sum = poly_iou_sum + poly_iou
+                    smooth = self._poly_smoothness(pred_poly)
+                    poly_smooth_sum = poly_smooth_sum + smooth
+                    poly_loss_token_sum = poly_loss_token_sum + (1.0 - poly_iou) * float(
+                        coord_len
                     )
+                    poly_smooth_token_sum = poly_smooth_token_sum + smooth * float(
+                        coord_len
+                    )
+                    poly_token_count += int(coord_len)
                     poly_count += 1
                     continue
                 else:
                     continue
 
-                bbox_giou_sum = bbox_giou_sum + self._giou_loss(pred_box, target_box)
+                giou = self._giou_loss(pred_box, target_box)
+                bbox_giou_sum = bbox_giou_sum + giou
+                bbox_giou_token_sum = bbox_giou_token_sum + giou * 4.0
+                bbox_token_count += 4
                 bbox_count += 1
 
-        l1_loss = (
-            l1_sum / float(coord_count)
-            if coord_count > 0
-            else logits_next.new_tensor(0.0)
-        )
-        giou_loss = (
-            bbox_giou_sum / float(bbox_count)
-            if bbox_count > 0
-            else logits_next.new_tensor(0.0)
-        )
-        poly_loss = (
-            poly_loss_sum / float(poly_count)
-            if poly_count > 0
-            else logits_next.new_tensor(0.0)
-        )
-        poly_smooth = (
-            poly_smooth_sum / float(poly_count)
-            if poly_count > 0
-            else logits_next.new_tensor(0.0)
-        )
+        if num_items_in_batch is None:
+            denom_val = int((labels_next != -100).sum().item())
+        elif isinstance(num_items_in_batch, torch.Tensor):
+            denom_val = int(num_items_in_batch.item())
+        else:
+            denom_val = int(num_items_in_batch)
+        denom_val = max(denom_val, 0)
+
+        if denom_val <= 0:
+            l1_loss = logits_next.new_tensor(0.0)
+            giou_loss = logits_next.new_tensor(0.0)
+            poly_loss = logits_next.new_tensor(0.0)
+            poly_iou = logits_next.new_tensor(0.0)
+            poly_smooth = logits_next.new_tensor(0.0)
+        else:
+            coord_denom = float(coord_count) if coord_count > 0 else 0.0
+            bbox_denom = float(bbox_count) if bbox_count > 0 else 0.0
+            poly_denom = float(poly_count) if poly_count > 0 else 0.0
+
+            use_token_norm = True
+            try:
+                acc_strategy = getattr(getattr(self, "args", None), "acc_strategy", None)
+                if isinstance(acc_strategy, str) and acc_strategy:
+                    use_token_norm = acc_strategy.strip().lower() == "token"
+                if bool(
+                    getattr(getattr(self, "args", None), "average_tokens_across_devices", False)
+                ):
+                    use_token_norm = True
+            except Exception:
+                use_token_norm = True
+
+            if use_token_norm:
+                denom = logits_next.new_tensor(float(denom_val), dtype=torch.float32)
+                if denom.item() <= 0:
+                    denom = logits_next.new_tensor(1.0, dtype=torch.float32)
+                # When num_items_in_batch is gathered across devices, HF/ms-swift
+                # averages the loss across processes; multiply back to keep the
+                # intended global token-average scale.
+                scale = logits_next.new_tensor(1.0, dtype=torch.float32)
+                if (
+                    num_items_in_batch is not None
+                    and getattr(self.args, "average_tokens_across_devices", False)
+                    and getattr(self, "model_accepts_loss_kwargs", False)
+                ):
+                    try:
+                        scale = logits_next.new_tensor(
+                            float(self.accelerator.num_processes), dtype=torch.float32
+                        )
+                    except Exception:
+                        scale = logits_next.new_tensor(1.0, dtype=torch.float32)
+
+                l1_loss = (l1_sum / denom) * scale
+                giou_loss = (bbox_giou_token_sum / denom) * scale
+                poly_loss = (poly_loss_token_sum / denom) * scale
+                poly_smooth = (poly_smooth_token_sum / denom) * scale
+            else:
+                l1_loss = (
+                    l1_sum / coord_denom
+                    if coord_denom > 0.0
+                    else logits_next.new_tensor(0.0)
+                )
+                giou_loss = (
+                    bbox_giou_sum / bbox_denom
+                    if bbox_denom > 0.0
+                    else logits_next.new_tensor(0.0)
+                )
+                poly_loss = (
+                    poly_loss_sum / poly_denom
+                    if poly_denom > 0.0
+                    else logits_next.new_tensor(0.0)
+                )
+                poly_smooth = (
+                    poly_smooth_sum / poly_denom
+                    if poly_denom > 0.0
+                    else logits_next.new_tensor(0.0)
+                )
+
+            poly_iou = (
+                poly_iou_sum / poly_denom
+                if poly_denom > 0.0
+                else logits_next.new_tensor(0.0)
+            )
 
         weighted_l1 = float(coord_cfg.l1_weight) * l1_loss
         weighted_giou = float(coord_cfg.giou_weight) * giou_loss
-        weighted_poly_mask = float(coord_cfg.giou_weight) * poly_loss
+        poly_mask_weight = getattr(coord_cfg, "poly_mask_weight", coord_cfg.giou_weight)
+        weighted_poly_mask = float(poly_mask_weight) * poly_loss
         weighted_poly_smooth = float(coord_cfg.poly_smooth_weight) * poly_smooth
 
-        weighted_l1 = torch.nan_to_num(
-            weighted_l1, nan=0.0, posinf=1e4, neginf=0.0
-        )
-        weighted_giou = torch.nan_to_num(
-            weighted_giou, nan=0.0, posinf=1e4, neginf=0.0
-        )
+        weighted_l1 = torch.nan_to_num(weighted_l1, nan=0.0, posinf=1e4, neginf=0.0)
+        weighted_giou = torch.nan_to_num(weighted_giou, nan=0.0, posinf=1e4, neginf=0.0)
         weighted_poly_mask = torch.nan_to_num(
             weighted_poly_mask, nan=0.0, posinf=1e4, neginf=0.0
         )
@@ -422,11 +669,13 @@ class CoordAuxLossMixin:
             weighted_poly_smooth, nan=0.0, posinf=1e4, neginf=0.0
         )
 
-        aux_loss = weighted_l1 + weighted_giou + weighted_poly_mask + weighted_poly_smooth
+        aux_loss = (
+            weighted_l1 + weighted_giou + weighted_poly_mask + weighted_poly_smooth
+        )
         loss = loss + aux_loss
         loss = torch.nan_to_num(loss, nan=0.0, posinf=1e4, neginf=0.0)
 
-        coord_ce, desc_ce = self._split_token_ce(
+        coord_ce, desc_ce, loss_ce = self._split_token_ce(
             outputs,
             logits_next,
             labels_next,
@@ -436,38 +685,185 @@ class CoordAuxLossMixin:
         )
         coord_ce = torch.nan_to_num(coord_ce, nan=0.0, posinf=1e4, neginf=0.0)
         desc_ce = torch.nan_to_num(desc_ce, nan=0.0, posinf=1e4, neginf=0.0)
+        loss_ce = torch.nan_to_num(loss_ce, nan=0.0, posinf=1e4, neginf=0.0)
 
         self._log_coord_metrics(
             coord_ce,
             desc_ce,
+            loss_ce,
             weighted_l1,
             weighted_giou,
             weighted_poly_mask,
             weighted_poly_smooth,
+            poly_iou,
         )
+        try:
+            self._log_coord_expectation_metrics(
+                logits_next=logits_next,
+                labels_next=labels_next,
+                coord_positions_mask=coord_positions_mask,
+            )
+        except Exception:
+            pass
         return loss
 
     def _log_coord_metrics(
         self,
         coord_ce: torch.Tensor,
         desc_ce: torch.Tensor,
+        loss_ce: torch.Tensor,
         weighted_l1: torch.Tensor,
         weighted_giou: torch.Tensor,
         weighted_poly_mask: torch.Tensor,
         weighted_poly_smooth: torch.Tensor,
+        poly_iou: torch.Tensor,
     ) -> None:
-        mode = "train" if getattr(self, "model", None) is None or self.model.training else "eval"  # type: ignore[attr-defined]
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
         custom_metrics = getattr(self, "custom_metrics", None)
         if custom_metrics is None or mode not in custom_metrics:
             return
         metrics = custom_metrics[mode]
 
+        loss_total = loss_ce + weighted_l1 + weighted_giou + weighted_poly_mask + weighted_poly_smooth
+
         metrics["coord_ce"].update(coord_ce.detach())
         metrics["desc_ce"].update(desc_ce.detach())
-        metrics["l1"].update(weighted_l1.detach())
-        metrics["giou"].update(weighted_giou.detach())
-        metrics["poly_mask"].update(weighted_poly_mask.detach())
-        metrics["poly_smooth"].update(weighted_poly_smooth.detach())
+        metrics["loss_ce"].update(loss_ce.detach())
+        metrics["loss_norm"].update(loss_total.detach())
+        if mode == "train":
+            metrics["loss"].update(loss_total.detach())
+
+        metrics["coord_loss/l1"].update(weighted_l1.detach())
+        metrics["coord_loss/giou"].update(weighted_giou.detach())
+        metrics["coord_loss/poly_mask"].update(weighted_poly_mask.detach())
+        metrics["coord_loss/poly_smooth"].update(weighted_poly_smooth.detach())
+
+    def _log_coord_expectation_metrics(
+        self,
+        *,
+        logits_next: torch.Tensor,
+        labels_next: torch.Tensor,
+        coord_positions_mask: torch.Tensor,
+    ) -> None:
+        cfg = getattr(self, "coord_expectation_metrics_cfg", None)
+        if not isinstance(cfg, Mapping) or not bool(cfg.get("enabled", False)):
+            return
+
+        coord_token_ids = self._get_coord_token_ids()
+        if not coord_token_ids:
+            return
+        coord_id_map = self._get_coord_id_map(logits_next.shape[-1], logits_next.device)
+        if coord_id_map is None:
+            return
+
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
+        custom_metrics = getattr(self, "custom_metrics", None)
+        if custom_metrics is None or mode not in custom_metrics:
+            return
+        metrics = custom_metrics[mode]
+
+        temperature = float(cfg.get("temperature", 1.0) or 1.0)
+        if not math.isfinite(temperature) or temperature <= 0:
+            temperature = 1.0
+
+        max_positions = cfg.get("max_positions", 4096)
+        try:
+            max_positions = int(max_positions)
+        except Exception:
+            max_positions = 4096
+        max_positions = max(0, max_positions)
+
+        tolerances = cfg.get("tolerances", [2])
+        if isinstance(tolerances, (int, float)):
+            tolerances = [int(tolerances)]
+        if not isinstance(tolerances, (list, tuple)):
+            tolerances = [0, 1, 2, 4]
+        tol_list: list[int] = []
+        for t in tolerances:
+            try:
+                ti = int(t)
+            except Exception:
+                continue
+            if ti < 0:
+                continue
+            tol_list.append(ti)
+        if not tol_list:
+            tol_list = [0, 1, 2, 4]
+        tol_list = sorted(set(tol_list))
+        # Avoid redundant logging: keep at most 2 tolerances (smallest + largest).
+        if len(tol_list) > 2:
+            tol_list = [tol_list[0], tol_list[-1]]
+
+        mask = coord_positions_mask & (labels_next != -100)
+        if not mask.any().item():
+            return
+
+        # Flatten coord positions and optionally sub-sample for speed under long packing.
+        coord_logits = logits_next[mask]
+        coord_labels = labels_next[mask]
+        if coord_logits.ndim != 2 or coord_labels.ndim != 1:
+            return
+        num_pos = int(coord_labels.numel())
+        if num_pos <= 0:
+            return
+
+        if max_positions > 0 and num_pos > max_positions:
+            with torch.no_grad():
+                perm = torch.randperm(num_pos, device=coord_labels.device)[:max_positions]
+                coord_logits = coord_logits.index_select(0, perm)
+                coord_labels = coord_labels.index_select(0, perm)
+                num_pos = int(coord_labels.numel())
+                if num_pos <= 0:
+                    return
+
+        # Map labels (vocab ids) -> coord bin index [0, M-1].
+        labels_safe = coord_labels
+        if labels_safe.min().item() < 0:
+            labels_safe = labels_safe.clamp(min=0)
+        target_bins = coord_id_map[labels_safe].to(dtype=torch.long)
+        valid_targets = target_bins >= 0
+        if not valid_targets.any().item():
+            return
+
+        coord_logits = coord_logits[valid_targets]
+        target_bins = target_bins[valid_targets]
+        if coord_logits.numel() == 0:
+            return
+
+        with torch.no_grad():
+            idx = torch.tensor(coord_token_ids, device=coord_logits.device, dtype=torch.long)
+            coord_logits_sub = coord_logits.index_select(-1, idx)
+            coord_logits_sub = coord_logits_sub.float() / float(temperature)
+            probs = torch.softmax(coord_logits_sub, dim=-1)
+
+            m = probs.shape[-1]
+            # Expected abs error in bins: E[|X - gt|]
+            ar = torch.arange(m, device=probs.device, dtype=torch.float32).unsqueeze(0)
+            tgt = target_bins.to(dtype=torch.float32).unsqueeze(-1)
+            eae = (probs * (ar - tgt).abs()).sum(dim=-1)
+            metrics["coord_expect/eae_norm"].update(float((eae.mean() / 1000.0).detach().cpu().item()))
+
+            # Mass within tolerance window around GT: sum_{|i-gt|<=k} p_i
+            cdf = probs.cumsum(dim=-1)
+            for k in tol_list:
+                k = int(k)
+                if k < 0:
+                    continue
+                lo = (target_bins - k).clamp(0, m - 1)
+                hi = (target_bins + k).clamp(0, m - 1)
+                cdf_hi = cdf.gather(-1, hi.unsqueeze(-1)).squeeze(-1)
+                lo_minus = (lo - 1).clamp(0, m - 1)
+                cdf_lo = cdf.gather(-1, lo_minus.unsqueeze(-1)).squeeze(-1)
+                within = torch.where(lo > 0, cdf_hi - cdf_lo, cdf_hi)
+                metrics[f"coord_expect/within_{k}"].update(float(within.mean().detach().cpu().item()))
 
     def _split_token_ce(
         self,
@@ -477,7 +873,7 @@ class CoordAuxLossMixin:
         coord_positions_mask: torch.Tensor,
         num_items_in_batch: int | None,
         loss_scale: Any,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         loss_per_token = getattr(outputs, "loss", None)
         if loss_per_token is None or not isinstance(loss_per_token, torch.Tensor):
             return self._split_token_ce_from_logits(
@@ -493,6 +889,15 @@ class CoordAuxLossMixin:
 
         batch_size = labels_next.shape[0]
         seq_len = labels_next.shape[1]
+        expected = batch_size * seq_len
+        if loss_per_token.ndim == 0 or loss_per_token.numel() < expected:
+            return self._split_token_ce_from_logits(
+                logits_next,
+                labels_next,
+                coord_positions_mask,
+                num_items_in_batch,
+                loss_scale,
+            )
         if loss_per_token.numel() % batch_size != 0:
             return self._split_token_ce_from_logits(
                 logits_next,
@@ -502,26 +907,19 @@ class CoordAuxLossMixin:
                 loss_scale,
             )
         loss_per_token = loss_per_token.reshape(batch_size, -1)
+        if loss_per_token.shape[1] < seq_len:
+            return self._split_token_ce_from_logits(
+                logits_next,
+                labels_next,
+                coord_positions_mask,
+                num_items_in_batch,
+                loss_scale,
+            )
         loss_next = loss_per_token[:, :seq_len]
         mask = labels_next != -100
 
-        loss_unscaled = loss_next
         valid_mask = mask
-        if isinstance(loss_scale, torch.Tensor):
-            loss_scale_next = loss_scale[:, 1 : seq_len + 1]
-            if loss_scale_next.numel() == loss_next.numel():
-                loss_scale_next = loss_scale_next.to(
-                    device=loss_next.device, dtype=loss_next.dtype
-                )
-                scale_mask = loss_scale_next > 0
-                valid_mask = valid_mask & scale_mask
-                if scale_mask.any().item():
-                    loss_unscaled = loss_next.clone()
-                    loss_unscaled[scale_mask] = (
-                        loss_next[scale_mask] / loss_scale_next[scale_mask]
-                    )
-
-        if valid_mask.any().item() and loss_unscaled[valid_mask].sum().item() == 0.0:
+        if valid_mask.any().item() and loss_next[valid_mask].sum().item() == 0.0:
             return self._split_token_ce_from_logits(
                 logits_next,
                 labels_next,
@@ -533,18 +931,25 @@ class CoordAuxLossMixin:
         coord_mask = coord_positions_mask & valid_mask
         desc_mask = (~coord_positions_mask) & valid_mask
 
-        coord_ce = (
-            loss_unscaled[coord_mask].mean()
-            if coord_mask.any().item()
-            else loss_next.new_tensor(0.0)
-        )
-        desc_ce = (
-            loss_unscaled[desc_mask].mean()
-            if desc_mask.any().item()
-            else loss_next.new_tensor(0.0)
-        )
+        if num_items_in_batch is None:
+            denom = valid_mask.sum()
+        else:
+            denom = num_items_in_batch
+        if isinstance(denom, torch.Tensor):
+            denom_t = denom.to(device=loss_next.device, dtype=loss_next.dtype)
+        else:
+            denom_t = loss_next.new_tensor(float(denom))
+        if denom_t.item() <= 0:
+            zero = loss_next.new_tensor(0.0)
+            return zero, zero, zero
 
-        return coord_ce, desc_ce
+        coord_sum = loss_next[coord_mask].sum() if coord_mask.any().item() else loss_next.new_tensor(0.0)
+        desc_sum = loss_next[desc_mask].sum() if desc_mask.any().item() else loss_next.new_tensor(0.0)
+        loss_ce = (coord_sum + desc_sum) / denom_t
+        coord_ce = coord_sum / denom_t
+        desc_ce = desc_sum / denom_t
+
+        return coord_ce, desc_ce, loss_ce
 
     def _split_token_ce_from_logits(
         self,
@@ -553,10 +958,10 @@ class CoordAuxLossMixin:
         coord_positions_mask: torch.Tensor,
         num_items_in_batch: int | None,
         loss_scale: Any,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if logits_next is None or labels_next is None:
             zero = torch.tensor(0.0)
-            return zero, zero
+            return zero, zero, zero
 
         vocab_size = logits_next.shape[-1]
         logits_safe = torch.nan_to_num(
@@ -577,26 +982,31 @@ class CoordAuxLossMixin:
         if isinstance(loss_scale, torch.Tensor):
             loss_scale_next = loss_scale[:, 1 : seq_len + 1]
             if loss_scale_next.numel() == ce.numel():
-                loss_scale_next = loss_scale_next.to(
-                    device=ce.device, dtype=ce.dtype
-                )
-                valid_mask = valid_mask & (loss_scale_next > 0)
+                loss_scale_next = loss_scale_next.to(device=ce.device, dtype=ce.dtype)
+                ce = ce * loss_scale_next
 
         coord_mask = coord_positions_mask & valid_mask
         desc_mask = (~coord_positions_mask) & valid_mask
 
-        coord_ce = (
-            ce[coord_mask].mean()
-            if coord_mask.any().item()
-            else ce.new_tensor(0.0)
-        )
-        desc_ce = (
-            ce[desc_mask].mean()
-            if desc_mask.any().item()
-            else ce.new_tensor(0.0)
-        )
+        if num_items_in_batch is None:
+            denom = valid_mask.sum()
+        else:
+            denom = num_items_in_batch
+        if isinstance(denom, torch.Tensor):
+            denom_t = denom.to(device=ce.device, dtype=ce.dtype)
+        else:
+            denom_t = ce.new_tensor(float(denom))
+        if denom_t.item() <= 0:
+            zero = ce.new_tensor(0.0)
+            return zero, zero, zero
 
-        return coord_ce, desc_ce
+        coord_sum = ce[coord_mask].sum() if coord_mask.any().item() else ce.new_tensor(0.0)
+        desc_sum = ce[desc_mask].sum() if desc_mask.any().item() else ce.new_tensor(0.0)
+        loss_ce = (coord_sum + desc_sum) / denom_t
+        coord_ce = coord_sum / denom_t
+        desc_ce = desc_sum / denom_t
+
+        return coord_ce, desc_ce, loss_ce
 
     def _ensure_finite_base_loss(
         self,
@@ -736,13 +1146,9 @@ class CoordAuxLossMixin:
         coord_token_ids = self._get_coord_token_ids()
         if not coord_token_ids:
             return None
-        id_map = torch.full(
-            (int(vocab_size),), -1, dtype=torch.long, device=device
-        )
+        id_map = torch.full((int(vocab_size),), -1, dtype=torch.long, device=device)
         coord_ids = torch.tensor(coord_token_ids, device=device, dtype=torch.long)
-        values = torch.arange(
-            coord_ids.numel(), device=device, dtype=torch.long
-        )
+        values = torch.arange(coord_ids.numel(), device=device, dtype=torch.long)
         valid = coord_ids < int(vocab_size)
         if valid.any().item():
             id_map[coord_ids[valid]] = values[valid]
@@ -778,39 +1184,64 @@ class CoordAuxLossMixin:
         beta_dist: float,
         eps: float = 1e-7,
     ) -> torch.Tensor:
-        pred = torch.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0).clamp(
-            0.0, 1.0
-        )
-        target = torch.nan_to_num(target, nan=0.0, posinf=1.0, neginf=0.0).clamp(
-            0.0, 1.0
-        )
-        pred_mask = soft_polygon_mask(
-            pred,
-            mask_size=mask_size,
-            sigma_mask=sigma_mask,
-            tau_inside=tau_inside,
-            beta_dist=beta_dist,
-            eps=eps,
-        )
-        target_mask = soft_polygon_mask(
-            target,
-            mask_size=mask_size,
-            sigma_mask=sigma_mask,
-            tau_inside=tau_inside,
-            beta_dist=beta_dist,
-            eps=eps,
-        )
-        pred_mask = torch.nan_to_num(pred_mask, nan=0.0, posinf=1.0, neginf=0.0)
-        target_mask = torch.nan_to_num(target_mask, nan=0.0, posinf=1.0, neginf=0.0)
-        inter = (pred_mask * target_mask).sum()
-        union = (pred_mask + target_mask - pred_mask * target_mask).sum()
-        return inter / (union + eps)
+        # Force numerically sensitive polygon rasterization to run in float32.
+        # Even if inputs are float32, AMP autocast can still downcast some ops,
+        # which increases the chance of NaN/Inf gradients (esp. atan2 / logsumexp).
+        try:
+            autocast_ctx = torch.autocast
+            device_type = pred.device.type
+            ctx = autocast_ctx(device_type=device_type, enabled=False)
+        except Exception:
+            ctx = torch.cuda.amp.autocast(enabled=False)  # type: ignore[attr-defined]
+
+        with ctx:
+            # Use a conservative epsilon for IoU division; too-small eps can create
+            # huge gradients when masks are tiny/empty early in training.
+            eps_iou = float(eps)
+            if eps_iou < 1e-4:
+                eps_iou = 1e-4
+
+            pred_f = (
+                torch.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0)
+                .clamp(0.0, 1.0)
+                .float()
+            )
+            target_f = (
+                torch.nan_to_num(target, nan=0.0, posinf=1.0, neginf=0.0)
+                .clamp(0.0, 1.0)
+                .float()
+            )
+            pred_mask = soft_polygon_mask(
+                pred_f,
+                mask_size=mask_size,
+                sigma_mask=sigma_mask,
+                tau_inside=tau_inside,
+                beta_dist=beta_dist,
+                eps=eps,
+            )
+            target_mask = soft_polygon_mask(
+                target_f,
+                mask_size=mask_size,
+                sigma_mask=sigma_mask,
+                tau_inside=tau_inside,
+                beta_dist=beta_dist,
+                eps=eps,
+            )
+            pred_mask = torch.nan_to_num(pred_mask, nan=0.0, posinf=1.0, neginf=0.0)
+            target_mask = torch.nan_to_num(target_mask, nan=0.0, posinf=1.0, neginf=0.0)
+            inter = (pred_mask * target_mask).sum()
+            union = (pred_mask + target_mask - pred_mask * target_mask).sum()
+            iou = inter / (union + eps_iou)
+            # If the polygon rasterizer produces NaNs/Infs, treat it as "skip" by
+            # returning IoU=1 (poly loss 0) so the step won't explode.
+            iou = torch.nan_to_num(iou, nan=1.0, posinf=1.0, neginf=0.0)
+            return iou.clamp(0.0, 1.0)
 
     @staticmethod
     def _poly_smoothness(vertices: torch.Tensor) -> torch.Tensor:
-        vertices = torch.nan_to_num(
-            vertices, nan=0.0, posinf=1.0, neginf=0.0
-        ).clamp(0.0, 1.0)
+        vertices = torch.nan_to_num(vertices, nan=0.0, posinf=1.0, neginf=0.0).clamp(
+            0.0, 1.0
+        )
         prev = torch.roll(vertices, shifts=1, dims=0)
         nxt = torch.roll(vertices, shifts=-1, dims=0)
         smooth = nxt - 2.0 * vertices + prev
@@ -852,3 +1283,454 @@ class CoordAuxLossMixin:
 
         giou = iou - (enc_area - union) / enc_area
         return 1.0 - giou
+
+
+class InstabilityMonitorMixin:
+    """Per-step monitor + optional guard for catastrophic batches.
+
+    Enabled via `custom.instability_monitor` (stored under `CustomConfig.extra`).
+    The collator attaches `instability_meta_json` (batch sample_id/base_idx info),
+    which this mixin consumes before model forward.
+
+    When triggered, writes a JSON event to `<output_dir>/instability_dumps/events.jsonl`
+    (or `dump_dir` if provided). If guard is enabled, replaces the loss with 0.0 to
+    avoid poisoning weights for the current step.
+    """
+
+    meta_field = "instability_meta_json"
+
+    def compute_loss(
+        self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
+    ):
+        meta_json = inputs.pop(self.meta_field, None)
+        labels_snapshot = inputs.get("labels")
+
+        loss, outputs = super().compute_loss(  # type: ignore[misc]
+            model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
+        )
+
+        try:
+            loss = self._monitor_and_guard(
+                loss=loss, outputs=outputs, labels=labels_snapshot, meta_json=meta_json
+            )
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
+        return (loss, outputs) if return_outputs else loss
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _as_float(value: Any, default: float) -> float:
+        try:
+            out = float(value)
+        except Exception:
+            return float(default)
+        if not math.isfinite(out):
+            return float(default)
+        return float(out)
+
+    @staticmethod
+    def _as_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+
+    def _get_cfg(self) -> Mapping[str, Any]:
+        raw = getattr(self, "instability_monitor_cfg", None)
+        return raw if isinstance(raw, Mapping) else {}
+
+    def _rank(self) -> int:
+        if not dist.is_available() or not dist.is_initialized():
+            return 0
+        try:
+            return int(dist.get_rank())
+        except Exception:
+            return 0
+
+    def _is_main_process(self) -> bool:
+        return self._rank() == 0
+
+    def _dump_dir(self, cfg: Mapping[str, Any]) -> str | None:
+        raw = cfg.get("dump_dir")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        output_dir = getattr(getattr(self, "args", None), "output_dir", None)
+        if isinstance(output_dir, str) and output_dir:
+            return os.path.join(output_dir, "instability_dumps")
+        return None
+
+    def _append_event(self, dump_dir: str, event: Mapping[str, Any]) -> None:
+        if not self._is_main_process():
+            return
+        os.makedirs(dump_dir, exist_ok=True)
+        path = os.path.join(dump_dir, "events.jsonl")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(dict(event), ensure_ascii=True, sort_keys=True))
+            f.write("\n")
+
+    @staticmethod
+    def _load_jsonl_records_by_index(
+        jsonl_path: str, indices: Sequence[int]
+    ) -> dict[int, Any]:
+        """Load a subset of JSONL rows by 0-based line index (best-effort)."""
+        wanted = sorted({int(i) for i in indices if isinstance(i, int) or str(i).isdigit()})
+        if not wanted:
+            return {}
+        out: dict[int, Any] = {}
+        try:
+            with open(jsonl_path, "r", encoding="utf-8") as f:
+                current = 0
+                target_pos = 0
+                target = wanted[target_pos]
+                for line in f:
+                    if current == target:
+                        raw = line.strip("\n")
+                        try:
+                            out[current] = json.loads(raw)
+                        except Exception:
+                            out[current] = {"_raw": raw, "_parse_error": True}
+                        target_pos += 1
+                        if target_pos >= len(wanted):
+                            break
+                        target = wanted[target_pos]
+                    current += 1
+        except Exception as exc:
+            return {"_error": str(exc)}  # type: ignore[return-value]
+        return out
+
+    def _maybe_dump_samples(
+        self, dump_dir: str, *, mode: str, step: Any, meta_json: str | None
+    ) -> None:
+        cfg = self._get_cfg()
+        if not bool(cfg.get("dump_samples", False)):
+            return
+        if not self._is_main_process():
+            return
+        if not isinstance(meta_json, str) or not meta_json.strip():
+            return
+
+        jsonl_path = None
+        if mode == "train":
+            jp = getattr(self, "instability_train_jsonl", None)
+            if isinstance(jp, str) and jp:
+                jsonl_path = jp
+        else:
+            jp = getattr(self, "instability_val_jsonl", None)
+            if isinstance(jp, str) and jp:
+                jsonl_path = jp
+        if jsonl_path is None:
+            return
+
+        try:
+            meta = json.loads(meta_json)
+        except Exception:
+            meta = None
+        if not isinstance(meta, list):
+            return
+
+        base_idxs: list[int] = []
+        # meta is a list of packs; each contains {"samples":[{"base_idx":...}, ...]}
+        for pack in meta:
+            if not isinstance(pack, dict):
+                continue
+            samples = pack.get("samples")
+            if not isinstance(samples, list):
+                continue
+            for s in samples:
+                if not isinstance(s, dict):
+                    continue
+                bi = s.get("base_idx")
+                try:
+                    bi_i = int(bi)
+                except Exception:
+                    continue
+                if bi_i >= 0:
+                    base_idxs.append(bi_i)
+
+        if not base_idxs:
+            return
+
+        records = self._load_jsonl_records_by_index(jsonl_path, base_idxs)
+        payload = {
+            "mode": mode,
+            "global_step": step,
+            "jsonl_path": jsonl_path,
+            "base_idxs": sorted(set(base_idxs)),
+            "records": records,
+            "meta": meta,
+        }
+
+        os.makedirs(dump_dir, exist_ok=True)
+        out_path = os.path.join(dump_dir, f"samples_step{step}_{mode}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=True, sort_keys=True)
+
+    def _ema_update(self, name: str, value: float, decay: float) -> float:
+        key = f"_instab_ema_{name}"
+        prev = getattr(self, key, None)
+        ema = float(value) if prev is None else float(decay) * float(prev) + (1.0 - float(decay)) * float(value)
+        setattr(self, key, ema)
+        return ema
+
+    def _request_training_stop(self, *, reason: str, mode: str, step: Any) -> None:
+        """Best-effort early stop request that works with HF Trainer-style loops."""
+        if getattr(self, "_instab_stop_requested", False):
+            return
+        setattr(self, "_instab_stop_requested", True)
+
+        # Mark the control/state so Trainer breaks out cleanly at the next check.
+        try:
+            control = getattr(self, "control", None)
+            if control is not None:
+                try:
+                    control.should_training_stop = True
+                except Exception:
+                    pass
+                try:
+                    control.should_epoch_stop = True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            state = getattr(self, "state", None)
+            if state is not None:
+                setattr(state, "should_training_stop", True)
+        except Exception:
+            pass
+
+        if self._is_main_process():
+            logger.error(
+                "InstabilityMonitor early stop requested (mode=%s step=%s reason=%s)",
+                mode,
+                step,
+                reason,
+            )
+
+    def _monitor_and_guard(
+        self, *, loss: torch.Tensor, outputs: Any, labels: Any, meta_json: Any
+    ) -> torch.Tensor:
+        cfg = self._get_cfg()
+        if not bool(cfg.get("enabled", False)):
+            return loss
+
+        guard_cfg = cfg.get("guard", {}) if isinstance(cfg.get("guard"), Mapping) else {}
+        guard_enabled = bool(guard_cfg.get("enabled", False))
+
+        # Optional early-stop (abort training cleanly) when a catastrophic signal is detected.
+        early_cfg = cfg.get("early_stop", {}) if isinstance(cfg.get("early_stop"), Mapping) else {}
+        early_enabled = bool(early_cfg.get("enabled", False))
+
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
+        if mode != "train" and not bool(guard_cfg.get("guard_in_eval", False)):
+            guard_enabled = False
+
+        ema_decay = self._as_float(cfg.get("ema_decay", 0.98), 0.98)
+        ema_decay = min(max(ema_decay, 0.0), 0.9999)
+        spike_factor = self._as_float(cfg.get("spike_factor", 8.0), 8.0)
+        abs_loss_threshold = self._as_float(cfg.get("abs_loss_threshold", 0.2), 0.2)
+        min_supervised_tokens = self._as_int(cfg.get("min_supervised_tokens", 64), 64)
+        min_token_acc = self._as_float(guard_cfg.get("min_token_acc", 0.01), 0.01)
+        max_abs_logit = self._as_float(guard_cfg.get("max_abs_logit", 200.0), 200.0)
+
+        loss_val = float(loss.detach().float().cpu().item())
+        finite_loss = bool(torch.isfinite(loss).all().item())
+
+        logits = getattr(outputs, "logits", None)
+        token_acc = None
+        supervised_tokens = None
+        max_logit_abs = None
+        finite_logits = None
+
+        if isinstance(logits, torch.Tensor) and isinstance(labels, torch.Tensor):
+            seq_len = min(int(logits.shape[1]), max(int(labels.shape[1] - 1), 0))
+            if seq_len > 0:
+                logits_next = logits[:, :seq_len, :]
+                labels_next = labels[:, 1 : seq_len + 1]
+                mask = labels_next != -100
+                supervised_tokens = int(mask.sum().detach().cpu().item())
+                with torch.no_grad():
+                    if supervised_tokens > 0:
+                        logits_sup = logits_next[mask]
+                        labels_sup = labels_next[mask]
+                        finite_logits = bool(torch.isfinite(logits_sup).all().item())
+                        safe_logits = torch.nan_to_num(
+                            logits_sup, nan=0.0, posinf=1e4, neginf=-1e4
+                        )
+                        max_logit_abs = float(
+                            safe_logits.abs().amax().detach().cpu().item()
+                        )
+                        preds = safe_logits.argmax(dim=-1)
+                        token_acc = float(
+                            (preds == labels_sup).float().mean().detach().cpu().item()
+                        )
+                    else:
+                        # No supervised tokens -> ignore logits checks for this batch.
+                        finite_logits = True
+
+        ema_loss = None
+        if mode == "train":
+            ema_loss = self._ema_update("loss", loss_val, ema_decay)
+
+        reasons: list[str] = []
+        if not finite_loss and bool(guard_cfg.get("guard_on_nonfinite", True)):
+            reasons.append("nonfinite_loss")
+        if finite_logits is False and bool(guard_cfg.get("guard_on_nonfinite", True)):
+            reasons.append("nonfinite_logits")
+        if max_logit_abs is not None and max_logit_abs > max_abs_logit:
+            reasons.append("logit_overflow_like")
+
+        is_spike = False
+        if mode == "train" and ema_loss is not None:
+            if loss_val >= abs_loss_threshold and ema_loss > 0 and loss_val > float(spike_factor) * float(ema_loss):
+                is_spike = True
+            if loss_val >= abs_loss_threshold and ema_loss < abs_loss_threshold / 4:
+                is_spike = True
+        if is_spike and bool(guard_cfg.get("guard_on_spike", True)):
+            reasons.append("loss_spike")
+
+        if (
+            token_acc is not None
+            and supervised_tokens is not None
+            and supervised_tokens >= min_supervised_tokens
+            and token_acc <= 0.0
+            and bool(guard_cfg.get("guard_on_zero_acc", True))
+        ):
+            reasons.append("zero_token_acc")
+        elif (
+            token_acc is not None
+            and supervised_tokens is not None
+            and supervised_tokens >= min_supervised_tokens
+            and token_acc < min_token_acc
+            and bool(guard_cfg.get("guard_on_zero_acc", True))
+            and is_spike
+        ):
+            reasons.append("low_token_acc")
+
+        if not reasons:
+            return loss
+
+        dump_dir = self._dump_dir(cfg)
+        step = getattr(getattr(self, "state", None), "global_step", None)
+        epoch = getattr(getattr(self, "state", None), "epoch", None)
+
+        # Decide whether to request an early stop. Default is off, but when enabled we
+        # stop on zero token acc (strong crash indicator) to save time.
+        should_early_stop = False
+        stop_reason = None
+        if mode == "train":
+            if bool(cfg.get("early_stop_on_zero_acc", False)) and "zero_token_acc" in reasons:
+                should_early_stop = True
+                stop_reason = "zero_token_acc"
+            if early_enabled:
+                raw_on = early_cfg.get("on_reasons")
+                if raw_on is None:
+                    on_reasons = ("zero_token_acc",)
+                elif isinstance(raw_on, str):
+                    on_reasons = (raw_on,)
+                elif isinstance(raw_on, (list, tuple, set)):
+                    on_reasons = tuple(str(r) for r in raw_on)
+                else:
+                    on_reasons = ("zero_token_acc",)
+                for r in reasons:
+                    if r in on_reasons:
+                        should_early_stop = True
+                        stop_reason = r
+                        break
+        lr = None
+        try:
+            opt = getattr(self, "optimizer", None)
+            if opt is not None and getattr(opt, "param_groups", None):
+                lr = opt.param_groups[0].get("lr", None)
+        except Exception:
+            lr = None
+        if lr is None:
+            try:
+                sched = getattr(self, "lr_scheduler", None)
+                if sched is not None:
+                    last = sched.get_last_lr()
+                    if last:
+                        lr = last[0]
+            except Exception:
+                lr = None
+        if lr is None:
+            lr = getattr(getattr(self, "args", None), "learning_rate", None)
+
+        meta_str = meta_json if isinstance(meta_json, str) else None
+        if isinstance(meta_str, str) and len(meta_str) > 20000:
+            meta_str = meta_str[:20000] + "...(truncated)"
+
+        event = {
+            "mode": mode,
+            "reasons": reasons,
+            "global_step": step,
+            "epoch": epoch,
+            "loss": loss_val,
+            "ema_loss": ema_loss,
+            "learning_rate": lr,
+            "supervised_tokens": supervised_tokens,
+            "token_acc": token_acc,
+            "max_abs_logit": max_logit_abs,
+            "finite_loss": finite_loss,
+            "finite_logits": finite_logits,
+            "meta_json": meta_str,
+        }
+        if dump_dir is not None:
+            try:
+                self._append_event(dump_dir, event)
+                self._maybe_dump_samples(
+                    dump_dir,
+                    mode=mode,
+                    step=step,
+                    meta_json=meta_str,
+                )
+            except Exception:
+                pass
+
+        if self._is_main_process():
+            ema_s = None if ema_loss is None else f"{float(ema_loss):.6f}"
+            acc_s = None if token_acc is None else f"{float(token_acc):.4f}"
+            maxlog_s = (
+                None if max_logit_abs is None else f"{float(max_logit_abs):.2f}"
+            )
+            logger.warning(
+                "InstabilityMonitor triggered (mode=%s step=%s): %s (loss=%.6f ema=%s acc=%s sup=%s max|logit|=%s)",
+                mode,
+                step,
+                ",".join(reasons),
+                loss_val,
+                ema_s,
+                acc_s,
+                supervised_tokens,
+                maxlog_s,
+            )
+
+        if should_early_stop and stop_reason is not None:
+            # Ensure we don't backprop through a bad step; stop ASAP after dumping.
+            guard_enabled = True
+            try:
+                self._request_training_stop(reason=stop_reason, mode=mode, step=step)
+            except Exception:
+                pass
+
+        if not guard_enabled:
+            return loss
+
+        # IMPORTANT: return a differentiable zero. A detached 0.0 breaks
+        # DeepSpeed/Accelerate backward with:
+        #   "element 0 of tensors does not require grad and does not have a grad_fn"
+        #
+        # Also avoid `loss * 0.0` when loss is NaN/Inf (NaN*0 -> NaN).
+        logits = getattr(outputs, "logits", None)
+        if isinstance(logits, torch.Tensor):
+            safe_logits = torch.nan_to_num(logits, nan=0.0, posinf=0.0, neginf=0.0)
+            return safe_logits.sum() * 0.0
+        return loss * 0.0

@@ -8,6 +8,8 @@ Set QWEN3VL_VERBOSE=1 to enable logging from all ranks.
 
 import logging
 import os
+import sys
+from dataclasses import dataclass
 from typing import Optional
 
 # Try to import ms-swift's logger, fall back to standard logging
@@ -192,6 +194,118 @@ def disable_verbose_logging() -> None:
         >>> # Only rank 0 will log
     """
     os.environ["QWEN3VL_VERBOSE"] = "0"
+
+
+# ---------------------------------------------------------------------------
+# File logging helpers
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class FileLoggingConfig:
+    enabled: bool = True
+    filename: str = "train.log"
+    capture_stdout: bool = False
+    capture_stderr: bool = False
+
+
+class _TeeStream:
+    def __init__(self, stream, file_obj):
+        self._stream = stream
+        self._file = file_obj
+
+    def write(self, data):
+        try:
+            self._stream.write(data)
+        except Exception:
+            pass
+        try:
+            self._file.write(data)
+        except Exception:
+            pass
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except Exception:
+            pass
+        try:
+            self._file.flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        try:
+            return bool(self._stream.isatty())
+        except Exception:
+            return False
+
+
+def enable_output_dir_file_logging(
+    output_dir: str, cfg: Optional[FileLoggingConfig] = None
+) -> str | None:
+    """Mirror logs (and optionally stdout/stderr) into output_dir.
+
+    - Only activates on the main process (rank 0).
+    - Attaches a FileHandler to the `swift` logger so ms-swift logs are captured.
+    - Optionally tees stdout/stderr to the same file for quick review.
+    """
+
+    if not output_dir or not is_main_process():
+        return None
+
+    if cfg is None:
+        cfg = FileLoggingConfig()
+    if not cfg.enabled:
+        return None
+
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except Exception:
+        return None
+
+    filename = cfg.filename.strip() if isinstance(cfg.filename, str) else "train.log"
+    if not filename:
+        filename = "train.log"
+    log_path = os.path.join(output_dir, filename)
+
+    swift_logger = logging.getLogger("swift")
+    for h in list(getattr(swift_logger, "handlers", []) or []):
+        base = getattr(h, "baseFilename", None)
+        if isinstance(base, str) and os.path.abspath(base) == os.path.abspath(log_path):
+            return log_path
+
+    try:
+        handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    except Exception:
+        return None
+
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    swift_logger.addHandler(handler)
+    swift_logger.setLevel(logging.DEBUG)
+
+    try:
+        file_obj = open(log_path, "a", encoding="utf-8")
+    except Exception:
+        file_obj = None
+
+    if file_obj is not None:
+        if cfg.capture_stdout:
+            try:
+                sys.stdout = _TeeStream(sys.stdout, file_obj)
+            except Exception:
+                pass
+        if cfg.capture_stderr:
+            try:
+                sys.stderr = _TeeStream(sys.stderr, file_obj)
+            except Exception:
+                pass
+
+    return log_path
 
 
 # Convenience logger for this module
