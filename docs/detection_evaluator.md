@@ -14,6 +14,8 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - Scores are fixed at 1.0 (greedy decoding outputs have no reliable confidence); any provided `score` fields are ignored.
 - COCOeval runs for bbox and segm (when polygons exist). TODO: polygon GIoU hook.
 - Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
+  - By default (`--f1ish-pred-scope annotated`), predictions whose `desc` is **not semantically close to any GT `desc` in the image** are **ignored** (not counted as FP). This makes F1-ish behave like “how well do we recover annotated objects” on partially-annotated / open-vocab settings.
+  - Use `--f1ish-pred-scope all` for strict counting that penalizes any extra predictions as FP.
 - GPU is required (CUDA must be available) for the CLI and the training callback.
 
 ## CLI
@@ -24,7 +26,7 @@ python scripts/evaluate_detection.py \
   [--metrics coco|f1ish|both] \
   [--unknown-policy bucket|drop|semantic] \
   [--semantic-model <hf-id>] [--semantic-threshold 0.6] [--semantic-device auto] \
-  [--f1ish-iou-thrs 0.3 0.5] \
+  [--f1ish-iou-thrs 0.3 0.5] [--f1ish-pred-scope annotated|all] \
   [--strict-parse] [--no-segm] [--iou-thrs 0.5 0.75] \
   [--overlay --overlay-k 12]
 ```

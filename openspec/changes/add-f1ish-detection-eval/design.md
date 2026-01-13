@@ -26,13 +26,16 @@ Pipeline:
      - If polygon exists: keep `segmentation` polygon.
      - If bbox-only: generate a rectangle polygon segmentation.
      - **Line geometries are excluded** from F1-ish matching/metrics (consistent with the current evaluator docs/behavior).
-3) Compute location-first matching:
+3) Select the evaluated prediction set (open-vocab / partial-GT friendly):
+   - Default "annotated-object recovery" behavior ignores predictions whose `desc` is not semantically close to any GT `desc` in the image (so extra open-vocab objects don't become FP).
+   - A strict mode can count all predictions as FP ("all predictions" scope).
+4) Compute location-first matching:
    - Build candidate pairs with IoU.
    - Greedy 1:1 assignment (highest IoU first), gated by `iou_thr`, with explicit deterministic tie-breaking.
-4) For matched pairs:
+5) For matched pairs:
    - Compute semantic similarity between `pred_desc` and `gt_desc`.
    - Determine `sem_ok` using exact match or embedding cosine similarity ≥ `semantic_thr`.
-5) Aggregate metrics:
+6) Aggregate metrics:
    - Localization-only counts: TP/FP/FN → precision/recall/F1.
    - Semantic-on-matched: semantic accuracy, plus optional strict “full” F1 variant.
 
@@ -98,7 +101,7 @@ Report both **localization-only** and **localization+semantic** views.
 
 Localization-only (micro + macro, per IoU threshold):
 - `tp_loc`: matched by IoU
-- `fp_loc`: unmatched predictions (hallucinations/extras)
+- `fp_loc`: unmatched evaluated predictions (hallucinations/extras within scope)
 - `fn_loc`: unmatched GT (missing)
 - `precision_loc_micro`, `recall_loc_micro`, `f1_loc_micro` computed from global sums over all images.
 - `precision_loc_macro`, `recall_loc_macro`, `f1_loc_macro` computed as the unweighted mean over images of per-image precision/recall/F1.

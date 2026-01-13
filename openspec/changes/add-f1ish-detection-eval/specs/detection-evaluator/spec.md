@@ -19,6 +19,13 @@ In addition to COCOeval metrics, the evaluator SHALL support an F1-ish set-match
 - micro- and macro-averaged precision/recall/F1 for localization (macro-over-images),
 - semantic accuracy over matched pairs, and MAY report a strict combined F1 that penalizes matched-but-wrong-semantic pairs.
 
+In open-vocabulary / partially-annotated settings, F1-ish SHALL support an "annotated-object recovery" interpretation:
+- Predictions outside the per-image GT label space MAY be excluded from evaluation (not counted as `hallucination`).
+- When excluded predictions are supported, the evaluator SHALL report the total/evaluated/ignored prediction counts per IoU threshold using the keys:
+  - `f1ish@{iou_thr}_pred_total` (all predictions),
+  - `f1ish@{iou_thr}_pred_eval` (predictions considered for FP/TP),
+  - `f1ish@{iou_thr}_pred_ignored` (predictions excluded from FP/TP).
+
 Macro definition (required for reproducibility):
 - **Micro** precision/recall/F1 SHALL be computed from global sums across all images.
 - **Macro** precision/recall/F1 SHALL be computed as the unweighted mean over images of per-image precision/recall/F1.
@@ -41,7 +48,7 @@ In F1-ish evaluation, the evaluator SHALL match predicted objects to GT objects 
 - Compute candidate pairs with IoU ≥ `iou_thr`,
 - Sort pairs by IoU descending, breaking ties deterministically by `(pred_idx asc, gt_idx asc)`,
 - Accept a pair only if both pred and GT are unmatched,
-- Remaining GT are `missing` and remaining preds are `hallucination`.
+- Remaining GT are `missing` and remaining *evaluated* preds are `hallucination`.
 
 Additionally:
 - Objects with `line` geometry SHALL be excluded from F1-ish matching and SHALL NOT contribute to `matched/missing/hallucination` counts.
@@ -80,10 +87,15 @@ The evaluator SHALL NOT rewrite predicted desc strings for the purpose of F1-ish
 ### Requirement: Match artifact export
 When F1-ish evaluation runs, the evaluator SHALL emit a `matches.jsonl` artifact that records, per image:
 - stable join keys (`image_id` as the JSONL index, and `file_name` when available),
-- matched pred/gt indices (indexing into the post-validation per-image `pred`/`gt` arrays),
+- matched pred/gt indices (GT indices index into the post-validation per-image GT array; prediction indices index into the original per-image prediction array),
 - location IoU,
 - predicted and GT desc strings,
 - semantic similarity score and pass/fail flag.
+
+If the evaluator supports excluding predictions outside the GT label space (see "annotated-object recovery"), it SHALL additionally record:
+- `pred_scope` (e.g. `annotated` or `all`),
+- `pred_count` / `pred_count_eval` / `pred_count_ignored`,
+- `ignored_pred_indices` listing prediction indices that were excluded from FP/TP counting.
 
 If multiple IoU thresholds are requested for F1-ish, the evaluator SHALL:
 - treat `0.50` as the primary threshold when present (otherwise use the largest requested threshold),
@@ -105,3 +117,16 @@ The evaluator CLI SHALL provide a flag to select evaluation families:
 - **GIVEN** `--metrics both`
 - **WHEN** the evaluator runs
 - **THEN** it writes COCO artifacts and also writes F1-ish metrics/artifacts in the same output directory.
+
+### Requirement: F1-ish prediction scope (annotated-object recovery)
+In F1-ish evaluation, the evaluator SHALL support controlling which predictions are counted toward FP/TP:
+- `annotated`: only predictions whose desc is semantically close to any GT desc in the image are evaluated; other predictions are ignored (not counted as FP).
+- `all`: all predictions are evaluated (strict; extra predictions are counted as FP).
+
+Semantic closeness SHALL use the same embedding model and `semantic_thr` as F1-ish semantic scoring, falling back to exact string match when embeddings are unavailable.
+
+#### Scenario: Predictions outside GT label space are ignored
+- **GIVEN** a GT set containing only the label `chair`
+- **AND** predictions contain `chair` and `table` with valid boxes
+- **WHEN** F1-ish runs with prediction scope `annotated`
+- **THEN** the `table` prediction is ignored and does not contribute to `hallucination` (FP).
