@@ -44,3 +44,8 @@ custom:
     # Gaussian soft target over bins 0..999.
     target_sigma: 2.0
     target_truncate: 16
+
+debug:
+  enabled: true
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train_tiny.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val_tiny.coord.jsonl
