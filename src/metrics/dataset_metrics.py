@@ -159,6 +159,132 @@ class AggregateTokenTypeMetricsMixin:
                 text_acc = (preds[text_mask] == labels_next[text_mask]).float().mean()
             metrics["text_token_acc"].update(float(text_acc.detach().item()))
 
+        # ------------------------------------------------------------------
+        # Coord vocab mass + type-flip monitors (best-effort)
+        # ------------------------------------------------------------------
+        # These are diagnostics only: they help distinguish two failure modes:
+        #   (A) GT coord slot -> model predicts non-coord token (e.g. '}' instead of <|coord_k|>)
+        #   (B) GT non-coord slot (format/desc) -> model predicts a coord token
+        #
+        # We classify by GT token type, and compare to predicted token type. This keeps the
+        # accounting unambiguous when users ask about "both ways" mismatches.
+        try:
+            vocab_size = int(logits_next.shape[-1])
+            if vocab_size > 0:
+                # Reuse cached coord ids from the coord-loss mixin when present; otherwise
+                # derive from the tokenizer for metrics-only setups.
+                coord_token_ids: list[int] = []
+                coord_ids_fn = getattr(self, "_get_coord_token_ids", None)
+                if callable(coord_ids_fn):
+                    coord_token_ids = coord_ids_fn()
+                else:
+                    tokenizer = getattr(getattr(self, "template", None), "tokenizer", None)
+                    if tokenizer is not None:
+                        coord_token_ids = get_coord_token_ids(tokenizer)
+
+                if coord_token_ids:
+                    ids = torch.tensor(
+                        coord_token_ids, device=logits_next.device, dtype=torch.long
+                    )
+                    valid = (ids >= 0) & (ids < vocab_size)
+                    if valid.any().item():
+                        coord_lookup = torch.zeros(
+                            (vocab_size,), dtype=torch.bool, device=logits_next.device
+                        )
+                        coord_lookup[ids[valid]] = True
+
+                        # Predicted token type (coord vs noncoord) for supervised tokens.
+                        pred_is_coord_masked = coord_lookup[preds_masked]
+
+                        # GT token type masks over supervised tokens.
+                        gt_coord = None
+                        gt_text = None
+                        gt_format = None
+                        gt_desc = None
+                        if token_types_next is not None:
+                            types_masked = token_types_next[mask]
+                            gt_coord = types_masked == TokenType.COORD
+                            gt_format = types_masked == TokenType.FORMAT
+                            gt_desc = types_masked == TokenType.DESC
+                            gt_text = (types_masked != TokenType.COORD) & (
+                                types_masked != TokenType.IGNORE
+                            )
+                        elif coord_mask is not None:
+                            gt_coord = coord_mask[mask]
+                            gt_text = ~gt_coord
+
+                        # Type flip rates.
+                        if gt_coord is not None and gt_coord.any().item():
+                            flip = (~pred_is_coord_masked[gt_coord]).float().mean()
+                            metrics["coord_monitor/flip_coord_to_noncoord"].update(
+                                float(flip.detach().item())
+                            )
+                        if gt_text is not None and gt_text.any().item():
+                            flip = (pred_is_coord_masked[gt_text]).float().mean()
+                            metrics["coord_monitor/flip_text_to_coord"].update(
+                                float(flip.detach().item())
+                            )
+                        if gt_format is not None and gt_format.any().item():
+                            flip = (pred_is_coord_masked[gt_format]).float().mean()
+                            metrics["coord_monitor/flip_format_to_coord"].update(
+                                float(flip.detach().item())
+                            )
+                        if gt_desc is not None and gt_desc.any().item():
+                            flip = (pred_is_coord_masked[gt_desc]).float().mean()
+                            metrics["coord_monitor/flip_desc_to_coord"].update(
+                                float(flip.detach().item())
+                            )
+
+                        # Coord-vocab probability mass at GT slots (mean over tokens).
+                        #
+                        # Use logsumexp differences instead of materializing full softmax:
+                        #   mass_coord = exp(logsumexp(coord/T) - logsumexp(full/T)).
+                        flat_logits_full = logits_next[mask]
+                        idx = ids[valid]
+                        flat_logits_coord = flat_logits_full.index_select(-1, idx)
+
+                        # Use the same temperature as coord_soft_ce_w1 if available for comparability.
+                        temperature = 1.0
+                        try:
+                            cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+                            if cfg is not None:
+                                temperature = float(getattr(cfg, "temperature", 1.0))
+                        except Exception:
+                            temperature = 1.0
+                        if temperature <= 0:
+                            temperature = 1.0
+
+                        full = torch.nan_to_num(
+                            flat_logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
+                        ).clamp(min=-1e4, max=1e4) / float(temperature)
+                        coord = torch.nan_to_num(
+                            flat_logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
+                        ).clamp(min=-1e4, max=1e4) / float(temperature)
+                        lse_all = torch.logsumexp(full, dim=-1)
+                        lse_coord = torch.logsumexp(coord, dim=-1)
+                        gate_loss = (lse_all - lse_coord).clamp(min=0.0)
+                        mass = torch.exp((-gate_loss).clamp(min=-50.0, max=50.0))
+
+                        if gt_coord is not None and gt_coord.any().item():
+                            metrics["coord_monitor/coord_vocab_mass_at_gt_coord"].update(
+                                float(mass[gt_coord].mean().detach().item())
+                            )
+                        if gt_text is not None and gt_text.any().item():
+                            metrics["coord_monitor/coord_vocab_mass_at_gt_text"].update(
+                                float(mass[gt_text].mean().detach().item())
+                            )
+                        if gt_format is not None and gt_format.any().item():
+                            metrics["coord_monitor/coord_vocab_mass_at_gt_format"].update(
+                                float(mass[gt_format].mean().detach().item())
+                            )
+                        if gt_desc is not None and gt_desc.any().item():
+                            metrics["coord_monitor/coord_vocab_mass_at_gt_desc"].update(
+                                float(mass[gt_desc].mean().detach().item())
+                            )
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
         # Only split text vs coord; do not emit per-subtype metrics.
 
     def _infer_coord_mask(
