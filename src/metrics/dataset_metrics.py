@@ -21,6 +21,9 @@ class AggregateTokenTypeMetricsMixin:
     - Aggregate only (no per-dataset buckets)
     - Safe under packing when token_types are pre-concatenated; skips on mismatch
     - Skips metrics when no supervised tokens to avoid NaNs
+
+    Metric key reference:
+      - docs/TRAINING_METRICS_AND_LOSSES.md
     """
 
     label_field = "dataset_labels"
