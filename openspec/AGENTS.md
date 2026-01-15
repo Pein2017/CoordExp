@@ -6,7 +6,7 @@ Instructions for AI coding assistants using OpenSpec for spec-driven development
 
 - Search existing work: `openspec spec list --long`, `openspec list` (use `rg` only for full-text search)
 - Decide scope: new capability vs modify existing capability
-- Pick a unique `change-id`: kebab-case, verb-led (`add-`, `update-`, `remove-`, `refactor-`)
+- Pick a unique `change-id`: `YYYY-MM-DD-<name>` where `<name>` is kebab-case and verb-led (`add-`, `update-`, `remove-`, `refactor-`). Use today's date (`date +%F`).
 - Scaffold: `proposal.md`, `tasks.md`, `design.md` (only if needed), and delta specs per affected capability
 - Write deltas: use `## ADDED|MODIFIED|REMOVED|RENAMED Requirements`; include at least one `#### Scenario:` per requirement
 - Validate: `openspec validate [change-id] --strict` and fix issues
