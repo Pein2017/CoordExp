@@ -304,32 +304,36 @@ Before training:
 
 - Enable with `custom.token_type_metrics.enabled: true`; defaults to `include: ["lvis"]`, `exclude: []`.
 - Works on padded and packed batches: token types are computed per sample pre-pack and concatenated; if alignment fails the metrics are skipped (training continues).
-- Metrics are aggregate-only: logs `token_acc`, `token_acc_top5`, `text_token_acc`, `coord_token_acc`, `coord_token_acc_top5`; no per-dataset buckets.
-- If token-type alignment fails, coord/text masks fall back to coord-token ids.
+- Metrics are aggregate-only: logs `token_acc_top5`, `text_token_acc`, and per-type breakdowns (`desc_token_frac`, `format_token_frac`, `coord_token_frac`, plus `desc_token_acc` / `format_token_acc` and their top-5 variants); no per-dataset buckets.
 - NaN-safe: batches with zero supervised tokens are skipped.
 
-### Coord auxiliary loss (SFT pretraining)
+### Coord distribution loss (coord tokens)
 
-Enable `custom.coord_loss` to add L1 + GIoU supervision on coord tokens during SFT (no detection head).
+CoordExp trains coordinate tokens with **distribution-based supervision** only:
+
+- Standard full-vocab CE is applied **only to non-coordinate tokens** (text + JSON structure).
+- At `<|coord_*|>` positions, the model is supervised via:
+  - `softCE`: soft cross-entropy between predicted coord-bin distribution `p` and a unimodal Gaussian soft label `q`
+  - `W1`: 1D Wasserstein-1 distance on discrete bins via CDF differences between `p` and `q`
+  - `gate`: coord-vocab gate loss that penalizes probability mass leaking to non-coord tokens
 
 ```yaml
 custom:
-  coord_loss:
+  coord_soft_ce_w1:
     enabled: true
-    l1_weight: 1.0
-    giou_weight: 1.0
-    poly_mask_weight: 1.0  # defaults to giou_weight when omitted
-    coord_ce_weight: 1.0
-    non_coord_ce_weight: 1.0
-    top_k: 0.1
+    # total_loss += soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
     temperature: 1.0
+    target_sigma: 2.0
+    target_truncate: 16
 ```
 
 Notes:
-- Aux losses are token-averaged over supervised tokens (stable under packing): L1 uses per-coord sums in normalized [0,1] space; GIoU applies to `bbox_2d`; `poly` uses soft mask-IoU loss; `line` uses L1 only.
-- Coord vs non-coord CE weights are applied via ms-swift `loss_scale` when weights differ from 1.0. This uses the per-token CE path (Liger kernel CE is not used in this mode).
-- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_ce` (mean CE on coord tokens), `desc_ce` (mean CE on non-coord tokens), `l1`, `giou`, `poly_mask`, `poly_smooth`.
-- Stability note: coord-aux losses should run in fp32 (expectation decode + L1/GIoU/IoU accumulators). bf16/bf16-softmax on coord logits can produce NaNs after the first optimizer step (symptom: eval_loss becomes NaN and token acc drops to 0). The current implementation promotes coord decode to fp32 to avoid this.
+- Coord-token positions are identified from **labels** (teacher forcing), never from model predictions.
+- No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
+- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, plus `coord_softce_w1/coord_vocab_mass` and `coord_softce_w1/coord_tokens`.
 
 ---
 

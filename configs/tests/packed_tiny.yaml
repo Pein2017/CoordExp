@@ -37,15 +37,15 @@ custom:
   coord_tokens:
     enabled: true            # emit <|coord_*|> tokens in JSONL and template
     skip_bbox_norm: true     # avoid double-normalizing coord-token bboxes
+  coord_soft_ce_w1:
+    enabled: true
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
+    temperature: 1.0
+    target_sigma: 2.0
+    target_truncate: 16
   token_type_metrics:
     enabled: true
     include: [bbu, lvis]
     exclude: []
-  coord_loss:
-    enabled: false
-    l1_weight: 1.0
-    giou_weight: 1.0
-    coord_ce_weight: 1.0
-    non_coord_ce_weight: 1.0
-    top_k: 0.1
-    temperature: 1.0

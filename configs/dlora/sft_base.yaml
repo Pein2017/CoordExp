@@ -66,6 +66,14 @@ custom:
   coord_tokens:
     enabled: true          # accept <|coord_*|> geometries in JSONL
     skip_bbox_norm: true   # avoid double-normalizing bbox when tokens already quantized
+  coord_soft_ce_w1:
+    enabled: true
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
+    temperature: 1.0
+    target_sigma: 2.0
+    target_truncate: 16
   # train_jsonl: ../Qwen3VL/public_data/lvis/rescale_32_768_poly_20/train.jsonl
   # val_jsonl: ../Qwen3VL/public_data/lvis/rescale_32_768_poly_20/val.jsonl
   augmentation:

@@ -14,10 +14,10 @@ training:
   vit_lr: 2.0e-4
   aligner_lr: 5.0e-4
   num_train_epochs: 2
-  optimizer: multimodal  # coord_loss does not require coord_offset optimizer
-  output_dir: ./output/12-24/coord_loss
-  run_name: epoch_2-dlora-lrs_80_20_50-coord_loss-eff_bs_32-max_length_16000-packing_buffer_512
-  logging_dir: ./tb/12-24/coord_loss
+  optimizer: multimodal
+  output_dir: ./output/12-24/coord_softce_w1
+  run_name: epoch_2-dlora-lrs_80_20_50-coord_softce_w1-eff_bs_32-max_length_16000-packing_buffer_512
+  logging_dir: ./tb/12-24/coord_softce_w1
   save_strategy: steps
   eval_steps: 40
   save_delay_steps: 500
@@ -39,14 +39,6 @@ custom:
   val_sample_with_replacement: false
   token_type_metrics:
     enabled: true
-  # Coordinate expectation diagnostics (localization-oriented; independent of top-k token hits).
-  coord_expectation_metrics:
-    enabled: true
-    temperature: 1.0
-    # Two tolerances are kept (smallest + largest) to avoid redundant logs.
-    tolerances: [2, 8]
-    # Sub-sample coord positions per step for speed under long packing.
-    max_positions: 4096
   # Log + dump offending samples when loss spikes / logits go non-finite.
   # Dumps into `<output_dir>/<run_name>/instability_dumps/`.
   instability_monitor:
@@ -74,17 +66,11 @@ custom:
     filename: train.log
     capture_stdout: false
     capture_stderr: false
-  coord_loss:
+  coord_soft_ce_w1:
     enabled: true
-    # Suggested starting weights; tune per run
-    l1_weight: 0.1
-    giou_weight: 0.1
-    coord_ce_weight: 1.0
-    non_coord_ce_weight: 1.0
-    top_k: 0.1
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
     temperature: 1.0
-    poly_mask_size: 64
-    poly_sigma_mask: 0.0234375  # 1.5 / 64
-    poly_tau_inside: 0.08
-    poly_beta_dist: 100.0
-    poly_smooth_weight: 0.05
+    target_sigma: 2.0
+    target_truncate: 16

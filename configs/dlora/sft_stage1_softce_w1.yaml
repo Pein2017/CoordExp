@@ -1,0 +1,46 @@
+extends: sft_base.yaml
+
+# Scheme A (Stage-1 retrain): CE on non-coord tokens + coord-gated softCE+W1 on coord tokens.
+# This config is intentionally placeholder-heavy; tune per run.
+
+global_max_length: 12000
+
+model:
+  model: output/12-24/coord_loss-merged/ckpt-3106
+
+training:
+  output_dir: ./output/1-15/stage1_softce_w1
+  run_name: stage1-softce_w1-LRs-2e-5_2e-5_5e-5
+  logging_dir: ./tb/1-15/stage1_softce_w1
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  effective_batch_size: 32
+  optimizer: multimodal
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  packing: true
+  packing_buffer: 512
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  eval_packing: true
+
+custom:
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl
+  val_sample_limit: 1000
+  val_sample_with_replacement: false
+  token_type_metrics:
+    enabled: true
+  coord_soft_ce_w1:
+    enabled: true
+    # Loss composition at coord positions: soft_ce_weight * softCE + w1_weight * W1(CDF)
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
+    # Distribution temperature for coord-gated softmax.
+    temperature: 1.0
+    # Gaussian soft target over bins 0..999.
+    target_sigma: 2.0
+    target_truncate: 16

@@ -39,7 +39,7 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 
 ### Requirement: Coord-token mode is gated
 - The system SHALL expose a config flag (e.g., `coord_tokens.enabled`) that, when false or absent, preserves the current numeric geometry workflow unchanged.
-- When the flag is true, coord-token handling is enabled across loader, template, and loss helpers.
+- When the flag is true, coord-token handling is enabled across loader, template, and coord-token supervision helpers.
 
 #### Scenario: Default path unchanged
 - GIVEN coord-token mode is disabled
@@ -48,7 +48,7 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 
 ### Requirement: Coord token codec utilities
 - The system SHALL provide a reusable codec that maps `<|coord_k|>` ↔ int k ↔ normalized float k/1000 and builds a coord-token id mask for CE/logit restriction.
-- The default supported k range SHALL be 0..999 inclusive; the codec MAY optionally allow 1000 when configured.
+- The supported k range SHALL be 0..999 inclusive.
 
 #### Scenario: Token round-trip
 - GIVEN a coord token string `<|coord_123|>`
@@ -80,11 +80,16 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - WHEN the converter is run
 - THEN the output JSONL has geometry/text coords as coord tokens and includes width/height so pixels can be reconstructed.
 
-### Requirement: Loss helpers for coord tokens
-- Coord-token mode SHALL include helpers that (a) restrict logits to coord tokens, (b) expectation-decode boxes, and (c) provide numeric targets for CE/L1/GIoU.
+### Requirement: Distributional coord-token supervision helpers
+- Coord-token mode SHALL include helpers that:
+  - restrict logits to the coord-token sub-vocabulary for coord supervision at `<|coord_*|>` positions,
+  - compute per-token distribution losses `softCE(Gaussian kernel) + 1D W1(CDF)` on the ordered coord bins,
+  - optionally apply a coord-vocab gate loss that penalizes probability mass outside the coord vocab at coord positions.
+- When distributional coord-token supervision is enabled, the system SHALL ensure coord-token targets do not contribute to the base full-vocab CE loss by masking coord targets to `ignore_index` (or an equivalent mechanism with zero gradient), while still using the same forward logits to compute coord losses.
 
-#### Scenario: Expectation decoding ready for loss
-- GIVEN logits over vocab and coord-position indices
-- WHEN passed to the helper
-- THEN it returns decoded boxes in normalized space and masks for CE/geom losses without needing the template to renormalize.
-
+#### Scenario: Coord tokens supervised with softCE+W1 from one forward
+- **GIVEN** coord-token mode is enabled
+- **AND** distributional coord-token supervision is enabled
+- **WHEN** `Trainer.compute_loss` is called
+- **THEN** coord-token targets do not contribute to the base full-vocab CE loss
+- **AND** coord `softCE+W1` is computed from the same forward logits restricted to the coord vocab.
