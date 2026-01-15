@@ -49,4 +49,4 @@ debug:
   enabled: true
   output_dir: ./output_debug/
   train_sample_limit: 256
-  val_sample_limit: 128
+  val_sample_limit: 64
