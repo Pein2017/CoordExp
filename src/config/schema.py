@@ -433,9 +433,6 @@ class CustomConfig:
     user_prompt: str
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
-    # Optional: lightweight datasets used for smoke tests when running `python -m src.sft --debug`.
-    # These do not affect normal training unless explicitly activated by the runner.
-    debug_train_jsonl: Optional[str] = None
     object_ordering: Literal["sorted", "random"] = "sorted"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
@@ -453,7 +450,6 @@ class CustomConfig:
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
-    debug_val_jsonl: Optional[str] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     hard_sample_mining: Optional["HardSampleMiningConfig"] = None  # Deprecated: not wired; will error if provided
@@ -504,7 +500,6 @@ class CustomConfig:
 
         data: MutableMapping[str, Any] = dict(payload)
         train_jsonl = data.pop("train_jsonl", data.pop("jsonl", None))
-        debug_train_jsonl_raw = data.pop("debug_train_jsonl", None)
         user_prompt = data.pop("user_prompt", prompts.user)
         emit_norm = data.pop("emit_norm", None)
 
@@ -569,7 +564,6 @@ class CustomConfig:
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
         val_jsonl = data.pop("val_jsonl", None)
-        debug_val_jsonl_raw = data.pop("debug_val_jsonl", None)
         fusion_config_raw = data.pop("fusion_config", None)
         if fusion_config_raw not in (None, "", False):
             raise ValueError(
@@ -627,20 +621,8 @@ class CustomConfig:
                 "custom.object_ordering must be 'sorted' or 'random' when provided"
             )
 
-        debug_train_jsonl = (
-            None
-            if debug_train_jsonl_raw in (None, "", False)
-            else str(debug_train_jsonl_raw)
-        )
-        debug_val_jsonl = (
-            None
-            if debug_val_jsonl_raw in (None, "", False)
-            else str(debug_val_jsonl_raw)
-        )
-
         return cls(
             train_jsonl=str(train_jsonl) if train_jsonl is not None else "",
-            debug_train_jsonl=debug_train_jsonl,
             user_prompt=str(user_prompt) if user_prompt is not None else "",
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
@@ -669,7 +651,6 @@ class CustomConfig:
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
-            debug_val_jsonl=debug_val_jsonl,
             fusion_config=str(fusion_config) if fusion_config is not None else None,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
@@ -680,9 +661,75 @@ class CustomConfig:
 
 
 @dataclass(frozen=True)
+class DebugConfig:
+    """Optional debug overrides (e.g. tiny JSONLs for smoke tests).
+
+    This is intentionally separate from `custom.*` so we can grow debug-only knobs
+    without polluting the dataset contract.
+    """
+
+    enabled: bool = False
+    # When set, overrides both training.output_dir and training.logging_dir so that
+    # checkpoints + tensorboard logs land in the same folder (easy cleanup).
+    output_dir: Optional[str] = None
+    train_jsonl: Optional[str] = None
+    val_jsonl: Optional[str] = None
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "DebugConfig":
+        if payload is None:
+            return cls(enabled=False)
+        if not isinstance(payload, Mapping):
+            raise TypeError("debug section must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        def _parse_bool(value: Any, field_name: str) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                if value in (0, 1, 0.0, 1.0):
+                    return bool(value)
+                raise ValueError(f"{field_name} must be boolean (0 or 1), got {value!r}.")
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"true", "1", "yes", "y", "on"}:
+                    return True
+                if normalized in {"false", "0", "no", "n", "off"}:
+                    return False
+                raise ValueError(
+                    f"{field_name} string value '{value}' is not a recognized boolean representation."
+                )
+            raise TypeError(f"{field_name} must be a boolean value, got {type(value)!r}.")
+
+        enabled_raw = data.pop("enabled", False)
+        enabled = _parse_bool(enabled_raw, "debug.enabled")
+
+        output_dir_raw = data.pop("output_dir", None)
+        output_dir = None if output_dir_raw in (None, "", False) else str(output_dir_raw)
+
+        train_jsonl_raw = data.pop("train_jsonl", None)
+        val_jsonl_raw = data.pop("val_jsonl", None)
+        train_jsonl = None if train_jsonl_raw in (None, "", False) else str(train_jsonl_raw)
+        val_jsonl = None if val_jsonl_raw in (None, "", False) else str(val_jsonl_raw)
+
+        extra = dict(data)
+
+        return cls(
+            enabled=enabled,
+            output_dir=output_dir,
+            train_jsonl=train_jsonl,
+            val_jsonl=val_jsonl,
+            extra=extra,
+        )
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     template: Mapping[str, Any]
     custom: CustomConfig
+    debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     quantization: Mapping[str, Any] = field(default_factory=dict)
     data: Mapping[str, Any] = field(default_factory=dict)
@@ -712,6 +759,7 @@ class TrainingConfig:
         training = dict(_as_dict(data.pop("training", None)))
         rlhf = dict(_as_dict(data.pop("rlhf", None)))
         custom_raw = data.pop("custom", None)
+        debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
 
@@ -734,6 +782,7 @@ class TrainingConfig:
         return cls(
             template=template,
             custom=custom,
+            debug=debug,
             model=model,
             quantization=quantization,
             data=data_section,

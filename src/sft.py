@@ -214,10 +214,37 @@ def main():
     # Ensure custom optimizer variant is available before trainer setup
     register_coord_offset_optimizer()
     custom_config = training_config.custom
+    debug_config = getattr(training_config, "debug", None)
     # Append run_name to output_dir and logging_dir to form final paths
     try:
         run_name = getattr(train_args, "run_name", None)
         training_args = getattr(train_args, "training_args", None)
+
+        # Debug: collapse output_dir + logging_dir into a single folder for easy cleanup.
+        if debug_config is not None and getattr(debug_config, "enabled", False):
+            debug_output_dir = getattr(debug_config, "output_dir", None)
+            if debug_output_dir:
+                logger.warning(
+                    "Debug output override enabled: setting output_dir=logging_dir=%s",
+                    debug_output_dir,
+                )
+                try:
+                    setattr(train_args, "output_dir", str(debug_output_dir))
+                except Exception:
+                    pass
+                try:
+                    setattr(train_args, "logging_dir", str(debug_output_dir))
+                except Exception:
+                    pass
+                if training_args is not None:
+                    try:
+                        setattr(training_args, "output_dir", str(debug_output_dir))
+                    except Exception:
+                        pass
+                    try:
+                        setattr(training_args, "logging_dir", str(debug_output_dir))
+                    except Exception:
+                        pass
 
         # Resolve and update output_dir
         base_output_dir = getattr(train_args, "output_dir", None)
@@ -292,6 +319,7 @@ def main():
         logger.debug(f"  tuner={training_config.tuner}")
         logger.debug(f"  rlhf={training_config.rlhf}")
         logger.debug(f"  deepspeed={training_config.deepspeed}")
+        logger.debug(f"  debug={getattr(training_config, 'debug', None)}")
         logger.debug(f"  prompts={training_config.prompts}")
         logger.debug("Custom dataset config:")
         for key, value in asdict(custom_config).items():
@@ -303,12 +331,12 @@ def main():
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl' or 'custom.jsonl'")
 
-    # Optional: smoke-test datasets activated in debug mode.
-    if args.debug:
-        debug_train_jsonl = getattr(custom_config, "debug_train_jsonl", None)
+    # Optional: smoke-test datasets activated via YAML (debug.enabled=true).
+    if debug_config is not None and getattr(debug_config, "enabled", False):
+        debug_train_jsonl = getattr(debug_config, "train_jsonl", None)
         if debug_train_jsonl:
             logger.warning(
-                "Debug mode enabled: overriding training jsonl with custom.debug_train_jsonl=%s",
+                "Debug dataset override enabled: using debug.train_jsonl=%s",
                 debug_train_jsonl,
             )
             train_jsonl = str(debug_train_jsonl)
@@ -802,11 +830,11 @@ def main():
     # Build validation dataset if provided
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
-    if args.debug:
-        debug_val_jsonl = getattr(custom_config, "debug_val_jsonl", None)
+    if debug_config is not None and getattr(debug_config, "enabled", False):
+        debug_val_jsonl = getattr(debug_config, "val_jsonl", None)
         if debug_val_jsonl:
             logger.warning(
-                "Debug mode enabled: overriding validation jsonl with custom.debug_val_jsonl=%s",
+                "Debug dataset override enabled: using debug.val_jsonl=%s",
                 debug_val_jsonl,
             )
             val_jsonl = str(debug_val_jsonl)

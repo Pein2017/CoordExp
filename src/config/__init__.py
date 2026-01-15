@@ -4,6 +4,7 @@ from .loader import ConfigLoader
 from .schema import (
     TrainingConfig,
     CustomConfig,
+    DebugConfig,
     PromptOverrides,
     VisualKDTargetConfig,
     VisualKDConfig,
@@ -16,6 +17,7 @@ __all__ = [
     "ConfigLoader",
     "TrainingConfig",
     "CustomConfig",
+    "DebugConfig",
     "PromptOverrides",
     "VisualKDTargetConfig",
     "VisualKDConfig",

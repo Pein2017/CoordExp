@@ -71,3 +71,12 @@ custom:
   train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
   val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl
   dump_conversation_path: output/conversation_text.txt
+
+debug:
+  # Debug overrides are opt-in and do not affect normal training unless enabled.
+  enabled: false
+  # When set, overrides both training.output_dir and training.logging_dir so that
+  # checkpoints + tensorboard logs land in the same folder (easy cleanup).
+  # output_dir: ./output/smoke
+  # train_jsonl: public_data/lvis/rescale_32_768_poly_20/train_tiny.jsonl
+  # val_jsonl: public_data/lvis/rescale_32_768_poly_20/val_tiny.jsonl
