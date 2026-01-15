@@ -197,11 +197,12 @@ class AggregateTokenTypeMetricsMixin:
                         pred_is_coord_masked = coord_lookup[preds_masked]
 
                         # GT token type masks over supervised tokens.
-                        gt_coord = None
-                        gt_text = None
+                        gt_coord = coord_lookup[labels_masked.clamp(min=0, max=vocab_size - 1)]
+                        gt_text = ~gt_coord
                         gt_format = None
                         gt_desc = None
                         if token_types_next is not None:
+                            # Prefer collator-provided token types so IGNORE regions are excluded.
                             types_masked = token_types_next[mask]
                             gt_coord = types_masked == TokenType.COORD
                             gt_format = types_masked == TokenType.FORMAT
@@ -209,9 +210,6 @@ class AggregateTokenTypeMetricsMixin:
                             gt_text = (types_masked != TokenType.COORD) & (
                                 types_masked != TokenType.IGNORE
                             )
-                        elif coord_mask is not None:
-                            gt_coord = coord_mask[mask]
-                            gt_text = ~gt_coord
 
                         # Type flip rates.
                         if gt_coord is not None and gt_coord.any().item():
