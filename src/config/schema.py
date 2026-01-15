@@ -94,27 +94,23 @@ class CoordTokensConfig:
 
 
 @dataclass(frozen=True)
-class CoordLossConfig:
+class CoordSoftCEW1Config:
+    """Coord-token supervision: softCE(Gaussian) + W1(CDF) + coord-vocab gate."""
+
     enabled: bool = False
-    l1_weight: float = 0.0
-    giou_weight: float = 0.0
-    poly_mask_weight: float = 0.0
-    coord_ce_weight: float = 1.0
-    non_coord_ce_weight: float = 1.0
-    top_k: float = 0.1
+    soft_ce_weight: float = 1.0
+    w1_weight: float = 1.0
+    gate_weight: float = 1.0
     temperature: float = 1.0
-    poly_mask_size: int = 64
-    poly_sigma_mask: float = 1.5 / 64.0
-    poly_tau_inside: float = 0.08
-    poly_beta_dist: float = 100.0
-    poly_smooth_weight: float = 0.05
+    target_sigma: float = 2.0
+    target_truncate: Optional[int] = None
 
     @classmethod
-    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordLossConfig":
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordSoftCEW1Config":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError("coord_loss section must be a mapping when provided")
+            raise TypeError("coord_soft_ce_w1 section must be a mapping when provided")
 
         enabled = bool(payload.get("enabled", False))
 
@@ -123,74 +119,49 @@ class CoordLossConfig:
             try:
                 return float(raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"coord_loss.{key} must be numeric") from exc
+                raise ValueError(f"coord_soft_ce_w1.{key} must be numeric") from exc
 
-        def _parse_int(key: str, default: int) -> int:
-            raw = payload.get(key, default)
-            try:
-                return int(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"coord_loss.{key} must be an integer") from exc
-
-        l1_weight = _parse_float("l1_weight", cls.l1_weight)
-        giou_weight = _parse_float("giou_weight", cls.giou_weight)
-        poly_mask_weight = _parse_float("poly_mask_weight", giou_weight)
-        coord_ce_weight = _parse_float("coord_ce_weight", cls.coord_ce_weight)
-        non_coord_ce_weight = _parse_float(
-            "non_coord_ce_weight", cls.non_coord_ce_weight
-        )
-        top_k = _parse_float("top_k", cls.top_k)
+        soft_ce_weight = _parse_float("soft_ce_weight", cls.soft_ce_weight)
+        w1_weight = _parse_float("w1_weight", cls.w1_weight)
+        gate_weight = _parse_float("gate_weight", cls.gate_weight)
         temperature = _parse_float("temperature", cls.temperature)
-        poly_mask_size = _parse_int("poly_mask_size", cls.poly_mask_size)
-        if "poly_sigma_mask" in payload:
-            poly_sigma_mask = _parse_float("poly_sigma_mask", cls.poly_sigma_mask)
-        else:
-            poly_sigma_mask = 1.5 / float(poly_mask_size)
-        poly_tau_inside = _parse_float("poly_tau_inside", cls.poly_tau_inside)
-        poly_beta_dist = _parse_float("poly_beta_dist", cls.poly_beta_dist)
-        poly_smooth_weight = _parse_float(
-            "poly_smooth_weight", cls.poly_smooth_weight
-        )
+        target_sigma = _parse_float("target_sigma", cls.target_sigma)
 
-        if l1_weight < 0:
-            raise ValueError("coord_loss.l1_weight must be >= 0")
-        if giou_weight < 0:
-            raise ValueError("coord_loss.giou_weight must be >= 0")
-        if poly_mask_weight < 0:
-            raise ValueError("coord_loss.poly_mask_weight must be >= 0")
-        if coord_ce_weight < 0:
-            raise ValueError("coord_loss.coord_ce_weight must be >= 0")
-        if non_coord_ce_weight < 0:
-            raise ValueError("coord_loss.non_coord_ce_weight must be >= 0")
-        if top_k <= 0:
-            raise ValueError("coord_loss.top_k must be > 0")
+        target_truncate_raw = payload.get("target_truncate", cls.target_truncate)
+        target_truncate: Optional[int]
+        if target_truncate_raw is None:
+            target_truncate = None
+        else:
+            try:
+                target_truncate = int(target_truncate_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("coord_soft_ce_w1.target_truncate must be an integer or null") from exc
+
+        if soft_ce_weight < 0:
+            raise ValueError("coord_soft_ce_w1.soft_ce_weight must be >= 0")
+        if w1_weight < 0:
+            raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
+        if gate_weight < 0:
+            raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
+        if enabled and soft_ce_weight == 0 and w1_weight == 0 and gate_weight == 0:
+            raise ValueError(
+                "coord_soft_ce_w1 is enabled but soft_ce_weight, w1_weight, and gate_weight are all 0"
+            )
         if temperature <= 0:
-            raise ValueError("coord_loss.temperature must be > 0")
-        if poly_mask_size <= 0:
-            raise ValueError("coord_loss.poly_mask_size must be > 0")
-        if poly_sigma_mask <= 0:
-            raise ValueError("coord_loss.poly_sigma_mask must be > 0")
-        if poly_tau_inside <= 0:
-            raise ValueError("coord_loss.poly_tau_inside must be > 0")
-        if poly_beta_dist <= 0:
-            raise ValueError("coord_loss.poly_beta_dist must be > 0")
-        if poly_smooth_weight < 0:
-            raise ValueError("coord_loss.poly_smooth_weight must be >= 0")
+            raise ValueError("coord_soft_ce_w1.temperature must be > 0")
+        if target_sigma <= 0:
+            raise ValueError("coord_soft_ce_w1.target_sigma must be > 0")
+        if target_truncate is not None and target_truncate < 0:
+            raise ValueError("coord_soft_ce_w1.target_truncate must be >= 0 or null")
 
         return cls(
             enabled=enabled,
-            l1_weight=l1_weight,
-            giou_weight=giou_weight,
-            poly_mask_weight=poly_mask_weight,
-            coord_ce_weight=coord_ce_weight,
-            non_coord_ce_weight=non_coord_ce_weight,
-            top_k=top_k,
+            soft_ce_weight=soft_ce_weight,
+            w1_weight=w1_weight,
+            gate_weight=gate_weight,
             temperature=temperature,
-            poly_mask_size=poly_mask_size,
-            poly_sigma_mask=poly_sigma_mask,
-            poly_tau_inside=poly_tau_inside,
-            poly_beta_dist=poly_beta_dist,
-            poly_smooth_weight=poly_smooth_weight,
+            target_sigma=target_sigma,
+            target_truncate=target_truncate,
         )
 
 
@@ -462,10 +433,13 @@ class CustomConfig:
     user_prompt: str
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
+    # Optional: lightweight datasets used for smoke tests when running `python -m src.sft --debug`.
+    # These do not affect normal training unless explicitly activated by the runner.
+    debug_train_jsonl: Optional[str] = None
     object_ordering: Literal["sorted", "random"] = "sorted"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
-    coord_loss: CoordLossConfig = field(default_factory=CoordLossConfig)
+    coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
     augmentation: Optional[Mapping[str, Any]] = None
@@ -479,6 +453,7 @@ class CustomConfig:
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
+    debug_val_jsonl: Optional[str] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     hard_sample_mining: Optional["HardSampleMiningConfig"] = None  # Deprecated: not wired; will error if provided
@@ -505,6 +480,11 @@ class CustomConfig:
             raise TypeError("custom.val_sample_with_replacement must be a boolean value")
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        if self.coord_tokens.enabled and not self.coord_soft_ce_w1.enabled:
+            raise ValueError(
+                "custom.coord_tokens.enabled requires custom.coord_soft_ce_w1.enabled "
+                "(coord tokens must be supervised with distribution losses)."
+            )
         if (
             self.val_sample_with_replacement
             and self.val_sample_limit is None
@@ -524,6 +504,7 @@ class CustomConfig:
 
         data: MutableMapping[str, Any] = dict(payload)
         train_jsonl = data.pop("train_jsonl", data.pop("jsonl", None))
+        debug_train_jsonl_raw = data.pop("debug_train_jsonl", None)
         user_prompt = data.pop("user_prompt", prompts.user)
         emit_norm = data.pop("emit_norm", None)
 
@@ -588,6 +569,7 @@ class CustomConfig:
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
         val_jsonl = data.pop("val_jsonl", None)
+        debug_val_jsonl_raw = data.pop("debug_val_jsonl", None)
         fusion_config_raw = data.pop("fusion_config", None)
         if fusion_config_raw not in (None, "", False):
             raise ValueError(
@@ -605,6 +587,12 @@ class CustomConfig:
         hsm_cfg = None
         token_type_metrics_raw = data.pop("token_type_metrics", None)
         token_type_metrics = TokenTypeMetricsConfig.from_mapping(token_type_metrics_raw)
+        if "coord_expectation_metrics" in data:
+            raise ValueError(
+                "custom.coord_expectation_metrics has been removed. "
+                "Decoded-coordinate diagnostics (expectation/argmax) are not supported; "
+                "use the distribution-based coord losses/logs instead."
+            )
         json_format_raw = data.pop("json_format", None)
         if json_format_raw is None:
             raise ValueError("custom.json_format must be provided")
@@ -625,8 +613,13 @@ class CustomConfig:
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
-        coord_loss_raw = data.pop("coord_loss", None)
-        coord_loss = CoordLossConfig.from_mapping(coord_loss_raw)
+        if "coord_loss" in data:
+            raise ValueError(
+                "custom.coord_loss has been removed (legacy expectation/L1/GIoU/poly losses). "
+                "Use custom.coord_soft_ce_w1 instead."
+            )
+        coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
+        coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
 
         object_ordering = str(object_ordering_raw).lower()
         if object_ordering not in {"sorted", "random"}:
@@ -634,15 +627,27 @@ class CustomConfig:
                 "custom.object_ordering must be 'sorted' or 'random' when provided"
             )
 
+        debug_train_jsonl = (
+            None
+            if debug_train_jsonl_raw in (None, "", False)
+            else str(debug_train_jsonl_raw)
+        )
+        debug_val_jsonl = (
+            None
+            if debug_val_jsonl_raw in (None, "", False)
+            else str(debug_val_jsonl_raw)
+        )
+
         return cls(
             train_jsonl=str(train_jsonl) if train_jsonl is not None else "",
+            debug_train_jsonl=debug_train_jsonl,
             user_prompt=str(user_prompt) if user_prompt is not None else "",
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
             object_ordering=cast(Literal["sorted", "random"], object_ordering),
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
-            coord_loss=coord_loss,
+            coord_soft_ce_w1=coord_soft_ce_w1,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
             augmentation=augmentation
@@ -664,6 +669,7 @@ class CustomConfig:
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
+            debug_val_jsonl=debug_val_jsonl,
             fusion_config=str(fusion_config) if fusion_config is not None else None,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,

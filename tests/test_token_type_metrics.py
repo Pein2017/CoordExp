@@ -7,9 +7,12 @@ from src.data_collators.token_types import TokenType, compute_token_types
 class DummyTokenizer:
     """Character-level tokenizer stub with offset_mapping."""
 
-    def __call__(self, text, add_special_tokens=False, return_offsets_mapping=False):
+    def __call__(self, text, add_special_tokens=False, return_offsets_mapping=False, **kwargs):
         offsets = [(i, i + 1) for i in range(len(text))]
-        return {"offset_mapping": offsets}
+        max_length = kwargs.get("max_length")
+        if max_length is not None:
+            offsets = offsets[: int(max_length)]
+        return {"offset_mapping": offsets, "input_ids": [0] * len(offsets)}
 
 
 class DummyTemplateMeta:
@@ -55,12 +58,8 @@ def _make_payload():
 def test_compute_token_types_basic():
     tokenizer = DummyTokenizer()
     payload = _make_payload()
-    text, _ = "placeholder", None  # just to count
-    # With char tokenizer, supervised positions length equals text length after json dumps
-    rendered, _ = (lambda p: __import__("json").dumps(p, ensure_ascii=False))(
-        payload
-    ), None
-    labels = torch.zeros(len(rendered), dtype=torch.long)
+    # Use a fixed supervised length so the dummy tokenizer can trivially align ids.
+    labels = torch.zeros(32, dtype=torch.long)
     types = compute_token_types(
         tokenizer=tokenizer,
         payload=payload,
@@ -82,13 +81,13 @@ def test_collator_attaches_token_types_padded():
     batch = [
         {
             "input_ids": [1, 2, 3],
-            "labels": [10, 11, 12],
+            "labels": [0, 0, 0],
             "attention_mask": [1, 1, 1],
             "assistant_payload": _make_payload(),
         },
         {
             "input_ids": [4, 5],
-            "labels": [13, 14],
+            "labels": [0, 0],
             "attention_mask": [1, 1],
             "assistant_payload": _make_payload(),
         },
@@ -129,13 +128,13 @@ def test_collator_attaches_token_types_packed_concat():
     pack = [
         {
             "input_ids": [1, 2],
-            "labels": [10, 11],
+            "labels": [0, 0],
             "attention_mask": [1, 1],
             "assistant_payload": _make_payload(),
         },
         {
             "input_ids": [3],
-            "labels": [12],
+            "labels": [0],
             "attention_mask": [1],
             "assistant_payload": _make_payload(),
         },
@@ -181,14 +180,14 @@ def test_packed_include_exclude_filters_and_aligns():
         {
             "dataset": "lvis",
             "input_ids": [1, 2],
-            "labels": [10, 11],
+            "labels": [0, 0],
             "attention_mask": [1, 1],
             "assistant_payload": _make_payload(),
         },
         {
             "dataset": "coco",
             "input_ids": [3, 4],
-            "labels": [12, 13],
+            "labels": [0, 0],
             "attention_mask": [1, 1],
             "assistant_payload": _make_payload(),
         },

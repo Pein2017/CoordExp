@@ -27,7 +27,7 @@ from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_data
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
 from .metrics.dataset_metrics import (
     AggregateTokenTypeMetricsMixin,
-    CoordAuxLossMixin,
+    CoordSoftCEW1LossMixin,
     InstabilityMonitorMixin,
 )
 from .trainers import with_final_checkpoint
@@ -302,6 +302,16 @@ def main():
     train_jsonl = custom_config.train_jsonl or custom_config.extra.get("jsonl")
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl' or 'custom.jsonl'")
+
+    # Optional: smoke-test datasets activated in debug mode.
+    if args.debug:
+        debug_train_jsonl = getattr(custom_config, "debug_train_jsonl", None)
+        if debug_train_jsonl:
+            logger.warning(
+                "Debug mode enabled: overriding training jsonl with custom.debug_train_jsonl=%s",
+                debug_train_jsonl,
+            )
+            train_jsonl = str(debug_train_jsonl)
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
         root_dir = os.path.abspath(os.path.dirname(train_jsonl))
@@ -792,6 +802,14 @@ def main():
     # Build validation dataset if provided
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
+    if args.debug:
+        debug_val_jsonl = getattr(custom_config, "debug_val_jsonl", None)
+        if debug_val_jsonl:
+            logger.warning(
+                "Debug mode enabled: overriding validation jsonl with custom.debug_val_jsonl=%s",
+                debug_val_jsonl,
+            )
+            val_jsonl = str(debug_val_jsonl)
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
@@ -865,28 +883,18 @@ def main():
     logger.info("Setting up trainer...")
     base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
-    coord_loss_cfg = getattr(custom_config, "coord_loss", None)
+    coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
-    coord_expectation_metrics_cfg = None
     try:
         raw_instab = getattr(custom_config, "extra", {}).get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
     except Exception:
         instability_monitor_cfg = None
-    try:
-        raw_coord_expect = getattr(custom_config, "extra", {}).get(
-            "coord_expectation_metrics"
-        )
-        if isinstance(raw_coord_expect, dict):
-            coord_expectation_metrics_cfg = raw_coord_expect
-    except Exception:
-        coord_expectation_metrics_cfg = None
     data_collator = build_dataset_metrics_collator(
         sft.template,
         base_collator,
         token_type_cfg=token_type_cfg,
-        coord_loss_cfg=coord_loss_cfg,
         instability_monitor_cfg=instability_monitor_cfg,
     )
     trainer_cls = resolve_trainer_cls(train_args)
@@ -896,10 +904,10 @@ def main():
         and bool(instability_monitor_cfg.get("enabled", False))
     ):
         mixins.append(InstabilityMonitorMixin)
-    if coord_loss_cfg and getattr(coord_loss_cfg, "enabled", False):
-        mixins.append(CoordAuxLossMixin)
     if token_type_cfg and getattr(token_type_cfg, "enabled", False):
         mixins.append(AggregateTokenTypeMetricsMixin)
+    if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
+        mixins.append(CoordSoftCEW1LossMixin)
     if mixins:
         trainer_cls = type(
             f"{trainer_cls.__name__}WithMetrics",
@@ -962,9 +970,9 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
-    if coord_loss_cfg is not None:
+    if coord_soft_ce_w1_cfg is not None:
         try:
-            setattr(trainer, "coord_loss_cfg", coord_loss_cfg)
+            setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
         except Exception:
             pass
     if instability_monitor_cfg is not None:
@@ -980,11 +988,6 @@ def main():
         try:
             if val_jsonl:
                 setattr(trainer, "instability_val_jsonl", str(val_jsonl))
-        except Exception:
-            pass
-    if coord_expectation_metrics_cfg is not None:
-        try:
-            setattr(trainer, "coord_expectation_metrics_cfg", coord_expectation_metrics_cfg)
         except Exception:
             pass
 
