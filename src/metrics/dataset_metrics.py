@@ -121,6 +121,7 @@ class AggregateTokenTypeMetricsMixin:
             for name, type_id in (
                 ("desc", TokenType.DESC),
                 ("format", TokenType.FORMAT),
+                ("coord", TokenType.COORD),
             ):
                 type_sel = types_masked == type_id
                 if not type_sel.any().item():
@@ -256,11 +257,16 @@ class CoordSoftCEW1LossMixin:
 
         passed_num_items = num_items_in_batch
         try:
-            if (
-                num_items_in_batch is not None
-                and getattr(getattr(self, "args", None), "average_tokens_across_devices", False)
-                and getattr(self, "model_accepts_loss_kwargs", False)
-            ):
+            # Swift/Transformers may call `compute_loss(..., num_items_in_batch=...)` where
+            # `num_items_in_batch` is the *number of sequences* in the micro-batch (e.g. 1),
+            # not the number of supervised tokens. In that case, upstream may rescale the
+            # model's per-token mean loss by (token_count / num_items_in_batch), effectively
+            # turning it into a token-sum and making the logged loss depend on packing length.
+            #
+            # For Stage-1 (Scheme A), we want all loss terms to be mean-normalized:
+            #   - base CE: mean over *non-coord* supervised tokens (coord targets are masked)
+            #   - coord loss: mean over coord-token positions (handled below)
+            if num_items_in_batch is not None:
                 passed_num_items = self._count_supervised_tokens(masked_labels)
         except Exception:
             passed_num_items = num_items_in_batch

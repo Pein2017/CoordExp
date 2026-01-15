@@ -30,6 +30,7 @@ class DummyTemplate:
 class DummyBaseTrainer:
     def __init__(self):
         self.seen_labels = None
+        self.seen_num_items_in_batch = None
 
     def compute_loss(
         self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
@@ -38,6 +39,7 @@ class DummyBaseTrainer:
         labels = inputs["labels"]
         # Record labels after any masking performed by mixins.
         self.seen_labels = labels.detach().clone()
+        self.seen_num_items_in_batch = num_items_in_batch
 
         seq_len = min(logits.shape[1], max(labels.shape[1] - 1, 0))
         logits_next = logits[:, :seq_len, :]
@@ -96,6 +98,7 @@ def test_stage1_softce_w1_masks_coord_tokens_from_base_ce_and_applies_gate_penal
         model=None,
         inputs={"labels": labels, "fake_logits": logits},
         return_outputs=False,
+        num_items_in_batch=1,
     )
 
     # Coord labels are masked to ignore_index for the base CE path.
@@ -105,6 +108,11 @@ def test_stage1_softce_w1_masks_coord_tokens_from_base_ce_and_applies_gate_penal
     # Non-coord labels are kept.
     assert int(trainer.seen_labels[0, 1].item()) == 5
     assert int(trainer.seen_labels[0, 3].item()) == 6
+
+    # With coord targets masked, only 2 next-token labels are supervised here.
+    # The mixin should override upstream `num_items_in_batch` (often batch size)
+    # to ensure mean-normalized loss under packing.
+    assert trainer.seen_num_items_in_batch == 2
 
     assert float(loss_no_leak.detach().item()) < 1e-3
 
@@ -118,5 +126,6 @@ def test_stage1_softce_w1_masks_coord_tokens_from_base_ce_and_applies_gate_penal
         model=None,
         inputs={"labels": labels, "fake_logits": logits_leak},
         return_outputs=False,
+        num_items_in_batch=1,
     )
     assert float(loss_leak.detach().item()) > float(loss_no_leak.detach().item()) + 1.0
