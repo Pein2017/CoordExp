@@ -15,10 +15,10 @@ training:
   aligner_lr: 4.0e-5
   num_train_epochs: 1
   # max_steps: 3
-  optimizer: multimodal  # coord_loss does not require coord_offset optimizer
+  optimizer: multimodal
   output_dir: ./output/smoke/
-  run_name: smoke-debug-sft_coord_loss-tiny-len4096
-  logging_dir: ./tb/smoke/debug_sft_coord_loss_tiny_len4096
+  run_name: smoke-debug-softce_w1-tiny-len4096
+  logging_dir: ./tb/smoke/debug_softce_w1_tiny_len4096
   save_strategy: "no"
   logging_steps: 1
   eval_steps: 10
@@ -66,26 +66,11 @@ custom:
     filename: train.log
     capture_stdout: false
     capture_stderr: false
-  # Distributional coord-token metrics (no generation): evaluates coord logits as a distribution
-  # so near-by bins (e.g., coord_12 vs coord_13) get partial credit.
-  coord_expectation_metrics:
+  coord_soft_ce_w1:
     enabled: true
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 1.0
     temperature: 1.0
-    max_positions: 4096
-    # Keep metrics minimal/non-redundant: tolerance mass is the main "soft accuracy".
-    # (Code also auto-prunes to at most 2 tolerances.)
-    tolerances: [2]
-  coord_loss:
-    enabled: true
-    # Suggested starting weights; tune per run
-    l1_weight: 0.01
-    giou_weight: 0.01
-    coord_ce_weight: 1
-    non_coord_ce_weight: 1.0
-    top_k: 0.1
-    temperature: 1.0
-    poly_mask_size: 64
-    poly_sigma_mask: 0.0234375  # 1.5 / 64
-    poly_tau_inside: 0.08
-    poly_beta_dist: 100.0
-    poly_smooth_weight: 0.01
+    target_sigma: 2.0
+    target_truncate: 16
