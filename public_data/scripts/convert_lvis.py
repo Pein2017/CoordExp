@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, MutableMapping, cast
 
 from public_data.converters.lvis_converter import ConversionConfig, LVISConverter
+from public_data.converters.sorting import canonicalize_poly, sort_objects_tlbr
 from src.datasets.preprocessors.resize import SmartResizeParams, SmartResizePreprocessor
 
 
@@ -48,6 +49,45 @@ def _relativize_images(row: MutableMapping[str, Any], base_dir: Path) -> Dict[st
     return result
 
 
+def _presort_objects_in_row(row: MutableMapping[str, Any]) -> Dict[str, Any]:
+    """Canonicalize polygon vertices and sort objects (TLBR) in a JSONL row.
+
+    This is a post-smart-resize step: resizing/clamping can change which vertex is
+    "top-most then left-most" due to rounding, so we enforce canonical ordering here.
+    """
+    objects = row.get("objects") or []
+    if not isinstance(objects, list) or not objects:
+        return dict(row)
+
+    processed = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("poly") is not None:
+            poly = obj.get("poly")
+            if isinstance(poly, list):
+                try:
+                    canon = canonicalize_poly(poly)
+                    canon_ints = [
+                        int(round(v)) if isinstance(v, (int, float)) else v for v in canon
+                    ]
+                    updated = dict(obj)
+                    updated["poly"] = canon_ints
+                    if "poly_points" in updated:
+                        updated["poly_points"] = len(canon_ints) // 2
+                    processed.append(updated)
+                    continue
+                except Exception:
+                    # If canonicalization fails, keep the original polygon.
+                    processed.append(obj)
+                    continue
+        processed.append(obj)
+
+    updated_row = dict(row)
+    updated_row["objects"] = sort_objects_tlbr(processed)
+    return updated_row
+
+
 def _process_row_worker(args_tuple):
     """Worker function for parallel processing of rows."""
     (
@@ -74,6 +114,7 @@ def _process_row_worker(args_tuple):
     )
 
     updated = pre.preprocess(row) or row
+    updated = _presort_objects_in_row(cast(MutableMapping[str, Any], updated))
     if relative_image_paths:
         updated = _relativize_images(
             cast(MutableMapping[str, Any], updated), Path(output_jsonl_parent)
@@ -130,6 +171,9 @@ def _run_smart_resize(
 
             for row in row_iterator:
                 updated = pre.preprocess(row) or row
+                updated = _presort_objects_in_row(
+                    cast(MutableMapping[str, Any], updated)
+                )
                 if relative_image_paths:
                     updated = _relativize_images(
                         cast(MutableMapping[str, Any], updated), output_jsonl.parent

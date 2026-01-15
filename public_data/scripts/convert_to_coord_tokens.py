@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from src.coord_tokens.codec import int_to_token, is_coord_token, token_to_int
+from public_data.converters.sorting import canonicalize_poly, sort_objects_tlbr
 
 MAX_VALUE = 999
 
@@ -179,6 +180,50 @@ def convert_record_to_tokens(record: dict, keys: Iterable[str]) -> dict:
     return record
 
 
+def _canonicalize_and_sort_objects_in_place(record: dict) -> dict:
+    """Canonicalize polygon vertex ordering and sort objects (TLBR).
+
+    This matches the CoordExp/Qwen3-VL prompt spec:
+    - `poly`: vertices are canonicalized offline (clockwise around centroid;
+      start from top-most then left-most vertex; drop duplicate closing point).
+    - objects: sorted top-to-bottom then left-to-right using bbox TL / poly first vertex.
+
+    Doing this in the *norm1000 integer* domain ensures that the ordering matches
+    what we actually train/evaluate on (coord tokens / ints).
+    """
+    objects = record.get("objects") or []
+    if not isinstance(objects, list) or not objects:
+        return record
+
+    processed = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("poly") is not None:
+            poly = obj.get("poly")
+            if not isinstance(poly, list):
+                # Leave malformed objects untouched; validation happens elsewhere.
+                processed.append(obj)
+                continue
+            try:
+                canon = canonicalize_poly(poly)
+                canon_ints = [int(round(v)) for v in canon]
+            except Exception:
+                processed.append(obj)
+                continue
+
+            updated = dict(obj)
+            updated["poly"] = canon_ints
+            if "poly_points" in updated:
+                updated["poly_points"] = len(canon_ints) // 2
+            processed.append(updated)
+        else:
+            processed.append(obj)
+
+    record["objects"] = sort_objects_tlbr(processed)
+    return record
+
+
 def main() -> None:
     args = parse_args()
     # Resolve outputs with backward compatibility
@@ -211,6 +256,7 @@ def main() -> None:
                 record_ints = convert_record_to_ints(
                     json.loads(json.dumps(record_raw)), args.keys, assume_normalized=args.assume_normalized
                 )
+                record_ints = _canonicalize_and_sort_objects_in_place(record_ints)
 
                 # Write norm ints if requested
                 if fout_norm:
