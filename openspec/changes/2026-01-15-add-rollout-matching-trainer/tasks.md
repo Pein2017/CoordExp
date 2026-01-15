@@ -1,0 +1,58 @@
+## 1. Implementation
+- [ ] 1.1 Add a rollout-matching config surface (YAML-first; alias: `stage_2`):
+  - [ ] `custom.trainer_variant: rollout_matching_sft`
+  - [ ] `custom.extra.rollout_matching` dict for rollout/matching knobs (decoding params, gating thresholds, weights).
+- [ ] 1.2 Add a rollout-matching trainer implementation under `src/trainers/` that:
+  - [ ] runs rollouts (no grad) using transformers generation (MVP),
+  - [ ] performs strict, schema-conformant parsing (no repair) to extract predicted objects in appearance order,
+  - [ ] extracts per-object coord token indices via token-aligned parsing (bbox_2d and poly; no decoded-text pattern search),
+  - [ ] runs Hungarian matching with dummy augmentation, candidate pruning, maskIoU costs, and pre-assignment gating,
+  - [ ] constructs a single teacher-forced assistant sequence per sample:
+    - [ ] `Y_train = Y_rollout_prefix + SerializeAppend(FN_gt_objects) + EOS`
+    - [ ] `Y_rollout_prefix` uses suffix-only trimming (strip `<|im_end|>`; drop incomplete tail; drop final top-level `}` so JSON is open for append),
+    - [ ] FN append is mandatory (unmatched GT objects are always appended),
+  - [ ] runs exactly one forward pass on `Y_train` and computes one total loss using token masks:
+    - [ ] coord-token supervision (`softCE + W1 + gate`) on matched prefix coord slots (self-context),
+    - [ ] hard CE on non-coord tokens in the appended GT tail,
+    - [ ] coord-token supervision (`softCE + W1 + gate`) on coord tokens in the appended GT tail,
+    - [ ] poly targets use Sinkhorn OT + barycentric projection ONLY (no mixture),
+    - [ ] no decoded-coordinate losses or IoU/maskIoU metrics logging.
+- [ ] 1.3 Integrate rollout-matching trainer selection into `src/sft.py` via `custom.trainer_variant`.
+- [ ] 1.4 Adjust the collator path for rollout-matching:
+  - [ ] rollout-matching SHOULD use an identity/pass-through collator so `messages` / `assistant_payload` / GT metadata are available in the trainer.
+  - [ ] Existing baseline collator + metrics MUST remain unchanged for non-rollout-matching trainers.
+- [ ] 1.5 Add explicit fail-fast checks:
+  - [ ] reject `training.packing: true` under rollout-matching,
+  - [ ] reject missing required GT metadata for rollout-matching (e.g., missing `assistant_payload` when needed).
+- [ ] 1.6 Add a rollout-matching YAML config template under `configs/` (placeholders only; no “default hyperparams”).
+- [ ] 1.7 Add unit tests:
+  - [ ] strict rollout parsing (no repair): invalid objects are dropped, valid objects preserved in appearance order,
+  - [ ] coord token index alignment via token-aligned parsing (bbox_2d + poly),
+  - [ ] Hungarian matching correctness (dummy augmentation + gating) on a tiny synthetic example,
+  - [ ] OT+barycentric target construction sanity (poly involved),
+  - [ ] loss masking invariants:
+    - [ ] rollout prefix non-coord tokens are ignored,
+    - [ ] coord tokens never contribute to full-vocab CE,
+    - [ ] appended tail non-coord tokens contribute to CE,
+    - [ ] supervised coord indices are within assistant span (sanity checks).
+- [ ] 1.8 Add training-time logging counters:
+  - [ ] valid vs invalid predicted objects (dropped),
+  - [ ] match rate, #matched objects, #FN appended, #gating rejections,
+  - [ ] distributional coord loss breakdown (prefix coord supervision vs appended tail coord supervision),
+  - [ ] optional debug dump on parse failures (bounded).
+
+## 1.9 Deprecate `line` geometries globally (not present in corpus)
+- [ ] Remove `line` from prompts and examples (`src/config/prompts.py`).
+- [ ] Update data contract/docs to standardize on `bbox_2d` and `poly` only (e.g., `docs/DATA_JSONL_CONTRACT.md`, `docs/DATA_AND_DATASETS.md`, `src/README.md`).
+- [ ] Update runtime parsing/validation so `line` is rejected/dropped (e.g., shared parsing/validators and inference engine).
+
+## 2. Rollout-Matching Smoke Test Checklist (paper-ready; alias: stage_2)
+- [ ] 2.1 Pick a baseline checkpoint as the starting point (`<BASE_CKPT>`).
+- [ ] 2.2 Pick a small train/val JSONL and set a strict sample limit (`<TRAIN_JSONL>`, `<VAL_JSONL>`, N≈50–200).
+- [ ] 2.3 Run rollout-matching with deterministic seed + greedy decoding.
+- [ ] 2.4 Verify:
+  - [ ] no NaNs/infs,
+  - [ ] strict parsing yields a non-trivial valid-object fraction (invalid objects are dropped, not repaired),
+  - [ ] match gating rejects obvious failures and FN append is non-zero when expected,
+  - [ ] training loss decreases and logs are emitted.
+- [ ] 2.5 Record run artifacts: resolved YAML, key counters, and a few debug examples.
