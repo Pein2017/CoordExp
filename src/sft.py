@@ -331,16 +331,6 @@ def main():
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl' or 'custom.jsonl'")
 
-    # Optional: smoke-test datasets activated via YAML (debug.enabled=true).
-    if debug_config is not None and getattr(debug_config, "enabled", False):
-        debug_train_jsonl = getattr(debug_config, "train_jsonl", None)
-        if debug_train_jsonl:
-            logger.warning(
-                "Debug dataset override enabled: using debug.train_jsonl=%s",
-                debug_train_jsonl,
-            )
-            train_jsonl = str(debug_train_jsonl)
-
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
         root_dir = os.path.abspath(os.path.dirname(train_jsonl))
         os.environ["ROOT_IMAGE_DIR"] = root_dir
@@ -454,35 +444,52 @@ def main():
         curriculum_scheduler = scheduler
         # Note: initial_state will be computed after dataset is loaded and total_steps is calculated
 
-    # Sample limits for quick smoke tests
-    shared_sample_limit = custom_config.sample_limit
-    train_sample_limit = (
-        custom_config.train_sample_limit
-        if custom_config.train_sample_limit is not None
-        else shared_sample_limit
-    )
-    val_sample_limit = (
-        custom_config.val_sample_limit
-        if custom_config.val_sample_limit is not None
-        else shared_sample_limit
-    )
+    # Sample limits for quick smoke tests.
+    #
+    # When debug.enabled=true, use debug.{train,val}_sample_limit (optional) and
+    # ignore custom.* limits. Otherwise use custom.{train,val}_sample_limit with
+    # fallback to custom.sample_limit.
+    debug_enabled = bool(debug_config is not None and getattr(debug_config, "enabled", False))
+    if debug_enabled:
+        train_sample_limit = getattr(debug_config, "train_sample_limit", None)
+        val_sample_limit = getattr(debug_config, "val_sample_limit", None)
+        sample_limit_ns = "debug"
+        if train_sample_limit is None and val_sample_limit is None:
+            logger.warning(
+                "debug.enabled=true but no debug.{train,val}_sample_limit set; "
+                "dataset will not be sample-limited."
+            )
+    else:
+        shared_sample_limit = custom_config.sample_limit
+        train_sample_limit = (
+            custom_config.train_sample_limit
+            if custom_config.train_sample_limit is not None
+            else shared_sample_limit
+        )
+        val_sample_limit = (
+            custom_config.val_sample_limit
+            if custom_config.val_sample_limit is not None
+            else shared_sample_limit
+        )
+        sample_limit_ns = "custom"
+
     val_sample_with_replacement = bool(
         getattr(custom_config, "val_sample_with_replacement", False)
     )
     val_sample_size = None
     if val_sample_with_replacement:
         val_sample_size = _parse_sample_size(
-            val_sample_limit, "custom.val_sample_limit"
+            val_sample_limit, f"{sample_limit_ns}.val_sample_limit"
         )
         if val_sample_size is None:
             raise ValueError(
-                "custom.val_sample_with_replacement requires custom.val_sample_limit "
-                "or custom.sample_limit to specify the eval sample size"
+                "custom.val_sample_with_replacement requires an eval sample size. "
+                f"Set {sample_limit_ns}.val_sample_limit to a positive integer (or disable val_sample_with_replacement)."
             )
     if train_sample_limit:
-        logger.info(f"Train sample limit: {train_sample_limit}")
+        logger.info(f"{sample_limit_ns}.train_sample_limit: {train_sample_limit}")
     if val_sample_limit and not val_sample_with_replacement:
-        logger.info(f"Val sample limit: {val_sample_limit}")
+        logger.info(f"{sample_limit_ns}.val_sample_limit: {val_sample_limit}")
     elif val_sample_with_replacement:
         logger.info(f"Val sample size per eval (with replacement): {val_sample_size}")
 
@@ -830,14 +837,6 @@ def main():
     # Build validation dataset if provided
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
-    if debug_config is not None and getattr(debug_config, "enabled", False):
-        debug_val_jsonl = getattr(debug_config, "val_jsonl", None)
-        if debug_val_jsonl:
-            logger.warning(
-                "Debug dataset override enabled: using debug.val_jsonl=%s",
-                debug_val_jsonl,
-            )
-            val_jsonl = str(debug_val_jsonl)
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit

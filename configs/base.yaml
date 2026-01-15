@@ -78,5 +78,6 @@ debug:
   # When set, overrides both training.output_dir and training.logging_dir so that
   # checkpoints + tensorboard logs land in the same folder (easy cleanup).
   # output_dir: ./output/smoke
-  # train_jsonl: public_data/lvis/rescale_32_768_poly_20/train_tiny.jsonl
-  # val_jsonl: public_data/lvis/rescale_32_768_poly_20/val_tiny.jsonl
+  # Optional: override dataset sampling (does not change dataset paths).
+  # train_sample_limit: 256
+  # val_sample_limit: 128

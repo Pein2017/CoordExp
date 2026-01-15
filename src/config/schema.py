@@ -481,15 +481,9 @@ class CustomConfig:
                 "custom.coord_tokens.enabled requires custom.coord_soft_ce_w1.enabled "
                 "(coord tokens must be supervised with distribution losses)."
             )
-        if (
-            self.val_sample_with_replacement
-            and self.val_sample_limit is None
-            and self.sample_limit is None
-        ):
-            raise ValueError(
-                "custom.val_sample_with_replacement requires custom.val_sample_limit "
-                "or custom.sample_limit to specify the eval sample size"
-            )
+        # NOTE: We intentionally do not validate val_sample_with_replacement sizing here
+        # because runtime may override sample limits (e.g. via debug.*). The runner
+        # performs the strict check after resolving the active sample-limit namespace.
 
     @classmethod
     def from_mapping(
@@ -672,8 +666,10 @@ class DebugConfig:
     # When set, overrides both training.output_dir and training.logging_dir so that
     # checkpoints + tensorboard logs land in the same folder (easy cleanup).
     output_dir: Optional[str] = None
-    train_jsonl: Optional[str] = None
-    val_jsonl: Optional[str] = None
+    # Optional: override dataset sampling for smoke tests (does NOT change dataset paths).
+    # When debug.enabled=true, these replace custom.{train,val}_sample_limit in the runner.
+    train_sample_limit: Optional[Any] = None
+    val_sample_limit: Optional[Any] = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -684,6 +680,13 @@ class DebugConfig:
             raise TypeError("debug section must be a mapping when provided")
 
         data: MutableMapping[str, Any] = dict(payload)
+        # Hard error on removed keys to avoid silently ignoring old configs.
+        if "train_jsonl" in data or "val_jsonl" in data:
+            raise ValueError(
+                "debug.train_jsonl/debug.val_jsonl have been removed. "
+                "Use custom.train_jsonl/custom.val_jsonl for dataset paths, and "
+                "debug.train_sample_limit/debug.val_sample_limit for smoke-test sizing."
+            )
 
         def _parse_bool(value: Any, field_name: str) -> bool:
             if isinstance(value, bool):
@@ -709,18 +712,16 @@ class DebugConfig:
         output_dir_raw = data.pop("output_dir", None)
         output_dir = None if output_dir_raw in (None, "", False) else str(output_dir_raw)
 
-        train_jsonl_raw = data.pop("train_jsonl", None)
-        val_jsonl_raw = data.pop("val_jsonl", None)
-        train_jsonl = None if train_jsonl_raw in (None, "", False) else str(train_jsonl_raw)
-        val_jsonl = None if val_jsonl_raw in (None, "", False) else str(val_jsonl_raw)
+        train_sample_limit = data.pop("train_sample_limit", None)
+        val_sample_limit = data.pop("val_sample_limit", None)
 
         extra = dict(data)
 
         return cls(
             enabled=enabled,
             output_dir=output_dir,
-            train_jsonl=train_jsonl,
-            val_jsonl=val_jsonl,
+            train_sample_limit=train_sample_limit,
+            val_sample_limit=val_sample_limit,
             extra=extra,
         )
 
