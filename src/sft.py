@@ -448,7 +448,7 @@ def main():
     #
     # When debug.enabled=true, use debug.{train,val}_sample_limit (optional) and
     # ignore custom.* limits. Otherwise use custom.{train,val}_sample_limit with
-    # fallback to custom.sample_limit.
+    # no shared fallback (explicit is better than implicit).
     debug_enabled = bool(debug_config is not None and getattr(debug_config, "enabled", False))
     if debug_enabled:
         train_sample_limit = getattr(debug_config, "train_sample_limit", None)
@@ -460,17 +460,8 @@ def main():
                 "dataset will not be sample-limited."
             )
     else:
-        shared_sample_limit = custom_config.sample_limit
-        train_sample_limit = (
-            custom_config.train_sample_limit
-            if custom_config.train_sample_limit is not None
-            else shared_sample_limit
-        )
-        val_sample_limit = (
-            custom_config.val_sample_limit
-            if custom_config.val_sample_limit is not None
-            else shared_sample_limit
-        )
+        train_sample_limit = custom_config.train_sample_limit
+        val_sample_limit = custom_config.val_sample_limit
         sample_limit_ns = "custom"
 
     val_sample_with_replacement = bool(

@@ -85,8 +85,8 @@ src/
 - For smoke tests, you can enable `debug.enabled: true` and set `debug.train_sample_limit` / `debug.val_sample_limit` (optional).
 - For easier cleanup in smoke tests, set `debug.output_dir` to force both checkpoints and TensorBoard logs into the same folder.
 - Applies tuner/adapters with `sft.prepare_model(...)` before trainer creation.
-- Supports optional sample limiting: `custom.sample_limit`, `custom.train_sample_limit`, `custom.val_sample_limit`.
-- For eval-only resampling, set `custom.val_sample_with_replacement: true` and provide a size via `custom.val_sample_limit` (or `custom.sample_limit`).
+- Supports optional sample limiting: `custom.train_sample_limit`, `custom.val_sample_limit`.
+- For eval-only resampling, set `custom.val_sample_with_replacement: true` and provide a size via `custom.val_sample_limit` (or `debug.val_sample_limit` when debug is enabled).
 
 ### Required custom.* keys
 - **custom.user_prompt**: string used by `JSONLinesBuilder` for the user turn.

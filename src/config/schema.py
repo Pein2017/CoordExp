@@ -443,7 +443,6 @@ class CustomConfig:
     augmentation_curriculum: Optional[Mapping[str, Any]] = None
     bypass_prob: float = 0.0
     trainer_variant: Optional[str] = None
-    sample_limit: Optional[Any] = None
     train_sample_limit: Optional[Any] = None
     val_sample_limit: Optional[Any] = None
     val_sample_with_replacement: bool = False
@@ -493,6 +492,11 @@ class CustomConfig:
             raise TypeError("custom section must be a mapping")
 
         data: MutableMapping[str, Any] = dict(payload)
+        if "sample_limit" in data:
+            raise ValueError(
+                "custom.sample_limit has been removed. "
+                "Use custom.train_sample_limit and/or custom.val_sample_limit instead."
+            )
         train_jsonl = data.pop("train_jsonl", data.pop("jsonl", None))
         user_prompt = data.pop("user_prompt", prompts.user)
         emit_norm = data.pop("emit_norm", None)
@@ -551,7 +555,6 @@ class CustomConfig:
         augmentation_curriculum = data.pop("augmentation_curriculum", None)
         bypass_prob = float(data.pop("bypass_prob", 0.0))
         trainer_variant = data.pop("trainer_variant", None)
-        sample_limit = data.pop("sample_limit", None)
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
         dump_conversation_text = bool(data.pop("dump_conversation_text", False))
@@ -636,7 +639,6 @@ class CustomConfig:
             trainer_variant=str(trainer_variant)
             if trainer_variant is not None
             else None,
-            sample_limit=sample_limit,
             train_sample_limit=train_sample_limit,
             val_sample_limit=val_sample_limit,
             val_sample_with_replacement=val_sample_with_replacement,
