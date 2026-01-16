@@ -13,7 +13,7 @@ The goal of this module is to provide **geometry-aware, tested pipelines** for t
 - **Dataset engineering** for public vision datasets (LVIS now; Objects365 / Open Images later).
 - **Geometry-aware conversion** from source formats (e.g., COCO-style bbox + segmentation) to Qwen3-VL JSONL with:
   - `bbox_2d`: `[x1, y1, x2, y2]` in **pixel coordinates**.
-  - `poly`: `[..., xn, yn]` + `poly_points` for N-point polygons. Simplify polygons during conversion (e.g., `--poly-max-points N` to downgrade oversized polygons to `bbox_2d`); the dataloader consumes geometry as written. (Our default LVIS pipeline caps to `--poly-max-points 20`, hence the `rescale_32_768_poly_20/` folder name.)
+- `poly`: `[..., xn, yn]` + `poly_points` for N-point polygons. **Legacy toggle**: `--poly-max-points N` can downgrade oversized polygons to `bbox_2d`, but this is disabled by default and **not used by training** (we rely on sequence-length limits + dataset-level filtering instead).
 - **Validation & tests** to catch schema or geometry errors early.
 - **Visualization tools** to visually inspect bounding boxes and polygons.
 

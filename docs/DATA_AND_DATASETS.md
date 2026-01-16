@@ -132,7 +132,7 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 
 - **Public datasets (`public_data/`)**:
   - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
-  - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. Cap polygon complexity during conversion (e.g., `--poly-max-points 20`) to downgrade oversized polygons to `bbox_2d` (this is how our default LVIS artifacts are built under `public_data/lvis/rescale_32_768_poly_20/`).
+  - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. **Legacy toggle**: `--poly-max-points N` can downgrade very high-vertex polygons to `bbox_2d`, but it is disabled by default and **not used by training** (we rely on sequence-length limits + dataset-level filtering instead).
   - For LVIS training, we typically use the **filtered** JSONLs to remove dense/low-diversity images (see `docs/DATA_PREPROCESSING_PIPELINE.md`):
     - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
     - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
