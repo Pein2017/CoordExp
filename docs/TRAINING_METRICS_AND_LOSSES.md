@@ -17,6 +17,7 @@ Stage-2 note (rollout-matching SFT):
     and CE for `desc` string *values* is intentionally masked out to avoid amplifying noisy GT labels.
 - As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` may be near-zero
   or not meaningful for stage_2 runs (because those positions are not supervised).
+- Stage_2 runbook: `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
 
 ## Loss Composition (Stage-1 / Scheme A)
 

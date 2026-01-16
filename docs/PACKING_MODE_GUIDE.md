@@ -5,6 +5,7 @@ Note:
   padding/packing dataset wrappers.
 - Stage_2 rollout-matching SFT (`custom.trainer_variant: rollout_matching_sft`) DOES NOT
   support packing and will fail fast if `training.packing: true`.
+- Stage_2 runbook: `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
