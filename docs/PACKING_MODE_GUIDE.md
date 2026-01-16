@@ -1,5 +1,11 @@
 # Packing Mode Guide (Default: 16k, eff_bs=12)
 
+Note:
+- This guide applies to baseline SFT runs (stage_1 style) where training uses standard
+  padding/packing dataset wrappers.
+- Stage_2 rollout-matching SFT (`custom.trainer_variant: rollout_matching_sft`) DOES NOT
+  support packing and will fail fast if `training.packing: true`.
+
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
 - Keeps per-update scale close to padding: ~117 base samples/update vs 128 baseline.

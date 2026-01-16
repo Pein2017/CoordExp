@@ -9,6 +9,15 @@ Notes:
 - Unless otherwise stated, metrics are computed on **supervised next-token positions**
   (i.e. `labels[:, 1:] != -100`).
 
+Stage-2 note (rollout-matching SFT):
+- Stage_2 (`custom.trainer_variant: rollout_matching_sft`) uses masked losses on a single
+  teacher-forced forward:
+  - rollout prefix: coord-token supervision only (prefix text CE is masked out),
+  - appended GT tail: normal CE on JSON structure, coord-token supervision on coord slots,
+    and CE for `desc` string *values* is intentionally masked out to avoid amplifying noisy GT labels.
+- As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` may be near-zero
+  or not meaningful for stage_2 runs (because those positions are not supervised).
+
 ## Loss Composition (Stage-1 / Scheme A)
 
 When `custom.coord_soft_ce_w1.enabled: true`:
@@ -128,4 +137,3 @@ For scalar floats, this typically means "average over logging steps" (not token-
 
 Where a metric is intended to be token-weighted, CoordExp computes a per-token mean first,
 then updates the metric with a scalar.
-
