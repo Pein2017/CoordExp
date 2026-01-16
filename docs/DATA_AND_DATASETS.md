@@ -132,7 +132,10 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 
 - **Public datasets (`public_data/`)**:
   - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
-  - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. Cap polygon complexity during conversion (e.g., `--poly-max-points 12`) if you want oversized shapes turned into `bbox_2d`.
+  - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. Cap polygon complexity during conversion (e.g., `--poly-max-points 20`) to downgrade oversized polygons to `bbox_2d` (this is how our default LVIS artifacts are built under `public_data/lvis/rescale_32_768_poly_20/`).
+  - For LVIS training, we typically use the **filtered** JSONLs to remove dense/low-diversity images (see `docs/DATA_PREPROCESSING_PIPELINE.md`):
+    - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
+    - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
 - **Visualization**:
   - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
 - **Chat template inspection**:

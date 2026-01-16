@@ -13,6 +13,7 @@ Raw annotations/images
   → smart resize (public_data/scripts/rescale_jsonl.py)
   → tiny subset (public_data/scripts/sample_dataset.py)
   → coord tokens (public_data/scripts/convert_to_coord_tokens.py)
+  → (optional) image-level filter (public_data/scripts/filter_low_diversity_images.py)
   → training (custom.train_jsonl / custom.val_jsonl)
 ```
 
@@ -54,11 +55,32 @@ PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/convert_to_
 - Repeat for `val.jsonl` and tiny splits.
 - Train with `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`.
 
+## Image-level filtering (recommended for LVIS)
+
+Some datasets (notably LVIS) contain images with **very high instance counts** but **low semantic diversity** (e.g., hundreds of near-identical fruits). These samples can dominate the GT token budget and reduce training signal.
+
+CoordExp's default policy is to filter these at the **record/image level** (never drop individual objects) using:
+- `public_data/scripts/filter_low_diversity_images.py`
+
+Example (coord-token JSONL):
+```bash
+PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/filter_low_diversity_images.py \
+  --input  public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl \
+  --output public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl \
+  --hard_max_objects 101 \
+  --min_objects 50 \
+  --max_unique 3 \
+  --min_top1_ratio 0.95 \
+  --stats_json output/lvis_train_filter_max100_dense50_u3_t095.json
+```
+- Repeat for val.
+- Numeric (no coord tokens): run the same script on `train.jsonl` / `val.jsonl` to produce `*.filtered_max100_dense50_u3_t095.jsonl`.
+
 ## One-shot wrapper
 `public_data/scripts/pipeline_rescale_tokenize.sh` runs resize → tiny → coord-token in one go. Configure via env vars:
 ```
 DATASET_JSONL=/path/to/raw/train.jsonl
-OUTPUT_ROOT=/path/to/out/rescale_32_768
+OUTPUT_ROOT=/path/to/out/rescale_32_768_poly_20
 FACTOR=32 MAX_BLOCKS=768 MIN_BLOCKS=4 NUM_WORKERS=8 TINY=256
 bash public_data/scripts/pipeline_rescale_tokenize.sh
 ```
@@ -76,4 +98,7 @@ Outputs:
 
 ## Handoff to training
 - Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
+- For LVIS, we typically train on the **filtered** JSONLs:
+  - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
+  - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
 - Multi-dataset fusion is disabled; ignore `fusion_config` in older configs.

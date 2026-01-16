@@ -13,7 +13,7 @@ The goal of this module is to provide **geometry-aware, tested pipelines** for t
 - **Dataset engineering** for public vision datasets (LVIS now; Objects365 / Open Images later).
 - **Geometry-aware conversion** from source formats (e.g., COCO-style bbox + segmentation) to Qwen3-VL JSONL with:
   - `bbox_2d`: `[x1, y1, x2, y2]` in **pixel coordinates**.
-- `poly`: `[..., xn, yn]` + `poly_points` for N-point polygons. Simplify polygons during conversion (e.g., `--poly-max-points N` to downgrade oversized polygons to `bbox_2d`); the dataloader consumes geometry as written.
+  - `poly`: `[..., xn, yn]` + `poly_points` for N-point polygons. Simplify polygons during conversion (e.g., `--poly-max-points N` to downgrade oversized polygons to `bbox_2d`); the dataloader consumes geometry as written. (Our default LVIS pipeline caps to `--poly-max-points 20`, hence the `rescale_32_768_poly_20/` folder name.)
 - **Validation & tests** to catch schema or geometry errors early.
 - **Visualization tools** to visually inspect bounding boxes and polygons.
 
@@ -62,8 +62,8 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
    ```bash
    PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \
      --input-jsonl public_data/lvis/raw/train.jsonl \
-     --output-jsonl public_data/lvis/rescale_32_768/train.jsonl \
-     --output-images public_data/lvis/rescale_32_768/images \
+     --output-jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \
+     --output-images public_data/lvis/rescale_32_768_poly_20/images \
      --image-factor 32 \
      --max-pixels $((32*32*768)) \
      --min-pixels $((32*32*4)) \
@@ -74,8 +74,8 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
 3) **Tiny subset (smoke tests)**
    ```bash
    PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/sample_dataset.py \
-     --input public_data/lvis/rescale_32_768/train.jsonl \
-     --output public_data/lvis/rescale_32_768/train_tiny.jsonl \
+     --input public_data/lvis/rescale_32_768_poly_20/train.jsonl \
+     --output public_data/lvis/rescale_32_768_poly_20/train_tiny.jsonl \
      --num_samples 256 \
      --strategy random
    ```
@@ -83,16 +83,34 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
 4) **Coord-token conversion (strict 0–999)**
    ```bash
    PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/convert_to_coord_tokens.py \
-     --input public_data/lvis/rescale_32_768/train.jsonl \
-     --output public_data/lvis/rescale_32_768/train.coord.jsonl
+     --input public_data/lvis/rescale_32_768_poly_20/train.jsonl \
+     --output public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl
    ```
    - Repeat for val and tiny splits.
    - Training: set `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`.
 
-5) **One-shot wrapper (resize → tiny → coord tokens)**
+5) **Image-level filtering (recommended for LVIS training)**
+
+Some LVIS images contain many repeated instances with low semantic diversity (e.g., hundreds of near-identical fruits/chairs), which can explode GT assistant token length. We filter these at the **record/image** level (never drop individual objects) to keep the dataset semantically rich and training-friendly.
+
+Coord-token JSONL:
+```bash
+PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/filter_low_diversity_images.py \
+  --input  public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl \
+  --output public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl \
+  --hard_max_objects 101 \
+  --min_objects 50 \
+  --max_unique 3 \
+  --min_top1_ratio 0.95 \
+  --stats_json output/lvis_train_filter_max100_dense50_u3_t095.json
+```
+- Repeat for `val.coord.jsonl`.
+- Numeric (no coord tokens): run the same script on `train.jsonl` / `val.jsonl` to produce `*.filtered_max100_dense50_u3_t095.jsonl`.
+
+6) **One-shot wrapper (resize → tiny → coord tokens)**
    ```bash
    DATASET_JSONL=public_data/lvis/raw/train.jsonl \
-   OUTPUT_ROOT=public_data/lvis/rescale_32_768 \
+   OUTPUT_ROOT=public_data/lvis/rescale_32_768_poly_20 \
    FACTOR=32 MAX_BLOCKS=768 MIN_BLOCKS=4 NUM_WORKERS=8 TINY=256 \
    bash public_data/scripts/pipeline_rescale_tokenize.sh
    ```
@@ -102,13 +120,13 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
    - `${OUTPUT_ROOT}/train.coord.jsonl`
    - `${OUTPUT_ROOT}/train_tiny.coord.jsonl`
 
-6) **Validation (bbox-focused)**
+7) **Validation (bbox-focused)**
    ```bash
-   conda run -n ms python public_data/scripts/validate_jsonl.py \
-     public_data/lvis/rescale_32_768/train.jsonl
+   /root/miniconda3/envs/ms/bin/python public_data/scripts/validate_jsonl.py \
+     public_data/lvis/rescale_32_768_poly_20/train.jsonl
    ```
 
-7) **Visualization**
+8) **Visualization**
    ```bash
-   conda run -n ms python public_data/vis_tools/visualize_lvis.py --num_samples 3 --mode both --save
+   /root/miniconda3/envs/ms/bin/python public_data/vis_tools/visualize_lvis.py --num_samples 3 --mode both --save
    ```

@@ -14,8 +14,8 @@ custom:
   trainer_variant: rollout_matching_sft
 
   # Update these paths for your run.
-  train_jsonl: <TRAIN_JSONL>
-  val_jsonl: <VAL_JSONL>
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
 
   # Rollout-matching assumes coord-token mode for coord supervision.
   coord_tokens:

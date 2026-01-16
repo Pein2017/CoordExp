@@ -33,8 +33,8 @@ training:
   eval_packing: true
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
   val_sample_limit: 1000
   val_sample_with_replacement: false
   token_type_metrics:

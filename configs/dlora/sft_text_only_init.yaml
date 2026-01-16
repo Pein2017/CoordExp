@@ -29,8 +29,8 @@ training:
 
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
   # Pre-normalized JSONLs; no runtime scaling
   emit_norm: none
   # ABLATION: Disable coord tokens - use pure numeric coordinates instead of <|coord_*|> tokens
