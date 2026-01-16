@@ -1,0 +1,44 @@
+# Rollout-matching SFT (stage_2) template.
+#
+# This is a PLACEHOLDER config intended for YAML-first iteration.
+# Fill in paths/checkpoints and tune rollout/matching knobs as needed.
+
+extends: configs/base.yaml
+
+training:
+  # Rollout generation does not support packing/padding-free.
+  packing: false
+
+custom:
+  # Opt-in trainer variant (stage_2).
+  trainer_variant: rollout_matching_sft
+
+  # Update these paths for your run.
+  train_jsonl: <TRAIN_JSONL>
+  val_jsonl: <VAL_JSONL>
+
+  # Rollout-matching assumes coord-token mode for coord supervision.
+  coord_tokens:
+    enabled: true
+  coord_soft_ce_w1:
+    enabled: true
+
+  # Rollout/matching knobs live under custom.extra.rollout_matching.
+  extra:
+    rollout_matching:
+      # Decoding (greedy only)
+      decode_mode: greedy
+      max_new_tokens: <MAX_NEW_TOKENS>
+      temperature: 0.0
+
+      # Matching
+      candidate_top_k: <TOP_K>
+      maskiou_gate: <MASKIOU_GATE_THRESHOLD>
+      maskiou_resolution: <MASKIOU_RESOLUTION>
+      fp_cost: 0.5
+      fn_cost: 2
+
+      # Poly OT targets (Sinkhorn + barycentric projection)
+      ot_cost: l2
+      ot_epsilon: 10
+      ot_iters: 1

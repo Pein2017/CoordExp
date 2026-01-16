@@ -4,7 +4,6 @@ Offline detection evaluator for CoordExp (pixel-space schema).
 Features:
 - Ingests standardized ``pred.jsonl`` (pixel-space ``gt`` / ``pred`` objects) or legacy GT JSONL.
 - Converts geometries to COCO-format GT and prediction artifacts (bbox + segm for polygons).
-- Lines are tolerated structurally but excluded from metrics.
 - Runs COCOeval (bbox + segm) and/or a set-matching "F1-ish" metric and emits metrics plus robustness counters.
 """
 
@@ -28,6 +27,7 @@ from tqdm import tqdm
 
 from src.common.geometry import (
     bbox_from_points,
+    bbox_to_quadrilateral,
     coerce_point_list,
     denorm_and_clamp,
     flatten_points,
@@ -138,11 +138,6 @@ def _bbox_iou(a: List[float], b: List[float]) -> float:
     return float(inter / union) if union > 0.0 else 0.0
 
 
-def _bbox_to_rect_poly(bbox_xyxy: List[float]) -> List[float]:
-    x1, y1, x2, y2 = bbox_xyxy
-    return [x1, y1, x2, y1, x2, y2, x1, y2]
-
-
 def _object_has_poly(obj: Dict[str, Any]) -> bool:
     if obj.get("type") == "poly":
         return True
@@ -157,7 +152,7 @@ def _object_segmentation(obj: Dict[str, Any]) -> List[List[float]]:
     segm = obj.get("segmentation")
     if isinstance(segm, list) and segm and isinstance(segm[0], list):
         return cast(List[List[float]], segm)
-    return [_bbox_to_rect_poly(cast(List[float], obj["bbox"]))]
+    return [bbox_to_quadrilateral(cast(List[float], obj["bbox"]))]
 
 
 def _segm_iou(
@@ -462,14 +457,24 @@ def _prepare_gt_record(
     invalid: List[Dict[str, Any]] = []
 
     objs_in = record.get("gt") or record.get("objects") or []
+    coord_mode_hint = record.get("coord_mode")
     for obj in objs_in:
-        gkeys = [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
+        gkeys = (
+            [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
+            if not obj.get("type")
+            else [obj.get("type")]
+        )
         if len(gkeys) != 1:
             counters.invalid_geometry += 1
             invalid.append({"reason": "geometry_keys", "raw": obj})
             continue
         gtype = gkeys[0]
-        pts_raw = flatten_points(obj[gtype])
+        if gtype not in GEOM_KEYS:
+            counters.invalid_geometry += 1
+            invalid.append({"reason": "geometry_kind", "raw": obj})
+            continue
+        pts_value = obj.get(gtype) if gtype in obj else obj.get("points")
+        pts_raw = flatten_points(pts_value)
         if pts_raw is None:
             counters.invalid_geometry += 1
             invalid.append({"reason": "geometry_points", "raw": obj})
@@ -479,7 +484,7 @@ def _prepare_gt_record(
             counters.invalid_coord += 1
             invalid.append({"reason": "coord_parse", "raw": obj})
             continue
-        coord_mode = "norm1000" if had_tokens else "pixel"
+        coord_mode = "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
         pts_px = denorm_and_clamp(points, width, height, coord_mode=coord_mode)
         x1, y1, x2, y2 = bbox_from_points(pts_px)
         if is_degenerate_bbox(x1, y1, x2, y2):

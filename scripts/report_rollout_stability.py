@@ -122,7 +122,7 @@ def main() -> None:
     attempted = 0
     has_any_pred = 0
 
-    for rec in records:
+    for local_idx, rec in enumerate(records):
         errors = rec.get("errors") or []
         if not isinstance(errors, list):
             errors = []
@@ -163,7 +163,7 @@ def main() -> None:
         # Capture a few examples for quick qualitative debugging.
         if args.max_examples > 0 and len(failure_examples) < args.max_examples:
             if ("empty_pred" in errors) or ("generation_failed" in errors) or has_coord or has_geom:
-                idx = int(rec.get("index", -1))
+                idx = int(rec.get("index", local_idx))
                 image = str(rec.get("image", ""))
                 raw = str(rec.get("raw_output", "") or "")
                 raw = raw.replace("\n", "\\n")
@@ -250,4 +250,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

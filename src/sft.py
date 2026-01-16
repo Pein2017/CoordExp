@@ -43,11 +43,15 @@ from .optim import register_coord_offset_optimizer
 
 def resolve_trainer_cls(train_args):
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if (
+    if trainer_variant == "rollout_matching_sft":
+        from .trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+
+        trainer_cls = RolloutMatchingSFTTrainer
+    elif (
         getattr(train_args, "rlhf_type", None) == "gkd"
         and trainer_variant == "gkd_monitor"
     ):
-        from .trainers import GKDTrainerWithMetrics
+        from .trainers.gkd_monitor import GKDTrainerWithMetrics
 
         trainer_cls = GKDTrainerWithMetrics
     else:
@@ -545,6 +549,13 @@ def main():
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
+    # Rollout-matching uses generation and does not support packing/padding-free.
+    trainer_variant = getattr(train_args, "trainer_variant", None)
+    if trainer_variant == "rollout_matching_sft" and packing_cfg.enabled:
+        raise ValueError(
+            "rollout-matching training requires packing to be disabled. "
+            "Set training.packing: false when custom.trainer_variant=rollout_matching_sft."
+        )
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
@@ -899,7 +910,24 @@ def main():
 
     # Setup trainer
     logger.info("Setting up trainer...")
-    base_collator = sft._get_data_collator()
+    trainer_variant = getattr(train_args, "trainer_variant", None)
+    if trainer_variant == "rollout_matching_sft":
+        # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
+        try:
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.remove_unused_columns = False
+        except Exception:
+            pass
+        try:
+            from swift.trainers.rlhf_trainer.utils import identity_data_collator
+
+            base_collator = identity_data_collator
+        except Exception as exc:
+            raise RuntimeError(
+                "rollout-matching trainer requires ms-swift identity_data_collator"
+            ) from exc
+    else:
+        base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
@@ -909,23 +937,28 @@ def main():
             instability_monitor_cfg = raw_instab
     except Exception:
         instability_monitor_cfg = None
-    data_collator = build_dataset_metrics_collator(
-        sft.template,
-        base_collator,
-        token_type_cfg=token_type_cfg,
-        instability_monitor_cfg=instability_monitor_cfg,
-    )
+    if trainer_variant == "rollout_matching_sft":
+        # Rollout-matching does its own encoding and loss masking inside the trainer.
+        data_collator = base_collator
+    else:
+        data_collator = build_dataset_metrics_collator(
+            sft.template,
+            base_collator,
+            token_type_cfg=token_type_cfg,
+            instability_monitor_cfg=instability_monitor_cfg,
+        )
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
-    if (
-        isinstance(instability_monitor_cfg, dict)
-        and bool(instability_monitor_cfg.get("enabled", False))
-    ):
-        mixins.append(InstabilityMonitorMixin)
-    if token_type_cfg and getattr(token_type_cfg, "enabled", False):
-        mixins.append(AggregateTokenTypeMetricsMixin)
-    if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
-        mixins.append(CoordSoftCEW1LossMixin)
+    if trainer_variant != "rollout_matching_sft":
+        if (
+            isinstance(instability_monitor_cfg, dict)
+            and bool(instability_monitor_cfg.get("enabled", False))
+        ):
+            mixins.append(InstabilityMonitorMixin)
+        if token_type_cfg and getattr(token_type_cfg, "enabled", False):
+            mixins.append(AggregateTokenTypeMetricsMixin)
+        if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
+            mixins.append(CoordSoftCEW1LossMixin)
     if mixins:
         trainer_cls = type(
             f"{trainer_cls.__name__}WithMetrics",
@@ -988,6 +1021,13 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
+    if trainer_variant == "rollout_matching_sft":
+        try:
+            rollout_cfg = getattr(custom_config, "extra", {}).get("rollout_matching", {})
+            if isinstance(rollout_cfg, dict):
+                setattr(trainer, "rollout_matching_cfg", rollout_cfg)
+        except Exception:
+            pass
     if coord_soft_ce_w1_cfg is not None:
         try:
             setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)

@@ -14,14 +14,13 @@ Schema (per line of ``pred.jsonl``)
 -----------------------------------
 ```
 {
-  "index": int,
   "image": str,              # relative or absolute path
   "width": int,
   "height": int,
   "mode": "coord" | "text",
-  "coord_mode": "norm1000" | "pixel" | null,  # optional trace
-  "gt": [ {"type","points","points_text","desc","score","_coord_mode"} ],
-  "pred": [ {"type","points","points_text","desc","score","_coord_mode"} ],
+  "coord_mode": "norm1000" | "pixel" | null,  # optional trace/debug
+  "gt": [ {"type","points","desc","score"} ],
+  "pred": [ {"type","points","desc","score"} ],
   "raw_output": str,         # generation text (may be empty on early skip)
   "errors": ["..."]         # empty when none
 }
@@ -253,6 +252,30 @@ class InferenceEngine:
             raw_text, width=width, height=height, errors=errors
         )
 
+    @staticmethod
+    def _compact_objects(objs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Strip internal fields to the unified pred.jsonl schema."""
+        compact: List[Dict[str, Any]] = []
+        for obj in objs:
+            if not isinstance(obj, dict):
+                continue
+            kind = obj.get("type")
+            points = obj.get("points")
+            if kind not in {"bbox_2d", "poly"}:
+                continue
+            if not isinstance(points, list):
+                continue
+            desc = str(obj.get("desc", "") or "").strip()
+            compact.append(
+                {
+                    "type": kind,
+                    "points": points,
+                    "desc": desc,
+                    "score": 1.0,
+                }
+            )
+        return compact
+
     def _prepare_image(
         self, jsonl_path: Path, record: Dict[str, Any]
     ) -> Tuple[Optional[Path], Optional[Image.Image]]:
@@ -322,7 +345,6 @@ class InferenceEngine:
                 if not width or not height:
                     errors.append("size_mismatch")
                     output = {
-                        "index": counters.total_read - 1,
                         "image": (record.get("images") or [None])[0],
                         "width": width,
                         "height": height,
@@ -345,6 +367,7 @@ class InferenceEngine:
                 gt = self._process_gt(
                     record, width=width, height=height, errors=gt_errors
                 )
+                gt = self._compact_objects(gt)
                 errors.extend(gt_errors)
 
                 # Mode/GT mismatch detected by processor -> skip generation but still emit record.
@@ -372,6 +395,7 @@ class InferenceEngine:
                         pred = self._process_pred(
                             raw_output, width=width, height=height, errors=pred_errors
                         )
+                        pred = self._compact_objects(pred)
                         errors.extend(pred_errors)
                     except Exception as exc:  # noqa: BLE001
                         errors.append("generation_failed")
@@ -382,7 +406,6 @@ class InferenceEngine:
                     counters.add(ERROR_CANONICAL.get(code, code))
 
                 output = {
-                    "index": counters.total_read - 1,
                     "image": (record.get("images") or [None])[0],
                     "width": width,
                     "height": height,

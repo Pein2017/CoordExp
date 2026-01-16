@@ -1,6 +1,6 @@
 ## Overview
 
-Modular, YAML-driven pipeline for fine-tuning Qwen3-VL on dense captioning tasks with structured geometry annotations (bbox/poly/line).
+Modular, YAML-driven pipeline for fine-tuning Qwen3-VL on dense captioning tasks with structured geometry annotations (bbox/poly).
 
 **Key Features**:
 - **Composable**: Pluggable preprocessors, builders, augmentation strategies
@@ -144,7 +144,7 @@ print(adapter_cfg["modules_to_save"])  # Should list your aligner modules
 ## Data Contract (JSONL)
 JSONL records (see `data_details.md`):
 - `images`: List[str] — paths resolved via `ROOT_IMAGE_DIR`
-- `objects`: List — each has one geometry (`bbox_2d`/`poly`/`line`) + `desc`
+- `objects`: List — each has one geometry (`bbox_2d`/`poly`) + `desc` (`line` is deprecated)
 - `width`, `height`: image dimensions
 - `summary`: **standardized all-slash format** (required for summary modes, optional otherwise)
 
@@ -254,7 +254,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
   - Best for variable-length samples; ~90-95% GPU utilization
 
 **Dual Representation Strategy**:
-1. **Assistant 文本**: 使用 object-index JSON（`object_{n}`），几何字段直接暴露（bbox_2d/poly/line）。
+1. **Assistant 文本**: 使用 object-index JSON（`object_{n}`），几何字段直接暴露（bbox_2d/poly；line 已弃用）。
 2. **顶层 objects**: 精确像素坐标供模板在编码阶段转换为 norm1000。
 3. 增广后的几何与文本保持一致。
 

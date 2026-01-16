@@ -25,13 +25,14 @@ The trainer SHALL construct the canonical assistant target sequence as:
 where:
 - `Y_rollout_prefix` is a **prefix** of the model’s rollout assistant `response_token_ids` produced by autoregressive generation.
   - The trainer MAY perform **suffix-only trimming** to define `Y_rollout_prefix` so it is safe for append:
-    - strip a trailing assistant end-of-turn token (e.g. `<|im_end|>`) when present,
+    - treat `<|im_end|>` as a hard stop and strip it (and any suffix after it) when present,
     - drop any trailing incomplete / invalid suffix tokens beyond the last complete predicted object boundary (e.g., when rollout is truncated mid-object),
     - drop the final top-level JSON closing brace `}` so the prefix ends in an **open** JSON object ready for append.
     - NOTE: Some tokenizers fuse closing punctuation (e.g., a single token may decode to `}}` or `}},`).
       - In those cases, the desired suffix cut can fall **inside** the final token.
       - The trainer MAY realize the cut by replacing ONLY the final token with a shorter tokenization that decodes to a strict prefix of that token’s decoded text (e.g., `}}` → `}`), while keeping all earlier token IDs unchanged.
   - The trainer SHALL NOT edit or re-tokenize any token **before** the cut boundary used for the prefix (no decode+re-encode; no pretty-printing; no key sorting).
+  - Failure behavior: if the rollout does not contain an opening `{` OR the prefix cannot be made append-ready via suffix-only trimming, the trainer SHALL treat the rollout prefix as empty and use `Y_rollout_prefix = "{"` (no prefix supervision; all GT objects become FN and are appended).
 - `FN_gt_objects` are the GT objects that are unmatched after matching (see matching requirement).
 - `SerializeAppend(FN_gt_objects)` emits GT objects in the project’s JSON-only assistant schema (object-index JSON mapping `object_{n}` → `{desc, geometry}`) as an **append fragment**:
   - it SHALL emit **only** comma-separated `"object_{n}": {...}` entries (no outer `{}` wrapper),
@@ -233,6 +234,7 @@ where:
 - `GateMassLeak` penalizes probability mass outside the coord sub-vocabulary at coord positions.
 
 For non-coordinate tokens in the appended GT tail segment, the trainer SHALL compute standard hard CE over the full vocabulary.
+For this rollout-matching rollout, the trainer SHALL ignore (mask out) CE supervision for tokens that correspond to the JSON string *value* of `desc` fields in the appended GT tail (i.e., the token span inside `"desc": "<VALUE>"`). JSON structure tokens (braces/quotes/keys/colons/commas) in the appended GT tail remain supervised by CE.
 
 The trainer SHALL NOT compute any of the legacy decoded-coordinate losses or metrics:
 - no expectation/argmax/median decoding losses,
@@ -246,7 +248,7 @@ The trainer SHALL NOT compute any of the legacy decoded-coordinate losses or met
 - **WHEN** losses are computed for that sample
 - **THEN** coord tokens at matched coord-slot indices in the prefix contribute `L_coord`
 - **AND** non-coord tokens in the rollout prefix contribute neither CE nor coord loss (they are masked out)
-- **AND** appended tail non-coord tokens contribute standard CE.
+- **AND** appended tail non-coord tokens contribute standard CE EXCEPT `desc` value tokens, which are masked out.
 
 ### Requirement: Canonical encoding and supervision index sanity checks
 The ONE teacher-forced forward pass SHALL use the exact same prompt/messages encoding (chat template + image tokens placement) as rollout generation.

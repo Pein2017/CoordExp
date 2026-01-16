@@ -3,7 +3,9 @@
 ## Why
 This proposal introduces a rollout-matching SFT trainer variant (alias: `stage_2` in `progress/full_idea.md`).
 
-Baseline training (alias: `stage_1`, see `progress/pretrain/first_stage_v2.md`) stabilizes **JSON-only** structured outputs and teaches the model to emit `<|coord_k|>` tokens reliably using **distributional coord supervision** (`softCE + W1 + gate`) while applying standard CE to non-coord tokens.
+**Prerequisite (stage_1):** A stable model that already outputs valid JSON and `<|coord_*|>` tokens reliably is required before enabling rollout-matching. Stage_2 assumes the stage_1 format is largely correct and focuses on matching + self-context refinement.
+
+Baseline training (alias: `stage_1`, see `progress/pretrain/first_stage_v2.md`) stabilizes **JSON-only** structured outputs and teaches the model to emit `<|coord_k|>` tokens reliably using **distributional coord supervision** (`softCE + W1 + gate`) while applying standard CE to non-coord tokens. Stage_2 is intended to run only after this stability is achieved.
 
 `progress/full_idea.md` motivates an **EM-ish** refinement loop:
 - **E-step**: rollout the current model to obtain a hypothesis output (and its tokenization),
@@ -26,9 +28,8 @@ To proceed, CoordExp needs a training infrastructure that can run **rollout → 
     - unmatched GT objects (FN) are **always** appended to recover recall.
   - **One loss with per-token masks** (single forward pass):
     - **Rollout prefix self-context:** apply coord-only distributional supervision (`softCE + W1 + gate`) at matched predicted coord-slot token indices (bbox_2d direct; poly via Sinkhorn OT + barycentric projection targets).
-    - **Appended GT tail:** apply hard CE on non-coord tokens and `softCE + W1 + gate` on coord tokens (baseline semantics).
+    - **Appended GT tail:** apply hard CE on non-coord tokens *excluding `desc` value tokens* (ignore desc supervision to avoid amplifying GT noise), and apply `softCE + W1 + gate` on coord tokens (baseline semantics).
     - No expectation decoding; no L1/GIoU/mask losses; no IoU/maskIoU metric logging.
-- Deprecate `line` geometries throughout the pipeline (prompts/contract/parsing/metrics): CoordExp standardizes on `bbox_2d` and `poly` only.
 - Provide a YAML config template under `configs/` for rollout-matching runs and a minimal runbook entry under `progress/` (paper-ready naming, deterministic seeds, key counters).
 - Enforce known constraints explicitly:
   - **Packing is not supported** for rollout-matching generation; enabling `training.packing: true` while `trainer_variant=rollout_matching_sft` SHALL fail fast with a clear error.

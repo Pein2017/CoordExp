@@ -3,6 +3,8 @@ CoordExp currently trains a Qwen3-VL family V-LLM to emit **JSON-only** structur
 - standard full-vocab CE for **non-coord** tokens (JSON structure + text), and
 - distributional coord-token supervision (`softCE + W1 + gate`) for **coord** token positions only.
 
+**Prerequisite (stage_1):** stage_2 rollout-matching assumes the model already produces valid JSON and `<|coord_*|>` tokens reliably. Run rollout-matching only after stage_1 output stability is achieved.
+
 Rollout-matching training (alias: `stage_2`, motivated in `progress/full_idea.md`) requires an on-policy rollout to infer a latent alignment (matching) and then update the model in a way that is consistent with the rollout context.
 
 This change introduces an explicit rollout-matching training infrastructure under the existing `src/sft.py` entrypoint, implemented as a trainer variant.
@@ -35,7 +37,7 @@ Non-goals:
   - Definition: for each sample, construct a single teacher-forced assistant token sequence:
     - `Y_train = Y_rollout_prefix + SerializeAppend(FN_gt_objects) + EOS`
     - `Y_rollout_prefix` is a prefix of the rollout assistant `response_token_ids` with **suffix-only trimming** allowed to:
-      - strip a trailing `<|im_end|>` when present,
+      - treat `<|im_end|>` as a hard stop (strip it even when fused),
       - drop a trailing incomplete / invalid suffix when the rollout is truncated mid-object,
       - drop the final top-level JSON `}` so the JSON object is open for append.
     - `SerializeAppend(FN_gt_objects)` emits the unmatched GT objects as an **append fragment** (comma-separated `"object_{n}": {...}` entries) and then closes the top-level JSON with a final `}` before EOS.
@@ -49,6 +51,10 @@ Non-goals:
 
 - Decision: Enforce strict parsing (no repair) and object-level dropping.
   - Rationale: “repair” changes tokens and silently shifts supervision; strict object dropping keeps `Y_rollout` unchanged while still enabling training via FN append.
+
+- Decision: Ignore `desc` value tokens for CE during rollout-matching (both prefix and appended tail).
+  - Rationale: the GT label text can be incomplete/mislabeled and the model’s rollout text can be more specific; forcing desc tokens risks amplifying noise and harming stability. Stage_2 focuses on geometry alignment + recall recovery via FN append.
+  - Note: JSON structure tokens remain supervised via CE in the appended tail; coord slots remain supervised via `softCE + W1 + gate`.
 
 - Decision: Compute coord-slot indices via token-aligned parsing, not by searching the decoded text.
   - Rationale: repeated `<|coord_k|>` values are common; string search is ambiguous and non-deterministic.
