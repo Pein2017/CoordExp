@@ -102,3 +102,18 @@ Non-goals:
 ## Open Questions
 - What is the most robust token-aligned parsing strategy to guarantee coord-slot indices for JSON without relying on string search?
 - When adding vLLM, do we accept slightly stale weights between sync steps, or must rollouts reflect every gradient update?
+
+## Validation (2026-01-16)
+- OpenSpec validation:
+  - `openspec validate 2026-01-15-add-rollout-matching-trainer --strict`
+- Unit tests (parser + masking invariants):
+  - `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python -m pytest -q tests/test_rollout_matching_sft.py -q`
+- Empirical rollout parsing sanity on the current 20-sample smoke rollout:
+  - Input: `output/infer/rollout_ckpt3106_smoke/pred.jsonl`
+  - Observed behaviour (raw text):
+    - 16/20 samples contain a trailing `<|im_end|>` and become valid JSON after suffix-only stripping at `<|im_end|>`.
+    - 4/20 remain invalid after stripping due to true truncation mid-object (commonly: poly coord arrays cut mid-token / unterminated strings).
+  - Expected trainer behaviour:
+    - treat `<|im_end|>` as a hard stop,
+    - suffix-trim any truncated tail to the last complete object boundary (append-ready prefix),
+    - fall back to `Y_rollout_prefix = "{"` when no opening brace exists (so training proceeds via mandatory FN append).

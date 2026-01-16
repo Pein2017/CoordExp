@@ -290,3 +290,14 @@ These counters SHALL NOT include IoU/GIoU/maskIoU numeric metric logging (those 
 - **WHEN** the trainer processes that batch
 - **THEN** invalid objects are dropped and counted
 - **AND** the training step completes without crashing due to mandatory FN append supervision in the tail.
+
+## Validation (non-normative)
+- OpenSpec validation:
+  - `openspec validate 2026-01-15-add-rollout-matching-trainer --strict`
+- Unit tests:
+  - `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python -m pytest -q tests/test_rollout_matching_sft.py -q`
+- Current rollout behaviour reference (20-sample smoke):
+  - `output/infer/rollout_ckpt3106_smoke/pred.jsonl`
+  - Raw-output pattern:
+    - Many samples end with `<|im_end|>` (strip required for strict JSON parsing).
+    - A minority are truly truncated mid-object (typically within poly coord arrays), which motivates suffix-only trimming to the last complete object boundary.
