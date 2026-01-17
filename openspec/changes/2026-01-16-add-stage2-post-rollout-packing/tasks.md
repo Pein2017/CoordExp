@@ -1,0 +1,60 @@
+## 1. Implementation (vLLM rollout backend + post-rollout packing + batched rollouts)
+- [ ] 1.1 Add YAML knobs under `custom.extra.rollout_matching`:
+  - [ ] `rollout_backend` (default `"vllm"`, allowed: `"vllm"|"hf"`)
+  - [ ] `vllm` (mapping) - rollout-only vLLM engine knobs (colocate only):
+    - [ ] `tensor_parallel_size` (default 4 on 4-GPU runs)
+    - [ ] `gpu_memory_utilization` (default **0.45** as a conservative starting point)
+    - [ ] `max_model_len` (required; should cover prompt_len + max_new_tokens)
+    - [ ] `enable_lora` (required for on-policy LoRA sync)
+    - [ ] `enable_prefix_caching` (optional; default true)
+    - [ ] `sleep_level` (optional; default 0; only for emergency memory relief)
+  - [ ] `rollout_generate_batch_size` (default 1) - per-rank batch size for rollout `generate()` calls
+  - [ ] (no extra packing knobs) stage_2 packing is enabled/disabled via existing `training.packing` config only.
+- [ ] 1.2 Update `src/sft.py`:
+  - [ ] Remove/relax the fail-fast that rejects `training.packing: true` for `rollout_matching_sft`
+  - [ ] When `trainer_variant=rollout_matching_sft` and packing is enabled:
+    - [ ] DO NOT wrap the dataset with `build_packed_dataset` (dynamic packing happens inside trainer)
+    - [ ] DO NOT force `per_device_train_batch_size=1` (trainer will pack the forward pass to `bsz=1`)
+    - [ ] propagate packing config (length/buffer/min_fill/drop_last) into trainer config injection
+  - [ ] Ensure rollout-matching still uses identity collator and `remove_unused_columns=false`
+- [ ] 1.3 Update `src/trainers/rollout_matching_sft.py`:
+  - [ ] Add a rollout-backend abstraction:
+    - [ ] HF backend: current generate path (with `_rollout_many` microbatching)
+    - [ ] vLLM backend (default): ms-swift-style colocate engine returning `response_token_ids` + `prompt_token_ids`
+      - [ ] enforce colocate-only; explicitly reject server mode for this trainer
+      - [ ] enforce TP=4 in typical 4-GPU runs (and validate `world_size % tp == 0`)
+      - [ ] use TP-group gather/slice pattern for TP>1 (single engine infer per TP group)
+      - [ ] encode prompts with `template.mode="vllm"` so multimodal payload is attached
+      - [ ] weight sync policy (on-policy, LoRA-only):
+        - [ ] base sync once (step 0 / resume)
+        - [ ] adapter sync on `global_step` boundaries (not per grad-acc micro-step)
+        - [ ] require `vllm.enable_lora: true` when backend=vllm
+      - [ ] fail-fast on vLLM errors/OOM (no automatic fallback); allow explicit YAML `rollout_backend: hf`
+  - [ ] Add a context manager to temporarily disable `template.padding_free` and `template.packing` during rollout generation
+  - [ ] Implement `_rollout_many(...)` microbatched generation (padded batch)
+  - [ ] Implement dynamic post-rollout packing (carry-only):
+    - [ ] maintain a rank-local buffer of `(encoded, meta)` segments
+    - [ ] select a subset per step such that `sum(encoded_len) <= packing_length`, maximizing fill best-effort
+    - [ ] never split a segment; carry leftovers to next step
+    - [ ] enforce `packing_drop_last: true` for carry-only mode (fail fast if false)
+    - [ ] enforce `packing_buffer` as a hard cap (fail fast if buffer grows beyond the cap; suggest reducing raw batch size or enabling multi-pack per step in a future change)
+  - [ ] Refactor `_prepare_batch_inputs` (or add helpers) to return:
+    - [ ] packed training batch (`bsz=1`) created from selected segments via `template.padding_free=True`
+    - [ ] `_rollout_matching_meta` list aligned to packed segment order, with `encoded_len` per segment
+- [ ] 1.4 Update `compute_loss` in `src/trainers/rollout_matching_sft.py`:
+  - [ ] Support packed-mode indexing (one packed row containing multiple sample segments)
+  - [ ] Keep un-packed behavior unchanged
+- [ ] 1.5 Tests:
+  - [ ] Add synthetic packed-mode tests to `tests/test_rollout_matching_sft.py`:
+    - [ ] label mask equivalence (packed vs un-packed) for CE masking
+    - [ ] coord supervision index offset correctness
+    - [ ] prompt prefix sanity check still works under packing
+- [ ] 1.6 Docs + configs:
+  - [ ] Update `configs/rollout_matching_sft_template.yaml` with the new knobs and recommended defaults
+  - [ ] Update `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` and `docs/PACKING_MODE_GUIDE.md` to reflect stage_2 packing support (or the chosen config semantics)
+- [ ] 1.7 Verification / profiling:
+  - [ ] Add lightweight timers around rollout/generate/parse/match/forward (rank-local)
+  - [ ] Run a 50-200 sample smoke and record:
+    - [ ] steps/sec (before/after)
+    - [ ] rollout time vs forward time split
+    - [ ] GPU utilization snapshot
