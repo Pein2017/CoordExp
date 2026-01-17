@@ -1,0 +1,70 @@
+# Rollout backend benchmark: HF (transformers) vs vLLM for rollout-stage inference.
+#
+# NOTE: This YAML is for analysis/benchmarking only (not an "official" launch config).
+# The runner lives under `analysis/rollout_backend_bench/`.
+#
+# Usage:
+#   /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+#     --config configs/bench/rollout_backend_bench.yaml --multi_gpu
+#
+# Notes:
+# - This config is *benchmark-only* (no training). It reuses the standard config
+#   layout so we can share paths/prompts/template settings.
+# - All benchmark knobs live under custom.extra.rollout_backend_bench.
+
+extends: ../base.yaml
+
+global_max_length: 4096
+
+deepspeed:
+  enabled: false
+
+model:
+  # Local model path used across the repo; override in a derived config.
+  model: model_cache/Qwen3-VL-8B-Instruct-coordexp
+  torch_dtype: bfloat16
+  attn_impl: flash_attention_2
+
+custom:
+  # Use coord-token JSONL so rollout parsing/matching is exercised.
+  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
+
+  # Coord-token mode is required to exercise rollout coord supervision parsing.
+  coord_tokens:
+    enabled: true
+    skip_bbox_norm: true
+  coord_soft_ce_w1:
+    enabled: true
+
+  extra:
+    rollout_backend_bench:
+      # Dataset sampling (deterministic via seed; per-GPU driver offsets the seed).
+      seed: 17
+      num_samples: 32
+      max_records_to_scan: 0   # 0 = scan full JSONL (slower but unbiased)
+
+      # Rollout decoding config (greedy).
+      max_new_tokens: 256
+      temperature: 0.0
+
+      # Benchmark protocol.
+      warmup_steps: 1
+      repeats: 1
+      batch_size: 1            # rollout trainer is effectively per-sample; keep 1 for apples-to-apples
+
+      # Output directory (a timestamped subdir is created).
+      output_dir: output/bench/rollout_backend_bench
+
+      # Backend-specific knobs (optional).
+      hf:
+        # Passed to swift.llm.PtEngine (HF backend)
+        attn_impl: flash_attention_2
+      vllm:
+        # Passed to swift.llm.VllmEngine (vLLM backend)
+        gpu_memory_utilization: 0.85
+        tensor_parallel_size: 1
+        max_model_len: 4096
+        max_num_seqs: 64
+        enforce_eager: true
+        disable_custom_all_reduce: true
+

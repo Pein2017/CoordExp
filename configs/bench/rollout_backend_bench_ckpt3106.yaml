@@ -1,0 +1,18 @@
+# Rollout backend benchmark: HF vs vLLM for rollout-stage inference
+# using the merged ckpt-3106 checkpoint (requested ablation).
+#
+# Usage (CUDA 0,1):
+#   /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+#     --config configs/bench/rollout_backend_bench_ckpt3106.yaml --multi_gpu --gpus 0,1
+
+extends: rollout_backend_bench.yaml
+
+model:
+  model: output/12-24/coord_loss-merged/ckpt-3106
+
+custom:
+  extra:
+    rollout_backend_bench:
+      # With only 2 GPUs, bump repeats so we still get >=3 runs total for variance.
+      repeats: 2
+

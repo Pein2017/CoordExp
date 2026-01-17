@@ -108,3 +108,45 @@ Loss breakdown:
 - Unit tests:
   - `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python -m pytest -q tests/test_rollout_matching_sft.py -q`
 
+## Tiny Ablation: Rollout Backend Efficiency (HF vs vLLM)
+
+Stage-2 rollouts are **inference-only** (no grad), so the rollout stage can be run
+with either:
+- HF backend: `swift.llm.PtEngine`
+- vLLM backend: `swift.llm.VllmEngine`
+
+Benchmark runner (analysis-only, not an official launch script):
+- `analysis/rollout_backend_bench/benchmark_rollout_backends.py`
+
+Configs used:
+- `configs/bench/rollout_backend_bench_ckpt3106.yaml` (vLLM `gpu_memory_utilization=0.85`)
+- `configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml` (vLLM `gpu_memory_utilization=0.5`)
+
+Hardware + settings (kept identical across backends):
+- 2× A100 80GB (CUDA 0,1)
+- checkpoint: `output/12-24/coord_loss-merged/ckpt-3106`
+- dataset: `public_data/lvis/rescale_32_768_poly_20/*coord.jsonl`
+- decoding: greedy (`temperature=0.0`), `max_new_tokens=256`
+- context: `max_length=4096`, `max_model_len=4096`
+- protocol: 32 samples / GPU, 2 repeats (4 runs total)
+
+Results (rollouts/s is higher-is-better; peak mem is per-GPU):
+- vLLM (0.85): ~**1.81×** faster than HF, but **~67.8 GB** peak GPU mem
+  - run: `output/bench/rollout_backend_bench/20260117_084925/aggregate_report_corrected.json`
+- vLLM (0.5): ~**1.84×** faster than HF, with **~39.4 GB** peak GPU mem
+  - run: `output/bench/rollout_backend_bench/20260117_094726/aggregate_report.json`
+
+Interpretation / gotchas:
+- vLLM speedup is substantial for rollout generation, but vLLM reserves a large **KV cache** by default.
+- `gpu_memory_utilization` primarily controls how much VRAM vLLM can reserve (mostly KV cache). Lowering it
+  can reduce peak VRAM dramatically without harming single-request throughput (as seen at 0.5 here).
+- vLLM is still inference-only: you cannot run SFT backward in vLLM, and you generally should not colocate
+  a vLLM engine on the same GPU as stage-2 training forward/backward unless you have ample headroom.
+
+Reproduce (CUDA 0,1):
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106.yaml --multi_gpu --gpus 0,1`
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml --multi_gpu --gpus 0,1`
+
+Optional visual sanity check (renders GT vs HF vs vLLM):
+- `export ROOT_IMAGE_DIR=public_data/lvis/rescale_32_768_poly_20`
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/vis_rollout_backend_compare.py --compare_jsonl output/bench/rollout_backend_bench/<run>/compare_gpu0_seed17.jsonl --save_dir vis_out/rollout_backend_compare --limit 50`
