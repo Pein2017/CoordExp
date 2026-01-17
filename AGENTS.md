@@ -88,4 +88,5 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Working Style
 - Ask for clarification when assumptions feel shaky; keep experiment metadata/artifacts paper-ready (configs, logs, qualitative vis).
+- Use `temp/` folder for temporary test scripts, debug code, or experimental utilities; create sub-folders and organize files flexibly as needed for the task; always cleanup temporary files/scripts once the task or test is completed to avoid clutter and one-shot console debugging sessions.
 
