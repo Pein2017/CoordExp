@@ -27,6 +27,10 @@ Each dataset entry supports:
   - `name`: dataset ID override (must be unique across all entries)
   - `val_jsonl`: path to eval JSONL, or `null` to skip eval for this dataset
   - `ratio`: float, defaults to `1.0`
+  - `sample_without_replacement`: bool, defaults to `false` (prevents upsampling beyond the pool)
+  - `augmentation_enabled`: bool (upstream-compat; only applies if you configured augmentation globally)
+  - `curriculum_enabled`: bool (upstream-compat; only applies if you configured augmentation curriculum globally)
+  - `mode`: `dense` / `summary` (validated for compatibility, but currently ignored; use `custom.use_summary` to control mode)
 
 Notes:
 
