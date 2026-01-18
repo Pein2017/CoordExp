@@ -76,4 +76,9 @@ Outputs:
 
 ## Handoff to training
 - Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
-- Multi-dataset fusion is disabled; ignore `fusion_config` in older configs.
+- For LVIS, we typically train on the **filtered** JSONLs:
+  - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
+  - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
+- Multi-dataset training:
+  - Preferred: merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`).
+  - Optional (legacy/experimental): set `custom.fusion_config` to a fusion YAML/JSON (see `docs/data/FUSION_DATASET.md`).

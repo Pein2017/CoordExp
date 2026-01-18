@@ -268,15 +268,20 @@ def main():
             logger.debug(f"  {key}: {value}")
         logger.debug("=" * 70)
 
-    # Auto-configure ROOT_IMAGE_DIR from JSONL directory
+    # Auto-configure ROOT_IMAGE_DIR from a path hint (single JSONL or fusion config).
     train_jsonl = custom_config.train_jsonl or custom_config.extra.get("jsonl")
-    if not train_jsonl:
-        raise ValueError("Config must specify 'custom.train_jsonl' or 'custom.jsonl'")
+    fusion_config_path = getattr(custom_config, "fusion_config", None)
+    if not train_jsonl and not fusion_config_path:
+        raise ValueError(
+            "Config must specify 'custom.train_jsonl'/'custom.jsonl' or 'custom.fusion_config'"
+        )
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_dir = os.path.abspath(os.path.dirname(train_jsonl))
-        os.environ["ROOT_IMAGE_DIR"] = root_dir
-        logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
+        root_hint = train_jsonl or fusion_config_path
+        if root_hint:
+            root_dir = os.path.abspath(os.path.dirname(str(root_hint)))
+            os.environ["ROOT_IMAGE_DIR"] = root_dir
+            logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")
@@ -418,8 +423,7 @@ def main():
     elif val_sample_with_replacement:
         logger.info(f"Val sample size per eval (with replacement): {val_sample_size}")
 
-    # Build training dataset
-    logger.info(f"Loading training dataset: {train_jsonl}")
+    # Build training dataset (single JSONL or fusion config)
     # Require minimal explicit keys; others have sane defaults
     if not custom_config.user_prompt:
         raise ValueError("custom.user_prompt must be provided (emit_norm is fixed to 'none')")
@@ -452,30 +456,61 @@ def main():
 
     dataset_seed = 42
     dataset: Any
+    fusion_cfg = None
 
     if custom_config.fusion_config:
-        raise ValueError(
-            "custom.fusion_config is deprecated; multi-dataset fusion is disabled while we focus on single LVIS training. "
-            "Remove custom.fusion_config to continue."
-        )
+        from .datasets.fusion import FusionConfig
+        from .datasets.unified_fusion_dataset import FusionCaptionDataset
 
-    dataset = BaseCaptionDataset.from_jsonl(
-        train_jsonl,
-        template=sft.template,
-        user_prompt=custom_config.user_prompt,
-        emit_norm=custom_config.emit_norm,
-        json_format=custom_config.json_format,
-        augmenter=augmenter,
-        bypass_prob=bypass_prob,
-        curriculum_state=curriculum_state,
-        sample_limit=train_sample_limit,
-        use_summary=use_summary,
-        system_prompt_dense=system_prompt_dense,
-        system_prompt_summary=system_prompt_summary,
-        coord_tokens=custom_config.coord_tokens,
-        seed=dataset_seed,
-        object_ordering=custom_config.object_ordering,
-    )
+        fusion_path = str(custom_config.fusion_config)
+        logger.info(f"Loading training datasets from fusion config: {fusion_path}")
+        fusion_cfg = FusionConfig.from_file(fusion_path)
+
+        # For fusion, interpret sample_limit as a per-dataset cap for debug/smoke runs.
+        fusion_train_limit: int | None = None
+        if isinstance(train_sample_limit, int) and train_sample_limit > 0:
+            fusion_train_limit = train_sample_limit
+        elif isinstance(train_sample_limit, str) and train_sample_limit.isdigit():
+            fusion_train_limit = int(train_sample_limit)
+
+        dataset = FusionCaptionDataset(
+            fusion_config=fusion_cfg,
+            base_template=sft.template,
+            user_prompt=custom_config.user_prompt,
+            emit_norm=custom_config.emit_norm,
+            json_format=custom_config.json_format,
+            augmenter=augmenter,
+            bypass_prob=bypass_prob,
+            curriculum_state=curriculum_state,
+            use_summary=use_summary,
+            system_prompt_dense=system_prompt_dense,
+            system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
+            seed=dataset_seed,
+            shuffle=True,
+            sample_limit=fusion_train_limit,
+            split="train",
+            object_ordering=custom_config.object_ordering,
+        )
+    else:
+        logger.info(f"Loading training dataset: {train_jsonl}")
+        dataset = BaseCaptionDataset.from_jsonl(
+            train_jsonl,
+            template=sft.template,
+            user_prompt=custom_config.user_prompt,
+            emit_norm=custom_config.emit_norm,
+            json_format=custom_config.json_format,
+            augmenter=augmenter,
+            bypass_prob=bypass_prob,
+            curriculum_state=curriculum_state,
+            sample_limit=train_sample_limit,
+            use_summary=use_summary,
+            system_prompt_dense=system_prompt_dense,
+            system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
+            seed=dataset_seed,
+            object_ordering=custom_config.object_ordering,
+        )
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
@@ -697,7 +732,19 @@ def main():
 
             assistant_gt = None
             try:
-                record_clone = copy.deepcopy(dataset.base_records[0])
+                record_clone = None
+                base_records = getattr(dataset, "base_records", None)
+                if isinstance(base_records, list) and base_records:
+                    record_clone = copy.deepcopy(base_records[0])
+                else:
+                    pools = getattr(dataset, "_record_pools", None)
+                    if isinstance(pools, dict):
+                        for pool in pools.values():
+                            if isinstance(pool, list) and pool:
+                                record_clone = copy.deepcopy(pool[0])
+                                break
+                if record_clone is None:
+                    raise ValueError("No base record available for assistant GT extraction")
                 builder = dataset._create_builder(dataset.mode)
                 merged = builder.build_many([record_clone])
                 assistant_turn = next(
@@ -745,10 +792,59 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to dump conversation text: {e}")
 
-    # Build validation dataset if provided
+    # Build validation dataset (single JSONL or fusion config).
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
-    if val_jsonl:
+    if fusion_cfg is not None:
+        from .datasets.unified_fusion_dataset import FusionCaptionDataset
+
+        has_any_val = any(spec.val_jsonl is not None for spec in fusion_cfg.datasets)
+        if has_any_val:
+            logger.info(
+                "Loading validation datasets from fusion config (val_jsonl entries only)"
+            )
+            eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
+            fusion_eval_limit: int | None = None
+            if isinstance(eval_sample_limit, int) and eval_sample_limit > 0:
+                fusion_eval_limit = eval_sample_limit
+            elif isinstance(eval_sample_limit, str) and eval_sample_limit.isdigit():
+                fusion_eval_limit = int(eval_sample_limit)
+
+            eval_dataset = FusionCaptionDataset(
+                fusion_config=fusion_cfg,
+                base_template=sft.template,
+                user_prompt=custom_config.user_prompt,
+                emit_norm=custom_config.emit_norm,
+                json_format=custom_config.json_format,
+                augmenter=None,  # No augmentation for validation
+                bypass_prob=0.0,  # Explicit: no bypass for validation
+                curriculum_state=None,
+                use_summary=use_summary,
+                system_prompt_dense=system_prompt_dense,
+                system_prompt_summary=system_prompt_summary,
+                coord_tokens=custom_config.coord_tokens,
+                seed=dataset_seed,
+                shuffle=False,  # eval ordering doesn't matter; keep stable by default
+                sample_limit=fusion_eval_limit,
+                split="eval",
+                object_ordering=custom_config.object_ordering,
+            )
+            base_eval_len = len(eval_dataset)
+            if val_sample_with_replacement:
+                eval_dataset = RandomSampleDataset(
+                    eval_dataset, sample_size=val_sample_size, seed=dataset_seed + 11
+                )
+                logger.info(
+                    "Validation dataset size: %s (sampled with replacement from %s)",
+                    len(eval_dataset),
+                    base_eval_len,
+                )
+            else:
+                logger.info(f"Validation dataset size: {base_eval_len}")
+        else:
+            logger.info("Fusion config has no val_jsonl entries; skipping evaluation dataset.")
+            val_jsonl = None
+    elif val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
         eval_dataset = BaseCaptionDataset.from_jsonl(

@@ -1,0 +1,16 @@
+# Training config example: enable fusion by pointing custom.fusion_config at a fusion YAML.
+#
+# Note: model + output_dir are intentionally set here so that config loading works
+# out of the box (actual dataset paths come from the fusion config).
+
+extends: ../base.yaml
+
+model:
+  model: model_cache/Qwen3-VL-8B-Instruct-coordexp
+
+training:
+  output_dir: ./output/fusion_example
+  run_name: fusion_lvis_vg_example
+
+custom:
+  fusion_config: configs/fusion/examples/lvis_vg.yaml

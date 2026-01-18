@@ -1,4 +1,8 @@
-"""Shared dataclasses for fusion datasets."""
+"""Shared dataclasses for fusion datasets.
+
+These dataclasses are intentionally compatible with the upstream Qwen3-VL
+fusion config shapes, but CoordExp may choose simpler semantics.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +24,8 @@ class DatasetSpec:
     domain: Literal["target", "source"]
     supports_augmentation: bool
     supports_curriculum: bool
+    # Optional explicit mode; defaults applied elsewhere when None.
+    mode: Optional[Literal["dense", "summary"]] = None
     poly_fallback: Literal["off", "bbox_2d"] = "off"
     poly_max_points: Optional[int] = None
     val_jsonl: Optional[Path] = None
@@ -30,11 +36,25 @@ class DatasetSpec:
     prompt_system: Optional[str] = None
     # Optional deterministic seed for per-epoch sampling/shuffling.
     seed: Optional[int] = None
+    # Optional per-dataset sampling policy: when true and quota <= pool, sample
+    # without replacement. CoordExp does not guarantee determinism; this only
+    # controls whether duplicates can appear when downsampling.
+    sample_without_replacement: bool = False
 
 
 @dataclass(frozen=True)
-class AuxiliarySpec(DatasetSpec):
-    ratio: float = 0.0
+class FusionDatasetSpec(DatasetSpec):
+    """Dataset entry used by CoordExp fusion training.
+
+    CoordExp treats every dataset entry uniformly (no target/source semantics).
+    Each entry contributes `round(len(pool) * ratio)` samples per epoch.
+    """
+
+    ratio: float = 1.0
 
 
-__all__ = ["DatasetSpec", "AuxiliarySpec", "FALLBACK_OPTIONS"]
+__all__ = [
+    "DatasetSpec",
+    "FusionDatasetSpec",
+    "FALLBACK_OPTIONS",
+]

@@ -2,7 +2,7 @@
 
 This document introduces the **public data** submodule under `public_data/` at the repo root.
 
-The goal of this module is to provide **geometry-aware, tested pipelines** for turning public detection/segmentation datasets (starting with **LVIS**, expanding to COCO/Objects365/OpenImages) into JSONL files that match the CoordExp training contract and can be used as **primary datasets** in training. Multi-dataset fusion is currently disabled.
+The goal of this module is to provide **geometry-aware, tested pipelines** for turning public detection/segmentation datasets (starting with **LVIS**, expanding to COCO/Objects365/OpenImages) into JSONL files that match the CoordExp training contract and can be used as **primary datasets** in training. These JSONLs can be used standalone or composed via fusion configs.
 
 ---
 
@@ -29,7 +29,7 @@ At the project level, `public_data/` plays three roles:
 - **Geometry bridge**: exposes `bbox_2d` and N-point polygon (`poly` + `poly_points`) geometries in **pixel space**, ready for downstream normalization to `norm1000` in templates.
 - **Quality gate**: provides tests and validation scripts to catch schema / geometry issues before training.
 
-In training configs under `configs/`, these JSONL files are referenced via `custom.train_jsonl` / `custom.val_jsonl`. Multi-dataset fusion is disabled for now; ignore `fusion_config` references in older docs.
+In training configs under `configs/`, these JSONL files are referenced via `custom.train_jsonl` / `custom.val_jsonl` (single-source) or via `custom.fusion_config` (multi-dataset). See `docs/data/FUSION_DATASET.md`.
 
 ---
 

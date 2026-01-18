@@ -7,7 +7,7 @@ Modular, YAML-driven pipeline for fine-tuning Qwen3-VL on dense captioning tasks
 - **Reproducible**: Epoch-based seeding for dynamic multi-image pairing
 - **Geometry-aware**: Affine transformations preserve spatial accuracy
 - **JSON-lines first**: Grouped JSON output with geometry preserved
-- **Single-source focus**: Multi-source fusion via `fusion_config` is deprecated; current runs use a single LVIS dataset.
+- **Multi-dataset support**: Single-source JSONL or multi-dataset fusion via `custom.fusion_config`.
 
 **Pipeline**: YAML Config → ConfigLoader → SwiftSft → BaseCaptionDataset (alias DenseCaptionDataset) → Training Loop
 
@@ -81,7 +81,9 @@ src/
 ### Runner specifics (sft.py)
 - Pure YAML-driven: CLI only accepts `--config`, optional `--base_config`, and `--debug`.
 - Inherits and merges configs via `extends`/`inherit`; last wins, cycles fail fast.
-- Auto-sets `ROOT_IMAGE_DIR` to the directory of `custom.train_jsonl` when not provided.
+- Auto-sets `ROOT_IMAGE_DIR` to the directory of `custom.train_jsonl` (or `custom.fusion_config`) when not provided.
+- For smoke tests, you can enable `debug.enabled: true` and set `debug.train_sample_limit` / `debug.val_sample_limit` (optional).
+- For easier cleanup in smoke tests, set `debug.output_dir` to force both checkpoints and TensorBoard logs into the same folder.
 - Applies tuner/adapters with `sft.prepare_model(...)` before trainer creation.
 - Supports optional sample limiting: `custom.sample_limit`, `custom.train_sample_limit`, `custom.val_sample_limit`.
 - For eval-only resampling, set `custom.val_sample_with_replacement: true` and provide a size via `custom.val_sample_limit` (or `custom.sample_limit`).

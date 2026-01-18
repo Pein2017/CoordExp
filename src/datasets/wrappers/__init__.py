@@ -212,6 +212,17 @@ def build_dataset_spec(
     return wrapper_cls.build_spec(name=name, params=params)
 
 
+def available_template_ids() -> set[str]:
+    """Return the set of known template IDs accepted in fusion configs.
+
+    CoordExp v1 uses a single runtime template instance, but we still validate
+    the `template:` field in fusion configs as a typo-guard and for upstream
+    compatibility.
+    """
+
+    return {getattr(wrapper, "template_id", "") for wrapper in _WRAPPERS.values()} - {""}
+
+
 class TargetDatasetWrapper(DatasetWrapper):
     domain: DatasetDomain = "target"
     template_id = "bbu_dense"
@@ -252,6 +263,27 @@ class LvisDatasetWrapper(PublicDetectionDatasetWrapper):
     default_name = "lvis"
 
 
+@register_dataset_wrapper("vg")
+class VisualGenomeDatasetWrapper(PublicDetectionDatasetWrapper):
+    default_name = "vg"
+
+
+@register_dataset_wrapper("jsonl")
+class GenericJsonlDatasetWrapper(DatasetWrapper):
+    """Generic wrapper for arbitrary JSONLs.
+
+    This exists so fusion configs are not blocked by the wrapper registry when
+    experimenting with new/converted datasets that already follow the JSONL
+    contract.
+    """
+
+    default_name = "jsonl"
+    domain: DatasetDomain = "target"
+    template_id = "aux_dense"
+    supports_augmentation = False
+    supports_curriculum = False
+
+
 @register_dataset_wrapper("flickr3k")
 class FlickrDatasetWrapper(PublicDetectionDatasetWrapper):
     default_name = "flickr3k"
@@ -262,4 +294,5 @@ __all__ = [
     "register_dataset_wrapper",
     "resolve_dataset_wrapper",
     "build_dataset_spec",
+    "available_template_ids",
 ]

@@ -8,14 +8,21 @@ import sys
 import types
 pytest.importorskip("pycocotools")
 
-if "yaml" not in sys.modules:
+# Some eval modules historically imported yaml/swift/torch at import time.
+# In the normal CoordExp environment these are installed; for stripped-down
+# environments we fall back to lightweight stubs.
+try:
+    import yaml  # noqa: F401
+except Exception:
     yaml_stub = types.SimpleNamespace(
         safe_load=lambda *args, **kwargs: {},
         dump=lambda *args, **kwargs: "",
     )
     sys.modules["yaml"] = yaml_stub
 
-if "swift" not in sys.modules:
+try:
+    import swift  # noqa: F401
+except Exception:
     swift_utils = types.SimpleNamespace(get_dist_setting=lambda *args, **kwargs: None)
     swift_argument = types.SimpleNamespace(RLHFArguments=object, TrainArguments=object)
     swift_llm = types.SimpleNamespace(argument=swift_argument)
@@ -25,7 +32,9 @@ if "swift" not in sys.modules:
     sys.modules["swift.llm.argument"] = swift_argument
     sys.modules["swift.utils"] = swift_utils
 
-if "torch" not in sys.modules:
+try:
+    import torch  # noqa: F401
+except Exception:
     torch_utils_data = types.SimpleNamespace(
         Dataset=object,
         IterableDataset=object,

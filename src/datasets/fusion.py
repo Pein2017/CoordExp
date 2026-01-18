@@ -1,7 +1,9 @@
-"""Fusion helpers for multi-dataset dense-caption training (deprecated).
+"""Fusion helpers for multi-dataset dense-caption training.
 
-Fusion is currently disabled in the training pipeline; these helpers are kept
-for potential future reinstatement.
+CoordExp supports configuring multi-dataset training via a separate "fusion
+config" file (YAML/JSON). The schema is intentionally compatible with the
+upstream Qwen3-VL containers (`targets` + optional `sources`), but CoordExp v1
+**treats targets and sources identically** (no target/source semantic split).
 """
 
 from __future__ import annotations
@@ -9,151 +11,312 @@ from __future__ import annotations
 import copy
 import json
 import random
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, cast
 
 from src.common.io import load_jsonl
-from src.datasets.fusion_types import AuxiliarySpec, DatasetSpec
-from src.datasets.wrappers import build_dataset_spec
+
+from .contracts import ConversationRecord
+from .fusion_types import DatasetSpec, FusionDatasetSpec
+from .wrappers import available_template_ids, build_dataset_spec
+
+
+def _normalize_extends(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _load_fusion_payload(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                "pyyaml is required to parse fusion configs; install pyyaml"
+            ) from exc
+        payload = yaml.safe_load(text)
+    else:
+        payload = json.loads(text)
+
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("fusion config must be a mapping")
+    return dict(payload)
+
+
+def _deep_merge_dicts(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(value, Mapping) and isinstance(existing, Mapping):
+            merged[key] = _deep_merge_dicts(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _dataset_entry_id(entry: Mapping[str, Any], *, field_name: str) -> str:
+    dataset_id = entry.get("name") or entry.get("dataset")
+    if dataset_id is None:
+        raise ValueError(f"{field_name} entry must include 'dataset' (and optional 'name')")
+    return str(dataset_id)
+
+
+def _ensure_entry_list(value: object, *, field_name: str) -> list[Mapping[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+        raise ValueError(f"fusion {field_name} must be an iterable")
+    entries = list(value)
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"{field_name} entry must be a mapping")
+    return cast(list[Mapping[str, Any]], entries)
+
+
+def _combined_entries(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    # Treat both keys as the same logical list in CoordExp.
+    targets = _ensure_entry_list(payload.get("targets"), field_name="targets")
+    sources = _ensure_entry_list(payload.get("sources"), field_name="sources")
+    return [*targets, *sources]
+
+
+def _merge_dataset_entries(
+    base_payload: Mapping[str, Any],
+    override_payload: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    base_entries = _combined_entries(base_payload)
+    override_entries = _combined_entries(override_payload)
+
+    if not base_entries:
+        return override_entries
+
+    base_map: dict[str, Mapping[str, Any]] = {}
+    for entry in base_entries:
+        key = _dataset_entry_id(entry, field_name="targets/sources")
+        if key in base_map:
+            raise ValueError(f"Duplicate dataset ID in base fusion config: {key}")
+        base_map[key] = entry
+
+    override_map: dict[str, Mapping[str, Any]] = {}
+    for entry in override_entries:
+        key = _dataset_entry_id(entry, field_name="targets/sources")
+        if key in override_map:
+            raise ValueError(f"Duplicate dataset ID in override fusion config: {key}")
+        override_map[key] = entry
+
+    merged_entries: list[Mapping[str, Any]] = []
+    for entry in base_entries:
+        key = _dataset_entry_id(entry, field_name="targets/sources")
+        if key in override_map:
+            merged_entries.append(_deep_merge_dicts(entry, override_map[key]))
+        else:
+            merged_entries.append(entry)
+
+    for entry in override_entries:
+        key = _dataset_entry_id(entry, field_name="targets/sources")
+        if key not in base_map:
+            merged_entries.append(entry)
+
+    return merged_entries
+
+
+def _merge_fusion_payload(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base)
+
+    # Merge non-dataset keys first (deep-merge mappings; override scalars).
+    for key, value in override.items():
+        if key in {"targets", "sources"}:
+            continue
+        existing = merged.get(key)
+        if isinstance(value, Mapping) and isinstance(existing, Mapping):
+            merged[key] = _deep_merge_dicts(existing, value)
+        else:
+            merged[key] = value
+
+    # Merge dataset entries (targets + sources treated uniformly).
+    merged_entries = _merge_dataset_entries(base, override)
+    if merged_entries:
+        merged["targets"] = merged_entries
+        merged.pop("sources", None)  # keep canonical form
+
+    return merged
+
+
+def _load_fusion_with_extends(path: Path, visited: set[Path] | None = None) -> dict[str, Any]:
+    abs_path = path.resolve()
+    visited = set() if visited is None else visited
+    if abs_path in visited:
+        raise ValueError(f"Cyclic fusion config inheritance detected at: {abs_path}")
+    visited.add(abs_path)
+
+    payload = _load_fusion_payload(abs_path)
+    extends_value = payload.pop("extends", None)
+    if extends_value is None:
+        extends_value = payload.pop("inherit", None)
+
+    merged_base: dict[str, Any] = {}
+    for base_ref in _normalize_extends(extends_value):
+        base_path = Path(base_ref)
+        if not base_path.is_absolute():
+            base_path = (abs_path.parent / base_path).resolve()
+        base_payload = _load_fusion_with_extends(base_path, visited)
+        merged_base = _merge_fusion_payload(merged_base, base_payload)
+
+    return _merge_fusion_payload(merged_base, payload)
 
 
 @dataclass(frozen=True)
 class FusionConfig:
-    target: DatasetSpec
-    sources: Tuple[AuxiliarySpec, ...]
+    """Runtime fusion config after resolving `extends` and parsing entries."""
+
+    targets: tuple[FusionDatasetSpec, ...]
+    # Accepted for schema compatibility; treated the same as `targets`.
+    sources: tuple[FusionDatasetSpec, ...] = ()
+
+    @property
+    def datasets(self) -> tuple[FusionDatasetSpec, ...]:
+        return self.targets + self.sources
 
     @classmethod
     def from_file(cls, path: str) -> "FusionConfig":
         path_obj = Path(path)
-        text = path_obj.read_text(encoding="utf-8")
-        suffix = path_obj.suffix.lower()
-        if suffix in {".yaml", ".yml"}:
-            try:
-                import yaml
-            except ImportError as exc:  # pragma: no cover
-                raise ImportError(
-                    "pyyaml is required to parse fusion configs; install pyyaml"
-                ) from exc
-            payload = yaml.safe_load(text)
-        else:
-            payload = json.loads(text)
-        if not isinstance(payload, Mapping):
-            raise ValueError("fusion config must be a mapping")
+        payload = _load_fusion_with_extends(path_obj)
 
-        target_spec, _ = cls._parse_dataset_entry(
-            payload.get("target"), require_ratio=False
-        )
+        if "target" in payload:
+            raise ValueError("fusion config must define 'targets' (list); 'target' is not supported.")
 
-        source_sections = payload.get("sources") or []
-        if not isinstance(source_sections, Iterable):
-            raise ValueError("fusion sources must be an iterable")
+        targets_entries = _ensure_entry_list(payload.get("targets"), field_name="targets")
+        if not targets_entries:
+            raise ValueError("fusion config requires at least one dataset entry in targets/sources")
 
-        sources: list[AuxiliarySpec] = []
-        for entry in source_sections:
-            spec, ratio = cls._parse_dataset_entry(entry, require_ratio=True)
-            sources.append(cls._as_auxiliary(spec, ratio or 0.0))
+        specs: list[FusionDatasetSpec] = []
+        for entry in targets_entries:
+            specs.append(cls._parse_dataset_entry(entry))
 
-        return cls(
-            target=target_spec,
-            sources=tuple(sources),
-        )
+        cls._validate_unique_ids(specs)
+
+        # Canonical: everything lives in targets (sources accepted at input).
+        return cls(targets=tuple(specs), sources=())
 
     @staticmethod
-    def _parse_dataset_entry(
-        entry: Any, *, require_ratio: bool
-    ) -> tuple[DatasetSpec, Optional[float]]:
+    def _validate_unique_ids(specs: Sequence[FusionDatasetSpec]) -> None:
+        seen: set[str] = set()
+        for spec in specs:
+            if spec.name in seen:
+                raise ValueError(f"Duplicate dataset ID in fusion config: {spec.name}")
+            seen.add(spec.name)
+
+    @staticmethod
+    def _parse_dataset_entry(entry: Mapping[str, Any]) -> FusionDatasetSpec:
         if not isinstance(entry, Mapping):
             raise ValueError("dataset entry must be a mapping")
 
-        dataset_key = entry.get("dataset")
-        name_override = entry.get("name") if dataset_key else None
-        if dataset_key is None:
-            dataset_key = entry.get("name")
-            if dataset_key is None:
-                raise ValueError("dataset entry must include 'dataset' or 'name'")
-            dataset_key = str(dataset_key)
-            name_override = str(entry.get("name")) if entry.get("name") else None
+        dataset_key_raw = entry.get("dataset")
+        if dataset_key_raw is None:
+            raise ValueError("dataset entry must include 'dataset'")
+        dataset_key = str(dataset_key_raw)
+
+        name_override_raw = entry.get("name")
+        name_override = str(name_override_raw) if name_override_raw is not None else None
+
         params = entry.get("params")
         if params is None:
             params = {
                 "train_jsonl": entry.get("train_jsonl"),
+                "val_jsonl": entry.get("val_jsonl"),
+                "template": entry.get("template"),
+                # Optional upstream-compatible keys (CoordExp may ignore some).
+                "poly_fallback": entry.get("poly_fallback"),
+                "poly_max_points": entry.get("poly_max_points"),
+                "augmentation_enabled": entry.get("augmentation_enabled"),
+                "curriculum_enabled": entry.get("curriculum_enabled"),
+                "max_objects_per_image": entry.get("max_objects_per_image"),
+                "user_prompt": entry.get("user_prompt"),
+                "system_prompt": entry.get("system_prompt"),
+                "seed": entry.get("seed"),
+                "mode": entry.get("mode"),
+                "sample_without_replacement": entry.get("sample_without_replacement"),
             }
-            if "val_jsonl" in entry:
-                params["val_jsonl"] = entry.get("val_jsonl")
-            if "template" in entry:
-                params["template"] = entry.get("template")
-            if "poly_fallback" in entry:
-                params["poly_fallback"] = entry.get("poly_fallback")
-            if "poly_max_points" in entry:
-                params["poly_max_points"] = entry.get("poly_max_points")
-            if "augmentation_enabled" in entry:
-                params["augmentation_enabled"] = entry.get("augmentation_enabled")
-            if "curriculum_enabled" in entry:
-                params["curriculum_enabled"] = entry.get("curriculum_enabled")
-            if "max_objects_per_image" in entry:
-                params["max_objects_per_image"] = entry.get("max_objects_per_image")
-            if "user_prompt" in entry:
-                params["user_prompt"] = entry.get("user_prompt")
-            if "system_prompt" in entry:
-                params["system_prompt"] = entry.get("system_prompt")
-            if "seed" in entry:
-                params["seed"] = entry.get("seed")
         elif not isinstance(params, Mapping):
             raise TypeError("dataset params must be a mapping if provided")
 
-        spec = build_dataset_spec(dataset_key, name=name_override, params=params)
-        ratio_value: Optional[float] = None
-        if require_ratio:
-            ratio = entry.get("ratio")
-            if ratio is None:
-                raise ValueError("auxiliary spec must include 'ratio'")
+        # Required: template must be present and known (typo guard).
+        template_raw = params.get("template")
+        if template_raw is None:
+            raise ValueError("dataset entry must include 'template'")
+        template = str(template_raw).strip()
+        if not template:
+            raise ValueError("dataset entry template must be a non-empty string")
+        known_templates = available_template_ids()
+        if template not in known_templates:
+            known = ", ".join(sorted(known_templates))
+            raise ValueError(f"Unknown fusion template '{template}'. Known templates: {known}")
+
+        # Optional: ratio defaults to 1.0
+        ratio_raw = entry.get("ratio", 1.0)
+        if ratio_raw is None:
+            ratio = 1.0
+        elif isinstance(ratio_raw, str) and not ratio_raw.strip():
+            ratio = 1.0
+        else:
+            if isinstance(ratio_raw, bool):
+                raise ValueError("ratio must be numeric")
             try:
-                ratio_value = float(ratio)
+                ratio = float(ratio_raw)
             except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
                 raise ValueError("ratio must be numeric") from exc
-            if ratio_value < 0:
-                raise ValueError("ratio must be non-negative")
-        return spec, ratio_value
+        if ratio < 0:
+            raise ValueError("ratio must be non-negative")
 
-    @staticmethod
-    def _as_auxiliary(spec: DatasetSpec, ratio: float) -> AuxiliarySpec:
-        return AuxiliarySpec(
-            key=spec.key,
-            name=spec.name,
-            train_jsonl=spec.train_jsonl,
-            template=spec.template,
-            domain=spec.domain,
-            supports_augmentation=spec.supports_augmentation,
-            supports_curriculum=spec.supports_curriculum,
-            poly_fallback=spec.poly_fallback,
-            poly_max_points=spec.poly_max_points,
-            max_objects_per_image=spec.max_objects_per_image,
-            val_jsonl=spec.val_jsonl,
-            prompt_user=spec.prompt_user,
-            prompt_system=spec.prompt_system,
-            seed=spec.seed,
+        # Ensure wrapper receives the validated template.
+        params = dict(params)
+        params["template"] = template
+
+        try:
+            base_spec = build_dataset_spec(dataset_key, name=name_override, params=params)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+
+        return FusionDatasetSpec(
+            key=base_spec.key,
+            name=base_spec.name,
+            train_jsonl=base_spec.train_jsonl,
+            template=base_spec.template,
+            domain=base_spec.domain,
+            supports_augmentation=base_spec.supports_augmentation,
+            supports_curriculum=base_spec.supports_curriculum,
+            mode=base_spec.mode,
+            poly_fallback=base_spec.poly_fallback,
+            poly_max_points=base_spec.poly_max_points,
+            val_jsonl=base_spec.val_jsonl,
+            max_objects_per_image=base_spec.max_objects_per_image,
+            prompt_user=base_spec.prompt_user,
+            prompt_system=base_spec.prompt_system,
+            seed=base_spec.seed,
+            sample_without_replacement=base_spec.sample_without_replacement,
             ratio=ratio,
         )
 
 
-def _annotate_record(record: Mapping[str, Any]) -> Dict[str, Any]:
-    annotated = copy.deepcopy(record)
+def _annotate_record(record: ConversationRecord, spec: DatasetSpec) -> ConversationRecord:
+    annotated = cast(ConversationRecord, dict(copy.deepcopy(record)))
+    metadata = annotated.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata["_fusion_source"] = spec.name
+    metadata["_fusion_template"] = spec.template
+    metadata["_fusion_domain"] = spec.domain
+    annotated["metadata"] = metadata
     return annotated
-
-
-def _sample_with_replacement(
-    records: Sequence[Mapping[str, Any]],
-    count: int,
-    rng: random.Random,
-) -> list[Dict[str, Any]]:
-    if not records or count <= 0:
-        return []
-    samples: list[Dict[str, Any]] = []
-    for _ in range(count):
-        choice = rng.choice(records)
-        samples.append(copy.deepcopy(choice))
-    return samples
 
 
 def build_fused_jsonl(
@@ -163,27 +326,36 @@ def build_fused_jsonl(
     seed: int = 2025,
     shuffle: bool = True,
 ) -> Path:
-    target_records = load_jsonl(str(config.target.train_jsonl), resolve_relative=True)
+    """Offline helper: materialize a single JSONL by sampling per-dataset quotas.
+
+    This is NOT required for training (training can read fusion configs directly)
+    but can be useful for debugging or for external tools.
+    """
+
     rng = random.Random(seed)
+    fused: list[ConversationRecord] = []
 
-    fused: list[Dict[str, Any]] = []
-    for record in target_records:
-        fused.append(_annotate_record(record))
-
-    for source in config.sources:
-        quota = round(source.ratio * len(target_records))
-        if quota <= 0:
+    for spec in config.datasets:
+        records = load_jsonl(str(spec.train_jsonl), resolve_relative=True)
+        pool_len = len(records)
+        quota = round(pool_len * float(spec.ratio))
+        if pool_len <= 0 or quota <= 0:
             continue
-        source_records = load_jsonl(str(source.train_jsonl), resolve_relative=True)
-        source_seed = (
-            seed if source.seed is None else (seed ^ int(source.seed)) & 0xFFFFFFFF
-        )
-        sampled = _sample_with_replacement(
-            source_records, quota, random.Random(source_seed)
-        )
-        fused.extend(_annotate_record(record) for record in sampled)
 
-    if shuffle:
+        rng_local = random.Random((seed ^ hash(spec.name)) & 0xFFFFFFFF)
+        indices = list(range(pool_len))
+        if pool_len > 1:
+            rng_local.shuffle(indices)
+        if quota <= pool_len:
+            sampled = indices[:quota]
+        else:
+            sampled = indices[:]
+            sampled.extend(rng_local.randrange(pool_len) for _ in range(quota - pool_len))
+
+        for idx in sampled:
+            fused.append(_annotate_record(records[idx], spec))
+
+    if shuffle and len(fused) > 1:
         rng.shuffle(fused)
 
     output_path_obj = Path(output_path)
@@ -196,16 +368,9 @@ def build_fused_jsonl(
     return output_path_obj
 
 
-def prepare_record_for_dataset(
-    record: Mapping[str, Any], spec: DatasetSpec
-) -> Dict[str, Any]:
-    return _annotate_record(record)
-
-
 __all__ = [
     "DatasetSpec",
-    "AuxiliarySpec",
+    "FusionDatasetSpec",
     "FusionConfig",
     "build_fused_jsonl",
-    "prepare_record_for_dataset",
 ]
