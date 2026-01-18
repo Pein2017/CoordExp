@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Type, Literal
+from typing import Any, Dict, Mapping, Optional, Type, Literal, cast
 
 from ..fusion_types import DatasetSpec, FALLBACK_OPTIONS
 
@@ -86,6 +86,21 @@ def _parse_prompt(value: Any, *, field_name: str) -> Optional[str]:
     raise TypeError(f"{field_name} must be a string if provided")
 
 
+def _parse_mode(
+    value: Any, *, field_name: str
+) -> Optional[Literal["dense", "summary"]]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string if provided")
+    mode = value.strip().lower()
+    if not mode:
+        return None
+    if mode not in {"dense", "summary"}:
+        raise ValueError(f"{field_name} must be one of {{dense, summary}}")
+    return cast(Literal["dense", "summary"], mode)
+
+
 class DatasetWrapper(abc.ABC):
     """Base class for converting fusion config entries into DatasetSpec objects."""
 
@@ -145,6 +160,12 @@ class DatasetWrapper(abc.ABC):
             field_name=f"{cls.__name__}.curriculum_enabled",
             default=cls.supports_curriculum,
         )
+        mode = _parse_mode(mapping.get("mode"), field_name=f"{cls.__name__}.mode")
+        sample_without_replacement = _normalize_bool(
+            mapping.get("sample_without_replacement"),
+            field_name=f"{cls.__name__}.sample_without_replacement",
+            default=False,
+        )
         user_prompt = _parse_prompt(
             mapping.get("user_prompt"),
             field_name=f"{cls.__name__}.user_prompt",
@@ -165,6 +186,7 @@ class DatasetWrapper(abc.ABC):
             domain=cls.domain,
             supports_augmentation=aug_flag,
             supports_curriculum=curriculum_flag,
+            mode=mode,
             poly_fallback=poly_fallback,  # type: ignore[arg-type]
             poly_max_points=poly_max_points,
             max_objects_per_image=max_objects,
@@ -172,6 +194,7 @@ class DatasetWrapper(abc.ABC):
             prompt_user=user_prompt,
             prompt_system=system_prompt,
             seed=dataset_seed,
+            sample_without_replacement=sample_without_replacement,
         )
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import json
 import random
+import zlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +50,81 @@ def _load_fusion_payload(path: Path) -> dict[str, Any]:
         return {}
     if not isinstance(payload, Mapping):
         raise ValueError("fusion config must be a mapping")
-    return dict(payload)
+    normalized = dict(payload)
+    return _resolve_dataset_jsonl_paths(normalized, base_dir=path.resolve().parent)
+
+
+def _maybe_resolve_dataset_path(value: Any, *, base_dir: Path) -> Any:
+    """Resolve a dataset path entry according to CoordExp conventions.
+
+    - Absolute paths are kept as-is.
+    - Relative paths that begin with ./ or ../ are resolved relative to the
+      fusion config file directory (so extends behave intuitively).
+    - Other relative paths (e.g. public_data/...) are treated as repo-root/CWD
+      relative; the launcher runs from the repo root by convention.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+
+    trimmed = value.strip()
+    if not trimmed:
+        return trimmed
+
+    path = Path(trimmed)
+    if path.is_absolute():
+        return trimmed
+
+    if trimmed.startswith("./") or trimmed.startswith("../"):
+        return str((base_dir / path).resolve())
+
+    return trimmed
+
+
+def _resolve_dataset_jsonl_paths(payload: dict[str, Any], *, base_dir: Path) -> dict[str, Any]:
+    """Resolve dataset JSONL paths within a single fusion payload."""
+
+    for container_key in ("targets", "sources"):
+        entries_raw = payload.get(container_key)
+        if entries_raw is None:
+            continue
+        if not isinstance(entries_raw, Sequence) or isinstance(entries_raw, (str, bytes)):
+            # Leave validation to the strict parser.
+            continue
+
+        normalized_entries: list[Any] = []
+        for entry_raw in entries_raw:
+            if not isinstance(entry_raw, Mapping):
+                normalized_entries.append(entry_raw)
+                continue
+            entry = dict(entry_raw)
+            params = entry.get("params")
+            if isinstance(params, Mapping):
+                params_dict = dict(params)
+                if "train_jsonl" in params_dict:
+                    params_dict["train_jsonl"] = _maybe_resolve_dataset_path(
+                        params_dict.get("train_jsonl"), base_dir=base_dir
+                    )
+                if "val_jsonl" in params_dict:
+                    params_dict["val_jsonl"] = _maybe_resolve_dataset_path(
+                        params_dict.get("val_jsonl"), base_dir=base_dir
+                    )
+                entry["params"] = params_dict
+            else:
+                if "train_jsonl" in entry:
+                    entry["train_jsonl"] = _maybe_resolve_dataset_path(
+                        entry.get("train_jsonl"), base_dir=base_dir
+                    )
+                if "val_jsonl" in entry:
+                    entry["val_jsonl"] = _maybe_resolve_dataset_path(
+                        entry.get("val_jsonl"), base_dir=base_dir
+                    )
+            normalized_entries.append(entry)
+        payload[container_key] = normalized_entries
+
+    return payload
 
 
 def _deep_merge_dicts(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -151,27 +226,48 @@ def _merge_fusion_payload(base: Mapping[str, Any], override: Mapping[str, Any]) 
     return merged
 
 
-def _load_fusion_with_extends(path: Path, visited: set[Path] | None = None) -> dict[str, Any]:
+def _load_fusion_with_extends(
+    path: Path,
+    *,
+    stack: set[Path] | None = None,
+    memo: dict[Path, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Load a fusion config, resolving extends with DAG-safe cycle detection.
+
+    We must allow diamond-shaped DAGs (A extends B and C, both extend D)
+    without treating D as a cycle. Use a recursion stack for cycle detection
+    and a memo table for reuse.
+    """
+
     abs_path = path.resolve()
-    visited = set() if visited is None else visited
-    if abs_path in visited:
+    memo = {} if memo is None else memo
+    if abs_path in memo:
+        return copy.deepcopy(memo[abs_path])
+
+    stack = set() if stack is None else stack
+    if abs_path in stack:
         raise ValueError(f"Cyclic fusion config inheritance detected at: {abs_path}")
-    visited.add(abs_path)
 
-    payload = _load_fusion_payload(abs_path)
-    extends_value = payload.pop("extends", None)
-    if extends_value is None:
-        extends_value = payload.pop("inherit", None)
+    stack.add(abs_path)
+    try:
+        payload = _load_fusion_payload(abs_path)
+        extends_value = payload.pop("extends", None)
+        if extends_value is None:
+            extends_value = payload.pop("inherit", None)
 
-    merged_base: dict[str, Any] = {}
-    for base_ref in _normalize_extends(extends_value):
-        base_path = Path(base_ref)
-        if not base_path.is_absolute():
-            base_path = (abs_path.parent / base_path).resolve()
-        base_payload = _load_fusion_with_extends(base_path, visited)
-        merged_base = _merge_fusion_payload(merged_base, base_payload)
+        merged_base: dict[str, Any] = {}
+        for base_ref in _normalize_extends(extends_value):
+            base_path = Path(base_ref)
+            if not base_path.is_absolute():
+                base_path = (abs_path.parent / base_path).resolve()
+            base_payload = _load_fusion_with_extends(base_path, stack=stack, memo=memo)
+            merged_base = _merge_fusion_payload(merged_base, base_payload)
 
-    return _merge_fusion_payload(merged_base, payload)
+        merged = _merge_fusion_payload(merged_base, payload)
+        memo[abs_path] = merged
+        return copy.deepcopy(merged)
+    finally:
+        stack.remove(abs_path)
 
 
 @dataclass(frozen=True)
@@ -228,26 +324,33 @@ class FusionConfig:
         name_override_raw = entry.get("name")
         name_override = str(name_override_raw) if name_override_raw is not None else None
 
-        params = entry.get("params")
-        if params is None:
-            params = {
-                "train_jsonl": entry.get("train_jsonl"),
-                "val_jsonl": entry.get("val_jsonl"),
-                "template": entry.get("template"),
-                # Optional upstream-compatible keys (CoordExp may ignore some).
-                "poly_fallback": entry.get("poly_fallback"),
-                "poly_max_points": entry.get("poly_max_points"),
-                "augmentation_enabled": entry.get("augmentation_enabled"),
-                "curriculum_enabled": entry.get("curriculum_enabled"),
-                "max_objects_per_image": entry.get("max_objects_per_image"),
-                "user_prompt": entry.get("user_prompt"),
-                "system_prompt": entry.get("system_prompt"),
-                "seed": entry.get("seed"),
-                "mode": entry.get("mode"),
-                "sample_without_replacement": entry.get("sample_without_replacement"),
-            }
-        elif not isinstance(params, Mapping):
+        params_raw = entry.get("params")
+        if params_raw is None:
+            params: dict[str, Any] = {}
+        elif isinstance(params_raw, Mapping):
+            params = dict(params_raw)
+        else:
             raise TypeError("dataset params must be a mapping if provided")
+
+        # Accept both "flat" fields and the upstream "params" mapping for
+        # compatibility; params values win when both are present.
+        for key in (
+            "train_jsonl",
+            "val_jsonl",
+            "template",
+            "poly_fallback",
+            "poly_max_points",
+            "augmentation_enabled",
+            "curriculum_enabled",
+            "max_objects_per_image",
+            "user_prompt",
+            "system_prompt",
+            "seed",
+            "mode",
+            "sample_without_replacement",
+        ):
+            if key not in params:
+                params[key] = entry.get(key)
 
         # Required: template must be present and known (typo guard).
         template_raw = params.get("template")
@@ -342,7 +445,8 @@ def build_fused_jsonl(
         if pool_len <= 0 or quota <= 0:
             continue
 
-        rng_local = random.Random((seed ^ hash(spec.name)) & 0xFFFFFFFF)
+        stable = zlib.crc32(spec.name.encode("utf-8")) & 0xFFFFFFFF
+        rng_local = random.Random((seed ^ stable) & 0xFFFFFFFF)
         indices = list(range(pool_len))
         if pool_len > 1:
             rng_local.shuffle(indices)
@@ -350,7 +454,10 @@ def build_fused_jsonl(
             sampled = indices[:quota]
         else:
             sampled = indices[:]
-            sampled.extend(rng_local.randrange(pool_len) for _ in range(quota - pool_len))
+            if not spec.sample_without_replacement:
+                sampled.extend(
+                    rng_local.randrange(pool_len) for _ in range(quota - pool_len)
+                )
 
         for idx in sampled:
             fused.append(_annotate_record(records[idx], spec))

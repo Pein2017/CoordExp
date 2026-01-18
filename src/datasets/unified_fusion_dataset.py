@@ -135,11 +135,18 @@ class FusionCaptionDataset(BaseCaptionDataset):
                 seed=spec.seed,
             )
 
-            if split == "train" and self._augmenter is not None:
+            if (
+                split == "train"
+                and self._augmenter is not None
+                and spec.supports_augmentation
+            ):
+                curriculum_state = (
+                    self.curriculum_state if spec.supports_curriculum else None
+                )
                 self._preprocessors_aug[spec.name] = AugmentationPreprocessor(
                     augmenter=self._augmenter,
                     bypass_prob=self.bypass_prob,
-                    curriculum_state=self.curriculum_state,
+                    curriculum_state=curriculum_state,
                     coord_tokens_enabled=self.coord_tokens.enabled,
                 )
             if spec.max_objects_per_image is not None:
@@ -259,7 +266,10 @@ class FusionCaptionDataset(BaseCaptionDataset):
                 sampled = indices[:quota]
             else:
                 sampled = indices[:]
-                sampled.extend(rng.randrange(pool_len) for _ in range(quota - pool_len))
+                if not spec.sample_without_replacement:
+                    sampled.extend(
+                        rng.randrange(pool_len) for _ in range(quota - pool_len)
+                    )
 
             counts[dataset_name] = len(sampled)
             schedule.extend((dataset_name, idx) for idx in sampled)

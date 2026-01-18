@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import json
 import textwrap
 from pathlib import Path
@@ -119,6 +122,75 @@ def test_fusion_extends_merges_by_dataset_id(tmp_path: Path):
     assert cfg.datasets[0].ratio == 1.0
 
 
+def test_fusion_extends_diamond_is_not_a_cycle(tmp_path: Path):
+    # A extends B and C; both extend D. This is a DAG (diamond), not a cycle.
+    base_dir = tmp_path / "base"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    (base_dir / "train.jsonl").write_text(
+        json.dumps({"images": [], "width": 1, "height": 1, "objects": []}) + "\n",
+        encoding="utf-8",
+    )
+
+    d_path = base_dir / "d.yaml"
+    d_path.write_text(
+        textwrap.dedent(
+            f"""
+            targets:
+              - dataset: jsonl
+                name: toy
+                train_jsonl: ./train.jsonl
+                template: aux_dense
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    b_path = base_dir / "b.yaml"
+    b_path.write_text(
+        textwrap.dedent(
+            f"""
+            extends: {d_path.name}
+            targets:
+              - name: toy
+                ratio: 1.0
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    c_path = base_dir / "c.yaml"
+    c_path.write_text(
+        textwrap.dedent(
+            f"""
+            extends: {d_path.name}
+            targets:
+              - name: toy
+                ratio: 0.5
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    a_path = base_dir / "a.yaml"
+    a_path.write_text(
+        textwrap.dedent(
+            f"""
+            extends: [{b_path.name}, {c_path.name}]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    cfg = FusionConfig.from_file(str(a_path))
+    assert len(cfg.datasets) == 1
+    assert cfg.datasets[0].name == "toy"
+
+
 def test_fusion_duplicate_dataset_ids_error(tmp_path: Path):
     cfg_path = tmp_path / "fusion.yaml"
     cfg_path.write_text(
@@ -161,6 +233,47 @@ def test_fusion_unknown_template_errors(tmp_path: Path):
 
     with pytest.raises(ValueError):
         _ = FusionConfig.from_file(str(cfg_path))
+
+
+def test_fusion_resolves_dot_paths_relative_to_config_dir(tmp_path: Path):
+    cfg_dir = tmp_path / "cfgs" / "nested"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+
+    train_path = cfg_dir / "train.jsonl"
+    train_path.write_text(
+        json.dumps({"images": [], "width": 1, "height": 1, "objects": []}) + "\n",
+        encoding="utf-8",
+    )
+
+    base_cfg = cfg_dir / "base.yaml"
+    base_cfg.write_text(
+        textwrap.dedent(
+            """
+            targets:
+              - dataset: jsonl
+                name: toy
+                train_jsonl: ./train.jsonl
+                template: aux_dense
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    override_cfg = tmp_path / "override.yaml"
+    override_cfg.write_text(
+        textwrap.dedent(
+            f"""
+            extends: {base_cfg.relative_to(tmp_path)}
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    cfg = FusionConfig.from_file(str(override_cfg))
+    assert len(cfg.datasets) == 1
+    assert cfg.datasets[0].train_jsonl == train_path.resolve()
 
 
 def test_fusion_val_jsonl_null_skips_eval(tmp_path: Path):
@@ -309,3 +422,62 @@ def test_training_config_materializes_with_fusion_config_without_train_jsonl(
     prompts = ConfigLoader.resolve_prompts(raw)
     training = TrainingConfig.from_mapping(raw, prompts)
     assert training.custom.fusion_config == "some/fusion.yaml"
+
+
+def test_offline_merge_is_reproducible_across_python_hash_seeds(tmp_path: Path):
+    # This should not depend on PYTHONHASHSEED; we use a stable hash function.
+    train_jsonl = tmp_path / "train.jsonl"
+    _write_jsonl(
+        train_jsonl,
+        [
+            {"images": ["a.jpg"], "width": 1, "height": 1, "objects": []},
+            {"images": ["b.jpg"], "width": 1, "height": 1, "objects": []},
+        ],
+    )
+
+    cfg_path = tmp_path / "fusion.yaml"
+    cfg_path.write_text(
+        textwrap.dedent(
+            f"""
+            targets:
+              - dataset: jsonl
+                name: toy
+                train_jsonl: {train_jsonl}
+                template: aux_dense
+                ratio: 1.0
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    script = textwrap.dedent(
+        f"""
+        import hashlib
+        from pathlib import Path
+        from src.datasets.fusion import FusionConfig, build_fused_jsonl
+
+        cfg = FusionConfig.from_file({str(cfg_path)!r})
+        out = Path({str(tmp_path / "out.jsonl")!r})
+        build_fused_jsonl(cfg, str(out), seed=2025, shuffle=False)
+        print(hashlib.md5(out.read_bytes()).hexdigest())
+        """
+    ).strip()
+
+    env1 = dict(os.environ)
+    env1["PYTHONHASHSEED"] = "1"
+    env2 = dict(os.environ)
+    env2["PYTHONHASHSEED"] = "2"
+
+    digest1 = subprocess.check_output(
+        [sys.executable, "-c", script],
+        env=env1,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    ).decode("utf-8").strip()
+    digest2 = subprocess.check_output(
+        [sys.executable, "-c", script],
+        env=env2,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    ).decode("utf-8").strip()
+
+    assert digest1 == digest2

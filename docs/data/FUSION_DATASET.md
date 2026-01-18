@@ -9,9 +9,11 @@ CoordExp can train/evaluate on **multiple JSONL datasets** without pre-merging b
 
 Fusion configs are YAML/JSON mappings with Qwen3-VL-style containers:
 
-- `targets`: **required** list of dataset entries
+- `targets`: list of dataset entries
 - `sources`: optional list of dataset entries (accepted for compatibility; treated the same as `targets`)
 - `extends`: optional string or list of strings for inheritance (paths relative to the current file)
+
+At least one dataset entry across `targets` and `sources` is required.
 
 ### Dataset Entry Fields
 
@@ -30,6 +32,10 @@ Notes:
 
 - Dataset ID = `name` if provided, otherwise `dataset`.
 - Unknown `dataset` wrapper keys error (to avoid silently ignoring typos).
+- JSONL path resolution:
+  - absolute paths are kept as-is
+  - paths starting with `./` or `../` are resolved relative to the fusion config file directory
+  - other relative paths (e.g. `public_data/...`) are treated as repo-root/CWD relative (launchers run from repo root)
 
 ### Extends Merge Semantics
 
@@ -65,6 +71,7 @@ Sampling behavior:
 
 - If `quota_i <= len(pool_i)`: sample without replacement (shuffle + take first `quota_i`)
 - If `quota_i > len(pool_i)`: include the whole pool and sample the extra with replacement
+  - Set `sample_without_replacement: true` on the dataset entry to prevent upsampling (cap at `len(pool_i)`).
 
 All per-dataset samples are concatenated and then shuffled for the epoch.
 

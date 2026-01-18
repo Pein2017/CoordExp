@@ -13,9 +13,11 @@ When `custom.fusion_config` is set, the system SHALL build train/eval datasets f
 
 ### Requirement: Fusion Config File Schema (Qwen3-VL Compatible Containers)
 The fusion config file SHALL be a mapping (YAML/JSON) with:
-- `targets`: non-empty list of dataset entries
+- `targets`: list of dataset entries
 - `sources`: optional list of dataset entries (**accepted for compatibility**; treated the same as `targets`)
 - `extends`: optional string or list of strings (inheritance)
+
+At least one dataset entry across `targets` and `sources` SHALL be provided.
 
 #### Scenario: Targets And Sources Are Both Accepted
 - **WHEN** a fusion config defines both `targets` and `sources`
