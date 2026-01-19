@@ -1,0 +1,59 @@
+extends: stage2_rollout_matching_ckpt3106.yaml
+
+# Production-like "monitoring" run:
+# - uses the same long-context + vLLM rollout settings as the real stage_2 config
+# - but limits dataset size so we can quickly observe whether loss decreases and rollout metrics improve
+#
+# NOTE (2026-01-18): vLLM colocate rollouts can OOM on multimodal prefill (vision encoder)
+# when training (HF+DeepSpeed) and vLLM share the same 4 GPUs. For monitoring/feasibility
+# runs, stick to rollout_backend: hf. When you want vLLM again, consider lowering
+# IMAGE_MAX_TOKEN_NUM via env var, or moving vLLM to a separate GPU pool.
+#
+# Example (4 GPUs):
+#   config=configs/dlora/monitor_stage2_rollout_matching_ckpt3106_128_32.yaml gpus=0,1,2,3 debug=true bash scripts/train.sh
+
+training:
+  run_name: monitor_stage2_rollout_matching_ckpt3106_128_32
+  output_dir: ./output/rollout_matching_sft/monitor_ckpt3106
+  logging_dir: ./tb/rollout_matching_sft/monitor_ckpt3106
+
+  # Keep it short but non-trivial so trends are visible.
+  num_train_epochs: 2
+
+  # Enable batched rollouts/teacher-encode per step (HF backend only).
+  # Keep grad_acc=1 (rollouts are expensive), but still get enough optimizer steps
+  # on the 128-sample slice to observe trends.
+  #
+  # With 4 GPUs: global microbatch = 4 * 4 = 16 (grad_acc=1).
+  per_device_train_batch_size: 4
+  effective_batch_size: 16
+
+  # Dense per-step logging for rollout metrics (match_rate, truncation, packing fill, etc.).
+  logging_steps: 1
+  logging_first_step: true
+
+custom:
+  # Few *real* samples for monitoring (does not change dataset paths).
+  train_sample_limit: 128
+  val_sample_limit: 32
+
+  extra:
+    rollout_matching:
+      # vLLM can be re-enabled later once colocate memory is proven stable.
+      rollout_backend: hf
+      # Batch HF generate() calls as much as the dataloader microbatch.
+      rollout_generate_batch_size: 4
+      # More aggressive termination for monitoring runs: avoid spending minutes on
+      # degenerate rollouts that will be truncated/invalid anyway.
+      repeat_terminate:
+        enabled: true
+        min_new_tokens: 256
+        max_consecutive_token_repeats: 32
+        ngram_size: 32
+        ngram_repeats: 2
+        max_object_keys: 128
+
+model:
+  # HF backend + post-rollout packing can hit flash-attn illegal memory access on some kernels.
+  # SDPA is slower but much more robust for long-context monitoring runs.
+  attn_impl: sdpa

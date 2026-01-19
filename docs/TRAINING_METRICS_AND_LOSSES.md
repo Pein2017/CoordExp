@@ -19,6 +19,108 @@ Stage-2 note (rollout-matching SFT):
   or not meaningful for stage_2 runs (because those positions are not supervised).
 - Stage_2 runbook: `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
 
+## Stage-2 Rollout-Matching Metrics (Training Logs)
+
+Stage_2 (`custom.trainer_variant: rollout_matching_sft`) logs additional keys
+under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
+performance. These are logged during training (not eval).
+
+Important semantics:
+- **Optimizer-step units:** when rollout buffering is enabled, "E-step vs M-step"
+  is defined on optimizer steps (`TrainerState.global_step`), not micro-steps.
+- **Buffering:** interpret rollout-quality metrics on **E-steps only** by
+  filtering to `rollout/buffer_reuse == 0`. M-steps reuse cached targets and are
+  not an on-policy rollout signal.
+- **Rank-local:** these metrics are rank-local (not all-reduced), so they can
+  vary across GPUs.
+
+### Buffer / EM window diagnostics
+
+- `rollout/buffer_reuse`
+  - **What:** 1.0 on M-steps (reuse), 0.0 on E-steps (fresh rollout).
+- `rollout/buffer_window_step0`
+  - **What:** optimizer-step index where the current reuse window started (E-step step id).
+- `rollout/buffer_completed_steps`
+  - **What:** how many optimizer steps in the current window have completed so far.
+- `rollout/buffer_micro_idx`
+  - **What:** micro-step index within the accumulation window (0..gas-1).
+
+### Rollout timing / throughput
+
+- `time/rollout_generate_s`
+- `time/rollout_parse_match_s`
+- `time/rollout_teacher_encode_s`
+  - **Note:** these are forced to 0.0 on buffer reuse steps to avoid double counting.
+
+- `rollout/gen_new_tokens_total|mean|p90|p99`
+  - **What:** generated assistant token counts (after stage_2 suffix trimming).
+  - **Why:** helps detect "always hit max_new_tokens" pathologies.
+
+- `rollout/gen_tokens_per_s`
+  - **What:** `gen_new_tokens_total / time/rollout_generate_s`.
+  - **Why:** detects rollout slowdowns (KV cache pressure / chunked prefill regressions).
+
+### Parse health
+
+- `rollout/parse_dropped_invalid`, `rollout/parse_dropped_ambiguous`
+  - **What:** number of predicted objects dropped by strict parsing.
+- `rollout/parse_truncated`, `rollout/parse_truncated_rate`
+  - **What:** sample count and rate where rollouts are truncated mid-object (suffix-trimmed).
+- `rollout/parse_obj_total`
+  - **What:** `valid_pred_objects + dropped_invalid + dropped_ambiguous` (object-level accounting).
+- `rollout/parse_obj_valid_frac`, `rollout/parse_obj_drop_frac`
+  - **What:** object-level valid/drop fractions.
+- `rollout/sample_valid_pred_rate`
+  - **What:** fraction of samples that yield at least one valid predicted object.
+- `rollout/sample_any_match_rate`
+  - **What:** fraction of samples that produce at least one supervised match.
+
+### Matching quality (rollout-level)
+
+- `rollout/gt_objects`, `rollout/valid_pred_objects`
+  - **What:** GT and valid predicted object counts (post-parse).
+- `rollout/matched_for_supervision`, `rollout/excluded_from_supervision`
+  - **What:** matched objects that were used vs excluded due to target-construction failure.
+- `rollout/fn_appended`, `rollout/fn`
+  - **What:** GT objects not supervised via prefix matching; appended as FN in the tail.
+- `rollout/gating_rejections`, `rollout/gating_rejection_rate`
+  - **What:** how often candidate pairs were rejected by the `maskiou_gate` threshold.
+
+- `rollout/precision`, `rollout/recall`, `rollout/f1`
+  - **What:** object-level precision/recall/F1 derived from matched-for-supervision.
+  - **Note:** `rollout/recall` is the same as `rollout/match_rate` (kept for compatibility).
+
+- `rollout/matched_maskiou_mean`, `rollout/matched_maskiou_count`
+  - **What:** mean maskIoU over matched pairs (norm1000-space, virtual canvas).
+  - **Why:** disambiguates “more matches” vs “better geometry”.
+
+### Supervision construction coverage
+
+- `rollout/excluded_rate`
+  - **What:** `excluded_from_supervision / (matched_for_supervision + excluded_from_supervision)`.
+  - **Why:** detects OT/target-construction instability.
+
+- `rollout/prefix_coord_targets_total`, `rollout/prefix_coord_targets_per_matched`
+  - **What:** total coord slots supervised in the prefix and average per matched object.
+
+- `rollout/tail_ignore_frac`
+  - **What:** fraction of appended tail tokens that are ignored for CE due to `"desc"` masking.
+
+### Length / packing diagnostics (stage_2)
+
+- `rollout/prompt_len_mean|p90`
+- `rollout/rollout_len_mean|p90`
+- `rollout/train_len_mean|p90`
+- `rollout/append_len_mean|p90`
+- `rollout/encoded_len_mean|p90`
+  - **What:** token-length summaries for prompt / rollout / training target / encoded length.
+  - **Why:** explains OOM risk and packing fill changes between 1k/4k/8k max_new_tokens.
+
+- `packing/post_rollout_fill`
+- `packing/post_rollout_segments`
+- `packing/post_rollout_buffer`
+  - **What:** post-rollout packing stats (carry-only mode).
+
 ## Loss Composition (Stage-1 / Scheme A)
 
 When `custom.coord_soft_ce_w1.enabled: true`:
