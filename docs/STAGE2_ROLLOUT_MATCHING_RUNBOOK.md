@@ -7,6 +7,8 @@ trainer (stage_2), enabled via:
 
 Authoritative requirements live under:
 - `openspec/changes/2026-01-15-add-rollout-matching-trainer/specs/rollout-matching-sft/spec.md`
+- `openspec/changes/2026-01-16-add-stage2-post-rollout-packing/specs/rollout-matching-sft/spec.md`
+- `openspec/changes/2026-01-19-add-stage2-rollout-buffer-offload/specs/rollout-matching-sft/spec.md`
 
 ## What Stage-2 Does (One Forward Pass)
 
@@ -26,9 +28,12 @@ Key policies:
 
 ## Hard Constraints / Gotchas
 
-- Packing is NOT supported:
-  - Set `training.packing: false`.
-  - The trainer fails fast if packing is enabled.
+- Packing is supported **post-rollout only**:
+  - Enable with `training.packing: true`.
+  - Rollout generation remains un-packed (padded batch) and the trainer temporarily disables
+    `template.padding_free/template.packing` during rollouts.
+  - Stage_2 uses **dynamic post-rollout packing inside the trainer** (dataset-level packing wrappers are not used).
+  - Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
 - The rollout prefix is treated as immutable in token space:
   - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
 
@@ -64,10 +69,46 @@ Set:
 - `custom.train_jsonl`
 - `custom.val_jsonl`
 - `custom.extra.rollout_matching.*` (decode + matching knobs)
-- `training.packing: false`
+- `training.packing: true` to enable post-rollout packing for the teacher-forced forward pass
+
+Buffered rollouts (E-step / M-step reuse):
+- `custom.extra.rollout_matching.rollout_buffer.enabled: true` enables caching + reuse of one completed
+  accumulation window across multiple optimizer steps.
+- `custom.extra.rollout_matching.rollout_buffer.m_steps: <int>` controls how many optimizer steps reuse one
+  window (counts in `TrainerState.global_step` units; `m_steps=1` disables reuse).
+- When buffering is enabled with `m_steps > 1`, the stage_2 trainer repeats each *gradient accumulation window*
+  `m_steps` times per rank (e.g., `A,B,C, A,B,C, ...` for `gas=3, m_steps=2`) to avoid silently skipping dataset
+  samples.
+- Final partial accumulation windows (< `gradient_accumulation_steps`) are processed once and MUST NOT be repeated.
+  If you want strict reuse only on full windows, set `training.dataloader_drop_last: true`.
+- Evaluation/prediction forces `m_steps=1` (buffering disabled) to keep metrics interpretable.
+- Checkpoint/resume: the buffer is runtime-only and starts empty after resume (first step regenerates).
+
+Colocate vLLM offload (peak memory relief during rollouts):
+- `custom.extra.rollout_matching.offload.enabled: true` enables offload during vLLM colocate rollouts only.
+- `custom.extra.rollout_matching.offload.offload_model: true` moves training model params to CPU during rollouts.
+- `custom.extra.rollout_matching.offload.offload_optimizer: true` moves optimizer state to CPU during rollouts.
+- Offload is currently **not supported** with DeepSpeed/ZeRO in this trainer; if you need it, disable offload or
+  switch `rollout_backend: hf`.
+
+Rollout backend:
+- Default: vLLM colocate (`custom.extra.rollout_matching.rollout_backend: vllm`)
+  - Requires `custom.extra.rollout_matching.vllm.max_model_len`
+  - Weight sync modes:
+    - **Recommended (default):** `custom.extra.rollout_matching.vllm.enable_lora: false`
+      - The trainer merges adapters into the training model weights and loads the merged full weights into vLLM
+        on E-steps ("GRPO-style"). This is significantly more robust for Qwen3-VL multimodal stacks.
+    - Optional: `custom.extra.rollout_matching.vllm.enable_lora: true`
+      - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal).
+- Fallback (explicit): HF (`custom.extra.rollout_matching.rollout_backend: hf`)
+  - To get *batched* HF rollouts, you must also increase `training.per_device_train_batch_size` (otherwise each rank rolls out 1 sample).
+  - `custom.extra.rollout_matching.rollout_generate_batch_size` controls the per-rank microbatch size for HF generate().
 
 Decoding notes:
 - Start with greedy (`decode_mode: greedy`, `temperature: 0.0`) for stability.
+- For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
+- If HF rollouts occasionally get stuck generating repetitive garbage until `max_new_tokens`, enable
+  `repeat_terminate` to force EOS for the offending sequences (batch-friendly; does not stop the whole batch).
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation
   (LVIS dense outputs can be ~11k text tokens in the tail).
 
@@ -75,25 +116,44 @@ Decoding notes:
 
 From repo root:
 
-`PYTHONPATH=. /root/miniconda3/envs/ms/bin/python -m src.sft --config <yaml> [--base_config <yaml>]`
+`PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>]`
 
 4 GPUs:
 
-`PYTHONPATH=. /root/miniconda3/envs/ms/bin/torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
+`PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
 
 ## Health Counters to Watch
 
-The trainer logs rollout health without logging IoU/maskIoU numeric metrics
-(maskIoU is internal to matching only).
+Stage_2 logs both rollout health counters and lightweight quality metrics. Under
+rollout buffering, interpret rollout-quality metrics on **E-steps only**:
+filter to `rollout/buffer_reuse == 0` (fresh rollouts). M-steps reuse cached
+targets and should not be used to judge on-policy rollout quality.
 
 Parsing/matching counters:
 - `rollout/parse_dropped_invalid`
+- `rollout/parse_dropped_ambiguous`
 - `rollout/parse_truncated`
+- `rollout/parse_truncated_rate`
+- `rollout/parse_obj_valid_frac`
 - `rollout/valid_pred_objects`
 - `rollout/matched_for_supervision`
 - `rollout/excluded_from_supervision`
 - `rollout/fn_appended`
 - `rollout/gating_rejections`
+- `rollout/gating_rejection_rate`
+
+Quality metrics (E-step only recommended):
+- `rollout/precision`
+- `rollout/recall` (same as `rollout/match_rate`)
+- `rollout/f1`
+- `rollout/matched_maskiou_mean` (mean maskIoU over matched pairs; norm1000 space)
+
+Generation/throughput (helps diagnose long-rollout slowdowns and OOM risk):
+- `rollout/gen_new_tokens_mean`
+- `rollout/gen_new_tokens_p90`
+- `rollout/gen_new_tokens_p99`
+- `rollout/gen_tokens_per_s`
+- `time/rollout_generate_s` (forced to 0 on buffer reuse steps)
 
 Loss breakdown:
 - `loss/ce`
@@ -101,12 +161,52 @@ Loss breakdown:
 - `loss/coord_prefix`
 - `loss/coord_tail`
 
+Buffered-mode diagnostics:
+- `rollout/buffer_reuse` (1 on M-steps, 0 on E-steps)
+- `rollout/buffer_window_step0`
+- `rollout/buffer_completed_steps`
+- `rollout/buffer_micro_idx`
+
+## Qualitative Monitoring Dumps (Rollout vs GT vs Training Target)
+
+For paper/debug runs, you can periodically dump a small number of qualitative
+examples (rank0 only), aligned to the same optimizer-step notion as buffering.
+
+Enable under `custom.extra.rollout_matching.monitor_dump`:
+
+```yaml
+custom:
+  extra:
+    rollout_matching:
+      monitor_dump:
+        enabled: true
+        # If omitted, follows training.logging_steps. In buffered mode, using
+        # every_steps == rollout_buffer.m_steps aligns dumps to E-steps.
+        every_steps: 4
+        max_events: 50
+        max_samples: 1
+        max_text_chars: 4000
+```
+
+Outputs land in:
+- `<training.output_dir>/monitor_dumps/step_000012.json`
+- `<training.output_dir>/monitor_dumps/step_000012.md`
+
+Each dump includes:
+- prompt `messages`
+- rollout text (raw)
+- append-ready prefix used for matching
+- training target text (prefix + FN append)
+- GT/pred objects + match details (with per-pair maskIoU)
+
 ## Minimal Preflight Validation
 
 - Spec validity:
   - `openspec validate 2026-01-15-add-rollout-matching-trainer --strict`
+  - `openspec validate 2026-01-19-add-stage2-rollout-buffer-offload --strict`
 - Unit tests:
-  - `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python -m pytest -q tests/test_rollout_matching_sft.py -q`
+  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_matching_sft.py -q`
+  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_stage2_rollout_buffer.py -q`
 
 ## Tiny Ablation: Rollout Backend Efficiency (HF vs vLLM)
 

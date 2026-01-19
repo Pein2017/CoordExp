@@ -3,8 +3,12 @@
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage_2 rollout-matching SFT (`custom.trainer_variant: rollout_matching_sft`) DOES NOT
-  support packing and will fail fast if `training.packing: true`.
+- Stage_2 rollout-matching SFT (`custom.trainer_variant: rollout_matching_sft`) supports
+  **post-rollout packing inside the trainer** when `training.packing: true`:
+  - rollout generation remains un-packed (padded batch),
+  - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
+  - carry-only mode requires `training.packing_drop_last: true`,
+  - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
 - Stage_2 runbook: `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
 
 ## Why this is the new default
@@ -40,7 +44,7 @@ eval_packing: true
 
 ## How to regenerate stats
 ```
-/root/miniconda3/envs/ms/bin/python scripts/token_length_analysis.py \
+conda run -n ms python scripts/token_length_analysis.py \
   --config configs/dlora/sft_text_only.yaml --binsize 512
 ```
 - Outputs mean/median/p95/p99, histograms, and packing sims for 12k/16k/20k with world=4, per_device=1.

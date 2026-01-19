@@ -36,13 +36,13 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - `openspec/` change governance; `progress/` ideas/roadmap; `patent/` background.
 
 ## Run Environment
-- Use `/root/miniconda3/envs/ms/bin/python|torchrun|swift` directly; no `conda activate/run`.
+- Use `conda run -n ms python *` for commands (e.g., `conda run -n ms python -m pytest tests/`).
 - Run commands from repo root `/data/home/xiaoyan/AIteam/data/CoordExp`.
 - `ms-swift` at `/data/home/xiaoyan/AIteam/data/ms-swift`; HF transformers in the ms env.
 
 ## Tools & Navigation
-- Serena MCP: great for symbol search/edits; avoid for plain docs (use `rg`/`cat`). Project lives at `.serena/project.yml`; memories in `.serena/memories/`.
-- Prefer MCP breadth → depth: `get_symbols_overview` / `find_symbol` then targeted reads or edits.
+- Serena MCP: best for code symbol discovery/edits; avoid for plain docs (use `rg`/`cat`).
+- For detailed Serena MCP workflows and common patterns, use the `serena-mcp-navigation` skill.
 
 ## Config Workflow (YAML-first)
 - CLI is minimal: `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`.
@@ -89,4 +89,3 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Working Style
 - Ask for clarification when assumptions feel shaky; keep experiment metadata/artifacts paper-ready (configs, logs, qualitative vis).
 - Use `temp/` folder for temporary test scripts, debug code, or experimental utilities; create sub-folders and organize files flexibly as needed for the task; always cleanup temporary files/scripts once the task or test is completed to avoid clutter and one-shot console debugging sessions.
-
