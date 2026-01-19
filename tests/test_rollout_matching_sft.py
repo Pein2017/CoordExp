@@ -8,6 +8,7 @@ import torch
 from src.trainers.rollout_matching_sft import (
     GTObject,
     _build_labels_and_coord_targets_for_sample,
+    _build_labels_and_coord_targets_for_batch,
     _sinkhorn_barycentric_targets,
     hungarian_match_maskiou,
     parse_rollout_for_matching,
@@ -317,3 +318,130 @@ def test_loss_masking_can_ignore_desc_like_tail_tokens():
     # Coord supervision still includes both prefix and tail coord token.
     assert 6 in coord_pos
     assert 9 in coord_pos
+
+
+def test_packed_label_mask_equivalence_two_segments():
+    # Two synthetic segments; packed-mode labels should equal concatenated per-segment labels.
+    coord_id_set = {10, 20}
+    coord_id_to_bin = {10: 10, 20: 20}
+
+    # Segment 1: reuse the invariant pattern (with one coord in prefix and one in tail).
+    prompt_len1 = 5
+    prefix_len1 = 3
+    train_len1 = 6
+    input_ids1 = torch.tensor([1, 2, 3, 4, 5, 6, 10, 7, 8, 20, 9, 0], dtype=torch.long)
+    labels1, cpos1, cbins1, cis1 = _build_labels_and_coord_targets_for_sample(
+        input_ids_1d=input_ids1,
+        prompt_len=prompt_len1,
+        prefix_len=prefix_len1,
+        train_len=train_len1,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+        prefix_coord_pos=[1],
+        prefix_coord_target_bins=[123],
+    )
+
+    # Segment 2: different sizes to validate offset logic.
+    prompt_len2 = 4
+    prefix_len2 = 2
+    train_len2 = 5
+    # Place a coord token in the tail (assistant-local) and one prefix-supervised slot.
+    input_ids2 = torch.tensor([11, 12, 13, 14, 15, 10, 20, 16, 17], dtype=torch.long)
+    labels2, cpos2, cbins2, cis2 = _build_labels_and_coord_targets_for_sample(
+        input_ids_1d=input_ids2,
+        prompt_len=prompt_len2,
+        prefix_len=prefix_len2,
+        train_len=train_len2,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+        prefix_coord_pos=[1],
+        prefix_coord_target_bins=[999],
+    )
+
+    packed_ids = torch.cat([input_ids1, input_ids2], dim=0).unsqueeze(0)
+    meta = [
+        {
+            "prompt_len": prompt_len1,
+            "prompt_ids": input_ids1[:prompt_len1].tolist(),
+            "prefix_len": prefix_len1,
+            "train_len": train_len1,
+            "encoded_len": int(input_ids1.numel()),
+            "prefix_coord_pos": [1],
+            "prefix_coord_target_bins": [123],
+        },
+        {
+            "prompt_len": prompt_len2,
+            "prompt_ids": input_ids2[:prompt_len2].tolist(),
+            "prefix_len": prefix_len2,
+            "train_len": train_len2,
+            "encoded_len": int(input_ids2.numel()),
+            "prefix_coord_pos": [1],
+            "prefix_coord_target_bins": [999],
+        },
+    ]
+    labels_packed, sb, spos, sbin, sis_prefix = _build_labels_and_coord_targets_for_batch(
+        input_ids=packed_ids,
+        meta=meta,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+    )
+
+    expected = torch.cat([labels1, labels2], dim=0)
+    assert labels_packed.shape == (1, expected.numel())
+    assert torch.equal(labels_packed[0], expected)
+
+    # Coord supervision positions for segment 2 must be offset by len(segment 1).
+    off = int(input_ids1.numel())
+    expected_pos = set(cpos1) | {off + int(p) for p in cpos2}
+    got_pos = set(int(p) for p in spos)
+    assert got_pos == expected_pos
+
+    # Bins should match (order not guaranteed).
+    expected_bins = [int(x) for x in cbins1] + [int(x) for x in cbins2]
+    assert sorted(int(x) for x in sbin) == sorted(expected_bins)
+
+    # Packed mode should report batch index 0 for all supervision targets.
+    assert set(int(b) for b in sb) == {0}
+
+    # Prefix flags should be preserved (order not guaranteed).
+    expected_is_prefix = [bool(x) for x in cis1] + [bool(x) for x in cis2]
+    assert sorted(bool(x) for x in sis_prefix) == sorted(expected_is_prefix)
+
+
+def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
+    coord_id_set = {10}
+    coord_id_to_bin = {10: 10}
+
+    input_ids1 = torch.tensor([1, 2, 3, 4, 5, 10, 6], dtype=torch.long)
+    input_ids2 = torch.tensor([7, 8, 9, 10, 11, 0], dtype=torch.long)
+    packed_ids = torch.cat([input_ids1, input_ids2], dim=0).unsqueeze(0)
+
+    # Segment 2 prompt_ids intentionally wrong to trigger the strict sanity check.
+    meta = [
+        {
+            "prompt_len": 3,
+            "prompt_ids": input_ids1[:3].tolist(),
+            "prefix_len": 1,
+            "train_len": 3,
+            "encoded_len": int(input_ids1.numel()),
+            "prefix_coord_pos": [],
+            "prefix_coord_target_bins": [],
+        },
+        {
+            "prompt_len": 2,
+            "prompt_ids": [999, 999],  # mismatch
+            "prefix_len": 0,
+            "train_len": 2,
+            "encoded_len": int(input_ids2.numel()),
+            "prefix_coord_pos": [],
+            "prefix_coord_target_bins": [],
+        },
+    ]
+
+    with pytest.raises(ValueError, match="prompt tokenization mismatch"):
+        _build_labels_and_coord_targets_for_batch(
+            input_ids=packed_ids,
+            meta=meta,
+            coord_id_set=coord_id_set,
+            coord_id_to_bin=coord_id_to_bin,
+        )

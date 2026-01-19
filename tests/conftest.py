@@ -31,3 +31,12 @@ _purge_modules("swift")
 
 # Ensure we use this repo's src package even if another is already imported
 _purge_modules("src")
+
+# Eagerly import ms-swift so later imports cannot accidentally lock in a
+# shadowing `swift` module from site-packages (some environments ship one).
+try:  # pragma: no cover - environment guard
+    import swift  # noqa: F401
+    import swift.llm  # noqa: F401
+    import swift.llm.argument  # noqa: F401
+except Exception:
+    pass
