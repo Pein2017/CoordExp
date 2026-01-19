@@ -10,10 +10,16 @@ High-level loop per batch:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import re
-from dataclasses import dataclass
+import time
+from contextlib import contextmanager
+from copy import copy as shallow_copy
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -22,11 +28,18 @@ import torch.nn.functional as F
 from pycocotools import mask as maskUtils
 from scipy.optimize import linear_sum_assignment
 from swift.trainers import Seq2SeqTrainer
-from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
+from swift.trainers.rlhf_trainer.utils import (
+    get_gather_if_zero3_context,
+    replace_assistant_response_with_ids,
+)
 from swift.utils import get_logger, unwrap_model_for_generation
 
 from src.common.geometry import bbox_from_points, bbox_to_quadrilateral, flatten_points
-from src.coord_tokens.codec import get_coord_token_ids, token_to_int, value_in_coord_range
+from src.coord_tokens.codec import (
+    get_coord_token_ids,
+    token_to_int,
+    value_in_coord_range,
+)
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 
 logger = get_logger()
@@ -39,18 +52,183 @@ _OBJECT_KEY_RE = re.compile(r"^object_(\d+)$")
 _IM_END = "<|im_end|>"
 
 
+class _ForceEosOnRepeatGuard:
+    """HF rollout-time guardrail: force EOS when generation becomes degenerate.
+
+    This is intentionally lightweight and batch-friendly:
+    - It does NOT stop the entire batch (which would harm other samples).
+    - Instead, it forces EOS for only the offending sequences by overriding logits.
+
+    Motivation:
+      Some rollouts can get stuck emitting repetitive garbage until `max_new_tokens`,
+      which makes stage_2 extremely slow and produces unusable supervision.
+    """
+
+    def __init__(
+        self,
+        *,
+        eos_token_id: int,
+        prompt_len: int,
+        min_new_tokens: int,
+        max_consecutive_token_repeats: int,
+        ngram_size: int,
+        ngram_repeats: int,
+        max_object_keys: Optional[int],
+        object_key_prefix_token_ids: Optional[List[int]],
+    ) -> None:
+        self.eos_token_id = int(eos_token_id)
+        self.prompt_len = int(prompt_len)
+        self.min_new_tokens = int(min_new_tokens)
+        self.max_consecutive_token_repeats = int(max_consecutive_token_repeats)
+        self.ngram_size = int(ngram_size)
+        self.ngram_repeats = int(ngram_repeats)
+        self.max_object_keys = (
+            int(max_object_keys) if max_object_keys is not None else None
+        )
+        self.object_key_prefix_token_ids = (
+            [int(x) for x in object_key_prefix_token_ids]
+            if isinstance(object_key_prefix_token_ids, list)
+            and object_key_prefix_token_ids
+            else None
+        )
+
+        # Lazily initialized per batch (batch size is only known at generation time).
+        self._processed_lens: Optional[List[int]] = None
+        self._obj_counts: Optional[List[int]] = None
+        self._obj_match_idx: Optional[List[int]] = None
+
+    def _init_state_if_needed(self, batch_size: int) -> None:
+        if self._processed_lens is not None and len(self._processed_lens) == batch_size:
+            return
+        self._processed_lens = [int(self.prompt_len) for _ in range(batch_size)]
+        self._obj_counts = [0 for _ in range(batch_size)]
+        self._obj_match_idx = [0 for _ in range(batch_size)]
+
+    def _update_object_key_counts(self, input_ids: torch.Tensor) -> None:
+        """Incrementally count '"object_' occurrences in the generated tail."""
+        if self.max_object_keys is None or not self.object_key_prefix_token_ids:
+            return
+        if (
+            self._processed_lens is None
+            or self._obj_counts is None
+            or self._obj_match_idx is None
+        ):
+            return
+
+        pat = self.object_key_prefix_token_ids
+        bs = int(input_ids.shape[0])
+        cur_len = int(input_ids.shape[1])
+
+        for i in range(bs):
+            start = int(self._processed_lens[i])
+            if start < self.prompt_len:
+                start = int(self.prompt_len)
+            if start >= cur_len:
+                continue
+
+            match = int(self._obj_match_idx[i])
+            count = int(self._obj_counts[i])
+            # Usually only 0..1 tokens per call, but keep it general.
+            for pos in range(start, cur_len):
+                tid = int(input_ids[i, pos].item())
+                if tid == pat[match]:
+                    match += 1
+                    if match >= len(pat):
+                        count += 1
+                        match = 0
+                else:
+                    match = 1 if tid == pat[0] else 0
+
+            self._obj_match_idx[i] = match
+            self._obj_counts[i] = count
+            self._processed_lens[i] = cur_len
+
+    def _should_force_eos_for_seq(self, seq: torch.Tensor, *, obj_count: int) -> bool:
+        gen_len = int(seq.numel()) - int(self.prompt_len)
+        if gen_len < int(self.min_new_tokens):
+            return False
+
+        # 1) Hard cap on the number of '"object_' keys (prevents runaway object spam).
+        if self.max_object_keys is not None and int(obj_count) >= int(
+            self.max_object_keys
+        ):
+            return True
+
+        # 2) Trivial single-token loops (e.g. repeating the same token forever).
+        if int(self.max_consecutive_token_repeats) > 0 and seq.numel() > 0:
+            last = int(seq[-1].item())
+            run = 1
+            # Bound the scan to avoid O(L) work.
+            limit = min(int(self.max_consecutive_token_repeats), int(seq.numel()))
+            for j in range(2, limit + 1):
+                if int(seq[-j].item()) != last:
+                    break
+                run += 1
+            if run >= int(self.max_consecutive_token_repeats):
+                return True
+
+        # 3) Detect consecutive repeated n-grams: (tail == prev == prev2 ...).
+        n = int(self.ngram_size)
+        reps = int(self.ngram_repeats)
+        if n > 0 and reps >= 2 and gen_len >= n * reps:
+            gen = seq[int(self.prompt_len) :]
+            if int(gen.numel()) >= n * reps:
+                tail = gen[-n:]
+                ok = True
+                for k in range(2, reps + 1):
+                    prev = gen[-k * n : -(k - 1) * n]
+                    if prev.numel() != tail.numel() or not torch.equal(prev, tail):
+                        ok = False
+                        break
+                if ok:
+                    return True
+
+        return False
+
+    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        # Signature matches transformers LogitsProcessor protocol.
+        if self.eos_token_id < 0:
+            return scores
+        if input_ids.ndim != 2 or scores.ndim != 2:
+            return scores
+        bs = int(input_ids.shape[0])
+        self._init_state_if_needed(bs)
+        self._update_object_key_counts(input_ids)
+
+        force = torch.zeros((bs,), dtype=torch.bool, device=scores.device)
+        obj_counts = self._obj_counts or [0 for _ in range(bs)]
+        for i in range(bs):
+            if self._should_force_eos_for_seq(
+                input_ids[i], obj_count=int(obj_counts[i])
+            ):
+                force[i] = True
+
+        if not bool(force.any().item()):
+            return scores
+
+        # Force EOS for the flagged sequences by overriding logits.
+        scores = scores.clone()
+        scores[force, :] = -float("inf")
+        scores[force, int(self.eos_token_id)] = 0.0
+        return scores
+
+
 @dataclass
 class ParsedPredObject:
     key: str
     index: int
     geom_type: GeomType
-    coord_token_indices: List[int]  # indices into rollout response_token_ids (assistant-local)
+    coord_token_indices: List[
+        int
+    ]  # indices into rollout response_token_ids (assistant-local)
     value_span: Tuple[int, int]  # [char_start, char_end) span of the object value dict
 
 
 @dataclass
 class RolloutParseResult:
-    response_token_ids: List[int]  # stripped stop tokens, full rollout (assistant-local)
+    response_token_ids: List[
+        int
+    ]  # stripped stop tokens, full rollout (assistant-local)
     response_text: str
     prefix_token_ids: List[int]  # suffix-trimmed prefix (assistant-local, append-ready)
     prefix_text: str
@@ -75,6 +253,9 @@ class MatchResult:
     fn_gt_indices: List[int]
     fp_pred_indices: List[int]
     gating_rejections: int
+    # Sum/count over matched pairs (maskIoU in norm1000 space). Used for lightweight monitoring.
+    matched_maskiou_sum: float
+    matched_maskiou_count: int
 
 
 def _coerce_int(value: Any) -> Optional[int]:
@@ -203,7 +384,11 @@ def _scan_rollout_tokens(
     global_char_pos = 0
     for tok_i, (tok_id, piece) in enumerate(zip(response_token_ids, pieces)):
         # Coord-token capture happens at token granularity.
-        if capture_active and int(tok_id) in coord_id_set and current_object is not None:
+        if (
+            capture_active
+            and int(tok_id) in coord_id_set
+            and current_object is not None
+        ):
             current_object.coord_token_indices.append(int(tok_i))
 
         for ch in piece:
@@ -274,7 +459,10 @@ def _scan_rollout_tokens(
             if ch == "}":
                 if brace_depth == 2 and current_object is not None:
                     # End of current object value dict.
-                    current_object.value_span = (current_object.value_span[0], global_char_pos + 1)
+                    current_object.value_span = (
+                        current_object.value_span[0],
+                        global_char_pos + 1,
+                    )
                     last_complete_object_end = global_char_pos + 1
                     current_object = None
                     last_key = None
@@ -400,7 +588,11 @@ def _validate_objects_strict(
                 dropped += 1
                 continue
         else:  # poly
-            if len(coord_idx) < 6 or (len(coord_idx) % 2 != 0) or len(token_bins) != len(coord_idx):
+            if (
+                len(coord_idx) < 6
+                or (len(coord_idx) % 2 != 0)
+                or len(token_bins) != len(coord_idx)
+            ):
                 dropped += 1
                 continue
 
@@ -453,15 +645,23 @@ def parse_rollout_for_matching(
             cursor += len(p)
         response_text = "".join(pieces)
 
-    objects_raw, max_index, first_open_brace_pos, truncated, last_obj_end = _scan_rollout_tokens(
-        tokenizer=tokenizer, response_token_ids=response_token_ids, coord_id_set=coord_id_set
+    objects_raw, max_index, first_open_brace_pos, truncated, last_obj_end = (
+        _scan_rollout_tokens(
+            tokenizer=tokenizer,
+            response_token_ids=response_token_ids,
+            coord_id_set=coord_id_set,
+        )
     )
 
     # If completely malformed (no top-level '{'), fall back to empty prefix so FN append can proceed.
     if first_open_brace_pos < 0:
-        prefix_token_ids = [int(t) for t in tokenizer.encode("{", add_special_tokens=False)]
+        prefix_token_ids = [
+            int(t) for t in tokenizer.encode("{", add_special_tokens=False)
+        ]
         prefix_text = tokenizer.decode(
-            prefix_token_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False
+            prefix_token_ids,
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
         )
         return RolloutParseResult(
             response_token_ids=list(response_token_ids),
@@ -541,7 +741,9 @@ def _points_from_coord_tokens(
     return out
 
 
-def _bbox_xyxy_from_norm(points: Sequence[int], kind: GeomType) -> Tuple[float, float, float, float]:
+def _bbox_xyxy_from_norm(
+    points: Sequence[int], kind: GeomType
+) -> Tuple[float, float, float, float]:
     if kind == "bbox_2d":
         if len(points) != 4:
             return 0.0, 0.0, 0.0, 0.0
@@ -551,7 +753,9 @@ def _bbox_xyxy_from_norm(points: Sequence[int], kind: GeomType) -> Tuple[float, 
     return float(x1), float(y1), float(x2), float(y2)
 
 
-def _bbox_iou_xyxy(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
+def _bbox_iou_xyxy(
+    a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]
+) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
     ix1 = max(ax1, bx1)
@@ -595,7 +799,9 @@ def _mask_iou_norm1000(
             if len(pts) != 4:
                 return []
             x1, y1, x2, y2 = [float(v) for v in pts]
-            quad = bbox_to_quadrilateral([min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)])
+            quad = bbox_to_quadrilateral(
+                [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+            )
             return [float(v) for v in quad]
         return [float(v) for v in pts]
 
@@ -630,16 +836,32 @@ def hungarian_match_maskiou(
     pred_n = len(preds)
     gt_n = len(gts)
     if pred_n == 0:
-        return MatchResult(matched_pairs=[], fn_gt_indices=list(range(gt_n)), fp_pred_indices=[], gating_rejections=0)
+        return MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=list(range(gt_n)),
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        )
     if gt_n == 0:
-        return MatchResult(matched_pairs=[], fn_gt_indices=[], fp_pred_indices=list(range(pred_n)), gating_rejections=0)
+        return MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=[],
+            fp_pred_indices=list(range(pred_n)),
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        )
 
     k = max(1, int(top_k))
     gate = float(gate_threshold)
     inf = 1e6
 
     gt_boxes = [_bbox_xyxy_from_norm(gt.points_norm1000, gt.geom_type) for gt in gts]
-    pred_boxes = [_bbox_xyxy_from_norm(pr.points_norm1000, pr.geom_type) for pr in preds]
+    pred_boxes = [
+        _bbox_xyxy_from_norm(pr.points_norm1000, pr.geom_type) for pr in preds
+    ]
 
     # Candidate pruning per pred.
     cand: List[List[int]] = []
@@ -689,6 +911,8 @@ def hungarian_match_maskiou(
     assign = {int(r): int(c) for r, c in zip(row_ind, col_ind)}
 
     matched_pairs: List[Tuple[int, int]] = []
+    matched_maskiou_sum = 0.0
+    matched_maskiou_count = 0
     fp_preds: List[int] = []
     matched_gt: set[int] = set()
 
@@ -700,6 +924,14 @@ def hungarian_match_maskiou(
         if c < gt_n and cost_pg[i, c] < inf * 0.5:
             matched_pairs.append((i, c))
             matched_gt.add(c)
+            # cost_pg is (1 - iou) for allowed candidates.
+            iou = 1.0 - float(cost_pg[i, c])
+            if iou < 0.0:
+                iou = 0.0
+            if iou > 1.0:
+                iou = 1.0
+            matched_maskiou_sum += float(iou)
+            matched_maskiou_count += 1
         else:
             fp_preds.append(i)
 
@@ -709,6 +941,8 @@ def hungarian_match_maskiou(
         fn_gt_indices=fn_gts,
         fp_pred_indices=fp_preds,
         gating_rejections=int(gating_rejections),
+        matched_maskiou_sum=float(matched_maskiou_sum),
+        matched_maskiou_count=int(matched_maskiou_count),
     )
 
 
@@ -777,7 +1011,9 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
         desc = entry.get("desc")
         if not isinstance(desc, str) or not desc.strip():
             continue
-        geom_keys = [k for k in ("bbox_2d", "poly") if k in entry and entry[k] is not None]
+        geom_keys = [
+            k for k in ("bbox_2d", "poly") if k in entry and entry[k] is not None
+        ]
         if len(geom_keys) != 1:
             continue
         geom_key = geom_keys[0]
@@ -805,7 +1041,11 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
             continue
         if geom_key == "poly" and (len(pts) < 6 or len(pts) % 2 != 0):
             continue
-        objs.append(GTObject(index=idx, geom_type=geom_key, points_norm1000=pts, desc=desc.strip()))
+        objs.append(
+            GTObject(
+                index=idx, geom_type=geom_key, points_norm1000=pts, desc=desc.strip()
+            )
+        )
     objs.sort(key=lambda o: o.index)
     return objs
 
@@ -826,7 +1066,9 @@ def _serialize_append_fragment(
 
     if not fn_objects:
         if last == ",":
-            raise ValueError("rollout prefix ends with ',' but FN set is empty; invalid JSON")
+            raise ValueError(
+                "rollout prefix ends with ',' but FN set is empty; invalid JSON"
+            )
         return "}"
 
     leading = ""
@@ -843,9 +1085,14 @@ def _serialize_append_fragment(
             payload["bbox_2d"] = [f"<|coord_{int(v)}|>" for v in obj.points_norm1000]
         else:
             pts = obj.points_norm1000
-            pairs = [[f"<|coord_{int(pts[i])}|>", f"<|coord_{int(pts[i + 1])}|>"] for i in range(0, len(pts), 2)]
+            pairs = [
+                [f"<|coord_{int(pts[i])}|>", f"<|coord_{int(pts[i + 1])}|>"]
+                for i in range(0, len(pts), 2)
+            ]
             payload["poly"] = pairs
-        entries.append(f"\"object_{n}\": {json.dumps(payload, ensure_ascii=False, separators=(', ', ': '))}")
+        entries.append(
+            f'"object_{n}": {json.dumps(payload, ensure_ascii=False, separators=(", ", ": "))}'
+        )
         n += 1
 
     return leading + ", ".join(entries) + "}"
@@ -901,7 +1148,9 @@ def _find_desc_value_char_spans(text: str) -> List[Tuple[int, int]]:
     return spans
 
 
-def _find_desc_value_token_positions(*, tokenizer: Any, token_ids: Sequence[int]) -> List[int]:
+def _find_desc_value_token_positions(
+    *, tokenizer: Any, token_ids: Sequence[int]
+) -> List[int]:
     """Return token indices (0-based, relative to token_ids) overlapping desc-value spans."""
     ids = [int(t) for t in token_ids]
     pieces = _decode_pieces(tokenizer, ids)
@@ -929,12 +1178,12 @@ def _coord_vocab_gate_loss(
 ) -> torch.Tensor:
     if temperature <= 0:
         raise ValueError("temperature must be > 0")
-    full = torch.nan_to_num(logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4).clamp(
-        min=-1e4, max=1e4
-    ) / float(temperature)
-    coord = torch.nan_to_num(logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4).clamp(
-        min=-1e4, max=1e4
-    ) / float(temperature)
+    full = torch.nan_to_num(
+        logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
+    ).clamp(min=-1e4, max=1e4) / float(temperature)
+    coord = torch.nan_to_num(
+        logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
+    ).clamp(min=-1e4, max=1e4) / float(temperature)
     lse_all = torch.logsumexp(full, dim=-1)
     lse_coord = torch.logsumexp(coord, dim=-1)
     loss = (lse_all - lse_coord).clamp(min=0.0)
@@ -983,13 +1232,17 @@ def _build_labels_and_coord_targets_for_sample(
     # Tail: [prompt_len + prefix_len, prompt_len + train_len)
     tail_start = prompt_len + prefix_len
     tail_end = prompt_len + train_len
-    tail_start = max(1, min(int(tail_start), seq_len))  # p-1 must be valid for logits_next gather
+    tail_start = max(
+        1, min(int(tail_start), seq_len)
+    )  # p-1 must be valid for logits_next gather
     tail_end = max(tail_start, min(int(tail_end), seq_len))
 
     ignore_set = set(int(i) for i in (tail_ignore_pos or []) if int(i) >= 0)
     for p in range(tail_start, tail_end):
         if p < assistant_start or p >= assistant_end:
-            raise ValueError(f"tail supervision index out of assistant span: p={p} span=[{assistant_start},{assistant_end})")
+            raise ValueError(
+                f"tail supervision index out of assistant span: p={p} span=[{assistant_start},{assistant_end})"
+            )
         tok_id = int(input_ids_1d[p].item())
         if tok_id in coord_id_set:
             bin_idx = coord_id_to_bin.get(tok_id)
@@ -1005,7 +1258,9 @@ def _build_labels_and_coord_targets_for_sample(
 
     # Prefix self-context: supervised coord slots only (no CE).
     if len(prefix_coord_pos) != len(prefix_coord_target_bins):
-        raise ValueError("prefix_coord_pos and prefix_coord_target_bins must have identical length")
+        raise ValueError(
+            "prefix_coord_pos and prefix_coord_target_bins must have identical length"
+        )
     for local_idx, tbin in zip(prefix_coord_pos, prefix_coord_target_bins):
         li = int(local_idx)
         if li < 0 or li >= prefix_len:
@@ -1024,6 +1279,385 @@ def _build_labels_and_coord_targets_for_sample(
     return labels, coord_pos, coord_bins, coord_is_prefix
 
 
+def _build_labels_and_coord_targets_for_batch(
+    *,
+    input_ids: torch.Tensor,  # [B, T]
+    meta: List[Mapping[str, Any]],
+    coord_id_set: set[int],
+    coord_id_to_bin: Mapping[int, int],
+) -> Tuple[torch.Tensor, List[int], List[int], List[int], List[bool]]:
+    """Build masked CE labels + coord supervision targets for a batch.
+
+    Supports two meta contracts:
+    - Un-packed: len(meta) == bsz and meta[b] describes one row.
+    - Packed: bsz == 1 and meta is a list of per-segment dicts (order matches concatenation),
+      each with an `encoded_len` key.
+    """
+    if input_ids.ndim != 2:
+        raise ValueError("input_ids must have shape [B, T]")
+    bsz, seq_len = input_ids.shape
+
+    labels_masked = torch.full_like(input_ids, -100)
+
+    supervised_batch: List[int] = []
+    supervised_pos: List[int] = []
+    supervised_bin: List[int] = []
+    supervised_is_prefix: List[bool] = []
+
+    if len(meta) == bsz:
+        # Un-packed path (existing behavior)
+        for b in range(bsz):
+            m = meta[b]
+            prompt_len = int(m["prompt_len"])
+            prefix_len = int(m["prefix_len"])
+            train_len = int(m["train_len"])
+            prompt_ids = m.get("prompt_ids")
+
+            # Sanity: prompt prefix matches (avoid silent misalignment).
+            if prompt_len <= 0 or prompt_len >= seq_len:
+                raise ValueError(
+                    f"invalid prompt_len={prompt_len} for seq_len={seq_len}"
+                )
+            if isinstance(prompt_ids, list):
+                teacher_prefix = input_ids[b, :prompt_len].detach().cpu().tolist()
+                if teacher_prefix != prompt_ids:
+                    raise ValueError(
+                        "prompt tokenization mismatch between generation and teacher-forced encoding"
+                    )
+
+            prefix_pos_local = m.get("prefix_coord_pos") or []
+            prefix_bins = m.get("prefix_coord_target_bins") or []
+            tail_ignore_pos = m.get("tail_ignore_pos") or []
+            labels_1d, cpos, cbins, cis_prefix = (
+                _build_labels_and_coord_targets_for_sample(
+                    input_ids_1d=input_ids[b],
+                    prompt_len=prompt_len,
+                    prefix_len=prefix_len,
+                    train_len=train_len,
+                    coord_id_set=coord_id_set,
+                    coord_id_to_bin=coord_id_to_bin,
+                    prefix_coord_pos=prefix_pos_local,
+                    prefix_coord_target_bins=prefix_bins,
+                    tail_ignore_pos=tail_ignore_pos,
+                )
+            )
+            labels_masked[b] = labels_1d
+            for p, tbin, is_pref in zip(cpos, cbins, cis_prefix):
+                supervised_batch.append(int(b))
+                supervised_pos.append(int(p))
+                supervised_bin.append(int(tbin))
+                supervised_is_prefix.append(bool(is_pref))
+
+        return (
+            labels_masked,
+            supervised_batch,
+            supervised_pos,
+            supervised_bin,
+            supervised_is_prefix,
+        )
+
+    # Packed path (one row containing multiple segments).
+    if bsz != 1:
+        raise ValueError(
+            "packed-mode meta requires bsz==1; got len(meta)=%s bsz=%s"
+            % (len(meta), bsz)
+        )
+    if not meta:
+        raise ValueError("packed-mode meta must be a non-empty list")
+
+    offset = 0
+    for seg in meta:
+        if not isinstance(seg, Mapping):
+            raise ValueError("packed-mode meta must be a list of dict-like segments")
+        encoded_len = int(seg.get("encoded_len") or 0)
+        if encoded_len <= 0:
+            raise ValueError("packed-mode segment missing/invalid encoded_len")
+        if offset + encoded_len > seq_len:
+            raise ValueError("packed-mode segments exceed packed seq_len")
+
+        seg_input_ids = input_ids[0, offset : offset + encoded_len]
+        seg_prompt_len = int(seg["prompt_len"])
+        seg_prefix_len = int(seg["prefix_len"])
+        seg_train_len = int(seg["train_len"])
+        prompt_ids = seg.get("prompt_ids")
+
+        if seg_prompt_len <= 0 or seg_prompt_len >= encoded_len:
+            raise ValueError(
+                f"invalid prompt_len={seg_prompt_len} for encoded_len={encoded_len}"
+            )
+        if isinstance(prompt_ids, list):
+            teacher_prefix = seg_input_ids[:seg_prompt_len].detach().cpu().tolist()
+            if teacher_prefix != prompt_ids:
+                raise ValueError(
+                    "prompt tokenization mismatch between generation and teacher-forced encoding"
+                )
+
+        prefix_pos_local = seg.get("prefix_coord_pos") or []
+        prefix_bins = seg.get("prefix_coord_target_bins") or []
+        tail_ignore_pos = seg.get("tail_ignore_pos") or []
+        labels_1d, cpos, cbins, cis_prefix = _build_labels_and_coord_targets_for_sample(
+            input_ids_1d=seg_input_ids,
+            prompt_len=seg_prompt_len,
+            prefix_len=seg_prefix_len,
+            train_len=seg_train_len,
+            coord_id_set=coord_id_set,
+            coord_id_to_bin=coord_id_to_bin,
+            prefix_coord_pos=prefix_pos_local,
+            prefix_coord_target_bins=prefix_bins,
+            tail_ignore_pos=tail_ignore_pos,
+        )
+        labels_masked[0, offset : offset + encoded_len] = labels_1d
+        for p, tbin, is_pref in zip(cpos, cbins, cis_prefix):
+            supervised_batch.append(0)
+            supervised_pos.append(int(offset + p))
+            supervised_bin.append(int(tbin))
+            supervised_is_prefix.append(bool(is_pref))
+
+        offset += encoded_len
+
+    return (
+        labels_masked,
+        supervised_batch,
+        supervised_pos,
+        supervised_bin,
+        supervised_is_prefix,
+    )
+
+
+def _fingerprint_raw_micro_batch(raw_micro_batch: Any) -> Optional[str]:
+    """Best-effort fingerprint for raw micro-batches.
+
+    This is used only as a runtime sanity check for buffered rollout reuse.
+    """
+
+    if not isinstance(raw_micro_batch, list):
+        return None
+
+    try:
+        keys: List[Tuple[Any, Any]] = []
+        for s in raw_micro_batch:
+            if not isinstance(s, Mapping):
+                keys.append((None, None))
+                continue
+            base = s.get("base_idx")
+            sid = s.get("sample_id")
+            # Keep this JSON-serializable and stable across ranks/processes.
+            if base is not None:
+                try:
+                    base = int(base)  # type: ignore[arg-type]
+                except Exception:
+                    base = str(base)
+            if sid is not None:
+                try:
+                    sid = str(sid)
+                except Exception:
+                    sid = None
+            keys.append((base, sid))
+
+        payload = json.dumps(keys, ensure_ascii=True, separators=(",", ":"))
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
+def _copy_prepared_batch_for_training_step(batch: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a safe copy of a prepared model batch.
+
+    HF/Swift trainer internals (and our compute_loss) may mutate input dicts via `pop`.
+    We must not mutate cached prepared batches when buffering is enabled.
+
+    Note: This is a shallow copy for tensors; only metadata is copied structurally.
+    """
+
+    out: Dict[str, Any] = shallow_copy(dict(batch))
+    meta = out.get("_rollout_matching_meta")
+    if isinstance(meta, list):
+        out["_rollout_matching_meta"] = [
+            dict(m) if isinstance(m, Mapping) else m for m in meta
+        ]
+    return out
+
+
+class _AccumulationWindowRepeater:
+    """Repeat each full gradient accumulation window `m_steps` times.
+
+    This is stage_2-only (rollout matching) and prevents silently skipping dataset
+    samples when the trainer reuses cached prepared batches across optimizer steps.
+
+    Semantics:
+    - A "window" is `gas` consecutive micro-batches.
+    - Each full window is yielded `m_steps` times.
+    - A final partial window (< gas micro-batches) is yielded once (no repeat).
+    """
+
+    def __init__(self, dataloader: Any, *, gas: int, m_steps: int):
+        self._dataloader = dataloader
+        self._gas = max(1, int(gas))
+        self._m_steps = max(1, int(m_steps))
+
+    def __iter__(self):
+        if self._m_steps <= 1:
+            yield from self._dataloader
+            return
+
+        window: List[Any] = []
+        for batch in self._dataloader:
+            window.append(batch)
+            # First pass: yield as micro-steps arrive.
+            yield batch
+
+            if len(window) == self._gas:
+                # Repeat the completed accumulation window `m_steps-1` more times.
+                for _ in range(self._m_steps - 1):
+                    for b in window:
+                        yield b
+                window.clear()
+
+        # Partial window: already yielded once; MUST NOT repeat.
+
+    def __len__(self) -> int:
+        inner_len = getattr(self._dataloader, "__len__", None)
+        if inner_len is None:
+            raise TypeError("wrapped dataloader has no __len__")
+        n = int(len(self._dataloader))
+        full = n // self._gas
+        rem = n % self._gas
+        return full * self._gas * self._m_steps + rem
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._dataloader, name)
+
+
+class _RolloutWindowBuffer:
+    """Cache one completed accumulation window of prepared micro-step batches.
+
+    - Builds the cache during the first optimizer step of a window (E-step).
+    - Reuses the cached batches for the next `m_steps - 1` optimizer steps (M-steps).
+    - Uses TrainerState.global_step to detect optimizer-step boundaries.
+    """
+
+    def __init__(self, *, gas: int, m_steps: int):
+        self.gas = max(1, int(gas))
+        self.m_steps = max(1, int(m_steps))
+
+        self.window_step0: Optional[int] = None
+        self.completed_optimizer_steps: int = 0
+        self.micro_idx: int = 0
+        self.cached_batches: List[Dict[str, Any]] = []
+        self.cached_raw_fps: List[Optional[str]] = []
+        self.last_seen_global_step: Optional[int] = None
+
+    def clear_window(self) -> None:
+        self.window_step0 = None
+        self.completed_optimizer_steps = 0
+        self.micro_idx = 0
+        self.cached_batches = []
+        self.cached_raw_fps = []
+
+    def on_micro_step_start(self, *, global_step: int) -> None:
+        gs = int(global_step)
+        if self.last_seen_global_step is None:
+            self.last_seen_global_step = gs
+            return
+
+        prev = int(self.last_seen_global_step)
+        if gs < prev:
+            # Resume/reset: treat as a fresh run.
+            self.clear_window()
+            self.last_seen_global_step = gs
+            return
+
+        if gs == prev:
+            return
+
+        # Global step should advance by exactly 1 per optimizer step; larger jumps typically
+        # indicate resume/skip behavior, so drop any runtime-only buffer state.
+        if int(gs - prev) != 1:
+            self.clear_window()
+            self.last_seen_global_step = gs
+            return
+
+        # Optimizer step boundary crossed since the previous micro-step.
+        if self.window_step0 is not None:
+            self.completed_optimizer_steps += int(gs - prev)
+        self.micro_idx = 0
+        self.last_seen_global_step = gs
+
+        # If the just-finished E-step window was partial, disable reuse (MUST).
+        if (
+            self.window_step0 is not None
+            and self.completed_optimizer_steps == 1
+            and self.m_steps > 1
+            and len(self.cached_batches) != self.gas
+        ):
+            logger.warning(
+                "rollout buffer: final partial accumulation window detected (cached_micro_steps=%s gas=%s); "
+                "disabling reuse for this window. Mitigations: set dataloader_drop_last=true or rollout_buffer.m_steps=1.",
+                len(self.cached_batches),
+                self.gas,
+            )
+            self.clear_window()
+            self.last_seen_global_step = gs
+            return
+
+        # Window fully consumed.
+        if (
+            self.window_step0 is not None
+            and self.completed_optimizer_steps >= self.m_steps
+        ):
+            self.clear_window()
+            self.last_seen_global_step = gs
+
+    def select_batch(
+        self,
+        *,
+        global_step: int,
+        raw_fp: Optional[str],
+        build_prepared: Any,
+    ) -> Tuple[Dict[str, Any], bool]:
+        """Return a batch for this micro-step, and whether it was reused."""
+
+        if self.m_steps <= 1:
+            prepared = build_prepared()
+            return _copy_prepared_batch_for_training_step(prepared), False
+
+        if self.window_step0 is None:
+            self.window_step0 = int(global_step)
+            self.completed_optimizer_steps = 0
+            self.micro_idx = 0
+            self.cached_batches = []
+            self.cached_raw_fps = []
+
+        # E-step: build and cache.
+        if self.completed_optimizer_steps == 0:
+            prepared = build_prepared()
+            if not isinstance(prepared, dict):
+                raise ValueError("prepared batch must be a dict")
+            self.cached_batches.append(prepared)
+            self.cached_raw_fps.append(raw_fp)
+            self.micro_idx += 1
+            return _copy_prepared_batch_for_training_step(prepared), False
+
+        # M-step: reuse cached batches.
+        if self.micro_idx >= len(self.cached_batches):
+            raise RuntimeError(
+                "rollout buffer: cached micro-step index out of range. "
+                "This usually indicates a dataloader repeater/gradient accumulation mismatch."
+            )
+
+        exp_fp = self.cached_raw_fps[self.micro_idx]
+        if raw_fp is not None and exp_fp is not None and raw_fp != exp_fp:
+            raise RuntimeError(
+                "rollout buffer: raw micro-batch fingerprint diverged during reuse. "
+                "This indicates the accumulation-window repeater is incorrect (A,A,B,B,... drift) or disabled. "
+                "Mitigations: enable rollout_buffer window repeater, set rollout_buffer.m_steps=1, or set rollout_backend=hf."
+            )
+
+        prepared = self.cached_batches[self.micro_idx]
+        self.micro_idx += 1
+        return _copy_prepared_batch_for_training_step(prepared), True
+
+
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -1032,6 +1666,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._coord_token_ids: Optional[List[int]] = None
         self._coord_id_to_bin: Optional[Dict[int, int]] = None
         self._debug_dump_count: int = 0
+        # Rank-local carry buffer for dynamic post-rollout packing (stage_2 only).
+        # Each entry is (encoded, meta, encoded_len).
+        self._post_rollout_segments: List[
+            Tuple[Dict[str, Any], Dict[str, Any], int]
+        ] = []
+
+        # vLLM rollout backend state (lazy init).
+        self._vllm_engine: Any = None
+        self._vllm_tp_group: Any = None
+        self._vllm_tp_size: int = 1
+        self._vllm_last_loaded_step: int = -1
+
+        # Buffered-rollout window state (lazy init; config injected after construction).
+        self._rm_rollout_buffer: Optional[_RolloutWindowBuffer] = None
+        self._rm_rollout_buffer_sig: Optional[Tuple[bool, int, int]] = None
+
+        # Periodic qualitative dumps (rank0 only): rollout vs GT vs training target.
+        self._monitor_dump_last_step: Optional[int] = None
+        self._monitor_dump_count: int = 0
 
         # Mutable config injected by src/sft.py after construction.
         self.rollout_matching_cfg: Mapping[str, Any] = {}
@@ -1045,6 +1698,425 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             pass
         return default
+
+    def _monitor_dump_cfg(self) -> Mapping[str, Any]:
+        cfg = self._cfg("monitor_dump", {}) or {}
+        return cfg if isinstance(cfg, Mapping) else {}
+
+    def _is_main_process(self) -> bool:
+        acc = getattr(self, "accelerator", None)
+        if acc is not None and hasattr(acc, "is_main_process"):
+            try:
+                return bool(acc.is_main_process)
+            except Exception:
+                pass
+        return bool(getattr(self, "is_world_process_zero", False))
+
+    def _should_monitor_dump(self, *, global_step: int) -> bool:
+        cfg = self._monitor_dump_cfg()
+        if not bool(cfg.get("enabled", False)):
+            return False
+        if bool(cfg.get("only_world_process_zero", True)) and not self._is_main_process():
+            return False
+
+        max_events = int(cfg.get("max_events", 20) or 0)
+        if max_events > 0 and self._monitor_dump_count >= max_events:
+            return False
+
+        gs = int(global_step)
+        if self._monitor_dump_last_step is not None and int(self._monitor_dump_last_step) == gs:
+            return False
+
+        every = cfg.get("every_steps", None)
+        if every is None:
+            every = int(getattr(self.args, "logging_steps", 1) or 1)
+        every = max(1, int(every))
+
+        dump_first = bool(cfg.get("dump_first_step", bool(getattr(self.args, "logging_first_step", False))))
+        if gs == 0 and not dump_first:
+            return False
+        if gs % every != 0:
+            return False
+        return True
+
+    @staticmethod
+    def _clip_text(text: Any, *, max_chars: int) -> str:
+        try:
+            s = str(text)
+        except Exception:
+            return ""
+        if max_chars <= 0:
+            return s
+        if len(s) <= max_chars:
+            return s
+        return s[:max_chars] + "...<truncated>"
+
+    @staticmethod
+    def _ascii_safe_text(text: str) -> str:
+        # Keep dumps ASCII by escaping non-ASCII characters, but preserve newlines.
+        out: List[str] = []
+        for ch in text:
+            if ord(ch) < 128:
+                out.append(ch)
+            else:
+                out.append("\\u%04x" % ord(ch))
+        return "".join(out)
+
+    def _write_monitor_dump(self, *, global_step: int, payload: Mapping[str, Any]) -> None:
+        cfg = self._monitor_dump_cfg()
+        out_dir = cfg.get("out_dir")
+        if not isinstance(out_dir, str) or not out_dir.strip():
+            out_dir = os.path.join(str(getattr(self.args, "output_dir", ".")), "monitor_dumps")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # One file per optimizer step by default (easy to inspect while training).
+        step_path = os.path.join(out_dir, f"step_{int(global_step):06d}.json")
+        with open(step_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=True, indent=2)
+
+        if bool(cfg.get("write_markdown", True)):
+            md_path = os.path.join(out_dir, f"step_{int(global_step):06d}.md")
+            try:
+                md = self._format_monitor_dump_markdown(payload)
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.write(md)
+            except Exception:
+                pass
+
+    def _format_monitor_dump_markdown(self, payload: Mapping[str, Any]) -> str:
+        # Human-readable dump; keep it ASCII-safe to avoid surprising tooling issues.
+        max_chars = int(self._monitor_dump_cfg().get("max_text_chars", 4000) or 4000)
+
+        def _j(obj: Any) -> str:
+            try:
+                return json.dumps(obj, ensure_ascii=True, indent=2)
+            except Exception:
+                return "{}"
+
+        lines: List[str] = []
+        gs = payload.get("global_step")
+        lines.append(f"# Rollout-Matching Monitor Dump (global_step={gs})\n")
+        meta = payload.get("meta") or {}
+        lines.append("## Meta\n")
+        lines.append("```json\n" + _j(meta) + "\n```\n")
+
+        samples = payload.get("samples") if isinstance(payload.get("samples"), list) else []
+        for i, s in enumerate(samples):
+            if not isinstance(s, Mapping):
+                continue
+            lines.append(f"## Sample {i}\n")
+            sid = s.get("sample_id")
+            bidx = s.get("base_idx")
+            img = s.get("image") or s.get("images")
+            lines.append(f"- sample_id: `{sid}`\n")
+            lines.append(f"- base_idx: `{bidx}`\n")
+            lines.append(f"- image(s): `{img}`\n\n")
+
+            lines.append("### Messages\n")
+            lines.append("```json\n" + _j(s.get("messages")) + "\n```\n")
+
+            lines.append("### Rollout (raw)\n")
+            lines.append(
+                "```text\n"
+                + self._ascii_safe_text(self._clip_text(s.get("rollout_text"), max_chars=max_chars))
+                + "\n```\n"
+            )
+            lines.append("### Prefix Used (append-ready)\n")
+            lines.append(
+                "```text\n"
+                + self._ascii_safe_text(self._clip_text(s.get("prefix_text"), max_chars=max_chars))
+                + "\n```\n"
+            )
+            lines.append("### Training Target (prefix + FN append)\n")
+            lines.append(
+                "```text\n"
+                + self._ascii_safe_text(self._clip_text(s.get("train_text"), max_chars=max_chars))
+                + "\n```\n"
+            )
+
+            lines.append("### GT Objects\n")
+            lines.append("```json\n" + _j(s.get("gt_objects")) + "\n```\n")
+            lines.append("### Pred Objects (valid)\n")
+            lines.append("```json\n" + _j(s.get("pred_objects")) + "\n```\n")
+            lines.append("### Match\n")
+            lines.append("```json\n" + _j(s.get("match")) + "\n```\n")
+            lines.append("### Stats\n")
+            lines.append("```json\n" + _j(s.get("stats")) + "\n```\n")
+
+        return "".join(lines)
+
+    def _rollout_buffer_settings(self) -> Tuple[bool, int]:
+        cfg_raw = self._cfg("rollout_buffer", {}) or {}
+        if cfg_raw is None:
+            cfg_raw = {}
+        if not isinstance(cfg_raw, Mapping):
+            raise ValueError(
+                "custom.extra.rollout_matching.rollout_buffer must be a mapping"
+            )
+
+        enabled = bool(cfg_raw.get("enabled", False))
+        m_steps_raw = cfg_raw.get("m_steps", 1)
+        try:
+            m_steps = int(m_steps_raw)
+        except Exception as exc:
+            raise ValueError(
+                "custom.extra.rollout_matching.rollout_buffer.m_steps must be an int"
+            ) from exc
+        if m_steps <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.rollout_buffer.m_steps must be > 0"
+            )
+        return enabled, m_steps
+
+    def _offload_settings(self) -> Tuple[bool, bool, bool]:
+        cfg_raw = self._cfg("offload", {}) or {}
+        if cfg_raw is None:
+            cfg_raw = {}
+        if not isinstance(cfg_raw, Mapping):
+            raise ValueError("custom.extra.rollout_matching.offload must be a mapping")
+
+        enabled = bool(cfg_raw.get("enabled", False))
+        offload_model = bool(cfg_raw.get("offload_model", False))
+        offload_optimizer = bool(cfg_raw.get("offload_optimizer", False))
+        return enabled, offload_model, offload_optimizer
+
+    def _maybe_init_rollout_buffer(self) -> Optional[_RolloutWindowBuffer]:
+        enabled, m_steps = self._rollout_buffer_settings()
+        gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+        sig = (bool(enabled), int(m_steps), int(gas))
+
+        if not enabled or m_steps <= 1:
+            self._rm_rollout_buffer = None
+            self._rm_rollout_buffer_sig = sig
+            return None
+
+        if self._rm_rollout_buffer is None or self._rm_rollout_buffer_sig != sig:
+            self._rm_rollout_buffer = _RolloutWindowBuffer(gas=gas, m_steps=m_steps)
+            self._rm_rollout_buffer_sig = sig
+        return self._rm_rollout_buffer
+
+    @contextmanager
+    def _maybe_rollout_offload_context(self):
+        """Offload training state during colocate vLLM rollout generation.
+
+        Fail-fast when offload is requested but not safe to apply.
+        """
+
+        enabled, offload_model, offload_optimizer = self._offload_settings()
+        if not enabled or (not offload_model and not offload_optimizer):
+            yield
+            return
+
+        # Only applicable for colocate vLLM rollouts.
+        if self._rollout_backend() != "vllm":
+            yield
+            return
+
+        # Fail-fast on known-incompatible setups.
+        if bool(getattr(self, "is_deepspeed_enabled", False)):
+            raise RuntimeError(
+                "rollout offload is not supported with DeepSpeed/ZeRO in this trainer. "
+                "Mitigations: disable custom.extra.rollout_matching.offload, switch rollout_backend=hf, "
+                "or disable DeepSpeed."
+            )
+
+        train_device = getattr(getattr(self, "accelerator", None), "device", None)
+        if train_device is None:
+            train_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        model = getattr(
+            getattr(self, "accelerator", None), "unwrap_model", lambda x: x
+        )(self.model)
+        opt = getattr(self, "optimizer", None)
+
+        @torch.no_grad()
+        def _offload_model_to_cpu(m) -> None:
+            for p in m.parameters():
+                p.data = p.data.to(torch.device("cpu"), non_blocking=True)
+
+        @torch.no_grad()
+        def _load_model_to_device(m) -> None:
+            for p in m.parameters():
+                p.data = p.data.to(train_device, non_blocking=True)
+
+        @torch.no_grad()
+        def _offload_opt_to_cpu(o) -> None:
+            if o is None or not getattr(o, "state", None):
+                return
+            for pg in o.param_groups:
+                for p in pg.get("params", []):
+                    st = o.state.get(p)
+                    if not isinstance(st, dict):
+                        continue
+                    for k, v in list(st.items()):
+                        if isinstance(v, torch.Tensor):
+                            st[k] = v.to(torch.device("cpu"), non_blocking=True)
+
+        @torch.no_grad()
+        def _load_opt_to_device(o) -> None:
+            if o is None or not getattr(o, "state", None):
+                return
+            for pg in o.param_groups:
+                for p in pg.get("params", []):
+                    st = o.state.get(p)
+                    if not isinstance(st, dict):
+                        continue
+                    for k, v in list(st.items()):
+                        if isinstance(v, torch.Tensor):
+                            st[k] = v.to(train_device, non_blocking=True)
+
+        try:
+            if offload_model:
+                _offload_model_to_cpu(model)
+            if offload_optimizer:
+                _offload_opt_to_cpu(opt)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            yield
+        finally:
+            if offload_model:
+                _load_model_to_device(model)
+            if offload_optimizer:
+                _load_opt_to_device(opt)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    def _rollout_backend(self) -> Literal["hf", "vllm"]:
+        backend = str(self._cfg("rollout_backend", "vllm")).strip().lower()
+        if backend not in {"hf", "vllm"}:
+            raise ValueError(
+                f"custom.extra.rollout_matching.rollout_backend must be one of {{hf,vllm}}, got {backend!r}"
+            )
+        return backend  # type: ignore[return-value]
+
+    def _rollout_generate_batch_size(self) -> int:
+        raw = self._cfg("rollout_generate_batch_size", 1)
+        try:
+            v = int(raw)
+        except Exception as exc:
+            raise ValueError(
+                "custom.extra.rollout_matching.rollout_generate_batch_size must be an int"
+            ) from exc
+        return max(1, v)
+
+    def _packing_enabled(self) -> bool:
+        return bool(self._cfg("packing_enabled", False))
+
+    def _packing_length(self) -> int:
+        try:
+            return int(self._cfg("packing_length", 0) or 0)
+        except Exception as exc:
+            raise ValueError("packing_length must be an int") from exc
+
+    def _packing_buffer_cap(self) -> int:
+        try:
+            return int(self._cfg("packing_buffer", 0) or 0)
+        except Exception as exc:
+            raise ValueError("packing_buffer must be an int") from exc
+
+    def _packing_min_fill_ratio(self) -> float:
+        try:
+            v = float(self._cfg("packing_min_fill_ratio", 0.65))
+        except Exception as exc:
+            raise ValueError("packing_min_fill_ratio must be a float") from exc
+        if not (0 < v <= 1):
+            raise ValueError("packing_min_fill_ratio must be in (0, 1]")
+        return float(v)
+
+    def _packing_drop_last(self) -> bool:
+        return bool(self._cfg("packing_drop_last", True))
+
+    @staticmethod
+    def _extract_encoded_len(encoded: Mapping[str, Any]) -> int:
+        length = encoded.get("length")
+        if isinstance(length, int) and length > 0:
+            return int(length)
+        input_ids = encoded.get("input_ids")
+        if input_ids is not None and hasattr(input_ids, "__len__"):
+            try:
+                n = int(len(input_ids))
+                if n > 0:
+                    return n
+            except Exception:
+                pass
+        raise ValueError("encoded sample is missing a valid length/input_ids")
+
+    @contextmanager
+    def _template_packing_disabled(self):
+        """Temporarily disable ms-swift template packing/padding-free flags."""
+        template = self.template
+        old_padding_free = getattr(template, "padding_free", False)
+        old_packing = getattr(template, "packing", False)
+        try:
+            try:
+                template.padding_free = False
+            except Exception:
+                pass
+            try:
+                template.packing = False
+            except Exception:
+                pass
+            yield
+        finally:
+            try:
+                template.padding_free = old_padding_free
+            except Exception:
+                pass
+            try:
+                template.packing = old_packing
+            except Exception:
+                pass
+
+    @contextmanager
+    def _template_train_mode(self):
+        """Temporarily force template mode to `train` for teacher-forced encoding.
+
+        Some runners may keep the template in a non-training mode (e.g. `pt`), which
+        would strip assistant responses from messages. Stage_2 needs the assistant span
+        present in `input_ids` for masking/loss construction.
+        """
+        template = self.template
+        old_mode = getattr(template, "mode", None)
+        try:
+            if (
+                old_mode is not None
+                and hasattr(template, "set_mode")
+                and str(old_mode) != "train"
+            ):
+                template.set_mode("train")
+            yield
+        finally:
+            if old_mode is not None and hasattr(template, "set_mode"):
+                try:
+                    template.set_mode(old_mode)
+                except Exception:
+                    pass
+
+    @contextmanager
+    def _template_packing_enabled(self):
+        """Temporarily enable ms-swift template packing/padding-free flags."""
+        template = self.template
+        old_padding_free = getattr(template, "padding_free", False)
+        old_packing = getattr(template, "packing", False)
+        try:
+            try:
+                template.packing = True
+            except Exception:
+                pass
+            try:
+                template.padding_free = True
+            except Exception:
+                pass
+            yield
+        finally:
+            try:
+                template.padding_free = old_padding_free
+            except Exception:
+                pass
+            try:
+                template.packing = old_packing
+            except Exception:
+                pass
 
     def _maybe_debug_dump_parse_failure(
         self,
@@ -1066,7 +2138,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return
 
         self._debug_dump_count += 1
-        images = sample.get("images") if isinstance(sample.get("images"), list) else None
+        images = (
+            sample.get("images") if isinstance(sample.get("images"), list) else None
+        )
         image = sample.get("image") if isinstance(sample.get("image"), str) else None
         tag = f"images={images!r}" if images else f"image={image!r}"
 
@@ -1120,10 +2194,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
         num_beams = int(self._cfg("num_beams", 1))
         temperature = float(self._cfg("temperature", 0.0))
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.repetition_penalty must be > 0"
+            )
 
-        with template.generate_context():
-            encoded = template.encode(dict(sample), return_length=True)
-        batch = template.data_collator([encoded])
+        # Rollout generation MUST run without sequence packing/padding-free.
+        with self._template_packing_disabled():
+            with template.generate_context():
+                encoded = template.encode(dict(sample), return_length=True)
+            batch = template.data_collator([encoded])
         from swift.llm import to_device
 
         batch = to_device(batch, self.model.device)
@@ -1136,48 +2217,1019 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             from transformers import GenerationConfig
 
             gen_cfg = GenerationConfig()
-        gen_cfg = gen_cfg.clone()
+        # GenerationConfig doesn't provide a stable `.clone()` across transformers versions.
+        gen_cfg = deepcopy(gen_cfg)
         gen_cfg.max_new_tokens = max_new_tokens
         gen_cfg.do_sample = bool(temperature > 0.0)
         gen_cfg.temperature = max(1e-4, temperature) if gen_cfg.do_sample else 1.0
+        gen_cfg.repetition_penalty = repetition_penalty
         if decode_mode == "beam":
             gen_cfg.num_beams = max(1, num_beams)
-            gen_cfg.num_return_sequences = max(1, int(self._cfg("num_return_sequences", gen_cfg.num_beams)))
+            gen_cfg.num_return_sequences = max(
+                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
+            )
         else:
             gen_cfg.num_beams = 1
             gen_cfg.num_return_sequences = 1
 
         model_inputs = {k: v for k, v in batch.items() if k != "labels"}
         model_inputs.pop("position_ids", None)
+        model_inputs.pop("text_position_ids", None)
+        logits_processor = None
+        repeat_cfg_raw = self._cfg("repeat_terminate", None)
+        if isinstance(repeat_cfg_raw, Mapping) and bool(
+            repeat_cfg_raw.get("enabled", False)
+        ):
+            min_new_tokens = int(repeat_cfg_raw.get("min_new_tokens", 256) or 0)
+            max_consecutive = int(
+                repeat_cfg_raw.get("max_consecutive_token_repeats", 64) or 0
+            )
+            ngram_size = int(repeat_cfg_raw.get("ngram_size", 64) or 0)
+            ngram_repeats = int(repeat_cfg_raw.get("ngram_repeats", 2) or 2)
+            max_object_keys_raw = repeat_cfg_raw.get("max_object_keys")
+            max_object_keys = (
+                int(max_object_keys_raw) if max_object_keys_raw is not None else None
+            )
+
+            obj_prefix_ids = None
+            if max_object_keys is not None:
+                try:
+                    obj_prefix_ids = tok.encode('"object_', add_special_tokens=False)
+                except Exception:
+                    obj_prefix_ids = None
+
+            eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
+            if eos_id >= 0:
+                guard = _ForceEosOnRepeatGuard(
+                    eos_token_id=eos_id,
+                    prompt_len=prompt_len,
+                    min_new_tokens=min_new_tokens,
+                    max_consecutive_token_repeats=max_consecutive,
+                    ngram_size=ngram_size,
+                    ngram_repeats=ngram_repeats,
+                    max_object_keys=max_object_keys,
+                    object_key_prefix_token_ids=obj_prefix_ids,
+                )
+                try:
+                    from transformers.generation.logits_process import (
+                        LogitsProcessorList,
+                    )
+
+                    logits_processor = LogitsProcessorList([guard])
+                except Exception:
+                    logits_processor = [guard]
         with unwrap_model_for_generation(
             self.model_wrapped,
             self.accelerator,
-            gather_deepspeed3_params=getattr(self.args, "ds3_gather_for_generation", False),
+            gather_deepspeed3_params=getattr(
+                self.args, "ds3_gather_for_generation", False
+            ),
         ) as unwrapped:
             unwrapped.eval()
-            with template.generate_context():
-                if getattr(self.model, "model_meta", None) is not None and self.model.model_meta.is_multimodal:
-                    _, model_inputs = template.pre_forward_hook(unwrapped, None, model_inputs)
-                out = template.generate(
-                    unwrapped,
-                    **model_inputs,
-                    generation_config=gen_cfg,
-                    return_dict_in_generate=True,
-                )
+            # Keep packing disabled inside rollout generate.
+            with self._template_packing_disabled():
+                with template.generate_context():
+                    if (
+                        getattr(self.model, "model_meta", None) is not None
+                        and self.model.model_meta.is_multimodal
+                    ):
+                        _, model_inputs = template.pre_forward_hook(
+                            unwrapped, None, model_inputs
+                        )
+                    # Some templates add auxiliary position ids that the underlying model.generate
+                    # doesn't accept; strip them after any pre_forward_hook edits.
+                    model_inputs.pop("position_ids", None)
+                    model_inputs.pop("text_position_ids", None)
+                    out = template.generate(
+                        unwrapped,
+                        **model_inputs,
+                        generation_config=gen_cfg,
+                        return_dict_in_generate=True,
+                        logits_processor=logits_processor,
+                    )
             unwrapped.train()
 
         sequences = out.sequences  # [R, T]
         if sequences.ndim != 2:
             raise ValueError("unexpected generate output shape")
-        if sequences.shape[0] > 1 and hasattr(out, "sequences_scores") and out.sequences_scores is not None:
+        if (
+            sequences.shape[0] > 1
+            and hasattr(out, "sequences_scores")
+            and out.sequences_scores is not None
+        ):
             best = int(torch.argmax(out.sequences_scores).item())
         else:
             best = 0
         seq = sequences[best]
         resp_ids = seq[prompt_len:].tolist()
         resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
-        text = template.decode(resp_ids, is_finished=True, first_token=True, clean_up_tokenization_spaces=False)
+        text = template.decode(
+            resp_ids,
+            is_finished=True,
+            first_token=True,
+            clean_up_tokenization_spaces=False,
+        )
         return resp_ids, text, decode_mode, [int(t) for t in prompt_ids]
+
+    # ---- rollout backends -------------------------------------------------
+    def _ensure_vllm_engine(self) -> Any:
+        """Initialize a colocated vLLM engine (lazy)."""
+        if self._vllm_engine is not None:
+            return self._vllm_engine
+
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("custom.extra.rollout_matching.vllm must be a mapping")
+        vcfg = dict(vcfg_raw)
+
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            world_size = int(dist.get_world_size())
+
+        # Defaults: TP=4 on 4-GPU runs; otherwise TP=1 unless explicitly set.
+        default_tp = 4 if world_size == 4 else 1
+        tp_size = int(vcfg.get("tensor_parallel_size", default_tp))
+        if tp_size <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.tensor_parallel_size must be > 0"
+            )
+        if world_size % tp_size != 0:
+            raise ValueError(
+                f"vLLM colocate requires world_size % tp == 0; world_size={world_size} tp={tp_size}"
+            )
+
+        max_model_len_raw = vcfg.get("max_model_len", None)
+        if max_model_len_raw is None:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.max_model_len is required when rollout_backend=vllm "
+                "(it must cover prompt_len + max_new_tokens)."
+            )
+        max_model_len = int(max_model_len_raw)
+        if max_model_len <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.max_model_len must be > 0"
+            )
+
+        # NOTE: vLLM LoRA on multimodal models (Qwen3-VL ViT) can be unstable on
+        # some stacks. Allow disabling vLLM LoRA and instead syncing merged
+        # weights into the colocated vLLM engine (GRPO-style).
+        enable_lora = bool(vcfg.get("enable_lora", False))
+
+        load_format = vcfg.get("load_format", None)
+        if load_format is None:
+            # When we sync weights from the training model, loading real weights
+            # from disk is unnecessary; dummy init reduces overhead.
+            load_format = "dummy" if not enable_lora else "auto"
+        if not isinstance(load_format, str):
+            raise ValueError("custom.extra.rollout_matching.vllm.load_format must be a string")
+        load_format = load_format.strip()
+
+        gpu_mem = float(vcfg.get("gpu_memory_utilization", 0.45))
+        enable_prefix_caching = bool(vcfg.get("enable_prefix_caching", True))
+        sleep_level = int(vcfg.get("sleep_level", 0) or 0)
+        enforce_eager = bool(vcfg.get("enforce_eager", False))
+        disable_custom_all_reduce = bool(vcfg.get("disable_custom_all_reduce", True))
+        max_num_seqs_raw = vcfg.get("max_num_seqs", None)
+        max_num_seqs: Optional[int] = None
+        if max_num_seqs_raw is not None:
+            try:
+                max_num_seqs = int(max_num_seqs_raw)
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.max_num_seqs must be an int"
+                ) from exc
+            if max_num_seqs <= 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.max_num_seqs must be > 0"
+                )
+
+        # Extra vLLM engine kwargs (passed through to vLLM EngineArgs by ms-swift VllmEngine).
+        # This is useful to avoid hard-coded vLLM defaults that can break long-context multimodal rollouts.
+        vllm_engine_kwargs: Dict[str, Any] = {}
+        limit_mm_per_prompt: Optional[Dict[str, int]] = None
+        max_num_batched_tokens_raw = vcfg.get("max_num_batched_tokens", None)
+        if max_num_batched_tokens_raw is not None:
+            try:
+                max_num_batched_tokens = int(max_num_batched_tokens_raw)
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.max_num_batched_tokens must be an int"
+                ) from exc
+            if max_num_batched_tokens <= 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.max_num_batched_tokens must be > 0"
+                )
+            vllm_engine_kwargs["max_num_batched_tokens"] = max_num_batched_tokens
+
+        # Optional vLLM EngineArgs knobs (allow-list).
+        #
+        # NOTE: These are passed to vLLM via ms-swift's VllmEngine(engine_kwargs=...),
+        # which forwards them into vLLM EngineArgs. Keep this list small and validated
+        # to avoid silent typos.
+        if "enable_chunked_prefill" in vcfg:
+            vllm_engine_kwargs["enable_chunked_prefill"] = bool(
+                vcfg.get("enable_chunked_prefill")
+            )
+        if "disable_chunked_mm_input" in vcfg:
+            vllm_engine_kwargs["disable_chunked_mm_input"] = bool(
+                vcfg.get("disable_chunked_mm_input")
+            )
+        if "kv_cache_dtype" in vcfg and vcfg.get("kv_cache_dtype") is not None:
+            kv_cache_dtype = vcfg.get("kv_cache_dtype")
+            if not isinstance(kv_cache_dtype, str):
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.kv_cache_dtype must be a string"
+                )
+            vllm_engine_kwargs["kv_cache_dtype"] = kv_cache_dtype
+        if "cpu_offload_gb" in vcfg and vcfg.get("cpu_offload_gb") is not None:
+            try:
+                cpu_offload_gb = float(vcfg.get("cpu_offload_gb"))
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.cpu_offload_gb must be a float"
+                ) from exc
+            if cpu_offload_gb < 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.cpu_offload_gb must be >= 0"
+                )
+            vllm_engine_kwargs["cpu_offload_gb"] = cpu_offload_gb
+        if "swap_space" in vcfg and vcfg.get("swap_space") is not None:
+            try:
+                swap_space = float(vcfg.get("swap_space"))
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.swap_space must be a float"
+                ) from exc
+            if swap_space < 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.swap_space must be >= 0"
+                )
+            vllm_engine_kwargs["swap_space"] = swap_space
+        if (
+            "limit_mm_per_prompt" in vcfg
+            and vcfg.get("limit_mm_per_prompt") is not None
+        ):
+            limit_raw = vcfg.get("limit_mm_per_prompt")
+            if not isinstance(limit_raw, Mapping):
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.limit_mm_per_prompt must be a mapping"
+                )
+            limit_parsed: Dict[str, int] = {}
+            for k, v in limit_raw.items():
+                if not isinstance(k, str):
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.limit_mm_per_prompt keys must be strings"
+                    )
+                try:
+                    limit_parsed[k] = int(v)
+                except Exception as exc:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.limit_mm_per_prompt values must be ints"
+                    ) from exc
+            # NOTE: ms-swift's `VllmEngine` already exposes `limit_mm_per_prompt` as a
+            # top-level kwarg, and forwards it to `_prepare_engine_kwargs`. Passing it
+            # again via `engine_kwargs` would cause a `got multiple values` TypeError.
+            limit_mm_per_prompt = limit_parsed
+
+        if "mm_encoder_tp_mode" in vcfg and vcfg.get("mm_encoder_tp_mode") is not None:
+            mm_encoder_tp_mode = vcfg.get("mm_encoder_tp_mode")
+            if not isinstance(mm_encoder_tp_mode, str):
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.mm_encoder_tp_mode must be a string"
+                )
+            mm_encoder_tp_mode = mm_encoder_tp_mode.strip().lower()
+            if mm_encoder_tp_mode not in {"weights", "data"}:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.mm_encoder_tp_mode must be 'weights' or 'data'"
+                )
+            vllm_engine_kwargs["mm_encoder_tp_mode"] = mm_encoder_tp_mode
+
+        # Multimodal encoder cache profiling can create extremely large dummy
+        # multimodal batches (e.g., video) during vLLM initialization, which is
+        # unnecessary for our image-only rollouts and can interact badly with
+        # vLLM LoRA kernels. Allow skipping it via EngineArgs.skip_mm_profiling.
+        if "skip_mm_profiling" in vcfg:
+            vllm_engine_kwargs["skip_mm_profiling"] = bool(
+                vcfg.get("skip_mm_profiling")
+            )
+
+        # Patch vLLM to allow loading LoRA from in-memory tensors (only needed
+        # when vLLM LoRA is enabled).
+        if enable_lora:
+            try:
+                from swift.trainers.rlhf_trainer.utils import patch_vllm_load_adapter
+
+                patch_vllm_load_adapter()
+            except Exception as exc:
+                raise RuntimeError(
+                    "vLLM rollout backend is enabled but vLLM is unavailable or incompatible. "
+                    "Install/upgrade vLLM in the ms env, or set custom.extra.rollout_matching.rollout_backend: hf."
+                ) from exc
+
+        model_dir = getattr(self.model, "model_dir", None) or getattr(
+            getattr(self.model, "model", None), "model_dir", None
+        )
+        if not model_dir:
+            raise RuntimeError(
+                "vLLM rollout backend requires a ms-swift model wrapper with `model_dir`. "
+                "Set rollout_backend: hf to disable vLLM rollouts."
+            )
+        model_info = getattr(self.model, "model_info", None)
+        torch_dtype = (
+            getattr(model_info, "torch_dtype", None) if model_info is not None else None
+        )
+
+        # Derive max_lora_rank from peft config when possible (must be >= actual rank).
+        max_lora_rank = 16
+        if enable_lora:
+            peft_cfg = getattr(self.model, "peft_config", None)
+            if isinstance(peft_cfg, Mapping) and peft_cfg:
+                cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
+                try:
+                    max_lora_rank = int(getattr(cfg0, "r", max_lora_rank))
+                except Exception:
+                    pass
+
+        # Build TP subgroup (colocate only; server mode unsupported here).
+        if tp_size > 1:
+            if dist is None or not dist.is_initialized():
+                raise RuntimeError(
+                    "vLLM tensor parallel requires torch.distributed to be initialized"
+                )
+            self._vllm_tp_group, _ = dist.new_subgroups_by_enumeration(
+                [
+                    list(range(i * tp_size, (i + 1) * tp_size))
+                    for i in range(world_size // tp_size)
+                ]
+            )
+        self._vllm_tp_size = int(tp_size)
+
+        # Use a shallow-copied template; vLLM expects template.mode='vllm'.
+        vllm_template = shallow_copy(self.template)
+        try:
+            vllm_template.packing = False
+            vllm_template.padding_free = False
+            vllm_template.set_mode("vllm")
+        except Exception:
+            pass
+
+        logger.info(
+            "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
+            "max_num_seqs=%s limit_mm_per_prompt=%s engine_kwargs=%s",
+            tp_size,
+            world_size,
+            max_model_len,
+            gpu_mem,
+            max_num_seqs if max_num_seqs is not None else 256,
+            limit_mm_per_prompt,
+            vllm_engine_kwargs or {},
+        )
+
+        try:
+            from swift.llm import VllmEngine
+
+            engine = VllmEngine(
+                model_dir,
+                torch_dtype=torch_dtype,
+                template=vllm_template,
+                tensor_parallel_size=tp_size,
+                gpu_memory_utilization=gpu_mem,
+                max_model_len=max_model_len,
+                max_num_seqs=max_num_seqs if max_num_seqs is not None else 256,
+                enforce_eager=enforce_eager,
+                disable_custom_all_reduce=disable_custom_all_reduce,
+                limit_mm_per_prompt=limit_mm_per_prompt,
+                load_format=load_format,
+                enable_lora=enable_lora,
+                max_loras=1,
+                max_lora_rank=max_lora_rank,
+                enable_prefix_caching=enable_prefix_caching,
+                engine_kwargs=vllm_engine_kwargs or None,
+                distributed_executor_backend="external_launcher",
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to initialize vLLM engine for rollout generation. "
+                "Set rollout_backend: hf to bypass vLLM."
+            ) from exc
+
+        if sleep_level > 0:
+            try:
+                engine.engine.sleep(sleep_level)
+            except Exception:
+                pass
+
+        self._vllm_engine = engine
+        return engine
+
+    def _sync_vllm_rollout_model_if_needed(self) -> None:
+        """Sync the rollout model weights into the colocated vLLM engine.
+
+        We support two modes:
+        - vLLM LoRA enabled: push adapter tensors via `add_lora` (fast, but can be
+          unstable on some multimodal stacks).
+        - vLLM LoRA disabled: merge adapters into the training model weights and
+          load the merged weights into vLLM (GRPO-style; more robust for ViT).
+        """
+        vcfg = self._cfg("vllm", {}) or {}
+        enable_lora = bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
+        if enable_lora:
+            self._sync_vllm_lora_if_needed()
+        else:
+            self._sync_vllm_full_weights_if_needed()
+
+    def _sync_vllm_full_weights_if_needed(self) -> None:
+        """Sync merged (LoRA-applied) weights into vLLM when vLLM LoRA is disabled."""
+        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        if step == self._vllm_last_loaded_step:
+            return
+
+        engine = self._ensure_vllm_engine()
+
+        from contextlib import nullcontext
+
+        try:
+            from accelerate.utils import is_peft_model
+        except Exception:
+            is_peft_model = None  # type: ignore[assignment]
+
+        is_peft = bool(is_peft_model(self.model)) if is_peft_model is not None else False
+
+        merge_cm = nullcontext()
+        unmerge_cm = nullcontext()
+        if is_peft:
+            try:
+                from swift.trainers.rlhf_trainer.utils import (
+                    patch_lora_merge,
+                    patch_lora_unmerge,
+                )
+
+                merge_cm = patch_lora_merge(self.model)
+                unmerge_cm = patch_lora_unmerge(self.model)
+            except Exception:
+                merge_cm = nullcontext()
+                unmerge_cm = nullcontext()
+
+        params = [p for _, p in self.model.named_parameters()]
+        gather_if_zero3 = get_gather_if_zero3_context(self)
+
+        with gather_if_zero3(params), merge_cm, torch.no_grad():
+            merged = False
+            try:
+                if is_peft:
+                    try:
+                        # Merge adapter weights into base weights for extraction.
+                        self.model.merge_adapter()
+                        merged = True
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "vLLM LoRA is disabled, but we failed to merge the adapter weights from the training "
+                            "model. Mitigations: set custom.extra.rollout_matching.vllm.enable_lora=true "
+                            "(may be unstable on multimodal), or ensure your PEFT stack supports "
+                            "merge_adapter/unmerge_adapter."
+                        ) from exc
+
+                state_dict = self.model.state_dict()
+                if is_peft:
+                    # Follow ms-swift GRPO key mapping conventions to match vLLM model names.
+                    prefix_removed = {
+                        k.removeprefix("base_model.model."): v for k, v in state_dict.items()
+                    }
+                    state_dict = {k.replace(".base_layer", ""): v for k, v in prefix_removed.items()}
+                    prefix = getattr(self.model, "prefix", None)
+                    if isinstance(prefix, str) and prefix:
+                        state_dict = {k: v for k, v in state_dict.items() if prefix not in k}
+                    state_dict = {
+                        k.replace("modules_to_save.default.", ""): v
+                        for k, v in state_dict.items()
+                        if "original_module" not in k
+                    }
+                    # vLLM LoRA is disabled: do not pass LoRA tensors (they're already merged).
+                    state_dict = {k: v for k, v in state_dict.items() if "lora_" not in k}
+
+                engine.inner_model.load_weights(state_dict.items())
+            finally:
+                # Never leave the training model in merged state, even if vLLM loading fails.
+                if is_peft and merged:
+                    with unmerge_cm:
+                        self.model.unmerge_adapter()
+
+        try:
+            engine.engine.reset_prefix_cache()
+        except Exception:
+            pass
+
+        self._vllm_last_loaded_step = step
+
+    def _sync_vllm_lora_if_needed(self) -> None:
+        """Sync LoRA adapter weights into vLLM on global_step boundaries."""
+        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        if step == self._vllm_last_loaded_step:
+            return
+
+        engine = self._ensure_vllm_engine()
+
+        # Build LoRA tensors (CPU) for vLLM.
+        peft_cfg = getattr(self.model, "peft_config", None)
+        if not isinstance(peft_cfg, Mapping) or not peft_cfg:
+            raise RuntimeError(
+                "vLLM rollout backend requires a PEFT LoRA model (peft_config missing). "
+                "Switch rollout_backend: hf if training is not LoRA."
+            )
+        cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
+
+        try:
+            peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
+        except Exception:
+            if hasattr(cfg0, "to_dict"):
+                peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
+            else:
+                peft_cfg_dict = {}
+
+        try:
+            from peft.utils.save_and_load import get_peft_model_state_dict
+        except Exception as exc:
+            raise RuntimeError("peft is required for vLLM LoRA sync") from exc
+
+        named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
+        if not named:
+            raise RuntimeError(
+                "No LoRA parameters found on model, but vLLM LoRA sync is required. "
+                "Disable vLLM (rollout_backend: hf) or ensure LoRA is enabled."
+            )
+        names = [n for n, _ in named]
+        params = [p for _, p in named]
+        gather_if_zero3 = get_gather_if_zero3_context(self)
+        with gather_if_zero3(params):
+            subset = {}
+            for n, p in zip(names, params):
+                t = p.full_tensor() if hasattr(p, "full_tensor") else p
+                subset[n] = t.detach()
+            lora_params = get_peft_model_state_dict(self.model, subset)
+            lora_params = {
+                k: (v.full_tensor() if hasattr(v, "full_tensor") else v).detach().cpu()
+                for k, v in lora_params.items()
+            }
+
+        try:
+            from swift.trainers.rlhf_trainer.utils import TensorLoRARequest
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to import TensorLoRARequest for vLLM LoRA sync"
+            ) from exc
+        if TensorLoRARequest is None:
+            raise RuntimeError("vLLM is not available (TensorLoRARequest is None)")
+
+        lora_int_id = int(time.time_ns() % 0x7FFFFFFF)
+        lora_request = TensorLoRARequest(
+            lora_name=f"{lora_int_id}",
+            lora_int_id=lora_int_id,
+            lora_path="dummy_lora_path",
+            peft_config=peft_cfg_dict,
+            lora_tensors=lora_params,
+        )
+        try:
+            engine.engine.add_lora(lora_request)
+            try:
+                engine.engine.reset_prefix_cache()
+            except Exception:
+                pass
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to load LoRA adapter into vLLM. "
+                "If this is due to multimodal/Vision LoRA incompatibility, freeze ViT or set rollout_backend: hf."
+            ) from exc
+
+        self._vllm_last_loaded_step = step
+
+    def _vllm_infer_tp_group(
+        self, infer_requests: List[Dict[str, Any]], request_config: Any
+    ) -> List[Any]:
+        """TP-group gather/slice pattern for colocate vLLM rollouts (matches ms-swift behavior)."""
+        engine = self._ensure_vllm_engine()
+        tp = int(self._vllm_tp_size)
+        # Optional micro-batching to reduce peak vLLM (vision) memory usage in colocate mode.
+        vcfg = self._cfg("vllm", None)
+        infer_batch_size: Optional[int] = None
+        if isinstance(vcfg, Mapping):
+            raw = vcfg.get("infer_batch_size", None)
+            if raw is not None:
+                try:
+                    infer_batch_size = int(raw)
+                except Exception as exc:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.infer_batch_size must be an int"
+                    ) from exc
+                if infer_batch_size <= 0:
+                    infer_batch_size = None
+
+        def _infer_batched(reqs: List[Dict[str, Any]]) -> List[Any]:
+            if not reqs:
+                return []
+            if infer_batch_size is None or infer_batch_size >= len(reqs):
+                return engine.infer(reqs, request_config=request_config, use_tqdm=False)
+            outs: List[Any] = []
+            for i in range(0, len(reqs), infer_batch_size):
+                outs.extend(
+                    engine.infer(
+                        reqs[i : i + infer_batch_size],
+                        request_config=request_config,
+                        use_tqdm=False,
+                    )
+                )
+            return outs
+
+        if tp <= 1:
+            return _infer_batched(infer_requests)
+
+        import torch.distributed as dist
+
+        group = self._vllm_tp_group
+        local_rank = int(dist.get_rank(group=group))
+        local_len = int(len(infer_requests))
+        all_lens: List[int] = [0 for _ in range(tp)]
+        dist.all_gather_object(all_lens, local_len, group=group)
+        start_idx = sum(int(x) for x in all_lens[:local_rank])
+        end_idx = start_idx + local_len
+
+        gathered: List[List[Dict[str, Any]]] = [[] for _ in range(tp)]
+        dist.all_gather_object(gathered, infer_requests, group=group)
+        flat: List[Dict[str, Any]] = [x for sub in gathered for x in sub]
+
+        outs = _infer_batched(flat)
+        return outs[start_idx:end_idx]
+
+    @torch.no_grad()
+    def _rollout_many_hf(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
+        """HF (transformers) rollout backend with per-rank microbatching (padded batch)."""
+        template = self.template
+        tok = template.tokenizer
+        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
+        max_new_tokens = int(self._cfg("max_new_tokens", 512))
+        num_beams = int(self._cfg("num_beams", 1))
+        temperature = float(self._cfg("temperature", 0.0))
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.repetition_penalty must be > 0"
+            )
+
+        # Build GenerationConfig from model defaults.
+        gen_cfg = getattr(self.model, "generation_config", None)
+        if gen_cfg is None:
+            from transformers import GenerationConfig
+
+            gen_cfg = GenerationConfig()
+        gen_cfg = deepcopy(gen_cfg)
+        gen_cfg.max_new_tokens = max_new_tokens
+        gen_cfg.do_sample = bool(temperature > 0.0)
+        gen_cfg.temperature = max(1e-4, temperature) if gen_cfg.do_sample else 1.0
+        gen_cfg.repetition_penalty = repetition_penalty
+        if decode_mode == "beam":
+            gen_cfg.num_beams = max(1, num_beams)
+            gen_cfg.num_return_sequences = max(
+                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
+            )
+        else:
+            gen_cfg.num_beams = 1
+            gen_cfg.num_return_sequences = 1
+
+        out: List[Tuple[List[int], str, str, List[int]]] = []
+        mb = self._rollout_generate_batch_size()
+
+        from swift.llm import to_device
+
+        idx = 0
+        while idx < len(samples):
+            chunk = list(samples[idx : idx + mb])
+            idx += len(chunk)
+
+            with self._template_packing_disabled():
+                with template.generate_context():
+                    encoded_list = [
+                        template.encode(dict(s), return_length=True) for s in chunk
+                    ]
+                    # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
+                    # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
+                    batch = template.data_collator(encoded_list)
+
+            batch = to_device(batch, self.model.device)
+            input_ids_t = batch["input_ids"]
+            attn = batch.get("attention_mask")
+            if attn is None:
+                pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
+                attn = (input_ids_t != pad_id).to(dtype=torch.long)
+
+            # Prompt token ids for strict sanity checks (strip padding using attention_mask).
+            prompt_ids_list: List[List[int]] = []
+            for row_ids, row_mask in zip(input_ids_t, attn):
+                ids = [
+                    int(t)
+                    for t, m in zip(
+                        row_ids.detach().cpu().tolist(),
+                        row_mask.detach().cpu().tolist(),
+                    )
+                    if int(m) == 1
+                ]
+                prompt_ids_list.append(ids)
+
+            prompt_pad_len = int(input_ids_t.shape[1])
+            model_inputs = {k: v for k, v in batch.items() if k != "labels"}
+            model_inputs.pop("position_ids", None)
+            model_inputs.pop("text_position_ids", None)
+
+            logits_processor = None
+            repeat_cfg_raw = self._cfg("repeat_terminate", None)
+            if isinstance(repeat_cfg_raw, Mapping) and bool(
+                repeat_cfg_raw.get("enabled", False)
+            ):
+                min_new_tokens = int(repeat_cfg_raw.get("min_new_tokens", 256) or 0)
+                max_consecutive = int(
+                    repeat_cfg_raw.get("max_consecutive_token_repeats", 64) or 0
+                )
+                ngram_size = int(repeat_cfg_raw.get("ngram_size", 64) or 0)
+                ngram_repeats = int(repeat_cfg_raw.get("ngram_repeats", 2) or 2)
+                max_object_keys_raw = repeat_cfg_raw.get("max_object_keys")
+                max_object_keys = (
+                    int(max_object_keys_raw)
+                    if max_object_keys_raw is not None
+                    else None
+                )
+
+                obj_prefix_ids = None
+                if max_object_keys is not None:
+                    try:
+                        obj_prefix_ids = tok.encode(
+                            '"object_', add_special_tokens=False
+                        )
+                    except Exception:
+                        obj_prefix_ids = None
+
+                eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
+                if eos_id >= 0:
+                    guard = _ForceEosOnRepeatGuard(
+                        eos_token_id=eos_id,
+                        prompt_len=prompt_pad_len,
+                        min_new_tokens=min_new_tokens,
+                        max_consecutive_token_repeats=max_consecutive,
+                        ngram_size=ngram_size,
+                        ngram_repeats=ngram_repeats,
+                        max_object_keys=max_object_keys,
+                        object_key_prefix_token_ids=obj_prefix_ids,
+                    )
+                    try:
+                        from transformers.generation.logits_process import (
+                            LogitsProcessorList,
+                        )
+
+                        logits_processor = LogitsProcessorList([guard])
+                    except Exception:
+                        # Fallback: transformers may accept a plain list.
+                        logits_processor = [guard]
+
+            with unwrap_model_for_generation(
+                self.model_wrapped,
+                self.accelerator,
+                gather_deepspeed3_params=getattr(
+                    self.args, "ds3_gather_for_generation", False
+                ),
+            ) as unwrapped:
+                unwrapped.eval()
+                with self._template_packing_disabled():
+                    with template.generate_context():
+                        if (
+                            getattr(self.model, "model_meta", None) is not None
+                            and self.model.model_meta.is_multimodal
+                        ):
+                            _, model_inputs = template.pre_forward_hook(
+                                unwrapped, None, model_inputs
+                            )
+                        model_inputs.pop("position_ids", None)
+                        model_inputs.pop("text_position_ids", None)
+                        gen_out = template.generate(
+                            unwrapped,
+                            **model_inputs,
+                            generation_config=gen_cfg,
+                            return_dict_in_generate=True,
+                            logits_processor=logits_processor,
+                        )
+                unwrapped.train()
+
+            sequences = gen_out.sequences
+            if sequences.ndim != 2:
+                raise ValueError("unexpected generate output shape")
+
+            bsz = int(input_ids_t.shape[0])
+            nret = int(getattr(gen_cfg, "num_return_sequences", 1) or 1)
+            if nret < 1:
+                nret = 1
+
+            # Pick best sequence per sample for beam mode when possible.
+            if (
+                decode_mode == "beam"
+                and nret > 1
+                and hasattr(gen_out, "sequences_scores")
+                and gen_out.sequences_scores is not None
+            ):
+                scores = gen_out.sequences_scores
+                if scores.ndim != 1 or sequences.shape[0] != bsz * nret:
+                    best_idx = torch.zeros(
+                        (bsz,), dtype=torch.long, device=sequences.device
+                    )
+                else:
+                    scores = scores.view(bsz, nret)
+                    best_idx = torch.argmax(scores, dim=1)
+                sequences = sequences.view(bsz, nret, -1)
+                best_seqs = sequences[
+                    torch.arange(bsz, device=sequences.device), best_idx
+                ]
+            else:
+                # Default: first sequence per sample.
+                if sequences.shape[0] == bsz * nret:
+                    sequences = sequences.view(bsz, nret, -1)[:, 0, :]
+                else:
+                    sequences = sequences[:bsz, :]
+                best_seqs = sequences
+
+            for i in range(bsz):
+                seq = best_seqs[i]
+                resp_ids = seq[prompt_pad_len:].tolist()
+                resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
+                text = template.decode(
+                    resp_ids,
+                    is_finished=True,
+                    first_token=True,
+                    clean_up_tokenization_spaces=False,
+                )
+                out.append((resp_ids, text, decode_mode, prompt_ids_list[i]))
+
+        return out
+
+    @torch.no_grad()
+    def _rollout_many_vllm(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
+        """vLLM colocate rollout backend (token ids)."""
+        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
+        if decode_mode != "greedy":
+            raise ValueError(
+                "vLLM rollout backend currently supports decode_mode=greedy only"
+            )
+
+        max_new_tokens = int(self._cfg("max_new_tokens", 512))
+        temperature = float(self._cfg("temperature", 0.0))
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.repetition_penalty must be > 0"
+            )
+        if temperature < 0:
+            raise ValueError("temperature must be >= 0")
+
+        try:
+            from swift.llm import RequestConfig
+        except Exception as exc:
+            raise RuntimeError(
+                "swift.llm.RequestConfig is required for vLLM rollouts"
+            ) from exc
+
+        request_config = RequestConfig(
+            n=1,
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=1.0,
+            top_k=-1,
+            repetition_penalty=repetition_penalty,
+            stop=None,
+            return_details=True,
+        )
+
+        # Build infer requests using swift.llm.InferRequest (ms-swift stable contract).
+        # NOTE: Do not pass dataset-level GT "objects" into vLLM infer; it may be interpreted as multimodal payload.
+        try:
+            from swift.llm import InferRequest
+        except Exception as exc:
+            raise RuntimeError("swift.llm.InferRequest is required for vLLM rollouts") from exc
+
+        infer_requests: List[Any] = []
+        for s in samples:
+            msgs = s.get("messages")
+            if not isinstance(msgs, list):
+                raise ValueError(
+                    "rollout-matching samples must contain messages (list)"
+                )
+            infer_requests.append(InferRequest(messages=msgs))
+
+        # Ensure vLLM engine init + LoRA sync + infer are all covered by offload.
+        with self._maybe_rollout_offload_context():
+            self._sync_vllm_rollout_model_if_needed()
+            outs: List[Any] = self._vllm_infer_tp_group(infer_requests, request_config)
+
+        if len(outs) != len(infer_requests):
+            raise RuntimeError("vLLM returned unexpected number of outputs")
+
+        results: List[Tuple[List[int], str, str, List[int]]] = []
+        for out in outs:
+            if isinstance(out, Exception):
+                results.append(([], "", decode_mode, []))
+                continue
+            text = ""
+            token_ids: List[int] = []
+            prompt_ids: List[int] = []
+            try:
+                text = str(out.choices[0].message.content or "")
+                token_ids = [int(t) for t in (out.choices[0].token_ids or [])]
+                prompt_ids = [
+                    int(t) for t in (getattr(out, "prompt_token_ids", None) or [])
+                ]
+            except Exception:
+                text = ""
+                token_ids = []
+                prompt_ids = []
+            results.append((token_ids, text, decode_mode, prompt_ids))
+        return results
+
+    @torch.no_grad()
+    def _rollout_many(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
+        backend = self._rollout_backend()
+        if backend == "hf":
+            return self._rollout_many_hf(samples)
+        if backend == "vllm":
+            return self._rollout_many_vllm(samples)
+        raise AssertionError("unreachable")
+
+    def _pop_post_rollout_pack(
+        self,
+    ) -> List[Tuple[Dict[str, Any], Dict[str, Any], int]]:
+        """Select and remove a subset of buffered segments for one packed forward pass (carry-only)."""
+        packing_length = int(self._packing_length())
+        if packing_length <= 0:
+            raise ValueError("packing is enabled but packing_length is invalid")
+        if not self._post_rollout_segments:
+            raise ValueError(
+                "packing is enabled but no post-rollout segments are available"
+            )
+
+        # Always include the oldest segment to avoid starvation.
+        selected_idx: List[int] = []
+        total_len = 0
+
+        enc0, meta0, len0 = self._post_rollout_segments[0]
+        if int(len0) > packing_length:
+            raise ValueError(
+                f"post-rollout packing cannot fit a single segment: encoded_len={int(len0)} > packing_length={packing_length}. "
+                "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
+            )
+        selected_idx.append(0)
+        total_len += int(len0)
+        remaining = packing_length - int(len0)
+
+        for i, (_, _, seg_len) in enumerate(self._post_rollout_segments[1:], start=1):
+            sl = int(seg_len)
+            if sl <= 0:
+                continue
+            if sl <= remaining:
+                selected_idx.append(i)
+                total_len += sl
+                remaining -= sl
+
+        selected = [self._post_rollout_segments[i] for i in selected_idx]
+        for i in reversed(selected_idx):
+            self._post_rollout_segments.pop(i)
+
+        fill = float(total_len) / float(packing_length) if packing_length > 0 else 0.0
+        target = float(self._packing_min_fill_ratio())
+        if fill < target:
+            logger.warning(
+                "post-rollout packing underfilled: fill=%.3f target=%.3f segments=%s buffer=%s",
+                fill,
+                target,
+                len(selected),
+                len(self._post_rollout_segments),
+            )
+        try:
+            self.log(
+                {
+                    "packing/post_rollout_fill": float(fill),
+                    "packing/post_rollout_segments": float(len(selected)),
+                    "packing/post_rollout_buffer": float(
+                        len(self._post_rollout_segments)
+                    ),
+                }
+            )
+        except Exception:
+            pass
+
+        return selected
 
     def _prepare_batch_inputs(self, inputs: List[Mapping[str, Any]]) -> Dict[str, Any]:
         template = self.template
@@ -1199,18 +3251,64 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ot_cost = str(self._cfg("ot_cost", "l2")).lower()
         ot_cost_kind: Literal["l1", "l2"] = "l1" if ot_cost == "l1" else "l2"
 
+        packing_enabled = self._packing_enabled()
+        if packing_enabled and not self._packing_drop_last():
+            raise ValueError(
+                "stage_2 post-rollout packing uses carry-only mode and requires training.packing_drop_last: true"
+            )
+        if packing_enabled and self._packing_buffer_cap() <= 0:
+            raise ValueError(
+                "training.packing_buffer must be a positive int when packing is enabled"
+            )
+        if packing_enabled and self._packing_length() <= 0:
+            raise ValueError(
+                "packing is enabled but no valid packing_length/template.max_length is set (check global_max_length)"
+            )
+
+        # Optional qualitative monitoring dumps: rollout vs GT vs training target.
+        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        do_dump = False
+        dump_cfg = self._monitor_dump_cfg()
+        dump_max_samples = 0
+        dump_max_chars = 0
+        dump_samples: List[Dict[str, Any]] = []
+        if self._should_monitor_dump(global_step=gs):
+            do_dump = True
+            dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
+            dump_max_chars = max(0, int(dump_cfg.get("max_text_chars", 4000) or 4000))
+            # Mark early to avoid duplicate dumps in the same optimizer step.
+            self._monitor_dump_last_step = int(gs)
+
+        # Phase A: rollout generation (no grad, un-packed; batched via backend).
+        t_gen0 = time.perf_counter()
+        rollout_results = self._rollout_many(inputs)
+        if len(rollout_results) != len(inputs):
+            raise RuntimeError("rollout backend returned unexpected number of results")
+        t_gen_s = time.perf_counter() - t_gen0
+
+        # Phase B: strict parse/match/build targets, then teacher-forced encode per sample.
         encoded_batch: List[Dict[str, Any]] = []
-        meta: List[Dict[str, Any]] = []
+        meta_unpacked: List[Dict[str, Any]] = []
+        segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
 
-        for sample in inputs:
+        t_parse_match_s = 0.0
+        t_encode_s = 0.0
+        rollout_lens: List[int] = []
+
+        for sample, (resp_ids, resp_text, decode_mode, prompt_ids) in zip(
+            inputs, rollout_results
+        ):
             if "messages" not in sample:
-                raise ValueError("rollout-matching requires 'messages' in dataset samples")
+                raise ValueError(
+                    "rollout-matching requires 'messages' in dataset samples"
+                )
 
-            # 1) Rollout
-            resp_ids, resp_text, decode_mode, prompt_ids = self._rollout_one(sample)
-
-            # 2) Strict token-aligned parsing + suffix-only prefix trimming
-            parse = parse_rollout_for_matching(tokenizer=tok, response_token_ids=resp_ids)
+            # 1) Strict token-aligned parsing + suffix-only prefix trimming
+            t_pm0 = time.perf_counter()
+            parse = parse_rollout_for_matching(
+                tokenizer=tok, response_token_ids=resp_ids
+            )
+            rollout_lens.append(int(len(parse.response_token_ids)))
             self._maybe_debug_dump_parse_failure(
                 sample=sample,
                 response_text=resp_text,
@@ -1221,7 +3319,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 decode_mode=str(decode_mode),
             )
 
-            # 3) Extract predicted objects (valid only) and map coord tokens -> bins
+            # 2) Extract predicted objects (valid only) and map coord tokens -> bins
             preds: List[GTObject] = []
             pred_meta: List[ParsedPredObject] = []
             for pobj in parse.valid_objects:
@@ -1233,10 +3331,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if pts is None:
                     continue
                 # For matching, keep geometry in norm1000.
-                preds.append(GTObject(index=int(pobj.index), geom_type=pobj.geom_type, points_norm1000=pts, desc=""))
+                preds.append(
+                    GTObject(
+                        index=int(pobj.index),
+                        geom_type=pobj.geom_type,
+                        points_norm1000=pts,
+                        desc="",
+                    )
+                )
                 pred_meta.append(pobj)
 
-            # 4) Extract GT objects and match
+            # 3) Extract GT objects and match
             gts = _extract_gt_objects(sample)
             match = hungarian_match_maskiou(
                 preds=preds,
@@ -1247,7 +3352,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 fp_cost=fp_cost,
                 fn_cost=fn_cost,
             )
-            # 4.1) Build self-context supervision targets for matched pairs.
+            # 3.1) Build self-context supervision targets for matched pairs.
             # If target construction fails, exclude that object from supervision and treat GT as FN.
             prefix_pos: List[int] = []
             prefix_target_bins: List[int] = []
@@ -1283,10 +3388,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     prefix_pos.append(int(local_idx))
                     prefix_target_bins.append(int(tbin))
 
-            fn_gt_indices_final = [i for i in range(len(gts)) if i not in matched_gt_for_supervision]
+            fn_gt_indices_final = [
+                i for i in range(len(gts)) if i not in matched_gt_for_supervision
+            ]
             fn_objs = [gts[i] for i in fn_gt_indices_final]
 
-            # 5) Serialize append fragment (mandatory FN append) and build Y_train ids
+            # 4) Serialize append fragment (mandatory FN append) and build Y_train ids
             max_idx = parse.max_object_index_in_prefix
             start_idx = (max_idx + 1) if max_idx is not None else 1
             append_text = _serialize_append_fragment(
@@ -1294,48 +3401,290 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             append_ids = tok.encode(append_text, add_special_tokens=False)
             # Ignore desc value tokens in the appended tail for CE (GT desc can be noisy).
-            tail_ignore_pos = _find_desc_value_token_positions(tokenizer=tok, token_ids=append_ids)
+            tail_ignore_pos = _find_desc_value_token_positions(
+                tokenizer=tok, token_ids=append_ids
+            )
             y_train_ids = list(parse.prefix_token_ids) + [int(t) for t in append_ids]
+            t_parse_match_s += time.perf_counter() - t_pm0
 
-            # 6) Teacher-forced encoding using the exact token ids (no re-tokenization)
+            # 5) Teacher-forced encoding using the exact token ids (no re-tokenization)
+            t_enc0 = time.perf_counter()
             data_for_encode = dict(sample)
             # Deepcopy messages to avoid in-place mutations across dataloader workers.
             messages = json.loads(json.dumps(sample["messages"]))
-            data_for_encode["messages"] = replace_assistant_response_with_ids(messages, y_train_ids)
-            encoded = template.encode(data_for_encode, return_length=True)
-            encoded_batch.append(encoded)
+            has_assistant = False
+            try:
+                for m in messages:
+                    if isinstance(m, dict) and m.get("role") == "assistant":
+                        has_assistant = True
+                        break
+            except Exception:
+                has_assistant = False
 
-            meta.append(
-                {
-                    "prompt_len": int(len(prompt_ids)),
-                    "prompt_ids": prompt_ids,
-                    "prefix_len": int(len(parse.prefix_token_ids)),
-                    "train_len": int(len(y_train_ids)),
-                    "decode_mode": decode_mode,
-                    "parse_dropped_invalid": int(parse.dropped_invalid),
-                    "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
-                    "parse_truncated": bool(parse.truncated),
-                    "valid_pred_objects": int(len(parse.valid_objects)),
-                    "matched_pairs": match.matched_pairs,
-                    "matched_for_supervision": int(len(matched_gt_for_supervision)),
-                    "gt_objects": int(len(gts)),
-                    "fn_count": int(len(fn_objs)),
-                    "gating_rejections": int(match.gating_rejections),
-                    "excluded_from_supervision": int(excluded),
-                    "prefix_coord_pos": prefix_pos,
-                    "prefix_coord_target_bins": prefix_target_bins,
-                    "tail_ignore_pos": tail_ignore_pos,
-                }
-            )
+            if has_assistant:
+                data_for_encode["messages"] = replace_assistant_response_with_ids(
+                    messages, y_train_ids
+                )
+            else:
+                # Some datasets keep only the user turn in `messages` and store GT separately.
+                # Stage_2 needs an assistant turn to inject token ids for teacher forcing.
+                data_for_encode["messages"] = list(messages) + [
+                    {"role": "assistant", "content": y_train_ids}
+                ]
+            with self._template_train_mode():
+                encoded = template.encode(data_for_encode, return_length=True)
+            t_encode_s += time.perf_counter() - t_enc0
+
+            encoded_len = self._extract_encoded_len(encoded)
+            if int(encoded_len) <= int(len(prompt_ids)):
+                raise ValueError(
+                    "teacher-forced encode produced no assistant span: "
+                    f"prompt_len={int(len(prompt_ids))} encoded_len={int(encoded_len)} train_len={int(len(y_train_ids))} "
+                    f"sample_id={sample.get('sample_id')} base_idx={sample.get('base_idx')}. "
+                    "This indicates the assistant turn was not injected or got truncated; check max_length/truncation settings."
+                )
+
+            if do_dump and len(dump_samples) < dump_max_samples:
+                try:
+                    # Build a compact, human-readable record (strings are clipped).
+                    gt_objs_dump = [
+                        {
+                            "index": int(o.index),
+                            "geom_type": str(o.geom_type),
+                            "points_norm1000": list(o.points_norm1000),
+                            "desc": str(o.desc),
+                        }
+                        for o in gts
+                    ]
+                    pred_objs_dump = [
+                        {
+                            "key": str(pred_meta[i].key) if i < len(pred_meta) else "",
+                            "index": int(o.index),
+                            "geom_type": str(o.geom_type),
+                            "points_norm1000": list(o.points_norm1000),
+                        }
+                        for i, o in enumerate(preds)
+                    ]
+
+                    pair_details: List[Dict[str, Any]] = []
+                    for pred_i, gt_i in match.matched_pairs:
+                        if pred_i < 0 or pred_i >= len(preds):
+                            continue
+                        if gt_i < 0 or gt_i >= len(gts):
+                            continue
+                        iou = _mask_iou_norm1000(
+                            pred_kind=preds[pred_i].geom_type,
+                            pred_points=preds[pred_i].points_norm1000,
+                            gt_kind=gts[gt_i].geom_type,
+                            gt_points=gts[gt_i].points_norm1000,
+                            resolution=mask_res,
+                        )
+                        pair_details.append(
+                            {
+                                "pred_i": int(pred_i),
+                                "gt_i": int(gt_i),
+                                "mask_iou": float(iou),
+                                "pred_index": int(preds[pred_i].index),
+                                "gt_index": int(gts[gt_i].index),
+                                "gt_desc": str(gts[gt_i].desc),
+                            }
+                        )
+
+                    # Per-sample derived quality stats.
+                    gt_n = float(len(gts))
+                    pred_n = float(len(preds))
+                    matched_n = float(len(matched_gt_for_supervision))
+                    prec = (matched_n / pred_n) if pred_n > 0 else 0.0
+                    rec = (matched_n / gt_n) if gt_n > 0 else 0.0
+                    f1 = (
+                        (2.0 * prec * rec / (prec + rec))
+                        if (prec + rec) > 0
+                        else 0.0
+                    )
+
+                    dump_samples.append(
+                        {
+                            "sample_id": sample.get("sample_id"),
+                            "base_idx": sample.get("base_idx"),
+                            "image": sample.get("image"),
+                            "images": sample.get("images"),
+                            "width": sample.get("width"),
+                            "height": sample.get("height"),
+                            "messages": sample.get("messages"),
+                            "rollout_text": self._clip_text(parse.response_text, max_chars=dump_max_chars),
+                            "prefix_text": self._clip_text(parse.prefix_text, max_chars=dump_max_chars),
+                            "append_text": self._clip_text(append_text, max_chars=dump_max_chars),
+                            "train_text": self._clip_text(
+                                tok.decode(
+                                    y_train_ids,
+                                    skip_special_tokens=False,
+                                    clean_up_tokenization_spaces=False,
+                                ),
+                                max_chars=dump_max_chars,
+                            ),
+                            "gt_objects": gt_objs_dump,
+                            "pred_objects": pred_objs_dump,
+                            "match": {
+                                "matched_pairs": list(match.matched_pairs),
+                                "matched_pair_details": pair_details,
+                                "fn_gt_indices": list(match.fn_gt_indices),
+                                "fp_pred_indices": list(match.fp_pred_indices),
+                                "gating_rejections": int(match.gating_rejections),
+                            },
+                            "stats": {
+                                "decode_mode": str(decode_mode),
+                                "parse_dropped_invalid": int(parse.dropped_invalid),
+                                "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
+                                "parse_truncated": bool(parse.truncated),
+                                "valid_pred_objects": int(len(preds)),
+                                "gt_objects": int(len(gts)),
+                                "matched_for_supervision": int(len(matched_gt_for_supervision)),
+                                "excluded_from_supervision": int(excluded),
+                                "fn_count": int(len(fn_objs)),
+                                "precision": float(prec),
+                                "recall": float(rec),
+                                "f1": float(f1),
+                                "matched_maskiou_mean": float(
+                                    (match.matched_maskiou_sum / match.matched_maskiou_count)
+                                    if match.matched_maskiou_count > 0
+                                    else 0.0
+                                ),
+                            },
+                        }
+                    )
+                except Exception:
+                    pass
+
+            meta_entry = {
+                "prompt_len": int(len(prompt_ids)),
+                "prompt_ids": prompt_ids,
+                "rollout_len": int(len(parse.response_token_ids)),
+                "prefix_len": int(len(parse.prefix_token_ids)),
+                "train_len": int(len(y_train_ids)),
+                "encoded_len": int(encoded_len),
+                "decode_mode": decode_mode,
+                "parse_dropped_invalid": int(parse.dropped_invalid),
+                "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
+                "parse_truncated": bool(parse.truncated),
+                "valid_pred_objects": int(len(parse.valid_objects)),
+                "matched_pairs": match.matched_pairs,
+                "matched_for_supervision": int(len(matched_gt_for_supervision)),
+                "matched_maskiou_sum": float(match.matched_maskiou_sum),
+                "matched_maskiou_count": int(match.matched_maskiou_count),
+                "gt_objects": int(len(gts)),
+                "fn_count": int(len(fn_objs)),
+                "gating_rejections": int(match.gating_rejections),
+                "excluded_from_supervision": int(excluded),
+                "prefix_coord_pos": prefix_pos,
+                "prefix_coord_target_bins": prefix_target_bins,
+                "tail_ignore_pos": tail_ignore_pos,
+            }
+
+            segments.append((encoded, meta_entry, int(encoded_len)))
+            if not packing_enabled:
+                encoded_batch.append(encoded)
+                meta_unpacked.append(meta_entry)
 
         from swift.llm import to_device
 
-        batch = to_device(template.data_collator(encoded_batch), self.model.device)
-        batch["_rollout_matching_meta"] = meta
+        # Rank-local instrumentation (no cross-rank aggregation).
+        try:
+            def _p(xs: List[int], q: float) -> float:
+                if not xs:
+                    return 0.0
+                arr = np.asarray(xs, dtype=np.float64)
+                return float(np.percentile(arr, float(q)))
+
+            new_tok_total = float(sum(int(x) for x in rollout_lens))
+            new_tok_mean = float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
+            new_tok_p90 = float(_p(rollout_lens, 90))
+            new_tok_p99 = float(_p(rollout_lens, 99))
+            toks_per_s = float(new_tok_total / float(t_gen_s)) if t_gen_s > 0 else 0.0
+            self.log(
+                {
+                    "time/rollout_generate_s": float(t_gen_s),
+                    "time/rollout_parse_match_s": float(t_parse_match_s),
+                    "time/rollout_teacher_encode_s": float(t_encode_s),
+                    "rollout/gen_new_tokens_total": float(new_tok_total),
+                    "rollout/gen_new_tokens_mean": float(new_tok_mean),
+                    "rollout/gen_new_tokens_p90": float(new_tok_p90),
+                    "rollout/gen_new_tokens_p99": float(new_tok_p99),
+                    "rollout/gen_tokens_per_s": float(toks_per_s),
+                }
+            )
+        except Exception:
+            pass
+
+        if do_dump:
+            try:
+                enabled, m_steps = False, 1
+                try:
+                    enabled, m_steps = self._rollout_buffer_settings()
+                except Exception:
+                    enabled, m_steps = False, 1
+                payload = {
+                    "global_step": int(gs),
+                    "epoch": float(getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0),
+                    "time": float(time.time()),
+                    "meta": {
+                        "rollout_backend": str(self._rollout_backend()),
+                        "decode_mode": str(self._cfg("decode_mode", "greedy")),
+                        "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
+                        "candidate_top_k": int(top_k),
+                        "maskiou_gate": float(gate_thr),
+                        "maskiou_resolution": int(mask_res),
+                        "fp_cost": float(fp_cost),
+                        "fn_cost": float(fn_cost),
+                        "ot_cost": str(ot_cost_kind),
+                        "ot_epsilon": float(ot_eps),
+                        "ot_iters": int(ot_iters),
+                        "packing_enabled": bool(packing_enabled),
+                        "rollout_buffer_enabled": bool(enabled),
+                        "rollout_buffer_m_steps": int(m_steps),
+                        "rollout_generate_s": float(t_gen_s),
+                        "rollout_tokens_per_s": float(toks_per_s) if 'toks_per_s' in locals() else 0.0,
+                    },
+                    "samples": dump_samples,
+                }
+                self._write_monitor_dump(global_step=int(gs), payload=payload)
+                self._monitor_dump_count += 1
+            except Exception:
+                pass
+
+        if packing_enabled:
+            cap = int(self._packing_buffer_cap())
+            self._post_rollout_segments.extend(segments)
+            if cap > 0 and len(self._post_rollout_segments) > cap:
+                raise ValueError(
+                    "post-rollout packing buffer overflow: "
+                    f"buffer_size={len(self._post_rollout_segments)} > packing_buffer={cap}. "
+                    "Mitigations: reduce per_device_train_batch_size, increase training.packing_buffer, "
+                    "or enable multi-pack-per-step in a future change."
+                )
+
+            t_pack0 = time.perf_counter()
+            selected = self._pop_post_rollout_pack()
+            with self._template_packing_enabled():
+                packed = template.data_collator([enc for enc, _, _ in selected])
+            batch = to_device(packed, self.model.device)
+            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
+            try:
+                self.log(
+                    {"time/post_rollout_pack_s": float(time.perf_counter() - t_pack0)}
+                )
+            except Exception:
+                pass
+            return batch
+
+        with self._template_packing_disabled():
+            batch = to_device(template.data_collator(encoded_batch), self.model.device)
+        batch["_rollout_matching_meta"] = meta_unpacked
         return batch
 
     # ------------------------ loss ------------------------ #
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         meta = inputs.pop("_rollout_matching_meta", None)
         if not isinstance(meta, list):
             raise ValueError("rollout-matching trainer requires _rollout_matching_meta")
@@ -1343,64 +3692,75 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Always compute logits; do not rely on model.loss (we need custom masking).
         # NOTE: ms-swift's Seq2SeqTrainer/_prepare_inputs may inject helper keys
         # like compute_loss_func/loss_scale/channel. Strip them before model forward.
-        ignored_keys = {"labels", "compute_loss_func", "loss_scale", "text_position_ids", "channel"}
+        ignored_keys = {
+            "labels",
+            "compute_loss_func",
+            "loss_scale",
+            "text_position_ids",
+            "channel",
+        }
         inputs_for_model = {k: v for k, v in inputs.items() if k not in ignored_keys}
+
+        # Qwen-VL (mRoPE) + padding_free packing:
+        # - Swift templates emit `position_ids` as the 3 mRoPE rows (t/h/w) and a separate
+        #   `text_position_ids` (pure sequential) for packing metadata.
+        # - Transformers' SDPA/eager mask creation may interpret non-unit diffs in position_ids as
+        #   packed-sequence boundaries when `attention_mask is None` (padding_free mode).
+        #   For Qwen3-VL, the mRoPE temporal row is not strictly sequential through vision tokens,
+        #   so we pass a 4-row `position_ids` where the first row is `text_position_ids`.
+        #   This matches HF Qwen3-VL's forward contract and keeps attention/masking correct.
+        try:
+            model_type = str(
+                getattr(getattr(model, "config", None), "model_type", "") or ""
+            )
+        except Exception:
+            model_type = ""
+        text_position_ids = inputs.get("text_position_ids")
+        position_ids = inputs_for_model.get("position_ids")
+        if (
+            model_type.startswith("qwen")
+            and isinstance(text_position_ids, torch.Tensor)
+            and isinstance(position_ids, torch.Tensor)
+            and position_ids.ndim == 3
+            and position_ids.shape[0] == 3
+            and text_position_ids.ndim == 2
+            and text_position_ids.shape == position_ids.shape[1:]
+        ):
+            inputs_for_model["position_ids"] = torch.cat(
+                [text_position_ids.unsqueeze(0), position_ids], dim=0
+            )
+        t_fwd0 = time.perf_counter()
         outputs = model(**inputs_for_model)
+        t_fwd_s = time.perf_counter() - t_fwd0
         logits = outputs.logits
         if logits is None:
             raise ValueError("model did not return logits")
 
         bsz, seq_len, vocab = logits.shape
         coord_token_ids = self._get_coord_token_ids()
-        coord_ids_t = torch.tensor(coord_token_ids, device=logits.device, dtype=torch.long)
+        coord_ids_t = torch.tensor(
+            coord_token_ids, device=logits.device, dtype=torch.long
+        )
         coord_id_set = set(int(i) for i in coord_token_ids if int(i) >= 0)
         coord_id_to_bin = self._coord_id_map()
 
         # Build custom labels for CE (tail non-coord tokens only) and collect
         # coord supervision targets (prefix self-context + tail GT).
         input_ids = inputs["input_ids"]
-        labels_masked = torch.full_like(input_ids, -100)
-
-        supervised_batch: List[int] = []
-        supervised_pos: List[int] = []  # full-seq positions (token positions)
-        supervised_bin: List[int] = []  # target bins in 0..999
-        supervised_is_prefix: List[bool] = []
-
-        for b in range(bsz):
-            m = meta[b]
-            prompt_len = int(m["prompt_len"])
-            prefix_len = int(m["prefix_len"])
-            train_len = int(m["train_len"])
-            prompt_ids = m.get("prompt_ids")
-
-            # Sanity: prompt prefix matches (avoid silent misalignment).
-            if prompt_len <= 0 or prompt_len >= seq_len:
-                raise ValueError(f"invalid prompt_len={prompt_len} for seq_len={seq_len}")
-            if isinstance(prompt_ids, list):
-                teacher_prefix = input_ids[b, :prompt_len].detach().cpu().tolist()
-                if teacher_prefix != prompt_ids:
-                    raise ValueError("prompt tokenization mismatch between generation and teacher-forced encoding")
-
-            prefix_pos_local = m.get("prefix_coord_pos") or []
-            prefix_bins = m.get("prefix_coord_target_bins") or []
-            tail_ignore_pos = m.get("tail_ignore_pos") or []
-            labels_1d, cpos, cbins, cis_prefix = _build_labels_and_coord_targets_for_sample(
-                input_ids_1d=input_ids[b],
-                prompt_len=prompt_len,
-                prefix_len=prefix_len,
-                train_len=train_len,
-                coord_id_set=coord_id_set,
-                coord_id_to_bin=coord_id_to_bin,
-                prefix_coord_pos=prefix_pos_local,
-                prefix_coord_target_bins=prefix_bins,
-                tail_ignore_pos=tail_ignore_pos,
-            )
-            labels_masked[b] = labels_1d
-            for p, tbin, is_pref in zip(cpos, cbins, cis_prefix):
-                supervised_batch.append(b)
-                supervised_pos.append(int(p))
-                supervised_bin.append(int(tbin))
-                supervised_is_prefix.append(bool(is_pref))
+        t_mask0 = time.perf_counter()
+        (
+            labels_masked,
+            supervised_batch,
+            supervised_pos,
+            supervised_bin,
+            supervised_is_prefix,
+        ) = _build_labels_and_coord_targets_for_batch(
+            input_ids=input_ids,
+            meta=meta,
+            coord_id_set=coord_id_set,
+            coord_id_to_bin=coord_id_to_bin,
+        )
+        t_mask_s = time.perf_counter() - t_mask0
 
         # Standard CE on masked labels (mean over supervised tokens).
         logits_next = logits[:, :-1, :]
@@ -1419,8 +3779,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if supervised_pos:
             b_t = torch.tensor(supervised_batch, device=logits.device, dtype=torch.long)
             pos_t = torch.tensor(supervised_pos, device=logits.device, dtype=torch.long)
-            bin_t = torch.tensor(supervised_bin, device=logits.device, dtype=torch.long).clamp(min=0, max=999)
-            is_prefix_t = torch.tensor(supervised_is_prefix, device=logits.device, dtype=torch.bool)
+            bin_t = torch.tensor(
+                supervised_bin, device=logits.device, dtype=torch.long
+            ).clamp(min=0, max=999)
+            is_prefix_t = torch.tensor(
+                supervised_is_prefix, device=logits.device, dtype=torch.bool
+            )
 
             logit_pos = (pos_t - 1).clamp(min=0, max=seq_len - 2)
             logits_full = logits_next[b_t, logit_pos, :]  # [N, V]
@@ -1428,12 +3792,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             # Loss weights come from rollout cfg, falling back to coord_soft_ce_w1_cfg.
             cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
-            sigma = float(self._cfg("target_sigma", float(getattr(cfg, "target_sigma", 2.0))))
-            truncate = self._cfg("target_truncate", getattr(cfg, "target_truncate", None))
-            temperature = float(self._cfg("temperature_coord", float(getattr(cfg, "temperature", 1.0))))
-            soft_w = float(self._cfg("soft_ce_weight", float(getattr(cfg, "soft_ce_weight", 1.0))))
+            sigma = float(
+                self._cfg("target_sigma", float(getattr(cfg, "target_sigma", 2.0)))
+            )
+            truncate = self._cfg(
+                "target_truncate", getattr(cfg, "target_truncate", None)
+            )
+            temperature = float(
+                self._cfg("temperature_coord", float(getattr(cfg, "temperature", 1.0)))
+            )
+            soft_w = float(
+                self._cfg("soft_ce_weight", float(getattr(cfg, "soft_ce_weight", 1.0)))
+            )
             w1_w = float(self._cfg("w1_weight", float(getattr(cfg, "w1_weight", 1.0))))
-            gate_w = float(self._cfg("gate_weight", float(getattr(cfg, "gate_weight", 0.0))))
+            gate_w = float(
+                self._cfg("gate_weight", float(getattr(cfg, "gate_weight", 0.0)))
+            )
 
             out = coord_soft_ce_w1(
                 logits_coord,
@@ -1446,12 +3820,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 normalize_w1=True,
             )
             gate_per = (
-                _coord_vocab_gate_loss(logits_full=logits_full, logits_coord=logits_coord, temperature=temperature)
+                _coord_vocab_gate_loss(
+                    logits_full=logits_full,
+                    logits_coord=logits_coord,
+                    temperature=temperature,
+                )
                 if gate_w != 0.0
                 else logits_full.new_zeros((logits_full.shape[0],), dtype=torch.float32)
             )
 
-            per_tok = soft_w * out.soft_ce_per_token + w1_w * out.w1_per_token + gate_w * gate_per
+            per_tok = (
+                soft_w * out.soft_ce_per_token
+                + w1_w * out.w1_per_token
+                + gate_w * gate_per
+            )
             denom = per_tok.numel()
             if denom > 0:
                 coord_loss = per_tok.mean().to(dtype=ce_loss.dtype)
@@ -1464,38 +3846,205 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Lightweight counters (no geometry metric logging).
         try:
+            n_samples = float(len(meta))
             gt_total = float(sum(int(m.get("gt_objects", 0)) for m in meta))
-            matched_total = float(sum(int(m.get("matched_for_supervision", 0)) for m in meta))
+            matched_total = float(
+                sum(int(m.get("matched_for_supervision", 0)) for m in meta)
+            )
+            pred_total = float(sum(int(m.get("valid_pred_objects", 0)) for m in meta))
+            excluded_total = float(
+                sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
+            )
+
+            # Sample-level rates (helps detect systematic parse failures).
+            n_samples_valid_pred = float(
+                sum(1 for m in meta if int(m.get("valid_pred_objects", 0)) > 0)
+            )
+            n_samples_any_match = float(
+                sum(1 for m in meta if int(m.get("matched_for_supervision", 0)) > 0)
+            )
+            sample_valid_pred_rate = (
+                (n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
+            )
+            sample_any_match_rate = (
+                (n_samples_any_match / n_samples) if n_samples > 0 else 0.0
+            )
+
+            fp_total = max(0.0, pred_total - matched_total)
+            fn_total = max(0.0, gt_total - matched_total)
+            precision = (matched_total / pred_total) if pred_total > 0 else 0.0
+            recall = (matched_total / gt_total) if gt_total > 0 else 0.0
+            f1 = (
+                (2.0 * precision * recall / (precision + recall))
+                if (precision + recall) > 0.0
+                else 0.0
+            )
+
+            dropped_invalid_total = float(
+                sum(int(m.get("parse_dropped_invalid", 0)) for m in meta)
+            )
+            dropped_ambiguous_total = float(
+                sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta)
+            )
+            obj_total = pred_total + dropped_invalid_total + dropped_ambiguous_total
+            obj_valid_frac = (pred_total / obj_total) if obj_total > 0 else 0.0
+            obj_drop_frac = (
+                ((dropped_invalid_total + dropped_ambiguous_total) / obj_total)
+                if obj_total > 0
+                else 0.0
+            )
+
+            trunc_samples = float(sum(1 for m in meta if m.get("parse_truncated")))
+            trunc_rate = (trunc_samples / n_samples) if n_samples > 0 else 0.0
+
+            gate_rejections_total = float(
+                sum(int(m.get("gating_rejections", 0)) for m in meta)
+            )
+            top_k = int(self._cfg("candidate_top_k", 10))
+            gate_rejection_rate = (
+                (gate_rejections_total / (pred_total * float(max(1, top_k))))
+                if pred_total > 0
+                else 0.0
+            )
+
+            matched_iou_sum = float(
+                sum(float(m.get("matched_maskiou_sum", 0.0)) for m in meta)
+            )
+            matched_iou_count = float(
+                sum(int(m.get("matched_maskiou_count", 0)) for m in meta)
+            )
+            matched_iou_mean = (
+                (matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
+            )
+
+            # Supervision coverage diagnostics.
+            excluded_rate = (
+                (excluded_total / (matched_total + excluded_total))
+                if (matched_total + excluded_total) > 0
+                else 0.0
+            )
+            prefix_targets_total = float(
+                sum(
+                    len(m.get("prefix_coord_target_bins") or [])
+                    for m in meta
+                    if isinstance(m, dict)
+                )
+            )
+            prefix_targets_per_matched = (
+                (prefix_targets_total / matched_total) if matched_total > 0 else 0.0
+            )
+            tail_ignore_total = float(
+                sum(
+                    len(m.get("tail_ignore_pos") or [])
+                    for m in meta
+                    if isinstance(m, dict)
+                )
+            )
+            append_len_total = float(
+                sum(
+                    max(0, int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
+                    for m in meta
+                    if isinstance(m, dict)
+                )
+            )
+            tail_ignore_frac = (
+                (tail_ignore_total / append_len_total) if append_len_total > 0 else 0.0
+            )
+
+            # Length stats (prompt/prefix/train/encoded) help diagnose truncation/packing behavior.
+            def _int_list(key: str) -> List[int]:
+                xs: List[int] = []
+                for m in meta:
+                    try:
+                        xs.append(int(m.get(key, 0)))
+                    except Exception:
+                        continue
+                return xs
+
+            prompt_lens = _int_list("prompt_len")
+            prefix_lens = _int_list("prefix_len")
+            train_lens = _int_list("train_len")
+            encoded_lens = _int_list("encoded_len")
+            rollout_lens = _int_list("rollout_len")
+            append_lens: List[int] = []
+            for m in meta:
+                try:
+                    append_lens.append(int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
+                except Exception:
+                    continue
+
+            def _mean(xs: List[int]) -> float:
+                return float(sum(xs) / len(xs)) if xs else 0.0
+
+            def _p(xs: List[int], q: float) -> float:
+                if not xs:
+                    return 0.0
+                arr = np.asarray(xs, dtype=np.float64)
+                return float(np.percentile(arr, float(q)))
+
             self.log(
                 {
-                    f"rollout/parse_dropped_invalid": float(
-                        sum(int(m.get("parse_dropped_invalid", 0)) for m in meta)
+                    "rollout/parse_dropped_invalid": float(dropped_invalid_total),
+                    "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
+                    "rollout/parse_truncated": float(trunc_samples),
+                    "rollout/parse_truncated_rate": float(trunc_rate),
+                    "rollout/parse_obj_total": float(obj_total),
+                    "rollout/parse_obj_valid_frac": float(obj_valid_frac),
+                    "rollout/parse_obj_drop_frac": float(obj_drop_frac),
+                    "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
+                    "rollout/sample_any_match_rate": float(sample_any_match_rate),
+                    "rollout/fn_appended": float(
+                        sum(int(m.get("fn_count", 0)) for m in meta)
                     ),
-                    f"rollout/parse_dropped_ambiguous": float(
-                        sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta)
+                    "rollout/gating_rejections": float(gate_rejections_total),
+                    "rollout/gating_rejection_rate": float(gate_rejection_rate),
+                    "rollout/valid_pred_objects": float(pred_total),
+                    "rollout/gt_objects": gt_total,
+                    "rollout/match_rate": recall,
+                    "rollout/precision": float(precision),
+                    "rollout/recall": float(recall),
+                    "rollout/f1": float(f1),
+                    "rollout/fp": float(fp_total),
+                    "rollout/fn": float(fn_total),
+                    "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
+                    "rollout/pred_per_sample": float(pred_total / n_samples) if n_samples > 0 else 0.0,
+                    "rollout/fp_per_sample": float(fp_total / n_samples) if n_samples > 0 else 0.0,
+                    "rollout/fn_per_sample": float(fn_total / n_samples) if n_samples > 0 else 0.0,
+                    "rollout/matched_maskiou_mean": float(matched_iou_mean),
+                    "rollout/matched_maskiou_count": float(matched_iou_count),
+                    "rollout/excluded_rate": float(excluded_rate),
+                    "rollout/prefix_coord_targets_total": float(prefix_targets_total),
+                    "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
+                    "rollout/tail_ignore_frac": float(tail_ignore_frac),
+                    "rollout/prompt_len_mean": float(_mean(prompt_lens)),
+                    "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
+                    "rollout/prefix_len_mean": float(_mean(prefix_lens)),
+                    "rollout/rollout_len_mean": float(_mean(rollout_lens)),
+                    "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
+                    "rollout/train_len_mean": float(_mean(train_lens)),
+                    "rollout/train_len_p90": float(_p(train_lens, 90)),
+                    "rollout/append_len_mean": float(_mean(append_lens)),
+                    "rollout/append_len_p90": float(_p(append_lens, 90)),
+                    "rollout/encoded_len_mean": float(_mean(encoded_lens)),
+                    "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
+                    "rollout/decode_greedy": float(
+                        sum(1 for m in meta if m.get("decode_mode") == "greedy")
                     ),
-                    f"rollout/parse_truncated": float(
-                        sum(1 for m in meta if m.get("parse_truncated"))
+                    "rollout/decode_beam": float(
+                        sum(1 for m in meta if m.get("decode_mode") == "beam")
                     ),
-                    f"rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
-                    f"rollout/gating_rejections": float(
-                        sum(int(m.get("gating_rejections", 0)) for m in meta)
-                    ),
-                    f"rollout/valid_pred_objects": float(sum(int(m.get("valid_pred_objects", 0)) for m in meta)),
-                    f"rollout/gt_objects": gt_total,
-                    f"rollout/match_rate": (matched_total / gt_total) if gt_total > 0 else 0.0,
-                    f"rollout/decode_greedy": float(sum(1 for m in meta if m.get("decode_mode") == "greedy")),
-                    f"rollout/decode_beam": float(sum(1 for m in meta if m.get("decode_mode") == "beam")),
-                    f"rollout/matched_for_supervision": float(
+                    "rollout/matched_for_supervision": float(
                         sum(int(m.get("matched_for_supervision", 0)) for m in meta)
                     ),
-                    f"rollout/excluded_from_supervision": float(
+                    "rollout/excluded_from_supervision": float(
                         sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
                     ),
-                    f"loss/ce": float(ce_loss.detach().cpu().item()),
-                    f"loss/coord": float(coord_loss.detach().cpu().item()),
-                    f"loss/coord_prefix": float(prefix_coord_mean.detach().cpu().item()),
-                    f"loss/coord_tail": float(tail_coord_mean.detach().cpu().item()),
+                    "loss/ce": float(ce_loss.detach().cpu().item()),
+                    "loss/coord": float(coord_loss.detach().cpu().item()),
+                    "loss/coord_prefix": float(prefix_coord_mean.detach().cpu().item()),
+                    "loss/coord_tail": float(tail_coord_mean.detach().cpu().item()),
+                    "time/forward_s": float(t_fwd_s),
+                    "time/mask_build_s": float(t_mask_s),
                 }
             )
         except Exception:
@@ -1503,12 +4052,74 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return (total, outputs) if return_outputs else total
 
+    def get_train_dataloader(self):
+        dl = super().get_train_dataloader()
+        try:
+            enabled, m_steps = self._rollout_buffer_settings()
+        except Exception:
+            enabled, m_steps = False, 1
+        if enabled and int(m_steps) > 1:
+            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+            return _AccumulationWindowRepeater(dl, gas=gas, m_steps=int(m_steps))
+        return dl
+
     def training_step(self, model, inputs, *args, **kwargs):
         # When using identity collator, `inputs` is a list of raw samples.
-        if isinstance(inputs, list):
-            batch = self._prepare_batch_inputs(inputs)
-            return super().training_step(model, batch, *args, **kwargs)
-        return super().training_step(model, inputs, *args, **kwargs)
+        if not isinstance(inputs, list):
+            return super().training_step(model, inputs, *args, **kwargs)
+
+        # Buffering is a training-only optimization.
+        if not bool(getattr(model, "training", False)):
+            self._rm_rollout_buffer = None
+            return super().training_step(
+                model, self._prepare_batch_inputs(inputs), *args, **kwargs
+            )
+
+        buf = self._maybe_init_rollout_buffer()
+        if buf is None:
+            return super().training_step(
+                model, self._prepare_batch_inputs(inputs), *args, **kwargs
+            )
+
+        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        buf.on_micro_step_start(global_step=gs)
+
+        raw_fp = _fingerprint_raw_micro_batch(inputs)
+
+        def _build_prepared() -> Dict[str, Any]:
+            prepared = self._prepare_batch_inputs(inputs)
+            if not isinstance(prepared, dict):
+                raise ValueError("prepared batch must be a dict")
+            return prepared
+
+        batch, reused = buf.select_batch(
+            global_step=gs, raw_fp=raw_fp, build_prepared=_build_prepared
+        )
+
+        try:
+            payload: Dict[str, float] = {
+                "rollout/buffer_reuse": float(1.0 if reused else 0.0),
+                # window_step0 can be 0 (valid), so do not use `or -1`.
+                "rollout/buffer_window_step0": float(
+                    -1 if buf.window_step0 is None else int(buf.window_step0)
+                ),
+                "rollout/buffer_completed_steps": float(buf.completed_optimizer_steps),
+                "rollout/buffer_micro_idx": float(max(0, int(buf.micro_idx) - 1)),
+            }
+            # Avoid double-counting rollout time on M-steps.
+            if reused:
+                payload.update(
+                    {
+                        "time/rollout_generate_s": 0.0,
+                        "time/rollout_parse_match_s": 0.0,
+                        "time/rollout_teacher_encode_s": 0.0,
+                    }
+                )
+            self.log(payload)
+        except Exception:
+            pass
+
+        return super().training_step(model, batch, *args, **kwargs)
 
     # ------------------------ target construction ------------------------ #
     @staticmethod

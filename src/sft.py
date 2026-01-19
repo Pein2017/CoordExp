@@ -8,7 +8,7 @@ import os
 import re
 from dataclasses import asdict, dataclass
 from multiprocessing import Manager
-from typing import Any
+from typing import Any, Mapping
 
 import torch
 from swift.llm.train.rlhf import SwiftRLHF
@@ -549,19 +549,15 @@ def main():
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
-    # Rollout-matching uses generation and does not support packing/padding-free.
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant == "rollout_matching_sft" and packing_cfg.enabled:
-        raise ValueError(
-            "rollout-matching training requires packing to be disabled. "
-            "Set training.packing: false when custom.trainer_variant=rollout_matching_sft."
-        )
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
     except Exception:
         base_dataset_len = None
-    if packing_cfg.enabled:
+    # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
+    # Do not apply dataset-level packing wrappers for this trainer variant.
+    if packing_cfg.enabled and trainer_variant != "rollout_matching_sft":
         orig_bs = getattr(train_args, "per_device_train_batch_size", None)
         if orig_bs != 1:
             logger.warning(
@@ -615,8 +611,13 @@ def main():
             packing_cfg.drop_last,
             packing_cfg.allow_single_long,
         )
+    elif packing_cfg.enabled and trainer_variant == "rollout_matching_sft":
+        logger.info(
+            "Packing enabled for rollout-matching: dataset packing is disabled; "
+            "trainer will apply dynamic post-rollout packing for the teacher-forced forward pass."
+        )
 
-    if packing_cfg.enabled and packing_cfg.eval_packing:
+    if packing_cfg.enabled and packing_cfg.eval_packing and trainer_variant != "rollout_matching_sft":
         eval_bs = getattr(train_args, "per_device_eval_batch_size", None)
         if eval_bs != 1:
             logger.warning(
@@ -871,7 +872,12 @@ def main():
         else:
             logger.info(f"Validation dataset size: {base_eval_len}")
 
-    if packing_cfg.enabled and packing_cfg.eval_packing and eval_dataset is not None:
+    if (
+        packing_cfg.enabled
+        and packing_cfg.eval_packing
+        and eval_dataset is not None
+        and trainer_variant != "rollout_matching_sft"
+    ):
         eval_dataset = build_packed_dataset(
             eval_dataset,
             template=sft.template,
@@ -1023,11 +1029,31 @@ def main():
     )
     if trainer_variant == "rollout_matching_sft":
         try:
-            rollout_cfg = getattr(custom_config, "extra", {}).get("rollout_matching", {})
-            if isinstance(rollout_cfg, dict):
-                setattr(trainer, "rollout_matching_cfg", rollout_cfg)
-        except Exception:
-            pass
+            extra_cfg = getattr(custom_config, "extra", {})
+            rollout_cfg_raw = (
+                extra_cfg.get("rollout_matching", {}) if isinstance(extra_cfg, Mapping) else {}
+            )
+            rollout_cfg: dict[str, Any] = (
+                dict(rollout_cfg_raw) if isinstance(rollout_cfg_raw, Mapping) else {}
+            )
+            # Inject packing runtime knobs (stage_2 uses dynamic post-rollout packing; dataset packing is disabled).
+            rollout_cfg.update(
+                {
+                    "packing_enabled": bool(packing_cfg.enabled),
+                    "packing_length": int(packing_cfg.packing_length),
+                    "packing_buffer": int(packing_cfg.buffer_size),
+                    "packing_min_fill_ratio": float(packing_cfg.min_fill_ratio),
+                    "packing_drop_last": bool(packing_cfg.drop_last),
+                }
+            )
+            setattr(trainer, "rollout_matching_cfg", rollout_cfg)
+            logger.info(
+                "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s",
+                rollout_cfg.get("rollout_backend", "vllm"),
+                rollout_cfg.get("packing_enabled", False),
+            )
+        except Exception as exc:
+            logger.warning("Failed to inject rollout_matching_cfg into trainer: %s", exc)
     if coord_soft_ce_w1_cfg is not None:
         try:
             setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)

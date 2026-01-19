@@ -589,7 +589,17 @@ class CustomConfig:
             raise ValueError("custom.json_format must be provided")
         json_format = _normalize_json_format(json_format_raw)
 
+        # Support namespaced knobs under `custom.extra` while preserving the legacy
+        # behavior where unknown keys under `custom.*` are stored in `CustomConfig.extra`.
+        nested_extra = data.get("extra")
+        if isinstance(nested_extra, Mapping):
+            data.pop("extra", None)
+        else:
+            nested_extra = None
+
         extra = dict(data)
+        if isinstance(nested_extra, Mapping):
+            extra.update(dict(nested_extra))
 
         if emit_norm is None:
             raise ValueError("custom.emit_norm must be provided")
