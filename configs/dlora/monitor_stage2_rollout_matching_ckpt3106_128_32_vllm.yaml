@@ -1,0 +1,73 @@
+extends: stage2_rollout_matching_ckpt3106.yaml
+
+# Production-like monitoring run (vLLM rollouts) on a small real slice (128/32).
+#
+# Use this when HF backend is too slow for long (8k) completions and you want to
+# validate the stage_2 algorithm end-to-end at (near) production decode settings.
+#
+# Example (4 GPUs):
+#   config=configs/dlora/monitor_stage2_rollout_matching_ckpt3106_128_32_vllm.yaml gpus=0,1,2,3 debug=true bash scripts/train.sh
+#
+# Notes:
+# - vLLM colocate consumes additional GPU memory (separate engine + KV cache).
+# - Keep `custom.extra.rollout_matching.vllm.gpu_memory_utilization` conservative (0.45)
+#   unless you have verified stability on your machine.
+
+training:
+  run_name: monitor_stage2_rollout_matching_ckpt3106_128_32_vllm
+  output_dir: ./output/rollout_matching_sft/monitor_ckpt3106
+  logging_dir: ./tb/rollout_matching_sft/monitor_ckpt3106
+
+  num_train_epochs: 2
+
+  # Keep vLLM parallelism conservative for stability:
+  # TP=4 (one engine across all 4 GPUs) minimizes per-GPU weight/KV cache footprint.
+  # Total requests per vLLM infer call = TP * per_device_train_batch_size = 4.
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  # Keep update cadence comparable to the HF monitor runs.
+  effective_batch_size: 16
+
+  logging_steps: 1
+  logging_first_step: true
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 32
+
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      # (Kept for consistency; vLLM batching is primarily controlled by per_device_train_batch_size.)
+      rollout_generate_batch_size: 1
+
+      # IMPORTANT: do NOT reduce tensor_parallel_size below world_size in colocate mode unless you
+      # explicitly want multiple vLLM engines (and higher per-GPU KV cache/weight footprint).
+      # With 4 GPUs, TP=4 is the safest default for long (16k) contexts.
+      vllm:
+        tensor_parallel_size: 4
+        # Colocate mode is tight on memory (training model + vLLM engine share GPUs).
+        # If you still OOM, lower this further (e.g. 0.35) before touching max_model_len.
+        gpu_memory_utilization: 0.45
+        # Chunk the TP-group gathered requests to reduce peak multimodal prefill VRAM.
+        # This trades throughput for stability in colocate mode.
+        infer_batch_size: 1
+        # Reduce scheduler overhead; we only ever send 4 requests per infer call in this config.
+        max_num_seqs: 4
+        # NOTE: `mm_encoder_tp_mode: data` can reduce peak vision prefill memory,
+        # but we have observed runtime shape issues with our current vLLM stack.
+        # Keep the safe default (`weights`) for production readiness unless you
+        # have verified `data` works on your machine/version.
+        mm_encoder_tp_mode: weights
+        # Keep vLLM initialization robust on multimodal models (avoid huge dummy encoder/profile runs).
+        skip_mm_profiling: true
+        # Reduce vLLM's per-step token budget to lower peak memory in colocate mode.
+        # Must be >= max_model_len, and large enough for your expected prompt+vision tokens.
+        max_num_batched_tokens: 16384
+        # Chunk long prefills to reduce peak memory during the prefill phase.
+        enable_chunked_prefill: true
+        # Some vLLM versions can behave poorly when chunking multimodal (image) inputs.
+        # Keep multimodal inputs unchunked while still chunking long text prefills.
+        disable_chunked_mm_input: true
+        # Hard cap multimodal item counts (defensive: we only use single-image samples here).
+        limit_mm_per_prompt: {image: 1, video: 0}

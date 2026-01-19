@@ -3,11 +3,17 @@
 # This is a PLACEHOLDER config intended for YAML-first iteration.
 # Fill in paths/checkpoints and tune rollout/matching knobs as needed.
 
-extends: configs/base.yaml
+extends: base.yaml
 
 training:
-  # Rollout generation does not support packing/padding-free.
-  packing: false
+  # Stage_2 supports *post-rollout* packing for the teacher-forced forward pass.
+  # Rollout generation remains un-packed (padded batch) inside the trainer.
+  packing: true
+  packing_buffer: 256
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  # eval_packing is ignored for rollout-matching (trainer handles its own collation).
+  eval_packing: false
 
 custom:
   # Opt-in trainer variant (stage_2).
@@ -23,18 +29,76 @@ custom:
   coord_soft_ce_w1:
     enabled: true
 
+  # Tiny smoke run sample limits
+  train_sample_limit: 32
+  val_sample_limit: 16
+
   # Rollout/matching knobs live under custom.extra.rollout_matching.
   extra:
     rollout_matching:
+      # ---------------- Buffered rollouts (E-step / M-step) ----------------
+      # Optional optimization: cache one completed accumulation window worth of prepared
+      # micro-step batches and reuse it across multiple optimizer steps (TrainerState.global_step units).
+      #
+      # Notes:
+      # - `m_steps=1` disables reuse (baseline behavior).
+      # - When enabled with m_steps>1, the stage_2 trainer repeats each gradient accumulation window
+      #   `m_steps` times per rank to avoid silently skipping dataset samples.
+      # - Final partial accumulation windows (< gradient_accumulation_steps) cannot be safely repeated and
+      #   will be processed once; for strict full-window-only reuse set:
+      #     training.dataloader_drop_last: true
+      rollout_buffer:
+        enabled: false
+        m_steps: 1
+
+      # Colocate vLLM offload (peak memory relief during rollouts only).
+      # This wraps vLLM engine init + LoRA load/sync + infer in an offload context.
+      #
+      # Not supported with DeepSpeed/ZeRO in this trainer; if needed, disable offload or switch rollout_backend: hf.
+      offload:
+        enabled: false
+        offload_model: false
+        offload_optimizer: false
+
+      # Rollout backend (default: vLLM colocate). Set to "hf" to bypass vLLM.
+      rollout_backend: vllm
+
+      # Per-rank microbatch size for rollout generation (HF uses padded generate(); vLLM chunks requests).
+      rollout_generate_batch_size: 1
+
+      # Rollout-only vLLM knobs (colocate only; server mode is out-of-scope).
+      vllm:
+        tensor_parallel_size: 4
+        gpu_memory_utilization: 0.45
+        # REQUIRED: must cover prompt_len + max_new_tokens for stage_2 rollouts.
+        max_model_len: 12000
+        # REQUIRED for on-policy LoRA sync.
+        enable_lora: true
+        enable_prefix_caching: true
+        sleep_level: 0
+
       # Decoding (greedy only)
       decode_mode: greedy
-      max_new_tokens: <MAX_NEW_TOKENS>
+      max_new_tokens: 512
       temperature: 0.0
+      # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
+      repetition_penalty: 1.05
+
+      # HF-only safety guard: force EOS early if generation becomes degenerate/repetitive.
+      # (vLLM currently ignores this hook.)
+      repeat_terminate:
+        enabled: true
+        min_new_tokens: 1024
+        max_consecutive_token_repeats: 64
+        ngram_size: 64
+        ngram_repeats: 2
+        # Optional hard cap to prevent runaway "object_k" spam.
+        max_object_keys: 256
 
       # Matching
-      candidate_top_k: <TOP_K>
-      maskiou_gate: <MASKIOU_GATE_THRESHOLD>
-      maskiou_resolution: <MASKIOU_RESOLUTION>
+      candidate_top_k: 5
+      maskiou_gate: 0.3
+      maskiou_resolution: 256
       fp_cost: 0.5
       fn_cost: 2
 
