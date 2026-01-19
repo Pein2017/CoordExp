@@ -1,0 +1,33 @@
+extends: sft_base.yaml
+
+# Example config showing how to train on a merged LVIS + Visual Genome JSONL.
+# Note: multi-dataset fusion is deprecated in CoordExp; combine datasets offline
+# by merging JSONLs and rewriting relative image paths.
+
+training:
+  output_dir: ./output/debug/lvis_vg_mix
+  run_name: debug-lvis-vg-mix
+  num_train_epochs: 1
+
+custom:
+  # 1) Prepare datasets independently:
+  #   - LVIS: already under public_data/lvis/...
+  #   - VG:   see public_data/scripts/prepare_visual_genome.py
+  #
+  # 2) Ensure both are in coord-token format (example):
+  #   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/convert_to_coord_tokens.py \
+  #     --input public_data/vg/rescale_32_768_bbox/train.jsonl \
+  #     --output-tokens public_data/vg/rescale_32_768_bbox/train.coord.jsonl
+  #
+  # 3) Merge JSONLs with path rewriting (recommended: round-robin interleave):
+  #   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/merge_jsonl.py \
+  #     --inputs \
+  #       public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl \
+  #       public_data/vg/rescale_32_768_bbox/train.coord.jsonl \
+  #     --output public_data/mix/lvis_vg/train.coord.jsonl \
+  #     --strategy round_robin
+  train_jsonl: public_data/mix/lvis_vg/train.coord.jsonl
+
+  # For evaluation, you can keep LVIS val only (VG has no official val split).
+  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
+  val_sample_limit: 1000

@@ -141,7 +141,7 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 - **Chat template inspection**:
   - `scripts/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
 
-**Fusion status**: Multi-dataset fusion is temporarily disabled. Training currently assumes a single LVIS JSONL provided via `custom.train_jsonl` / `custom.val_jsonl`. Fusion helpers remain in the codebase for potential future use but are not wired into the runner.
+**Fusion status**: Multi-dataset fusion is supported via `custom.fusion_config`. When set, the runner builds train/eval datasets from the fusion config and ignores `custom.train_jsonl` / `custom.val_jsonl`. See `docs/data/FUSION_DATASET.md`.
 
 For the universal JSONL record contract shared by all domains, see `docs/DATA_JSONL_CONTRACT.md`.
 

@@ -454,11 +454,16 @@ class CustomConfig:
     hard_sample_mining: Optional["HardSampleMiningConfig"] = None  # Deprecated: not wired; will error if provided
     token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
-    fusion_config: Optional[str] = None  # Deprecated: fusion disabled
+    # Optional path to a fusion config (YAML/JSON) describing multiple datasets.
+    # When set, training/eval datasets are built from the fusion config and
+    # `train_jsonl`/`val_jsonl` are ignored by the runner.
+    fusion_config: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if not self.train_jsonl:
-            raise ValueError("custom.train_jsonl must be provided")
+        if not self.fusion_config and not self.train_jsonl:
+            raise ValueError(
+                "custom.train_jsonl must be provided when custom.fusion_config is not set"
+            )
         if not self.user_prompt:
             raise ValueError("custom.user_prompt must be provided")
         if self.emit_norm != "none":
@@ -562,12 +567,13 @@ class CustomConfig:
         object_ordering_raw = data.pop("object_ordering", "sorted")
         val_jsonl = data.pop("val_jsonl", None)
         fusion_config_raw = data.pop("fusion_config", None)
-        if fusion_config_raw not in (None, "", False):
-            raise ValueError(
-                "custom.fusion_config is deprecated while the pipeline focuses on a single LVIS dataset. "
-                "Remove this field to continue."
-            )
-        fusion_config = None
+        fusion_config: Optional[str]
+        if fusion_config_raw in (None, "", False):
+            fusion_config = None
+        elif isinstance(fusion_config_raw, str):
+            fusion_config = fusion_config_raw.strip() or None
+        else:
+            raise TypeError("custom.fusion_config must be a string path when provided")
         visual_kd_raw = data.pop("visual_kd", None)
         visual_kd = VisualKDConfig.from_mapping(visual_kd_raw)
         hsm_raw = data.pop("hard_sample_mining", None)
@@ -657,7 +663,7 @@ class CustomConfig:
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
-            fusion_config=str(fusion_config) if fusion_config is not None else None,
+            fusion_config=fusion_config,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
             hard_sample_mining=hsm_cfg,

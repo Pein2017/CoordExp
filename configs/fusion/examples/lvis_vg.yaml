@@ -1,0 +1,22 @@
+# Example fusion config (Qwen3-VL-style containers).
+#
+# CoordExp v1 semantics:
+# - targets/sources are both accepted and treated the same.
+# - quota_i = round(len(pool_i) * ratio_i)
+# - val_jsonl: null (or missing) skips eval for that dataset.
+
+targets:
+  - dataset: lvis
+    name: lvis
+    train_jsonl: /abs/path/to/lvis_train.jsonl
+    val_jsonl: /abs/path/to/lvis_val.jsonl
+    template: aux_dense
+    ratio: 1.0
+
+sources:  # accepted for compatibility; treated the same as targets
+  - dataset: vg
+    name: vg
+    train_jsonl: /abs/path/to/vg_train.jsonl
+    val_jsonl: null
+    template: aux_dense
+    ratio: 0.2

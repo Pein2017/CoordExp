@@ -8,9 +8,17 @@ root_str = str(ROOT)
 sys.path = [root_str] + [p for p in sys.path if p != root_str and "Qwen3-VL" not in p]
 
 # Ensure ms-swift is importable as `swift` in unit tests.
-# In this workspace layout, CoordExp and ms-swift live under the same parent dir.
-ms_swift_root = (ROOT.parent / "ms-swift").resolve()
-if ms_swift_root.is_dir():
+# This repo may be checked out as a git worktree under `.worktrees/`, so we
+# search upward for a sibling `ms-swift` directory instead of assuming a fixed
+# relative layout.
+ms_swift_root = None
+for base in [ROOT.parent, *ROOT.parents]:
+    candidate = (base / "ms-swift").resolve()
+    if candidate.is_dir():
+        ms_swift_root = candidate
+        break
+
+if ms_swift_root is not None:
     ms_swift_str = str(ms_swift_root)
     # Force ms-swift to be early in sys.path even if it's already present via
     # easy-install.pth (editable install). This prevents accidental resolution
@@ -32,11 +40,25 @@ _purge_modules("swift")
 # Ensure we use this repo's src package even if another is already imported
 _purge_modules("src")
 
-# Eagerly import ms-swift so later imports cannot accidentally lock in a
-# shadowing `swift` module from site-packages (some environments ship one).
-try:  # pragma: no cover - environment guard
+# Proactively import ms-swift to avoid later tests accidentally shadowing the
+# `swift` package with a non-package module.
+try:
     import swift  # noqa: F401
+except Exception as exc:  # pragma: no cover - environment guard
+    raise RuntimeError(
+        "Unit tests require ms-swift to be importable as the `swift` package."
+    ) from exc
+
+if not getattr(sys.modules.get("swift"), "__path__", None):  # pragma: no cover - guard
+    raise RuntimeError(
+        "Resolved `swift` is not a package; ensure ms-swift is first on sys.path."
+    )
+
+# Ensure key submodules are loaded early so that other tests that use
+# `sys.modules.setdefault(\"swift.llm\", ...)` for minimal stubs do not shadow the
+# real ms-swift modules for the rest of the session.
+try:
     import swift.llm  # noqa: F401
     import swift.llm.argument  # noqa: F401
-except Exception:
+except Exception:  # pragma: no cover - environment guard
     pass

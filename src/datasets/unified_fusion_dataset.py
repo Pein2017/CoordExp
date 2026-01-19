@@ -1,11 +1,12 @@
-"""Unified fusion dataset that concatenates JSONL files and uses a single template.
+"""Unified fusion dataset for multi-JSONL dense-caption training.
 
-Deprecated: fusion-based training is currently disabled while we focus on
-single-source LVIS runs. This implementation is retained for potential future
-use but is not wired into the active pipeline.
-
-This avoids template cloning issues by using one dataset with one template.
-Records are tagged with their source dataset for prompt selection.
+This dataset reads multiple JSONL pools (from a FusionConfig) and builds a
+per-epoch sampling schedule. CoordExp v1 semantics:
+- `targets` and `sources` are both accepted in configs, but are treated the same
+  at runtime (no target/source semantic split).
+- Each dataset contributes `round(len(pool) * ratio)` samples per epoch.
+- Evaluation uses any dataset entry with a non-null `val_jsonl`; missing/null
+  `val_jsonl` skips evaluation for that dataset.
 """
 
 from __future__ import annotations
@@ -20,12 +21,13 @@ from torch.utils.data import get_worker_info
 
 from src.config.schema import CoordTokensConfig
 from src.coord_tokens.validator import annotate_coord_tokens
-from ..config.prompts import USER_PROMPT_SUMMARY, get_template_prompts
+
+from ..config.prompts import USER_PROMPT_SUMMARY
 from .builders import JSONLinesBuilder
 from .contracts import validate_conversation_record
 from .dense_caption import LAST_SAMPLE_DEBUG, BaseCaptionDataset
 from .fusion import FusionConfig
-from .fusion_types import DatasetSpec
+from .fusion_types import FusionDatasetSpec
 from .preprocessors import AugmentationPreprocessor, ObjectCapPreprocessor
 from .utils import load_jsonl, sort_objects_by_topleft
 
@@ -34,21 +36,19 @@ from .utils import load_jsonl, sort_objects_by_topleft
 class _PromptResolution:
     user: str
     system: Optional[str]
-    source: Literal["default", "domain", "dataset"]
+    source: Literal["default", "dataset"]
 
 
 @dataclass
 class _DatasetPolicy:
-    spec: DatasetSpec
+    spec: FusionDatasetSpec
     prompts: _PromptResolution
-    augmentation_enabled: bool
-    curriculum_enabled: bool
     max_objects_per_image: Optional[int]
     seed: Optional[int]
 
 
 class FusionCaptionDataset(BaseCaptionDataset):
-    """Fusion dataset that concatenates multiple JSONL sources with a unified template."""
+    """Fusion dataset that samples from multiple JSONL pools with one template."""
 
     def __init__(
         self,
@@ -69,10 +69,8 @@ class FusionCaptionDataset(BaseCaptionDataset):
         shuffle: bool = True,
         sample_limit: Optional[int] = None,
         split: Literal["train", "eval"] = "train",
-        target_eval_jsonl: Optional[str] = None,
-        include_source_eval: bool = True,
         object_ordering: Literal["sorted", "random"] = "sorted",
-    ):
+    ) -> None:
         self._fusion_config = fusion_config
         self._split: Literal["train", "eval"] = split
         self._augmenter = augmenter
@@ -80,7 +78,6 @@ class FusionCaptionDataset(BaseCaptionDataset):
         self.curriculum_state = curriculum_state
         self.coord_tokens = coord_tokens or CoordTokensConfig()
         self._shuffle = bool(shuffle)
-        self._include_source_eval = bool(include_source_eval)
         self._sample_limit = sample_limit
         self._epoch = 0
         self._schedule: list[tuple[str, int]] = []
@@ -93,96 +90,73 @@ class FusionCaptionDataset(BaseCaptionDataset):
         self._hard_sample_plan: dict[str, Any] | None = None
         self.object_ordering: Literal["sorted", "random"] = object_ordering
 
-        self._dataset_order = [
-            fusion_config.target.name,
-            *[src.name for src in fusion_config.sources],
-        ]
-        self._target_name = fusion_config.target.name
-
+        self._dataset_order = [spec.name for spec in fusion_config.datasets]
         default_system_prompt = system_prompt_dense
-        # Load pools for the selected split
-        target_path: Optional[Path]
-        if split == "eval":
-            if target_eval_jsonl:
-                target_path = Path(target_eval_jsonl)
+
+        # Load pools for the selected split.
+        for spec in fusion_config.datasets:
+            path: Optional[Path]
+            if split == "eval":
+                path = spec.val_jsonl
+                if path is None:
+                    # Explicitly skipped in eval.
+                    self._record_pools[spec.name] = []
+                    continue
             else:
-                target_path = fusion_config.target.val_jsonl
-        else:
-            target_path = fusion_config.target.train_jsonl
-        if target_path is None:
-            raise ValueError("Target split is required for FusionCaptionDataset")
+                path = spec.train_jsonl
 
-        target_records = self._load_records(
-            target_path, limit=sample_limit if split == "train" else sample_limit
-        )
-        if not target_records:
-            raise ValueError("FusionCaptionDataset requires at least one target record")
-        self._record_pools[self._target_name] = [
-            self._annotate_record(rec, fusion_config.target) for rec in target_records
-        ]
+            records = self._load_records(
+                path,
+                limit=sample_limit if isinstance(sample_limit, int) and sample_limit > 0 else None,
+            )
+            if not records:
+                if split == "train" and float(spec.ratio) > 0:
+                    raise ValueError(
+                        f"Fusion dataset '{spec.name}' is empty while ratio={spec.ratio}"
+                    )
+                if split == "eval":
+                    raise ValueError(
+                        f"Fusion eval dataset '{spec.name}' is empty (val_jsonl={path})"
+                    )
+            self._record_pools[spec.name] = [
+                self._annotate_record(rec, spec) for rec in records
+            ]
 
-        # Build prompt/policy for target
-        target_prompts = self._resolve_prompts(
-            fusion_config.target,
-            default_user_prompt=user_prompt,
-            default_system_prompt=default_system_prompt,
-            ordering=self.object_ordering,
-        )
-        self._policies[self._target_name] = _DatasetPolicy(
-            spec=fusion_config.target,
-            prompts=target_prompts,
-            augmentation_enabled=fusion_config.target.supports_augmentation,
-            curriculum_enabled=fusion_config.target.supports_curriculum,
-            max_objects_per_image=fusion_config.target.max_objects_per_image,
-            seed=fusion_config.target.seed,
-        )
-
-        # Sources
-        for source in fusion_config.sources:
-            policy = self._resolve_prompts(
-                source,
+            prompts = self._resolve_prompts(
+                spec,
                 default_user_prompt=user_prompt,
                 default_system_prompt=default_system_prompt,
                 ordering=self.object_ordering,
             )
-            self._policies[source.name] = _DatasetPolicy(
-                spec=source,
-                prompts=policy,
-                augmentation_enabled=source.supports_augmentation,
-                curriculum_enabled=source.supports_curriculum,
-                max_objects_per_image=source.max_objects_per_image,
-                seed=source.seed,
+            self._policies[spec.name] = _DatasetPolicy(
+                spec=spec,
+                prompts=prompts,
+                max_objects_per_image=spec.max_objects_per_image,
+                seed=spec.seed,
             )
 
-            # Skip loading for train split when ratio is zero
-            if split == "train" and source.ratio <= 0:
-                self._record_pools[source.name] = []
-                continue
-
-            if split == "eval":
-                if not include_source_eval or source.val_jsonl is None:
-                    self._record_pools[source.name] = []
-                    continue
-                source_path = source.val_jsonl
-            else:
-                source_path = source.train_jsonl
-
-            source_records = self._load_records(
-                source_path,
-                limit=None,  # Keep auxiliary pools intact
-            )
-            if split == "train" and source.ratio > 0 and not source_records:
-                raise ValueError(
-                    f"Fusion source '{source.name}' is empty while ratio={source.ratio}"
+            if (
+                split == "train"
+                and self._augmenter is not None
+                and spec.supports_augmentation
+            ):
+                curriculum_state = (
+                    self.curriculum_state if spec.supports_curriculum else None
                 )
-            self._record_pools[source.name] = [
-                self._annotate_record(rec, source) for rec in source_records
-            ]
+                self._preprocessors_aug[spec.name] = AugmentationPreprocessor(
+                    augmenter=self._augmenter,
+                    bypass_prob=self.bypass_prob,
+                    curriculum_state=curriculum_state,
+                    coord_tokens_enabled=self.coord_tokens.enabled,
+                )
+            if spec.max_objects_per_image is not None:
+                self._preprocessors_cap[spec.name] = ObjectCapPreprocessor(
+                    spec.max_objects_per_image
+                )
 
         # Initialize parent BaseCaptionDataset with a single template instance.
-        all_records = [rec for pool in self._record_pools.values() for rec in pool]
         super().__init__(
-            base_records=all_records,
+            base_records=[],
             template=base_template,
             user_prompt=user_prompt,
             emit_norm=emit_norm,
@@ -196,38 +170,18 @@ class FusionCaptionDataset(BaseCaptionDataset):
             system_prompt_summary=system_prompt_summary,
             coord_tokens=self.coord_tokens,
             seed=seed,
-            dataset_name=self._target_name,
+            dataset_name="fusion",
             allow_empty=True,
             object_ordering=object_ordering,
         )
-
-        # Build preprocessors after parent init sets base attributes.
-        for name, policy in self._policies.items():
-            if (
-                policy.augmentation_enabled
-                and self._split == "train"
-                and self._augmenter is not None
-            ):
-                self._preprocessors_aug[name] = AugmentationPreprocessor(
-                    augmenter=self._augmenter,
-                    bypass_prob=self.bypass_prob,
-                    curriculum_state=(
-                        self.curriculum_state if policy.curriculum_enabled else None
-                    ),
-                    coord_tokens_enabled=self.coord_tokens.enabled,
-                )
-            if policy.max_objects_per_image is not None:
-                self._preprocessors_cap[name] = ObjectCapPreprocessor(
-                    policy.max_objects_per_image
-                )
 
         self.set_epoch(0)
 
     @staticmethod
     def _annotate_record(
-        record: MutableMapping[str, Any], spec: DatasetSpec
+        record: MutableMapping[str, Any], spec: FusionDatasetSpec
     ) -> dict[str, Any]:
-        """Annotate record with source dataset metadata."""
+        """Annotate record with fusion metadata for debugging/analysis."""
         annotated = copy.deepcopy(dict(record))
         metadata = annotated.get("metadata") or {}
         if not isinstance(metadata, dict):
@@ -239,9 +193,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
         return annotated
 
     @staticmethod
-    def _load_records(
-        path: Path, *, limit: Optional[int]
-    ) -> list[MutableMapping[str, Any]]:
+    def _load_records(path: Path, *, limit: Optional[int]) -> list[MutableMapping[str, Any]]:
         records = load_jsonl(str(path), resolve_relative=True)
         records = [cast(MutableMapping[str, Any], rec) for rec in records]
         if limit is not None and limit > 0:
@@ -268,80 +220,59 @@ class FusionCaptionDataset(BaseCaptionDataset):
 
     def _resolve_prompts(
         self,
-        spec: DatasetSpec,
+        spec: FusionDatasetSpec,
         *,
         default_user_prompt: str,
         default_system_prompt: Optional[str],
         ordering: Literal["sorted", "random"] = "sorted",
     ) -> _PromptResolution:
-        coord_mode = "coord_tokens" if getattr(self.coord_tokens, "enabled", False) else "numeric"
-        domain_system, domain_user = get_template_prompts(
-            ordering=ordering, coord_mode=coord_mode
-        )
-        user_prompt = spec.prompt_user or domain_user or default_user_prompt
-        system_prompt = spec.prompt_system or domain_system or default_system_prompt
+        # Dataset-level overrides are supported; otherwise fall back to the
+        # runner's resolved prompts.
+        user_prompt = spec.prompt_user or default_user_prompt
+        system_prompt = spec.prompt_system or default_system_prompt
 
-        if spec.prompt_user or spec.prompt_system:
-            source = "dataset"
-        elif domain_user or domain_system:
-            source = "domain"
-        else:
-            source = "default"
+        source = "dataset" if (spec.prompt_user or spec.prompt_system) else "default"
         return _PromptResolution(user=user_prompt, system=system_prompt, source=source)
 
     def _build_train_schedule(self) -> None:
-        target_pool = self._record_pools.get(self._target_name, [])
-        target_count_raw = len(target_pool)
-        plan = self._hard_sample_plan or {}
-        target_epoch_size = int(plan.get("target_epoch_size") or target_count_raw)
-        target_weights_map = plan.get("weights") if isinstance(plan, dict) else None
-        rng_target = random.Random(
-            self._mix_seed(
-                self.seed,
-                self._epoch,
-                self._policies[self._target_name].seed or 0,
-                0xA1,
-            )
-        )
-        target_indices_all = list(range(target_count_raw))
-        if target_weights_map:
-            target_weights = [float(target_weights_map.get(i, 1.0)) for i in target_indices_all]
-            sampled_target = rng_target.choices(target_indices_all, weights=target_weights, k=target_epoch_size)
-        else:
-            target_indices = list(target_indices_all)
-            if self._shuffle and len(target_indices) > 1:
-                rng_target.shuffle(target_indices)
-            if target_epoch_size == len(target_indices):
-                sampled_target = target_indices
-            elif target_epoch_size < len(target_indices):
-                sampled_target = target_indices[:target_epoch_size]
-            else:
-                extra = rng_target.choices(target_indices, k=target_epoch_size - len(target_indices))
-                sampled_target = target_indices + extra
+        schedule: list[tuple[str, int]] = []
+        counts: dict[str, int] = {}
 
-        schedule: list[tuple[str, int]] = [
-            (self._target_name, idx) for idx in sampled_target
-        ]
-        counts: dict[str, int] = {self._target_name: len(sampled_target)}
-
-        for source in self._fusion_config.sources:
-            policy = self._policies[source.name]
-            pool = self._record_pools.get(source.name, [])
-            if source.ratio > 0 and not pool:
-                raise ValueError(
-                    f"Fusion source '{source.name}' is empty while ratio={source.ratio}"
-                )
-            quota = round(source.ratio * len(sampled_target))
-            if quota <= 0 or not pool:
-                counts[source.name] = 0
+        for dataset_name in self._dataset_order:
+            policy = self._policies.get(dataset_name)
+            pool = self._record_pools.get(dataset_name, [])
+            spec = policy.spec if policy is not None else None
+            if spec is None:
+                counts[dataset_name] = 0
                 continue
 
-            rng_source = random.Random(
-                self._mix_seed(self.seed, self._epoch, policy.seed or 0, 0xB7)
+            pool_len = len(pool)
+            quota = round(pool_len * float(spec.ratio))
+            if quota <= 0:
+                counts[dataset_name] = 0
+                continue
+            if pool_len <= 0:
+                raise ValueError(
+                    f"Fusion dataset '{dataset_name}' is empty while ratio={spec.ratio}"
+                )
+
+            rng = random.Random(
+                self._mix_seed(self.seed, self._epoch, policy.seed or 0, 0xA1)
             )
-            sampled_indices = [rng_source.randrange(len(pool)) for _ in range(quota)]
-            counts[source.name] = quota
-            schedule.extend((source.name, idx) for idx in sampled_indices)
+            indices = list(range(pool_len))
+            if pool_len > 1:
+                rng.shuffle(indices)
+            if quota <= pool_len:
+                sampled = indices[:quota]
+            else:
+                sampled = indices[:]
+                if not spec.sample_without_replacement:
+                    sampled.extend(
+                        rng.randrange(pool_len) for _ in range(quota - pool_len)
+                    )
+
+            counts[dataset_name] = len(sampled)
+            schedule.extend((dataset_name, idx) for idx in sampled)
 
         if self._shuffle and len(schedule) > 1:
             rng_shuffle = random.Random(self._mix_seed(self.seed, self._epoch, 0xC3))
@@ -349,45 +280,41 @@ class FusionCaptionDataset(BaseCaptionDataset):
 
         self._schedule = schedule
         self._epoch_counts = counts
-        self._update_epoch_plan()
+        self._update_epoch_plan(eval_mode=False)
 
     def _build_eval_schedule(self) -> None:
         schedule: list[tuple[str, int]] = []
         counts: dict[str, int] = {}
 
-        for name in self._dataset_order:
-            pool = self._record_pools.get(name, [])
-            counts[name] = len(pool)
-            schedule.extend((name, idx) for idx in range(len(pool)))
+        for dataset_name in self._dataset_order:
+            pool = self._record_pools.get(dataset_name, [])
+            if not pool:
+                continue
+            counts[dataset_name] = len(pool)
+            schedule.extend((dataset_name, idx) for idx in range(len(pool)))
 
         self._schedule = schedule
         self._epoch_counts = counts
         self._update_epoch_plan(eval_mode=True)
 
-    def _update_epoch_plan(self, eval_mode: bool = False) -> None:
+    def _update_epoch_plan(self, *, eval_mode: bool) -> None:
         plan: dict[str, dict[str, Any]] = {}
-        for name in self._dataset_order:
-            policy = self._policies.get(name)
+        for dataset_name in self._dataset_order:
+            policy = self._policies.get(dataset_name)
             if policy is None:
                 continue
-            plan[name] = {
-                "count": self._epoch_counts.get(name, 0),
-                "augmentation": bool(
-                    policy.augmentation_enabled
-                    and self._augmenter is not None
-                    and not eval_mode
-                ),
-                "curriculum": bool(
-                    policy.curriculum_enabled
-                    and self.curriculum_state is not None
-                    and not eval_mode
-                ),
-                "max_objects_per_image": policy.max_objects_per_image,
+            plan[dataset_name] = {
+                "count": self._epoch_counts.get(dataset_name, 0),
+                "eval_mode": eval_mode,
+                "ratio": float(policy.spec.ratio),
                 "prompt_source": policy.prompts.source,
+                "max_objects_per_image": policy.max_objects_per_image,
             }
         self.epoch_plan = plan
 
     def set_hard_sample_plan(self, plan: Optional[MutableMapping[str, Any]]) -> None:
+        # Hard-sample mining is deprecated in CoordExp; keep the hook for
+        # compatibility but do not change fusion scheduling semantics.
         self._hard_sample_plan = dict(plan) if plan is not None else None
 
     def set_epoch(self, epoch: int) -> None:
@@ -416,35 +343,17 @@ class FusionCaptionDataset(BaseCaptionDataset):
             seed_local ^= ((worker.id + 1) * 0xC2B2AE35) & 0xFFFFFFFF
         rng_local = random.Random(seed_local & 0xFFFFFFFF)
 
-        allow_augmentation = (
-            self._split == "train"
-            and policy.augmentation_enabled
-            and self._augmenter is not None
-        )
-        allow_curriculum = (
-            allow_augmentation and policy.curriculum_enabled and self.curriculum_state
-        )
-
         was_augmented = False
         cap_applied = False
         objects_before = len(record.get("objects") or [])
 
         aug_pre = self._preprocessors_aug.get(dataset_name)
-        if allow_augmentation and aug_pre is not None:
+        if self._split == "train" and aug_pre is not None:
             if hasattr(aug_pre, "rng"):
                 aug_pre.rng = rng_local
-            if hasattr(aug_pre, "curriculum_state"):
-                try:
-                    aug_pre.curriculum_state = (
-                        self.curriculum_state if allow_curriculum else None
-                    )
-                except Exception:
-                    pass
             processed = aug_pre(record)
             if processed is None:
-                raise ValueError(
-                    "Preprocessor removed the record; dataset does not duplicate samples"
-                )
+                raise ValueError("Preprocessor removed the record; dataset does not duplicate samples")
             record = processed
             was_augmented = True
 
@@ -454,18 +363,14 @@ class FusionCaptionDataset(BaseCaptionDataset):
                 cap_pre.rng = rng_local
             capped = cap_pre(record)
             if capped is None:
-                raise ValueError(
-                    "Preprocessor removed the record; dataset does not duplicate samples"
-                )
+                raise ValueError("Preprocessor removed the record; dataset does not duplicate samples")
             record = capped
             objects_after = len(record.get("objects") or [])
-            cap_applied = objects_after < objects_before or (
-                objects_before > policy.max_objects_per_image
-            )
+            cap_applied = objects_after < objects_before or (objects_before > policy.max_objects_per_image)
         else:
             objects_after = len(record.get("objects") or [])
 
-        # Apply ordering or randomization for ablations
+        # Apply ordering or randomization for ablations.
         objects_list = record.get("objects") or []
         if isinstance(objects_list, list) and objects_list:
             if self.object_ordering == "sorted":
@@ -478,12 +383,13 @@ class FusionCaptionDataset(BaseCaptionDataset):
         if self.coord_tokens.enabled:
             annotate_coord_tokens(record)
 
-        # Build conversation
+        # Build conversation (dense-caption path).
         mode = self.mode
         prompts = policy.prompts
         system_prompt = prompts.system
         if mode == "summary" and self.system_prompt_summary is not None:
             system_prompt = self.system_prompt_summary
+
         builder = JSONLinesBuilder(
             user_prompt=USER_PROMPT_SUMMARY if mode == "summary" else prompts.user,
             emit_norm=self.emit_norm,
@@ -493,12 +399,8 @@ class FusionCaptionDataset(BaseCaptionDataset):
         )
         merged = builder.build_many([record])
         conversation_messages = copy.deepcopy(merged.get("messages", []) or [])
-
         if system_prompt:
-            conversation_messages = [
-                {"role": "system", "content": system_prompt},
-                *conversation_messages,
-            ]
+            conversation_messages = [{"role": "system", "content": system_prompt}, *conversation_messages]
 
         original_system = getattr(self.template, "system", None)
         try:
@@ -521,17 +423,10 @@ class FusionCaptionDataset(BaseCaptionDataset):
                 encoded[key] = copy.deepcopy(merged[key])
 
         try:
-            max_poly = 0
-            for obj in record.get("objects") or []:
-                if "poly_points" in obj:
-                    max_poly = max(max_poly, int(obj.get("poly_points") or 0))
             info = {
                 "dataset": dataset_name,
                 "base_idx": base_idx,
                 "objects": objects_after,
-                "max_poly_points": max_poly,
-                "width": record.get("width"),
-                "height": record.get("height"),
                 "mode": mode,
                 "prompt_source": prompts.source,
                 "augmentation_enabled": was_augmented,
@@ -554,42 +449,6 @@ class FusionCaptionDataset(BaseCaptionDataset):
             pass
 
         return encoded
-
-    @property
-    def aux_quota(self) -> dict[str, int]:
-        """Per-epoch auxiliary sample counts for debugging/telemetry."""
-        return {k: v for k, v in self._epoch_counts.items() if k != self._target_name}
-
-    def set_curriculum_state(self, state: MutableMapping[str, Any]) -> None:
-        self.curriculum_state = state
-        for name, aug in self._preprocessors_aug.items():
-            policy = self._policies.get(name)
-            if policy and policy.curriculum_enabled:
-                try:
-                    aug.curriculum_state = state
-                except Exception:
-                    pass
-
-    def make_target_eval_dataset(self, *, mine_clean: bool = False) -> BaseCaptionDataset:
-        policy = self._policies[self._target_name]
-        use_aug = policy.augmentation_enabled and self._augmenter is not None and not mine_clean
-        return BaseCaptionDataset(
-            base_records=self._record_pools[self._target_name],
-            template=self.template,
-            user_prompt=policy.prompts.user,
-            emit_norm=self.emit_norm,
-            json_format=self.json_format,
-            augmenter=self._augmenter if use_aug else None,
-            bypass_prob=0.0 if mine_clean else self.bypass_prob,
-            curriculum_state=None,
-            use_summary=self.use_summary,
-            system_prompt_dense=self.system_prompt_dense,
-            system_prompt_summary=self.system_prompt_summary,
-            seed=self.seed,
-            dataset_name=self._target_name,
-            allow_empty=False,
-            object_ordering=self.object_ordering,
-        )
 
 
 # Backward compatibility alias

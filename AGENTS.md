@@ -26,7 +26,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Current Priorities
 - Broaden datasets beyond telecom; validate coord-token + expectation decoding and order-invariant matching.
 - Iterate via YAML in `configs/` first; keep compatibility with `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
-- Maintain single-dataset training (fusion deprecated) while packing becomes the default efficiency lever.
+- Maintain single-dataset training as the default; fusion-config training is legacy/experimental; packing remains the default efficiency lever.
 
 ## Codebase Map
 - `src/` core: `sft.py` entry, `config/loader.py` (YAML merge + prompt resolve), datasets/augment/collators, coord token adapters, callbacks, trainers, eval/infer.
@@ -47,7 +47,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Config Workflow (YAML-first)
 - CLI is minimal: `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`.
 - Inheritance via `extends`/`inherit`; cycles fail fast. Prompt overrides in YAML are **disabled**—edit `src/config/prompts.py`.
-- Required: `custom.train_jsonl` (or `custom.jsonl`) and `custom.user_prompt`; `ROOT_IMAGE_DIR` auto-set from the train JSONL dir if unset.
+- Required: `custom.user_prompt` and either (`custom.train_jsonl` / `custom.jsonl`) OR `custom.fusion_config`; `ROOT_IMAGE_DIR` auto-set from the JSONL/fusion-config dir if unset.
 - `custom.use_summary` toggles summary mode; ordering controlled by `custom.object_ordering` (`sorted`/`random`).
 - `custom.coord_tokens.enabled` applies the template adapter; if data are pre-tokenized, set `custom.coord_tokens.skip_bbox_norm: true`.
 - KD guards: enabling GKD or visual KD requires `rlhf.teacher_model`; vocab sizes must match teacher/student.
@@ -61,7 +61,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Training Loop Guardrails (sft.py)
 - Always call `sft.prepare_model(...)` (already done in entrypoint) before trainer to ensure LoRA/PEFT wrapping; otherwise full weights train/save.
 - Coord-offset adapter: enable via `custom.coord_offset`; ids must fit tokenizer vocab; module is added to `modules_to_save` and hooks are reattached after PEFT wrap.
-- Fusion is **deprecated**; `custom.fusion_config` will error—use single JSONL source.
+- Fusion is supported (legacy/experimental): set `custom.fusion_config` to a fusion YAML/JSON; it overrides `custom.train_jsonl` / `custom.val_jsonl`. Prefer offline JSONL merge when possible.
 - Packing: enabling forces `per_device_train_batch_size=1` and requires finite `max_steps`; `_parse_packing_config` uses template/global_max_length. Eval packing is opt-in (`training.eval_packing`).
 - Save-delay: `training.save_delay_steps|epochs` or structured `save_delay_config`; checkpoints blocked until the delay passes.
 - Augmentation: YAML-built pipeline (ops registered via `datasets/augmentation/ops`); curriculum requires the augmenter and a computable `total_steps`.
