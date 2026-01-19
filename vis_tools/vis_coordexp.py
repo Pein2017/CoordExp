@@ -15,18 +15,17 @@ Configuration is controlled via the `CONFIG` object below.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional
 
 from PIL import Image
 from tqdm import tqdm
 
 from src.common.geometry import pair_points
-
 
 # ---------------------- Configuration ---------------------- #
 
@@ -211,8 +210,12 @@ def run_inference_if_needed(cfg: Config) -> Path:
 
 
 def parse_args() -> Config:
-    parser = argparse.ArgumentParser(description="Visualization for CoordExp unified outputs (pred.jsonl with inline gt)")
-    parser.add_argument("--pred_jsonl", required=True, help="Existing pred.jsonl containing gt and pred")
+    parser = argparse.ArgumentParser(
+        description="Visualization for CoordExp unified outputs (pred.jsonl with inline gt)"
+    )
+    parser.add_argument(
+        "--pred_jsonl", required=True, help="Existing pred.jsonl containing gt and pred"
+    )
     parser.add_argument("--save_dir", default="vis_out")
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
