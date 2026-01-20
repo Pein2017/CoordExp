@@ -9,6 +9,7 @@ Authoritative requirements live under:
 - `openspec/changes/2026-01-15-add-rollout-matching-trainer/specs/rollout-matching-sft/spec.md`
 - `openspec/changes/2026-01-16-add-stage2-post-rollout-packing/specs/rollout-matching-sft/spec.md`
 - `openspec/changes/2026-01-19-add-stage2-rollout-buffer-offload/specs/rollout-matching-sft/spec.md`
+- `openspec/changes/2026-01-19-update-stage2-post-rollout-packing-binpacking/specs/rollout-matching-sft/spec.md`
 
 ## What Stage-2 Does (One Forward Pass)
 
@@ -33,6 +34,8 @@ Key policies:
   - Rollout generation remains un-packed (padded batch) and the trainer temporarily disables
     `template.padding_free/template.packing` during rollouts.
   - Stage_2 uses **dynamic post-rollout packing inside the trainer** (dataset-level packing wrappers are not used).
+  - Selection uses a deterministic, ms-swift-like constant-volume binpacking heuristic; the `binpacking` dependency is
+    required when packing is enabled.
   - Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
 - The rollout prefix is treated as immutable in token space:
   - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
@@ -81,7 +84,8 @@ Buffered rollouts (E-step / M-step reuse):
   samples.
 - Final partial accumulation windows (< `gradient_accumulation_steps`) are processed once and MUST NOT be repeated.
   If you want strict reuse only on full windows, set `training.dataloader_drop_last: true`.
-- Evaluation/prediction forces `m_steps=1` (buffering disabled) to keep metrics interpretable.
+- Evaluation/prediction forces `m_steps=1` (buffering disabled) to keep metrics interpretable,
+  and uses a production-style evaluator (rollout -> parse -> match only; no teacher-forced loss).
 - Checkpoint/resume: the buffer is runtime-only and starts empty after resume (first step regenerates).
 
 Colocate vLLM offload (peak memory relief during rollouts):
@@ -121,6 +125,29 @@ From repo root:
 4 GPUs:
 
 `PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
+
+## Evaluation (Production-Style)
+
+Stage_2 evaluation (`training.eval_strategy`/`training.eval_steps`) runs a production-style
+pipeline on `custom.val_jsonl`:
+
+rollout (no grad) -> strict parse -> Hungarian match -> report metrics
+
+Important:
+- Eval intentionally **skips** teacher-forced encoding and loss computation to keep eval fast and
+  reflective of real rollout performance on unseen data.
+- As a result, Stage_2 eval does **not** report `eval_loss`.
+
+Eval metrics:
+- `eval_rollout_precision`, `eval_rollout_recall`, `eval_rollout_f1`
+- `eval_rollout_pred_objects`, `eval_rollout_gt_objects`, `eval_rollout_matched`, `eval_rollout_fp`, `eval_rollout_fn`
+- Parse health: `eval_rollout_parse_truncated_rate`, `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
+- Sample health: `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
+- Geometry quality: `eval_rollout_matched_maskiou_mean`
+
+Best-checkpoint selection:
+- For Stage_2 runs, prefer `training.metric_for_best_model: eval_rollout_f1` and
+  `training.greater_is_better: true`.
 
 ## Health Counters to Watch
 
