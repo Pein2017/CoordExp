@@ -66,8 +66,12 @@ custom:
       # Per-rank microbatch size for rollout generation (HF uses padded generate(); vLLM chunks requests).
       rollout_generate_batch_size: 1
 
-      # Rollout-only vLLM knobs (colocate only; server mode is out-of-scope).
+      # Rollout-only vLLM knobs.
+      # - mode: colocate (default): learner instantiates a local vLLM engine (uses VRAM on training GPUs).
+      # - mode: server (optional): learner connects to a pre-launched `swift rollout` server and generates rollouts on
+      #   dedicated GPUs with in-memory weight sync.
       vllm:
+        mode: colocate  # colocate|server
         tensor_parallel_size: 4
         gpu_memory_utilization: 0.45
         # REQUIRED: must cover prompt_len + max_new_tokens for stage_2 rollouts.
@@ -76,6 +80,16 @@ custom:
         enable_lora: true
         enable_prefix_caching: true
         sleep_level: 0
+        # Server mode connectivity + sync (ignored in colocate mode):
+        # server:
+        #   timeout_s: 240.0
+        #   infer_timeout_s: null
+        #   servers:
+        #     - base_url: http://127.0.0.1:8000
+        #       group_port: 51216
+        # sync:
+        #   mode: full        # full|adapter|auto
+        #   fallback_to_full: true
 
       # Decoding (greedy only)
       decode_mode: greedy
