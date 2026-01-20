@@ -217,6 +217,7 @@ class _ForceEosOnRepeatGuard:
 class ParsedPredObject:
     key: str
     index: int
+    desc: str
     geom_type: GeomType
     coord_token_indices: List[
         int
@@ -440,6 +441,7 @@ def _scan_rollout_tokens(
                         current_object = ParsedPredObject(
                             key=key,
                             index=n,
+                            desc="",
                             geom_type="bbox_2d",  # placeholder until validated
                             coord_token_indices=[],
                             value_span=(global_char_pos, -1),
@@ -599,6 +601,7 @@ def _validate_objects_strict(
             ParsedPredObject(
                 key=obj.key,
                 index=int(obj.index),
+                desc=str(desc).strip(),
                 geom_type=geom_key,  # type: ignore[assignment]
                 coord_token_indices=coord_idx,
                 value_span=obj.value_span,
@@ -1685,6 +1688,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._monitor_dump_last_step: Optional[int] = None
         self._monitor_dump_count: int = 0
 
+        # Optional semantic desc monitoring (lazy init; metrics only).
+        self._desc_semantic_encoder: Any = None
+        self._desc_semantic_encoder_sig: Any = None
+
         # Mutable config injected by src/sft.py after construction.
         self.rollout_matching_cfg: Mapping[str, Any] = {}
 
@@ -1701,6 +1708,45 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _monitor_dump_cfg(self) -> Mapping[str, Any]:
         cfg = self._cfg("monitor_dump", {}) or {}
         return cfg if isinstance(cfg, Mapping) else {}
+
+    def _desc_monitor_cfg(self) -> Mapping[str, Any]:
+        cfg = self._cfg("desc_monitor", {}) or {}
+        return cfg if isinstance(cfg, Mapping) else {}
+
+    def _get_desc_semantic_encoder(self, cfg: Mapping[str, Any]) -> Any:
+        """Return a cached semantic encoder instance, or None if disabled/unavailable."""
+
+        mode = str(cfg.get("mode", "semantic") or "semantic").strip().lower()
+        if mode not in {"semantic", "both"}:
+            return None
+
+        try:
+            from src.metrics.semantic_desc import SemanticDescEncoder
+        except Exception:
+            return None
+
+        model_name = str(
+            cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+        )
+        device = str(cfg.get("semantic_device", "cpu"))
+        batch_size = int(cfg.get("semantic_batch_size", 64) or 64)
+        max_length = int(cfg.get("semantic_max_length", 64) or 64)
+
+        sig = (model_name, device, batch_size, max_length)
+        enc = getattr(self, "_desc_semantic_encoder", None)
+        enc_sig = getattr(self, "_desc_semantic_encoder_sig", None)
+        if enc is not None and enc_sig == sig:
+            return enc
+
+        enc = SemanticDescEncoder(
+            model_name=model_name,
+            device=device,
+            batch_size=batch_size,
+            max_length=max_length,
+        )
+        setattr(self, "_desc_semantic_encoder", enc)
+        setattr(self, "_desc_semantic_encoder_sig", sig)
+        return enc
 
     def _is_main_process(self) -> bool:
         acc = getattr(self, "accelerator", None)
@@ -3468,6 +3514,94 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 fp_cost=fp_cost,
                 fn_cost=fn_cost,
             )
+
+            # 3.0) Optional desc monitor (metrics only; does not affect loss).
+            desc_cfg = self._desc_monitor_cfg()
+            desc_monitor_ran = False
+            desc_pairs_total = 0
+            desc_exact_ok = 0
+            desc_sem_ok = 0
+            desc_sem_sim_sum = 0.0
+            desc_sem_sim_count = 0
+            desc_sem_enabled = 0
+            if isinstance(desc_cfg, Mapping) and bool(desc_cfg.get("enabled", False)):
+                every = int(desc_cfg.get("every_steps", 0) or 0)
+                if every <= 0:
+                    every = int(getattr(getattr(self, "args", None), "logging_steps", 0) or 0)
+                if every <= 0:
+                    every = 1
+                if int(gs) % int(every) == 0:
+                    desc_monitor_ran = True
+                    max_pairs = int(desc_cfg.get("max_pairs", 64) or 64)
+                    thr = float(desc_cfg.get("semantic_threshold", 0.6) or 0.6)
+                    mode = str(desc_cfg.get("mode", "semantic") or "semantic").strip().lower()
+
+                    try:
+                        from src.metrics.semantic_desc import normalize_desc
+                    except Exception:
+                        normalize_desc = None  # type: ignore[assignment]
+
+                    pairs = list(match.matched_pairs)
+                    if max_pairs > 0 and len(pairs) > max_pairs:
+                        pairs = pairs[:max_pairs]
+
+                    norm_pairs: List[Tuple[str, str, bool]] = []
+                    uniq: set[str] = set()
+                    for pred_i, gt_i in pairs:
+                        if pred_i < 0 or pred_i >= len(pred_meta):
+                            continue
+                        if gt_i < 0 or gt_i >= len(gts):
+                            continue
+                        pred_desc_raw = str(getattr(pred_meta[pred_i], "desc", "") or "")
+                        gt_desc_raw = str(getattr(gts[gt_i], "desc", "") or "")
+                        if normalize_desc is None:
+                            p = pred_desc_raw.strip().lower()
+                            g = gt_desc_raw.strip().lower()
+                        else:
+                            p = normalize_desc(pred_desc_raw)
+                            g = normalize_desc(gt_desc_raw)
+                        exact_ok = bool(p) and (p == g)
+                        if exact_ok:
+                            desc_exact_ok += 1
+                        if p and g:
+                            norm_pairs.append((p, g, bool(exact_ok)))
+                            uniq.add(p)
+                            uniq.add(g)
+
+                    desc_pairs_total = int(len(norm_pairs))
+
+                    if mode in {"semantic", "both"} and desc_pairs_total > 0:
+                        enc = None
+                        try:
+                            enc = self._get_desc_semantic_encoder(desc_cfg)
+                        except Exception:
+                            enc = None
+
+                        if enc is not None:
+                            # Best-effort: if model load fails (missing cache/network), skip semantics.
+                            try:
+                                emb = enc.encode_norm_texts(sorted(uniq))
+                            except Exception:
+                                emb = {}
+                                enc = None
+
+                        if enc is not None:
+                            desc_sem_enabled = 1
+                            for p, g, exact_ok in norm_pairs:
+                                pv = emb.get(p)
+                                gv = emb.get(g)
+                                if pv is None or gv is None:
+                                    ok = bool(exact_ok)
+                                    sim = None
+                                else:
+                                    sim = float(np.dot(pv, gv))
+                                    ok = bool(exact_ok or sim >= thr)
+                                if ok:
+                                    desc_sem_ok += 1
+                                if sim is not None:
+                                    desc_sem_sim_sum += float(sim)
+                                    desc_sem_sim_count += 1
+
             # 3.1) Build self-context supervision targets for matched pairs.
             # If target construction fails, exclude that object from supervision and treat GT as FN.
             prefix_pos: List[int] = []
@@ -3578,6 +3712,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             "index": int(o.index),
                             "geom_type": str(o.geom_type),
                             "points_norm1000": list(o.points_norm1000),
+                            "desc": str(getattr(pred_meta[i], "desc", "") or "")
+                            if i < len(pred_meta)
+                            else "",
                         }
                         for i, o in enumerate(preds)
                     ]
@@ -3602,6 +3739,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 "mask_iou": float(iou),
                                 "pred_index": int(preds[pred_i].index),
                                 "gt_index": int(gts[gt_i].index),
+                                "pred_desc": str(getattr(pred_meta[pred_i], "desc", "") or "")
+                                if pred_i < len(pred_meta)
+                                else "",
                                 "gt_desc": str(gts[gt_i].desc),
                             }
                         )
@@ -3694,6 +3834,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "prefix_coord_pos": prefix_pos,
                 "prefix_coord_target_bins": prefix_target_bins,
                 "tail_ignore_pos": tail_ignore_pos,
+                # Optional desc monitor (metrics-only).
+                "desc_monitor_ran": bool(desc_monitor_ran),
+                "desc_pairs_total": int(desc_pairs_total),
+                "desc_exact_ok": int(desc_exact_ok),
+                "desc_sem_ok": int(desc_sem_ok),
+                "desc_sem_sim_sum": float(desc_sem_sim_sum),
+                "desc_sem_sim_count": int(desc_sem_sim_count),
+                "desc_sem_enabled": int(desc_sem_enabled),
             }
 
             segments.append((encoded, meta_entry, int(encoded_len)))
@@ -4090,71 +4238,115 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 arr = np.asarray(xs, dtype=np.float64)
                 return float(np.percentile(arr, float(q)))
 
-            self.log(
-                {
-                    "rollout/parse_dropped_invalid": float(dropped_invalid_total),
-                    "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
-                    "rollout/parse_truncated": float(trunc_samples),
-                    "rollout/parse_truncated_rate": float(trunc_rate),
-                    "rollout/parse_obj_total": float(obj_total),
-                    "rollout/parse_obj_valid_frac": float(obj_valid_frac),
-                    "rollout/parse_obj_drop_frac": float(obj_drop_frac),
-                    "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
-                    "rollout/sample_any_match_rate": float(sample_any_match_rate),
-                    "rollout/fn_appended": float(
-                        sum(int(m.get("fn_count", 0)) for m in meta)
-                    ),
-                    "rollout/gating_rejections": float(gate_rejections_total),
-                    "rollout/gating_rejection_rate": float(gate_rejection_rate),
-                    "rollout/valid_pred_objects": float(pred_total),
-                    "rollout/gt_objects": gt_total,
-                    "rollout/match_rate": recall,
-                    "rollout/precision": float(precision),
-                    "rollout/recall": float(recall),
-                    "rollout/f1": float(f1),
-                    "rollout/fp": float(fp_total),
-                    "rollout/fn": float(fn_total),
-                    "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
-                    "rollout/pred_per_sample": float(pred_total / n_samples) if n_samples > 0 else 0.0,
-                    "rollout/fp_per_sample": float(fp_total / n_samples) if n_samples > 0 else 0.0,
-                    "rollout/fn_per_sample": float(fn_total / n_samples) if n_samples > 0 else 0.0,
-                    "rollout/matched_maskiou_mean": float(matched_iou_mean),
-                    "rollout/matched_maskiou_count": float(matched_iou_count),
-                    "rollout/excluded_rate": float(excluded_rate),
-                    "rollout/prefix_coord_targets_total": float(prefix_targets_total),
-                    "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
-                    "rollout/tail_ignore_frac": float(tail_ignore_frac),
-                    "rollout/prompt_len_mean": float(_mean(prompt_lens)),
-                    "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
-                    "rollout/prefix_len_mean": float(_mean(prefix_lens)),
-                    "rollout/rollout_len_mean": float(_mean(rollout_lens)),
-                    "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
-                    "rollout/train_len_mean": float(_mean(train_lens)),
-                    "rollout/train_len_p90": float(_p(train_lens, 90)),
-                    "rollout/append_len_mean": float(_mean(append_lens)),
-                    "rollout/append_len_p90": float(_p(append_lens, 90)),
-                    "rollout/encoded_len_mean": float(_mean(encoded_lens)),
-                    "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
-                    "rollout/decode_greedy": float(
-                        sum(1 for m in meta if m.get("decode_mode") == "greedy")
-                    ),
-                    "rollout/decode_beam": float(
-                        sum(1 for m in meta if m.get("decode_mode") == "beam")
-                    ),
-                    "rollout/matched_for_supervision": float(
-                        sum(int(m.get("matched_for_supervision", 0)) for m in meta)
-                    ),
-                    "rollout/excluded_from_supervision": float(
-                        sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
-                    ),
-                    "loss/ce": float(ce_loss.detach().cpu().item()),
-                    "loss/coord": float(coord_loss.detach().cpu().item()),
-                    "loss/coord_prefix": float(prefix_coord_mean.detach().cpu().item()),
-                    "loss/coord_tail": float(tail_coord_mean.detach().cpu().item()),
-                    "time/forward_s": float(t_fwd_s),
-                    "time/mask_build_s": float(t_mask_s),
-                }
-            )
+            payload: Dict[str, float] = {
+                "rollout/parse_dropped_invalid": float(dropped_invalid_total),
+                "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
+                "rollout/parse_truncated": float(trunc_samples),
+                "rollout/parse_truncated_rate": float(trunc_rate),
+                "rollout/parse_obj_total": float(obj_total),
+                "rollout/parse_obj_valid_frac": float(obj_valid_frac),
+                "rollout/parse_obj_drop_frac": float(obj_drop_frac),
+                "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
+                "rollout/sample_any_match_rate": float(sample_any_match_rate),
+                "rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
+                "rollout/gating_rejections": float(gate_rejections_total),
+                "rollout/gating_rejection_rate": float(gate_rejection_rate),
+                "rollout/valid_pred_objects": float(pred_total),
+                "rollout/gt_objects": gt_total,
+                "rollout/match_rate": recall,
+                "rollout/precision": float(precision),
+                "rollout/recall": float(recall),
+                "rollout/f1": float(f1),
+                "rollout/fp": float(fp_total),
+                "rollout/fn": float(fn_total),
+                "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
+                "rollout/pred_per_sample": float(pred_total / n_samples)
+                if n_samples > 0
+                else 0.0,
+                "rollout/fp_per_sample": float(fp_total / n_samples)
+                if n_samples > 0
+                else 0.0,
+                "rollout/fn_per_sample": float(fn_total / n_samples)
+                if n_samples > 0
+                else 0.0,
+                "rollout/matched_maskiou_mean": float(matched_iou_mean),
+                "rollout/matched_maskiou_count": float(matched_iou_count),
+                "rollout/excluded_rate": float(excluded_rate),
+                "rollout/prefix_coord_targets_total": float(prefix_targets_total),
+                "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
+                "rollout/tail_ignore_frac": float(tail_ignore_frac),
+                "rollout/prompt_len_mean": float(_mean(prompt_lens)),
+                "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
+                "rollout/prefix_len_mean": float(_mean(prefix_lens)),
+                "rollout/rollout_len_mean": float(_mean(rollout_lens)),
+                "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
+                "rollout/train_len_mean": float(_mean(train_lens)),
+                "rollout/train_len_p90": float(_p(train_lens, 90)),
+                "rollout/append_len_mean": float(_mean(append_lens)),
+                "rollout/append_len_p90": float(_p(append_lens, 90)),
+                "rollout/encoded_len_mean": float(_mean(encoded_lens)),
+                "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
+                "rollout/decode_greedy": float(
+                    sum(1 for m in meta if m.get("decode_mode") == "greedy")
+                ),
+                "rollout/decode_beam": float(
+                    sum(1 for m in meta if m.get("decode_mode") == "beam")
+                ),
+                "rollout/matched_for_supervision": float(
+                    sum(int(m.get("matched_for_supervision", 0)) for m in meta)
+                ),
+                "rollout/excluded_from_supervision": float(
+                    sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
+                ),
+                "loss/ce": float(ce_loss.detach().cpu().item()),
+                "loss/coord": float(coord_loss.detach().cpu().item()),
+                "loss/coord_prefix": float(prefix_coord_mean.detach().cpu().item()),
+                "loss/coord_tail": float(tail_coord_mean.detach().cpu().item()),
+                "time/forward_s": float(t_fwd_s),
+                "time/mask_build_s": float(t_mask_s),
+            }
+
+            # Optional semantic desc monitoring (metrics only).
+            try:
+                if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
+                    pairs_total = float(
+                        sum(int(m.get("desc_pairs_total", 0)) for m in meta)
+                    )
+                    exact_ok_total = float(
+                        sum(int(m.get("desc_exact_ok", 0)) for m in meta)
+                    )
+                    exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                    payload["rollout/desc_pairs_total"] = float(pairs_total)
+                    payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
+
+                    sem_enabled_total = float(
+                        sum(int(m.get("desc_sem_enabled", 0)) for m in meta)
+                    )
+                    payload["rollout/desc_sem_enabled"] = float(
+                        1.0 if sem_enabled_total > 0 else 0.0
+                    )
+                    if sem_enabled_total > 0:
+                        sem_ok_total = float(
+                            sum(int(m.get("desc_sem_ok", 0)) for m in meta)
+                        )
+                        sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                        payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
+
+                        sim_sum_total = float(
+                            sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta)
+                        )
+                        sim_count_total = float(
+                            sum(int(m.get("desc_sem_sim_count", 0)) for m in meta)
+                        )
+                        if sim_count_total > 0:
+                            payload["rollout/desc_sem_sim_mean"] = float(
+                                sim_sum_total / sim_count_total
+                            )
+                            payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
+            except Exception:
+                pass
+
+            self.log(payload)
         except Exception:
             pass
 
@@ -4199,6 +4391,34 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         fp_cost = float(self._cfg("fp_cost", 1.0))
         fn_cost = float(self._cfg("fn_cost", 1.0))
 
+        # Optional semantic desc monitoring (metrics only).
+        desc_cfg = self._desc_monitor_cfg()
+        desc_enabled = isinstance(desc_cfg, Mapping) and bool(desc_cfg.get("enabled", False))
+        desc_mode = str(desc_cfg.get("mode", "semantic") or "semantic").strip().lower()
+        desc_thr = float(desc_cfg.get("semantic_threshold", 0.6) or 0.6)
+        desc_max_pairs = int(desc_cfg.get("max_pairs", 0) or 0)
+
+        try:
+            from src.metrics.semantic_desc import normalize_desc
+        except Exception:
+            normalize_desc = None  # type: ignore[assignment]
+
+        sem_loaded_local = 0.0
+        sem_encoder = None
+        if desc_enabled and desc_mode in {"semantic", "both"}:
+            try:
+                sem_encoder = self._get_desc_semantic_encoder(desc_cfg)
+            except Exception:
+                sem_encoder = None
+            if sem_encoder is not None:
+                # Probe once so failures are detected consistently across ranks.
+                try:
+                    _ = sem_encoder.encode_norm_texts(["__probe__"])
+                    sem_loaded_local = 1.0
+                except Exception:
+                    sem_encoder = None
+                    sem_loaded_local = 0.0
+
         n_samples = 0.0
         gt_total = 0.0
         pred_total = 0.0
@@ -4213,6 +4433,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         matched_iou_count = 0.0
         n_samples_valid_pred = 0.0
         n_samples_any_match = 0.0
+
+        # Desc monitor accumulators (matched pairs only).
+        desc_pairs_total = 0.0
+        desc_exact_ok_total = 0.0
+        desc_sem_ok_total = 0.0
+        desc_sem_sim_sum_total = 0.0
+        desc_sem_sim_count_total = 0.0
 
         n_steps = 0.0
 
@@ -4231,9 +4458,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 n_steps += 1.0
                 rollout_results = self._rollout_many(batch)
                 if len(rollout_results) != len(batch):
-                    raise RuntimeError(
-                        "rollout backend returned unexpected number of results"
-                    )
+                    raise RuntimeError("rollout backend returned unexpected number of results")
 
                 for sample, (resp_ids, _resp_text, _decode_mode, _prompt_ids) in zip(
                     batch, rollout_results
@@ -4249,8 +4474,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                     # Pred objects (valid only) -> norm1000 geometry.
                     coord_id_to_bin = self._coord_id_map()
+                    pred_meta = list(parse.valid_objects)
                     preds: List[GTObject] = []
-                    for pobj in parse.valid_objects:
+                    for pobj in pred_meta:
                         pts = _points_from_coord_tokens(
                             response_token_ids=parse.response_token_ids,
                             coord_token_indices=pobj.coord_token_indices,
@@ -4293,12 +4519,71 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if matched > 0:
                         n_samples_any_match += 1.0
 
+                    # Optional desc semantic monitor on matched pairs.
+                    if desc_enabled and match.matched_pairs:
+                        pairs = list(match.matched_pairs)
+                        if desc_max_pairs > 0 and len(pairs) > desc_max_pairs:
+                            pairs = pairs[:desc_max_pairs]
+
+                        uniq: set[str] = set()
+                        norm_pairs: List[Tuple[str, str, bool]] = []
+                        for pred_i, gt_i in pairs:
+                            if pred_i < 0 or pred_i >= len(pred_meta):
+                                continue
+                            if gt_i < 0 or gt_i >= len(gts):
+                                continue
+                            pred_desc_raw = str(getattr(pred_meta[pred_i], "desc", "") or "")
+                            gt_desc_raw = str(getattr(gts[gt_i], "desc", "") or "")
+                            if normalize_desc is None:
+                                p = pred_desc_raw.strip().lower()
+                                g = gt_desc_raw.strip().lower()
+                            else:
+                                p = normalize_desc(pred_desc_raw)
+                                g = normalize_desc(gt_desc_raw)
+                            exact_ok = bool(p) and (p == g)
+                            if exact_ok:
+                                desc_exact_ok_total += 1.0
+                            if p and g:
+                                norm_pairs.append((p, g, bool(exact_ok)))
+                                uniq.add(p)
+                                uniq.add(g)
+
+                        desc_pairs_total += float(len(norm_pairs))
+
+                        if sem_loaded_local > 0.0 and sem_encoder is not None and norm_pairs:
+                            try:
+                                emb = sem_encoder.encode_norm_texts(sorted(uniq))
+                            except Exception:
+                                emb = {}
+                                sem_encoder = None
+                                sem_loaded_local = 0.0
+
+                            if sem_loaded_local > 0.0 and sem_encoder is not None:
+                                for p, g, exact_ok in norm_pairs:
+                                    pv = emb.get(p)
+                                    gv = emb.get(g)
+                                    if pv is None or gv is None:
+                                        ok = bool(exact_ok)
+                                        sim = None
+                                    else:
+                                        sim = float(np.dot(pv, gv))
+                                        ok = bool(exact_ok or sim >= desc_thr)
+                                    if ok:
+                                        desc_sem_ok_total += 1.0
+                                    if sim is not None:
+                                        desc_sem_sim_sum_total += float(sim)
+                                        desc_sem_sim_count_total += 1.0
+
         t_local = time.perf_counter() - t0
 
         try:
             import torch.distributed as dist
         except Exception:
             dist = None  # type: ignore[assignment]
+
+        world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            world_size = int(dist.get_world_size())
 
         # Reduce sums across ranks.
         sums_t = torch.tensor(
@@ -4318,6 +4603,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 n_samples_valid_pred,
                 n_samples_any_match,
                 n_steps,
+                # desc monitor
+                desc_pairs_total,
+                desc_exact_ok_total,
+                desc_sem_ok_total,
+                desc_sem_sim_sum_total,
+                desc_sem_sim_count_total,
+                sem_loaded_local,
             ],
             device=self.model.device,
             dtype=torch.float64,
@@ -4344,6 +4636,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             n_samples_valid_pred,
             n_samples_any_match,
             n_steps,
+            desc_pairs_total,
+            desc_exact_ok_total,
+            desc_sem_ok_total,
+            desc_sem_sim_sum_total,
+            desc_sem_sim_count_total,
+            sem_loaded_sum,
         ) = [float(x.item()) for x in sums_t]
         runtime = float(rt_t.item())
 
@@ -4396,6 +4694,39 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if matched_iou_count > 0
             else 0.0
         )
+
+        # Desc monitor outputs (matched pairs only).
+        if desc_enabled:
+            metrics[f"{metric_key_prefix}_rollout_desc_pairs_total"] = float(desc_pairs_total)
+            exact_acc = (
+                float(desc_exact_ok_total / desc_pairs_total)
+                if desc_pairs_total > 0
+                else 1.0
+            )
+            metrics[f"{metric_key_prefix}_rollout_desc_exact_acc_on_matched"] = float(
+                exact_acc
+            )
+
+            sem_enabled = bool(sem_loaded_sum >= float(world_size) - 0.5)
+            metrics[f"{metric_key_prefix}_rollout_desc_sem_enabled"] = float(
+                1.0 if sem_enabled else 0.0
+            )
+            if sem_enabled:
+                sem_acc = (
+                    float(desc_sem_ok_total / desc_pairs_total)
+                    if desc_pairs_total > 0
+                    else 1.0
+                )
+                metrics[f"{metric_key_prefix}_rollout_desc_sem_acc_on_matched"] = float(
+                    sem_acc
+                )
+                if desc_sem_sim_count_total > 0:
+                    metrics[f"{metric_key_prefix}_rollout_desc_sem_sim_mean"] = float(
+                        desc_sem_sim_sum_total / desc_sem_sim_count_total
+                    )
+                    metrics[f"{metric_key_prefix}_rollout_desc_sem_sim_count"] = float(
+                        desc_sem_sim_count_total
+                    )
 
         if was_training:
             self.model.train()

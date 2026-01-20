@@ -186,3 +186,17 @@ custom:
       ot_cost: l2
       ot_epsilon: 10
       ot_iters: 3
+
+
+      # Optional desc monitoring (metrics only; does not affect loss).
+      # Set mode=semantic (or both) to enable Sentence-Transformer similarity.
+      desc_monitor:
+        enabled: true
+        mode: exact
+        every_steps: 20
+        max_pairs: 64
+        semantic_model: sentence-transformers/all-MiniLM-L6-v2
+        semantic_threshold: 0.6
+        semantic_device: cpu
+        semantic_batch_size: 64
+        semantic_max_length: 64

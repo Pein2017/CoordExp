@@ -101,6 +101,23 @@ Important semantics:
   - **What:** mean maskIoU over matched pairs (norm1000-space, virtual canvas).
   - **Why:** disambiguates “more matches” vs “better geometry”.
 
+### Desc monitoring (optional; metrics only)
+
+Stage_2 can optionally monitor whether rollout `desc` strings stay semantically
+aligned with GT on geometry-matched pairs. This is **metrics-only** and does not
+affect the training loss.
+
+- `rollout/desc_pairs_total`
+  - **What:** number of geometry-matched pairs evaluated for desc monitoring.
+- `rollout/desc_exact_acc_on_matched`
+  - **What:** exact-match accuracy of normalized `desc` strings on matched pairs.
+- `rollout/desc_sem_enabled`
+  - **What:** 1.0 when the semantic embedding model is available for this step.
+- `rollout/desc_sem_acc_on_matched`
+  - **What:** semantic accuracy on matched pairs (exact OR cosine-sim >= threshold).
+- `rollout/desc_sem_sim_mean`, `rollout/desc_sem_sim_count`
+  - **What:** mean cosine similarity and count over matched pairs with embeddings.
+
 ### Supervision construction coverage
 
 - `rollout/excluded_rate`
@@ -141,6 +158,13 @@ Returned keys (prefixed with `eval_`):
 - `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
 - `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
 - `eval_rollout_matched_maskiou_mean`
+
+Optional desc monitor keys (when enabled):
+- `eval_rollout_desc_pairs_total`
+- `eval_rollout_desc_exact_acc_on_matched`
+- `eval_rollout_desc_sem_enabled`
+- `eval_rollout_desc_sem_acc_on_matched`
+- `eval_rollout_desc_sem_sim_mean`, `eval_rollout_desc_sem_sim_count`
 
 Config tip:
 - For Stage_2 runs, prefer `training.metric_for_best_model: eval_rollout_f1` (and
