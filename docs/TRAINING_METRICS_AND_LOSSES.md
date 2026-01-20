@@ -23,7 +23,12 @@ Stage-2 note (rollout-matching SFT):
 
 Stage_2 (`custom.trainer_variant: rollout_matching_sft`) logs additional keys
 under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
-performance. These are logged during training (not eval).
+performance during training.
+
+For evaluation, Stage_2 uses a production-style evaluator (rollout -> parse ->
+Hungarian match) and reports metrics under `eval_rollout_*` keys. This evaluator
+intentionally skips teacher-forced encoding/loss computation, so `eval_loss` is
+not reported for this trainer variant.
 
 Important semantics:
 - **Optimizer-step units:** when rollout buffering is enabled, "E-step vs M-step"
@@ -31,8 +36,10 @@ Important semantics:
 - **Buffering:** interpret rollout-quality metrics on **E-steps only** by
   filtering to `rollout/buffer_reuse == 0`. M-steps reuse cached targets and are
   not an on-policy rollout signal.
-- **Rank-local:** these metrics are rank-local (not all-reduced), so they can
-  vary across GPUs.
+- **Rank-local (training logs):** `rollout/*` keys logged during training are
+  rank-local (not all-reduced), so they can vary across GPUs.
+- **All-reduced (eval):** `eval_rollout_*` keys are aggregated over the full
+  evaluation dataset and summed across ranks.
 
 ### Buffer / EM window diagnostics
 
@@ -120,6 +127,24 @@ Important semantics:
 - `packing/post_rollout_segments`
 - `packing/post_rollout_buffer`
   - **What:** post-rollout packing stats (carry-only mode).
+
+## Stage-2 Rollout-Matching Metrics (Eval)
+
+When `custom.trainer_variant: rollout_matching_sft` runs evaluation (`training.eval_strategy != no`),
+it reports production-style metrics derived from rollout -> parse -> Hungarian matching.
+
+Returned keys (prefixed with `eval_`):
+- `eval_rollout_precision`, `eval_rollout_recall`, `eval_rollout_f1`
+- `eval_rollout_pred_objects`, `eval_rollout_gt_objects`, `eval_rollout_matched`
+- `eval_rollout_fp`, `eval_rollout_fn`
+- `eval_rollout_parse_truncated_rate`
+- `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
+- `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
+- `eval_rollout_matched_maskiou_mean`
+
+Config tip:
+- For Stage_2 runs, prefer `training.metric_for_best_model: eval_rollout_f1` (and
+  `training.greater_is_better: true`) to select best checkpoints by on-policy rollout quality.
 
 ## Loss Composition (Stage-1 / Scheme A)
 
