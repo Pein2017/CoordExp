@@ -8,7 +8,7 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - Width/height are taken from the inline GT; size mismatches are counted but do not abort.
 
 ## Behavior
-- Pixel-ready consumption: no coord-mode inference/denorm is performed; polygons are exported directly as COCO `segmentation` (mask IoU), bboxes as `bbox`. Lines are carried through in reports but excluded from metrics (and currently unused in CoordExp datasets).
+- Pixel-ready consumption: no coord-mode inference/denorm is performed; polygons are exported directly as COCO `segmentation` (mask IoU), bboxes as `bbox`. Line geometries are rejected and counted as invalid.
 - One geometry per object; degenerate/invalid entries are dropped with counters and recorded per-image for diagnostics.
 - Categories use exact desc strings; unknowns bucket to `unknown` by default (configurable to drop).
 - Scores are fixed at 1.0 (greedy decoding outputs have no reliable confidence); any provided `score` fields are ignored.

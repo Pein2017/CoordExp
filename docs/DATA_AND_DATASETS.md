@@ -28,8 +28,7 @@ Each record in your training data follows this structure:
   "images": ["path/to/img1.jpg", "path/to/img2.jpg"],
   "objects": [
     {"bbox_2d": [x1, y1, x2, y2], "desc": "object description"},
-    {"poly": [x1, y1, x2, y2, x3, y3, ...], "poly_points": M, "desc": "polygon description"},
-    {"line": [x1, y1, ..., xn, yn], "line_points": N, "desc": "line description"}
+    {"poly": [x1, y1, x2, y2, x3, y3, ...], "poly_points": M, "desc": "polygon description"}
   ],
   "width": 1920,
   "height": 1080,
@@ -39,9 +38,8 @@ Each record in your training data follows this structure:
 
 **Key Rules**:
 - Image paths resolve relative to JSONL file directory (absolute paths also allowed)
-- Exactly ONE geometry field per object (`bbox_2d`, `poly`, or `line`)
+- Exactly ONE geometry field per object (`bbox_2d` or `poly`)
 - For polygons: `poly` is a flat, even-length list (≥6 values / ≥3 points). `poly_points` is optional metadata but should match `len(poly) / 2` when present.
-- For lines: `line_points` should equal number of coords ÷ 2 (optional but recommended; validation falls back to the coord count when absent)
 - Coordinates are in pixel space with original `width`/`height`
 
 ### Geometry Types
@@ -50,7 +48,6 @@ Each record in your training data follows this structure:
 |------|--------|----------|
 | **bbox_2d** | `[x1, y1, x2, y2]` | Axis-aligned boxes |
 | **poly** | `[x1,y1, x2,y2, x3,y3, ...]` | Arbitrary polygons (even-length list, ≥3 points). Use `poly_points` to record vertex count. |
-| **line** | `[x1,y1, ..., xn,yn]` + `line_points: N` | Polylines (cables, fibers) |
 
 ### Coordinate Normalization
 
@@ -70,7 +67,7 @@ Each record in your training data follows this structure:
 ```json
 {
   "object_1": {"bbox_2d": [100, 200, 300, 400], "desc": "..."},
-  "object_2": {"line_points": 4, "line": [50, 60, 80, 120, 130, 180, 180, 220], "desc": "..."}
+  "object_2": {"poly": [50, 60, 80, 60, 80, 120, 50, 120], "poly_points": 4, "desc": "..."}
 }
 ```
 ## Dataset Pipeline
@@ -164,7 +161,7 @@ For the universal JSONL record contract shared by all domains, see `docs/DATA_JS
 # Assistant message: minimal object hierarchy (no per-image wrapper)
 {
   "object_1": {"bbox_2d": [...], "desc": "类型/属性/..."},
-  "object_2": {"line_points": 4, "line": [...], "desc": "..."}
+  "object_2": {"poly": [...], "poly_points": 4, "desc": "..."}
 }
 ```
 
@@ -186,7 +183,6 @@ For the universal JSONL record contract shared by all domains, see `docs/DATA_JS
 **Checks**:
 - Schema validity (required fields present)
 - Geometry field uniqueness (exactly one per object)
-- Line point count matches `line_points`
 - Image paths resolve correctly
 
 **Action**: Raises `ValueError` on invalid records (fail-fast)
@@ -254,7 +250,6 @@ python -m src.datasets.validate_jsonl --input train.jsonl --verbose
 ```
 
 **Common Issues**:
-- Missing `line_points` for line geometries
 - Multiple geometry fields per object
 - Path resolution failures
 - Width/height mismatch
@@ -295,7 +290,6 @@ Before training:
 
 - [ ] JSONL schema valid (all required fields present)
 - [ ] Geometry fields correct (one per object)
-- [ ] Line objects have `line_points` matching coord count
 - [ ] Image paths resolve correctly
 - [ ] Width/height metadata present
 - [ ] Summary field present (if using summary mode)

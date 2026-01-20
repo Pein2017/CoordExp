@@ -17,16 +17,12 @@ Each object MUST contain exactly one geometry field plus a non-empty `desc`.
 - One geometry (required, mutually exclusive):
   - `bbox_2d`: `[x1, y1, x2, y2]` pixel coordinates.
   - `poly`: flat list `[x1, y1, x2, y2, ...]` (even length, ≥6 values / ≥3 points). Optional `poly_points` (int) should equal `len(poly)/2` when present.
-  - `line`: flat list `[x1, y1, ..., xn, yn]`. Optional `line_points` (int) should equal `len(line)/2` when present.
 - No additional geometry fields are allowed on the same object.
 
-Note (current practice, 2026-01-13): although `line` is part of the contract for completeness,
-it is currently unused in CoordExp training/eval datasets and experiments. Most pipelines assume
-only `bbox_2d` or `poly`. If you plan to introduce `line`, treat it as a deliberate extension and
-update downstream tools (evaluator/visualization/training) accordingly.
+Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are rejected.
 
 ### Geometry keys and coordinate space (canonical)
-- Accepted geometry keys are **only** `bbox_2d`, `poly`, or `line` (plus optional `line_points`/`poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
+- Accepted geometry keys are **only** `bbox_2d` or `poly` (plus optional `poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
 - Coordinate space is either pixel (floating point) or normalized coord tokens `<|coord_k|>` where `k ∈ [0, 999]`. The loader infers pixel vs normalized using image `width`/`height`. Avoid mixing pixel floats and coord tokens in the same object.
 - When pre-tokenizing (`custom.coord_tokens.enabled: true`), keep geometry in tokens and set `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
 
@@ -35,7 +31,7 @@ update downstream tools (evaluator/visualization/training) accordingly.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Polygon vertices are canonicalized offline: duplicate closing points are removed, vertices are ordered clockwise around the centroid, and the starting vertex is the top-most (then left-most) point. This prevents self-crossing orderings across converters and visualization tools.
-- Optional fields (e.g., `summary`, `poly_points`, `line_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
+- Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
 - **Coord-token mode (opt-in)**: When `custom.coord_tokens.enabled` is true, geometry may be pre-quantized as `<|coord_k|>` tokens (0–999). Set `custom.coord_tokens.skip_bbox_norm: true` to avoid double normalization when feeding tokenized records.
 
 ## Example

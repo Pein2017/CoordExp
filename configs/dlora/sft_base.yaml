@@ -95,7 +95,6 @@ custom:
           min_coverage: 0.4
           completeness_threshold: 0.95
           min_objects: 4
-          skip_if_line: true
           prob: 0.10
       - name: small_object_zoom_paste  # fixed strength across training
         params:
@@ -104,10 +103,8 @@ custom:
           max_attempts: 20
           scale: [1.45, 1.9]
           max_size: 96
-          max_line_length: 128
           overlap_threshold: 0.1
           context: 4
-          line_buffer: 4
       - name: resize_by_scale
         params: { lo: 0.95, hi: 1.08, align_multiple: 32, prob: 0.34 }
       - name: color_jitter

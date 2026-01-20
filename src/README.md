@@ -144,7 +144,7 @@ print(adapter_cfg["modules_to_save"])  # Should list your aligner modules
 ## Data Contract (JSONL)
 JSONL records (see `data_details.md`):
 - `images`: List[str] — paths resolved via `ROOT_IMAGE_DIR`
-- `objects`: List — each has one geometry (`bbox_2d`/`poly`) + `desc` (`line` is deprecated)
+- `objects`: List — each has one geometry (`bbox_2d`/`poly`) + `desc`
 - `width`, `height`: image dimensions
 - `summary`: **standardized all-slash format** (required for summary modes, optional otherwise)
 
@@ -180,7 +180,7 @@ Index → Epoch-seeded permutation
 6) DataLoader yields tensors: `input_ids`, `attention_mask`, `labels`, `pixel_values`, `image_grid_thw`, `objects`
 
 **Key Transformations**:
-- **Geometry**: Exact `poly`/`line`/`bbox_2d` point arrays are preserved and used for grounding.
+- **Geometry**: Exact `poly`/`bbox_2d` point arrays are preserved and used for grounding.
 - **Coordinates**: Original pixel → norm1000 (based on original dims; no runtime resizing in training path).
 - **Text**: Original geometries preserved in JSON-lines (training target); `emit_norm` affects text only.
 - **Images**: No HF smart-resize in training path (`do_resize=false`).
@@ -189,7 +189,7 @@ Index → Epoch-seeded permutation
 ### Geometry Handling
 **Modules**: `datasets/builders/jsonlines.py`, `datasets/geometry.py`, `datasets/augment.py`
 
-- Supported types: `bbox_2d` (4), `poly` (even-length list, currently 8), `line` (2N)
+- Supported types: `bbox_2d` (4), `poly` (even-length list, currently 8)
 - Default: exact points preserved in top-level `objects.bbox`; template scales any even-length list to norm1000.
 - Augmentation: affine transforms update points atomically; text unchanged; spatial accuracy preserved.
 - Useful ops: `apply_affine()` (runtime normalization disabled; data are pre-normalized)
@@ -204,8 +204,7 @@ Index → Epoch-seeded permutation
     "desc": "tool cabinet / front panel / clean"
   },
   "object_2": {
-    "line_points": 4,
-    "line": [x1,y1,...,x4,y4],
+    "bbox_2d": [x1,y1,x2,y2],
     "desc": "fiber cable / protected / gentle bend"
   }
 }
@@ -254,7 +253,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
   - Best for variable-length samples; ~90-95% GPU utilization
 
 **Dual Representation Strategy**:
-1. **Assistant 文本**: 使用 object-index JSON（`object_{n}`），几何字段直接暴露（bbox_2d/poly；line 已弃用）。
+1. **Assistant 文本**: 使用 object-index JSON（`object_{n}`），几何字段直接暴露（bbox_2d/poly）。
 2. **顶层 objects**: 精确像素坐标供模板在编码阶段转换为 norm1000。
 3. 增广后的几何与文本保持一致。
 
