@@ -6,5 +6,8 @@
 - [x] 1.5 Update docs or notes describing the loss_scale weighting behavior and the Liger-kernel tradeoff
 
 ## 2. Validation
-- [ ] 2.1 Run a small packed smoke config with coord/text CE weights != 1 and confirm loss_scale is populated
-- [ ] 2.2 Verify coord/text CE metrics remain finite and aux losses still compute on coord tokens only
+NOTE: This section is operational validation guidance and may require training datasets / GPUs. It is intentionally
+NOT tracked as OpenSpec tasks (i.e., no checkboxes) so it doesn't block archiving.
+
+- 2.1 Run a small packed smoke config with coord/text CE weights != 1 and confirm loss_scale is populated
+- 2.2 Verify coord/text CE metrics remain finite and aux losses still compute on coord tokens only

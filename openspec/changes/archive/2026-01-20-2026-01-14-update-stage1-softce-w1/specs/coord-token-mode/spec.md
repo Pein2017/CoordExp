@@ -43,23 +43,23 @@ The system SHALL provide utilities to build unimodal soft targets over ordered c
 
 ## MODIFIED Requirements
 
-### Requirement: Coord-token supervision is distributional (legacy removed)
-The system SHALL treat coord-token supervision as a **distributional** token-level problem:
-- `<|coord_*|>` positions are supervised via coord-gated `softCE(Gaussian kernel) + 1D W1(CDF)`,
-- non-coord tokens remain supervised with the model's standard full-vocab CE,
-- expectation-decoding and box-level regression losses are not supported.
+### Requirement: Distributional coord-token supervision helpers
+- Coord-token mode SHALL include helpers that:
+  - restrict logits to the coord-token sub-vocabulary for coord supervision at `<|coord_*|>` positions,
+  - compute per-token distribution losses `softCE(Gaussian kernel) + 1D W1(CDF)` on the ordered coord bins,
+  - optionally apply a coord-vocab gate loss that penalizes probability mass outside the coord vocab at coord positions.
+- When distributional coord-token supervision is enabled, the system SHALL ensure coord-token targets do not contribute to the base full-vocab CE loss by masking coord targets to `ignore_index` (or an equivalent mechanism with zero gradient), while still using the same forward logits to compute coord losses.
+- Legacy expectation-decoding and box-level regression losses are not supported. The system SHALL fail fast with a clear error if legacy config keys are provided (e.g. `custom.coord_loss` or `custom.coord_expectation_metrics`), directing users to `custom.coord_soft_ce_w1`.
 
-The system SHALL fail fast with a clear error if legacy config keys are provided (e.g. `custom.coord_loss` or `custom.coord_expectation_metrics`), directing users to `custom.coord_soft_ce_w1`.
+#### Scenario: Coord tokens supervised with softCE+W1 from one forward
+- **GIVEN** coord-token mode is enabled
+- **AND** distributional coord-token supervision is enabled
+- **WHEN** `Trainer.compute_loss` is called
+- **THEN** coord-token targets do not contribute to the base full-vocab CE loss
+- **AND** coord `softCE+W1` is computed from the same forward logits restricted to the coord vocab.
 
 #### Scenario: Legacy coord-loss config rejected
 - **GIVEN** a YAML config that provides `custom.coord_loss` or `custom.coord_expectation_metrics`
 - **WHEN** the training config is loaded
 - **THEN** the load fails with a clear error message
 - **AND** the error indicates the supported replacement is `custom.coord_soft_ce_w1`.
-
-## REMOVED Requirements
-
-### Requirement: Expectation-decoded coordinate regression losses
-**Reason**: Stage-1 retraining uses token-native distribution supervision; expectation decoding and box-level losses are removed for simplicity and stability.
-
-**Migration**: Replace `custom.coord_loss` / `custom.coord_expectation_metrics` with `custom.coord_soft_ce_w1` and retrain Stage-1 using the single-forward distribution loss mode.

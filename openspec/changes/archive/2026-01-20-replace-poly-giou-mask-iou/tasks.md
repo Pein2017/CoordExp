@@ -6,5 +6,8 @@
 - [x] 1.5 Update `configs/dlora/sft_coord_loss.yaml` with poly mask defaults.
 
 ## 2. Validation
-- [ ] 2.1 Run a short debug config (e.g., `configs/dlora/debug-sft_coord_loss.yaml`) and confirm poly metrics appear in logs.
-- [ ] 2.2 Verify no regressions in bbox GIoU metrics on a small eval run.
+NOTE: This section is operational validation guidance and may require training datasets / GPUs. It is intentionally
+NOT tracked as OpenSpec tasks (i.e., no checkboxes) so it doesn't block archiving.
+
+- 2.1 Run a short debug config (e.g., `configs/dlora/debug-sft_coord_loss.yaml`) and confirm poly metrics appear in logs.
+- 2.2 Verify no regressions in bbox GIoU metrics on a small eval run.

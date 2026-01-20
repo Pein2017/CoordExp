@@ -265,15 +265,6 @@ The trainer MUST implement two engineering sanity checks:
 - **THEN** it asserts every supervised coord index lies within the assistant portion of the encoded sequence
 - **AND** it errors clearly if any index points into the prompt/image prefix (preventing silent misalignment).
 
-### Requirement: Packing is rejected under rollout-matching training
-Rollout-matching training SHALL fail fast if packing is enabled, because rollout generation does not support packing/padding-free batches.
-
-#### Scenario: Packing enabled errors clearly
-- **GIVEN** a YAML config with `custom.trainer_variant: rollout_matching_sft`
-- **AND** `training.packing: true`
-- **WHEN** training starts
-- **THEN** initialization fails with a clear error indicating rollout-matching training requires packing to be disabled.
-
 ### Requirement: Training-time counters expose parsing/matching health (without geometry metrics)
 The trainer SHALL expose counters that record:
 - number of predicted objects parsed as valid vs invalid (dropped),

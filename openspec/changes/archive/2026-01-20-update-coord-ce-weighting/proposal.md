@@ -1,5 +1,12 @@
 # Change: Adopt loss_scale-based coord/text CE weighting
 
+## Archive Note (2026-01-20)
+This change targets the legacy `custom.coord_loss` coord/text CE weighting mode. Current Stage-1 training uses
+`custom.coord_soft_ce_w1` (distribution-based supervision), and `custom.coord_loss` is removed from the runtime
+config surface (configs fail fast in `src/config/schema.py`).
+
+Accordingly, this change is archived as legacy and does not update current specs.
+
 ## Why
 Manual coord/text CE weighting recomputes cross-entropy from logits and bypasses ms-swift's native per-token loss path. This adds extra compute and diverges from the upstream loss_scale mechanism that is already integrated with the trainer.
 

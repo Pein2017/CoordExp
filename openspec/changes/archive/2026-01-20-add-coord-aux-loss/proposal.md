@@ -1,5 +1,10 @@
 # Change: Add CoordExp auxiliary loss for SFT detection pretraining
 
+## Archive Note (2026-01-20)
+This change proposal was archived, but the `custom.coord_loss` config block described here is now deprecated/removed in the codebase.
+Current Stage-1 training uses `custom.coord_soft_ce_w1` (distribution-based loss/logging) instead, and configs that still set
+`custom.coord_loss` fail fast in `src/config/schema.py`.
+
 ## Why
 Stage-1 SFT needs continuous geometric supervision on coord tokens (L1 + GIoU) while keeping the Qwen3-VL SFT pipeline intact and packing-compatible. This improves localization quality without adding a detection head, and enables controlled ablations via config.
 

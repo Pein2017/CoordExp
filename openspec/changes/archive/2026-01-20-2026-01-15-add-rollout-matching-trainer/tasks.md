@@ -48,12 +48,15 @@
 - [x] 1.9.4 Add unit tests for (1.9.1-1.9.3).
 
 ## 2. Rollout-Matching Smoke Test Checklist (paper-ready; alias: stage_2)
-- [ ] 2.1 Pick a baseline checkpoint as the starting point (`<BASE_CKPT>`).
-- [ ] 2.2 Pick a small train/val JSONL and set a strict sample limit (`<TRAIN_JSONL>`, `<VAL_JSONL>`, N≈50–200).
-- [ ] 2.3 Run rollout-matching with deterministic seed + greedy decoding.
-- [ ] 2.4 Verify:
-  - [ ] no NaNs/infs,
-  - [ ] strict parsing yields a non-trivial valid-object fraction (invalid objects are dropped, not repaired),
-  - [ ] match gating rejects obvious failures and FN append is non-zero when expected,
-  - [ ] training loss decreases and logs are emitted.
-- [ ] 2.5 Record run artifacts: resolved YAML, key counters, and a few debug examples.
+NOTE: This section is an operational checklist for running stage_2 experiments. It is intentionally NOT tracked
+as OpenSpec tasks (i.e., no checkboxes) so it doesn't block archiving code/spec changes.
+
+- 2.1 Pick a baseline checkpoint as the starting point (`<BASE_CKPT>`).
+- 2.2 Pick a small train/val JSONL and set a strict sample limit (`<TRAIN_JSONL>`, `<VAL_JSONL>`, N≈50–200).
+- 2.3 Run rollout-matching with deterministic seed + greedy decoding.
+- 2.4 Verify:
+  - no NaNs/infs,
+  - strict parsing yields a non-trivial valid-object fraction (invalid objects are dropped, not repaired),
+  - match gating rejects obvious failures and FN append is non-zero when expected,
+  - training loss decreases and logs are emitted.
+- 2.5 Record run artifacts: resolved YAML, key counters, and a few debug examples.

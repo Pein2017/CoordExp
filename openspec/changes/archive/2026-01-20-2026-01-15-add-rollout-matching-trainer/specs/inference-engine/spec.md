@@ -11,8 +11,7 @@ Each output line in `pred.jsonl` SHALL contain `gt` and `pred` arrays of objects
 - **WHEN** a sample fails validation (e.g., missing height)
 - **THEN** the JSONL line contains an `errors` list describing the issue, `pred` is empty, and processing continues for subsequent samples.
 
-## REMOVED Requirements
-
-### Requirement: Line tolerance without metrics
-**Reason**: `line` geometries are deprecated and not present in the supported dataset corpus; keeping them in the inference artifact format increases downstream ambiguity without providing value.
-
+<!--
+NOTE: Line geometry support was removed in a later change (2026-01-19-remove-line-geometry) and has already been
+reflected in the main specs. This change does not need to apply an explicit REMOVED delta for that requirement.
+-->

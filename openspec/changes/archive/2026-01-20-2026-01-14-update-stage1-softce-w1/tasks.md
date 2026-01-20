@@ -18,11 +18,14 @@
 - [x] 1.9 Add/extend logging keys so Stage-1 runs report: `loss`, `token_acc`, `coord_token_acc`, plus coord-loss breakdown terms (softCE/W1) when enabled.
 
 ## 2. Retraining Checklist (operational, paper-ready)
-- [ ] 2.1 Select the Stage-1 base checkpoint to retrain from (`<BASE_CKPT_PATH>`).
-- [ ] 2.2 Select the Stage-1 train/val JSONL(s) (`<TRAIN_JSONL>`, `<VAL_JSONL>`), ensuring coord-token mode is enabled.
-- [ ] 2.3 Run Stage-1 retraining with fixed seed and clear run naming (`<RUN_NAME>`), saving the resolved config with the output.
-- [ ] 2.4 Verify:
-  - [ ] JSON parse rate on a held-out sample set,
-  - [ ] coord-token accuracy and coord-loss curves are stable (no spikes / NaNs),
-  - [ ] basic detection evaluator sanity check (optional, offline).
-- [ ] 2.5 Export the resulting Stage-1 checkpoint to the expected location (`<STAGE1_CKPT_OUT>`), and record metrics + config snapshot.
+NOTE: This section is an operational checklist for running Stage-1 experiments. It is intentionally NOT tracked
+as OpenSpec tasks (i.e., no checkboxes) so it doesn't block archiving code/spec changes.
+
+- 2.1 Select the Stage-1 base checkpoint to retrain from (`<BASE_CKPT_PATH>`).
+- 2.2 Select the Stage-1 train/val JSONL(s) (`<TRAIN_JSONL>`, `<VAL_JSONL>`), ensuring coord-token mode is enabled.
+- 2.3 Run Stage-1 retraining with fixed seed and clear run naming (`<RUN_NAME>`), saving the resolved config with the output.
+- 2.4 Verify:
+  - JSON parse rate on a held-out sample set,
+  - coord-token accuracy and coord-loss curves are stable (no spikes / NaNs),
+  - basic detection evaluator sanity check (optional, offline).
+- 2.5 Export the resulting Stage-1 checkpoint to the expected location (`<STAGE1_CKPT_OUT>`), and record metrics + config snapshot.

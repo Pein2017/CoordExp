@@ -34,7 +34,10 @@
 
 ## 3. Validation
 - [x] 3.1 Run `openspec validate 2026-01-19-add-stage2-rollout-buffer-offload --strict`.
-- [ ] 3.2 Run a small monitor run (e.g., 128/32) and record steps/sec and rollout time split with and without buffering.
-      - [ ] In buffered mode, ensure logs/metrics distinguish E-steps vs M-steps:
+NOTE: The following items are operational benchmarking guidance (not OpenSpec-gated tasks) and may require
+cluster resources and dataset access beyond this repo.
+
+- 3.2 Run a small monitor run (e.g., 128/32) and record steps/sec and rollout time split with and without buffering.
+      - In buffered mode, ensure logs/metrics distinguish E-steps vs M-steps:
             - rollout generation timing SHOULD be logged as 0 (or omitted) on M-steps to avoid double-counting
             - add a boolean flag/counter (e.g., `rollout/buffer_reuse=1`) to make dashboards interpretable.

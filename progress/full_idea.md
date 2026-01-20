@@ -106,7 +106,7 @@ Each JSONL line follows the global contract:
 - `images` (list of str, required): relative image paths.
 - `objects` (list, required): one entry per annotated object.
 - `width`, `height` (int, required): image size in pixels.
-- Optional fields: `summary` (sing le-line description) and `metadata` (provenance, dataset tags, etc.).
+- Optional fields: `summary` (single-line description) and `metadata` (provenance, dataset tags, etc.).
 
 Each object has:
 
@@ -114,7 +114,7 @@ Each object has:
 - Exactly one geometry field (required, mutually exclusive):
   - `bbox_2d`: `[x1, y1, x2, y2]` rectangular box.
   - `poly`: flat `[x1, y1, ..., xn, yn]` polygon.
-  - `line`: flat `[x1, y1, ..., xn, yn]` polyline.
+  - Note: `line` / `line_points` polyline geometry was removed from the runtime contract and is no longer supported.
 
 Coordinates can be **pixel-space floats** or **pre-tokenized coord tokens** (`"<|coord_k|>"`, `k ∈ [0, 999]`). When using coord tokens in the JSONL, we keep `width`/`height` and set `custom.coord_tokens.skip_bbox_norm: true` in configs to avoid double normalization.
 
@@ -134,7 +134,7 @@ For intuition, a single-image shorthand (omitting some optional fields) looks li
 }
 ```
 
-For early CoordExp experiments, **axis-aligned bounding boxes** (`bbox_2d`) are the main target; polygons and lines are supported by the contract but used later.
+For early CoordExp experiments, **axis-aligned bounding boxes** (`bbox_2d`) are the main target; polygons are supported by the contract but used later.
 
 ### 3.3 Supervision view
 
@@ -451,4 +451,3 @@ This document specifies a complete end-to-end pipeline for training a pretrained
 * EM-ish rollout + update loops,
 * and standard SFT for caption/format/recall control,
   all without introducing new detection heads or DETR-style architectures.
-
