@@ -4,7 +4,7 @@ These helpers are the single source of truth for:
 - coord token encode/decode (0-999 bin grid)
 - flattening point containers
 - norm1000 <-> pixel conversion with clamping/rounding
-- basic geometry helpers (bbox from points, degenerate checks, line->bbox, bbox->segm)
+- basic geometry helpers (bbox from points, degenerate checks, bbox->segm)
 
 They are re-exported via ``src.common.geometry`` so inference, visualization, and
 evaluation can share the same logic and avoid double-scaling bugs.
@@ -22,7 +22,6 @@ from src.coord_tokens.codec import (
     value_in_coord_range,
 )
 from src.datasets.geometry import clamp_points as _clamp_points
-from src.datasets.geometry import points_to_xyxy
 
 COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,4})\|>")
 MAX_BIN = 999  # coord tokens are 0..999 inclusive
@@ -134,10 +133,6 @@ def is_degenerate_bbox(x1: float, y1: float, x2: float, y2: float) -> bool:
     return (x2 - x1) <= 0 or (y2 - y1) <= 0
 
 
-def line_to_bbox(points: Sequence[float]) -> List[float]:
-    return list(points_to_xyxy(points))
-
-
 def bbox_to_quadrilateral(bbox: Sequence[float]) -> List[float]:
     x1, y1, x2, y2 = bbox
     return [x1, y1, x2, y1, x2, y2, x1, y2]
@@ -180,9 +175,7 @@ __all__ = [
     "clamp_and_round",
     "denorm_and_clamp",
     "bbox_from_points",
-    "is_degenerate_bbox",
-    "line_to_bbox",
-    "bbox_to_quadrilateral",
+    "is_degenerate_bbox",    "bbox_to_quadrilateral",
     "pair_points",
     "coerce_point_list",
 ]

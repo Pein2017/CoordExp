@@ -26,7 +26,6 @@ GEOM_ERRORS = {
     "geometry_points",
     "bbox_points",
     "poly_points",
-    "line_points",
     "degenerate",
 }
 COORD_ERRORS = {"coord_parse", "coord_range"}

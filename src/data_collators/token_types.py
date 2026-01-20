@@ -27,7 +27,7 @@ class TokenType:
 def _format_payload_for_text(payload: Any) -> Any:
     """Match the JSON formatting used in dataset builders for assistant_text.
 
-    In dense mode, JSONLinesBuilder formats `poly`/`line` sequences as
+    In dense mode, JSONLinesBuilder formats `poly` sequences as
     list-of-pairs (e.g. [[x, y], ...]) for readability. The stored
     `assistant_payload` is kept in the raw/flat representation.
 
@@ -64,7 +64,7 @@ def _format_payload_for_text(payload: Any) -> Any:
             continue
         formatted_entry: dict[str, Any] = {}
         for field, value in entry.items():
-            if field in {"poly", "line"} and isinstance(value, list):
+            if field in {"poly"} and isinstance(value, list):
                 formatted_entry[field] = group_xy(value)
             elif field == "bbox_2d" and isinstance(value, list):
                 formatted_entry[field] = list(value)
@@ -123,7 +123,7 @@ def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
                     "desc"
                     if k == "desc"
                     else "coord"
-                    if k in {"bbox_2d", "poly", "line", "line_points"}
+                    if k in {"bbox_2d", "poly"}
                     else "format"
                 )
                 emit_value(v, next_ctx)

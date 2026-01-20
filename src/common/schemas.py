@@ -8,7 +8,7 @@ from typing import Any, Mapping, MutableMapping, Optional, Sequence, TypedDict, 
 CoordSpace = Literal["pixel", "norm100", "norm1000"]
 
 # Canonical geometry kinds.
-GeometryKind = Literal["bbox_2d", "poly", "line"]
+GeometryKind = Literal["bbox_2d", "poly"]
 
 
 class GeometryDict(TypedDict, total=False):
@@ -16,8 +16,6 @@ class GeometryDict(TypedDict, total=False):
 
     bbox_2d: Sequence[float]
     poly: Sequence[float]
-    line: Sequence[float]
-    line_points: int
     desc: str
     score: float
     object_id: str

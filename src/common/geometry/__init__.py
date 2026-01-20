@@ -9,7 +9,6 @@ from __future__ import annotations
 from src.datasets.geometry import (  # noqa: F401
     BBox,
     Polygon,
-    Polyline,
     apply_affine,
     clamp_points,
     points_to_xyxy,
@@ -31,14 +30,12 @@ from .coord_utils import (  # noqa: F401
     ints_to_pixels_norm1000,
     is_coord_token,
     is_degenerate_bbox,
-    line_to_bbox,
     pair_points,
 )
 
 __all__ = [
     "BBox",
     "Polygon",
-    "Polyline",
     "apply_affine",
     "clamp_points",
     "points_to_xyxy",
@@ -57,7 +54,6 @@ __all__ = [
     "denorm_and_clamp",
     "bbox_from_points",
     "is_degenerate_bbox",
-    "line_to_bbox",
     "bbox_to_quadrilateral",
     "pair_points",
     "coerce_point_list",

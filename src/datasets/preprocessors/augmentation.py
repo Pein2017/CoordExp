@@ -136,7 +136,6 @@ class AugmentationPreprocessor(BasePreprocessor):
                 if (
                     obj.get("bbox_2d") is not None
                     or obj.get("poly") is not None
-                    or obj.get("line") is not None
                 ):
                     g = per_obj_geoms_new[j]
                     had_tokens = tokenized_flags[j]
@@ -172,7 +171,6 @@ class AugmentationPreprocessor(BasePreprocessor):
                 if (
                     obj.get("bbox_2d") is not None
                     or obj.get("poly") is not None
-                    or obj.get("line") is not None
                 ):
                     obj_idx_with_geom.append(i)
 
@@ -391,11 +389,11 @@ class AugmentationPreprocessor(BasePreprocessor):
         Update object's geometry field, ensuring only ONE geometry type exists.
 
         Critical for downstream consistency - builders expect exactly one of:
-        bbox_2d, poly, or line per object.
+        bbox_2d or poly per object.
 
         Args:
             obj: Object dict to update
-            new_geom: New geometry dict with bbox_2d, poly, or line field
+            new_geom: New geometry dict with bbox_2d or poly field
         """
         if "bbox_2d" in new_geom:
             obj["bbox_2d"] = new_geom["bbox_2d"]
@@ -405,10 +403,6 @@ class AugmentationPreprocessor(BasePreprocessor):
             obj["poly"] = new_geom["poly"]
             obj.pop("bbox_2d", None)
             obj.pop("line", None)
-        elif "line" in new_geom:
-            obj["line"] = new_geom["line"]
-            obj.pop("bbox_2d", None)
-            obj.pop("poly", None)
 
 
 __all__ = ["AugmentationPreprocessor"]

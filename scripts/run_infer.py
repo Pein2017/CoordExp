@@ -63,7 +63,6 @@ def _detect_mode_from_gt(jsonl_path: str, *, sample_size: int = 128) -> Tuple[st
                     pts = flatten_points(
                         obj.get("bbox_2d")
                         or obj.get("poly")
-                        or obj.get("line")
                         or obj.get("points")
                         or []
                     )

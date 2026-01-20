@@ -22,7 +22,7 @@ from src.common.geometry import (
 )
 from src.eval.parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
 
-GeomType = Literal["bbox_2d", "poly", "line"]
+GeomType = Literal["bbox_2d", "poly"]
 ModeType = Literal["coord", "text"]
 
 
@@ -42,7 +42,7 @@ class CoordinateStandardizer:
     """Mode-aware coordinate validation and scaling helpers.
 
     The standardizer accepts heterogeneous inputs:
-    - Ground-truth objects with geometry keys (``bbox_2d``/``poly``/``line``)
+    - Ground-truth objects with geometry keys (``bbox_2d``/``poly``)
     - Parsed prediction dicts containing ``type`` + ``points`` (as returned by
       ``parse_prediction``)
     It detects norm1000 tokens/ints vs. pixel coordinates, converts to pixel
@@ -178,11 +178,9 @@ class CoordinateStandardizer:
             raise ValueError("bbox_points")
         if kind == "poly" and len(pts_px) < 6:
             raise ValueError("poly_points")
-        if kind == "line" and len(pts_px) < 4:
-            raise ValueError("line_points")
 
         x1, y1, x2, y2 = bbox_from_points(pts_px)
-        if kind != "line" and is_degenerate_bbox(x1, y1, x2, y2):
+        if is_degenerate_bbox(x1, y1, x2, y2):
             raise ValueError("degenerate")
 
         return [int(v) for v in pts_px], coord_mode

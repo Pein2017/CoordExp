@@ -10,7 +10,7 @@ from .codec import (
     value_in_coord_range,
 )
 
-GEOMETRY_KEYS = ("bbox_2d", "poly", "line")
+GEOMETRY_KEYS = ("bbox_2d", "poly")
 
 
 def _looks_like_coord_value(value: Any) -> bool:
@@ -51,6 +51,8 @@ def annotate_coord_tokens(
     for obj_idx, obj in enumerate(objects):
         if not isinstance(obj, MutableMapping):
             raise ValueError(f"objects[{obj_idx}] must be a mapping")
+        if obj.get("line") is not None or obj.get("line_points") is not None:
+            raise ValueError("line geometry is not supported")
 
         for key in GEOMETRY_KEYS:
             if key not in obj or obj[key] is None:

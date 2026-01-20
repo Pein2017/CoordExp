@@ -23,13 +23,13 @@ def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
             return [float(v) for v in value]
         except (TypeError, ValueError):
             return list(value)
+    if "line" in obj or "line_points" in obj:
+        raise ValueError("line geometry is not supported")
 
     if "bbox_2d" in obj:
         return "bbox_2d", _coerce(obj["bbox_2d"], "bbox_2d")
     if "poly" in obj:
         return "poly", _coerce(obj["poly"], "poly")
-    if "line" in obj:
-        return "line", _coerce(obj["line"], "line")
     return "", []
 
 
@@ -103,12 +103,12 @@ def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[float]]:
         Dictionary with geometry key and points
     """
     geom: Dict[str, List[float]] = {}
+    if obj.get("line") is not None or obj.get("line_points") is not None:
+        raise ValueError("line geometry is not supported")
     if obj.get("bbox_2d") is not None:
         geom["bbox_2d"] = obj["bbox_2d"]
     if obj.get("poly") is not None:
         geom["poly"] = obj["poly"]
-    if obj.get("line") is not None:
-        geom["line"] = obj["line"]
     return geom
 
 

@@ -157,16 +157,9 @@ class JSONLinesBuilder(BaseBuilder):
                 text_points = self._select_text_points(obj, geom_type, points)
                 numeric_points = self._select_numeric_points(obj, geom_type, points)
                 obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
-                # For line objects, emit line_points before line for better causality
-                if geom_type == "line":
-                    payload["line_points"] = len(text_points) // 2
-                    payload[geom_type] = self._format_points(
-                        text_points, width, height, geom_type
-                    )
-                else:
-                    payload[geom_type] = self._format_points(
-                        text_points, width, height, geom_type
-                    )
+                payload[geom_type] = self._format_points(
+                    text_points, width, height, geom_type
+                )
             grouped_objects[f"object_{idx}"] = payload
         return grouped_objects
 
@@ -278,7 +271,7 @@ class JSONLinesBuilder(BaseBuilder):
     def _format_object_entry(self, entry: Mapping[str, Any]) -> Dict[str, Any]:
         formatted_entry: Dict[str, Any] = {}
         for field, value in entry.items():
-            if field in {"poly", "line"} and isinstance(value, list):
+            if field in {"poly"} and isinstance(value, list):
                 formatted_entry[field] = self._format_geometry_sequence(value)
             elif field == "bbox_2d" and isinstance(value, list):
                 formatted_entry[field] = list(value)
