@@ -74,6 +74,14 @@ Set:
 - `custom.extra.rollout_matching.*` (decode + matching knobs)
 - `training.packing: true` to enable post-rollout packing for the teacher-forced forward pass
 
+TensorBoard/logging tip:
+- Stage_2 metrics are logged once per optimizer step (aggregated across gradient accumulation).
+- If you rerun the same config with the same `training.run_name` and a shared `training.logging_dir`, multiple
+  `events.out.tfevents.*` files can accumulate in the same folder. ms-swift's `plot_images` may pick an older file,
+  which makes plots look "wrong".
+- Prefer leaving `training.logging_dir` unset (HF default is unique per run), or set a unique `run_name`, or clean
+  the folder before reruns.
+
 Optional desc monitoring (metrics only; does not affect loss):
 - Enable with `custom.extra.rollout_matching.desc_monitor.enabled: true`.
 - Suggested starting point:
@@ -219,7 +227,6 @@ Buffered-mode diagnostics:
 - `rollout/buffer_reuse` (1 on M-steps, 0 on E-steps)
 - `rollout/buffer_window_step0`
 - `rollout/buffer_completed_steps`
-- `rollout/buffer_micro_idx`
 
 ## Qualitative Monitoring Dumps (Rollout vs GT vs Training Target)
 

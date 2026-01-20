@@ -19,7 +19,7 @@ import time
 from contextlib import contextmanager
 from copy import copy as shallow_copy
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -1477,6 +1477,12 @@ def _copy_prepared_batch_for_training_step(batch: Mapping[str, Any]) -> Dict[str
         out["_rollout_matching_meta"] = [
             dict(m) if isinstance(m, Mapping) else m for m in meta
         ]
+
+    # Batch-level metric dict is mutated on reuse steps; copy it as well.
+    bm = out.get("_rollout_matching_batch_metrics")
+    if isinstance(bm, Mapping):
+        out["_rollout_matching_batch_metrics"] = dict(bm)
+
     return out
 
 
@@ -1528,6 +1534,83 @@ class _AccumulationWindowRepeater:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._dataloader, name)
+
+
+class _RolloutMatchingPackWindow:
+    """Holds one accumulation window worth of raw micro-batches and cached prepared batches.
+
+    This enables window-aware scheduling (lookahead) without changing the Trainer's
+    micro-step interface: each yielded micro-batch is still a list, but carries a
+    pointer to the full window.
+    """
+
+    def __init__(self, *, raw_micro_batches: List[List[Any]]):
+        self.raw_micro_batches = raw_micro_batches
+        self._prepared_micro_batches: Optional[List[Dict[str, Any]]] = None
+
+    @property
+    def gas(self) -> int:
+        return int(len(self.raw_micro_batches))
+
+    def get_prepared(
+        self,
+        *,
+        idx: int,
+        build_all_prepared: Any,
+    ) -> Dict[str, Any]:
+        if self._prepared_micro_batches is None:
+            self._prepared_micro_batches = list(build_all_prepared())
+        if not isinstance(self._prepared_micro_batches, list):
+            raise ValueError("prepared window batches must be a list")
+        if idx < 0 or idx >= len(self._prepared_micro_batches):
+            raise IndexError("prepared window batch index out of range")
+        prepared = self._prepared_micro_batches[idx]
+        if not isinstance(prepared, dict):
+            raise ValueError("prepared batch must be a dict")
+        return prepared
+
+
+class _WindowedMicroBatch(list):
+    """List-like micro-batch carrying a reference to its full accumulation window."""
+
+    def __init__(self, raw: List[Any], *, window: _RolloutMatchingPackWindow, idx: int):
+        super().__init__(raw)
+        self.rm_window = window
+        self.rm_window_idx = int(idx)
+
+
+class _AccumulationWindowLookahead:
+    """Prefetch `gas` micro-batches so the trainer can schedule within the full window."""
+
+    def __init__(self, dataloader, *, gas: int):
+        self.dataloader = dataloader
+        self.gas = int(gas)
+
+    def __len__(self):
+        return len(self.dataloader)
+
+    def __iter__(self):
+        it = iter(self.dataloader)
+        while True:
+            raw_window: List[List[Any]] = []
+            try:
+                for _ in range(int(self.gas)):
+                    b = next(it)
+                    # Identity collator yields a list of raw samples.
+                    if not isinstance(b, list):
+                        raise ValueError(
+                            "window lookahead expects identity-collated train batches (list of raw samples)"
+                        )
+                    raw_window.append(b)
+            except StopIteration:
+                # Partial final window: yield whatever is left without window context.
+                for b in raw_window:
+                    yield b
+                break
+
+            window = _RolloutMatchingPackWindow(raw_micro_batches=raw_window)
+            for i, b in enumerate(raw_window):
+                yield _WindowedMicroBatch(b, window=window, idx=int(i))
 
 
 class _RolloutWindowBuffer:
@@ -1660,6 +1743,149 @@ class _RolloutWindowBuffer:
         return _copy_prepared_batch_for_training_step(prepared), True
 
 
+
+
+def _slim_rollout_meta_for_logging(meta: Mapping[str, Any]) -> Dict[str, Any]:
+    """Drop large fields (e.g. token id lists) from rollout meta before buffering for logs.
+
+    Rollout-matching uses gradient accumulation; we want ONE log point per optimizer step.
+    We therefore buffer meta across micro-batches, but keep it lightweight.
+    """
+
+    def _as_int(x: Any, default: int = 0) -> int:
+        try:
+            return int(x)
+        except Exception:
+            return int(default)
+
+    def _as_float(x: Any, default: float = 0.0) -> float:
+        try:
+            return float(x)
+        except Exception:
+            return float(default)
+
+    out: Dict[str, Any] = {
+        "prompt_len": _as_int(meta.get("prompt_len", 0)),
+        "rollout_len": _as_int(meta.get("rollout_len", 0)),
+        "prefix_len": _as_int(meta.get("prefix_len", 0)),
+        "train_len": _as_int(meta.get("train_len", 0)),
+        "encoded_len": _as_int(meta.get("encoded_len", 0)),
+        "decode_mode": str(meta.get("decode_mode", "")),
+        "parse_dropped_invalid": _as_int(meta.get("parse_dropped_invalid", 0)),
+        "parse_dropped_ambiguous": _as_int(meta.get("parse_dropped_ambiguous", 0)),
+        "parse_truncated": bool(meta.get("parse_truncated", False)),
+        "valid_pred_objects": _as_int(meta.get("valid_pred_objects", 0)),
+        "matched_for_supervision": _as_int(meta.get("matched_for_supervision", 0)),
+        "matched_maskiou_sum": _as_float(meta.get("matched_maskiou_sum", 0.0)),
+        "matched_maskiou_count": _as_int(meta.get("matched_maskiou_count", 0)),
+        "gt_objects": _as_int(meta.get("gt_objects", 0)),
+        "fn_count": _as_int(meta.get("fn_count", 0)),
+        "gating_rejections": _as_int(meta.get("gating_rejections", 0)),
+        "excluded_from_supervision": _as_int(meta.get("excluded_from_supervision", 0)),
+        # For token masking diagnostics.
+        "prefix_coord_target_bins": list(meta.get("prefix_coord_target_bins") or []),
+        "tail_ignore_pos": list(meta.get("tail_ignore_pos") or []),
+        # Desc monitor fields (optional).
+        "desc_monitor_ran": bool(meta.get("desc_monitor_ran", False)),
+        "desc_pairs_total": _as_int(meta.get("desc_pairs_total", 0)),
+        "desc_exact_ok": _as_int(meta.get("desc_exact_ok", 0)),
+        "desc_sem_ok": _as_int(meta.get("desc_sem_ok", 0)),
+        "desc_sem_sim_sum": _as_float(meta.get("desc_sem_sim_sum", 0.0)),
+        "desc_sem_sim_count": _as_int(meta.get("desc_sem_sim_count", 0)),
+        "desc_sem_enabled": _as_int(meta.get("desc_sem_enabled", 0)),
+    }
+
+    return out
+
+
+@dataclass
+class _PendingTrainRolloutLog:
+    """Accumulate rollout-matching logs across micro-batches for ONE optimizer step."""
+
+    meta: List[Dict[str, Any]] = field(default_factory=list)
+
+    ce_loss_sum: float = 0.0
+    coord_loss_sum: float = 0.0
+    coord_prefix_sum: float = 0.0
+    coord_tail_sum: float = 0.0
+    n_micro: int = 0
+
+    time_forward_s: float = 0.0
+    time_mask_build_s: float = 0.0
+
+    # Rollout pipeline timings (0 on reuse steps).
+    time_rollout_generate_s: float = 0.0
+    time_rollout_parse_match_s: float = 0.0
+    time_rollout_teacher_encode_s: float = 0.0
+
+    # Packing/collation timing (0 on reuse steps).
+    time_post_rollout_pack_s: float = 0.0
+
+    # Packing stats (optional; only populated when packing is enabled).
+    packing_fill_sum: float = 0.0
+    packing_selected_total_len_sum: float = 0.0
+    packing_segments_sum: float = 0.0
+    packing_count: int = 0
+    packing_buffer_last: float = 0.0
+
+    # Rollout buffer stats (optional).
+    buffer_reuse_sum: float = 0.0
+    buffer_reuse_count: int = 0
+    buffer_window_step0_last: Optional[float] = None
+    buffer_completed_steps_last: Optional[float] = None
+
+    def add_micro(
+        self,
+        *,
+        meta: List[Mapping[str, Any]],
+        ce_loss: float,
+        coord_loss: float,
+        coord_prefix: float,
+        coord_tail: float,
+        time_forward_s: float,
+        time_mask_build_s: float,
+        batch_metrics: Optional[Mapping[str, Any]],
+    ) -> None:
+        self.n_micro += 1
+        self.ce_loss_sum += float(ce_loss)
+        self.coord_loss_sum += float(coord_loss)
+        self.coord_prefix_sum += float(coord_prefix)
+        self.coord_tail_sum += float(coord_tail)
+        self.time_forward_s += float(time_forward_s)
+        self.time_mask_build_s += float(time_mask_build_s)
+
+        for m in meta:
+            if isinstance(m, Mapping):
+                self.meta.append(_slim_rollout_meta_for_logging(m))
+
+        if not isinstance(batch_metrics, Mapping):
+            return
+
+        # Timings.
+        self.time_rollout_generate_s += float(batch_metrics.get("time/rollout_generate_s", 0.0) or 0.0)
+        self.time_rollout_parse_match_s += float(batch_metrics.get("time/rollout_parse_match_s", 0.0) or 0.0)
+        self.time_rollout_teacher_encode_s += float(batch_metrics.get("time/rollout_teacher_encode_s", 0.0) or 0.0)
+        self.time_post_rollout_pack_s += float(batch_metrics.get("time/post_rollout_pack_s", 0.0) or 0.0)
+
+        # Packing stats.
+        if "packing/post_rollout_fill" in batch_metrics:
+            self.packing_fill_sum += float(batch_metrics.get("packing/post_rollout_fill", 0.0) or 0.0)
+            self.packing_selected_total_len_sum += float(
+                batch_metrics.get("packing/post_rollout_selected_total_len", 0.0) or 0.0
+            )
+            self.packing_segments_sum += float(batch_metrics.get("packing/post_rollout_segments", 0.0) or 0.0)
+            self.packing_buffer_last = float(batch_metrics.get("packing/post_rollout_buffer", self.packing_buffer_last) or self.packing_buffer_last)
+            self.packing_count += 1
+
+        # Rollout buffer stats.
+        if "rollout/buffer_reuse" in batch_metrics:
+            self.buffer_reuse_sum += float(batch_metrics.get("rollout/buffer_reuse", 0.0) or 0.0)
+            self.buffer_reuse_count += 1
+        if "rollout/buffer_window_step0" in batch_metrics:
+            self.buffer_window_step0_last = float(batch_metrics.get("rollout/buffer_window_step0") or 0.0)
+        if "rollout/buffer_completed_steps" in batch_metrics:
+            self.buffer_completed_steps_last = float(batch_metrics.get("rollout/buffer_completed_steps") or 0.0)
+
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -1670,9 +1896,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._debug_dump_count: int = 0
         # Rank-local carry buffer for dynamic post-rollout packing (stage_2 only).
         # Each entry is (encoded, meta, encoded_len).
-        self._post_rollout_segments: List[
-            Tuple[Dict[str, Any], Dict[str, Any], int]
-        ] = []
+        self._post_rollout_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
 
         # vLLM rollout backend state (lazy init).
         self._vllm_engine: Any = None
@@ -1683,6 +1907,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Buffered-rollout window state (lazy init; config injected after construction).
         self._rm_rollout_buffer: Optional[_RolloutWindowBuffer] = None
         self._rm_rollout_buffer_sig: Optional[Tuple[bool, int, int]] = None
+
+        # Buffered training logs: accumulate across micro-batches and merge into the step log.
+        # Keyed by the *post-optimizer* global_step (HF logs after increment).
+        self._rm_pending_train_logs: Dict[int, _PendingTrainRolloutLog] = {}
 
         # Periodic qualitative dumps (rank0 only): rollout vs GT vs training target.
         self._monitor_dump_last_step: Optional[int] = None
@@ -3345,8 +3573,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _pop_post_rollout_pack(
         self,
-    ) -> List[Tuple[Dict[str, Any], Dict[str, Any], int]]:
-        """Select and remove a subset of buffered segments for one packed forward pass (carry-only)."""
+    ) -> Tuple[List[Tuple[Dict[str, Any], Dict[str, Any], int]], Dict[str, float]]:
+        """Select and remove a subset of buffered segments for one packed forward pass (carry-only).
+
+        Returns (selected_segments, packing_metrics). Packing metrics are emitted into the main
+        training log line (merged with loss) to avoid per-micro-batch log spam.
+        """
         packing_length = int(self._packing_length())
         if packing_length <= 0:
             raise ValueError("packing is enabled but packing_length is invalid")
@@ -3377,21 +3609,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 len(selected),
                 len(self._post_rollout_segments),
             )
-        try:
-            self.log(
-                {
-                    "packing/post_rollout_fill": float(fill),
-                    "packing/post_rollout_selected_total_len": float(total_len),
-                    "packing/post_rollout_segments": float(len(selected)),
-                    "packing/post_rollout_buffer": float(
-                        len(self._post_rollout_segments)
-                    ),
-                }
-            )
-        except Exception:
-            pass
 
-        return selected
+        pack_metrics: Dict[str, float] = {
+            "packing/post_rollout_fill": float(fill),
+            "packing/post_rollout_selected_total_len": float(total_len),
+            "packing/post_rollout_segments": float(len(selected)),
+            "packing/post_rollout_buffer": float(len(self._post_rollout_segments)),
+        }
+
+        return selected, pack_metrics
 
     def _prepare_batch_inputs(self, inputs: List[Mapping[str, Any]]) -> Dict[str, Any]:
         template = self.template
@@ -3851,33 +4077,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         from swift.llm import to_device
 
-        # Rank-local instrumentation (no cross-rank aggregation).
-        try:
-            def _p(xs: List[int], q: float) -> float:
-                if not xs:
-                    return 0.0
-                arr = np.asarray(xs, dtype=np.float64)
-                return float(np.percentile(arr, float(q)))
+        # Batch-level metrics are accumulated across micro-batches and merged into the
+        # main step log line (together with train/loss) to avoid messy TB curves.
+        batch_metrics: Dict[str, float] = {
+            "time/rollout_generate_s": float(t_gen_s),
+            "time/rollout_parse_match_s": float(t_parse_match_s),
+            "time/rollout_teacher_encode_s": float(t_encode_s),
+        }
 
-            new_tok_total = float(sum(int(x) for x in rollout_lens))
-            new_tok_mean = float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
-            new_tok_p90 = float(_p(rollout_lens, 90))
-            new_tok_p99 = float(_p(rollout_lens, 99))
-            toks_per_s = float(new_tok_total / float(t_gen_s)) if t_gen_s > 0 else 0.0
-            self.log(
-                {
-                    "time/rollout_generate_s": float(t_gen_s),
-                    "time/rollout_parse_match_s": float(t_parse_match_s),
-                    "time/rollout_teacher_encode_s": float(t_encode_s),
-                    "rollout/gen_new_tokens_total": float(new_tok_total),
-                    "rollout/gen_new_tokens_mean": float(new_tok_mean),
-                    "rollout/gen_new_tokens_p90": float(new_tok_p90),
-                    "rollout/gen_new_tokens_p99": float(new_tok_p99),
-                    "rollout/gen_tokens_per_s": float(toks_per_s),
-                }
-            )
-        except Exception:
-            pass
+        # For monitor dumps only (no TB logging here).
+        toks_per_s = (
+            float(sum(int(x) for x in rollout_lens)) / float(t_gen_s) if t_gen_s > 0 else 0.0
+        )
 
         if do_dump:
             try:
@@ -3919,31 +4130,312 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self._append_post_rollout_segments(segments)
 
             t_pack0 = time.perf_counter()
-            selected = self._pop_post_rollout_pack()
+            selected, pack_metrics = self._pop_post_rollout_pack()
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
-            try:
-                self.log(
-                    {"time/post_rollout_pack_s": float(time.perf_counter() - t_pack0)}
-                )
-            except Exception:
-                pass
+
+            batch_metrics.update(pack_metrics)
+            batch_metrics["time/post_rollout_pack_s"] = float(
+                time.perf_counter() - t_pack0
+            )
+            batch["_rollout_matching_batch_metrics"] = batch_metrics
             return batch
 
         with self._template_packing_disabled():
             batch = to_device(template.data_collator(encoded_batch), self.model.device)
         batch["_rollout_matching_meta"] = meta_unpacked
+        batch["_rollout_matching_batch_metrics"] = batch_metrics
         return batch
 
     # ------------------------ loss ------------------------ #
+
+    def log(self, logs: Dict[str, float]) -> None:
+        """Merge buffered rollout-matching metrics into the main train log record.
+
+        HF/Swift logs `loss` after the optimizer step (global_step already incremented).
+        Our rollout metrics are computed inside `compute_loss` (before the increment),
+        so we buffer them keyed by `global_step + 1` and merge here.
+
+        This keeps one scalar per step per tag in TensorBoard (clean plots) and reduces
+        `logging.jsonl` fragmentation.
+        """
+
+        try:
+            if (
+                isinstance(logs, dict)
+                and "loss" in logs
+                and not any(str(k).startswith("eval_") for k in logs.keys())
+            ):
+                step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+                pending = self._rm_pending_train_logs.pop(step, None)
+                if pending is not None:
+                    logs.update(self._build_train_rollout_log_payload(pending))
+        except Exception:
+            pass
+
+        return super().log(logs)
+
+    def _build_rollout_metrics_from_meta(
+        self, meta: List[Mapping[str, Any]]
+    ) -> Dict[str, float]:
+        """Compute step-level rollout metrics from slim meta dicts."""
+
+        n_samples = float(len(meta))
+        gt_total = float(sum(int(m.get("gt_objects", 0)) for m in meta))
+        matched_total = float(sum(int(m.get("matched_for_supervision", 0)) for m in meta))
+        pred_total = float(sum(int(m.get("valid_pred_objects", 0)) for m in meta))
+        excluded_total = float(sum(int(m.get("excluded_from_supervision", 0)) for m in meta))
+
+        # Sample-level rates (helps detect systematic parse failures).
+        n_samples_valid_pred = float(
+            sum(1 for m in meta if int(m.get("valid_pred_objects", 0)) > 0)
+        )
+        n_samples_any_match = float(
+            sum(1 for m in meta if int(m.get("matched_for_supervision", 0)) > 0)
+        )
+        sample_valid_pred_rate = (n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
+        sample_any_match_rate = (n_samples_any_match / n_samples) if n_samples > 0 else 0.0
+
+        fp_total = max(0.0, pred_total - matched_total)
+        fn_total = max(0.0, gt_total - matched_total)
+        precision = (matched_total / pred_total) if pred_total > 0 else 0.0
+        recall = (matched_total / gt_total) if gt_total > 0 else 0.0
+        f1 = (
+            (2.0 * precision * recall / (precision + recall))
+            if (precision + recall) > 0.0
+            else 0.0
+        )
+
+        dropped_invalid_total = float(sum(int(m.get("parse_dropped_invalid", 0)) for m in meta))
+        dropped_ambiguous_total = float(sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta))
+        obj_total = pred_total + dropped_invalid_total + dropped_ambiguous_total
+        obj_valid_frac = (pred_total / obj_total) if obj_total > 0 else 0.0
+        obj_drop_frac = (
+            ((dropped_invalid_total + dropped_ambiguous_total) / obj_total)
+            if obj_total > 0
+            else 0.0
+        )
+
+        trunc_samples = float(sum(1 for m in meta if m.get("parse_truncated")))
+        trunc_rate = (trunc_samples / n_samples) if n_samples > 0 else 0.0
+
+        gate_rejections_total = float(sum(int(m.get("gating_rejections", 0)) for m in meta))
+        top_k = int(self._cfg("candidate_top_k", 10))
+        gate_rejection_rate = (
+            (gate_rejections_total / (pred_total * float(max(1, top_k)))) if pred_total > 0 else 0.0
+        )
+
+        matched_iou_sum = float(sum(float(m.get("matched_maskiou_sum", 0.0)) for m in meta))
+        matched_iou_count = float(sum(int(m.get("matched_maskiou_count", 0)) for m in meta))
+        matched_iou_mean = (
+            (matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
+        )
+
+        # Supervision coverage diagnostics.
+        excluded_rate = (
+            (excluded_total / (matched_total + excluded_total))
+            if (matched_total + excluded_total) > 0
+            else 0.0
+        )
+        prefix_targets_total = float(sum(len(m.get("prefix_coord_target_bins") or []) for m in meta))
+        prefix_targets_per_matched = (
+            (prefix_targets_total / matched_total) if matched_total > 0 else 0.0
+        )
+        tail_ignore_total = float(sum(len(m.get("tail_ignore_pos") or []) for m in meta))
+        append_len_total = float(
+            sum(max(0, int(m.get("train_len", 0)) - int(m.get("prefix_len", 0))) for m in meta)
+        )
+        tail_ignore_frac = (
+            (tail_ignore_total / append_len_total) if append_len_total > 0 else 0.0
+        )
+
+        # Length stats (prompt/prefix/train/encoded) help diagnose truncation/packing behavior.
+        def _int_list(key: str) -> List[int]:
+            xs: List[int] = []
+            for m in meta:
+                try:
+                    xs.append(int(m.get(key, 0)))
+                except Exception:
+                    continue
+            return xs
+
+        prompt_lens = _int_list("prompt_len")
+        prefix_lens = _int_list("prefix_len")
+        train_lens = _int_list("train_len")
+        encoded_lens = _int_list("encoded_len")
+        rollout_lens = _int_list("rollout_len")
+        append_lens: List[int] = []
+        for m in meta:
+            try:
+                append_lens.append(int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
+            except Exception:
+                continue
+
+        def _mean(xs: List[int]) -> float:
+            return float(sum(xs) / len(xs)) if xs else 0.0
+
+        def _p(xs: List[int], q: float) -> float:
+            if not xs:
+                return 0.0
+            arr = np.asarray(xs, dtype=np.float64)
+            return float(np.percentile(arr, float(q)))
+
+        payload: Dict[str, float] = {
+            "rollout/parse_dropped_invalid": float(dropped_invalid_total),
+            "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
+            "rollout/parse_truncated": float(trunc_samples),
+            "rollout/parse_truncated_rate": float(trunc_rate),
+            "rollout/parse_obj_total": float(obj_total),
+            "rollout/parse_obj_valid_frac": float(obj_valid_frac),
+            "rollout/parse_obj_drop_frac": float(obj_drop_frac),
+            "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
+            "rollout/sample_any_match_rate": float(sample_any_match_rate),
+            "rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
+            "rollout/gating_rejections": float(gate_rejections_total),
+            "rollout/gating_rejection_rate": float(gate_rejection_rate),
+            "rollout/valid_pred_objects": float(pred_total),
+            "rollout/gt_objects": float(gt_total),
+            # Backward-compat alias: this is recall (GT coverage).
+            "rollout/match_rate": float(recall),
+            "rollout/precision": float(precision),
+            "rollout/recall": float(recall),
+            "rollout/f1": float(f1),
+            "rollout/fp": float(fp_total),
+            "rollout/fn": float(fn_total),
+            "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
+            "rollout/pred_per_sample": float(pred_total / n_samples) if n_samples > 0 else 0.0,
+            "rollout/fp_per_sample": float(fp_total / n_samples) if n_samples > 0 else 0.0,
+            "rollout/fn_per_sample": float(fn_total / n_samples) if n_samples > 0 else 0.0,
+            "rollout/matched_maskiou_mean": float(matched_iou_mean),
+            "rollout/matched_maskiou_count": float(matched_iou_count),
+            "rollout/excluded_rate": float(excluded_rate),
+            "rollout/prefix_coord_targets_total": float(prefix_targets_total),
+            "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
+            "rollout/tail_ignore_frac": float(tail_ignore_frac),
+            "rollout/prompt_len_mean": float(_mean(prompt_lens)),
+            "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
+            "rollout/prefix_len_mean": float(_mean(prefix_lens)),
+            "rollout/rollout_len_mean": float(_mean(rollout_lens)),
+            "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
+            "rollout/train_len_mean": float(_mean(train_lens)),
+            "rollout/train_len_p90": float(_p(train_lens, 90)),
+            "rollout/append_len_mean": float(_mean(append_lens)),
+            "rollout/append_len_p90": float(_p(append_lens, 90)),
+            "rollout/encoded_len_mean": float(_mean(encoded_lens)),
+            "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
+            "rollout/decode_greedy": float(sum(1 for m in meta if m.get("decode_mode") == "greedy")),
+            "rollout/decode_beam": float(sum(1 for m in meta if m.get("decode_mode") == "beam")),
+            "rollout/matched_for_supervision": float(matched_total),
+            "rollout/excluded_from_supervision": float(excluded_total),
+        }
+
+        # Desc monitor outputs (matched pairs only).
+        try:
+            if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
+                pairs_total = float(sum(int(m.get("desc_pairs_total", 0)) for m in meta))
+                exact_ok_total = float(sum(int(m.get("desc_exact_ok", 0)) for m in meta))
+                exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                payload["rollout/desc_pairs_total"] = float(pairs_total)
+                payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
+
+                sem_enabled_total = float(sum(int(m.get("desc_sem_enabled", 0)) for m in meta))
+                payload["rollout/desc_sem_enabled"] = float(1.0 if sem_enabled_total > 0 else 0.0)
+                if sem_enabled_total > 0:
+                    sem_ok_total = float(sum(int(m.get("desc_sem_ok", 0)) for m in meta))
+                    sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                    payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
+
+                    sim_sum_total = float(sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta))
+                    sim_count_total = float(sum(int(m.get("desc_sem_sim_count", 0)) for m in meta))
+                    if sim_count_total > 0:
+                        payload["rollout/desc_sem_sim_mean"] = float(sim_sum_total / sim_count_total)
+                        payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
+        except Exception:
+            pass
+
+        return payload
+
+    def _build_train_rollout_log_payload(
+        self, pending: _PendingTrainRolloutLog
+    ) -> Dict[str, float]:
+        payload = self._build_rollout_metrics_from_meta(pending.meta)
+
+        if pending.n_micro > 0:
+            payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
+            payload["loss/coord"] = float(pending.coord_loss_sum / float(pending.n_micro))
+            payload["loss/coord_prefix"] = float(
+                pending.coord_prefix_sum / float(pending.n_micro)
+            )
+            payload["loss/coord_tail"] = float(pending.coord_tail_sum / float(pending.n_micro))
+
+        payload["time/forward_s"] = float(pending.time_forward_s)
+        payload["time/mask_build_s"] = float(pending.time_mask_build_s)
+
+        payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
+        payload["time/rollout_parse_match_s"] = float(pending.time_rollout_parse_match_s)
+        payload["time/rollout_teacher_encode_s"] = float(pending.time_rollout_teacher_encode_s)
+        if pending.time_post_rollout_pack_s > 0:
+            payload["time/post_rollout_pack_s"] = float(pending.time_post_rollout_pack_s)
+
+        if pending.packing_count > 0:
+            payload["packing/post_rollout_fill"] = float(
+                pending.packing_fill_sum / float(pending.packing_count)
+            )
+            payload["packing/post_rollout_selected_total_len"] = float(
+                pending.packing_selected_total_len_sum / float(pending.packing_count)
+            )
+            payload["packing/post_rollout_segments"] = float(
+                pending.packing_segments_sum / float(pending.packing_count)
+            )
+            payload["packing/post_rollout_buffer"] = float(pending.packing_buffer_last)
+
+        if pending.buffer_reuse_count > 0:
+            payload["rollout/buffer_reuse"] = float(
+                pending.buffer_reuse_sum / float(pending.buffer_reuse_count)
+            )
+            if pending.buffer_window_step0_last is not None:
+                payload["rollout/buffer_window_step0"] = float(
+                    pending.buffer_window_step0_last
+                )
+            if pending.buffer_completed_steps_last is not None:
+                payload["rollout/buffer_completed_steps"] = float(
+                    pending.buffer_completed_steps_last
+                )
+
+        # Generation-length stats are only meaningful when we actually ran a rollout this step.
+        if pending.time_rollout_generate_s > 0:
+            rollout_lens = [int(m.get("rollout_len", 0)) for m in pending.meta]
+
+            def _p(xs: List[int], q: float) -> float:
+                if not xs:
+                    return 0.0
+                arr = np.asarray(xs, dtype=np.float64)
+                return float(np.percentile(arr, float(q)))
+
+            new_tok_total = float(sum(int(x) for x in rollout_lens))
+            new_tok_mean = float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
+            payload["rollout/gen_new_tokens_total"] = float(new_tok_total)
+            payload["rollout/gen_new_tokens_mean"] = float(new_tok_mean)
+            payload["rollout/gen_new_tokens_p90"] = float(_p(rollout_lens, 90))
+            payload["rollout/gen_new_tokens_p99"] = float(_p(rollout_lens, 99))
+            payload["rollout/gen_tokens_per_s"] = float(
+                (new_tok_total / float(pending.time_rollout_generate_s))
+                if pending.time_rollout_generate_s > 0
+                else 0.0
+            )
+
+        return payload
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         meta = inputs.pop("_rollout_matching_meta", None)
         if not isinstance(meta, list):
             raise ValueError("rollout-matching trainer requires _rollout_matching_meta")
+
+        batch_metrics = inputs.pop("_rollout_matching_batch_metrics", None)
 
         # Always compute logits; do not rely on model.loss (we need custom masking).
         # NOTE: ms-swift's Seq2SeqTrainer/_prepare_inputs may inject helper keys
@@ -4100,253 +4592,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         total = ce_loss + coord_loss
 
-        # Lightweight counters (no geometry metric logging).
+        # Accumulate rollout-matching metrics across micro-batches and merge them into the
+        # *post-optimizer* train log line (same step as train/loss). This avoids duplicated
+        # TB scalars at the same step (messy plots) under gradient accumulation.
         try:
-            n_samples = float(len(meta))
-            gt_total = float(sum(int(m.get("gt_objects", 0)) for m in meta))
-            matched_total = float(
-                sum(int(m.get("matched_for_supervision", 0)) for m in meta)
+            step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+            target_step = step + 1
+            pending = self._rm_pending_train_logs.get(target_step)
+            if pending is None:
+                pending = _PendingTrainRolloutLog()
+                self._rm_pending_train_logs[target_step] = pending
+            pending.add_micro(
+                meta=meta,
+                ce_loss=float(ce_loss.detach().cpu().item()),
+                coord_loss=float(coord_loss.detach().cpu().item()),
+                coord_prefix=float(prefix_coord_mean.detach().cpu().item()),
+                coord_tail=float(tail_coord_mean.detach().cpu().item()),
+                time_forward_s=float(t_fwd_s),
+                time_mask_build_s=float(t_mask_s),
+                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
             )
-            pred_total = float(sum(int(m.get("valid_pred_objects", 0)) for m in meta))
-            excluded_total = float(
-                sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
-            )
-
-            # Sample-level rates (helps detect systematic parse failures).
-            n_samples_valid_pred = float(
-                sum(1 for m in meta if int(m.get("valid_pred_objects", 0)) > 0)
-            )
-            n_samples_any_match = float(
-                sum(1 for m in meta if int(m.get("matched_for_supervision", 0)) > 0)
-            )
-            sample_valid_pred_rate = (
-                (n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
-            )
-            sample_any_match_rate = (
-                (n_samples_any_match / n_samples) if n_samples > 0 else 0.0
-            )
-
-            fp_total = max(0.0, pred_total - matched_total)
-            fn_total = max(0.0, gt_total - matched_total)
-            precision = (matched_total / pred_total) if pred_total > 0 else 0.0
-            recall = (matched_total / gt_total) if gt_total > 0 else 0.0
-            f1 = (
-                (2.0 * precision * recall / (precision + recall))
-                if (precision + recall) > 0.0
-                else 0.0
-            )
-
-            dropped_invalid_total = float(
-                sum(int(m.get("parse_dropped_invalid", 0)) for m in meta)
-            )
-            dropped_ambiguous_total = float(
-                sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta)
-            )
-            obj_total = pred_total + dropped_invalid_total + dropped_ambiguous_total
-            obj_valid_frac = (pred_total / obj_total) if obj_total > 0 else 0.0
-            obj_drop_frac = (
-                ((dropped_invalid_total + dropped_ambiguous_total) / obj_total)
-                if obj_total > 0
-                else 0.0
-            )
-
-            trunc_samples = float(sum(1 for m in meta if m.get("parse_truncated")))
-            trunc_rate = (trunc_samples / n_samples) if n_samples > 0 else 0.0
-
-            gate_rejections_total = float(
-                sum(int(m.get("gating_rejections", 0)) for m in meta)
-            )
-            top_k = int(self._cfg("candidate_top_k", 10))
-            gate_rejection_rate = (
-                (gate_rejections_total / (pred_total * float(max(1, top_k))))
-                if pred_total > 0
-                else 0.0
-            )
-
-            matched_iou_sum = float(
-                sum(float(m.get("matched_maskiou_sum", 0.0)) for m in meta)
-            )
-            matched_iou_count = float(
-                sum(int(m.get("matched_maskiou_count", 0)) for m in meta)
-            )
-            matched_iou_mean = (
-                (matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
-            )
-
-            # Supervision coverage diagnostics.
-            excluded_rate = (
-                (excluded_total / (matched_total + excluded_total))
-                if (matched_total + excluded_total) > 0
-                else 0.0
-            )
-            prefix_targets_total = float(
-                sum(
-                    len(m.get("prefix_coord_target_bins") or [])
-                    for m in meta
-                    if isinstance(m, dict)
-                )
-            )
-            prefix_targets_per_matched = (
-                (prefix_targets_total / matched_total) if matched_total > 0 else 0.0
-            )
-            tail_ignore_total = float(
-                sum(
-                    len(m.get("tail_ignore_pos") or [])
-                    for m in meta
-                    if isinstance(m, dict)
-                )
-            )
-            append_len_total = float(
-                sum(
-                    max(0, int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
-                    for m in meta
-                    if isinstance(m, dict)
-                )
-            )
-            tail_ignore_frac = (
-                (tail_ignore_total / append_len_total) if append_len_total > 0 else 0.0
-            )
-
-            # Length stats (prompt/prefix/train/encoded) help diagnose truncation/packing behavior.
-            def _int_list(key: str) -> List[int]:
-                xs: List[int] = []
-                for m in meta:
-                    try:
-                        xs.append(int(m.get(key, 0)))
-                    except Exception:
-                        continue
-                return xs
-
-            prompt_lens = _int_list("prompt_len")
-            prefix_lens = _int_list("prefix_len")
-            train_lens = _int_list("train_len")
-            encoded_lens = _int_list("encoded_len")
-            rollout_lens = _int_list("rollout_len")
-            append_lens: List[int] = []
-            for m in meta:
-                try:
-                    append_lens.append(int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
-                except Exception:
-                    continue
-
-            def _mean(xs: List[int]) -> float:
-                return float(sum(xs) / len(xs)) if xs else 0.0
-
-            def _p(xs: List[int], q: float) -> float:
-                if not xs:
-                    return 0.0
-                arr = np.asarray(xs, dtype=np.float64)
-                return float(np.percentile(arr, float(q)))
-
-            payload: Dict[str, float] = {
-                "rollout/parse_dropped_invalid": float(dropped_invalid_total),
-                "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
-                "rollout/parse_truncated": float(trunc_samples),
-                "rollout/parse_truncated_rate": float(trunc_rate),
-                "rollout/parse_obj_total": float(obj_total),
-                "rollout/parse_obj_valid_frac": float(obj_valid_frac),
-                "rollout/parse_obj_drop_frac": float(obj_drop_frac),
-                "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
-                "rollout/sample_any_match_rate": float(sample_any_match_rate),
-                "rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
-                "rollout/gating_rejections": float(gate_rejections_total),
-                "rollout/gating_rejection_rate": float(gate_rejection_rate),
-                "rollout/valid_pred_objects": float(pred_total),
-                "rollout/gt_objects": gt_total,
-                "rollout/match_rate": recall,
-                "rollout/precision": float(precision),
-                "rollout/recall": float(recall),
-                "rollout/f1": float(f1),
-                "rollout/fp": float(fp_total),
-                "rollout/fn": float(fn_total),
-                "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
-                "rollout/pred_per_sample": float(pred_total / n_samples)
-                if n_samples > 0
-                else 0.0,
-                "rollout/fp_per_sample": float(fp_total / n_samples)
-                if n_samples > 0
-                else 0.0,
-                "rollout/fn_per_sample": float(fn_total / n_samples)
-                if n_samples > 0
-                else 0.0,
-                "rollout/matched_maskiou_mean": float(matched_iou_mean),
-                "rollout/matched_maskiou_count": float(matched_iou_count),
-                "rollout/excluded_rate": float(excluded_rate),
-                "rollout/prefix_coord_targets_total": float(prefix_targets_total),
-                "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
-                "rollout/tail_ignore_frac": float(tail_ignore_frac),
-                "rollout/prompt_len_mean": float(_mean(prompt_lens)),
-                "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
-                "rollout/prefix_len_mean": float(_mean(prefix_lens)),
-                "rollout/rollout_len_mean": float(_mean(rollout_lens)),
-                "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
-                "rollout/train_len_mean": float(_mean(train_lens)),
-                "rollout/train_len_p90": float(_p(train_lens, 90)),
-                "rollout/append_len_mean": float(_mean(append_lens)),
-                "rollout/append_len_p90": float(_p(append_lens, 90)),
-                "rollout/encoded_len_mean": float(_mean(encoded_lens)),
-                "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
-                "rollout/decode_greedy": float(
-                    sum(1 for m in meta if m.get("decode_mode") == "greedy")
-                ),
-                "rollout/decode_beam": float(
-                    sum(1 for m in meta if m.get("decode_mode") == "beam")
-                ),
-                "rollout/matched_for_supervision": float(
-                    sum(int(m.get("matched_for_supervision", 0)) for m in meta)
-                ),
-                "rollout/excluded_from_supervision": float(
-                    sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
-                ),
-                "loss/ce": float(ce_loss.detach().cpu().item()),
-                "loss/coord": float(coord_loss.detach().cpu().item()),
-                "loss/coord_prefix": float(prefix_coord_mean.detach().cpu().item()),
-                "loss/coord_tail": float(tail_coord_mean.detach().cpu().item()),
-                "time/forward_s": float(t_fwd_s),
-                "time/mask_build_s": float(t_mask_s),
-            }
-
-            # Optional semantic desc monitoring (metrics only).
-            try:
-                if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
-                    pairs_total = float(
-                        sum(int(m.get("desc_pairs_total", 0)) for m in meta)
-                    )
-                    exact_ok_total = float(
-                        sum(int(m.get("desc_exact_ok", 0)) for m in meta)
-                    )
-                    exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
-                    payload["rollout/desc_pairs_total"] = float(pairs_total)
-                    payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
-
-                    sem_enabled_total = float(
-                        sum(int(m.get("desc_sem_enabled", 0)) for m in meta)
-                    )
-                    payload["rollout/desc_sem_enabled"] = float(
-                        1.0 if sem_enabled_total > 0 else 0.0
-                    )
-                    if sem_enabled_total > 0:
-                        sem_ok_total = float(
-                            sum(int(m.get("desc_sem_ok", 0)) for m in meta)
-                        )
-                        sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
-                        payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
-
-                        sim_sum_total = float(
-                            sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta)
-                        )
-                        sim_count_total = float(
-                            sum(int(m.get("desc_sem_sim_count", 0)) for m in meta)
-                        )
-                        if sim_count_total > 0:
-                            payload["rollout/desc_sem_sim_mean"] = float(
-                                sim_sum_total / sim_count_total
-                            )
-                            payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
-            except Exception:
-                pass
-
-            self.log(payload)
         except Exception:
             pass
 
@@ -4728,6 +4993,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         desc_sem_sim_count_total
                     )
 
+        # Mirror HF Trainer.evaluate(): log metrics and trigger callbacks.
+        self.log(metrics)
+        self.control = self.callback_handler.on_evaluate(
+            self.args, self.state, self.control, metrics
+        )
+
         if was_training:
             self.model.train()
 
@@ -4787,25 +5058,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         try:
-            payload: Dict[str, float] = {
-                "rollout/buffer_reuse": float(1.0 if reused else 0.0),
-                # window_step0 can be 0 (valid), so do not use `or -1`.
-                "rollout/buffer_window_step0": float(
-                    -1 if buf.window_step0 is None else int(buf.window_step0)
-                ),
-                "rollout/buffer_completed_steps": float(buf.completed_optimizer_steps),
-                "rollout/buffer_micro_idx": float(max(0, int(buf.micro_idx) - 1)),
-            }
-            # Avoid double-counting rollout time on M-steps.
+            bm = batch.get("_rollout_matching_batch_metrics")
+            if not isinstance(bm, dict):
+                bm = {}
+                batch["_rollout_matching_batch_metrics"] = bm
+
+            bm["rollout/buffer_reuse"] = float(1.0 if reused else 0.0)
+            # window_step0 can be 0 (valid), so do not use `or -1`.
+            bm["rollout/buffer_window_step0"] = float(
+                -1 if buf.window_step0 is None else int(buf.window_step0)
+            )
+            bm["rollout/buffer_completed_steps"] = float(buf.completed_optimizer_steps)
+
+            # Avoid double-counting rollout pipeline time on M-steps.
             if reused:
-                payload.update(
-                    {
-                        "time/rollout_generate_s": 0.0,
-                        "time/rollout_parse_match_s": 0.0,
-                        "time/rollout_teacher_encode_s": 0.0,
-                    }
-                )
-            self.log(payload)
+                bm["time/rollout_generate_s"] = 0.0
+                bm["time/rollout_parse_match_s"] = 0.0
+                bm["time/rollout_teacher_encode_s"] = 0.0
+                bm["time/post_rollout_pack_s"] = 0.0
         except Exception:
             pass
 

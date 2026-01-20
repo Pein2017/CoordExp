@@ -39,7 +39,9 @@ model:
 training:
   output_dir: output/rollout_matching_sft/stage2_ckpt3106_buffered
   run_name: debug
-  logging_dir: tb/rollout_matching_sft/stage2_ckpt3106_buffered
+  # NOTE: leaving logging_dir unset uses HF default `output_dir/runs/<timestamp>` (unique per run),
+  # which prevents mixing reruns into the same TensorBoard directory (and keeps plot_images sane).
+  # logging_dir: tb/rollout_matching_sft/stage2_ckpt3106_buffered
 
   # Sensible starting point; tune for real runs.
   num_train_epochs: 4

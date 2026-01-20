@@ -33,6 +33,8 @@ not reported for this trainer variant.
 Important semantics:
 - **Optimizer-step units:** when rollout buffering is enabled, "E-step vs M-step"
   is defined on optimizer steps (`TrainerState.global_step`), not micro-steps.
+- **Aggregated logging:** metrics are accumulated across gradient-accumulation micro-batches and
+  logged once per optimizer step (same step index as `train/loss`).
 - **Buffering:** interpret rollout-quality metrics on **E-steps only** by
   filtering to `rollout/buffer_reuse == 0`. M-steps reuse cached targets and are
   not an on-policy rollout signal.
@@ -49,9 +51,6 @@ Important semantics:
   - **What:** optimizer-step index where the current reuse window started (E-step step id).
 - `rollout/buffer_completed_steps`
   - **What:** how many optimizer steps in the current window have completed so far.
-- `rollout/buffer_micro_idx`
-  - **What:** micro-step index within the accumulation window (0..gas-1).
-
 ### Rollout timing / throughput
 
 - `time/rollout_generate_s`
