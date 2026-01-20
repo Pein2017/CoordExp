@@ -544,11 +544,14 @@ def _prepare_pred_objects(
     preds: List[Dict[str, Any]] = []
     coord_mode_hint = record.get("coord_mode")
     for obj in objs_raw:
-        gkeys = (
-            [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
-            if not obj.get("type")
-            else [obj["type"]]
-        )
+        if obj.get("type"):
+            if obj["type"] not in GEOM_KEYS:
+                counters.invalid_geometry += 1
+                invalid.append({"reason": "geometry_kind", "raw": obj})
+                continue
+            gkeys = [obj["type"]]
+        else:
+            gkeys = [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
         if len(gkeys) != 1:
             counters.invalid_geometry += 1
             invalid.append({"reason": "geometry_keys", "raw": obj})
@@ -564,11 +567,6 @@ def _prepare_pred_objects(
         if points is None:
             counters.invalid_coord += 1
             invalid.append({"reason": "coord_parse", "raw": obj})
-            continue
-
-        if gtype == "line":
-            # lines are carried through in reports but excluded from metrics
-            invalid.append({"reason": "line_skipped", "raw": obj})
             continue
 
         # Pixel-ready by default; allow norm1000 if tokens or hint present.
@@ -1273,8 +1271,7 @@ def evaluate_and_save(
 
 
 def _f1ish_filter_gt_objects(sample: Sample) -> List[Dict[str, Any]]:
-    # Line geometries are excluded from F1-ish matching/metrics.
-    return [obj for obj in sample.objects if obj.get("type") != "line"]
+    return list(sample.objects)
 
 
 def _compute_prf_from_counts(tp: int, fp: int, fn: int) -> Tuple[float, float, float]:

@@ -17,7 +17,7 @@ from src.common.geometry import (
     flatten_points,
 )
 
-GEOM_KEYS = ("bbox_2d", "poly", "line")
+GEOM_KEYS = ("bbox_2d", "poly")
 
 
 def extract_json_block(text: str) -> str | None:
@@ -125,6 +125,13 @@ def parse_prediction(text: str) -> List[Dict[str, Any]]:
     for key, val in sorted(obj.items(), key=lambda kv: str(kv[0])):
         if not isinstance(val, dict):
             continue
+        if "line" in val or "line_points" in val:
+            parsed.append({
+                "desc": str(val.get("desc", "")),
+                "line": val.get("line"),
+                "line_points": val.get("line_points"),
+            })
+            continue
         geom_keys = [g for g in GEOM_KEYS if g in val]
         if len(geom_keys) != 1:
             continue
@@ -141,10 +148,6 @@ def parse_prediction(text: str) -> List[Dict[str, Any]]:
         if had_tokens and any(v < 0 or v > MAX_BIN for v in ints):
             continue
         ints = [int(round(v)) for v in ints]
-        if gtype == "line":
-            lp = val.get("line_points")
-            if isinstance(lp, int) and lp > 0 and lp * 2 != len(ints):
-                continue
         parsed.append(
             {
                 "desc": str(val.get("desc", "")),

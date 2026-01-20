@@ -54,7 +54,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - `effective_batch_size` auto-computes `gradient_accumulation_steps`; packing keys are stripped before TrainArguments and re-consumed in `sft.py`.
 
 ## Data Contract & Prep
-- Follow `docs/DATA_JSONL_CONTRACT.md`: exactly one geometry per object (`bbox_2d|poly|line`), width/height required, paths relative to JSONL dir.
+- Follow `docs/DATA_JSONL_CONTRACT.md`: exactly one geometry per object (`bbox_2d|poly`), width/height required, paths relative to JSONL dir.
 - Pixel coords are canonical; template normalizes to norm1000 at encode time. If using coord tokens in JSONL, keep `width/height` and enable `skip_bbox_norm` to avoid double scaling.
 - Validate/preview with `scripts/inspect_chat_template.py` and dataset validators in `src/datasets/`.
 

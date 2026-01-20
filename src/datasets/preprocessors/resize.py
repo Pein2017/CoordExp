@@ -110,6 +110,8 @@ def _scale_and_clamp_geometry(
     scaled: List[MutableMapping[str, Any]] = []
     for obj in objects:
         updated = dict(obj)
+        if obj.get("line") is not None or obj.get("line_points") is not None:
+            raise ValueError("line geometry is not supported")
         if obj.get("bbox_2d") is not None:
             pts = scale_points(obj["bbox_2d"], sx, sy)
             updated["bbox_2d"] = clamp_points(pts, width, height)
@@ -120,11 +122,6 @@ def _scale_and_clamp_geometry(
             updated["poly"] = clamp_points(pts, width, height)
             updated.pop("bbox_2d", None)
             updated.pop("line", None)
-        elif obj.get("line") is not None:
-            pts = scale_points(obj["line"], sx, sy)
-            updated["line"] = clamp_points(pts, width, height)
-            updated.pop("bbox_2d", None)
-            updated.pop("poly", None)
         scaled.append(updated)
     return scaled
 

@@ -4,7 +4,7 @@ Features
 --------
 - Optionally run inference via ``src.infer.InferenceEngine`` (coord/text mode).
 - Render pixel-space GT vs prediction geometries from the standardized
-  ``pred.jsonl`` schema (bbox_2d, poly, line).
+  ``pred.jsonl`` schema (bbox_2d, poly).
 - Saves per-sample PNG overlays to ``save_dir``.
 
 Usage (inside repo root, ms env):
@@ -143,7 +143,7 @@ def draw_sample(item: VisItem, save_path: Path) -> None:
             gtype = obj.get("type", "")
             label = obj.get("desc", "") or "object"
             color = color_map.get(label, "#1f77b4")
-            linestyle = "-" if gtype == "bbox_2d" else "--" if gtype == "poly" else ":"
+            linestyle = "-" if gtype == "bbox_2d" else "--"
             if gtype == "bbox_2d" and len(pts) == 4:
                 x1, y1, x2, y2 = pts
                 rect = patches.Rectangle(
@@ -167,10 +167,6 @@ def draw_sample(item: VisItem, save_path: Path) -> None:
                     linestyle=linestyle,
                 )
                 ax.add_patch(poly)
-            elif gtype == "line" and len(pts) >= 4:
-                xy = pair_points(pts)
-                xs, ys = zip(*xy)
-                ax.plot(xs, ys, color=color, linewidth=2, linestyle=linestyle)
 
     ax_gt.set_title("Ground Truth")
     _draw(ax_gt, item.gt)

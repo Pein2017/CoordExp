@@ -125,7 +125,6 @@ custom:
           min_coverage: 0.4               # Drop objects <40% visible (more lenient)
           completeness_threshold: 0.95    # Mark "只显示部分" if <95% visible
           min_objects: 4                  # Skip crop if <4 objects (dense scenes)
-          skip_if_line: true              # Skip crop if line objects present
           prob: 0.08                      # Reduced from 0.15 (softer)
       # ✅ Multi-scale training: prefer medium-large sizes (no aggressive shrinking)
       - name: resize_by_scale

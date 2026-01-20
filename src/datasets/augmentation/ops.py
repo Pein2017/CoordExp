@@ -14,16 +14,12 @@ from ..geometry import (
     hflip_matrix,
     rotate_center,
     vflip_matrix,
-    clamp_points,
-    dedupe_consecutive_points,
-    invert_affine,
+    clamp_points,    invert_affine,
     scale_center,
     scale_matrix,
     sutherland_hodgman_clip,
     min_area_rect,
-    to_clockwise,
-    clip_polyline_to_rect,
-    points_to_xyxy,
+    to_clockwise,    points_to_xyxy,
     translate,
     transform_geometry,
     # Coverage and cropping utilities
@@ -500,28 +496,6 @@ class ResizeByScale(ImageAugmenter):
                     # Degenerate: preserve by clamping original scaled coords
                     q = clamp_points(to_clockwise(scaled), new_w, new_h)
                     out_geoms.append({"poly": q})
-            elif "line" in g:
-                pts = g["line"]
-                scaled: List[float] = []
-                for i in range(0, len(pts), 2):
-                    scaled.append(float(pts[i]) * sx)
-                    scaled.append(float(pts[i + 1]) * sy)
-                clipped = clip_polyline_to_rect(scaled, new_w, new_h)
-                clipped = clamp_points(clipped, new_w, new_h)
-                clipped = dedupe_consecutive_points(clipped)
-                if len(clipped) >= 4:
-                    out_geoms.append({"line": clipped})
-                else:
-                    # Degenerate: preserve by collapsing to minimal 2-point line
-                    raw = clamp_points(scaled, new_w, new_h)
-                    raw = dedupe_consecutive_points(raw)
-                    if len(raw) >= 4:
-                        out_geoms.append({"line": raw[:4]})
-                    elif len(raw) >= 2:
-                        out_geoms.append({"line": [raw[0], raw[1], raw[0], raw[1]]})
-                    else:
-                        # Extreme fallback: point at (0,0)
-                        out_geoms.append({"line": [0.0, 0.0, 0.0, 0.0]})
             else:
                 out_geoms.append(g)
 
@@ -927,7 +901,7 @@ class SmallObjectZoomPaste(ImageAugmenter):
       1) Select small objects by size/length thresholds (optional class whitelist).
       2) Crop patch with context, scale up, and translate within the same image.
       3) Reject placements overlapping existing annotations beyond threshold; retry a few times.
-      4) Apply identical affine (scale+translate) to bbox/poly/line; originals remain.
+      4) Apply identical affine (scale+translate) to bbox/poly; originals remain.
     """
 
     def __init__(
@@ -937,10 +911,8 @@ class SmallObjectZoomPaste(ImageAugmenter):
         max_attempts: int = 20,
         scale: Tuple[float, float] = (1.4, 1.8),
         max_size: float = 96.0,
-        max_line_length: float = 128.0,
         context: float = 4.0,
         overlap_threshold: float = 0.1,
-        line_buffer: float = 4.0,
         class_whitelist: List[str] | None = None,
     ):
         self.prob = float(prob)
@@ -948,10 +920,8 @@ class SmallObjectZoomPaste(ImageAugmenter):
         self.max_attempts = int(max_attempts)
         self.scale = (float(scale[0]), float(scale[1]))
         self.max_size = float(max_size)
-        self.max_line_length = float(max_line_length)
         self.context = float(context)
         self.overlap_threshold = float(overlap_threshold)
-        self.line_buffer = float(line_buffer)
         self.class_whitelist = list(class_whitelist) if class_whitelist else None
         self.kind = "barrier"
         self.allows_geometry_drops = True  # geometry count may increase; allow validation bypass
@@ -964,14 +934,6 @@ class SmallObjectZoomPaste(ImageAugmenter):
             return False
         if max(w, h) <= self.max_size:
             return True
-        if "line" in geom:
-            pts = geom["line"]
-            length = 0.0
-            for i in range(0, len(pts) - 2, 2):
-                dx = pts[i + 2] - pts[i]
-                dy = pts[i + 3] - pts[i + 1]
-                length += math.hypot(dx, dy)
-            return length <= self.max_line_length
         return False
 
     def _class_allowed(self, desc: str) -> bool:
@@ -996,8 +958,6 @@ class SmallObjectZoomPaste(ImageAugmenter):
             compose_affine(scale_matrix(scale_factor, scale_factor), translate(-cx, -cy)),
         )
         transformed = transform_geometry(geom, M, width=width, height=height)
-        if "line" in transformed and len(transformed["line"]) < 4:
-            return None
         if "poly" in transformed and len(transformed["poly"]) < 6:
             return None
         return transformed
@@ -1010,11 +970,9 @@ class SmallObjectZoomPaste(ImageAugmenter):
         height: int,
     ) -> bool:
         new_aabb = get_aabb(new_geom)
-        new_aabb = _buffer_aabb(new_aabb, self.line_buffer if "line" in new_geom else 0.0, width, height)
+        new_aabb = _buffer_aabb(new_aabb, 0.0, width, height)
         for g in existing:
-            aabb = get_aabb(g)
-            pad = self.line_buffer if "line" in g else 0.0
-            aabb = _buffer_aabb(aabb, pad, width, height)
+            aabb = get_aabb(g)        aabb = _buffer_aabb(aabb, 0.0, width, height)
             if _aabb_iou(new_aabb, aabb) > self.overlap_threshold:
                 return True
         return False
@@ -1108,8 +1066,6 @@ class RandomCrop(ImageAugmenter):
     Random crop with label filtering for dense captioning.
 
     Crops a random region from the image and filters geometries based on visibility.
-    If filtered objects < min_objects or any filtered object is a line (when skip_if_line=True),
-    the entire crop operation is skipped and original images/geometries are returned unchanged.
 
     Parameters:
         scale: (min, max) tuple for crop size as fraction of original image (default: (0.6, 1.0))
@@ -1117,7 +1073,6 @@ class RandomCrop(ImageAugmenter):
         min_coverage: minimum coverage ratio to keep object (default: 0.3)
         completeness_threshold: coverage threshold for marking "只显示部分" (default: 0.95)
         min_objects: skip crop if filtered objects < this value (default: 4)
-        skip_if_line: skip crop if any filtered object is a line (default: True)
         prob: probability of applying crop (default: 1.0)
     """
 
@@ -1128,7 +1083,6 @@ class RandomCrop(ImageAugmenter):
         min_coverage: float = 0.3,
         completeness_threshold: float = 0.95,
         min_objects: int = 4,
-        skip_if_line: bool = True,
         prob: float = 1.0,
     ):
         self.scale = (float(scale[0]), float(scale[1]))
@@ -1136,7 +1090,6 @@ class RandomCrop(ImageAugmenter):
         self.min_coverage = float(min_coverage)
         self.completeness_threshold = float(completeness_threshold)
         self.min_objects = int(min_objects)
-        self.skip_if_line = bool(skip_if_line)
         self.prob = float(prob)
         self.kind = "barrier"
 
@@ -1219,20 +1172,6 @@ class RandomCrop(ImageAugmenter):
             self.last_skip_counters[reason] = self.last_skip_counters.get(reason, 0) + 1
             return images, geoms
 
-        if self.skip_if_line:
-            has_line = any("line" in g for g in filtered_geoms)
-            if has_line:
-                reason = "line_object"
-                logger.debug(
-                    "Crop region contains line object. Skipping crop to preserve cable/fiber integrity."
-                )
-                self.last_skip_reason = reason
-                self.last_crop_skip_reason = reason
-                self.last_skip_counters[reason] = (
-                    self.last_skip_counters.get(reason, 0) + 1
-                )
-                return images, geoms
-
         # Proceed with crop - truncate and translate geometries
         cropped_geoms: List[Dict[str, Any]] = []
         for g in filtered_geoms:
@@ -1284,40 +1223,6 @@ class RandomCrop(ImageAugmenter):
                         clamped.append(max(crop_bbox[0], min(crop_bbox[2], pts[i])))
                         clamped.append(max(crop_bbox[1], min(crop_bbox[3], pts[i + 1])))
                     truncated = {"poly": clamped}
-            elif "line" in g:
-                pts = g["line"]
-                # Translate to crop origin
-                pts_translated = []
-                for i in range(0, len(pts), 2):
-                    pts_translated.append(pts[i] - crop_bbox[0])
-                    pts_translated.append(pts[i + 1] - crop_bbox[1])
-                # Clip line to crop boundary
-                clipped = clip_polyline_to_rect(pts_translated, crop_w, crop_h)
-                # Translate back
-                final_pts = []
-                for i in range(0, len(clipped), 2):
-                    final_pts.append(clipped[i] + crop_bbox[0])
-                    final_pts.append(clipped[i + 1] + crop_bbox[1])
-
-                if len(final_pts) >= 4:
-                    truncated = {"line": final_pts}
-                else:
-                    # Degenerate line - clamp to crop boundary
-                    clamped = []
-                    for i in range(0, len(pts), 2):
-                        clamped.append(max(crop_bbox[0], min(crop_bbox[2], pts[i])))
-                        clamped.append(max(crop_bbox[1], min(crop_bbox[3], pts[i + 1])))
-                    if len(clamped) >= 4:
-                        truncated = {"line": clamped[:4]}
-                    else:
-                        truncated = {
-                            "line": [
-                                crop_bbox[0],
-                                crop_bbox[1],
-                                crop_bbox[0],
-                                crop_bbox[1],
-                            ]
-                        }
             else:
                 truncated = g
 

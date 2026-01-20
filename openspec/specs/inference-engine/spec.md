@@ -33,15 +33,20 @@ In `text` mode, the engine SHALL treat GT coordinates as absolute pixels (no sca
 - **THEN** predictions are accepted as-is (clamped to image bounds) and emitted; GT remains unchanged.
 
 ### Requirement: Unified output schema
-Each output line in `pred.jsonl` SHALL contain `gt` and `pred` arrays of objects with fields `type` (`bbox_2d` or `poly`; `line` allowed but not evaluated), `points` (absolute pixel coordinates), `desc` (label string), and `score` fixed at 1.0, plus top-level `width`, `height`, `image`, `mode`, optional `coord_mode` for trace/debug, `raw_output`, and an `errors` list (empty when none). Legacy mixed-format fields (e.g., raw norm `predictions`/dual schemas) SHALL NOT be emitted.
+Each output line in `pred.jsonl` SHALL contain `gt` and `pred` arrays of objects with fields:
+- `type` (`bbox_2d` or `poly` only),
+- `points` (absolute pixel coordinates),
+- `desc` (label string),
+- `score` fixed at 1.0,
 
-#### Scenario: Successful sample output
-- **WHEN** a sample is processed without errors
-- **THEN** the JSONL line includes `gt` and `pred` arrays with pixel `points`, `desc`, `type`, `score:1.0`, along with `width`, `height`, `image`, `mode`, and an empty `errors` list.
+plus top-level `width`, `height`, `image`, `mode`, optional `coord_mode` for trace/debug, `raw_output`, and an `errors` list (empty when none).
 
-#### Scenario: Error sample output
-- **WHEN** a sample fails validation (e.g., missing height)
-- **THEN** the JSONL line contains an `errors` list describing the issue, `pred` is empty, and processing continues for subsequent samples.
+Any `line` geometry encountered during parsing/validation SHALL be treated as invalid geometry and MUST NOT be emitted in `pred` outputs.
+
+#### Scenario: Line in raw output is dropped
+- **GIVEN** a generated JSON object that includes a `line` geometry
+- **WHEN** the inference engine parses and validates predictions
+- **THEN** the `line` object is excluded from `pred` and an error/counter reflects invalid geometry.
 
 ### Requirement: Polygon preservation and evaluation
 Polygons (`poly`) SHALL be preserved in outputs and evaluated via COCO-style polygon segmentation (mask IoU) derived from the vertex list (single ring, clamped, non-degenerate). Bounding boxes MAY be derived for ancillary needs but SHALL NOT replace the polygon geometry in the output schema.
@@ -49,13 +54,6 @@ Polygons (`poly`) SHALL be preserved in outputs and evaluated via COCO-style pol
 #### Scenario: Polygon prediction
 - **WHEN** a prediction is a `poly` with valid vertices
 - **THEN** the output keeps the polygon vertex list in pixels, and downstream evaluation uses COCO segmentation/mask IoU derived from those vertices.
-
-### Requirement: Line tolerance without metrics
-Line geometries MAY appear in input/output for forward compatibility, MUST pass through validation/clamping, but SHALL NOT be included in current metric computations.
-
-#### Scenario: Line present
-- **WHEN** a `line` object appears in predictions
-- **THEN** it is carried in the output schema (clamped to bounds) but excluded from metric scoring.
 
 ### Requirement: Deterministic generation
 When `--seed` is provided, the engine SHALL seed torch (and CUDA) generators and pass a seeded `torch.Generator` into `model.generate` so that repeated runs with the same inputs and flags yield identical `pred.jsonl` outputs.

@@ -28,6 +28,39 @@ _Source: `transformers.models.qwen3_vl` (installed under `/root/miniconda3/envs/
 - **Freezing / LoRA**: the project’s YAMLs freeze `model.visual` components selectively. When adding LoRA targets, reference the actual module names (`model.visual.merger`, `model.visual.deepstack_merger_list.X`) from the HF implementation.
 - **Generation config**: `SwiftSft` replaces `model.generation_config` per run. The default config from HF sets repetition penalties and default image token ids; rely on `prepare_generation_config` to keep these in sync.
 
+### Module Name Reference (LoRA/DoRA Targeting)
+
+When you set `tuner.target_regex`, ms-swift forwards it to PEFT as a *regex string* for `target_modules`.
+PEFT matches **module names** (not parameter names) using `re.fullmatch()`. This means:
+- Your regex must match the **entire** module key (use `^...$`).
+- Avoid broad `.*` patterns that also match non-linear modules (LayerNorm / ModuleList / containers), otherwise PEFT can error.
+- Keep the regex as a **single YAML line** (no folding), otherwise whitespace becomes part of the regex and it may match nothing.
+
+**Stable Qwen3-VL prefixes (HF)**:
+- **LLM tower**: `model.language_model.layers.<idx>.…`
+  - Typical LoRA-able linears:
+    - Attention: `self_attn.{q_proj,k_proj,v_proj,o_proj}`
+    - MLP: `mlp.{gate_proj,up_proj,down_proj}`
+- **ViT tower**: `model.visual.blocks.<idx>.…`
+  - Typical LoRA-able linears:
+    - Attention: `attn.{qkv,proj}`
+    - MLP: `mlp.{linear_fc1,linear_fc2}`
+- **Aligner (deepstack)**: `model.visual.{merger,deepstack_merger_list.<i>}.…`
+  - Typical LoRA-able linears:
+    - `linear_fc1`, `linear_fc2`
+
+**Cookbook: last-8 LLM blocks + aligner MLPs (freeze ViT via `freeze_vit: true`)**
+
+```yaml
+tuner:
+  # DoRA ("dlora") on last 8 LLM blocks + aligner MLPs, freeze ViT.
+  target_regex: '^(model\.visual\.merger\.(linear_fc1|linear_fc2)|model\.visual\.deepstack_merger_list\.(0|1|2)\.(linear_fc1|linear_fc2)|model\.language_model\.layers\.(2[8-9]|3[0-5])\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj)))$'
+```
+
+**Avoid repeated guesswork**:
+- Use `scripts/inspect_checkpoint_modules.py` to inspect a checkpoint and generate a correct `target_regex`
+  based on the checkpoint’s actual module keys (works without loading tensors).
+
 ---
 
 ## ms-swift Training Framework
@@ -78,4 +111,4 @@ _Source: `/data/home/xiaoyan/AIteam/data/ms-swift` (notably `swift/llm/train/sft
 - For new training modes, verify ms-swift already supports them (`swift/llm/train/` contains SFT, PT, RLHF, KTO). Extend SwiftSft only if the functionality is absent.
 - Keep this document updated when upstream versions change (e.g., Transformer release bumps or ms-swift upgrades).
 
-**Last Reviewed:** 2025-10-28
+**Last Reviewed:** 2026-01-20

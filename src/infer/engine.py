@@ -5,7 +5,7 @@ Features
 - Single entrypoint that works for coord-token (normalized) and pure-text
   checkpoints via an explicit ``mode`` switch.
 - Standardized ``pred.jsonl`` with pixel-space geometries for both GT and
-  predictions; polygons and lines are preserved.
+  predictions; polygons are preserved.
 - Per-sample error reporting plus run-level counters and summary JSON.
 - Deterministic generation when ``--seed`` is provided (torch + CUDA +
   generator passed into ``model.generate``).
@@ -43,8 +43,7 @@ Notes
 - ``gt`` and ``pred`` points are always pixel-space when emitted.
 - ``points_text`` mirrors the pixel coords as a text string to unify downstream
   consumers that expect pure-text geometry.
-- Polygons are kept verbatim (single ring) for COCO segmentation; lines are
-  tolerated structurally but excluded from metrics downstream.
+- Polygons are kept verbatim (single ring) for COCO segmentation.
 """
 
 from __future__ import annotations
@@ -68,9 +67,9 @@ from src.utils import get_logger
 ERROR_CANONICAL = {
     "geometry_keys": "invalid_geometry",
     "geometry_points": "invalid_geometry",
+    "geometry_kind": "invalid_geometry",
     "bbox_points": "invalid_geometry",
     "poly_points": "invalid_geometry",
-    "line_points": "invalid_geometry",
     "degenerate": "invalid_geometry",
     "coord_parse": "invalid_coord",
     "coord_range": "invalid_coord",

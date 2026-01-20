@@ -14,7 +14,7 @@ def points_to_xyxy(points: Sequence[float]) -> List[float]:
     """
     Compute [x1,y1,x2,y2] axis-aligned bounding box that encloses arbitrary points.
 
-    This is the canonical function for converting polygon or line points to bbox_2d format.
+    This is the canonical function for converting polygon points to bbox_2d format.
     Used throughout the codebase for poly-to-bbox conversion (e.g., in offline
     conversion steps that cap polygon complexity).
 
@@ -140,19 +140,6 @@ def clamp_points(points: Sequence[float], width: float, height: float) -> List[i
             out.append(max(0, min(int(width) - 1, int(round(float(v))))))
         else:
             out.append(max(0, min(int(height) - 1, int(round(float(v))))))
-    return out
-
-
-def dedupe_consecutive_points(points: Sequence[int]) -> List[int]:
-    if not points:
-        return []
-    out: List[int] = []
-    prev: Tuple[int, int] | None = None
-    for x, y in _pair_points(points):
-        pt = (int(round(x)), int(round(y)))
-        if prev is None or pt != prev:
-            out.extend([pt[0], pt[1]])
-            prev = pt
     return out
 
 
@@ -542,34 +529,6 @@ def _clip_segment_cs(
     return accept, x1, y1, x2, y2
 
 
-def clip_polyline_to_rect(
-    points: Sequence[float], width: float, height: float
-) -> List[float]:
-    bounds = _rect_bounds(width, height)
-    pts = _pair_points(points)
-    if len(pts) < 2:
-        return []
-    out: List[Tuple[float, float]] = []
-    # Process each segment; stitch consecutive segments
-    for i in range(len(pts) - 1):
-        x1, y1 = pts[i]
-        x2, y2 = pts[i + 1]
-        ok, nx1, ny1, nx2, ny2 = _clip_segment_cs(x1, y1, x2, y2, bounds)
-        if not ok:
-            continue
-        if not out:
-            out.append((nx1, ny1))
-        else:
-            # avoid duplicate point
-            if (abs(out[-1][0] - nx1) > 1e-9) or (abs(out[-1][1] - ny1) > 1e-9):
-                out.append((nx1, ny1))
-        out.append((nx2, ny2))
-    flat: List[float] = []
-    for x, y in out:
-        flat.extend([x, y])
-    return flat
-
-
 # --- Typed geometry value objects and transform entrypoint ---
 
 
@@ -608,16 +567,7 @@ class Polygon:
         return Polygon(tuple(pts))  # type: ignore[arg-type]
 
 
-@dataclass(frozen=True)
-class Polyline:
-    points: Tuple[float, ...]
-
-    def apply_affine(self, M: List[List[float]]) -> "Polyline":
-        pts = apply_affine(self.points, M)
-        return Polyline(tuple(pts))
-
-
-def geometry_from_dict(g: Dict[str, Any]) -> Union[BBox, Polygon, Polyline]:
+def geometry_from_dict(g: Dict[str, Any]) -> Union[BBox, Polygon]:
     if "bbox_2d" in g:
         x1, y1, x2, y2 = map(float, g["bbox_2d"])
         return BBox(x1, y1, x2, y2)
@@ -628,11 +578,7 @@ def geometry_from_dict(g: Dict[str, Any]) -> Union[BBox, Polygon, Polyline]:
                 f"poly must contain >=8 floats with even length, got {len(pts)}"
             )
         return Polygon(pts)  # type: ignore[arg-type]
-    if "line" in g:
-        pts = tuple(float(v) for v in g["line"])
-        assert len(pts) >= 4 and len(pts) % 2 == 0, "line must have >= 2 points"
-        return Polyline(pts)
-    raise ValueError("unknown geometry dict type; expected bbox_2d|poly|line")
+    raise ValueError("unknown geometry dict type; expected bbox_2d|poly")
 
 
 # ============================================================================
@@ -646,7 +592,6 @@ def get_aabb(geom: Dict[str, Any]) -> List[float]:
 
     For bbox_2d: returns the bbox directly
     For poly: computes min/max from polygon points using points_to_xyxy
-    For line: computes min/max from line points using points_to_xyxy
 
     Returns:
         [x1, y1, x2, y2] where x1 <= x2 and y1 <= y2
@@ -655,8 +600,6 @@ def get_aabb(geom: Dict[str, Any]) -> List[float]:
         return list(map(float, geom["bbox_2d"]))
     elif "poly" in geom:
         return points_to_xyxy(geom["poly"])
-    elif "line" in geom:
-        return points_to_xyxy(geom["line"])
     else:
         raise ValueError(f"Unknown geometry type: {list(geom.keys())}")
 
@@ -779,7 +722,7 @@ def compute_coverage(geom: Dict[str, Any], crop_bbox: List[float]) -> float:
     polygons have larger AABBs), making the coverage estimate conservative.
 
     Args:
-        geom: Geometry dict with bbox_2d, poly, or line field
+        geom: Geometry dict with bbox_2d or poly field
         crop_bbox: Crop region [x1, y1, x2, y2]
 
     Returns:
@@ -795,12 +738,12 @@ def compute_coverage(geom: Dict[str, Any], crop_bbox: List[float]) -> float:
     geom_bbox = get_aabb(geom)
     geom_area = aabb_area(geom_bbox)
 
-    # Degenerate geometry (collapsed to line or point)
+    # Degenerate geometry (collapsed to point)
     if geom_area <= 0.0:
         # Check if any point is inside crop
         x1, y1, x2, y2 = crop_bbox
         gx1, gy1, gx2, gy2 = geom_bbox
-        # If the degenerate point/line is inside crop, consider it 100% covered
+        # If the degenerate point is inside crop, consider it 100% covered
         if x1 <= gx1 <= x2 and y1 <= gy1 <= y2:
             return 1.0
         return 0.0
@@ -821,7 +764,7 @@ def translate_geometry(geom: Dict[str, Any], dx: float, dy: float) -> Dict[str, 
     to crop-relative coordinates.
 
     Args:
-        geom: Geometry dict with bbox_2d, poly, or line field
+        geom: Geometry dict with bbox_2d or poly field
         dx: X offset (typically negative crop x)
         dy: Y offset (typically negative crop y)
 
@@ -838,13 +781,6 @@ def translate_geometry(geom: Dict[str, Any], dx: float, dy: float) -> Dict[str, 
             translated.append(pts[i] + dx)
             translated.append(pts[i + 1] + dy)
         return {"poly": translated}
-    elif "line" in geom:
-        pts = geom["line"]
-        translated = []
-        for i in range(0, len(pts), 2):
-            translated.append(pts[i] + dx)
-            translated.append(pts[i + 1] + dy)
-        return {"line": translated}
     else:
         raise ValueError(f"Unknown geometry type: {list(geom.keys())}")
 
@@ -862,7 +798,6 @@ def transform_geometry(
 
     - BBox under general affine promotes to Polygon.
     - Polygon is transformed exactly; enforce clockwise order.
-    - Polyline is transformed and clipped to rect; degenerate outputs dropped.
     - Rounding/clamping to integer pixel grid occurs at the end.
     """
     obj = geometry_from_dict(g)
@@ -916,28 +851,11 @@ def transform_geometry(
             return {"poly": q}
         q = clamp_points(to_clockwise(t), width, height)
         return {"poly": q}
-    # Polyline
-    pl = obj.apply_affine(M)
-    clipped = clip_polyline_to_rect(list(pl.points), width, height)
-    line_points = clamp_points(clipped, width, height)
-    line_points = dedupe_consecutive_points(line_points)
-    if len(line_points) < 4:
-        # preserve by collapsing to minimal 2-point line on clamped endpoints
-        raw = clamp_points(list(pl.points), width, height)
-        raw = dedupe_consecutive_points(raw)
-        if len(raw) >= 4:
-            return {"line": raw[:4]}
-        # fallback to a point repeated
-        if len(raw) >= 2:
-            return {"line": [raw[0], raw[1], raw[0], raw[1]]}
-        return {"line": [0, 0, 0, 0]}
-    return {"line": line_points}
 
 
 __all_typed__ = [
     "BBox",
     "Polygon",
-    "Polyline",
     "geometry_from_dict",
     "transform_geometry",
 ]

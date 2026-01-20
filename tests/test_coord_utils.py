@@ -52,7 +52,6 @@ from src.common.geometry import (
     coerce_point_list,
     denorm_and_clamp,
     is_degenerate_bbox,
-    line_to_bbox,
 )
 from src.eval.parsing import parse_prediction
 from src.eval.detection import EvalOptions, evaluate_detection
@@ -66,10 +65,8 @@ def test_norm1000_to_pixels_and_bbox():
     assert not is_degenerate_bbox(x1, y1, x2, y2)
 
 
-def test_line_to_bbox_and_quad():
-    line_pts = [0, 0, 10, 20]
-    bbox = line_to_bbox(line_pts)
-    assert bbox == [0.0, 0.0, 10.0, 20.0]
+def test_bbox_to_quad():
+    bbox = [0.0, 0.0, 10.0, 20.0]
     quad = bbox_to_quadrilateral(bbox)
     assert quad == [0.0, 0.0, 10.0, 0.0, 10.0, 20.0, 0.0, 20.0]
 

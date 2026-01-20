@@ -96,7 +96,6 @@ def _sample_record():
         "objects": [
             {"bbox_2d": ["<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"]},
             {"poly": ["<|coord_0|>", "<|coord_0|>", "<|coord_999|>", "<|coord_0|>", "<|coord_999|>", "<|coord_999|>", "<|coord_0|>", "<|coord_999|>"]},
-            {"line": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]},
         ],
         "width": 1024,
         "height": 1024,
@@ -139,7 +138,6 @@ def test_coord_tokens_roundtrip_identity(monkeypatch):
 
     assert objs[0]["bbox_2d"] == ["<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"]
     assert objs[1]["poly"] == sample["objects"][1]["poly"]
-    assert objs[2]["line"] == sample["objects"][2]["line"]
 
     assert objs[0]["_coord_token_ints"]["bbox_2d"] == [10, 20, 30, 40]
     assert objs[1]["_coord_tokens"]["poly"] == sample["objects"][1]["poly"]
@@ -172,5 +170,4 @@ def test_coord_tokens_roundtrip_after_affine(monkeypatch):
     objs = out["objects"]
 
     assert objs[0]["bbox_2d"] == ["<|coord_11|>", "<|coord_21|>", "<|coord_31|>", "<|coord_41|>"]
-    assert objs[2]["line"] == ["<|coord_2|>", "<|coord_3|>", "<|coord_4|>", "<|coord_5|>"]
     assert objs[0]["_coord_token_norm"]["bbox_2d"] == [v / 1000.0 for v in [11, 21, 31, 41]]

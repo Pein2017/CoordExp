@@ -1123,6 +1123,30 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
+    # For rollout-matching we still want stable eval-time monitoring (and to support
+    # `metric_for_best_model: eval_token_acc` from the base config).
+    if (
+        trainer_variant == "rollout_matching_sft"
+        and eval_dataset is not None
+        and getattr(train_args, "training_args", None) is not None
+        and "token_acc" in str(getattr(train_args.training_args, "metric_for_best_model", ""))
+    ):
+        try:
+            from .metrics.simple_token_accuracy import (
+                compute_token_accuracy_metrics,
+                preprocess_logits_for_token_accuracy,
+            )
+
+            # Attach lazily so we don't change other trainer variants' behavior.
+            if getattr(trainer, "preprocess_logits_for_metrics", None) is None:
+                trainer.preprocess_logits_for_metrics = preprocess_logits_for_token_accuracy
+            if getattr(trainer, "compute_metrics", None) is None:
+                trainer.compute_metrics = compute_token_accuracy_metrics
+        except Exception as exc:
+            logger.warning(
+                "Failed to enable eval token accuracy for rollout-matching: %s", exc
+            )
+
     if trainer_variant == "rollout_matching_sft":
         try:
             extra_cfg = getattr(custom_config, "extra", {})

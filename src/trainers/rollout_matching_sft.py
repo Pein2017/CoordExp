@@ -355,7 +355,6 @@ def _scan_rollout_tokens(
     for p in pieces:
         token_start_chars.append(cursor)
         cursor += len(p)
-    text = "".join(pieces)
 
     brace_depth = 0
     bracket_depth = 0
@@ -3167,6 +3166,137 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return self._rollout_many_vllm(samples)
         raise AssertionError("unreachable")
 
+    def _append_post_rollout_segments(
+        self, segments: Sequence[Tuple[Dict[str, Any], Dict[str, Any], int]]
+    ) -> None:
+        """Append newly produced post-rollout segments to the rank-local buffer.
+
+        Safety: fail-fast if any single segment exceeds packing_length, at insertion time.
+        """
+        packing_length = int(self._packing_length())
+        if packing_length <= 0:
+            raise ValueError("packing is enabled but packing_length is invalid")
+
+        seg_list = segments if isinstance(segments, list) else list(segments)
+
+        for _, _, seg_len in seg_list:
+            sl = int(seg_len)
+            if sl > packing_length:
+                raise ValueError(
+                    f"post-rollout packing cannot fit a single segment: encoded_len={sl} > packing_length={packing_length}. "
+                    "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
+                )
+
+        cap = int(self._packing_buffer_cap())
+        if cap > 0:
+            new_size = len(self._post_rollout_segments) + len(seg_list)
+            if new_size > cap:
+                raise ValueError(
+                    "post-rollout packing buffer overflow: "
+                    f"buffer_size={new_size} > packing_buffer={cap}. "
+                    "Mitigations: reduce per_device_train_batch_size, increase training.packing_buffer, "
+                    "or enable multi-pack-per-step in a future change."
+                )
+
+        self._post_rollout_segments.extend(seg_list)
+
+    @staticmethod
+    def _select_post_rollout_segment_indices(
+        encoded_lens: Sequence[int],
+        packing_length: int,
+    ) -> List[int]:
+        """Select segment indices for one packed forward pass.
+
+        Input `encoded_lens` is in insertion order (index 0 is oldest). Output indices
+        are in insertion order, MUST include the oldest segment, and total length MUST
+        be <= packing_length.
+
+        Selection is:
+          - FIFO-greedy baseline (current behavior), and
+          - ms-swift-like constant-volume binpacking candidate constrained to include oldest,
+        with a strict "never worse than FIFO" fallback rule.
+        """
+        packing_length = int(packing_length)
+        if packing_length <= 0:
+            raise ValueError("packing_length must be positive")
+        if not encoded_lens:
+            return []
+
+        try:
+            import binpacking
+        except ImportError as exc:
+            raise ImportError(
+                "binpacking is required for stage-2 post-rollout packing selection; "
+                "install `binpacking` or disable `training.packing`."
+            ) from exc
+
+        lens = [int(x) for x in encoded_lens]
+        oldest_len = int(lens[0])
+        if oldest_len > packing_length:
+            raise ValueError(
+                f"post-rollout packing cannot fit a single segment: encoded_len={oldest_len} > packing_length={packing_length}. "
+                "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
+            )
+        if oldest_len <= 0:
+            raise ValueError("oldest post-rollout segment has non-positive encoded_len")
+
+        # Defensive invariant check (insertion should already enforce this).
+        for sl in lens:
+            if int(sl) > packing_length:
+                raise ValueError(
+                    f"post-rollout packing buffer contains an oversized segment: encoded_len={int(sl)} > packing_length={packing_length}."
+                )
+
+        # 1) FIFO-greedy baseline (current behavior): always include oldest, then scan.
+        baseline: List[int] = [0]
+        used = int(oldest_len)
+        for i in range(1, len(lens)):
+            sl = int(lens[i])
+            if sl <= 0:
+                continue
+            if used + sl <= packing_length:
+                baseline.append(int(i))
+                used += sl
+        baseline_total = int(used)
+
+        # 2) Binpacking candidate under the residual cap (oldest is pinned).
+        cap_rem = int(packing_length - oldest_len)
+        if cap_rem <= 0:
+            return baseline
+
+        items: List[Tuple[int, int]] = []
+        for i in range(1, len(lens)):
+            sl = int(lens[i])
+            if sl <= 0:
+                continue
+            if sl <= cap_rem:
+                items.append((int(i), int(sl)))
+
+        bins = (
+            binpacking.to_constant_volume(items, cap_rem, weight_pos=1) if items else []
+        )
+
+        best_rest: List[int] = []
+        best_key: Optional[Tuple[int, int, Tuple[int, ...]]] = None
+        for b in bins:
+            rest = sorted(int(idx) for idx, _ in b)
+            total = int(sum(int(lens[i]) for i in rest))
+            key = (-total, len(rest), tuple(rest))
+            if best_key is None or key < best_key:
+                best_key = key
+                best_rest = rest
+
+        candidate: List[int] = [0] + best_rest
+        candidate.sort()
+        candidate_total = int(sum(int(lens[i]) for i in candidate))
+        if candidate_total > packing_length:
+            raise AssertionError("post-rollout packing selection overflowed packing_length")
+
+        # Baseline-fallback rule: only switch if binpacking strictly improves total length.
+        if candidate_total > baseline_total:
+            return candidate
+        return baseline
+
     def _pop_post_rollout_pack(
         self,
     ) -> List[Tuple[Dict[str, Any], Dict[str, Any], int]]:
@@ -3179,28 +3309,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "packing is enabled but no post-rollout segments are available"
             )
 
-        # Always include the oldest segment to avoid starvation.
-        selected_idx: List[int] = []
-        total_len = 0
-
-        enc0, meta0, len0 = self._post_rollout_segments[0]
-        if int(len0) > packing_length:
-            raise ValueError(
-                f"post-rollout packing cannot fit a single segment: encoded_len={int(len0)} > packing_length={packing_length}. "
-                "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
-            )
-        selected_idx.append(0)
-        total_len += int(len0)
-        remaining = packing_length - int(len0)
-
-        for i, (_, _, seg_len) in enumerate(self._post_rollout_segments[1:], start=1):
-            sl = int(seg_len)
-            if sl <= 0:
-                continue
-            if sl <= remaining:
-                selected_idx.append(i)
-                total_len += sl
-                remaining -= sl
+        encoded_lens = [int(seg_len) for _, _, seg_len in self._post_rollout_segments]
+        selected_idx = self._select_post_rollout_segment_indices(
+            encoded_lens, packing_length
+        )
+        if not selected_idx:
+            raise AssertionError("post-rollout packing selected an empty segment set")
+        total_len = int(sum(encoded_lens[i] for i in selected_idx))
 
         selected = [self._post_rollout_segments[i] for i in selected_idx]
         for i in reversed(selected_idx):
@@ -3220,6 +3335,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self.log(
                 {
                     "packing/post_rollout_fill": float(fill),
+                    "packing/post_rollout_selected_total_len": float(total_len),
                     "packing/post_rollout_segments": float(len(selected)),
                     "packing/post_rollout_buffer": float(
                         len(self._post_rollout_segments)
@@ -3652,15 +3768,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 pass
 
         if packing_enabled:
-            cap = int(self._packing_buffer_cap())
-            self._post_rollout_segments.extend(segments)
-            if cap > 0 and len(self._post_rollout_segments) > cap:
-                raise ValueError(
-                    "post-rollout packing buffer overflow: "
-                    f"buffer_size={len(self._post_rollout_segments)} > packing_buffer={cap}. "
-                    "Mitigations: reduce per_device_train_batch_size, increase training.packing_buffer, "
-                    "or enable multi-pack-per-step in a future change."
-                )
+            self._append_post_rollout_segments(segments)
 
             t_pack0 = time.perf_counter()
             selected = self._pop_post_rollout_pack()
@@ -4062,6 +4170,257 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
             return _AccumulationWindowRepeater(dl, gas=gas, m_steps=int(m_steps))
         return dl
+
+
+    def evaluate(
+        self,
+        eval_dataset=None,
+        ignore_keys=None,
+        metric_key_prefix: str = "eval",
+    ):
+        """Production-style evaluator: rollout -> parse -> Hungarian match.
+
+        This intentionally skips teacher-forced encoding and loss computation to keep eval
+        fast and reflective of real rollout performance on unseen data.
+        """
+
+        was_training = bool(getattr(self.model, "training", False))
+        self.model.eval()
+
+        t0 = time.perf_counter()
+        dl = self.get_eval_dataloader(eval_dataset)
+
+        template = self.template
+        tok = template.tokenizer
+
+        gate_thr = float(self._cfg("maskiou_gate", 0.3))
+        top_k = int(self._cfg("candidate_top_k", 10))
+        mask_res = int(self._cfg("maskiou_resolution", 256))
+        fp_cost = float(self._cfg("fp_cost", 1.0))
+        fn_cost = float(self._cfg("fn_cost", 1.0))
+
+        n_samples = 0.0
+        gt_total = 0.0
+        pred_total = 0.0
+        matched_total = 0.0
+        fp_total = 0.0
+        fn_total = 0.0
+        gating_rejections_total = 0.0
+        dropped_invalid_total = 0.0
+        dropped_ambiguous_total = 0.0
+        trunc_samples = 0.0
+        matched_iou_sum = 0.0
+        matched_iou_count = 0.0
+        n_samples_valid_pred = 0.0
+        n_samples_any_match = 0.0
+
+        n_steps = 0.0
+
+        with torch.no_grad():
+            for batch in dl:
+                # For rollout-matching, we expect identity_data_collator to yield a
+                # list[dict] of raw samples (with `messages` + GT geometry).
+                if not isinstance(batch, list):
+                    raise ValueError(
+                        "rollout-matching evaluator expects eval batches as list[dict]; "
+                        f"got {type(batch).__name__}"
+                    )
+                if not batch:
+                    continue
+
+                n_steps += 1.0
+                rollout_results = self._rollout_many(batch)
+                if len(rollout_results) != len(batch):
+                    raise RuntimeError(
+                        "rollout backend returned unexpected number of results"
+                    )
+
+                for sample, (resp_ids, _resp_text, _decode_mode, _prompt_ids) in zip(
+                    batch, rollout_results
+                ):
+                    n_samples += 1.0
+
+                    parse = parse_rollout_for_matching(
+                        tokenizer=tok, response_token_ids=resp_ids
+                    )
+                    dropped_invalid_total += float(parse.dropped_invalid)
+                    dropped_ambiguous_total += float(parse.dropped_ambiguous)
+                    trunc_samples += 1.0 if bool(parse.truncated) else 0.0
+
+                    # Pred objects (valid only) -> norm1000 geometry.
+                    coord_id_to_bin = self._coord_id_map()
+                    preds: List[GTObject] = []
+                    for pobj in parse.valid_objects:
+                        pts = _points_from_coord_tokens(
+                            response_token_ids=parse.response_token_ids,
+                            coord_token_indices=pobj.coord_token_indices,
+                            coord_id_to_bin=coord_id_to_bin,
+                        )
+                        if pts is None:
+                            continue
+                        preds.append(
+                            GTObject(
+                                index=int(pobj.index),
+                                geom_type=pobj.geom_type,
+                                points_norm1000=pts,
+                                desc="",
+                            )
+                        )
+
+                    gts = _extract_gt_objects(sample)
+                    gt_total += float(len(gts))
+                    pred_total += float(len(preds))
+                    if len(preds) > 0:
+                        n_samples_valid_pred += 1.0
+
+                    match = hungarian_match_maskiou(
+                        preds=preds,
+                        gts=gts,
+                        top_k=top_k,
+                        gate_threshold=gate_thr,
+                        mask_resolution=mask_res,
+                        fp_cost=fp_cost,
+                        fn_cost=fn_cost,
+                    )
+
+                    matched = float(len(match.matched_pairs))
+                    matched_total += matched
+                    fp_total += float(len(match.fp_pred_indices))
+                    fn_total += float(len(match.fn_gt_indices))
+                    gating_rejections_total += float(match.gating_rejections)
+                    matched_iou_sum += float(match.matched_maskiou_sum)
+                    matched_iou_count += float(match.matched_maskiou_count)
+                    if matched > 0:
+                        n_samples_any_match += 1.0
+
+        t_local = time.perf_counter() - t0
+
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        # Reduce sums across ranks.
+        sums_t = torch.tensor(
+            [
+                n_samples,
+                gt_total,
+                pred_total,
+                matched_total,
+                fp_total,
+                fn_total,
+                gating_rejections_total,
+                dropped_invalid_total,
+                dropped_ambiguous_total,
+                trunc_samples,
+                matched_iou_sum,
+                matched_iou_count,
+                n_samples_valid_pred,
+                n_samples_any_match,
+                n_steps,
+            ],
+            device=self.model.device,
+            dtype=torch.float64,
+        )
+        rt_t = torch.tensor([float(t_local)], device=self.model.device, dtype=torch.float64)
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            dist.all_reduce(sums_t, op=dist.ReduceOp.SUM)
+            # Use max runtime as the global wall time.
+            dist.all_reduce(rt_t, op=dist.ReduceOp.MAX)
+
+        (
+            n_samples,
+            gt_total,
+            pred_total,
+            matched_total,
+            fp_total,
+            fn_total,
+            gating_rejections_total,
+            dropped_invalid_total,
+            dropped_ambiguous_total,
+            trunc_samples,
+            matched_iou_sum,
+            matched_iou_count,
+            n_samples_valid_pred,
+            n_samples_any_match,
+            n_steps,
+        ) = [float(x.item()) for x in sums_t]
+        runtime = float(rt_t.item())
+
+        precision = (matched_total / pred_total) if pred_total > 0 else 0.0
+        recall = (matched_total / gt_total) if gt_total > 0 else 0.0
+        f1 = (
+            (2.0 * precision * recall / (precision + recall))
+            if (precision + recall) > 0.0
+            else 0.0
+        )
+
+        metrics: Dict[str, float] = {}
+        metrics[f"{metric_key_prefix}_runtime"] = float(runtime)
+        if runtime > 0:
+            metrics[f"{metric_key_prefix}_samples_per_second"] = float(n_samples / runtime)
+            metrics[f"{metric_key_prefix}_steps_per_second"] = float(n_steps / runtime)
+
+        metrics[f"{metric_key_prefix}_rollout_precision"] = float(precision)
+        metrics[f"{metric_key_prefix}_rollout_recall"] = float(recall)
+        metrics[f"{metric_key_prefix}_rollout_f1"] = float(f1)
+
+        metrics[f"{metric_key_prefix}_rollout_pred_objects"] = float(pred_total)
+        metrics[f"{metric_key_prefix}_rollout_gt_objects"] = float(gt_total)
+        metrics[f"{metric_key_prefix}_rollout_matched"] = float(matched_total)
+        metrics[f"{metric_key_prefix}_rollout_fp"] = float(fp_total)
+        metrics[f"{metric_key_prefix}_rollout_fn"] = float(fn_total)
+        metrics[f"{metric_key_prefix}_rollout_gating_rejections"] = float(
+            gating_rejections_total
+        )
+
+        metrics[f"{metric_key_prefix}_rollout_parse_dropped_invalid"] = float(
+            dropped_invalid_total
+        )
+        metrics[f"{metric_key_prefix}_rollout_parse_dropped_ambiguous"] = float(
+            dropped_ambiguous_total
+        )
+        metrics[f"{metric_key_prefix}_rollout_parse_truncated_rate"] = (
+            float(trunc_samples / n_samples) if n_samples > 0 else 0.0
+        )
+
+        metrics[f"{metric_key_prefix}_rollout_sample_valid_pred_rate"] = (
+            float(n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
+        )
+        metrics[f"{metric_key_prefix}_rollout_sample_any_match_rate"] = (
+            float(n_samples_any_match / n_samples) if n_samples > 0 else 0.0
+        )
+
+        metrics[f"{metric_key_prefix}_rollout_matched_maskiou_mean"] = (
+            float(matched_iou_sum / matched_iou_count)
+            if matched_iou_count > 0
+            else 0.0
+        )
+
+        if was_training:
+            self.model.train()
+
+        return metrics
+
+    def prediction_step(
+        self,
+        model,
+        inputs,
+        prediction_loss_only: bool = False,
+        ignore_keys: Optional[List[str]] = None,
+    ):
+        # Handle the case where inputs is a list of raw samples during evaluation.
+        # This can happen when using identity collator or during eval with rollout matching.
+        if isinstance(inputs, list):
+            inputs = self._prepare_batch_inputs(inputs)
+
+        # Call the parent prediction_step with properly formatted inputs.
+        return super().prediction_step(
+            model=model,
+            inputs=inputs,
+            prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys,
+        )
 
     def training_step(self, model, inputs, *args, **kwargs):
         # When using identity collator, `inputs` is a list of raw samples.
