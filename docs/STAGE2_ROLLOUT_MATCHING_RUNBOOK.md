@@ -37,6 +37,10 @@ Key policies:
   - Selection uses a deterministic, ms-swift-like constant-volume binpacking heuristic; the `binpacking` dependency is
     required when packing is enabled.
   - Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
+  - Optional scheduling improvement (train-only): `custom.extra.rollout_matching.post_rollout_pack_scope`:
+    - `micro` (default): current behavior, pack immediately per micro-step.
+    - `window`: accumulate segments across a full gradient-accumulation window and schedule packing within-window
+      (no cross-step carry; infeasible windows fail fast).
 - The rollout prefix is treated as immutable in token space:
   - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
 
@@ -73,6 +77,37 @@ Set:
 - `custom.val_jsonl`
 - `custom.extra.rollout_matching.*` (decode + matching knobs)
 - `training.packing: true` to enable post-rollout packing for the teacher-forced forward pass
+
+TensorBoard/logging tip:
+- Stage_2 metrics are logged once per optimizer step (aggregated across gradient accumulation).
+- If you rerun the same config with the same `training.run_name` and a shared `training.logging_dir`, multiple
+  `events.out.tfevents.*` files can accumulate in the same folder. ms-swift's `plot_images` may pick an older file,
+  which makes plots look "wrong".
+- Prefer leaving `training.logging_dir` unset (HF default is unique per run), or set a unique `run_name`, or clean
+  the folder before reruns.
+
+Optional desc monitoring (metrics only; does not affect loss):
+- Enable with `custom.extra.rollout_matching.desc_monitor.enabled: true`.
+- Suggested starting point:
+
+```yaml
+custom:
+  extra:
+    rollout_matching:
+      desc_monitor:
+        enabled: true
+        # 'exact'|'semantic'|'both'
+        mode: semantic
+        # Run on every N optimizer steps (only runs on E-steps when buffering is enabled).
+        every_steps: 20
+        # Sentence embedding model used for semantic matching.
+        semantic_model: sentence-transformers/all-MiniLM-L6-v2
+        semantic_threshold: 0.6
+        semantic_device: cpu
+        semantic_batch_size: 64
+        # Cap matched pairs per batch for monitoring cost control.
+        max_pairs: 64
+```
 
 Buffered rollouts (E-step / M-step reuse):
 - `custom.extra.rollout_matching.rollout_buffer.enabled: true` enables caching + reuse of one completed
@@ -144,6 +179,10 @@ Eval metrics:
 - Parse health: `eval_rollout_parse_truncated_rate`, `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
 - Sample health: `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
 - Geometry quality: `eval_rollout_matched_maskiou_mean`
+- (Optional) Desc monitor:
+  - `eval_rollout_desc_pairs_total`, `eval_rollout_desc_exact_acc_on_matched`
+  - `eval_rollout_desc_sem_enabled`, `eval_rollout_desc_sem_acc_on_matched`
+  - `eval_rollout_desc_sem_sim_mean`
 
 Best-checkpoint selection:
 - For Stage_2 runs, prefer `training.metric_for_best_model: eval_rollout_f1` and
@@ -192,7 +231,6 @@ Buffered-mode diagnostics:
 - `rollout/buffer_reuse` (1 on M-steps, 0 on E-steps)
 - `rollout/buffer_window_step0`
 - `rollout/buffer_completed_steps`
-- `rollout/buffer_micro_idx`
 
 ## Qualitative Monitoring Dumps (Rollout vs GT vs Training Target)
 
