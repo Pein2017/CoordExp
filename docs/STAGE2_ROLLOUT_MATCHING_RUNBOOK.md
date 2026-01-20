@@ -37,6 +37,10 @@ Key policies:
   - Selection uses a deterministic, ms-swift-like constant-volume binpacking heuristic; the `binpacking` dependency is
     required when packing is enabled.
   - Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
+  - Optional scheduling improvement (train-only): `custom.extra.rollout_matching.post_rollout_pack_scope`:
+    - `micro` (default): current behavior, pack immediately per micro-step.
+    - `window`: accumulate segments across a full gradient-accumulation window and schedule packing within-window
+      (no cross-step carry; infeasible windows fail fast).
 - The rollout prefix is treated as immutable in token space:
   - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
 

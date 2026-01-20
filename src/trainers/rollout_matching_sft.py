@@ -1886,6 +1886,58 @@ class _PendingTrainRolloutLog:
         if "rollout/buffer_completed_steps" in batch_metrics:
             self.buffer_completed_steps_last = float(batch_metrics.get("rollout/buffer_completed_steps") or 0.0)
 
+
+
+def schedule_post_rollout_segment_indices_window(
+    *,
+    encoded_lens: Sequence[int],
+    packing_length: int,
+    gas: int,
+    select_indices_fn: Any,
+) -> List[List[int]]:
+    """Pure helper for window-aware post-rollout packing.
+
+    `select_indices_fn(encoded_lens_remaining, packing_length) -> List[int]` must be
+    deterministic and include index 0 (oldest) when non-empty.
+    """
+    packing_length = int(packing_length)
+    gas = int(gas)
+    if packing_length <= 0:
+        raise ValueError("packing_length must be positive")
+    if gas <= 0:
+        raise ValueError("gas must be positive")
+
+    lens = [int(x) for x in encoded_lens]
+    total = int(sum(lens))
+    if total > gas * packing_length:
+        raise ValueError(
+            f"infeasible window: sum_encoded_len={total} > gas*packing_length={gas*packing_length}"
+        )
+
+    remaining: List[Tuple[int, int]] = [(i, int(l)) for i, l in enumerate(lens)]
+    packs: List[List[int]] = []
+
+    for _ in range(gas):
+        if not remaining:
+            break
+        rem_lens = [int(l) for _, l in remaining]
+        sel_local = list(select_indices_fn(rem_lens, packing_length) or [])
+        if not sel_local:
+            raise ValueError("window scheduling selected empty pack")
+        # Map local indices to original indices.
+        sel_orig = [int(remaining[i][0]) for i in sel_local]
+        packs.append(sel_orig)
+        for i in sorted(sel_local, reverse=True):
+            remaining.pop(int(i))
+
+    if remaining:
+        raise ValueError("window scheduling could not schedule all segments")
+
+    while len(packs) < gas:
+        packs.append([])
+
+    return packs
+
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -3619,7 +3671,133 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return selected, pack_metrics
 
-    def _prepare_batch_inputs(self, inputs: List[Mapping[str, Any]]) -> Dict[str, Any]:
+
+    def _schedule_post_rollout_packs_window(
+        self,
+        *,
+        window_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
+        gas: int,
+    ) -> Tuple[List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]], Dict[str, float]]:
+        packing_length = int(self._packing_length())
+        gas = int(gas)
+        encoded_lens = [int(sl) for _, _, sl in window_segments]
+
+        pack_indices = schedule_post_rollout_segment_indices_window(
+            encoded_lens=encoded_lens,
+            packing_length=packing_length,
+            gas=gas,
+            select_indices_fn=self._select_post_rollout_segment_indices,
+        )
+
+        packs: List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]] = []
+        fill_sum = 0.0
+        selected_total_len_sum = 0.0
+        segments_sum = 0
+
+        for sel in pack_indices:
+            selected = [window_segments[i] for i in sel]
+            sel_total = int(sum(int(encoded_lens[i]) for i in sel))
+            fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            packs.append(selected)
+            fill_sum += float(fill)
+            selected_total_len_sum += float(sel_total)
+            segments_sum += int(len(selected))
+
+        total_len = int(sum(encoded_lens))
+        metrics: Dict[str, float] = {
+            "packing/window_segments_total": float(len(window_segments)),
+            "packing/window_sum_encoded_len": float(total_len),
+            "packing/window_packs": float(gas),
+            "packing/window_nonempty_packs": float(sum(1 for p in packs if p)),
+            "packing/window_avg_fill": float(fill_sum / float(max(1, gas))),
+            "packing/window_selected_total_len_sum": float(selected_total_len_sum),
+            "packing/window_segments_sum": float(segments_sum),
+        }
+        return packs, metrics
+
+
+
+    def _prepare_window_packed_batches(
+        self,
+        *,
+        window_raw_micro_batches: List[List[Mapping[str, Any]]],
+        global_step: int,
+    ) -> List[Dict[str, Any]]:
+        """Build packed prepared batches for a full accumulation window.
+
+        Implementation note: to keep changes localized, we reuse `_prepare_batch_inputs`
+        to build per-micro post-rollout segments (without packing), then schedule and
+        repack within the window.
+        """
+        gas = int(len(window_raw_micro_batches))
+        if gas <= 0:
+            raise ValueError("window_raw_micro_batches is empty")
+
+        # Collect segments for the whole window.
+        window_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
+        per_micro_metrics: List[Dict[str, float]] = []
+
+        for mb in window_raw_micro_batches:
+            segs, bm = self._prepare_batch_inputs(mb, _segments_only=True)
+            window_segments.extend(segs)
+            per_micro_metrics.append(bm)
+
+        # Schedule segments into exactly `gas` micro-packs.
+        t_pack0 = time.perf_counter()
+        packs, window_pack_metrics = self._schedule_post_rollout_packs_window(
+            window_segments=window_segments,
+            gas=gas,
+        )
+        t_pack_s = float(time.perf_counter() - t_pack0)
+
+        template = self.template
+        from swift.llm import to_device
+
+        prepared: List[Dict[str, Any]] = []
+        packing_length = int(self._packing_length())
+
+        for i, selected in enumerate(packs):
+            if not selected:
+                raise ValueError(
+                    "window post-rollout packing produced an empty micro-pack. "
+                    "This indicates the window did not produce enough post-rollout segments."
+                )
+
+            with self._template_packing_enabled():
+                packed = template.data_collator([enc for enc, _, _ in selected])
+            batch = to_device(packed, self.model.device)
+            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
+
+            bm = dict(per_micro_metrics[i]) if i < len(per_micro_metrics) else {}
+            bm["time/post_rollout_pack_s"] = float(t_pack_s if i == 0 else 0.0)
+
+            sel_total = int(sum(int(sl) for _, _, sl in selected))
+            fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            bm.update(
+                {
+                    "packing/post_rollout_fill": float(fill),
+                    "packing/post_rollout_selected_total_len": float(sel_total),
+                    "packing/post_rollout_segments": float(len(selected)),
+                    "packing/post_rollout_buffer": float(0.0),
+                }
+            )
+
+            if i == 0:
+                bm.update(window_pack_metrics)
+                bm["packing/post_rollout_scope_window"] = 1.0
+            else:
+                bm["packing/post_rollout_scope_window"] = 0.0
+
+            batch["_rollout_matching_batch_metrics"] = bm
+            prepared.append(batch)
+
+        return prepared
+
+    def _prepare_batch_inputs(
+        self,
+        inputs: List[Mapping[str, Any]],
+        _segments_only: bool = False,
+    ) -> Any:
         template = self.template
         tok = template.tokenizer
 
@@ -4084,6 +4262,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),
         }
+
+        if bool(_segments_only):
+            return segments, batch_metrics
 
         # For monitor dumps only (no TB logging here).
         toks_per_s = (
@@ -4623,9 +4804,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             enabled, m_steps = self._rollout_buffer_settings()
         except Exception:
             enabled, m_steps = False, 1
+
+        gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+
+        # Keep existing rollout buffer semantics: repeat full accumulation windows for M-steps.
         if enabled and int(m_steps) > 1:
-            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-            return _AccumulationWindowRepeater(dl, gas=gas, m_steps=int(m_steps))
+            dl = _AccumulationWindowRepeater(dl, gas=gas, m_steps=int(m_steps))
+
+        # Optional window-aware post-rollout packing requires lookahead over one accumulation window.
+        if self._packing_enabled() and self._post_rollout_pack_scope() == "window":
+            dl = _AccumulationWindowLookahead(dl, gas=gas)
+
         return dl
 
 
@@ -5048,6 +5237,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         raw_fp = _fingerprint_raw_micro_batch(inputs)
 
         def _build_prepared() -> Dict[str, Any]:
+            packing_enabled = bool(self._packing_enabled())
+            if (
+                packing_enabled
+                and self._post_rollout_pack_scope() == "window"
+                and isinstance(inputs, _WindowedMicroBatch)
+            ):
+                win = inputs.rm_window
+                idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
+
+                def _build_all() -> List[Dict[str, Any]]:
+                    return self._prepare_window_packed_batches(
+                        window_raw_micro_batches=win.raw_micro_batches,
+                        global_step=gs,
+                    )
+
+                prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
+                return prepared
+
             prepared = self._prepare_batch_inputs(inputs)
             if not isinstance(prepared, dict):
                 raise ValueError("prepared batch must be a dict")

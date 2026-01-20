@@ -39,12 +39,9 @@ model:
 training:
   output_dir: output/rollout_matching_sft/stage2_ckpt3106_buffered
   run_name: debug
-  # NOTE: leaving logging_dir unset uses HF default `output_dir/runs/<timestamp>` (unique per run),
-  # which prevents mixing reruns into the same TensorBoard directory (and keeps plot_images sane).
-  # logging_dir: tb/rollout_matching_sft/stage2_ckpt3106_buffered
+  logging_dir: .tb/stage2_ckpt3106_buffered
 
-  # Sensible starting point; tune for real runs.
-  num_train_epochs: 4
+  num_train_epochs: 2
   # Rollout-matching is rollout-heavy; keep per-device small for stability on long sequences.
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
@@ -94,15 +91,16 @@ custom:
   val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
 
   # Limit samples for monitoring runs.
-  train_sample_limit: 32
-  val_sample_limit: 16
+  train_sample_limit: 128
+  val_sample_limit: 32
 
   extra:
     rollout_matching:
       # Default: vLLM colocate rollouts (teacher-forced forward/backprop stays on the training model).
       # For monitoring/debugging, you can switch to HF backend: rollout_backend: hf
       rollout_backend: vllm
-      rollout_generate_batch_size: 1
+      rollout_generate_batch_size: 2
+      post_rollout_pack_scope: window
 
       # Buffered rollouts for efficiency (reuse one rollout window across multiple optimizer steps)
       rollout_buffer:
@@ -114,7 +112,7 @@ custom:
       vllm:
         tensor_parallel_size: 4
         # Keep this modest to leave headroom for the training model on the same GPU.
-        gpu_memory_utilization: 0.50
+        gpu_memory_utilization: 0.45
         # Chunk TP-group gathered requests to reduce peak multimodal prefill VRAM in colocate mode.
         infer_batch_size: 4
         # Must cover prompt_len + max_new_tokens (vLLM requirement).
@@ -182,7 +180,7 @@ custom:
       candidate_top_k: 5
       maskiou_gate: 0.3
       maskiou_resolution: 256
-      fp_cost: 0.5
+      fp_cost: 1
       fn_cost: 2
 
       ot_cost: l2
@@ -199,6 +197,6 @@ custom:
         max_pairs: 64
         semantic_model: sentence-transformers/all-MiniLM-L6-v2
         semantic_threshold: 0.6
-        semantic_device: cpu
+        semantic_device: auto
         semantic_batch_size: 64
         semantic_max_length: 64
