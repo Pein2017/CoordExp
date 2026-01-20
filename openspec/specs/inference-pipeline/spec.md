@@ -8,6 +8,7 @@ TBD - created by archiving change refactor-inference-viz-decouple. Update Purpos
 - Each line SHALL include: `image_id` (input order), `images` (original list), `width`, `height`, `coord_mode` set to `"norm1000"` (model always outputs 0–999), `raw_output` (verbatim model text), mandatory `preds` (parsed objects) with `score: 1.0`, and optional `error` when parsing/validation fails; `preds` SHALL be `[]` on errors while retaining the flawed raw output for debugging.
 - The runner SHALL attempt aggressive JSON repair (quotes/brackets/trailing commas) on malformed/truncated generations; if still invalid, it SHALL emit the line with `error` populated and continue without aborting the batch.
 - Extra `score` hints from the model are ignored; generation order defines export order when scores tie.
+- Parsed geometries in `preds` SHALL be limited to `bbox_2d` or `poly`; any `line` geometry in the raw output is invalid and MUST be excluded from `preds` with an error recorded.
 - If a multi-image record is encountered, the runner SHALL mark the record with an `error` (e.g., `multi_image_not_supported`), skip generation, and continue.
 
 #### Scenario: Malformed generation still yields JSON
@@ -29,4 +30,3 @@ TBD - created by archiving change refactor-inference-viz-decouple. Update Purpos
 - GIVEN an inference run that produces `predictions.jsonl`
 - WHEN the user runs the detection evaluator and the visualization tool against that file
 - THEN both complete without invoking the model, using the same parsed geometry and metadata, enabling apples-to-apples comparison across checkpoints.
-

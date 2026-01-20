@@ -22,7 +22,7 @@ TBD - created by archiving change add-detection-evaluator. Update Purpose after 
 ### Requirement: Parsing and coordinate handling
 - The evaluator SHALL reuse the shared coord-processing module (via `src/common/geometry`/`src/common/schemas`) used by inference/visualization, supporting coord tokens or ints in 0–999 with one geometry per object.
 - Coordinates SHALL be converted according to `coord_mode`: when `norm1000`, denormalize using per-image width/height, clamp to bounds, and round; when `pixel`, only clamp/round applies to avoid double scaling. Missing width/height SHALL cause the object to be dropped and counted. If invalid/degenerate, the evaluator SHALL drop the object, increment a counter, and retain the raw geometry in per-image diagnostics.
-- Lines SHALL be converted to their tight bbox for detection; polygons retain segmentation and also expose a bbox; bbox GT SHALL be given a minimal quadrilateral segmentation when segm evaluation is enabled so bbox–poly/line predictions can be paired; degenerate geometries are dropped and counted.
+- Polygons SHALL retain segmentation and also expose a bbox; bbox GT SHALL be given a minimal quadrilateral segmentation when segm evaluation is enabled so bbox–poly predictions can be paired; degenerate geometries are dropped and counted.
 
 #### Scenario: Coord-token prediction is denormalized correctly
 - GIVEN a prediction with `bbox_2d: ['<|coord_10|>', '<|coord_20|>', '<|coord_200|>', '<|coord_220|>']`, `coord_mode="norm1000"`, and width=1000, height=800
@@ -86,4 +86,3 @@ TBD - created by archiving change add-detection-evaluator. Update Purpose after 
 - GIVEN the fixture GT/pred files
 - WHEN the evaluator test runs
 - THEN it completes without errors and asserts AP50 exceeds a small threshold (e.g., >0) while verifying invalid/empty counters are zero for the fixture.
-

@@ -4,7 +4,7 @@
 TBD - created by archiving change add-augment-coord-token-support. Update Purpose after archive.
 ## Requirements
 ### Requirement: Coord-token augmentation compatibility
-The system SHALL support data augmentation on records whose geometries are expressed as coord tokens (`<|coord_k|>`, 0–999), converting to numeric values before augmentation and restoring coord tokens after augmentation when coord-token mode is enabled. Public geometry fields (`bbox_2d`, `poly`, `line`) MUST remain token strings after augmentation.
+The system SHALL support data augmentation on records whose geometries are expressed as coord tokens (`<|coord_k|>`, 0–999), converting to numeric values before augmentation and restoring coord tokens after augmentation when coord-token mode is enabled. Public geometry fields (`bbox_2d`, `poly`) MUST remain token strings after augmentation.
 
 #### Scenario: Coord tokens round-trip through identity augmentation
 - **GIVEN** `custom.coord_tokens.enabled` is true
