@@ -66,7 +66,8 @@ custom:
       # Per-rank microbatch size for rollout generation (HF uses padded generate(); vLLM chunks requests).
       rollout_generate_batch_size: 1
 
-      # Rollout-only vLLM knobs (colocate only; server mode is out-of-scope).
+      # vLLM knobs (colocate default; server mode supported via vllm.mode: server + vllm.server.*).
+      # NOTE: tensor_parallel_size/gpu_memory_utilization/max_model_len are used only in colocate mode.
       vllm:
         tensor_parallel_size: 4
         gpu_memory_utilization: 0.45
