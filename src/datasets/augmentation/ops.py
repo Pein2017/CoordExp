@@ -972,7 +972,8 @@ class SmallObjectZoomPaste(ImageAugmenter):
         new_aabb = get_aabb(new_geom)
         new_aabb = _buffer_aabb(new_aabb, 0.0, width, height)
         for g in existing:
-            aabb = get_aabb(g)        aabb = _buffer_aabb(aabb, 0.0, width, height)
+            aabb = get_aabb(g)
+            aabb = _buffer_aabb(aabb, 0.0, width, height)
             if _aabb_iou(new_aabb, aabb) > self.overlap_threshold:
                 return True
         return False
