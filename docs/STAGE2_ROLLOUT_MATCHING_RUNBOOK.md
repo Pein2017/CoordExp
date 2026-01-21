@@ -131,14 +131,28 @@ Colocate vLLM offload (peak memory relief during rollouts):
   switch `rollout_backend: hf`.
 
 Rollout backend:
-- Default: vLLM colocate (`custom.extra.rollout_matching.rollout_backend: vllm`)
-  - Requires `custom.extra.rollout_matching.vllm.max_model_len`
-  - Weight sync modes:
-    - **Recommended (default):** `custom.extra.rollout_matching.vllm.enable_lora: false`
-      - The trainer merges adapters into the training model weights and loads the merged full weights into vLLM
-        on E-steps ("GRPO-style"). This is significantly more robust for Qwen3-VL multimodal stacks.
-    - Optional: `custom.extra.rollout_matching.vllm.enable_lora: true`
-      - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal).
+- Default: vLLM (`custom.extra.rollout_matching.rollout_backend: vllm`)
+  - vLLM has a mode switch under `custom.extra.rollout_matching.vllm.mode`:
+    - `colocate` (default): learner instantiates a local vLLM engine on the same GPU(s) as training.
+    - `server` (optional): learner connects to a pre-launched `swift rollout` server and generates rollouts on dedicated GPUs.
+
+  - Colocate mode (`vllm.mode: colocate`)
+    - Requires `custom.extra.rollout_matching.vllm.max_model_len`
+    - Weight sync modes:
+      - **Recommended (default):** `custom.extra.rollout_matching.vllm.enable_lora: false`
+        - The trainer merges adapters into the training model weights and loads the merged full weights into vLLM
+          on E-steps ("GRPO-style"). This is significantly more robust for Qwen3-VL multimodal stacks.
+      - Optional: `custom.extra.rollout_matching.vllm.enable_lora: true`
+        - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal).
+
+  - Server mode (`vllm.mode: server`) (3v1 recommended)
+    - Purpose: avoid colocate VRAM contention (vLLM KV cache vs training activations) by running rollouts on separate GPUs.
+    - v1 constraint: learner MUST run as a single process (`world_size == 1`); do not launch learner with `torchrun`.
+    - Connectivity is configured in YAML under `custom.extra.rollout_matching.vllm.server`.
+    - Weight sync is configured under `custom.extra.rollout_matching.vllm.sync`:
+      - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
+      - `sync.mode: adapter`: adapter-only sync (requires server launched with `--vllm_enable_lora true`).
+      - `sync.fallback_to_full: true` will permanently fall back to full sync if adapter sync fails at runtime.
 - Fallback (explicit): HF (`custom.extra.rollout_matching.rollout_backend: hf`)
   - To get *batched* HF rollouts, you must also increase `training.per_device_train_batch_size` (otherwise each rank rolls out 1 sample).
   - `custom.extra.rollout_matching.rollout_generate_batch_size` controls the per-rank microbatch size for HF generate().
@@ -160,6 +174,41 @@ From repo root:
 4 GPUs:
 
 `PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
+
+## 3v1 Server Mode Launch (Single Node, 4 GPUs)
+
+Server-mode splits rollouts (actors) from training (learner).
+The learner still owns parse/match/`Y_train` construction and post-rollout packing; only rollouts + weight sync cross the boundary.
+
+1) Launch rollout server on 3 GPUs (example):
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2 conda run -n ms swift rollout \
+  --model output/12-24/coord_loss-merged/ckpt-3106 \
+  --host 0.0.0.0 --port 8000 \
+  --infer_backend vllm \
+  --vllm_data_parallel_size 3 \
+  --vllm_tensor_parallel_size 1 \
+  --vllm_gpu_memory_utilization 0.90 \
+  --vllm_max_model_len 16000 \
+  --vllm_enable_lora false
+```
+
+Notes:
+- Pick a stable server port and set it in the learner YAML as `vllm.server.servers[].base_url`.
+- `vllm.server.servers[].group_port` is the NCCL communicator port used for in-memory weight sync. It must be reachable.
+
+2) Launch learner on 1 GPU (no torchrun):
+
+```bash
+CUDA_VISIBLE_DEVICES=3 PYTHONPATH=. conda run -n ms python -m src.sft \
+  --config configs/dlora/stage2_rollout_matching_ckpt3106_server_3v1.yaml
+```
+
+Common failure modes:
+- `/health/` unreachable: server not running, wrong `base_url`, firewall/port issue.
+- Communicator init fails: `group_port` blocked/in-use, NCCL env issues, mismatched host networking.
+- Adapter sync fails: server launched with `--vllm_enable_lora false` but `vllm.sync.mode: adapter` requested.
 
 ## Evaluation (Production-Style)
 

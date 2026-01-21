@@ -66,10 +66,11 @@ custom:
       # Per-rank microbatch size for rollout generation (HF uses padded generate(); vLLM chunks requests).
       rollout_generate_batch_size: 1
 
-      # Rollout-only vLLM knobs.
+      # vLLM knobs.
       # - mode: colocate (default): learner instantiates a local vLLM engine (uses VRAM on training GPUs).
       # - mode: server (optional): learner connects to a pre-launched `swift rollout` server and generates rollouts on
       #   dedicated GPUs with in-memory weight sync.
+      # NOTE: tensor_parallel_size/gpu_memory_utilization/max_model_len are used only in colocate mode.
       vllm:
         mode: colocate  # colocate|server
         tensor_parallel_size: 4
