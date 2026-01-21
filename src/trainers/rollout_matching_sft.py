@@ -45,6 +45,32 @@ from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 logger = get_logger()
 
 
+def _contiguous_chunk_slices(n: int, num_chunks: int) -> List[Tuple[int, int]]:
+    """Deterministically slice `range(n)` into `num_chunks` contiguous chunks.
+
+    This is the normative chunking used for multi-server vLLM rollout distribution.
+    It preserves order and is stable across runs.
+
+    Returns a list of (start, end) index pairs of length `num_chunks`.
+    """
+    if num_chunks <= 0:
+        raise ValueError("num_chunks must be > 0")
+    if n < 0:
+        raise ValueError("n must be >= 0")
+    if n == 0:
+        return [(0, 0) for _ in range(int(num_chunks))]
+
+    chunk_size = int((n + num_chunks - 1) // num_chunks)
+    out: List[Tuple[int, int]] = []
+    for i in range(int(num_chunks)):
+        start = min(int(i * chunk_size), int(n))
+        end = min(int((i + 1) * chunk_size), int(n))
+        if end < start:
+            end = start
+        out.append((start, end))
+    return out
+
+
 GeomType = Literal["bbox_2d", "poly"]
 
 
@@ -1743,8 +1769,6 @@ class _RolloutWindowBuffer:
         return _copy_prepared_batch_for_training_step(prepared), True
 
 
-
-
 def _slim_rollout_meta_for_logging(meta: Mapping[str, Any]) -> Dict[str, Any]:
     """Drop large fields (e.g. token id lists) from rollout meta before buffering for logs.
 
@@ -1862,30 +1886,52 @@ class _PendingTrainRolloutLog:
             return
 
         # Timings.
-        self.time_rollout_generate_s += float(batch_metrics.get("time/rollout_generate_s", 0.0) or 0.0)
-        self.time_rollout_parse_match_s += float(batch_metrics.get("time/rollout_parse_match_s", 0.0) or 0.0)
-        self.time_rollout_teacher_encode_s += float(batch_metrics.get("time/rollout_teacher_encode_s", 0.0) or 0.0)
-        self.time_post_rollout_pack_s += float(batch_metrics.get("time/post_rollout_pack_s", 0.0) or 0.0)
+        self.time_rollout_generate_s += float(
+            batch_metrics.get("time/rollout_generate_s", 0.0) or 0.0
+        )
+        self.time_rollout_parse_match_s += float(
+            batch_metrics.get("time/rollout_parse_match_s", 0.0) or 0.0
+        )
+        self.time_rollout_teacher_encode_s += float(
+            batch_metrics.get("time/rollout_teacher_encode_s", 0.0) or 0.0
+        )
+        self.time_post_rollout_pack_s += float(
+            batch_metrics.get("time/post_rollout_pack_s", 0.0) or 0.0
+        )
 
         # Packing stats.
         if "packing/post_rollout_fill" in batch_metrics:
-            self.packing_fill_sum += float(batch_metrics.get("packing/post_rollout_fill", 0.0) or 0.0)
+            self.packing_fill_sum += float(
+                batch_metrics.get("packing/post_rollout_fill", 0.0) or 0.0
+            )
             self.packing_selected_total_len_sum += float(
                 batch_metrics.get("packing/post_rollout_selected_total_len", 0.0) or 0.0
             )
-            self.packing_segments_sum += float(batch_metrics.get("packing/post_rollout_segments", 0.0) or 0.0)
-            self.packing_buffer_last = float(batch_metrics.get("packing/post_rollout_buffer", self.packing_buffer_last) or self.packing_buffer_last)
+            self.packing_segments_sum += float(
+                batch_metrics.get("packing/post_rollout_segments", 0.0) or 0.0
+            )
+            self.packing_buffer_last = float(
+                batch_metrics.get(
+                    "packing/post_rollout_buffer", self.packing_buffer_last
+                )
+                or self.packing_buffer_last
+            )
             self.packing_count += 1
 
         # Rollout buffer stats.
         if "rollout/buffer_reuse" in batch_metrics:
-            self.buffer_reuse_sum += float(batch_metrics.get("rollout/buffer_reuse", 0.0) or 0.0)
+            self.buffer_reuse_sum += float(
+                batch_metrics.get("rollout/buffer_reuse", 0.0) or 0.0
+            )
             self.buffer_reuse_count += 1
         if "rollout/buffer_window_step0" in batch_metrics:
-            self.buffer_window_step0_last = float(batch_metrics.get("rollout/buffer_window_step0") or 0.0)
+            self.buffer_window_step0_last = float(
+                batch_metrics.get("rollout/buffer_window_step0") or 0.0
+            )
         if "rollout/buffer_completed_steps" in batch_metrics:
-            self.buffer_completed_steps_last = float(batch_metrics.get("rollout/buffer_completed_steps") or 0.0)
-
+            self.buffer_completed_steps_last = float(
+                batch_metrics.get("rollout/buffer_completed_steps") or 0.0
+            )
 
 
 def schedule_post_rollout_segment_indices_window(
@@ -1911,16 +1957,18 @@ def schedule_post_rollout_segment_indices_window(
     total = int(sum(lens))
     if total > gas * packing_length:
         raise ValueError(
-            f"infeasible window: sum_encoded_len={total} > gas*packing_length={gas*packing_length}"
+            f"infeasible window: sum_encoded_len={total} > gas*packing_length={gas * packing_length}"
         )
 
-    remaining: List[Tuple[int, int]] = [(i, int(l)) for i, l in enumerate(lens)]
+    remaining: List[Tuple[int, int]] = [
+        (int(i), int(seg_len)) for i, seg_len in enumerate(lens)
+    ]
     packs: List[List[int]] = []
 
     for _ in range(gas):
         if not remaining:
             break
-        rem_lens = [int(l) for _, l in remaining]
+        rem_lens = [int(seg_len) for _, seg_len in remaining]
         sel_local = list(select_indices_fn(rem_lens, packing_length) or [])
         if not sel_local:
             raise ValueError("window scheduling selected empty pack")
@@ -1938,6 +1986,7 @@ def schedule_post_rollout_segment_indices_window(
 
     return packs
 
+
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -1948,13 +1997,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._debug_dump_count: int = 0
         # Rank-local carry buffer for dynamic post-rollout packing (stage_2 only).
         # Each entry is (encoded, meta, encoded_len).
-        self._post_rollout_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
+        self._post_rollout_segments: List[
+            Tuple[Dict[str, Any], Dict[str, Any], int]
+        ] = []
 
         # vLLM rollout backend state (lazy init).
         self._vllm_engine: Any = None
         self._vllm_tp_group: Any = None
         self._vllm_tp_size: int = 1
         self._vllm_last_loaded_step: int = -1
+
+        # vLLM server-mode rollout backend state (lazy init).
+        self._vllm_server_client: Any = None
+        self._vllm_server_last_synced_step: int = -1
+        self._vllm_server_last_logged_step: int = -1
+        self._vllm_server_force_full_sync: bool = False
 
         # Buffered-rollout window state (lazy init; config injected after construction).
         self._rm_rollout_buffer: Optional[_RolloutWindowBuffer] = None
@@ -2041,7 +2098,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         cfg = self._monitor_dump_cfg()
         if not bool(cfg.get("enabled", False)):
             return False
-        if bool(cfg.get("only_world_process_zero", True)) and not self._is_main_process():
+        if (
+            bool(cfg.get("only_world_process_zero", True))
+            and not self._is_main_process()
+        ):
             return False
 
         max_events = int(cfg.get("max_events", 20) or 0)
@@ -2049,7 +2109,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return False
 
         gs = int(global_step)
-        if self._monitor_dump_last_step is not None and int(self._monitor_dump_last_step) == gs:
+        if (
+            self._monitor_dump_last_step is not None
+            and int(self._monitor_dump_last_step) == gs
+        ):
             return False
 
         every = cfg.get("every_steps", None)
@@ -2057,7 +2120,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             every = int(getattr(self.args, "logging_steps", 1) or 1)
         every = max(1, int(every))
 
-        dump_first = bool(cfg.get("dump_first_step", bool(getattr(self.args, "logging_first_step", False))))
+        dump_first = bool(
+            cfg.get(
+                "dump_first_step", bool(getattr(self.args, "logging_first_step", False))
+            )
+        )
         if gs == 0 and not dump_first:
             return False
         if gs % every != 0:
@@ -2087,11 +2154,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 out.append("\\u%04x" % ord(ch))
         return "".join(out)
 
-    def _write_monitor_dump(self, *, global_step: int, payload: Mapping[str, Any]) -> None:
+    def _write_monitor_dump(
+        self, *, global_step: int, payload: Mapping[str, Any]
+    ) -> None:
         cfg = self._monitor_dump_cfg()
         out_dir = cfg.get("out_dir")
         if not isinstance(out_dir, str) or not out_dir.strip():
-            out_dir = os.path.join(str(getattr(self.args, "output_dir", ".")), "monitor_dumps")
+            out_dir = os.path.join(
+                str(getattr(self.args, "output_dir", ".")), "monitor_dumps"
+            )
         os.makedirs(out_dir, exist_ok=True)
 
         # One file per optimizer step by default (easy to inspect while training).
@@ -2125,7 +2196,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         lines.append("## Meta\n")
         lines.append("```json\n" + _j(meta) + "\n```\n")
 
-        samples = payload.get("samples") if isinstance(payload.get("samples"), list) else []
+        samples = (
+            payload.get("samples") if isinstance(payload.get("samples"), list) else []
+        )
         for i, s in enumerate(samples):
             if not isinstance(s, Mapping):
                 continue
@@ -2143,19 +2216,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             lines.append("### Rollout (raw)\n")
             lines.append(
                 "```text\n"
-                + self._ascii_safe_text(self._clip_text(s.get("rollout_text"), max_chars=max_chars))
+                + self._ascii_safe_text(
+                    self._clip_text(s.get("rollout_text"), max_chars=max_chars)
+                )
                 + "\n```\n"
             )
             lines.append("### Prefix Used (append-ready)\n")
             lines.append(
                 "```text\n"
-                + self._ascii_safe_text(self._clip_text(s.get("prefix_text"), max_chars=max_chars))
+                + self._ascii_safe_text(
+                    self._clip_text(s.get("prefix_text"), max_chars=max_chars)
+                )
                 + "\n```\n"
             )
             lines.append("### Training Target (prefix + FN append)\n")
             lines.append(
                 "```text\n"
-                + self._ascii_safe_text(self._clip_text(s.get("train_text"), max_chars=max_chars))
+                + self._ascii_safe_text(
+                    self._clip_text(s.get("train_text"), max_chars=max_chars)
+                )
                 + "\n```\n"
             )
 
@@ -2233,7 +2312,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return
 
         # Only applicable for colocate vLLM rollouts.
-        if self._rollout_backend() != "vllm":
+        if self._rollout_backend() != "vllm" or self._vllm_mode() != "colocate":
             yield
             return
 
@@ -2313,6 +2392,222 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 f"custom.extra.rollout_matching.rollout_backend must be one of {{hf,vllm}}, got {backend!r}"
             )
         return backend  # type: ignore[return-value]
+
+    def _vllm_mode(self) -> Literal["colocate", "server"]:
+        """vLLM integration mode.
+
+        - `colocate` (default): instantiate a local vLLM engine.
+        - `server`: connect to a pre-launched ms-swift rollout server.
+        """
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("custom.extra.rollout_matching.vllm must be a mapping")
+        mode = str(vcfg_raw.get("mode", "colocate") or "colocate").strip().lower()
+        if mode not in {"colocate", "server"}:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.mode must be 'colocate' or 'server'; "
+                f"got {mode!r}"
+            )
+        return mode  # type: ignore[return-value]
+
+    def _vllm_server_cfg(self) -> Mapping[str, Any]:
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("custom.extra.rollout_matching.vllm must be a mapping")
+        scfg_raw = vcfg_raw.get("server", {}) or {}
+        if not isinstance(scfg_raw, Mapping):
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.server must be a mapping"
+            )
+        return scfg_raw
+
+    def _vllm_server_specs(self) -> List[Dict[str, Any]]:
+        """Normalize server list config to a list of {base_url, group_port} dicts.
+
+        Spec contract: config MUST be expressed in exactly one of:
+        - `server.servers: [...]` (preferred)
+        - legacy paired lists: `server.base_url` + `server.group_port`
+        """
+        scfg = self._vllm_server_cfg()
+
+        servers_raw = scfg.get("servers", None)
+        base_url_raw = scfg.get("base_url", None)
+        group_port_raw = scfg.get("group_port", None)
+
+        if servers_raw is not None:
+            if base_url_raw is not None or group_port_raw is not None:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server must define exactly one of 'servers' or ('base_url','group_port'), not both"
+                )
+
+            if not isinstance(servers_raw, list) or not servers_raw:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.servers must be a non-empty list"
+                )
+            out: List[Dict[str, Any]] = []
+            for i, s in enumerate(servers_raw):
+                if not isinstance(s, Mapping):
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.servers[%d] must be a mapping"
+                        % int(i)
+                    )
+                base_url = s.get("base_url")
+                if not isinstance(base_url, str) or not base_url.strip():
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.servers[%d].base_url must be a non-empty string"
+                        % int(i)
+                    )
+                group_port_entry_raw = s.get("group_port")
+                try:
+                    group_port_entry = int(group_port_entry_raw)
+                except Exception as exc:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.servers[%d].group_port must be an int"
+                        % int(i)
+                    ) from exc
+                if group_port_entry <= 0:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.servers[%d].group_port must be > 0"
+                        % int(i)
+                    )
+                out.append(
+                    {
+                        "base_url": base_url.strip().rstrip("/"),
+                        "group_port": int(group_port_entry),
+                    }
+                )
+            return out
+
+        # Legacy paired-list form.
+        if base_url_raw is None or group_port_raw is None:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.server must define either 'servers' or ('base_url','group_port')"
+            )
+
+        if isinstance(base_url_raw, str):
+            if not isinstance(group_port_raw, int):
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.group_port must be an int when base_url is a string"
+                )
+            if group_port_raw <= 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.group_port must be > 0"
+                )
+            return [
+                {
+                    "base_url": base_url_raw.strip().rstrip("/"),
+                    "group_port": int(group_port_raw),
+                }
+            ]
+
+        if not isinstance(base_url_raw, list) or not all(
+            isinstance(u, str) and u.strip() for u in base_url_raw
+        ):
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.server.base_url must be a string or a list of non-empty strings"
+            )
+        base_urls = [u.strip().rstrip("/") for u in base_url_raw]
+
+        group_ports: List[int] = []
+        if isinstance(group_port_raw, int):
+            if group_port_raw <= 0:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.group_port must be > 0"
+                )
+            group_ports = [int(group_port_raw) + i for i in range(len(base_urls))]
+        elif isinstance(group_port_raw, list):
+            if len(group_port_raw) != len(base_urls):
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.group_port list length must match base_url list length"
+                )
+            for i, gp_raw in enumerate(group_port_raw):
+                try:
+                    gp = int(gp_raw)
+                except Exception as exc:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.group_port[%d] must be an int"
+                        % int(i)
+                    ) from exc
+                if gp <= 0:
+                    raise ValueError(
+                        "custom.extra.rollout_matching.vllm.server.group_port[%d] must be > 0"
+                        % int(i)
+                    )
+                group_ports.append(int(gp))
+        else:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.server.group_port must be an int or list of ints"
+            )
+
+        return [
+            {"base_url": u, "group_port": int(gp)}
+            for u, gp in zip(base_urls, group_ports)
+        ]
+
+    def _vllm_server_timeouts(self) -> Tuple[float, Optional[float]]:
+        scfg = self._vllm_server_cfg()
+
+        timeout_raw = scfg.get("timeout_s", None)
+        if timeout_raw is None:
+            timeout_s = 240.0
+        else:
+            try:
+                timeout_s = float(timeout_raw)
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.timeout_s must be a float/int"
+                ) from exc
+        if timeout_s <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.server.timeout_s must be > 0"
+            )
+
+        infer_timeout_raw = scfg.get("infer_timeout_s", None)
+        infer_timeout_s: Optional[float]
+        if infer_timeout_raw is None:
+            infer_timeout_s = None
+        else:
+            try:
+                infer_timeout_s = float(infer_timeout_raw)
+            except Exception as exc:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
+                ) from exc
+            if infer_timeout_s <= 0:
+                infer_timeout_s = None
+
+        return float(timeout_s), infer_timeout_s
+
+    def _vllm_server_sync_cfg(self) -> Tuple[str, bool]:
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("custom.extra.rollout_matching.vllm must be a mapping")
+        sync_raw = vcfg_raw.get("sync", {}) or {}
+        if not isinstance(sync_raw, Mapping):
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.sync must be a mapping"
+            )
+
+        mode = str(sync_raw.get("mode", "full") or "full").strip().lower()
+        if mode not in {"full", "adapter", "auto"}:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
+            )
+        fallback_to_full = bool(sync_raw.get("fallback_to_full", True))
+        return mode, fallback_to_full
+
+    def _derive_rollout_seed_base(self, *, global_step: int) -> int:
+        """Deterministic seed base for rollouts.
+
+        Contract: per-request seeds are derived deterministically from:
+        - `training.seed` (HF TrainingArguments.seed)
+        - `global_step` (optimizer-step index)
+        - within-batch sample index
+        """
+        base = int(getattr(getattr(self, "args", None), "seed", 0) or 0)
+        gs = int(global_step)
+        # Keep in signed int32 range for compatibility with various backends.
+        return int((base + gs * 1000003) & 0x7FFFFFFF)
 
     def _rollout_generate_batch_size(self) -> int:
         raw = self._cfg("rollout_generate_batch_size", 1)
@@ -2711,7 +3006,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # from disk is unnecessary; dummy init reduces overhead.
             load_format = "dummy" if not enable_lora else "auto"
         if not isinstance(load_format, str):
-            raise ValueError("custom.extra.rollout_matching.vllm.load_format must be a string")
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.load_format must be a string"
+            )
         load_format = load_format.strip()
 
         gpu_mem = float(vcfg.get("gpu_memory_utilization", 0.45))
@@ -2962,7 +3259,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
           load the merged weights into vLLM (GRPO-style; more robust for ViT).
         """
         vcfg = self._cfg("vllm", {}) or {}
-        enable_lora = bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
+        enable_lora = (
+            bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
+        )
         if enable_lora:
             self._sync_vllm_lora_if_needed()
         else:
@@ -2983,7 +3282,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             is_peft_model = None  # type: ignore[assignment]
 
-        is_peft = bool(is_peft_model(self.model)) if is_peft_model is not None else False
+        is_peft = (
+            bool(is_peft_model(self.model)) if is_peft_model is not None else False
+        )
 
         merge_cm = nullcontext()
         unmerge_cm = nullcontext()
@@ -3023,19 +3324,27 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if is_peft:
                     # Follow ms-swift GRPO key mapping conventions to match vLLM model names.
                     prefix_removed = {
-                        k.removeprefix("base_model.model."): v for k, v in state_dict.items()
+                        k.removeprefix("base_model.model."): v
+                        for k, v in state_dict.items()
                     }
-                    state_dict = {k.replace(".base_layer", ""): v for k, v in prefix_removed.items()}
+                    state_dict = {
+                        k.replace(".base_layer", ""): v
+                        for k, v in prefix_removed.items()
+                    }
                     prefix = getattr(self.model, "prefix", None)
                     if isinstance(prefix, str) and prefix:
-                        state_dict = {k: v for k, v in state_dict.items() if prefix not in k}
+                        state_dict = {
+                            k: v for k, v in state_dict.items() if prefix not in k
+                        }
                     state_dict = {
                         k.replace("modules_to_save.default.", ""): v
                         for k, v in state_dict.items()
                         if "original_module" not in k
                     }
                     # vLLM LoRA is disabled: do not pass LoRA tensors (they're already merged).
-                    state_dict = {k: v for k, v in state_dict.items() if "lora_" not in k}
+                    state_dict = {
+                        k: v for k, v in state_dict.items() if "lora_" not in k
+                    }
 
                 engine.inner_model.load_weights(state_dict.items())
             finally:
@@ -3131,6 +3440,334 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ) from exc
 
         self._vllm_last_loaded_step = step
+
+    def _effective_vllm_server_sync_mode(self) -> str:
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        enable_lora = (
+            bool(vcfg_raw.get("enable_lora", False))
+            if isinstance(vcfg_raw, Mapping)
+            else False
+        )
+
+        mode, _fallback_to_full = self._vllm_server_sync_cfg()
+        if bool(getattr(self, "_vllm_server_force_full_sync", False)):
+            return "full"
+        if mode == "auto":
+            return "adapter" if enable_lora else "full"
+        return mode
+
+    def _ensure_vllm_server_client(self) -> Any:
+        """Create and initialize an ms-swift vLLM server client (lazy)."""
+        if self._vllm_server_client is not None:
+            return self._vllm_server_client
+
+        # v1: server-mode learner is single-process only.
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            world_size = int(dist.get_world_size())
+            if world_size > 1:
+                raise RuntimeError(
+                    "custom.extra.rollout_matching.vllm.mode=server requires a single-process learner (world_size==1). "
+                    "Mitigations: run the learner on one GPU (no torchrun), or set vllm.mode=colocate."
+                )
+
+        servers = self._vllm_server_specs()
+        timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
+
+        try:
+            from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
+        except Exception as exc:
+            raise RuntimeError(
+                "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
+                "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
+            ) from exc
+
+        base_urls = [str(s["base_url"]) for s in servers]
+        group_ports = [int(s["group_port"]) for s in servers]
+
+        try:
+            client = VLLMClient(
+                base_urls=base_urls,
+                group_ports=group_ports,
+                connection_timeout=float(timeout_s),
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to connect to vLLM rollout server(s). "
+                "Check custom.extra.rollout_matching.vllm.server (base_url/group_port) and ensure /health/ is reachable."
+            ) from exc
+
+        try:
+            # In single-process learner, CUDA device 0 is the only visible device.
+            client.init_communicator(device=0)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to initialize NCCL communicator with vLLM rollout server(s). "
+                "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
+            ) from exc
+
+        # Best-effort: log server runtime type (enable_lora, async engine, etc.).
+        try:
+            info = client.get_engine_type()
+            logger.info("vLLM rollout server engine_type: %s", info)
+        except Exception:
+            pass
+
+        self._vllm_server_client = client
+        return client
+
+    def _sync_vllm_server_rollout_model_if_needed(self) -> None:
+        """Sync weights/adapters to rollout server for vLLM server mode."""
+        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        if step == int(getattr(self, "_vllm_server_last_synced_step", -1)):
+            return
+
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        enable_lora = (
+            bool(vcfg_raw.get("enable_lora", False))
+            if isinstance(vcfg_raw, Mapping)
+            else False
+        )
+
+        mode, fallback_to_full = self._vllm_server_sync_cfg()
+        eff_mode = self._effective_vllm_server_sync_mode()
+
+        if eff_mode == "adapter" and not enable_lora:
+            raise ValueError(
+                "custom.extra.rollout_matching.vllm.sync.mode=adapter requires custom.extra.rollout_matching.vllm.enable_lora: true"
+            )
+
+        client = self._ensure_vllm_server_client()
+
+        if eff_mode == "adapter":
+            # Optional runtime sanity check (server must have vLLM LoRA enabled).
+            try:
+                info = client.get_engine_type()
+                if isinstance(info, dict) and not bool(info.get("enable_lora", False)):
+                    raise RuntimeError(
+                        "vLLM server reports enable_lora=false, but adapter-only sync was requested. "
+                        "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
+                        "or set vllm.sync.mode=full."
+                    )
+            except Exception as exc:
+                # If the check itself fails, continue; sync will fail with a clearer error.
+                logger.warning(
+                    "Unable to verify rollout server LoRA capability: %s", exc
+                )
+
+            try:
+                self._sync_vllm_server_adapter(client)
+            except Exception as exc:
+                if bool(fallback_to_full):
+                    logger.warning(
+                        "Adapter-only vLLM server sync failed; falling back to full sync for the remainder of the run. "
+                        "Error: %s",
+                        exc,
+                    )
+                    self._vllm_server_force_full_sync = True
+                    self._sync_vllm_server_full_weights(client)
+                else:
+                    raise
+        else:
+            self._sync_vllm_server_full_weights(client)
+
+        self._vllm_server_last_synced_step = step
+
+    def _sync_vllm_server_full_weights(self, client: Any) -> None:
+        """Full merged-weight sync to vLLM server (robust default)."""
+        from contextlib import nullcontext
+
+        try:
+            from accelerate.utils import is_peft_model
+        except Exception:
+            is_peft_model = None  # type: ignore[assignment]
+
+        is_peft = (
+            bool(is_peft_model(self.model)) if is_peft_model is not None else False
+        )
+
+        merge_cm = nullcontext()
+        unmerge_cm = nullcontext()
+        if is_peft:
+            try:
+                from swift.trainers.rlhf_trainer.utils import (
+                    patch_lora_merge,
+                    patch_lora_unmerge,
+                )
+
+                merge_cm = patch_lora_merge(self.model)
+                unmerge_cm = patch_lora_unmerge(self.model)
+            except Exception:
+                merge_cm = nullcontext()
+                unmerge_cm = nullcontext()
+
+        params = [p for _, p in self.model.named_parameters()]
+        gather_if_zero3 = get_gather_if_zero3_context(self)
+
+        with gather_if_zero3(params), merge_cm, torch.no_grad():
+            merged = False
+            try:
+                if is_peft:
+                    try:
+                        self.model.merge_adapter()
+                        merged = True
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "vLLM server full sync requires merging adapter weights from the training model. "
+                            "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter, or use sync.mode=adapter."
+                        ) from exc
+
+                state_dict = self.model.state_dict()
+                if is_peft:
+                    prefix_removed = {
+                        k.removeprefix("base_model.model."): v
+                        for k, v in state_dict.items()
+                    }
+                    state_dict = {
+                        k.replace(".base_layer", ""): v
+                        for k, v in prefix_removed.items()
+                    }
+                    prefix = getattr(self.model, "prefix", None)
+                    if isinstance(prefix, str) and prefix:
+                        state_dict = {
+                            k: v for k, v in state_dict.items() if prefix not in k
+                        }
+                    state_dict = {
+                        k.replace("modules_to_save.default.", ""): v
+                        for k, v in state_dict.items()
+                        if "original_module" not in k
+                    }
+                    # LoRA already merged: do not send LoRA tensors.
+                    state_dict = {
+                        k: v for k, v in state_dict.items() if "lora_" not in k
+                    }
+
+                self._vllm_server_update_state_dict(client, state_dict)
+            finally:
+                if is_peft and merged:
+                    with unmerge_cm:
+                        self.model.unmerge_adapter()
+
+        # Reset server prefix cache to avoid stale cached states.
+        try:
+            client.reset_prefix_cache()
+        except Exception as exc:
+            logger.warning(
+                "Failed to reset vLLM server prefix cache after full sync: %s", exc
+            )
+
+    def _vllm_server_update_state_dict(
+        self, client: Any, state_dict: Mapping[str, Any]
+    ) -> None:
+        """Bucket + broadcast a state_dict into the vLLM server via NCCL."""
+        try:
+            from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
+        except Exception as exc:
+            raise RuntimeError(
+                "FlattenedTensorBucket is required for vLLM server sync"
+            ) from exc
+
+        bucket_size_mb = int(os.environ.get("SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE", 512))
+        bucket_size_bytes = int(bucket_size_mb) * 1024 * 1024
+
+        bucket: List[Tuple[str, torch.Tensor]] = []
+        bucket_bytes = 0
+
+        def _flush_bucket() -> None:
+            nonlocal bucket, bucket_bytes
+            if not bucket:
+                return
+            b = FlattenedTensorBucket(named_tensors=bucket)
+            client.update_flattened_params(b.get_metadata(), b.get_flattened_tensor())
+            bucket = []
+            bucket_bytes = 0
+
+        for name, t in state_dict.items():
+            if t is None or not isinstance(t, torch.Tensor):
+                continue
+            if t.numel() == 0:
+                continue
+            ten = t.detach()
+            nbytes = int(ten.numel() * ten.element_size())
+            if (
+                bucket
+                and bucket_size_bytes > 0
+                and bucket_bytes + nbytes > bucket_size_bytes
+            ):
+                _flush_bucket()
+            bucket.append((str(name), ten))
+            bucket_bytes += nbytes
+
+        _flush_bucket()
+
+    def _sync_vllm_server_adapter(self, client: Any) -> None:
+        """Adapter-only sync to vLLM server (requires vLLM LoRA)."""
+        peft_cfg = getattr(self.model, "peft_config", None)
+        if not isinstance(peft_cfg, Mapping) or not peft_cfg:
+            raise RuntimeError(
+                "vLLM server adapter sync requires a PEFT LoRA model (peft_config missing). "
+                "Use sync.mode=full or disable server mode."
+            )
+        cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
+
+        try:
+            peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
+        except Exception:
+            if hasattr(cfg0, "to_dict"):
+                peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
+            else:
+                peft_cfg_dict = {}
+
+        try:
+            from peft.utils.save_and_load import get_peft_model_state_dict
+        except Exception as exc:
+            raise RuntimeError("peft is required for vLLM server adapter sync") from exc
+
+        named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
+        if not named:
+            raise RuntimeError(
+                "No LoRA parameters found on model, but adapter sync is enabled. "
+                "Mitigations: set sync.mode=full or ensure LoRA/DoRA is enabled."
+            )
+
+        names = [n for n, _ in named]
+        params = [p for _, p in named]
+        gather_if_zero3 = get_gather_if_zero3_context(self)
+        with gather_if_zero3(params):
+            subset: Dict[str, torch.Tensor] = {}
+            for n, p in zip(names, params):
+                t = p.full_tensor() if hasattr(p, "full_tensor") else p
+                subset[n] = t.detach()
+            lora_params = get_peft_model_state_dict(self.model, subset)
+            lora_params = {
+                k: (v.full_tensor() if hasattr(v, "full_tensor") else v).detach()
+                for k, v in lora_params.items()
+            }
+
+        try:
+            from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
+        except Exception as exc:
+            raise RuntimeError(
+                "FlattenedTensorBucket is required for vLLM server adapter sync"
+            ) from exc
+
+        bucket = FlattenedTensorBucket(named_tensors=list(lora_params.items()))
+        client.update_adapter_flattened_param(
+            peft_cfg_dict,
+            bucket.get_metadata(),
+            bucket.get_flattened_tensor(),
+        )
+
+        try:
+            client.reset_prefix_cache()
+        except Exception as exc:
+            logger.warning(
+                "Failed to reset vLLM server prefix cache after adapter sync: %s", exc
+            )
 
     def _vllm_infer_tp_group(
         self, infer_requests: List[Dict[str, Any]], request_config: Any
@@ -3401,6 +4038,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _rollout_many_vllm(
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Tuple[List[int], str, str, List[int]]]:
+        """vLLM rollout backend (colocate default, server optional)."""
+        mode = self._vllm_mode()
+        if mode == "server":
+            return self._rollout_many_vllm_server(samples)
+        return self._rollout_many_vllm_colocate(samples)
+
+    @torch.no_grad()
+    def _rollout_many_vllm_colocate(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM colocate rollout backend (token ids)."""
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         if decode_mode != "greedy":
@@ -3441,7 +4088,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         try:
             from swift.llm import InferRequest
         except Exception as exc:
-            raise RuntimeError("swift.llm.InferRequest is required for vLLM rollouts") from exc
+            raise RuntimeError(
+                "swift.llm.InferRequest is required for vLLM rollouts"
+            ) from exc
 
         infer_requests: List[Any] = []
         for s in samples:
@@ -3480,6 +4129,240 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 prompt_ids = []
             results.append((token_ids, text, decode_mode, prompt_ids))
         return results
+
+    @torch.no_grad()
+    def _rollout_many_vllm_server(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
+        """vLLM server rollout backend (token ids via ms-swift `swift rollout`)."""
+        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
+        if decode_mode != "greedy":
+            raise ValueError(
+                "vLLM server rollout backend currently supports decode_mode=greedy only"
+            )
+
+        n = int(len(samples))
+        if n == 0:
+            return []
+
+        # Sync weights to server only when fresh rollouts are requested.
+        self._sync_vllm_server_rollout_model_if_needed()
+
+        max_new_tokens = int(self._cfg("max_new_tokens", 512))
+        temperature = float(self._cfg("temperature", 0.0))
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.repetition_penalty must be > 0"
+            )
+        if temperature < 0:
+            raise ValueError("temperature must be >= 0")
+
+        try:
+            from swift.llm import RequestConfig
+        except Exception as exc:
+            raise RuntimeError(
+                "swift.llm.RequestConfig is required for vLLM server rollouts"
+            ) from exc
+
+        # Base request config (per-server seed is set deterministically below).
+        base_request_config = RequestConfig(
+            n=1,
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=1.0,
+            top_k=-1,
+            repetition_penalty=repetition_penalty,
+            stop=None,
+            return_details=True,
+        )
+        base_request_config_dict = asdict(base_request_config)
+
+        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        seed_base = int(self._derive_rollout_seed_base(global_step=gs))
+
+        # Build JSON-serializable ms-swift RolloutInferRequest-compatible dicts.
+        infer_requests: List[Dict[str, Any]] = []
+        for s in samples:
+            msgs = s.get("messages")
+            if not isinstance(msgs, list):
+                raise ValueError(
+                    "rollout-matching samples must contain messages (list)"
+                )
+            try:
+                msgs_json = json.loads(json.dumps(msgs))
+            except Exception as exc:
+                raise ValueError(
+                    "vLLM server mode requires JSON-serializable messages. "
+                    "Ensure images are passed as strings (path/url/base64), not PIL objects."
+                ) from exc
+
+            req: Dict[str, Any] = {"messages": msgs_json}
+
+            # Best-effort: include images list when present (common ms-swift multimodal contract).
+            images_raw = s.get("images", None)
+            if images_raw is None:
+                img = s.get("image", None)
+                if isinstance(img, str) and img:
+                    images_raw = [img]
+            if images_raw is not None:
+                if isinstance(images_raw, str):
+                    images = [images_raw]
+                elif isinstance(images_raw, (list, tuple)):
+                    images = list(images_raw)
+                else:
+                    raise ValueError(
+                        "vLLM server mode expects sample['images'] to be a string or list of strings"
+                    )
+                if not all(isinstance(x, str) for x in images):
+                    raise ValueError(
+                        "vLLM server mode expects all image entries to be strings (path/url/base64)"
+                    )
+                req["images"] = images
+
+            infer_requests.append(req)
+
+        servers = self._vllm_server_specs()
+        if not servers:
+            raise ValueError("vLLM server mode requires a non-empty server list")
+
+        _timeout_s, infer_timeout_s = self._vllm_server_timeouts()
+
+        client = self._ensure_vllm_server_client()
+
+        # Deterministic contiguous chunking across servers.
+        chunks = _contiguous_chunk_slices(int(len(infer_requests)), int(len(servers)))
+
+        # Log reproducibility metadata once per optimizer step (E-steps only).
+        if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
+            seed_plan: List[Dict[str, Any]] = []
+            for i, (start, end) in enumerate(chunks):
+                if start >= end:
+                    continue
+                seed_plan.append(
+                    {
+                        "server_idx": int(i),
+                        "base_url": str(servers[i].get("base_url", "")),
+                        "start": int(start),
+                        "end": int(end),
+                        # Effective per-server-call seed used for RequestConfig.seed:
+                        # seed = rollout_seed_base + chunk_start
+                        "seed": int((seed_base + int(start)) & 0x7FFFFFFF),
+                    }
+                )
+            logger.info(
+                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s seed_plan=%s",
+                servers,
+                self._effective_vllm_server_sync_mode(),
+                int(len(infer_requests)),
+                int(seed_base),
+                seed_plan,
+            )
+            self._vllm_server_last_logged_step = int(gs)
+
+        results: List[Optional[Tuple[List[int], str, str, List[int]]]] = [None] * len(
+            infer_requests
+        )
+
+        def _parse_output(raw: Any) -> Tuple[List[int], str, List[int]]:
+            # Support both direct ChatCompletionResponse dicts and wrapped RolloutOutput dicts.
+            if isinstance(raw, dict) and isinstance(raw.get("response"), dict):
+                raw = raw.get("response")
+            if not isinstance(raw, dict):
+                raise RuntimeError("vLLM server returned a non-dict output")
+            if raw.get("object") == "error":
+                raise RuntimeError(str(raw.get("message") or raw))
+
+            prompt_ids_raw = raw.get("prompt_token_ids")
+            if not isinstance(prompt_ids_raw, list) or not prompt_ids_raw:
+                raise RuntimeError(
+                    "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
+                )
+            prompt_ids = [int(t) for t in prompt_ids_raw]
+
+            choices = raw.get("choices")
+            if not isinstance(choices, list) or not choices:
+                raise RuntimeError("vLLM server response missing choices")
+            ch0 = choices[0]
+            if not isinstance(ch0, dict):
+                raise RuntimeError("vLLM server response choice is not a dict")
+
+            msg = ch0.get("message")
+            if not isinstance(msg, dict):
+                msg = {}
+            text = str(msg.get("content") or "")
+
+            token_ids_raw = ch0.get("token_ids")
+            if not isinstance(token_ids_raw, list):
+                raise RuntimeError(
+                    "vLLM server response missing token_ids; ensure request_config.return_details=true"
+                )
+            token_ids = [int(t) for t in token_ids_raw]
+            return token_ids, text, prompt_ids
+
+        def _infer_on_server(server_idx: int, start: int, end: int) -> None:
+            if start >= end:
+                return
+            base_url = str(servers[server_idx]["base_url"]).rstrip("/")
+
+            # Derive per-server-call seed so per-request seeds are stable.
+            req_cfg = dict(base_request_config_dict)
+            req_cfg["seed"] = int((seed_base + int(start)) & 0x7FFFFFFF)
+
+            payload = {
+                "infer_requests": infer_requests[start:end],
+                "request_config": req_cfg,
+                "metrics": None,
+                "template": None,
+                "use_tqdm": None,
+                "adapter_request": None,
+            }
+
+            url = f"{base_url}/infer/"
+            session = client.sessions[server_idx]
+            if infer_timeout_s is None:
+                resp = session.post(url, json=payload)
+            else:
+                resp = session.post(url, json=payload, timeout=float(infer_timeout_s))
+
+            if int(getattr(resp, "status_code", 0) or 0) != 200:
+                raise RuntimeError(
+                    f"vLLM server infer failed: url={url} status={getattr(resp, 'status_code', None)} body={getattr(resp, 'text', '')}"
+                )
+
+            data = resp.json()
+            if not isinstance(data, list):
+                raise RuntimeError("vLLM server returned non-list JSON")
+            if len(data) != int(end - start):
+                raise RuntimeError(
+                    "vLLM server returned unexpected number of outputs: "
+                    f"expected={int(end - start)} got={len(data)}"
+                )
+
+            for j, raw_out in enumerate(data):
+                token_ids, text, prompt_ids = _parse_output(raw_out)
+                results[int(start + j)] = (token_ids, text, decode_mode, prompt_ids)
+
+        # Parallelize across servers.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=int(len(servers))) as ex:
+            futs = []
+            for i, (start, end) in enumerate(chunks):
+                if start >= end:
+                    continue
+                futs.append(ex.submit(_infer_on_server, int(i), int(start), int(end)))
+            for f in futs:
+                f.result()
+
+        out: List[Tuple[List[int], str, str, List[int]]] = []
+        for r in results:
+            if r is None:
+                raise RuntimeError(
+                    "vLLM server failed to produce outputs for all requests"
+                )
+            out.append(r)
+        return out
 
     @torch.no_grad()
     def _rollout_many(
@@ -3616,7 +4499,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         candidate.sort()
         candidate_total = int(sum(int(lens[i]) for i in candidate))
         if candidate_total > packing_length:
-            raise AssertionError("post-rollout packing selection overflowed packing_length")
+            raise AssertionError(
+                "post-rollout packing selection overflowed packing_length"
+            )
 
         # Baseline-fallback rule: only switch if binpacking strictly improves total length.
         if candidate_total > baseline_total:
@@ -3671,13 +4556,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return selected, pack_metrics
 
-
     def _schedule_post_rollout_packs_window(
         self,
         *,
         window_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
         gas: int,
-    ) -> Tuple[List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]], Dict[str, float]]:
+    ) -> Tuple[
+        List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]], Dict[str, float]
+    ]:
         packing_length = int(self._packing_length())
         gas = int(gas)
         encoded_lens = [int(sl) for _, _, sl in window_segments]
@@ -3697,7 +4583,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for sel in pack_indices:
             selected = [window_segments[i] for i in sel]
             sel_total = int(sum(int(encoded_lens[i]) for i in sel))
-            fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            fill = (
+                float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            )
             packs.append(selected)
             fill_sum += float(fill)
             selected_total_len_sum += float(sel_total)
@@ -3714,8 +4602,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "packing/window_segments_sum": float(segments_sum),
         }
         return packs, metrics
-
-
 
     def _prepare_window_packed_batches(
         self,
@@ -3772,7 +4658,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             bm["time/post_rollout_pack_s"] = float(t_pack_s if i == 0 else 0.0)
 
             sel_total = int(sum(int(sl) for _, _, sl in selected))
-            fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            fill = (
+                float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            )
             bm.update(
                 {
                     "packing/post_rollout_fill": float(fill),
@@ -3931,14 +4819,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if isinstance(desc_cfg, Mapping) and bool(desc_cfg.get("enabled", False)):
                 every = int(desc_cfg.get("every_steps", 0) or 0)
                 if every <= 0:
-                    every = int(getattr(getattr(self, "args", None), "logging_steps", 0) or 0)
+                    every = int(
+                        getattr(getattr(self, "args", None), "logging_steps", 0) or 0
+                    )
                 if every <= 0:
                     every = 1
                 if int(gs) % int(every) == 0:
                     desc_monitor_ran = True
                     max_pairs = int(desc_cfg.get("max_pairs", 64) or 64)
                     thr = float(desc_cfg.get("semantic_threshold", 0.6) or 0.6)
-                    mode = str(desc_cfg.get("mode", "semantic") or "semantic").strip().lower()
+                    mode = (
+                        str(desc_cfg.get("mode", "semantic") or "semantic")
+                        .strip()
+                        .lower()
+                    )
 
                     try:
                         from src.metrics.semantic_desc import normalize_desc
@@ -3956,7 +4850,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             continue
                         if gt_i < 0 or gt_i >= len(gts):
                             continue
-                        pred_desc_raw = str(getattr(pred_meta[pred_i], "desc", "") or "")
+                        pred_desc_raw = str(
+                            getattr(pred_meta[pred_i], "desc", "") or ""
+                        )
                         gt_desc_raw = str(getattr(gts[gt_i], "desc", "") or "")
                         if normalize_desc is None:
                             p = pred_desc_raw.strip().lower()
@@ -4143,7 +5039,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 "mask_iou": float(iou),
                                 "pred_index": int(preds[pred_i].index),
                                 "gt_index": int(gts[gt_i].index),
-                                "pred_desc": str(getattr(pred_meta[pred_i], "desc", "") or "")
+                                "pred_desc": str(
+                                    getattr(pred_meta[pred_i], "desc", "") or ""
+                                )
                                 if pred_i < len(pred_meta)
                                 else "",
                                 "gt_desc": str(gts[gt_i].desc),
@@ -4156,11 +5054,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     matched_n = float(len(matched_gt_for_supervision))
                     prec = (matched_n / pred_n) if pred_n > 0 else 0.0
                     rec = (matched_n / gt_n) if gt_n > 0 else 0.0
-                    f1 = (
-                        (2.0 * prec * rec / (prec + rec))
-                        if (prec + rec) > 0
-                        else 0.0
-                    )
+                    f1 = (2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
 
                     dump_samples.append(
                         {
@@ -4171,9 +5065,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             "width": sample.get("width"),
                             "height": sample.get("height"),
                             "messages": sample.get("messages"),
-                            "rollout_text": self._clip_text(parse.response_text, max_chars=dump_max_chars),
-                            "prefix_text": self._clip_text(parse.prefix_text, max_chars=dump_max_chars),
-                            "append_text": self._clip_text(append_text, max_chars=dump_max_chars),
+                            "rollout_text": self._clip_text(
+                                parse.response_text, max_chars=dump_max_chars
+                            ),
+                            "prefix_text": self._clip_text(
+                                parse.prefix_text, max_chars=dump_max_chars
+                            ),
+                            "append_text": self._clip_text(
+                                append_text, max_chars=dump_max_chars
+                            ),
                             "train_text": self._clip_text(
                                 tok.decode(
                                     y_train_ids,
@@ -4198,14 +5098,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 "parse_truncated": bool(parse.truncated),
                                 "valid_pred_objects": int(len(preds)),
                                 "gt_objects": int(len(gts)),
-                                "matched_for_supervision": int(len(matched_gt_for_supervision)),
+                                "matched_for_supervision": int(
+                                    len(matched_gt_for_supervision)
+                                ),
                                 "excluded_from_supervision": int(excluded),
                                 "fn_count": int(len(fn_objs)),
                                 "precision": float(prec),
                                 "recall": float(rec),
                                 "f1": float(f1),
                                 "matched_maskiou_mean": float(
-                                    (match.matched_maskiou_sum / match.matched_maskiou_count)
+                                    (
+                                        match.matched_maskiou_sum
+                                        / match.matched_maskiou_count
+                                    )
                                     if match.matched_maskiou_count > 0
                                     else 0.0
                                 ),
@@ -4268,7 +5173,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # For monitor dumps only (no TB logging here).
         toks_per_s = (
-            float(sum(int(x) for x in rollout_lens)) / float(t_gen_s) if t_gen_s > 0 else 0.0
+            float(sum(int(x) for x in rollout_lens)) / float(t_gen_s)
+            if t_gen_s > 0
+            else 0.0
         )
 
         if do_dump:
@@ -4280,7 +5187,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     enabled, m_steps = False, 1
                 payload = {
                     "global_step": int(gs),
-                    "epoch": float(getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0),
+                    "epoch": float(
+                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                    ),
                     "time": float(time.time()),
                     "meta": {
                         "rollout_backend": str(self._rollout_backend()),
@@ -4298,7 +5207,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         "rollout_buffer_enabled": bool(enabled),
                         "rollout_buffer_m_steps": int(m_steps),
                         "rollout_generate_s": float(t_gen_s),
-                        "rollout_tokens_per_s": float(toks_per_s) if 'toks_per_s' in locals() else 0.0,
+                        "rollout_tokens_per_s": float(toks_per_s)
+                        if "toks_per_s" in locals()
+                        else 0.0,
                     },
                     "samples": dump_samples,
                 }
@@ -4365,9 +5276,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         n_samples = float(len(meta))
         gt_total = float(sum(int(m.get("gt_objects", 0)) for m in meta))
-        matched_total = float(sum(int(m.get("matched_for_supervision", 0)) for m in meta))
+        matched_total = float(
+            sum(int(m.get("matched_for_supervision", 0)) for m in meta)
+        )
         pred_total = float(sum(int(m.get("valid_pred_objects", 0)) for m in meta))
-        excluded_total = float(sum(int(m.get("excluded_from_supervision", 0)) for m in meta))
+        excluded_total = float(
+            sum(int(m.get("excluded_from_supervision", 0)) for m in meta)
+        )
 
         # Sample-level rates (helps detect systematic parse failures).
         n_samples_valid_pred = float(
@@ -4376,8 +5291,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         n_samples_any_match = float(
             sum(1 for m in meta if int(m.get("matched_for_supervision", 0)) > 0)
         )
-        sample_valid_pred_rate = (n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
-        sample_any_match_rate = (n_samples_any_match / n_samples) if n_samples > 0 else 0.0
+        sample_valid_pred_rate = (
+            (n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
+        )
+        sample_any_match_rate = (
+            (n_samples_any_match / n_samples) if n_samples > 0 else 0.0
+        )
 
         fp_total = max(0.0, pred_total - matched_total)
         fn_total = max(0.0, gt_total - matched_total)
@@ -4389,8 +5308,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             else 0.0
         )
 
-        dropped_invalid_total = float(sum(int(m.get("parse_dropped_invalid", 0)) for m in meta))
-        dropped_ambiguous_total = float(sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta))
+        dropped_invalid_total = float(
+            sum(int(m.get("parse_dropped_invalid", 0)) for m in meta)
+        )
+        dropped_ambiguous_total = float(
+            sum(int(m.get("parse_dropped_ambiguous", 0)) for m in meta)
+        )
         obj_total = pred_total + dropped_invalid_total + dropped_ambiguous_total
         obj_valid_frac = (pred_total / obj_total) if obj_total > 0 else 0.0
         obj_drop_frac = (
@@ -4402,14 +5325,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         trunc_samples = float(sum(1 for m in meta if m.get("parse_truncated")))
         trunc_rate = (trunc_samples / n_samples) if n_samples > 0 else 0.0
 
-        gate_rejections_total = float(sum(int(m.get("gating_rejections", 0)) for m in meta))
+        gate_rejections_total = float(
+            sum(int(m.get("gating_rejections", 0)) for m in meta)
+        )
         top_k = int(self._cfg("candidate_top_k", 10))
         gate_rejection_rate = (
-            (gate_rejections_total / (pred_total * float(max(1, top_k)))) if pred_total > 0 else 0.0
+            (gate_rejections_total / (pred_total * float(max(1, top_k))))
+            if pred_total > 0
+            else 0.0
         )
 
-        matched_iou_sum = float(sum(float(m.get("matched_maskiou_sum", 0.0)) for m in meta))
-        matched_iou_count = float(sum(int(m.get("matched_maskiou_count", 0)) for m in meta))
+        matched_iou_sum = float(
+            sum(float(m.get("matched_maskiou_sum", 0.0)) for m in meta)
+        )
+        matched_iou_count = float(
+            sum(int(m.get("matched_maskiou_count", 0)) for m in meta)
+        )
         matched_iou_mean = (
             (matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
         )
@@ -4420,13 +5351,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if (matched_total + excluded_total) > 0
             else 0.0
         )
-        prefix_targets_total = float(sum(len(m.get("prefix_coord_target_bins") or []) for m in meta))
+        prefix_targets_total = float(
+            sum(len(m.get("prefix_coord_target_bins") or []) for m in meta)
+        )
         prefix_targets_per_matched = (
             (prefix_targets_total / matched_total) if matched_total > 0 else 0.0
         )
-        tail_ignore_total = float(sum(len(m.get("tail_ignore_pos") or []) for m in meta))
+        tail_ignore_total = float(
+            sum(len(m.get("tail_ignore_pos") or []) for m in meta)
+        )
         append_len_total = float(
-            sum(max(0, int(m.get("train_len", 0)) - int(m.get("prefix_len", 0))) for m in meta)
+            sum(
+                max(0, int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
+                for m in meta
+            )
         )
         tail_ignore_frac = (
             (tail_ignore_total / append_len_total) if append_len_total > 0 else 0.0
@@ -4450,7 +5388,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         append_lens: List[int] = []
         for m in meta:
             try:
-                append_lens.append(int(m.get("train_len", 0)) - int(m.get("prefix_len", 0)))
+                append_lens.append(
+                    int(m.get("train_len", 0)) - int(m.get("prefix_len", 0))
+                )
             except Exception:
                 continue
 
@@ -4485,15 +5425,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/f1": float(f1),
             "rollout/fp": float(fp_total),
             "rollout/fn": float(fn_total),
-            "rollout/gt_per_sample": float(gt_total / n_samples) if n_samples > 0 else 0.0,
-            "rollout/pred_per_sample": float(pred_total / n_samples) if n_samples > 0 else 0.0,
-            "rollout/fp_per_sample": float(fp_total / n_samples) if n_samples > 0 else 0.0,
-            "rollout/fn_per_sample": float(fn_total / n_samples) if n_samples > 0 else 0.0,
+            "rollout/gt_per_sample": float(gt_total / n_samples)
+            if n_samples > 0
+            else 0.0,
+            "rollout/pred_per_sample": float(pred_total / n_samples)
+            if n_samples > 0
+            else 0.0,
+            "rollout/fp_per_sample": float(fp_total / n_samples)
+            if n_samples > 0
+            else 0.0,
+            "rollout/fn_per_sample": float(fn_total / n_samples)
+            if n_samples > 0
+            else 0.0,
             "rollout/matched_maskiou_mean": float(matched_iou_mean),
             "rollout/matched_maskiou_count": float(matched_iou_count),
             "rollout/excluded_rate": float(excluded_rate),
             "rollout/prefix_coord_targets_total": float(prefix_targets_total),
-            "rollout/prefix_coord_targets_per_matched": float(prefix_targets_per_matched),
+            "rollout/prefix_coord_targets_per_matched": float(
+                prefix_targets_per_matched
+            ),
             "rollout/tail_ignore_frac": float(tail_ignore_frac),
             "rollout/prompt_len_mean": float(_mean(prompt_lens)),
             "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
@@ -4506,8 +5456,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/append_len_p90": float(_p(append_lens, 90)),
             "rollout/encoded_len_mean": float(_mean(encoded_lens)),
             "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
-            "rollout/decode_greedy": float(sum(1 for m in meta if m.get("decode_mode") == "greedy")),
-            "rollout/decode_beam": float(sum(1 for m in meta if m.get("decode_mode") == "beam")),
+            "rollout/decode_greedy": float(
+                sum(1 for m in meta if m.get("decode_mode") == "greedy")
+            ),
+            "rollout/decode_beam": float(
+                sum(1 for m in meta if m.get("decode_mode") == "beam")
+            ),
             "rollout/matched_for_supervision": float(matched_total),
             "rollout/excluded_from_supervision": float(excluded_total),
         }
@@ -4515,23 +5469,39 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Desc monitor outputs (matched pairs only).
         try:
             if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
-                pairs_total = float(sum(int(m.get("desc_pairs_total", 0)) for m in meta))
-                exact_ok_total = float(sum(int(m.get("desc_exact_ok", 0)) for m in meta))
+                pairs_total = float(
+                    sum(int(m.get("desc_pairs_total", 0)) for m in meta)
+                )
+                exact_ok_total = float(
+                    sum(int(m.get("desc_exact_ok", 0)) for m in meta)
+                )
                 exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
                 payload["rollout/desc_pairs_total"] = float(pairs_total)
                 payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
 
-                sem_enabled_total = float(sum(int(m.get("desc_sem_enabled", 0)) for m in meta))
-                payload["rollout/desc_sem_enabled"] = float(1.0 if sem_enabled_total > 0 else 0.0)
+                sem_enabled_total = float(
+                    sum(int(m.get("desc_sem_enabled", 0)) for m in meta)
+                )
+                payload["rollout/desc_sem_enabled"] = float(
+                    1.0 if sem_enabled_total > 0 else 0.0
+                )
                 if sem_enabled_total > 0:
-                    sem_ok_total = float(sum(int(m.get("desc_sem_ok", 0)) for m in meta))
+                    sem_ok_total = float(
+                        sum(int(m.get("desc_sem_ok", 0)) for m in meta)
+                    )
                     sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
                     payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
 
-                    sim_sum_total = float(sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta))
-                    sim_count_total = float(sum(int(m.get("desc_sem_sim_count", 0)) for m in meta))
+                    sim_sum_total = float(
+                        sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta)
+                    )
+                    sim_count_total = float(
+                        sum(int(m.get("desc_sem_sim_count", 0)) for m in meta)
+                    )
                     if sim_count_total > 0:
-                        payload["rollout/desc_sem_sim_mean"] = float(sim_sum_total / sim_count_total)
+                        payload["rollout/desc_sem_sim_mean"] = float(
+                            sim_sum_total / sim_count_total
+                        )
                         payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
         except Exception:
             pass
@@ -4545,20 +5515,30 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
-            payload["loss/coord"] = float(pending.coord_loss_sum / float(pending.n_micro))
+            payload["loss/coord"] = float(
+                pending.coord_loss_sum / float(pending.n_micro)
+            )
             payload["loss/coord_prefix"] = float(
                 pending.coord_prefix_sum / float(pending.n_micro)
             )
-            payload["loss/coord_tail"] = float(pending.coord_tail_sum / float(pending.n_micro))
+            payload["loss/coord_tail"] = float(
+                pending.coord_tail_sum / float(pending.n_micro)
+            )
 
         payload["time/forward_s"] = float(pending.time_forward_s)
         payload["time/mask_build_s"] = float(pending.time_mask_build_s)
 
         payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
-        payload["time/rollout_parse_match_s"] = float(pending.time_rollout_parse_match_s)
-        payload["time/rollout_teacher_encode_s"] = float(pending.time_rollout_teacher_encode_s)
+        payload["time/rollout_parse_match_s"] = float(
+            pending.time_rollout_parse_match_s
+        )
+        payload["time/rollout_teacher_encode_s"] = float(
+            pending.time_rollout_teacher_encode_s
+        )
         if pending.time_post_rollout_pack_s > 0:
-            payload["time/post_rollout_pack_s"] = float(pending.time_post_rollout_pack_s)
+            payload["time/post_rollout_pack_s"] = float(
+                pending.time_post_rollout_pack_s
+            )
 
         if pending.packing_count > 0:
             payload["packing/post_rollout_fill"] = float(
@@ -4596,7 +5576,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 return float(np.percentile(arr, float(q)))
 
             new_tok_total = float(sum(int(x) for x in rollout_lens))
-            new_tok_mean = float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
+            new_tok_mean = (
+                float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
+            )
             payload["rollout/gen_new_tokens_total"] = float(new_tok_total)
             payload["rollout/gen_new_tokens_mean"] = float(new_tok_mean)
             payload["rollout/gen_new_tokens_p90"] = float(_p(rollout_lens, 90))
@@ -4791,7 +5773,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 coord_tail=float(tail_coord_mean.detach().cpu().item()),
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(t_mask_s),
-                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
+                batch_metrics=batch_metrics
+                if isinstance(batch_metrics, Mapping)
+                else None,
             )
         except Exception:
             pass
@@ -4816,7 +5800,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             dl = _AccumulationWindowLookahead(dl, gas=gas)
 
         return dl
-
 
     def evaluate(
         self,
@@ -4847,7 +5830,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Optional semantic desc monitoring (metrics only).
         desc_cfg = self._desc_monitor_cfg()
-        desc_enabled = isinstance(desc_cfg, Mapping) and bool(desc_cfg.get("enabled", False))
+        desc_enabled = isinstance(desc_cfg, Mapping) and bool(
+            desc_cfg.get("enabled", False)
+        )
         desc_mode = str(desc_cfg.get("mode", "semantic") or "semantic").strip().lower()
         desc_thr = float(desc_cfg.get("semantic_threshold", 0.6) or 0.6)
         desc_max_pairs = int(desc_cfg.get("max_pairs", 0) or 0)
@@ -4912,7 +5897,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 n_steps += 1.0
                 rollout_results = self._rollout_many(batch)
                 if len(rollout_results) != len(batch):
-                    raise RuntimeError("rollout backend returned unexpected number of results")
+                    raise RuntimeError(
+                        "rollout backend returned unexpected number of results"
+                    )
 
                 for sample, (resp_ids, _resp_text, _decode_mode, _prompt_ids) in zip(
                     batch, rollout_results
@@ -4986,7 +5973,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 continue
                             if gt_i < 0 or gt_i >= len(gts):
                                 continue
-                            pred_desc_raw = str(getattr(pred_meta[pred_i], "desc", "") or "")
+                            pred_desc_raw = str(
+                                getattr(pred_meta[pred_i], "desc", "") or ""
+                            )
                             gt_desc_raw = str(getattr(gts[gt_i], "desc", "") or "")
                             if normalize_desc is None:
                                 p = pred_desc_raw.strip().lower()
@@ -5004,7 +5993,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                         desc_pairs_total += float(len(norm_pairs))
 
-                        if sem_loaded_local > 0.0 and sem_encoder is not None and norm_pairs:
+                        if (
+                            sem_loaded_local > 0.0
+                            and sem_encoder is not None
+                            and norm_pairs
+                        ):
                             try:
                                 emb = sem_encoder.encode_norm_texts(sorted(uniq))
                             except Exception:
@@ -5068,7 +6061,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             device=self.model.device,
             dtype=torch.float64,
         )
-        rt_t = torch.tensor([float(t_local)], device=self.model.device, dtype=torch.float64)
+        rt_t = torch.tensor(
+            [float(t_local)], device=self.model.device, dtype=torch.float64
+        )
         if dist is not None and dist.is_available() and dist.is_initialized():
             dist.all_reduce(sums_t, op=dist.ReduceOp.SUM)
             # Use max runtime as the global wall time.
@@ -5110,7 +6105,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         metrics: Dict[str, float] = {}
         metrics[f"{metric_key_prefix}_runtime"] = float(runtime)
         if runtime > 0:
-            metrics[f"{metric_key_prefix}_samples_per_second"] = float(n_samples / runtime)
+            metrics[f"{metric_key_prefix}_samples_per_second"] = float(
+                n_samples / runtime
+            )
             metrics[f"{metric_key_prefix}_steps_per_second"] = float(n_steps / runtime)
 
         metrics[f"{metric_key_prefix}_rollout_precision"] = float(precision)
@@ -5144,14 +6141,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         metrics[f"{metric_key_prefix}_rollout_matched_maskiou_mean"] = (
-            float(matched_iou_sum / matched_iou_count)
-            if matched_iou_count > 0
-            else 0.0
+            float(matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
         )
 
         # Desc monitor outputs (matched pairs only).
         if desc_enabled:
-            metrics[f"{metric_key_prefix}_rollout_desc_pairs_total"] = float(desc_pairs_total)
+            metrics[f"{metric_key_prefix}_rollout_desc_pairs_total"] = float(
+                desc_pairs_total
+            )
             exact_acc = (
                 float(desc_exact_ok_total / desc_pairs_total)
                 if desc_pairs_total > 0
