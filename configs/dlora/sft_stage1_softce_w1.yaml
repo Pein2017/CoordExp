@@ -38,7 +38,7 @@ custom:
     # Loss composition at coord positions: soft_ce_weight * softCE + w1_weight * W1(CDF)
     soft_ce_weight: 1.0
     w1_weight: 1.0
-    gate_weight: 1.0
+    gate_weight: 3.0
     # Distribution temperature for coord-gated softmax.
     temperature: 1.0
     # Gaussian soft target over bins 0..999.
