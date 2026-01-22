@@ -99,10 +99,15 @@ def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
             text = json.dumps(value, ensure_ascii=False)
             write(text, TokenType.COORD if context == "coord" else TokenType.FORMAT)
         elif isinstance(value, str):
-            text = json.dumps(value, ensure_ascii=False)
             if context == "coord" and is_coord_token(value):
-                write(text, TokenType.COORD)
+                # Important: mark the surrounding JSON quotes as FORMAT, and only the inner
+                # `<|coord_k|>` substring as COORD. If we label the quotes as COORD too,
+                # "GT coord" monitors (flip/mass) get diluted by punctuation tokens.
+                write('"', TokenType.FORMAT)
+                write(value, TokenType.COORD)
+                write('"', TokenType.FORMAT)
             else:
+                text = json.dumps(value, ensure_ascii=False)
                 write(text, TokenType.DESC if context == "desc" else TokenType.FORMAT)
         elif isinstance(value, list):
             write("[", TokenType.FORMAT)

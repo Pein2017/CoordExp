@@ -15,6 +15,93 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+class GradAccumLossScaleMixin:
+    """Fix gradient-accumulation loss scaling for transformers>=4.57 w/ model_accepts_loss_kwargs.
+
+    Background
+    - In transformers>=4.57, `Trainer.training_step()` only divides the loss by
+      `current_gradient_accumulation_steps` when `model_accepts_loss_kwargs` is False
+      (or `num_items_in_batch` is None).
+    - ms-swift uses `Seq2SeqTrainer` for causal_lm and forces `model_accepts_loss_kwargs=True`,
+      which disables the trainer-side division. If the underlying `compute_loss()` does not
+      handle this, gradients (and logged `loss`) become scaled by grad-accum steps.
+
+    This mixin restores the expected behavior:
+    - Train: divide the returned loss by `current_gradient_accumulation_steps` so that
+      optimizer updates see the mean (not sum) loss across micro-batches.
+    - Eval: do not scale.
+    """
+
+    def compute_loss(
+        self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
+    ):
+        # Pop pack-level metadata so it doesn't get forwarded into model(**inputs).
+        # Store it on `self` so later mixins can log per-sample-normalized metrics.
+        try:
+            if isinstance(inputs, dict) and "pack_num_samples" in inputs:
+                setattr(self, "_coordexp_pack_num_samples", inputs.pop("pack_num_samples"))
+            else:
+                setattr(self, "_coordexp_pack_num_samples", None)
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
+        loss, outputs = super().compute_loss(  # type: ignore[misc]
+            model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
+        )
+
+        # Log a few optimizer/runtime scalars as *metrics* so eval logs include them
+        # (ms-swift only injects learning_rate/grad_norm into train logs by default).
+        try:
+            mode = (
+                "train"
+                if getattr(self, "model", None) is None or self.model.training
+                else "eval"
+            )  # type: ignore[attr-defined]
+            custom_metrics = getattr(self, "custom_metrics", None)
+            if custom_metrics is not None and mode in custom_metrics:
+                metrics = custom_metrics[mode]
+
+                lr_fn = getattr(self, "_get_learning_rate", None)
+                if callable(lr_fn):
+                    metrics["learning_rate"].update(float(lr_fn()))
+
+                args = getattr(self, "args", None)
+                gas = getattr(args, "gradient_accumulation_steps", None)
+                if gas is not None:
+                    metrics["accum/grad_steps"].update(float(gas))
+                cur_gas = getattr(self, "current_gradient_accumulation_steps", None)
+                if cur_gas is not None:
+                    metrics["accum/current_grad_steps"].update(float(cur_gas))
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
+        # Train-only scaling fix.
+        try:
+            if getattr(self, "model", None) is not None and bool(self.model.training):
+                # Match transformers training_step gating:
+                # - only skip division when model_accepts_loss_kwargs AND num_items_in_batch is not None
+                # - and when there is no custom compute_loss_func to handle scaling itself.
+                if (
+                    bool(getattr(self, "model_accepts_loss_kwargs", False))
+                    and num_items_in_batch is not None
+                    and getattr(self, "compute_loss_func", None) is None
+                ):
+                    gas = getattr(self, "current_gradient_accumulation_steps", None)
+                    if gas is None:
+                        args = getattr(self, "args", None)
+                        gas = getattr(args, "gradient_accumulation_steps", None)
+                    gas_int = int(gas or 1)
+                    if gas_int > 1:
+                        loss = loss / float(gas_int)
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
+        return (loss, outputs) if return_outputs else loss
+
+
 class AggregateTokenTypeMetricsMixin:
     """Trainer mixin to log aggregate loss/accuracy and token-type metrics.
 
@@ -69,10 +156,27 @@ class AggregateTokenTypeMetricsMixin:
             return
         metrics = custom_metrics[mode]
 
+        cfg = getattr(self, "token_type_metrics_cfg", None)
+        log_top5 = True
+        coord_monitor_mass = True
+        coord_monitor_mass_max_tokens = 0
+        try:
+            if cfg is not None:
+                log_top5 = bool(getattr(cfg, "log_top5", True))
+                coord_monitor_mass = bool(getattr(cfg, "coord_monitor_mass", True))
+                coord_monitor_mass_max_tokens = int(
+                    getattr(cfg, "coord_monitor_mass_max_tokens", 0) or 0
+                )
+                coord_monitor_mass_max_tokens = max(0, coord_monitor_mass_max_tokens)
+        except Exception:
+            log_top5 = True
+            coord_monitor_mass = True
+            coord_monitor_mass_max_tokens = 0
+
         logits_next = logits[:, :-1, :]
         labels_next = labels[:, 1:]
-        mask = labels_next != -100
-        supervised_count = int(mask.sum().detach())
+        mask_all = labels_next != -100
+        supervised_count = int(mask_all.sum().detach())
         if supervised_count == 0:
             return
 
@@ -88,30 +192,58 @@ class AggregateTokenTypeMetricsMixin:
         else:
             coord_mask = self._infer_coord_mask(labels_next, logits_next)
 
+        # Align aggregate accuracy metrics with the *effective* base-loss supervision.
+        #
+        # When Stage-1 coord_softce_w1 is enabled, we mask GT coord tokens to -100 for
+        # the base CE term. ms-swift's built-in `token_acc` is computed on that masked
+        # label tensor. To keep `token_acc_top5` comparable, we exclude GT coord-token
+        # positions here as well.
+        mask_base = mask_all
+        if log_top5:
+            try:
+                cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+                if cfg is not None and bool(getattr(cfg, "enabled", False)):
+                    coord_map_fn = getattr(self, "_get_coord_id_map", None)
+                    if callable(coord_map_fn):
+                        coord_id_map = coord_map_fn(logits_next.shape[-1], logits_next.device)
+                        if coord_id_map is not None:
+                            labels_safe = labels_next
+                            if labels_safe.numel() > 0 and labels_safe.min().item() < 0:
+                                labels_safe = labels_safe.clamp(min=0)
+                            is_gt_coord = (coord_id_map[labels_safe] >= 0) & mask_all
+                            mask_base = mask_all & (~is_gt_coord)
+            except Exception:
+                mask_base = mask_all
+
         with torch.no_grad():
             preds = logits_next.argmax(dim=-1)
 
-            labels_masked = labels_next[mask]
-            preds_masked = preds[mask]
+            labels_masked = labels_next[mask_all]
+            preds_masked = preds[mask_all]
 
             topk_indices = None
-            flat_logits = logits_next[mask]
-            if flat_logits.numel() > 0:
-                k = min(5, flat_logits.shape[-1])
-                topk_indices = flat_logits.topk(k=k, dim=-1).indices
-                top5_acc = (
-                    (topk_indices == labels_masked.unsqueeze(-1))
-                    .any(dim=-1)
-                    .float()
-                    .mean()
-                )
+            flat_logits_all = logits_next[mask_all]
+            if log_top5 and flat_logits_all.numel() > 0:
+                k = min(5, flat_logits_all.shape[-1])
+                topk_indices = flat_logits_all.topk(k=k, dim=-1).indices
+                base_sel = mask_base[mask_all]
+                if base_sel.any().item():
+                    top5_acc = (
+                        (topk_indices[base_sel] == labels_masked[base_sel].unsqueeze(-1))
+                        .any(dim=-1)
+                        .float()
+                        .mean()
+                    )
+                else:
+                    top5_acc = logits_next.new_tensor(0.0)
             else:
                 top5_acc = logits_next.new_tensor(0.0)
 
-        metrics["token_acc_top5"].update(float(top5_acc.detach().item()))
+        if log_top5:
+            metrics["token_acc_top5"].update(float(top5_acc.detach().item()))
 
         if token_types_next is not None:
-            types_masked = token_types_next[mask]
+            types_masked = token_types_next[mask_all]
             for name, type_id in (
                 ("desc", TokenType.DESC),
                 ("format", TokenType.FORMAT),
@@ -150,12 +282,12 @@ class AggregateTokenTypeMetricsMixin:
 
         # Token-type metrics (optional)
         if token_types_next is not None:
-            text_mask = mask & (token_types_next != TokenType.COORD)
+            text_mask = mask_all & (token_types_next != TokenType.COORD)
             text_mask = text_mask & (token_types_next != TokenType.IGNORE)
         elif coord_mask is not None:
-            text_mask = mask & (~coord_mask)
+            text_mask = mask_all & (~coord_mask)
         else:
-            text_mask = mask
+            text_mask = mask_all
 
         if text_mask is not None and text_mask.any().item():
             with torch.no_grad():
@@ -236,52 +368,84 @@ class AggregateTokenTypeMetricsMixin:
                                 float(flip.detach().item())
                             )
 
-                        # Coord-vocab probability mass at GT slots (mean over tokens).
-                        #
-                        # Use logsumexp differences instead of materializing full softmax:
-                        #   mass_coord = exp(logsumexp(coord/T) - logsumexp(full/T)).
-                        flat_logits_full = logits_next[mask]
-                        idx = ids[valid]
-                        flat_logits_coord = flat_logits_full.index_select(-1, idx)
+                        if coord_monitor_mass:
+                            # Coord-vocab probability mass at GT slots (mean over tokens).
+                            #
+                            # Use logsumexp differences instead of materializing full softmax:
+                            #   mass_coord = exp(logsumexp(coord/T) - logsumexp(full/T)).
+                            flat_logits_full = logits_next[mask_all]
+                            gt_coord_mass = gt_coord
+                            gt_text_mass = gt_text
+                            gt_format_mass = gt_format
+                            gt_desc_mass = gt_desc
 
-                        # Use the same temperature as coord_soft_ce_w1 if available for comparability.
-                        temperature = 1.0
-                        try:
-                            cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
-                            if cfg is not None:
-                                temperature = float(getattr(cfg, "temperature", 1.0))
-                        except Exception:
+                            # Optional deterministic downsampling (diagnostic-only) to reduce full-vocab
+                            # logsumexp overhead on long packed sequences.
+                            if (
+                                coord_monitor_mass_max_tokens > 0
+                                and flat_logits_full.shape[0] > coord_monitor_mass_max_tokens
+                            ):
+                                stride = max(
+                                    1, flat_logits_full.shape[0] // coord_monitor_mass_max_tokens
+                                )
+                                sel = torch.arange(
+                                    0,
+                                    flat_logits_full.shape[0],
+                                    stride,
+                                    device=flat_logits_full.device,
+                                    dtype=torch.long,
+                                )[:coord_monitor_mass_max_tokens]
+                                flat_logits_full = flat_logits_full.index_select(0, sel)
+                                if isinstance(gt_coord_mass, torch.Tensor):
+                                    gt_coord_mass = gt_coord_mass.index_select(0, sel)
+                                if isinstance(gt_text_mass, torch.Tensor):
+                                    gt_text_mass = gt_text_mass.index_select(0, sel)
+                                if isinstance(gt_format_mass, torch.Tensor):
+                                    gt_format_mass = gt_format_mass.index_select(0, sel)
+                                if isinstance(gt_desc_mass, torch.Tensor):
+                                    gt_desc_mass = gt_desc_mass.index_select(0, sel)
+
+                            idx = ids[valid]
+                            flat_logits_coord = flat_logits_full.index_select(-1, idx)
+
+                            # Use the same temperature as coord_soft_ce_w1 if available for comparability.
                             temperature = 1.0
-                        if temperature <= 0:
-                            temperature = 1.0
+                            try:
+                                cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+                                if cfg is not None:
+                                    temperature = float(getattr(cfg, "temperature", 1.0))
+                            except Exception:
+                                temperature = 1.0
+                            if temperature <= 0:
+                                temperature = 1.0
 
-                        full = torch.nan_to_num(
-                            flat_logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
-                        ).clamp(min=-1e4, max=1e4) / float(temperature)
-                        coord = torch.nan_to_num(
-                            flat_logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
-                        ).clamp(min=-1e4, max=1e4) / float(temperature)
-                        lse_all = torch.logsumexp(full, dim=-1)
-                        lse_coord = torch.logsumexp(coord, dim=-1)
-                        gate_loss = (lse_all - lse_coord).clamp(min=0.0)
-                        mass = torch.exp((-gate_loss).clamp(min=-50.0, max=50.0))
+                            full = torch.nan_to_num(
+                                flat_logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
+                            ).clamp(min=-1e4, max=1e4) / float(temperature)
+                            coord = torch.nan_to_num(
+                                flat_logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
+                            ).clamp(min=-1e4, max=1e4) / float(temperature)
+                            lse_all = torch.logsumexp(full, dim=-1)
+                            lse_coord = torch.logsumexp(coord, dim=-1)
+                            gate_loss = (lse_all - lse_coord).clamp(min=0.0)
+                            mass = torch.exp((-gate_loss).clamp(min=-50.0, max=50.0))
 
-                        if gt_coord is not None and gt_coord.any().item():
-                            metrics["coord_monitor/coord_vocab_mass_at_gt_coord"].update(
-                                float(mass[gt_coord].mean().detach().item())
-                            )
-                        if gt_text is not None and gt_text.any().item():
-                            metrics["coord_monitor/coord_vocab_mass_at_gt_text"].update(
-                                float(mass[gt_text].mean().detach().item())
-                            )
-                        if gt_format is not None and gt_format.any().item():
-                            metrics["coord_monitor/coord_vocab_mass_at_gt_format"].update(
-                                float(mass[gt_format].mean().detach().item())
-                            )
-                        if gt_desc is not None and gt_desc.any().item():
-                            metrics["coord_monitor/coord_vocab_mass_at_gt_desc"].update(
-                                float(mass[gt_desc].mean().detach().item())
-                            )
+                            if isinstance(gt_coord_mass, torch.Tensor) and gt_coord_mass.any().item():
+                                metrics["coord_monitor/coord_vocab_mass_at_gt_coord"].update(
+                                    float(mass[gt_coord_mass].mean().detach().item())
+                                )
+                            if isinstance(gt_text_mass, torch.Tensor) and gt_text_mass.any().item():
+                                metrics["coord_monitor/coord_vocab_mass_at_gt_text"].update(
+                                    float(mass[gt_text_mass].mean().detach().item())
+                                )
+                            if isinstance(gt_format_mass, torch.Tensor) and gt_format_mass.any().item():
+                                metrics["coord_monitor/coord_vocab_mass_at_gt_format"].update(
+                                    float(mass[gt_format_mass].mean().detach().item())
+                                )
+                            if isinstance(gt_desc_mass, torch.Tensor) and gt_desc_mass.any().item():
+                                metrics["coord_monitor/coord_vocab_mass_at_gt_desc"].update(
+                                    float(mass[gt_desc_mass].mean().detach().item())
+                                )
         except Exception:
             # Best-effort only; never block training.
             pass
@@ -403,6 +567,7 @@ class CoordSoftCEW1LossMixin:
         )
 
         try:
+            self._log_base_ce_metrics(loss_base=loss, masked_labels=masked_labels)
             loss = self._maybe_add_coord_softce_w1_loss(
                 loss=loss,
                 outputs=outputs,
@@ -424,6 +589,56 @@ class CoordSoftCEW1LossMixin:
             inputs["labels"] = labels_orig
 
         return (loss, outputs) if return_outputs else loss
+
+    def _log_base_ce_metrics(
+        self, *, loss_base: torch.Tensor, masked_labels: torch.Tensor
+    ) -> None:
+        """Log the base CE (non-coord) component, so train/eval loss parts line up."""
+
+        mode = (
+            "train"
+            if getattr(self, "model", None) is None or self.model.training
+            else "eval"
+        )  # type: ignore[attr-defined]
+        custom_metrics = getattr(self, "custom_metrics", None)
+        if custom_metrics is None or mode not in custom_metrics:
+            return
+        metrics = custom_metrics[mode]
+
+        metrics["base_ce/loss"].update(float(loss_base.detach().cpu().item()))
+        try:
+            noncoord_tokens = int((masked_labels[:, 1:] != -100).sum().detach().item())
+            metrics["base_ce/noncoord_tokens"].update(float(noncoord_tokens))
+
+            # Per-sample normalization for packed runs: interpret a "unit" as a pack of N samples.
+            # This is a logging-only helper (does not affect optimization).
+            total_samples = None
+            pack_n = getattr(self, "_coordexp_pack_num_samples", None)
+            if isinstance(pack_n, torch.Tensor):
+                total_samples = float(pack_n.detach().sum().cpu().item())
+            elif isinstance(pack_n, (list, tuple)):
+                try:
+                    total_samples = float(sum(int(v) for v in pack_n))
+                except Exception:
+                    total_samples = None
+            elif isinstance(pack_n, (int, float)):
+                total_samples = float(pack_n)
+            if total_samples is None:
+                total_samples = float(masked_labels.shape[0])
+            total_samples = max(1.0, float(total_samples))
+
+            metrics["pack/num_samples"].update(float(total_samples))
+            metrics["base_ce/noncoord_tokens_per_sample"].update(
+                float(noncoord_tokens) / float(total_samples)
+            )
+            loss_per_sample = float(loss_base.detach().cpu().item()) * float(noncoord_tokens) / float(
+                total_samples
+            )
+            metrics["base_ce/loss_per_sample"].update(float(loss_per_sample))
+            # Stash for the stage1 total-per-sample estimate (logged from coord loss block).
+            setattr(self, "_coordexp_last_base_loss_per_sample", float(loss_per_sample))
+        except Exception:
+            pass
 
     def _maybe_add_coord_softce_w1_loss(
         self,
@@ -495,6 +710,33 @@ class CoordSoftCEW1LossMixin:
             normalize_w1=True,
         )
 
+        # Coord distribution monitors (coord vocab only; cheap vs full-vocab top-k).
+        coord_acc_top5 = None
+        coord_p_gt_mean = None
+        coord_margin_mean = None
+        try:
+            with torch.no_grad():
+                k = min(5, int(flat_logits.shape[-1]))
+                topk = flat_logits.topk(k=k, dim=-1).indices
+                coord_acc_top5 = (
+                    (topk == flat_target_bins.unsqueeze(-1))
+                    .any(dim=-1)
+                    .float()
+                    .mean()
+                )
+                coord_p_gt_mean = out.pred_probs.gather(
+                    1, flat_target_bins.view(-1, 1)
+                ).mean()
+                temp = float(temperature) if float(temperature) > 0 else 1.0
+                logits_scaled = flat_logits.float() / temp
+                gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
+                max_logit = logits_scaled.max(dim=-1).values
+                coord_margin_mean = (max_logit - gt_logit).mean()
+        except Exception:
+            coord_acc_top5 = None
+            coord_p_gt_mean = None
+            coord_margin_mean = None
+
         softce_sum = out.soft_ce_per_token.sum()
         w1_sum = out.w1_per_token.sum()
         gate_sum = softce_sum.new_tensor(0.0)
@@ -559,6 +801,9 @@ class CoordSoftCEW1LossMixin:
             loss_w1=w1_contrib,
             loss_gate=gate_contrib,
             gate_mass_mean=gate_mass_mean,
+            coord_acc_top5=coord_acc_top5,
+            coord_p_gt_mean=coord_p_gt_mean,
+            coord_margin_mean=coord_margin_mean,
         )
 
         return loss + coord_loss.to(dtype=loss.dtype)
@@ -574,6 +819,9 @@ class CoordSoftCEW1LossMixin:
         loss_w1: torch.Tensor,
         loss_gate: torch.Tensor,
         gate_mass_mean: torch.Tensor | None,
+        coord_acc_top5: torch.Tensor | None,
+        coord_p_gt_mean: torch.Tensor | None,
+        coord_margin_mean: torch.Tensor | None,
     ) -> None:
         mode = (
             "train"
@@ -589,13 +837,52 @@ class CoordSoftCEW1LossMixin:
         metrics["coord_softce_w1/soft_ce"].update(float(loss_softce.detach().cpu().item()))
         metrics["coord_softce_w1/w1"].update(float(loss_w1.detach().cpu().item()))
         metrics["coord_softce_w1/gate"].update(float(loss_gate.detach().cpu().item()))
-        metrics["coord_softce_w1/coord_tokens"].update(
-            float(int(coord_positions_mask.sum().detach().item()))
-        )
+        coord_tokens = int(coord_positions_mask.sum().detach().item())
+        metrics["coord_softce_w1/coord_tokens"].update(float(coord_tokens))
         if gate_mass_mean is not None:
             metrics["coord_softce_w1/coord_vocab_mass"].update(
                 float(gate_mass_mean.detach().cpu().item())
             )
+        if coord_acc_top5 is not None:
+            metrics["coord_softce_w1/acc_top5"].update(float(coord_acc_top5.detach().cpu().item()))
+        if coord_p_gt_mean is not None:
+            metrics["coord_softce_w1/p_gt_mean"].update(
+                float(coord_p_gt_mean.detach().cpu().item())
+            )
+        if coord_margin_mean is not None:
+            metrics["coord_softce_w1/margin_mean"].update(
+                float(coord_margin_mean.detach().cpu().item())
+            )
+
+        # Per-sample normalization (packed units).
+        try:
+            total_samples = None
+            pack_n = getattr(self, "_coordexp_pack_num_samples", None)
+            if isinstance(pack_n, torch.Tensor):
+                total_samples = float(pack_n.detach().sum().cpu().item())
+            elif isinstance(pack_n, (list, tuple)):
+                total_samples = float(sum(int(v) for v in pack_n))
+            elif isinstance(pack_n, (int, float)):
+                total_samples = float(pack_n)
+            if total_samples is None:
+                total_samples = float(labels_next.shape[0])
+            total_samples = max(1.0, float(total_samples))
+
+            metrics["coord_softce_w1/coord_tokens_per_sample"].update(
+                float(coord_tokens) / float(total_samples)
+            )
+            coord_loss_per_sample = float(loss_total.detach().cpu().item()) * float(
+                coord_tokens
+            ) / float(total_samples)
+            metrics["coord_softce_w1/loss_per_sample"].update(float(coord_loss_per_sample))
+
+            base_loss_per_sample = getattr(self, "_coordexp_last_base_loss_per_sample", None)
+            if isinstance(base_loss_per_sample, (int, float)):
+                metrics["stage1/total_loss_per_sample_est"].update(
+                    float(base_loss_per_sample) + float(coord_loss_per_sample)
+                )
+        except Exception:
+            pass
 
     def _coord_vocab_gate_loss(
         self,

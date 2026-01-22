@@ -42,12 +42,20 @@ class TokenTypeMetricsConfig:
     enabled: bool = False
     include: tuple[str, ...] = ("lvis",)
     exclude: tuple[str, ...] = ()
+    # Metric compute knobs (diagnostics-only; does not affect training loss)
+    log_top5: bool = True
+    coord_monitor_mass: bool = True
+    # Optional deterministic downsampling cap for expensive coord-vocab mass diagnostics.
+    # 0 means "no cap" (compute on all supervised tokens).
+    coord_monitor_mass_max_tokens: int = 0
 
     def __post_init__(self) -> None:
         inc = tuple(str(v).strip().lower() for v in self.include)
         exc = tuple(str(v).strip().lower() for v in self.exclude)
         object.__setattr__(self, "include", inc)
         object.__setattr__(self, "exclude", exc)
+        max_tokens = int(self.coord_monitor_mass_max_tokens or 0)
+        object.__setattr__(self, "coord_monitor_mass_max_tokens", max(0, max_tokens))
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "TokenTypeMetricsConfig":
@@ -59,6 +67,17 @@ class TokenTypeMetricsConfig:
         enabled = bool(payload.get("enabled", False))
         include_raw = payload.get("include", cls.include)
         exclude_raw = payload.get("exclude", cls.exclude)
+        log_top5 = bool(payload.get("log_top5", cls.log_top5))
+        coord_monitor_mass = bool(payload.get("coord_monitor_mass", cls.coord_monitor_mass))
+        coord_monitor_mass_max_tokens_raw = payload.get(
+            "coord_monitor_mass_max_tokens", cls.coord_monitor_mass_max_tokens
+        )
+        try:
+            coord_monitor_mass_max_tokens = int(coord_monitor_mass_max_tokens_raw or 0)
+        except Exception as exc:
+            raise TypeError(
+                "custom.token_type_metrics.coord_monitor_mass_max_tokens must be an int"
+            ) from exc
 
         def _to_tuple(value: Any) -> tuple[str, ...]:
             if value is None:
@@ -70,7 +89,14 @@ class TokenTypeMetricsConfig:
         include = _to_tuple(include_raw)
         exclude = _to_tuple(exclude_raw)
 
-        return cls(enabled=enabled, include=include, exclude=exclude)
+        return cls(
+            enabled=enabled,
+            include=include,
+            exclude=exclude,
+            log_top5=log_top5,
+            coord_monitor_mass=coord_monitor_mass,
+            coord_monitor_mass_max_tokens=coord_monitor_mass_max_tokens,
+        )
 
 
 @dataclass(frozen=True)
