@@ -40,10 +40,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from public_data.converters.sorting import sort_objects_tlbr
-
 
 # URLs are copied from the HF dataset loader `visual_genome.py` (snapshot).
 VG_BASE = "https://homes.cs.washington.edu/~ranjay/visualgenome/data/dataset"
@@ -186,6 +185,9 @@ def _sanitize_desc(value: Any) -> Optional[str]:
 
 
 def _pick_name(names: Any) -> Optional[str]:
+    # Type guard: names should be either a list of strings or a single string
+    if not isinstance(names, (list, str)):
+        return None
     if isinstance(names, list):
         for n in names:
             out = _sanitize_desc(n)
@@ -309,8 +311,8 @@ class ConvertStats:
 
 
 def _convert_pair_to_record(
-    img_meta: Mapping[str, Any],
-    ann: Mapping[str, Any],
+    img_meta: Dict[str, Any],
+    ann: Dict[str, Any],
     *,
     min_box_area: float,
     min_box_dimension: float,
@@ -342,11 +344,15 @@ def _convert_pair_to_record(
     for obj in objects:
         if not isinstance(obj, dict):
             continue
-        x = obj.get("x")
-        y = obj.get("y")
-        w = obj.get("w")
-        h = obj.get("h")
-        names = obj.get("names")
+        obj_dict: Dict[str, Any] = obj  # type: ignore
+        x = obj_dict.get("x")
+        y = obj_dict.get("y")
+        w = obj_dict.get("w")
+        h = obj_dict.get("h")
+        names = obj_dict.get("names")
+
+        if x is None or y is None or w is None or h is None:
+            continue
 
         try:
             xf = float(x)
@@ -411,8 +417,8 @@ def _convert_pair_to_record(
 
 
 def _convert_pair_to_region_record(
-    img_meta: Mapping[str, Any],
-    ann: Mapping[str, Any],
+    img_meta: Dict[str, Any],
+    ann: Dict[str, Any],
     *,
     min_box_area: float,
     min_box_dimension: float,
@@ -444,11 +450,15 @@ def _convert_pair_to_region_record(
     for region in regions:
         if not isinstance(region, dict):
             continue
-        x = region.get("x")
-        y = region.get("y")
-        w = region.get("width")
-        h = region.get("height")
-        phrase = region.get("phrase")
+        region_dict: Dict[str, Any] = region  # type: ignore
+        x = region_dict.get("x")
+        y = region_dict.get("y")
+        w = region_dict.get("width")
+        h = region_dict.get("height")
+        phrase = region_dict.get("phrase")
+
+        if x is None or y is None or w is None or h is None:
+            continue
 
         try:
             xf = float(x)
@@ -544,8 +554,8 @@ def convert(
                 continue
 
             record, kept = _convert_pair_to_record(
-                img_meta,
-                ann,
+                img_meta,  # type: ignore
+                ann,  # type: ignore
                 min_box_area=min_box_area,
                 min_box_dimension=min_box_dimension,
                 clip_boxes=clip_boxes,
@@ -573,9 +583,7 @@ def convert(
 
     if stats_path is not None:
         _ensure_dir(stats_path.parent)
-        stats_path.write_text(
-            json.dumps(stats.to_dict(), indent=2), encoding="utf-8"
-        )
+        stats_path.write_text(json.dumps(stats.to_dict(), indent=2), encoding="utf-8")
     return stats
 
 
@@ -610,8 +618,8 @@ def convert_regions(
                 continue
 
             record, kept = _convert_pair_to_region_record(
-                img_meta,
-                ann,
+                img_meta,  # type: ignore
+                ann,  # type: ignore
                 min_box_area=min_box_area,
                 min_box_dimension=min_box_dimension,
                 clip_boxes=clip_boxes,
@@ -764,7 +772,9 @@ def main() -> None:
             return
 
         if args.mode == "objects":
-            obj_zip = ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
+            obj_zip = (
+                ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
+            )
             if not _download_with_wget(
                 VG_OBJECTS_URLS[args.objects_version],
                 obj_zip,
@@ -823,7 +833,9 @@ def main() -> None:
                     url, zip_path, timeout_s=t, no_proxy=bool(args.wget_no_proxy)
                 )
                 if not ok:
-                    print("Image download incomplete (timeout or error); continuing to conversion.")
+                    print(
+                        "Image download incomplete (timeout or error); continuing to conversion."
+                    )
                     break
                 t = remaining_timeout()
                 if t == 0:
@@ -831,7 +843,9 @@ def main() -> None:
                     break
                 ok = _unzip(zip_path, img_dir, timeout_s=t)
                 if not ok:
-                    print("Image unzip incomplete (timeout or error); continuing to conversion.")
+                    print(
+                        "Image unzip incomplete (timeout or error); continuing to conversion."
+                    )
                     break
 
     if args.download_only:
