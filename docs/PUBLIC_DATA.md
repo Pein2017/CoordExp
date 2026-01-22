@@ -26,8 +26,15 @@ Examples:
 # VG (download+convert+rescale+coord+validate)
 ./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
 
+# VG region phrases ("vg_ref"): desc = region phrase, bbox_2d = region box
+# Tip: run `vg download` first so `vg_ref` can reuse images and only fetch annotations.
+./public_data/run.sh vg_ref all --preset rescale_32_768_bbox
+
 # LVIS (bbox-only default; pass dataset-specific args after --)
 ./public_data/run.sh lvis all --preset rescale_32_768_bbox
+
+# LVIS polygons (recommended when you want segmentation → poly)
+./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon --poly-max-points 20
 
 # Validate annotation structure without images present yet
 ./public_data/run.sh lvis validate --raw-only --skip-image-check
@@ -37,6 +44,13 @@ Tip: if you need to tune shared preprocessing options (e.g., `--image-factor`, `
 ```bash
 ./public_data/run.sh <dataset> rescale --preset <preset> -- --image-factor 32 --max-pixels $((32*32*768))
 ./public_data/run.sh <dataset> coord --preset <preset>
+```
+
+Example (larger resize budget): `max_pixels = 32*32*1024`
+```bash
+./public_data/run.sh vg rescale --preset rescale_32_1024_bbox -- --image-factor 32 --max-pixels $((32*32*1024))
+./public_data/run.sh vg coord --preset rescale_32_1024_bbox
+./public_data/run.sh vg validate --preset rescale_32_1024_bbox
 ```
 
 ## Scope and Responsibilities
