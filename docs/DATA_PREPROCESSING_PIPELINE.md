@@ -24,7 +24,7 @@ For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other data
 PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \
   --input-jsonl path/to/raw/train.jsonl \
   --output-jsonl path/to/out/train.jsonl \
-  --output-images path/to/out/images \
+  --output-images path/to/out \
   --image-factor 32 \
   --max-pixels $((32*32*768)) \
   --min-pixels $((32*32*4)) \

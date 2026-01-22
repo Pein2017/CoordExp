@@ -28,6 +28,7 @@ from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
 from .metrics.dataset_metrics import (
     AggregateTokenTypeMetricsMixin,
     CoordSoftCEW1LossMixin,
+    GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
 )
 from .trainers import with_final_checkpoint
@@ -1052,6 +1053,9 @@ def main():
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
     if trainer_variant != "rollout_matching_sft":
+        # Fix transformers>=4.57 grad-accum scaling when model_accepts_loss_kwargs=True
+        # (ms-swift uses Seq2SeqTrainer for causal_lm). This keeps train `loss` comparable to eval_loss.
+        mixins.append(GradAccumLossScaleMixin)
         if (
             isinstance(instability_monitor_cfg, dict)
             and bool(instability_monitor_cfg.get("enabled", False))
@@ -1177,6 +1181,11 @@ def main():
     if coord_soft_ce_w1_cfg is not None:
         try:
             setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
+        except Exception:
+            pass
+    if token_type_cfg is not None:
+        try:
+            setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
         except Exception:
             pass
     if instability_monitor_cfg is not None:

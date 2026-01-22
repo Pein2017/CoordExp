@@ -177,7 +177,22 @@ When `custom.coord_soft_ce_w1.enabled: true`:
 - **What:** model-native cross-entropy over the full vocabulary.
 - **Where applied:** only on **non-coord** targets (coord targets are masked to `-100`).
 - **Normalization:** mean over the number of supervised non-coord tokens (packing-safe).
-- **In loss:** YES (this is the primary training loss term).
+- **In loss:** YES (train and eval_loss).
+
+Diagnostics (logged as metrics, prefixed with `eval_` during evaluation):
+- `base_ce/loss`
+  - **What:** the base CE term after masking coord targets (i.e. non-coord CE only).
+  - **In loss:** YES (this is the base term of the objective).
+- `base_ce/noncoord_tokens`
+  - **What:** supervised non-coord token count used by the base CE term (sanity-check denominator).
+  - **In loss:** NO (diagnostic only).
+- `base_ce/noncoord_tokens_per_sample`
+  - **What:** `base_ce/noncoord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
+  - **In loss:** NO (diagnostic only; helps interpret scale per original sample).
+- `base_ce/loss_per_sample`
+  - **What:** approximate base-CE contribution per original sample:
+    `base_ce/loss * base_ce/noncoord_tokens / pack/num_samples`.
+  - **In loss:** NO (diagnostic only).
 
 2) Coord-token loss (coord-gated distribution losses)
 - **What:** extra supervision computed from the same forward logits at GT coord positions.
@@ -193,21 +208,21 @@ The coord loss is:
 
 - `coord_softce_w1/loss`
   - **What:** total coord loss added to the training loss (already includes weights).
-  - **In loss:** YES (train), NO (eval-only logging).
+  - **In loss:** YES (train and eval_loss when `custom.coord_soft_ce_w1.enabled: true`).
 
 - `coord_softce_w1/soft_ce`
   - **What:** soft cross-entropy between the predicted coord distribution and a Gaussian
     soft target centered at the GT bin.
-  - **In loss:** YES (train), NO (eval-only logging).
+  - **In loss:** YES (train and eval_loss).
 
 - `coord_softce_w1/w1`
   - **What:** 1D Wasserstein-1 distance computed via CDF differences on the ordered bins.
-  - **In loss:** YES (train), NO (eval-only logging).
+  - **In loss:** YES (train and eval_loss).
 
 - `coord_softce_w1/gate`
   - **What:** coord-vocab "mass leak" penalty at GT coord positions:
       `gate = -log(sum_{i in coord_vocab} softmax(full_logits / T)[i])`
-  - **In loss:** YES iff `gate_weight != 0` (train), NO (eval-only logging).
+  - **In loss:** YES iff `gate_weight != 0` (train and eval_loss).
 
 - `coord_softce_w1/coord_vocab_mass`
   - **What:** mean probability mass inside the coord sub-vocabulary at GT coord positions.
@@ -218,6 +233,31 @@ The coord loss is:
   - **What:** number of GT coord-token positions in the current batch (or mean count over
     logging windows). Useful for sanity-checking the denominator.
   - **In loss:** NO (diagnostic only).
+
+- `coord_softce_w1/acc_top5`
+  - **What:** top-5 accuracy within the 1000-bin coord sub-vocabulary at GT coord positions.
+  - **In loss:** NO (distribution-quality monitor).
+
+- `coord_softce_w1/p_gt_mean`
+  - **What:** mean predicted probability assigned to the GT coord bin (after temperature).
+  - **In loss:** NO (distribution-quality monitor).
+
+- `coord_softce_w1/margin_mean`
+  - **What:** mean `(max_logit - gt_logit)` within coord vocab (after temperature); lower is better.
+  - **In loss:** NO (distribution-quality monitor).
+
+- `coord_softce_w1/coord_tokens_per_sample`
+  - **What:** `coord_softce_w1/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
+  - **In loss:** NO (diagnostic only).
+
+- `coord_softce_w1/loss_per_sample`
+  - **What:** approximate coord-loss contribution per original sample:
+    `coord_softce_w1/loss * coord_softce_w1/coord_tokens / pack/num_samples`.
+  - **In loss:** NO (diagnostic only).
+
+- `stage1/total_loss_per_sample_est`
+  - **What:** `base_ce/loss_per_sample + coord_softce_w1/loss_per_sample` (approx. total per-sample objective).
+  - **In loss:** NO (diagnostic only; useful for packed runs).
 
 ## Token Accuracy and Token-Type Metrics
 
@@ -231,6 +271,7 @@ categories. They are all **metrics-only** (not part of the loss).
 - `token_acc_top5` (CoordExp aggregate metric)
   - **What:** top-5 token accuracy over supervised tokens.
   - **In loss:** NO.
+  - **Config:** set `custom.token_type_metrics.log_top5: false` to skip top-k metrics (can reduce logging overhead).
 
 - `text_token_acc`
   - **What:** top-1 accuracy over supervised tokens that are not GT coord tokens.
@@ -281,6 +322,18 @@ Interpretation:
 - Low `..._at_gt_coord` means coord slots are bleeding probability into non-coord tokens.
 - High `..._at_gt_format` / `..._at_gt_desc` means coord tokens are intruding into text/format slots.
 
+Config:
+- Set `custom.token_type_metrics.coord_monitor_mass: false` to skip these mass diagnostics.
+- Optionally cap compute cost with `custom.token_type_metrics.coord_monitor_mass_max_tokens: <int>` (0 = no cap).
+
+## Packed-Run Per-Sample Helpers
+
+When packing is enabled, one "training unit" is a concatenation of multiple original samples.
+To make scales more intuitive, CoordExp logs a pack-size helper:
+- `pack/num_samples`
+  - **What:** number of original samples concatenated into the current unit (batch-wide aggregate).
+  - **Note:** in non-packed runs, this is effectively the batch size.
+
 ## Reduction / Aggregation Semantics (Important)
 
 Internally, per-step values are pushed into ms-swift's `MeanMetric` containers.
@@ -288,3 +341,10 @@ For scalar floats, this typically means "average over logging steps" (not token-
 
 Where a metric is intended to be token-weighted, CoordExp computes a per-token mean first,
 then updates the metric with a scalar.
+
+Grad-accumulation note:
+- Train `loss` is intended to be comparable to `eval_loss` (mean objective per optimizer step), even when
+  `gradient_accumulation_steps > 1`.
+- CoordExp logs two runtime helpers (metrics-only; prefixed with `eval_` during eval):
+  - `accum/grad_steps`: configured `gradient_accumulation_steps`.
+  - `accum/current_grad_steps`: per-update value (may differ on the last partial update in an epoch).

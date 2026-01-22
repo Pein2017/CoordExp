@@ -6,6 +6,39 @@ The goal of this module is to provide **geometry-aware, tested pipelines** for t
 
 ---
 
+## Unified runner (recommended)
+
+The preferred way to prepare public datasets is the unified runner:
+
+```bash
+./public_data/run.sh <dataset> <command> [runner-flags] [-- <passthrough-args>]
+```
+
+Key design points:
+- Run from the repo root (`/data/home/xiaoyan/AIteam/data/CoordExp`) so `PYTHONPATH=.` is consistent.
+- Dataset-specific logic lives in shell plugins under `public_data/datasets/<dataset>.sh`.
+- Shared preprocessing steps are reused across datasets:
+  - `public_data/scripts/rescale_jsonl.py`
+  - `public_data/scripts/convert_to_coord_tokens.py`
+
+Examples:
+```bash
+# VG (download+convert+rescale+coord+validate)
+./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
+
+# LVIS (bbox-only default; pass dataset-specific args after --)
+./public_data/run.sh lvis all --preset rescale_32_768_bbox
+
+# Validate annotation structure without images present yet
+./public_data/run.sh lvis validate --raw-only --skip-image-check
+```
+
+Tip: if you need to tune shared preprocessing options (e.g., `--image-factor`, `--max-pixels`), run steps separately:
+```bash
+./public_data/run.sh <dataset> rescale --preset <preset> -- --image-factor 32 --max-pixels $((32*32*768))
+./public_data/run.sh <dataset> coord --preset <preset>
+```
+
 ## Scope and Responsibilities
 
 `public_data/` is a self-contained mini-project focused on:
@@ -60,15 +93,15 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
 
 2) **Smart resize (budget + grid, dataset-agnostic)**
    ```bash
-   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \
-     --input-jsonl public_data/lvis/raw/train.jsonl \
-     --output-jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \
-     --output-images public_data/lvis/rescale_32_768_poly_20/images \
-     --image-factor 32 \
-     --max-pixels $((32*32*768)) \
-     --min-pixels $((32*32*4)) \
-     --num-workers 8 \
-     --relative-images
+	   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \
+	     --input-jsonl public_data/lvis/raw/train.jsonl \
+	     --output-jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \
+	     --output-images public_data/lvis/rescale_32_768_poly_20 \
+	     --image-factor 32 \
+	     --max-pixels $((32*32*768)) \
+	     --min-pixels $((32*32*4)) \
+	     --num-workers 8 \
+	     --relative-images
    ```
 
 3) **Tiny subset (smoke tests)**

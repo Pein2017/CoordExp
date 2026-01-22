@@ -40,10 +40,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from public_data.converters.sorting import sort_objects_tlbr
-
 
 # URLs are copied from the HF dataset loader `visual_genome.py` (snapshot).
 VG_BASE = "https://homes.cs.washington.edu/~ranjay/visualgenome/data/dataset"
@@ -52,6 +51,7 @@ VG_OBJECTS_URLS = {
     "1.0.0": f"{VG_BASE}/objects_v1.json.zip",
     "1.2.0": f"{VG_BASE}/objects_v1_2.json.zip",
 }
+VG_REGION_DESCRIPTIONS_URL = f"{VG_BASE}/region_descriptions.json.zip"
 VG_IMAGE_ZIPS = {
     # The zip names are historical; the extracted folders are VG_100K and VG_100K_2.
     "images.zip": "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
@@ -185,6 +185,9 @@ def _sanitize_desc(value: Any) -> Optional[str]:
 
 
 def _pick_name(names: Any) -> Optional[str]:
+    # Type guard: names should be either a list of strings or a single string
+    if not isinstance(names, (list, str)):
+        return None
     if isinstance(names, list):
         for n in names:
             out = _sanitize_desc(n)
@@ -192,6 +195,21 @@ def _pick_name(names: Any) -> Optional[str]:
                 return out
         return None
     return _sanitize_desc(names)
+
+
+def _sanitize_phrase(value: Any) -> Optional[str]:
+    """Sanitize free-form region phrases.
+
+    Unlike object `names`, region phrases may include commas and other
+    punctuation, so we only strip and normalize whitespace.
+    """
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    s = re.sub(r"\s+", " ", s)
+    return s if s else None
 
 
 def _image_relpath_from_url(url: str) -> Optional[str]:
@@ -293,8 +311,8 @@ class ConvertStats:
 
 
 def _convert_pair_to_record(
-    img_meta: Mapping[str, Any],
-    ann: Mapping[str, Any],
+    img_meta: Dict[str, Any],
+    ann: Dict[str, Any],
     *,
     min_box_area: float,
     min_box_dimension: float,
@@ -326,11 +344,15 @@ def _convert_pair_to_record(
     for obj in objects:
         if not isinstance(obj, dict):
             continue
-        x = obj.get("x")
-        y = obj.get("y")
-        w = obj.get("w")
-        h = obj.get("h")
-        names = obj.get("names")
+        obj_dict: Dict[str, Any] = obj  # type: ignore
+        x = obj_dict.get("x")
+        y = obj_dict.get("y")
+        w = obj_dict.get("w")
+        h = obj_dict.get("h")
+        names = obj_dict.get("names")
+
+        if x is None or y is None or w is None or h is None:
+            continue
 
         try:
             xf = float(x)
@@ -394,6 +416,113 @@ def _convert_pair_to_record(
     return record, kept
 
 
+def _convert_pair_to_region_record(
+    img_meta: Dict[str, Any],
+    ann: Dict[str, Any],
+    *,
+    min_box_area: float,
+    min_box_dimension: float,
+    clip_boxes: bool,
+) -> Tuple[Optional[Dict[str, Any]], int]:
+    """Return (record, kept_objects) for region descriptions."""
+    image_id = img_meta.get("image_id")
+    url = img_meta.get("url")
+    width = img_meta.get("width")
+    height = img_meta.get("height")
+
+    if not isinstance(image_id, int) or not isinstance(url, str):
+        return None, 0
+    if not isinstance(width, int) or not isinstance(height, int):
+        return None, 0
+    if width <= 0 or height <= 0:
+        return None, 0
+
+    rel = _image_relpath_from_url(url)
+    if rel is None:
+        return None, 0
+
+    regions = ann.get("regions")
+    if not isinstance(regions, list) or not regions:
+        return None, 0
+
+    out_objs: List[Dict[str, Any]] = []
+    kept = 0
+    for region in regions:
+        if not isinstance(region, dict):
+            continue
+        region_dict: Dict[str, Any] = region  # type: ignore
+        x = region_dict.get("x")
+        y = region_dict.get("y")
+        w = region_dict.get("width")
+        h = region_dict.get("height")
+        phrase = region_dict.get("phrase")
+
+        if x is None or y is None or w is None or h is None:
+            continue
+
+        try:
+            xf = float(x)
+            yf = float(y)
+            wf = float(w)
+            hf = float(h)
+        except Exception:
+            continue
+
+        if wf <= 0 or hf <= 0:
+            continue
+
+        x1 = xf
+        y1 = yf
+        x2 = xf + wf
+        y2 = yf + hf
+
+        bbox: Optional[List[float]]
+        if clip_boxes:
+            bbox = _clip_bbox_xyxy(x1, y1, x2, y2, width=width, height=height)
+        else:
+            bbox = [x1, y1, x2, y2]
+
+        if bbox is None or len(bbox) != 4:
+            continue
+
+        bx1, by1, bx2, by2 = bbox
+        bw = bx2 - bx1
+        bh = by2 - by1
+        area = bw * bh
+        if (
+            area < float(min_box_area)
+            or bw < float(min_box_dimension)
+            or bh < float(min_box_dimension)
+        ):
+            continue
+
+        desc = _sanitize_phrase(phrase)
+        if not desc:
+            continue
+
+        out_objs.append({"bbox_2d": [bx1, by1, bx2, by2], "desc": desc})
+        kept += 1
+
+    if not out_objs:
+        return None, 0
+
+    out_objs = sort_objects_tlbr(out_objs)
+
+    record: Dict[str, Any] = {
+        "images": [rel],
+        "objects": out_objs,
+        "width": int(width),
+        "height": int(height),
+        "metadata": {
+            "dataset": "visual_genome",
+            "image_id": int(image_id),
+            "url": url,
+            "annotation": "regions",
+        },
+    }
+    return record, kept
+
+
 def convert(
     *,
     image_meta_json: Path,
@@ -425,8 +554,8 @@ def convert(
                 continue
 
             record, kept = _convert_pair_to_record(
-                img_meta,
-                ann,
+                img_meta,  # type: ignore
+                ann,  # type: ignore
                 min_box_area=min_box_area,
                 min_box_dimension=min_box_dimension,
                 clip_boxes=clip_boxes,
@@ -454,14 +583,80 @@ def convert(
 
     if stats_path is not None:
         _ensure_dir(stats_path.parent)
-        stats_path.write_text(
-            json.dumps(stats.to_dict(), indent=2), encoding="utf-8"
-        )
+        stats_path.write_text(json.dumps(stats.to_dict(), indent=2), encoding="utf-8")
+    return stats
+
+
+def convert_regions(
+    *,
+    image_meta_json: Path,
+    regions_json: Path,
+    out_train_jsonl: Path,
+    out_val_jsonl: Path,
+    max_samples: Optional[int],
+    val_mod: int,
+    min_box_area: float,
+    min_box_dimension: float,
+    clip_boxes: bool,
+    stats_path: Optional[Path],
+) -> ConvertStats:
+    stats = ConvertStats()
+    _ensure_dir(out_train_jsonl.parent)
+
+    fout_train = out_train_jsonl.open("w", encoding="utf-8")
+    fout_val = out_val_jsonl.open("w", encoding="utf-8")
+    try:
+        it_meta = _iter_json_array(image_meta_json)
+        it_ann = _iter_json_array(regions_json)
+
+        for idx, (img_meta, ann) in enumerate(zip(it_meta, it_ann)):
+            if max_samples is not None and idx >= max_samples:
+                break
+            stats.images_total += 1
+
+            if not isinstance(img_meta, dict) or not isinstance(ann, dict):
+                continue
+
+            record, kept = _convert_pair_to_region_record(
+                img_meta,  # type: ignore
+                ann,  # type: ignore
+                min_box_area=min_box_area,
+                min_box_dimension=min_box_dimension,
+                clip_boxes=clip_boxes,
+            )
+
+            if record is None:
+                stats.images_skipped_missing_ann += 1
+                continue
+
+            stats.objects_kept += kept
+            image_id = int(record.get("metadata", {}).get("image_id") or 0)
+            if val_mod > 0 and (image_id % val_mod) == 0:
+                fout_val.write(json.dumps(record, ensure_ascii=False) + "\n")
+                stats.images_written_val += 1
+            else:
+                fout_train.write(json.dumps(record, ensure_ascii=False) + "\n")
+                stats.images_written_train += 1
+
+    finally:
+        fout_train.close()
+        fout_val.close()
+
+    if stats_path is not None:
+        _ensure_dir(stats_path.parent)
+        stats_path.write_text(json.dumps(stats.to_dict(), indent=2), encoding="utf-8")
     return stats
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["objects", "regions"],
+        default="objects",
+        help="Which VG annotations to convert/download (default: objects)",
+    )
     parser.add_argument(
         "--output-root",
         type=Path,
@@ -479,6 +674,11 @@ def main() -> None:
         "--download",
         action="store_true",
         help="Download VG zips (annotations + images) into public_data/vg/raw",
+    )
+    parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Download/extract raw artifacts but skip JSONL conversion",
     )
     parser.add_argument(
         "--wget-no-proxy",
@@ -505,8 +705,8 @@ def main() -> None:
     parser.add_argument(
         "--val-mod",
         type=int,
-        default=100,
-        help="Deterministic val split: image_id % val_mod == 0 (default: 100 -> ~1%)",
+        default=5,
+        help="Deterministic val split: image_id %% val_mod == 0 (default: 5 -> ~20%%)",
     )
     parser.add_argument(
         "--min-box-area",
@@ -533,6 +733,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.download_only and not args.download:
+        raise SystemExit("--download-only requires --download")
+
     out_root: Path = args.output_root
     raw_root = out_root / "raw"
     ann_dir = raw_root / "annotations"
@@ -552,7 +755,6 @@ def main() -> None:
     if args.download:
         # 1) Annotation zips
         meta_zip = ann_dir / "image_data.json.zip"
-        obj_zip = ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
         print(f"Downloading annotations into: {ann_dir}")
         t = remaining_timeout()
         if t == 0:
@@ -563,18 +765,34 @@ def main() -> None:
         ):
             print("Stopped during image metadata download (timeout or error).")
             return
+
         t = remaining_timeout()
         if t == 0:
-            print("Time budget exhausted before objects download started.")
+            print("Time budget exhausted before annotation download started.")
             return
-        if not _download_with_wget(
-            VG_OBJECTS_URLS[args.objects_version],
-            obj_zip,
-            timeout_s=t,
-            no_proxy=bool(args.wget_no_proxy),
-        ):
-            print("Stopped during objects annotation download (timeout or error).")
-            return
+
+        if args.mode == "objects":
+            obj_zip = (
+                ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
+            )
+            if not _download_with_wget(
+                VG_OBJECTS_URLS[args.objects_version],
+                obj_zip,
+                timeout_s=t,
+                no_proxy=bool(args.wget_no_proxy),
+            ):
+                print("Stopped during objects annotation download (timeout or error).")
+                return
+        else:
+            reg_zip = ann_dir / "region_descriptions.json.zip"
+            if not _download_with_wget(
+                VG_REGION_DESCRIPTIONS_URL,
+                reg_zip,
+                timeout_s=t,
+                no_proxy=bool(args.wget_no_proxy),
+            ):
+                print("Stopped during region_descriptions download (timeout or error).")
+                return
 
         # Extract annotations
         t = remaining_timeout()
@@ -584,13 +802,23 @@ def main() -> None:
         if not _unzip(meta_zip, ann_dir, timeout_s=t):
             print("Stopped during image metadata unzip (timeout or error).")
             return
-        t = remaining_timeout()
-        if t == 0:
-            print("Time budget exhausted before objects unzip started.")
-            return
-        if not _unzip(obj_zip, ann_dir, timeout_s=t):
-            print("Stopped during objects unzip (timeout or error).")
-            return
+        if args.mode == "objects":
+            t = remaining_timeout()
+            if t == 0:
+                print("Time budget exhausted before objects unzip started.")
+                return
+            if not _unzip(obj_zip, ann_dir, timeout_s=t):
+                print("Stopped during objects unzip (timeout or error).")
+                return
+        else:
+            t = remaining_timeout()
+            if t == 0:
+                print("Time budget exhausted before region_descriptions unzip started.")
+                return
+            reg_zip = ann_dir / "region_descriptions.json.zip"
+            if not _unzip(reg_zip, ann_dir, timeout_s=t):
+                print("Stopped during region_descriptions unzip (timeout or error).")
+                return
 
         # 2) Image zips
         if not args.skip_images:
@@ -605,7 +833,9 @@ def main() -> None:
                     url, zip_path, timeout_s=t, no_proxy=bool(args.wget_no_proxy)
                 )
                 if not ok:
-                    print("Image download incomplete (timeout or error); continuing to conversion.")
+                    print(
+                        "Image download incomplete (timeout or error); continuing to conversion."
+                    )
                     break
                 t = remaining_timeout()
                 if t == 0:
@@ -613,27 +843,52 @@ def main() -> None:
                     break
                 ok = _unzip(zip_path, img_dir, timeout_s=t)
                 if not ok:
-                    print("Image unzip incomplete (timeout or error); continuing to conversion.")
+                    print(
+                        "Image unzip incomplete (timeout or error); continuing to conversion."
+                    )
                     break
+
+    if args.download_only:
+        print("Download finished (--download-only). Skipping conversion.")
+        return
 
     # Locate extracted annotation JSONs.
     image_meta_json = _find_one(ann_dir, ["image_data.json"])
-    objects_json = _find_one(ann_dir, ["objects.json", "objects_v1.json", "objects_v1_2.json"])
 
     out_train = raw_root / "train.jsonl"
     out_val = raw_root / "val.jsonl"
-    stats = convert(
-        image_meta_json=image_meta_json,
-        objects_json=objects_json,
-        out_train_jsonl=out_train,
-        out_val_jsonl=out_val,
-        max_samples=args.max_samples,
-        val_mod=int(args.val_mod),
-        min_box_area=float(args.min_box_area),
-        min_box_dimension=float(args.min_box_dim),
-        clip_boxes=not bool(args.no_clip_boxes),
-        stats_path=args.stats_json,
-    )
+    if args.mode == "objects":
+        objects_json = _find_one(
+            ann_dir, ["objects.json", "objects_v1.json", "objects_v1_2.json"]
+        )
+        stats = convert(
+            image_meta_json=image_meta_json,
+            objects_json=objects_json,
+            out_train_jsonl=out_train,
+            out_val_jsonl=out_val,
+            max_samples=args.max_samples,
+            val_mod=int(args.val_mod),
+            min_box_area=float(args.min_box_area),
+            min_box_dimension=float(args.min_box_dim),
+            clip_boxes=not bool(args.no_clip_boxes),
+            stats_path=args.stats_json,
+        )
+    else:
+        regions_json = _find_one(
+            ann_dir, ["region_descriptions.json", "region_descriptions_v1.json"]
+        )
+        stats = convert_regions(
+            image_meta_json=image_meta_json,
+            regions_json=regions_json,
+            out_train_jsonl=out_train,
+            out_val_jsonl=out_val,
+            max_samples=args.max_samples,
+            val_mod=int(args.val_mod),
+            min_box_area=float(args.min_box_area),
+            min_box_dimension=float(args.min_box_dim),
+            clip_boxes=not bool(args.no_clip_boxes),
+            stats_path=args.stats_json,
+        )
 
     print("Conversion finished.")
     print(json.dumps(stats.to_dict(), indent=2))

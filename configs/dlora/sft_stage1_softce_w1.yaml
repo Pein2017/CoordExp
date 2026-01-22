@@ -9,22 +9,26 @@ model:
   model: output/12-24/coord_loss-merged/ckpt-3106
 
 training:
-  output_dir: ./output/1-15/stage1_softce_w1
-  run_name: stage1-softce_w1-LRs-2e-5_2e-5_5e-5
-  logging_dir: ./tb/1-15/stage1_softce_w1
+  output_dir: ./output/1-20/stage1_softce_w1
+  run_name: stage1-softce_w1-LRs-2e-5_1e-5_4e-5
+  logging_dir: ./tb/1-20/stage1_softce_w1
   num_train_epochs: 4
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   effective_batch_size: 32
   optimizer: multimodal
   learning_rate: 2.0e-5
-  vit_lr: 2.0e-5
-  aligner_lr: 5.0e-5
+  vit_lr: 1.0e-5
+  aligner_lr: 4.0e-5
   packing: true
   packing_buffer: 512
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
   eval_packing: true
+  eval_steps: 40
+  save_steps: 200
+  save_total_limit: 2
+  save_delay_steps: 400
 
 custom:
   train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
@@ -37,16 +41,16 @@ custom:
     enabled: true
     # Loss composition at coord positions: soft_ce_weight * softCE + w1_weight * W1(CDF)
     soft_ce_weight: 1.0
-    w1_weight: 1.0
-    gate_weight: 3.0
+    w1_weight: 3.0
+    gate_weight: 5.0
     # Distribution temperature for coord-gated softmax.
-    temperature: 1.0
+    temperature: 0.9
     # Gaussian soft target over bins 0..999.
-    target_sigma: 2.0
-    target_truncate: 16
+    target_sigma: 1.5
+    target_truncate: 8
 
 debug:
-  enabled: true
+  enabled: false
   output_dir: ./output_debug/
   train_sample_limit: 256
   val_sample_limit: 64

@@ -107,6 +107,40 @@ def _scale_and_clamp_geometry(
     height: int,
 ) -> List[MutableMapping[str, Any]]:
     """Scale geometries by (sx, sy) and clamp to the new bounds."""
+
+    def _fix_bbox_xyxy(bbox_xyxy: Sequence[int]) -> List[int]:
+        """Ensure bbox_2d is strictly valid after rounding/clamping.
+
+        Smart-resize scales floats and then rounds to int pixels. Rarely, this can collapse
+        a box to zero width/height (x2 == x1 or y2 == y1). We minimally expand within bounds
+        to satisfy the global contract: x2 > x1 and y2 > y1.
+        """
+
+        if len(bbox_xyxy) != 4:
+            return list(bbox_xyxy)
+
+        x1, y1, x2, y2 = (int(bbox_xyxy[0]), int(bbox_xyxy[1]), int(bbox_xyxy[2]), int(bbox_xyxy[3]))
+
+        # Normalize ordering if rounding/clamping flipped them.
+        if x2 < x1:
+            x1, x2 = x2, x1
+        if y2 < y1:
+            y1, y2 = y2, y1
+
+        # Expand collapsed edges when possible.
+        if x2 <= x1:
+            if x2 < width - 1:
+                x2 = min(width - 1, x1 + 1)
+            elif x1 > 0:
+                x1 = max(0, x2 - 1)
+        if y2 <= y1:
+            if y2 < height - 1:
+                y2 = min(height - 1, y1 + 1)
+            elif y1 > 0:
+                y1 = max(0, y2 - 1)
+
+        return [x1, y1, x2, y2]
+
     scaled: List[MutableMapping[str, Any]] = []
     for obj in objects:
         updated = dict(obj)
@@ -114,7 +148,7 @@ def _scale_and_clamp_geometry(
             raise ValueError("line geometry is not supported")
         if obj.get("bbox_2d") is not None:
             pts = scale_points(obj["bbox_2d"], sx, sy)
-            updated["bbox_2d"] = clamp_points(pts, width, height)
+            updated["bbox_2d"] = _fix_bbox_xyxy(clamp_points(pts, width, height))
             updated.pop("poly", None)
             updated.pop("line", None)
         elif obj.get("poly") is not None:
@@ -152,8 +186,9 @@ class Resizer:
         exif_fn: Callable[[Image.Image], Image.Image] | None = None,
     ) -> None:
         self.params = params or SmartResizeParams()
-        self.jsonl_dir = Path(jsonl_dir) if jsonl_dir else None
-        self.output_dir = Path(output_dir) if output_dir else None
+        # Resolve to avoid mixing relative/absolute paths (which breaks relative_to()).
+        self.jsonl_dir = Path(jsonl_dir).resolve() if jsonl_dir else None
+        self.output_dir = Path(output_dir).resolve() if output_dir else None
         self.write_images = bool(write_images)
         self.images_root_override = (
             Path(images_root_override).resolve() if images_root_override else None

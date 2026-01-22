@@ -103,6 +103,7 @@ def build_dataset_metrics_collator(
             # Each element is a pack (list of samples). Use a synthetic label for the pack.
             dataset_labels = []
             flat_for_labels: List[Dict[str, Any]] = []
+            pack_num_samples: List[int] = []
             for pack in batch:
                 labels_in_pack = {
                     _resolve_label(sample)
@@ -116,9 +117,14 @@ def build_dataset_metrics_collator(
                 )
                 dataset_labels.append(pack_label)
                 flat_for_labels.append({"dataset": pack_label})
+                try:
+                    pack_num_samples.append(int(len(pack)))
+                except Exception:
+                    pack_num_samples.append(1)
         else:
             dataset_labels = [_resolve_label(row) for row in batch]
             flat_for_labels = batch
+            pack_num_samples = [1 for _ in dataset_labels]
 
         collated = collate_fn(batch)
 
@@ -141,6 +147,17 @@ def build_dataset_metrics_collator(
 
         collated["dataset_labels"] = dataset_labels
         collated["dataset_segments"] = segments
+        # Number of original samples that were concatenated into each training "unit".
+        # This is used for per-sample-normalized logging in packed training.
+        try:
+            labels_t = collated.get("labels")
+            device = labels_t.device if isinstance(labels_t, torch.Tensor) else None
+            collated["pack_num_samples"] = torch.tensor(
+                pack_num_samples, dtype=torch.long, device=device
+            )
+        except Exception:
+            # Best-effort only; never block training.
+            pass
 
         if instab_enabled:
             try:
@@ -335,4 +352,3 @@ def _maybe_attach_token_types(
 
     if token_type_list:
         collated["token_types"] = torch.stack(token_type_list, dim=0)
-
