@@ -12,7 +12,7 @@ Example:
   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \\
     --input-jsonl public_data/lvis/raw/train.jsonl \\
     --output-jsonl public_data/lvis/rescale_32_768/train.jsonl \\
-    --output-images public_data/lvis/rescale_32_768/images \\
+    --output-images public_data/lvis/rescale_32_768 \\
     --image-factor 32 --max-pixels $((32*32*768)) --min-pixels $((32*32*4)) \\
     --num-workers 8 --relative-images
 """

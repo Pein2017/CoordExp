@@ -7,7 +7,9 @@ Checks:
 - Required fields presence
 - Data types correctness
 - Image file existence
-- Bbox format and bounds
+- Geometry format and bounds (bbox_2d / poly)
+- Coord-token values (<|coord_k|>, k in 0..999) when present
+- Reject legacy/unsupported geometry keys (bbox, polygon, line, line_points)
 - Summary statistics
 """
 import argparse
@@ -15,7 +17,36 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Sequence
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.coord_tokens.codec import is_coord_token, token_to_int
+
+
+DISALLOWED_GEOMETRY_KEYS = {"bbox", "polygon", "line", "line_points"}
+
+
+def _as_float_coord(value: Any) -> Optional[float]:
+    """Return numeric coordinate value for comparisons, supporting coord tokens."""
+    if is_coord_token(value):
+        try:
+            return float(token_to_int(str(value)))
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _sequence_has_coord_tokens(values: Sequence[Any]) -> bool:
+    return any(is_coord_token(v) for v in values)
+
+
+def _sequence_has_numbers(values: Sequence[Any]) -> bool:
+    return any(isinstance(v, (int, float)) for v in values)
 
 
 class ValidationError:
@@ -43,6 +74,8 @@ class JSONLValidator:
             "total_objects": 0,
             "missing_images": 0,
             "invalid_bboxes": 0,
+            "invalid_polys": 0,
+            "invalid_geometries": 0,
             "categories": set()
         }
     
@@ -98,6 +131,10 @@ class JSONLValidator:
           "height": int,
           "summary": str  # optional
         }
+
+        Notes:
+        - Objects may use either `bbox_2d` or `poly` geometry (exactly one).
+        - Geometry coordinates may be pixel-space numbers or coord tokens (<|coord_k|>).
         
         Returns:
             True if sample is valid
@@ -134,16 +171,28 @@ class JSONLValidator:
                     line_num, "images[0]", f"Must be string, got {type(image_path).__name__}"
                 ))
                 sample_valid = False
-            elif self.check_images:
-                # Resolve relative path
-                if not os.path.isabs(image_path):
-                    image_path = os.path.join(base_dir, image_path)
-                if not os.path.exists(image_path):
-                    self.errors.append(ValidationError(
-                        line_num, "images[0]", f"Image not found: {image_path}"
-                    ))
-                    self.stats["missing_images"] += 1
+            else:
+                # Enforce the global contract: images MUST be relative to the JSONL directory.
+                if os.path.isabs(image_path):
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "images[0]",
+                            "Image path must be relative to the JSONL directory (docs/DATA_JSONL_CONTRACT.md)",
+                        )
+                    )
                     sample_valid = False
+                elif self.check_images:
+                    # Resolve relative path and ensure the file exists.
+                    image_abs = os.path.join(base_dir, image_path)
+                    if not os.path.exists(image_abs):
+                        self.errors.append(
+                            ValidationError(
+                                line_num, "images[0]", f"Image not found: {image_abs}"
+                            )
+                        )
+                        self.stats["missing_images"] += 1
+                        sample_valid = False
         
         # Validate 'width' and 'height'
         width = sample["width"]
@@ -187,89 +236,291 @@ class JSONLValidator:
         line_num: int,
         obj_idx: int,
         img_width: int,
-        img_height: int
+        img_height: int,
     ) -> bool:
-        """Validate one object annotation."""
-        obj_valid = True
+        """Validate one object annotation against docs/DATA_JSONL_CONTRACT.md."""
         prefix = f"objects[{obj_idx}]"
-        
-        # Check required fields
-        if "bbox_2d" not in obj:
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.bbox_2d", "Required field missing"
-            ))
-            return False
-        
-        if "desc" not in obj:
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.desc", "Required field missing"
-            ))
-            return False
-        
-        # Validate bbox_2d
-        bbox = obj["bbox_2d"]
-        if not isinstance(bbox, list):
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.bbox_2d", f"Must be list, got {type(bbox).__name__}"
-            ))
-            obj_valid = False
-        elif len(bbox) != 4:
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.bbox_2d", f"Must have 4 values, got {len(bbox)}"
-            ))
-            obj_valid = False
-        else:
-            x1, y1, x2, y2 = bbox
-            
-            # Check types (allow int or float)
-            for i, coord in enumerate(bbox):
-                if not isinstance(coord, (int, float)):
-                    self.errors.append(ValidationError(
-                        line_num, f"{prefix}.bbox_2d[{i}]", 
-                        f"Must be numeric, got {type(coord).__name__}"
-                    ))
-                    obj_valid = False
-            
-            # Check bbox is well-formed
-            if x2 <= x1:
-                self.errors.append(ValidationError(
-                    line_num, f"{prefix}.bbox_2d", f"Invalid: x2 ({x2}) <= x1 ({x1})"
-                ))
-                self.stats["invalid_bboxes"] += 1
-                obj_valid = False
-            
-            if y2 <= y1:
-                self.errors.append(ValidationError(
-                    line_num, f"{prefix}.bbox_2d", f"Invalid: y2 ({y2}) <= y1 ({y1})"
-                ))
-                self.stats["invalid_bboxes"] += 1
-                obj_valid = False
-            
-            # Check bounds (allow partial outside for robustness)
-            if x2 < 0 or x1 > img_width:
-                self.warnings.append(
-                    f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image width"
+
+        if not isinstance(obj, dict):
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    prefix,
+                    f"Must be object/dict, got {type(obj).__name__}",
                 )
-            if y2 < 0 or y1 > img_height:
-                self.warnings.append(
-                    f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image height"
+            )
+            self.stats["invalid_geometries"] += 1
+            return False
+
+        obj_valid = True
+
+        # Reject legacy/unsupported geometry keys (must be normalized by converters).
+        for key in sorted(DISALLOWED_GEOMETRY_KEYS):
+            if key in obj and obj.get(key) is not None:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.{key}",
+                        "Legacy/unsupported geometry key; expected only bbox_2d or poly",
+                    )
                 )
-        
+                self.stats["invalid_geometries"] += 1
+                obj_valid = False
+
         # Validate desc
-        desc = obj["desc"]
+        if "desc" not in obj:
+            self.errors.append(
+                ValidationError(line_num, f"{prefix}.desc", "Required field missing")
+            )
+            return False
+
+        desc = obj.get("desc")
         if not isinstance(desc, str):
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.desc", f"Must be string, got {type(desc).__name__}"
-            ))
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.desc",
+                    f"Must be string, got {type(desc).__name__}",
+                )
+            )
             obj_valid = False
         elif not desc.strip():
-            self.errors.append(ValidationError(
-                line_num, f"{prefix}.desc", "Cannot be empty"
-            ))
+            self.errors.append(
+                ValidationError(line_num, f"{prefix}.desc", "Cannot be empty")
+            )
             obj_valid = False
         else:
             self.stats["categories"].add(desc)
-        
+
+        # Exactly one geometry per object.
+        has_bbox = ("bbox_2d" in obj) and (obj.get("bbox_2d") is not None)
+        has_poly = ("poly" in obj) and (obj.get("poly") is not None)
+
+        if has_bbox and has_poly:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    prefix,
+                    "Object has multiple geometry fields (bbox_2d + poly); exactly one is allowed",
+                )
+            )
+            self.stats["invalid_geometries"] += 1
+            return False
+
+        if not has_bbox and not has_poly:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    prefix,
+                    "Missing geometry: expected bbox_2d or poly",
+                )
+            )
+            self.stats["invalid_geometries"] += 1
+            return False
+
+        if "poly_points" in obj and not has_poly:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.poly_points",
+                    "poly_points is only allowed when poly is present",
+                )
+            )
+            self.stats["invalid_geometries"] += 1
+            obj_valid = False
+
+        if has_bbox:
+            bbox = obj.get("bbox_2d")
+            if not isinstance(bbox, list):
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.bbox_2d",
+                        f"Must be list, got {type(bbox).__name__}",
+                    )
+                )
+                self.stats["invalid_bboxes"] += 1
+                return False
+
+            if len(bbox) != 4:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.bbox_2d",
+                        f"Must have 4 values, got {len(bbox)}",
+                    )
+                )
+                self.stats["invalid_bboxes"] += 1
+                return False
+
+            if _sequence_has_coord_tokens(bbox) and _sequence_has_numbers(bbox):
+                self.warnings.append(
+                    f"Line {line_num}, {prefix}.bbox_2d: Mixed pixel numbers and coord tokens in one geometry"
+                )
+
+            coords: List[float] = []
+            for i, coord in enumerate(bbox):
+                if is_coord_token(coord):
+                    try:
+                        coords.append(float(token_to_int(str(coord))))
+                    except ValueError as exc:
+                        self.errors.append(
+                            ValidationError(
+                                line_num,
+                                f"{prefix}.bbox_2d[{i}]",
+                                f"Invalid coord token: {exc}",
+                            )
+                        )
+                        self.stats["invalid_bboxes"] += 1
+                        obj_valid = False
+                    continue
+
+                if isinstance(coord, (int, float)):
+                    coords.append(float(coord))
+                    continue
+
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.bbox_2d[{i}]",
+                        f"Must be numeric or coord token, got {type(coord).__name__}",
+                    )
+                )
+                self.stats["invalid_bboxes"] += 1
+                obj_valid = False
+
+            if len(coords) == 4:
+                x1, y1, x2, y2 = coords
+
+                if x2 <= x1:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{prefix}.bbox_2d",
+                            f"Invalid: x2 ({x2}) <= x1 ({x1})",
+                        )
+                    )
+                    self.stats["invalid_bboxes"] += 1
+                    obj_valid = False
+
+                if y2 <= y1:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{prefix}.bbox_2d",
+                            f"Invalid: y2 ({y2}) <= y1 ({y1})",
+                        )
+                    )
+                    self.stats["invalid_bboxes"] += 1
+                    obj_valid = False
+
+                # Bounds checks only make sense for pixel-space numbers.
+                if not _sequence_has_coord_tokens(bbox):
+                    if x2 < 0 or x1 > img_width:
+                        self.warnings.append(
+                            f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image width"
+                        )
+                    if y2 < 0 or y1 > img_height:
+                        self.warnings.append(
+                            f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image height"
+                        )
+
+            return obj_valid
+
+        # poly
+        poly = obj.get("poly")
+        if not isinstance(poly, list):
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.poly",
+                    f"Must be list, got {type(poly).__name__}",
+                )
+            )
+            self.stats["invalid_polys"] += 1
+            return False
+
+        if len(poly) < 6:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.poly",
+                    f"Must have at least 6 values (>= 3 points), got {len(poly)}",
+                )
+            )
+            self.stats["invalid_polys"] += 1
+            obj_valid = False
+
+        if len(poly) % 2 != 0:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.poly",
+                    f"Must have even length (x,y pairs), got {len(poly)}",
+                )
+            )
+            self.stats["invalid_polys"] += 1
+            obj_valid = False
+
+        if _sequence_has_coord_tokens(poly) and _sequence_has_numbers(poly):
+            self.warnings.append(
+                f"Line {line_num}, {prefix}.poly: Mixed pixel numbers and coord tokens in one geometry"
+            )
+
+        for i, coord in enumerate(poly):
+            if is_coord_token(coord):
+                try:
+                    _ = token_to_int(str(coord))
+                except ValueError as exc:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{prefix}.poly[{i}]",
+                            f"Invalid coord token: {exc}",
+                        )
+                    )
+                    self.stats["invalid_polys"] += 1
+                    obj_valid = False
+                continue
+
+            if isinstance(coord, (int, float)):
+                continue
+
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.poly[{i}]",
+                    f"Must be numeric or coord token, got {type(coord).__name__}",
+                )
+            )
+            self.stats["invalid_polys"] += 1
+            obj_valid = False
+
+        poly_points = obj.get("poly_points")
+        if poly_points is not None:
+            if not isinstance(poly_points, int):
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.poly_points",
+                        f"Must be int when present, got {type(poly_points).__name__}",
+                    )
+                )
+                self.stats["invalid_polys"] += 1
+                obj_valid = False
+            elif len(poly) % 2 == 0:
+                expected = len(poly) // 2
+                if poly_points != expected:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{prefix}.poly_points",
+                            f"Expected {expected} (=len(poly)/2), got {poly_points}",
+                        )
+                    )
+                    self.stats["invalid_polys"] += 1
+                    obj_valid = False
+
         return obj_valid
     
     def print_results(self) -> bool:
@@ -283,6 +534,9 @@ class JSONLValidator:
         print(f"  Total lines: {self.stats['total_lines']}")
         print(f"  Valid samples: {self.stats['valid_samples']}")
         print(f"  Total objects: {self.stats['total_objects']}")
+        print(f"  Missing images: {self.stats['missing_images']}")
+        print(f"  Invalid bboxes: {self.stats['invalid_bboxes']}")
+        print(f"  Invalid polys: {self.stats['invalid_polys']}")
         print(f"  Unique categories: {len(self.stats['categories'])}")
         
         if self.stats['valid_samples'] > 0:
@@ -330,7 +584,7 @@ Expected JSONL format:
   "images": ["path/to/image.jpg"],
   "objects": [
     {"bbox_2d": [x1, y1, x2, y2], "desc": "person"},
-    {"bbox_2d": [x1, y1, x2, y2], "desc": "car"}
+    {"poly": [x1, y1, x2, y2, x3, y3], "poly_points": 3, "desc": "car"}
   ],
   "width": 640,
   "height": 480,
@@ -342,9 +596,12 @@ Validation checks:
 - Required fields: images, objects, width, height
 - Images list has exactly 1 element
 - bbox_2d format: [x1, y1, x2, y2] with x2 > x1, y2 > y1
+- poly format: flat [x1, y1, x2, y2, ...] with even length >= 6
+- Coord-token values (<|coord_k|>, k in 0..999) are accepted for geometry coords
 - Bboxes within image bounds (warning if outside)
 - Category names are non-empty strings
 - Image files exist (optional, use --skip-image-check to disable)
+- Reject legacy geometry keys: bbox, polygon, line, line_points
 
 Examples:
 
@@ -390,4 +647,3 @@ Examples:
 
 if __name__ == "__main__":
     main()
-

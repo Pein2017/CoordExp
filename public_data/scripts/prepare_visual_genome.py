@@ -481,6 +481,11 @@ def main() -> None:
         help="Download VG zips (annotations + images) into public_data/vg/raw",
     )
     parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Download/extract raw artifacts but skip JSONL conversion",
+    )
+    parser.add_argument(
         "--wget-no-proxy",
         action="store_true",
         help="Pass --no-proxy to wget (useful when HF needs a proxy but VG mirrors do not)",
@@ -532,6 +537,9 @@ def main() -> None:
         help="Optional path to write conversion stats JSON",
     )
     args = parser.parse_args()
+
+    if args.download_only and not args.download:
+        raise SystemExit("--download-only requires --download")
 
     out_root: Path = args.output_root
     raw_root = out_root / "raw"
@@ -615,6 +623,10 @@ def main() -> None:
                 if not ok:
                     print("Image unzip incomplete (timeout or error); continuing to conversion.")
                     break
+
+    if args.download_only:
+        print("Download finished (--download-only). Skipping conversion.")
+        return
 
     # Locate extracted annotation JSONs.
     image_meta_json = _find_one(ann_dir, ["image_data.json"])
