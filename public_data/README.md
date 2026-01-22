@@ -1,98 +1,87 @@
-# Public Data (LVIS) Pipeline - Single Source
+# Public Data Pipeline (Unified Runner)
+
+This folder contains dataset preparation for public detection/grounding datasets
+(currently LVIS + Visual Genome), and shared preprocessing utilities.
+
+The preferred interface is the unified runner:
+`./public_data/run.sh <dataset> <command> ...`
 
 ## Scope & Prereqs
-- Focus: LVIS v1.0 -> Qwen3-VL JSONL (bbox or polygon).
-- Repo root: `/data/Qwen3-VL`; module root: `/data/Qwen3-VL/public_data`.
-- Conda env: `ms` (run commands with `conda run -n ms ...`).
-- Tools: `wget`, `unzip`; Disk: ~25 GB for LVIS+COCO plus converted JSONL.
+- Repo root: `/data/home/xiaoyan/AIteam/data/CoordExp` (run `./public_data/run.sh` from here).
+- Conda env: `ms` (python steps run via `conda run -n ms python ...` by default).
+- Tools: dataset-dependent (`wget`, `unzip`, etc.); disk requirements depend on dataset.
 
-## Layout
-public_data/
-|-- lvis/            # raw -> processed data
-|-- scripts/         # download/convert/sample/validate CLIs
-|-- converters/      # conversion logic (bbox + polygon)
-|-- vis_tools/       # visualization helpers
-`-- tests/           # converter tests (no images required)
+## Directory Layout (Runner Outputs)
+For a dataset id `<ds>`:
 
-## Quick Recipes
-Run from repo root unless noted.
+- Raw outputs (dataset plugin writes these):
+  - `public_data/<ds>/raw/train.jsonl`
+  - `public_data/<ds>/raw/val.jsonl` (optional; if the dataset defines a val split)
+  - `public_data/<ds>/raw/images/...` (typical; dataset-specific)
 
-**Smoke test (10 samples, polygon on, no smart-resize)**
+- Preset outputs (shared steps write these):
+  - `public_data/<ds>/<preset>/train.jsonl`
+  - `public_data/<ds>/<preset>/val.jsonl` (optional)
+  - `public_data/<ds>/<preset>/images/...`
+  - `public_data/<ds>/<preset>/train.coord.jsonl`
+  - `public_data/<ds>/<preset>/val.coord.jsonl` (optional)
+
+Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
+(`docs/DATA_JSONL_CONTRACT.md`).
+
+## Quick Start (Unified Runner)
+
+Show help / command grammar:
 ```bash
-cd public_data
-conda run -n ms python scripts/download_lvis.py --skip_images   # if annotations only
-conda run -n ms python scripts/convert_lvis.py --split train --use-polygon --test
-# For bbox-only smoke test: drop --use-polygon
+./public_data/run.sh help
+./public_data/run.sh lvis help
 ```
 
-**Full conversion (train + val, bbox)**
+LVIS end-to-end (download -> convert -> rescale -> coord -> validate):
 ```bash
-cd public_data
-conda run -n ms python scripts/download_lvis.py
-conda run -n ms python scripts/convert_lvis.py --split train
-conda run -n ms python scripts/convert_lvis.py --split val
+./public_data/run.sh lvis all --preset rescale_32_768_bbox
 ```
 
-**Polygon conversion**
+Visual Genome end-to-end (passes dataset-specific args after `--`):
 ```bash
-conda run -n ms python scripts/convert_lvis.py --split train --use-polygon
+./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
 ```
 
-**Sampling (stratified 5k from full train)**
+Validate only raw JSONL structure (no images required):
 ```bash
-conda run -n ms python scripts/sample_dataset.py \
-  --input lvis/processed/train.jsonl \
-  --output lvis/processed/samples/train_5k_stratified.jsonl \
-  --num_samples 5000 \
-  --strategy stratified \
-  --stats
+./public_data/run.sh lvis validate --raw-only --skip-image-check
 ```
 
-**Validate bbox JSONL** (validator currently checks bbox-only)
+Tune shared preprocessing options (run steps separately; args after `--` go to the python scripts):
 ```bash
-conda run -n ms python scripts/validate_jsonl.py \
-  lvis/processed/train.jsonl
+./public_data/run.sh <dataset> rescale --preset <preset> -- --image-factor 32 --max-pixels $((32*32*768))
+./public_data/run.sh <dataset> coord   --preset <preset>
+./public_data/run.sh <dataset> validate --preset <preset> --skip-image-check
 ```
 
-**Visualize a few samples**
-```bash
-conda run -n ms python vis_tools/visualize_lvis.py --num_samples 3 --mode both --save
-```
+Notes:
+- For `all`, args after `--` are forwarded only to dataset-specific steps (`download`/`convert`) to avoid ambiguity.
+- `validate` also runs a best-effort prompt/template sanity check on `train.coord.jsonl` (it warns+skips if no cached model is available under `model_cache/`).
 
-**Download COIG-CQIA to JSONL (ModelScope)**
-```bash
-cd public_data
-conda run -n ms python scripts/download_coig_cqia.py \
-  --subsets coig_pc zhihu \
-  --sample 2000 \
-  --merge \
-  --format           # normalize metadata + strip message loss fields
-# outputs to public_data/coig_cqia/*.jsonl (merged file optional)
-```
+## Dataset Plugins (Download/Convert)
+Datasets implement a small executable plugin contract:
+`public_data/datasets/<dataset>.sh`
 
-**Format an existing COIG-CQIA JSONL**
-```bash
-python scripts/format_coig_cqia.py \
-  --input public_data/coig_cqia/coig_cqia_merged.jsonl \
-  --output public_data/coig_cqia/coig_cqia_merged_formatted.jsonl
-# or --inplace to rewrite
-```
+The runner executes the plugin (it does NOT `source` it). Plugins receive required paths/settings via explicit flags and MUST NOT rely on runner-exported environment variables for those values.
 
-## Conversion Behavior (from code)
-- Input: LVIS COCO-format JSON (`lvis_v1_[split].json`) + COCO images under `lvis/raw/images/{train2017,val2017}`.
-- Output JSONL: one line per image with `images`, `objects`, `width`, `height`; stats saved as `<output>_stats.json`.
-- Bounding boxes: COCO `[x,y,w,h]` -> `[x1,y1,x2,y2]`; boxes are clipped unless `--no-clip-boxes`; min area/dim default 1 px.
-- Crowd: skipped by default (`--keep-crowd` to keep).
-- Relative paths: default; use `--absolute-paths` to keep absolute.
-- Polygons: `--use-polygon` converts each segmentation part to a `poly` (N-point closed polygon). If no valid polygon, it falls back to bbox.
-- Smart resize: `--smart-resize` uses `src/datasets/preprocessors/resize.SmartResizePreprocessor` to resize images + geometry. The preprocessor scales `bbox_2d` and `poly` fields.
-- Stats counters: total/skipped images & objects; polygon mode adds `poly_converted` and `polygon_skipped`.
-- Polygon cap: `--poly-max-points` (default: 12) converts polygons with more than N vertices to `bbox_2d` for simplicity.
+Existing plugins:
+- `public_data/datasets/lvis.sh`
+- `public_data/datasets/vg.sh`
 
-## JSONL Schema (produced here)
+Tip: standard proxy env vars like `http_proxy`/`https_proxy` are still honored by underlying tools (wget/huggingface), but they are not part of the runner/plugin *contract*.
+
+## JSONL Contract (Produced Here)
+See `docs/DATA_JSONL_CONTRACT.md` for the authoritative schema.
+
+Produced records look like:
 ```json
 {
-  "images": ["train2017/000000000001.jpg"],
+  "images": ["images/000000000001.jpg"],
   "objects": [
     {"bbox_2d": [x1, y1, x2, y2], "desc": "person"},
     {"poly": [x1, y1, ..., xn, yn], "poly_points": n, "desc": "car"}
@@ -101,39 +90,39 @@ python scripts/format_coig_cqia.py \
   "height": 480
 }
 ```
-- Pixel coordinates; not normalized.
-- `poly` is the generic N-point polygon; `poly_points` = N.
-- One image per record is expected; validator warns otherwise.
+- Pixel coordinates (not normalized); templates normalize to norm1000 at encode time.
+- Exactly one geometry per object (`bbox_2d` OR `poly`).
 
-## Sampling Strategies (scripts/sample_dataset.py)
-- `stratified` (default): preserves object frequency distribution; draws per-category targets proportional to object counts.
-- `uniform`: equal samples per category.
-- `random`: dataset-wide random without replacement.
-- `top_k`: sample from top-K most frequent categories (prints top list).
-All strategies keep unique image lines; category stats printed when `--stats` is set.
-
-## Validation & Tests
-- `scripts/validate_jsonl.py`: checks JSON shape, bbox format, image existence (unless `--skip-image-check`). **Polygon objects are not yet validated** because the script requires `bbox_2d`; use bbox mode or add a custom check for polygons.
-- Test suite (no images needed): `cd public_data && conda run -n ms bash tests/run_tests.sh`. It exercises annotation loading, bbox conversion, polygon extraction, and format compliance.
-- Test-mode validation inside `convert_lvis.py` is lightweight and may report JSON errors because of a double-parse bug; rely on `validate_jsonl.py` for ground truth.
-
-## Training Integration (example)
-```yaml
-custom:
-  train_jsonl: ./public_data/lvis/processed/samples/train_5k_stratified.jsonl
-  val_jsonl:   ./public_data/lvis/processed/val.jsonl
-  emit_norm: norm1000
-  images_per_user_turn: 1
+## Validation
+### Validator CLI
+`public_data/scripts/validate_jsonl.py` validates the contract for both `bbox_2d` and `poly`:
+```bash
+conda run -n ms python public_data/scripts/validate_jsonl.py public_data/<ds>/raw/train.jsonl
+conda run -n ms python public_data/scripts/validate_jsonl.py public_data/<ds>/<preset>/train.coord.jsonl --skip-image-check
 ```
-- Templates in Qwen3-VL convert pixel coords to `norm1000`.
-- For multi-dataset fusion, see `openspec/changes/update-geometry-poly-fusion/design.md`.
 
-## Dataset Facts
-- LVIS v1.0: 1203 categories (long-tail: frequent/common/rare), ~100k train images, ~20k val, ~1.27M annotations.
-- Polygons are common and detailed (many 10-40 point contours); converter accepts any N >= 3.
+Behavior:
+- Enforces `images[0]` is a relative path (errors on absolute paths).
+- Validates geometry values are numeric OR coord tokens (`<|coord_k|>` with k in 0..999).
+- Malformed/out-of-range coord tokens are reported as validation errors (the validator must not crash).
+- Rejects legacy/unsupported geometry keys (`bbox`, `polygon`, `line`, `line_points`).
+
+### Runner Validation
+`./public_data/run.sh <ds> validate ...` runs the validator for raw and/or preset artifacts and (best-effort) runs `scripts/inspect_chat_template.py` on a coord-token JSONL sample.
+
+## Tests
+LVIS converter tests (no images required):
+```bash
+conda run -n ms bash public_data/tests/run_tests.sh
+```
+
+## Extra Utilities
+- COIG-CQIA (ModelScope) downloader: `public_data/scripts/download_coig_cqia.py`
+- JSONL formatting: `public_data/scripts/format_coig_cqia.py`
+- Sampling: `public_data/scripts/sample_dataset.py`
+- Merging JSONLs: `public_data/scripts/merge_jsonl.py` (rewrites relative image paths to keep them resolvable)
 
 ## Troubleshooting
-- Missing images: ensure `lvis/raw/images/train2017` and `val2017` exist (copy from your COCO install if needed).
-- Slow conversion: use `--max_samples` or `--test` first.
-- Validator failures on polygons: run bbox mode or add a temporary bbox-only pass; polygon validation is a TODO.
-- Disk pressure: sample down with `sample_dataset.py` before training.
+- If `validate` fails on missing images, re-run with `--skip-image-check` to validate structure first.
+- If `all` fails because `scripts/inspect_chat_template.py` cannot run (no cached model), it will warn+skip; the JSONL contract validation still runs.
+- Disk pressure: use `public_data/scripts/sample_dataset.py` to produce smaller JSONLs before training.

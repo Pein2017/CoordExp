@@ -9,6 +9,23 @@ Visual Genome is supported via a downloader + converter script that follows the 
 All commands should be run from the repo root:
 `/data/home/xiaoyan/AIteam/data/CoordExp`
 
+### Preferred: unified runner (one command)
+
+The unified public-data runner is the recommended entrypoint:
+
+```bash
+./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
+```
+
+For a smoke run that stops downloads after 300 seconds:
+
+```bash
+./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0 --max-seconds 300
+```
+
+Tip: `all` forwards passthrough args after `--` only to dataset-specific steps (download/convert). If you need to tune
+shared preprocessing options (e.g., `--image-factor`, `--max-pixels`), run `rescale`/`coord` separately.
+
 ### 0) (Optional) Network proxy
 
 If you need a proxy for HuggingFace access, export it in your shell before running:
@@ -51,7 +68,7 @@ Example:
 PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
   --input-jsonl public_data/vg/raw/train.jsonl \
   --output-jsonl public_data/vg/rescale_32_768_bbox/train.jsonl \
-  --output-images public_data/vg/rescale_32_768_bbox/images \
+  --output-images public_data/vg/rescale_32_768_bbox \
   --image-factor 32 \
   --max-pixels $((32*32*768)) \
   --min-pixels $((32*32*4)) \
