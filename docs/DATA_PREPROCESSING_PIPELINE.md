@@ -116,9 +116,10 @@ Outputs:
 
 ## Handoff to training
 - Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
-- For LVIS, we typically train on the **filtered** JSONLs:
-  - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
-  - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
+- For LVIS, pick a dataset-fixed variant that matches your ablation goal:
+  - Geometry ablations: use `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh` outputs under `public_data/lvis/`.
+  - Sequence-length control: apply a simple record-level `max_objects` cap (e.g., 60).
+  - Optional: apply low-diversity filtering (`filter_low_diversity_images.py`) if you want to drop dense repetitive scenes.
 - Multi-dataset training:
   - Preferred: merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`).
   - Optional (legacy/experimental): set `custom.fusion_config` to a fusion YAML/JSON (see `docs/data/FUSION_DATASET.md`).
