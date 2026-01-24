@@ -75,6 +75,22 @@ Existing plugins:
 
 Tip: standard proxy env vars like `http_proxy`/`https_proxy` are still honored by underlying tools (wget/huggingface), but they are not part of the runner/plugin *contract*.
 
+## LVIS Geometry Ablations (BBox-only vs Poly-prefer)
+In addition to the unified runner, we maintain **dataset-fixed** LVIS exports for
+geometry-format ablations:
+- `bbox_only`: every instance emits `bbox_2d`
+- `poly_prefer_semantic`: prefer `poly` (single segment) when feasible; fallback to `bbox_2d`
+  when the visible-mask polygon is semantically unreliable (occlusion edge cases) or a capped poly
+  cannot be formed.
+
+Reproducer script:
+```bash
+bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
+```
+
+Details, rationale, and output paths:
+- `public_data/lvis/README.md`
+
 ## JSONL Contract (Produced Here)
 See `docs/DATA_JSONL_CONTRACT.md` for the authoritative schema.
 

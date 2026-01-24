@@ -7,10 +7,10 @@
 # - a few visualization grids for typical failure modes (seg vs hull vs bbox)
 #
 # Usage (from repo root):
-#   bash temp/run_lvis_semantic_pipeline.sh
+#   bash public_data/scripts/export_lvis_semantic_guard_mix_max60.sh
 #
 # Or in tmux:
-#   tmux new -s lvis_semantic 'bash temp/run_lvis_semantic_pipeline.sh'
+#   tmux new -s lvis_semantic 'bash public_data/scripts/export_lvis_semantic_guard_mix_max60.sh'
 
 set -euo pipefail
 
