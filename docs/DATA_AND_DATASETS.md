@@ -130,9 +130,11 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 - **Public datasets (`public_data/`)**:
   - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
   - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. **Legacy toggle**: `--poly-max-points N` can downgrade very high-vertex polygons to `bbox_2d`, but it is disabled by default and **not used by training** (we rely on sequence-length limits + dataset-level filtering instead).
-  - For LVIS training, we typically use the **filtered** JSONLs to remove dense/low-diversity images (see `docs/DATA_PREPROCESSING_PIPELINE.md`):
-    - `public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl`
-    - `public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl`
+  - For LVIS, we maintain dataset-fixed geometry exports for ablations:
+    - `bbox_only` (every instance emits `bbox_2d`)
+    - `poly_prefer_semantic` (prefer a capped single poly; fallback-to-bbox for semantic edge cases)
+    See `public_data/lvis/README.md` and `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh`.
+  - For sequence-length control, prefer transparent record-level caps like `max_objects=60` (see `public_data/scripts/filter_jsonl_max_objects.py` and `docs/DATA_PREPROCESSING_PIPELINE.md`). Low-diversity filtering remains optional.
 - **Visualization**:
   - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
 - **Chat template inspection**:

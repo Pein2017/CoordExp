@@ -21,7 +21,7 @@ For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other data
 
 ## Smart resize (budget + grid)
 ```bash
-PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \
+PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
   --input-jsonl path/to/raw/train.jsonl \
   --output-jsonl path/to/out/train.jsonl \
   --output-images path/to/out \
@@ -37,7 +37,7 @@ PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jso
 
 ## Tiny subset (smoke)
 ```bash
-PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/sample_dataset.py \
+PYTHONPATH=. conda run -n ms python public_data/scripts/sample_dataset.py \
   --input path/to/out/train.jsonl \
   --output path/to/out/train_tiny.jsonl \
   --num_samples 256 \
@@ -47,7 +47,7 @@ Use `--strategy stratified` for long-tail sets like LVIS.
 
 ## Coord-token conversion (strict 0–999)
 ```bash
-PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/convert_to_coord_tokens.py \
+PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
   --input path/to/out/train.jsonl \
   --output path/to/out/train.coord.jsonl
 ```
@@ -55,16 +55,16 @@ PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/convert_to_
 - Repeat for `val.jsonl` and tiny splits.
 - Train with `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`.
 
-## Image-level filtering (recommended for LVIS)
+## Image-level filtering (optional for LVIS)
 
-Some datasets (notably LVIS) contain images with **very high instance counts** but **low semantic diversity** (e.g., hundreds of near-identical fruits). These samples can dominate the GT token budget and reduce training signal.
+Some datasets (notably LVIS) contain images with very high instance counts but low semantic diversity (e.g., many near-identical fruits). These samples can dominate the GT token budget and reduce training signal.
 
-CoordExp's default policy is to filter these at the **record/image level** (never drop individual objects) using:
+CoordExp supports record-level filtering (never drop individual objects) using:
 - `public_data/scripts/filter_low_diversity_images.py`
 
 Example (coord-token JSONL):
 ```bash
-PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/filter_low_diversity_images.py \
+PYTHONPATH=. conda run -n ms python public_data/scripts/filter_low_diversity_images.py \
   --input  public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl \
   --output public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl \
   --hard_max_objects 101 \
@@ -75,6 +75,24 @@ PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/filter_low_
 ```
 - Repeat for val.
 - Numeric (no coord tokens): run the same script on `train.jsonl` / `val.jsonl` to produce `*.filtered_max100_dense50_u3_t095.jsonl`.
+
+## Object-count cap (recommended)
+If you want a simple, transparent control over sequence length, cap objects per image:
+```bash
+PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
+  --input  public_data/lvis/<preset>/train.raw.jsonl \
+  --output public_data/lvis/<preset>/train.max60.raw.jsonl \
+  --max-objects 60
+```
+This is the strategy used by the current LVIS geometry ablations under `public_data/lvis/`.
+
+## LVIS geometry ablations (bbox-only vs poly-prefer semantic)
+For dataset-fixed geometry experiments, use:
+```bash
+bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
+```
+This exports both `bbox_only` and `poly_prefer_semantic` (fallback-to-bbox) train/val JSONLs.
+See `public_data/lvis/README.md` for details and output paths.
 
 ## One-shot wrapper
 `public_data/scripts/pipeline_rescale_tokenize.sh` runs resize → tiny → coord-token in one go. Configure via env vars:

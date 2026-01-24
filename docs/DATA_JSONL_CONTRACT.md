@@ -30,7 +30,11 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - Coordinates can be pixel-space numbers or pre-tokenized `<|coord_k|>` values (0–999). Width/height must be present so pixel values can be reconstructed for losses.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
-- Polygon vertices are canonicalized offline: duplicate closing points are removed, vertices are ordered clockwise around the centroid, and the starting vertex is the top-most (then left-most) point. This prevents self-crossing orderings across converters and visualization tools.
+- Polygon vertices should be canonicalized offline for determinism:
+  - drop duplicated closing point if present
+  - order vertices clockwise around the centroid (angle sort)
+  - rotate so the top-most (then left-most) vertex is first
+  This matches the public-data converters (e.g., `public_data/scripts/convert_to_coord_tokens.py`) and the prompt spec.
 - Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
 - **Coord-token mode (opt-in)**: When `custom.coord_tokens.enabled` is true, geometry may be pre-quantized as `<|coord_k|>` tokens (0–999). Set `custom.coord_tokens.skip_bbox_norm: true` to avoid double normalization when feeding tokenized records.
 

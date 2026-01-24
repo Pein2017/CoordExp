@@ -33,7 +33,7 @@ Script
   - Pixel → norm ints and tokens in one pass: `--output-norm ... --output-tokens ...`
   - Already-normalized ints/tokens → tokens only: `--assume-normalized --output-tokens ...`
   - Geometry keys default: `bbox_2d poly line`
-  - Clamps to [0,width-1]/[0,height-1], rounds to [0,999]; validates bounds.
+  - Strict: raises on out-of-range / malformed coords (no clamping); rounds to [0,999] when valid.
 
 Training config alignment
 - Numeric JSONL (norm1000 ints): set `custom.emit_norm: none`, `coord_tokens.enabled: false`.
