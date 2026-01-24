@@ -23,8 +23,14 @@ the visible mask polygon can be a tiny fragment that does not represent the "sem
 To prioritize semantic correctness, we support an optional rule-based override that forces bbox for such
 edge cases based on cheap area-derived proxies (fill ratio, hull IoU, multipart-ness).
 
-Outputs pixel-space coords on *smart-resized* images, matching the existing
-`public_data/lvis/rescale_32_768_poly_20/images/` layout (flat images/ dir).
+Outputs pixel-space coords on *smart-resized* images. In practice, for LVIS/COCO2017,
+all images are already within the default max-pixels budget used by `smart_resize`,
+so this is typically a no-op and you can point `--images-dir` directly at the raw
+COCO2017 directory structure (contains `train2017/` and `val2017/`).
+
+`--images-dir` supports two common layouts:
+- Flat directory (legacy): `.../images/000000391895.jpg`
+- COCO2017 structure: `.../images/train2017/000000391895.jpg` and `.../images/val2017/...`
 
 Geometry policies (single geometry per instance)
 ------------------------------------------------
@@ -34,12 +40,12 @@ This script supports multiple geometry output policies via `--geometry-policy`:
   for semantic-guard reasons or when a cap-respecting poly cannot be formed.
 - bbox_only: always output bbox_2d (ignores segmentation).
 
-Example (val, cap=20):
+Example (val, cap=20; COCO2017 layout):
   PYTHONPATH=. conda run -n ms python \\
     public_data/scripts/build_lvis_hull_mix.py \\
     --lvis-json public_data/lvis/raw/annotations/lvis_v1_val.json \\
-    --images-dir public_data/lvis/rescale_32_768_poly_20/images \\
-    --output-jsonl public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.raw.jsonl \\
+    --images-dir public_data/lvis/raw/images \\
+    --output-jsonl tmp/val.mix_hull_cap20.raw.jsonl \\
     --poly-cap 20 \\
     --lambda-iou-per-extra-point 0.01 \\
     --drop-min-objects 50 --drop-max-unique 3 --drop-min-top1-ratio 0.95
@@ -325,7 +331,11 @@ def parse_args() -> argparse.Namespace:
         "--images-dir",
         type=Path,
         required=True,
-        help="Directory containing resized images (flat), e.g. public_data/lvis/rescale_32_768_poly_20/images",
+        help=(
+            "Directory containing images. Supports either a flat images/ directory "
+            "(.../images/000000391895.jpg) or COCO2017 layout "
+            "(.../images/train2017/000000391895.jpg)."
+        ),
     )
     ap.add_argument("--output-jsonl", type=Path, required=True, help="Output JSONL (pixel coords on resized images)")
     ap.add_argument(
@@ -486,13 +496,32 @@ def main() -> None:
             info = image_id_to_info.get(int(image_id))
             if not info:
                 continue
-            # Images are flattened to basename in the resized images directory.
-            basename = os.path.basename(str(info["file_name"]))
-            resized_path = (args.images_dir / basename).resolve()
-            if not resized_path.exists():
+            file_name = str(info["file_name"])
+            basename = os.path.basename(file_name)
+
+            # Prefer the COCO-style `train2017/xxx.jpg` path when present. Fall back to
+            # a legacy "flat images/" layout keyed by basename.
+            #
+            # This keeps the script usable in both:
+            # - public_data/lvis/raw/images/{train2017,val2017}/...
+            # - public_data/lvis/rescale_32_768_*/images/*.jpg
+            candidate_paths = [
+                (args.images_dir / file_name),
+                (args.images_dir / basename),
+            ]
+            resized_path = None
+            for p in candidate_paths:
+                if p.exists():
+                    resized_path = p
+                    break
+
+            if resized_path is None:
                 stats.images_missing_resized += 1
                 continue
-            image_rel = os.path.relpath(str(resized_path), str(out_path.parent.resolve()))
+            # Important: do NOT resolve symlinks here. We want JSONLs to keep stable
+            # `images/...`-style paths when `args.images_dir` is a symlink within the
+            # dataset directory (common in our reproducible exports).
+            image_rel = os.path.relpath(str(resized_path), str(out_path.parent))
 
             orig_w = int(info["width"])
             orig_h = int(info["height"])

@@ -20,7 +20,8 @@ cd "${ROOT}"
 
 mkdir -p output
 
-IMG_DIR="public_data/lvis/rescale_32_768_poly_20/images"
+RAW_LVIS_JSON_DIR="public_data/lvis/raw/annotations"
+RAW_IMG_DIR="public_data/lvis/raw/images"
 MODEL_CKPT="model_cache/Qwen3-VL-8B-Instruct-coordexp"
 
 # Semantic guard thresholds (Balanced). Only used by poly-prefer policy.
@@ -45,11 +46,34 @@ exec > >(tee -a "${LOG}") 2>&1
 echo "[run_lvis_bbox_poly_prefer_pipeline] start: $(date)"
 echo "[run_lvis_bbox_poly_prefer_pipeline] log:   ${LOG}"
 
+if [ ! -f "${RAW_LVIS_JSON_DIR}/lvis_v1_train.json" ] || [ ! -f "${RAW_LVIS_JSON_DIR}/lvis_v1_val.json" ]; then
+  echo "[error] Missing LVIS annotation JSONs under: ${RAW_LVIS_JSON_DIR}"
+  echo "        Expected: lvis_v1_train.json and lvis_v1_val.json"
+  echo ""
+  echo "To download+extract LVIS/COCO2017 raw data, run (from repo root):"
+  echo "  ./public_data/run.sh lvis download"
+  exit 2
+fi
+if [ ! -d "${RAW_IMG_DIR}/train2017" ] || [ ! -d "${RAW_IMG_DIR}/val2017" ]; then
+  echo "[error] Missing COCO2017 image dirs under: ${RAW_IMG_DIR}"
+  echo "        Expected: train2017/ and val2017/"
+  echo ""
+  echo "To download+extract LVIS/COCO2017 raw data, run (from repo root):"
+  echo "  ./public_data/run.sh lvis download"
+  exit 2
+fi
+
 ensure_images_link() {
   local out_dir="$1"
   mkdir -p "${out_dir}"
-  if [ ! -e "${out_dir}/images" ]; then
-    ln -s ../rescale_32_768_poly_20/images "${out_dir}/images"
+  # Keep datasets self-contained: JSONLs reference `images/...` within the dataset dir.
+  # Point at the downloaded raw COCO2017 tree containing train2017/ and val2017/.
+  if [ -L "${out_dir}/images" ]; then
+    ln -sfn ../raw/images "${out_dir}/images"
+  elif [ ! -e "${out_dir}/images" ]; then
+    ln -s ../raw/images "${out_dir}/images"
+  else
+    echo "[warn] ${out_dir}/images exists and is not a symlink; keeping as-is"
   fi
 }
 
@@ -103,7 +127,7 @@ build_bbox_only_split() {
   local out_dir="public_data/lvis/rescale_32_768_bbox_max60"
   ensure_images_link "${out_dir}"
 
-  local lvis_json="public_data/lvis/raw/annotations/lvis_v1_${split}.json"
+  local lvis_json="${RAW_LVIS_JSON_DIR}/lvis_v1_${split}.json"
   local raw_out="${out_dir}/${split}.bbox_only.raw.jsonl"
   local build_stats="${out_dir}/${split}.bbox_only.build_stats.json"
   local max60_raw="${out_dir}/${split}.bbox_only.max60.raw.jsonl"
@@ -116,7 +140,7 @@ build_bbox_only_split() {
     echo "[build:bbox_only] ${split}"
     PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
-      --images-dir "${IMG_DIR}" \
+      --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
       --geometry-policy bbox_only \
       --poly-cap 20 \
@@ -146,7 +170,7 @@ build_poly_prefer_split() {
   local out_dir="public_data/lvis/rescale_32_768_poly_prefer_semantic_max60"
   ensure_images_link "${out_dir}"
 
-  local lvis_json="public_data/lvis/raw/annotations/lvis_v1_${split}.json"
+  local lvis_json="${RAW_LVIS_JSON_DIR}/lvis_v1_${split}.json"
   local raw_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.raw.jsonl"
   local build_stats="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.build_stats.json"
   local max60_raw="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.raw.jsonl"
@@ -159,7 +183,7 @@ build_poly_prefer_split() {
     echo "[build:poly_prefer] ${split} cap=${cap}"
     PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
-      --images-dir "${IMG_DIR}" \
+      --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
       --geometry-policy poly_prefer_semantic \
       --poly-cap "${cap}" \
@@ -198,26 +222,30 @@ build_poly_prefer_split val 20
 
 echo ""
 echo "== Token length sanity (GT assistant, coord jsonl) =="
-PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
-  --train_jsonl public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl \
-  --val_jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
-  --checkpoint "${MODEL_CKPT}" \
-  --batch_size 128 --topk 10 \
-  --save_json public_data/lvis/rescale_32_768_bbox_max60/length.bbox_only.max60.assistant_tokens.json
+if [ -d "${MODEL_CKPT}" ]; then
+  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+    --train_jsonl public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl \
+    --val_jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
+    --checkpoint "${MODEL_CKPT}" \
+    --batch_size 128 --topk 10 \
+    --save_json public_data/lvis/rescale_32_768_bbox_max60/length.bbox_only.max60.assistant_tokens.json
 
-PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
-  --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap10.max60.coord.jsonl \
-  --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap10.max60.coord.jsonl \
-  --checkpoint "${MODEL_CKPT}" \
-  --batch_size 128 --topk 10 \
-  --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap10.max60.assistant_tokens.json
+  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+    --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap10.max60.coord.jsonl \
+    --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap10.max60.coord.jsonl \
+    --checkpoint "${MODEL_CKPT}" \
+    --batch_size 128 --topk 10 \
+    --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap10.max60.assistant_tokens.json
 
-PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
-  --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl \
-  --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
-  --checkpoint "${MODEL_CKPT}" \
-  --batch_size 128 --topk 10 \
-  --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap20.max60.assistant_tokens.json
+  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+    --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl \
+    --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
+    --checkpoint "${MODEL_CKPT}" \
+    --batch_size 128 --topk 10 \
+    --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap20.max60.assistant_tokens.json
+else
+  echo "[warn] skip token-length sanity: missing checkpoint dir: ${MODEL_CKPT}"
+fi
 
 echo ""
 echo "[run_lvis_bbox_poly_prefer_pipeline] done: $(date)"

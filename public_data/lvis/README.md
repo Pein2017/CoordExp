@@ -46,8 +46,33 @@ extra point). It is driven by the ability to keep polygons semantically correct.
 
 ## Export scripts and outputs
 
-The recommended reproducer (train+val, max60 objects/image, cap10 + cap20, plus
-token-length sanity) is:
+### From scratch on a new machine / cluster node
+
+1) Download + extract LVIS annotations and COCO2017 images:
+```bash
+./public_data/run.sh lvis download
+```
+
+This writes to:
+- `public_data/lvis/raw/annotations/` (LVIS v1 train/val JSON)
+- `public_data/lvis/raw/images/` (`train2017/` and `val2017/`)
+
+2) Export the two geometry modes (train+val, max60 objects/image, cap10 + cap20):
+```bash
+bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
+```
+
+Alternatively, a one-command reproducer (downloads only if missing) is:
+```bash
+bash public_data/lvis/reproduce_max60_exports.sh
+```
+
+Notes:
+- The export script creates `images -> ../raw/images` symlinks inside each output dataset directory,
+  so the JSONLs reference `images/train2017/...` and `images/val2017/...` and stay relocatable.
+- Token-length sanity is best-effort: it runs only if `model_cache/Qwen3-VL-8B-Instruct-coordexp` exists.
+
+### Outputs
 ```bash
 bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
 ```
@@ -80,4 +105,3 @@ Each export produces 3 JSONLs:
 
 These are **offline-normalized** to avoid runtime scaling. See
 `public_data/scripts/README.md` for normalization details.
-

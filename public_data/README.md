@@ -85,6 +85,7 @@ geometry-format ablations:
 
 Reproducer script:
 ```bash
+# (On a fresh machine/node, run `./public_data/run.sh lvis download` first.)
 bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
 ```
 

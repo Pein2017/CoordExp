@@ -20,9 +20,27 @@ cd "${ROOT}"
 OUT="public_data/lvis/rescale_32_768_mix_hull_semantic_max60"
 mkdir -p "${OUT}" "output"
 
-# Keep image dir consistent with existing LVIS rescale outputs.
-if [ ! -e "${OUT}/images" ]; then
-  ln -s ../rescale_32_768_poly_20/images "${OUT}/images"
+RAW_ANN_DIR="public_data/lvis/raw/annotations"
+RAW_IMG_DIR="public_data/lvis/raw/images"
+
+if [ ! -f "${RAW_ANN_DIR}/lvis_v1_train.json" ] || [ ! -f "${RAW_ANN_DIR}/lvis_v1_val.json" ]; then
+  echo "[error] Missing LVIS annotation JSONs under: ${RAW_ANN_DIR}"
+  echo "        Run: ./public_data/run.sh lvis download"
+  exit 2
+fi
+if [ ! -d "${RAW_IMG_DIR}/train2017" ] || [ ! -d "${RAW_IMG_DIR}/val2017" ]; then
+  echo "[error] Missing COCO2017 image dirs under: ${RAW_IMG_DIR}"
+  echo "        Run: ./public_data/run.sh lvis download"
+  exit 2
+fi
+
+# Keep datasets self-contained: JSONLs reference `images/...` within the dataset dir.
+if [ -L "${OUT}/images" ]; then
+  ln -sfn ../raw/images "${OUT}/images"
+elif [ ! -e "${OUT}/images" ]; then
+  ln -s ../raw/images "${OUT}/images"
+else
+  echo "[warn] ${OUT}/images exists and is not a symlink; keeping as-is"
 fi
 
 LOG="output/tmux_lvis_semantic_$(date +%Y%m%d_%H%M%S).log"
@@ -33,7 +51,7 @@ echo "[run_lvis_semantic_pipeline] out:   ${OUT}"
 echo "[run_lvis_semantic_pipeline] log:   ${LOG}"
 
 COMMON_ARGS=( \
-  --images-dir public_data/lvis/rescale_32_768_poly_20/images \
+  --images-dir "${OUT}/images" \
   --lambda-iou-per-extra-point 0.01 \
   --force-bbox-hull-iou 0.25 \
   --force-bbox-fill 0.06 \
@@ -49,7 +67,7 @@ COMMON_ARGS=( \
 build_split() {
   local split="$1"  # train|val
   local cap="$2"    # 10|20
-  local lvis_json="public_data/lvis/raw/annotations/lvis_v1_${split}.json"
+  local lvis_json="${RAW_ANN_DIR}/lvis_v1_${split}.json"
   local raw_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.raw.jsonl"
   local build_stats="${OUT}/${split}.mix_hull_semantic_cap${cap}.build_stats.json"
   local max60_raw="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.raw.jsonl"
