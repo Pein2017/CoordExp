@@ -1,4 +1,0 @@
-extends: stage2_rollout_matching_ckpt3106.yaml
-
-# Deprecated: this file used to provide a monitoring-only overlay for ckpt3106.
-# The canonical entrypoint is now `configs/dlora/stage2_rollout_matching_ckpt3106.yaml`.
