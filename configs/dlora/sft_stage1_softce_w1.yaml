@@ -6,20 +6,22 @@ extends: sft_base.yaml
 global_max_length: 12000
 
 model:
-  model: output/12-24/coord_loss-merged/ckpt-3106
+  # Base checkpoint (expanded vocab with <|coord_*|> tokens)
+  model: model_cache/Qwen3-VL-4B-Instruct-coordexp
 
 training:
-  output_dir: ./output/1-20/stage1_softce_w1
-  run_name: stage1-softce_w1-LRs-2e-5_1e-5_4e-5
-  logging_dir: ./tb/1-20/stage1_softce_w1
+  output_dir: ./output/1-24/stage_1/poly_prefer_semantic_max60
+  run_name: epoch_4-softce_w1-LRs-2e-4_1e-4_4e-4-from-base-4B
+  logging_dir: ./tb/1-24/stage_1/poly_prefer_semantic_max60
   num_train_epochs: 4
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   effective_batch_size: 32
-  optimizer: multimodal
-  learning_rate: 2.0e-5
-  vit_lr: 1.0e-5
-  aligner_lr: 4.0e-5
+  # Use the custom optimizer variant so coord_offset can have its own lr buckets.
+  optimizer: multimodal_coord_offset
+  learning_rate: 2.0e-4
+  vit_lr: 1.0e-4
+  aligner_lr: 4.0e-4
   packing: true
   packing_buffer: 512
   packing_min_fill_ratio: 0.7
@@ -28,15 +30,24 @@ training:
   eval_steps: 40
   save_steps: 200
   save_total_limit: 2
-  save_delay_steps: 400
+  save_delay_steps: 800
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl
   val_sample_limit: 1000
   val_sample_with_replacement: false
   token_type_metrics:
     enabled: true
+  # Train only the 1000 newly added coord-token IDs via a lightweight offset adapter
+  # (keeps the adapter small vs saving full embed/lm_head matrices).
+  coord_offset:
+    enabled: true
+    ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
+    # Optional: override per-bucket lrs; defaults to training.learning_rate when omitted.
+    embed_lr: 1.0e-4
+    head_lr: 1.0e-4
+    weight_decay: 0.0
   coord_soft_ce_w1:
     enabled: true
     # Loss composition at coord positions: soft_ce_weight * softCE + w1_weight * W1(CDF)
