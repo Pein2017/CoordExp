@@ -52,8 +52,11 @@ VG_OBJECTS_URLS = {
     "1.2.0": f"{VG_BASE}/objects_v1_2.json.zip",
 }
 VG_REGION_DESCRIPTIONS_URL = f"{VG_BASE}/region_descriptions.json.zip"
+
+# Updated image URLs - Stanford sources confirmed working
 VG_IMAGE_ZIPS = {
     # The zip names are historical; the extracted folders are VG_100K and VG_100K_2.
+    # Using Stanford URLs which are confirmed working
     "images.zip": "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
     "images2.zip": "https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip",
 }
@@ -72,7 +75,7 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _run(cmd: List[str], *, timeout_s: Optional[int] = None) -> int:
+def _run(cmd: list[str], *, timeout_s: int | None = None) -> int:
     """Run a subprocess command.
 
     Returns the exit code.
@@ -90,42 +93,67 @@ def _download_with_wget(
     url: str,
     out_path: Path,
     *,
-    timeout_s: Optional[int],
+    timeout_s: int | None,
     no_proxy: bool,
+    max_retries: int = 3,
 ) -> bool:
-    """Download a URL to out_path with resume support.
+    """Download a URL to out_path with resume support and retry logic.
 
     We intentionally keep partial files on timeout so a future run with
     `--continue` can resume.
     """
     _ensure_dir(out_path.parent)
 
-    cmd = [
-        "wget",
-        "--continue",
-        "--progress=bar:force",
-        "--show-progress",
-        *(["--no-proxy"] if no_proxy else []),
-        url,
-        "-O",
-        str(out_path),
-    ]
-    rc = _run(cmd, timeout_s=timeout_s)
-    if rc == 124:
-        print(f"[timeout] wget exceeded {timeout_s}s: {url}")
-        return False
-    if rc != 0:
-        print(f"[error] wget failed with code {rc}: {url}")
-        return False
-    if not out_path.exists() or out_path.stat().st_size == 0:
-        print(f"[error] download failed: {url}")
-        return False
-    return True
+    for attempt in range(max_retries):
+        if attempt > 0:
+            print(f"[retry] Attempt {attempt + 1}/{max_retries} for: {url}")
+
+        cmd = [
+            "wget",
+            "--continue",
+            "--progress=bar:force",
+            "--show-progress",
+            "--tries=3",
+            *(["--no-proxy"] if no_proxy else []),
+            url,
+            "-O",
+            str(out_path),
+        ]
+        rc = _run(cmd, timeout_s=timeout_s)
+        if rc == 124:
+            print(f"[timeout] wget exceeded {timeout_s}s: {url}")
+            if attempt == max_retries - 1:
+                return False
+            continue
+        if rc != 0:
+            print(f"[error] wget failed with code {rc}: {url}")
+            if attempt == max_retries - 1:
+                return False
+            continue
+        if not out_path.exists() or out_path.stat().st_size == 0:
+            print(f"[error] download failed (empty file): {url}")
+            if attempt == max_retries - 1:
+                return False
+            continue
+        # Success
+        print(f"[success] Downloaded: {url} ({out_path.stat().st_size} bytes)")
+        return True
+
+    return False
 
 
-def _unzip(zip_path: Path, out_dir: Path, *, timeout_s: Optional[int]) -> bool:
+def _unzip(zip_path: Path, out_dir: Path, *, timeout_s: int | None) -> bool:
     _ensure_dir(out_dir)
-    cmd = ["unzip", "-q", str(zip_path), "-d", str(out_dir)]
+
+    # First test the zip file integrity
+    test_cmd = ["unzip", "-t", str(zip_path)]
+    test_rc = _run(test_cmd, timeout_s=30)  # Short timeout for testing
+    if test_rc != 0:
+        print(f"[error] zip file corrupted (test failed): {zip_path}")
+        return False
+
+    # Extract the zip file
+    cmd = ["unzip", "-q", "-o", str(zip_path), "-d", str(out_dir)]
     rc = _run(cmd, timeout_s=timeout_s)
     if rc == 124:
         print(f"[timeout] unzip exceeded {timeout_s}s: {zip_path}")
@@ -133,6 +161,8 @@ def _unzip(zip_path: Path, out_dir: Path, *, timeout_s: Optional[int]) -> bool:
     if rc != 0:
         print(f"[error] unzip failed with code {rc}: {zip_path}")
         return False
+
+    print(f"[success] Extracted: {zip_path}")
     return True
 
 
@@ -745,7 +775,7 @@ def main() -> None:
 
     start = _now()
 
-    def remaining_timeout() -> Optional[int]:
+    def remaining_timeout() -> int | None:
         if args.max_seconds is None:
             return None
         elapsed = int(_now() - start)
@@ -771,6 +801,8 @@ def main() -> None:
             print("Time budget exhausted before annotation download started.")
             return
 
+        obj_zip = None
+        reg_zip = None
         if args.mode == "objects":
             obj_zip = (
                 ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
@@ -802,7 +834,7 @@ def main() -> None:
         if not _unzip(meta_zip, ann_dir, timeout_s=t):
             print("Stopped during image metadata unzip (timeout or error).")
             return
-        if args.mode == "objects":
+        if args.mode == "objects" and obj_zip is not None:
             t = remaining_timeout()
             if t == 0:
                 print("Time budget exhausted before objects unzip started.")
@@ -810,12 +842,11 @@ def main() -> None:
             if not _unzip(obj_zip, ann_dir, timeout_s=t):
                 print("Stopped during objects unzip (timeout or error).")
                 return
-        else:
+        elif args.mode != "objects" and reg_zip is not None:
             t = remaining_timeout()
             if t == 0:
                 print("Time budget exhausted before region_descriptions unzip started.")
                 return
-            reg_zip = ann_dir / "region_descriptions.json.zip"
             if not _unzip(reg_zip, ann_dir, timeout_s=t):
                 print("Stopped during region_descriptions unzip (timeout or error).")
                 return
@@ -823,30 +854,54 @@ def main() -> None:
         # 2) Image zips
         if not args.skip_images:
             print(f"Downloading images into: {img_dir}")
+            downloaded_images = False
             for fname, url in VG_IMAGE_ZIPS.items():
                 t = remaining_timeout()
                 if t == 0:
                     print("Time budget exhausted; skipping remaining image downloads.")
                     break
                 zip_path = img_dir / fname
+                print(f"Downloading: {fname} from {url}")
                 ok = _download_with_wget(
                     url, zip_path, timeout_s=t, no_proxy=bool(args.wget_no_proxy)
                 )
                 if not ok:
                     print(
-                        "Image download incomplete (timeout or error); continuing to conversion."
+                        f"[warning] {fname} download failed; skipping this image set."
                     )
-                    break
+                    continue
+
                 t = remaining_timeout()
                 if t == 0:
                     print("Time budget exhausted; skipping image unzip.")
                     break
+
+                print(f"Extracting: {fname}")
                 ok = _unzip(zip_path, img_dir, timeout_s=t)
                 if not ok:
                     print(
-                        "Image unzip incomplete (timeout or error); continuing to conversion."
+                        f"[warning] {fname} extraction failed; skipping this image set."
                     )
-                    break
+                    continue
+
+                # Verify extraction was successful by checking for expected directories
+                if fname == "images.zip" and not (img_dir / "VG_100K").exists():
+                    print(
+                        f"[warning] VG_100K directory not found after {fname} extraction"
+                    )
+                elif fname == "images2.zip" and not (img_dir / "VG_100K_2").exists():
+                    print(
+                        f"[warning] VG_100K_2 directory not found after {fname} extraction"
+                    )
+                else:
+                    downloaded_images = True
+                    print(f"[success] {fname} successfully extracted")
+
+            if not downloaded_images:
+                print("[warning] No images were successfully downloaded and extracted.")
+                print(
+                    "You may need to run the download again or use --skip-images for testing."
+                )
 
     if args.download_only:
         print("Download finished (--download-only). Skipping conversion.")
