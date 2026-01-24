@@ -35,7 +35,7 @@ This script supports multiple geometry output policies via `--geometry-policy`:
 - bbox_only: always output bbox_2d (ignores segmentation).
 
 Example (val, cap=20):
-  PYTHONPATH=. /root/miniconda3/envs/ms/bin/python \\
+  PYTHONPATH=. conda run -n ms python \\
     public_data/scripts/build_lvis_hull_mix.py \\
     --lvis-json public_data/lvis/raw/annotations/lvis_v1_val.json \\
     --images-dir public_data/lvis/rescale_32_768_poly_20/images \\
@@ -45,7 +45,7 @@ Example (val, cap=20):
     --drop-min-objects 50 --drop-max-unique 3 --drop-min-top1-ratio 0.95
 
 Then convert to coord tokens:
-  PYTHONPATH=. /root/miniconda3/envs/ms/bin/python \\
+  PYTHONPATH=. conda run -n ms python \\
     public_data/scripts/convert_to_coord_tokens.py \\
     --input public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.raw.jsonl \\
     --output-tokens public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.coord.jsonl

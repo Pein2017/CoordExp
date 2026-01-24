@@ -8,10 +8,10 @@
 # - public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/
 #
 # Usage (from repo root):
-#   bash temp/run_lvis_bbox_poly_prefer_pipeline.sh
+#   bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
 #
 # Or in tmux:
-#   tmux new -s lvis_reexport 'bash temp/run_lvis_bbox_poly_prefer_pipeline.sh'
+#   tmux new -s lvis_reexport 'bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh'
 
 set -euo pipefail
 
@@ -221,4 +221,3 @@ PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
 
 echo ""
 echo "[run_lvis_bbox_poly_prefer_pipeline] done: $(date)"
-

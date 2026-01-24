@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end LVIS pipeline: convert raw annotations -> JSONL, smart-resize images/geometry,
+# End-to-end LVIS pipeline (legacy baseline): convert raw annotations -> JSONL, smart-resize images/geometry,
 # cap polygon vertices, emit coord-token JSONLs, and create tiny subsets.
+#
+# If you want the current LVIS geometry ablations (bbox-only vs poly-prefer semantic fallback),
+# use:
+#   bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
+# and see:
+#   public_data/lvis/README.md
 #
 # Run after public_data/scripts/download_lvis.py
 # Override defaults via env vars, e.g.
