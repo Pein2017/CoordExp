@@ -1,7 +1,8 @@
 """Dataset wrapper registry for fusion configs.
 
-Legacy `bbu`/`rru` entries remain for backward compatibility with old configs,
-but the project now targets general/public detection datasets.
+Note: The `template` field in fusion configs is a lightweight typo-guard and a
+metadata hook. CoordExp v1 uses a single runtime template instance, but we keep
+template IDs to allow dataset-specific prompting policies.
 """
 
 from __future__ import annotations
@@ -248,14 +249,14 @@ def available_template_ids() -> set[str]:
 
 class TargetDatasetWrapper(DatasetWrapper):
     domain: DatasetDomain = "target"
-    template_id = "bbu_dense"
+    template_id = "bbox_only"
     supports_augmentation = True
     supports_curriculum = True
 
 
 class PublicDetectionDatasetWrapper(DatasetWrapper):
     domain: DatasetDomain = "source"
-    template_id = "aux_dense"
+    template_id = "poly_preferred"
     supports_augmentation = False
     supports_curriculum = False
     default_max_objects_per_image = DEFAULT_SOURCE_OBJECT_CAP
@@ -302,7 +303,7 @@ class GenericJsonlDatasetWrapper(DatasetWrapper):
 
     default_name = "jsonl"
     domain: DatasetDomain = "target"
-    template_id = "aux_dense"
+    template_id = "poly_preferred"
     supports_augmentation = False
     supports_curriculum = False
 

@@ -56,8 +56,8 @@ When using `extends`, dataset entries are merged by **dataset ID**:
 
 Fusion config `template:` is currently validated against the known IDs:
 
-- `aux_dense`
-- `bbu_dense`
+- `bbox_only`
+- `poly_preferred`
 
 CoordExp v1 uses a single runtime template instance; `template` is primarily a typo-guard and a compatibility hook.
 
@@ -109,7 +109,7 @@ targets:
     name: lvis
     train_jsonl: /abs/path/to/lvis_train.jsonl
     val_jsonl: /abs/path/to/lvis_val.jsonl
-    template: aux_dense
+    template: poly_preferred
     ratio: 1.0
 
 sources:  # accepted for compatibility; treated the same as targets
@@ -117,7 +117,7 @@ sources:  # accepted for compatibility; treated the same as targets
     name: vg
     train_jsonl: /abs/path/to/vg_train.jsonl
     val_jsonl: null
-    template: aux_dense
+    template: poly_preferred
     ratio: 0.2
 ```
 

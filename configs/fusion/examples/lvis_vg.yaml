@@ -10,7 +10,7 @@ targets:
     name: lvis
     train_jsonl: /abs/path/to/lvis_train.jsonl
     val_jsonl: /abs/path/to/lvis_val.jsonl
-    template: aux_dense
+    template: poly_preferred
     ratio: 1.0
 
 sources:  # accepted for compatibility; treated the same as targets
@@ -18,5 +18,5 @@ sources:  # accepted for compatibility; treated the same as targets
     name: vg
     train_jsonl: /abs/path/to/vg_train.jsonl
     val_jsonl: null
-    template: aux_dense
+    template: poly_preferred
     ratio: 0.2
