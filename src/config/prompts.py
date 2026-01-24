@@ -1,25 +1,17 @@
 """Unified English prompts for CoordExp general detection/grounding."""
 
 # Shared prior rules (kept flat for easy embedding in system prompt)
-PRIOR_RULES = (
-    "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
-    '- For occluded/blurred/cropped targets, avoid guessing; use desc="unknown" with a short reason.\n'
-    "- Use only visible evidence; never rely on external knowledge.\n"
-)
+PRIOR_RULES = "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
 
 # Ordering instructions (shared across coord modes)
-_ORDER_RULE_SORTED = (
-    "- Order objects top-to-bottom then left-to-right. Index from 1.\n"
-)
-_ORDER_RULE_RANDOM = (
-    "- Object order is unrestricted; any ordering is acceptable. Index objects consecutively starting from 1.\n"
-)
+_ORDER_RULE_SORTED = "- Order objects top-to-bottom then left-to-right. Index from 1.\n"
+_ORDER_RULE_RANDOM = "- Object order is unrestricted; any ordering is acceptable. Index objects consecutively starting from 1.\n"
 
 # Coord-token mode (model asked to emit <|coord_N|> tokens)
 _SYSTEM_PREFIX_TOKENS = (
     'You are a general-purpose object detection and grounding assistant. Output exactly one JSON object like {"object_1":{...}} with no extra text.\n'
     "- Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
-    "- If uncertain, set desc=\"unknown\" and give the reason succinctly.\n"
+    '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
     "- Geometry formatting rules:\n"
     "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
     "  * poly is a single closed polygon as an ordered list of [x, y] vertices.\n"
@@ -52,7 +44,7 @@ USER_PROMPT_RANDOM_TOKENS = (
 _SYSTEM_PREFIX_NUMERIC = (
     'You are a general-purpose object detection and grounding assistant. Output exactly one JSON object like {"object_1":{...}} with no extra text.\n'
     "- Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
-    "- If uncertain, set desc=\"unknown\" and give the reason succinctly.\n"
+    '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
     "- Geometry formatting rules:\n"
     "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
     "  * poly is a single closed polygon as an ordered list of [x, y] vertices.\n"
@@ -84,29 +76,49 @@ USER_PROMPT = USER_PROMPT_SORTED_TOKENS
 USER_PROMPT_JSON = USER_PROMPT  # legacy alias
 
 # Summary prompts remain unchanged
-SYSTEM_PROMPT_SUMMARY = (
-    "You are an assistant that writes a concise English one-sentence summary of the image contents."
-)
+SYSTEM_PROMPT_SUMMARY = "You are an assistant that writes a concise English one-sentence summary of the image contents."
 USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 
-def build_dense_system_prompt(ordering: str = "sorted", coord_mode: str = "coord_tokens") -> str:
+def build_dense_system_prompt(
+    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+) -> str:
     """Return system prompt for dense mode given ordering and coordinate representation."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if str(coord_mode).lower() == "numeric":
-        return SYSTEM_PROMPT_RANDOM_NUMERIC if ordering_key == "random" else SYSTEM_PROMPT_SORTED_NUMERIC
-    return SYSTEM_PROMPT_RANDOM_TOKENS if ordering_key == "random" else SYSTEM_PROMPT_SORTED_TOKENS
+        return (
+            SYSTEM_PROMPT_RANDOM_NUMERIC
+            if ordering_key == "random"
+            else SYSTEM_PROMPT_SORTED_NUMERIC
+        )
+    return (
+        SYSTEM_PROMPT_RANDOM_TOKENS
+        if ordering_key == "random"
+        else SYSTEM_PROMPT_SORTED_TOKENS
+    )
 
 
-def build_dense_user_prompt(ordering: str = "sorted", coord_mode: str = "coord_tokens") -> str:
+def build_dense_user_prompt(
+    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+) -> str:
     """Return user prompt for dense mode given ordering and coordinate representation."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if str(coord_mode).lower() == "numeric":
-        return USER_PROMPT_RANDOM_NUMERIC if ordering_key == "random" else USER_PROMPT_SORTED_NUMERIC
-    return USER_PROMPT_RANDOM_TOKENS if ordering_key == "random" else USER_PROMPT_SORTED_TOKENS
+        return (
+            USER_PROMPT_RANDOM_NUMERIC
+            if ordering_key == "random"
+            else USER_PROMPT_SORTED_NUMERIC
+        )
+    return (
+        USER_PROMPT_RANDOM_TOKENS
+        if ordering_key == "random"
+        else USER_PROMPT_SORTED_TOKENS
+    )
 
 
-def get_template_prompts(ordering: str = "sorted", coord_mode: str = "coord_tokens") -> tuple[str, str]:
+def get_template_prompts(
+    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode; coord_mode in {'coord_tokens','numeric'}."""
     return (
         build_dense_system_prompt(ordering=ordering, coord_mode=coord_mode),
