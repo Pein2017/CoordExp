@@ -1,0 +1,38 @@
+# LVIS 1:1 fusion for "two-mode" training:
+# - bbox-only supervision (bbox_2d only)
+# - poly-prefer supervision (prefer poly, fallback to bbox for semantic edge cases)
+#
+# Enable in training YAML:
+#   custom:
+#     fusion_config: configs/fusion/lvis_bbox_only_vs_poly_prefer_1to1.yaml
+#
+# Notes:
+# - Ratios are applied as: quota_i = round(len(pool_i) * ratio_i) per epoch.
+#   If both pools are the same size, ratio=1.0 + 1.0 gives an exact 1:1 mix.
+# - You can override `user_prompt` / `system_prompt` per dataset entry to enforce
+#   different output formats (bbox-only vs poly-prefer).
+
+targets:
+  - dataset: lvis
+    name: lvis_bbox_only_max60
+    template: aux_dense
+    ratio: 1.0
+    train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+    val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+    user_prompt: >-
+      Detect and list every object in the image, ordered top-to-bottom then left-to-right.
+      Return a single JSON object where each entry has desc plus bbox_2d ONLY (no poly),
+      using `<|coord_N|>` tokens (0–999).
+
+  - dataset: lvis
+    name: lvis_poly_prefer_semantic_cap20_max60
+    template: aux_dense
+    ratio: 1.0
+    train_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl
+    val_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl
+    user_prompt: >-
+      Detect and list every object in the image, ordered top-to-bottom then left-to-right.
+      Prefer poly for each object (single polygon, <=20 vertices). If the polygon is unreliable
+      (e.g., heavily occluded / only a tiny visible fragment), output bbox_2d instead.
+      Use `<|coord_N|>` tokens (0–999).
+
