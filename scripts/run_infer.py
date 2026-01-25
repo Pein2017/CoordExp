@@ -61,10 +61,7 @@ def _detect_mode_from_gt(jsonl_path: str, *, sample_size: int = 128) -> Tuple[st
                 objs = rec.get("objects") or rec.get("gt") or []
                 for obj in objs:
                     pts = flatten_points(
-                        obj.get("bbox_2d")
-                        or obj.get("poly")
-                        or obj.get("points")
-                        or []
+                        obj.get("bbox_2d") or obj.get("poly") or obj.get("points") or []
                     )
                     if pts is None or len(pts) == 0:
                         continue
@@ -103,7 +100,7 @@ def parse_args() -> tuple[InferenceConfig, GenerationConfig, Optional[str]]:
     )
     ap.add_argument("--device", default="cuda:0", help="Device for inference")
     ap.add_argument(
-        "--limit", type=int, default=0, help="Max samples to process (0 = all)"
+        "--limit", type=int, default=10, help="Max samples to process (0 = all)"
     )
     ap.add_argument(
         "--detect-samples",
@@ -124,9 +121,9 @@ def parse_args() -> tuple[InferenceConfig, GenerationConfig, Optional[str]]:
     )
 
     # Generation flags (CLI only)
-    ap.add_argument("--temperature", type=float, default=0.01)
+    ap.add_argument("--temperature", type=float, default=0.1)
     ap.add_argument("--top_p", type=float, default=0.95)
-    ap.add_argument("--max_new_tokens", type=int, default=1024)
+    ap.add_argument("--max_new_tokens", type=int, default=2048)
     ap.add_argument("--repetition_penalty", type=float, default=1.05)
     ap.add_argument("--seed", type=int, default=None)
 

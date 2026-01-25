@@ -257,6 +257,7 @@ class ConfigLoader:
             "packing_drop_last",
             "packing_allow_single_long",
             "eval_packing",
+            "packing_avg_samples",
         }
         packing_overrides = {k: training_section.pop(k) for k in list(training_section.keys()) if k in _packing_keys}
 

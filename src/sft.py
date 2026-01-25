@@ -614,16 +614,43 @@ def main():
                 grad_acc = getattr(train_args, "gradient_accumulation_steps", 1) or 1
                 _, _, world_size, _ = get_dist_setting()
                 world_size = max(world_size, 1)
-                est = math.ceil(base_dataset_len / (grad_acc * world_size))
-                train_args.max_steps = est
+                # Heuristic: estimate average samples per emitted pack to align optimizer steps with requested epochs.
+                # Defaults to ~8 samples/pack (observed in packing guide); override via training.packing_avg_samples.
+                try:
+                    training_map = getattr(training_config, "training", {}) or {}
+                    avg_pack_samples = float(
+                        training_map.get("packing_avg_samples", 8.0)
+                    )
+                except Exception:
+                    avg_pack_samples = 8.0
+                avg_pack_samples = max(avg_pack_samples, 1e-6)
+                packs_per_rank_est = math.ceil(
+                    base_dataset_len / (avg_pack_samples * world_size)
+                )
+                steps_per_epoch_est = math.ceil(packs_per_rank_est / grad_acc)
+
+                epochs_target = getattr(train_args, "num_train_epochs", None)
+                if epochs_target is None or epochs_target <= 0:
+                    est_total = steps_per_epoch_est
+                else:
+                    est_total = math.ceil(steps_per_epoch_est * float(epochs_target))
+
+                train_args.max_steps = est_total
                 if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.max_steps = est
+                    train_args.training_args.max_steps = est_total
                 logger.warning(
-                    "packing enabled with iterable dataset: auto-setting max_steps=%s (base_len=%s, grad_acc=%s, world_size=%s)",
-                    est,
+                    (
+                        "packing enabled with iterable dataset: auto-setting max_steps=%s "
+                        "(base_len=%s, avg_pack_samples=%.3f, packs_per_rank_est=%s, "
+                        "grad_acc=%s, world_size=%s, target_epochs=%s)"
+                    ),
+                    est_total,
                     base_dataset_len,
+                    avg_pack_samples,
+                    packs_per_rank_est,
                     grad_acc,
                     world_size,
+                    epochs_target,
                 )
             else:
                 raise ValueError(

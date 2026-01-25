@@ -338,7 +338,7 @@ class AggregateTokenTypeMetricsMixin:
                         gt_desc = None
                         if token_types_next is not None:
                             # Prefer collator-provided token types so IGNORE regions are excluded.
-                            types_masked = token_types_next[mask]
+                            types_masked = token_types_next[mask_all]
                             gt_coord = types_masked == TokenType.COORD
                             gt_format = types_masked == TokenType.FORMAT
                             gt_desc = types_masked == TokenType.DESC
@@ -714,6 +714,7 @@ class CoordSoftCEW1LossMixin:
         coord_acc_top5 = None
         coord_p_gt_mean = None
         coord_margin_mean = None
+        coord_expected_bin_mae = None
         try:
             with torch.no_grad():
                 k = min(5, int(flat_logits.shape[-1]))
@@ -727,6 +728,17 @@ class CoordSoftCEW1LossMixin:
                 coord_p_gt_mean = out.pred_probs.gather(
                     1, flat_target_bins.view(-1, 1)
                 ).mean()
+                # Expected coord bin error: more aligned with distribution supervision than top-k hits.
+                # Units are "bins" in [0, K-1].
+                bins = torch.arange(
+                    int(out.pred_probs.shape[-1]),
+                    device=out.pred_probs.device,
+                    dtype=out.pred_probs.dtype,
+                )
+                pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
+                coord_expected_bin_mae = (
+                    pred_expected.float() - flat_target_bins.float()
+                ).abs().mean()
                 temp = float(temperature) if float(temperature) > 0 else 1.0
                 logits_scaled = flat_logits.float() / temp
                 gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
@@ -736,6 +748,7 @@ class CoordSoftCEW1LossMixin:
             coord_acc_top5 = None
             coord_p_gt_mean = None
             coord_margin_mean = None
+            coord_expected_bin_mae = None
 
         softce_sum = out.soft_ce_per_token.sum()
         w1_sum = out.w1_per_token.sum()
@@ -804,6 +817,7 @@ class CoordSoftCEW1LossMixin:
             coord_acc_top5=coord_acc_top5,
             coord_p_gt_mean=coord_p_gt_mean,
             coord_margin_mean=coord_margin_mean,
+            coord_expected_bin_mae=coord_expected_bin_mae,
         )
 
         return loss + coord_loss.to(dtype=loss.dtype)
@@ -822,6 +836,7 @@ class CoordSoftCEW1LossMixin:
         coord_acc_top5: torch.Tensor | None,
         coord_p_gt_mean: torch.Tensor | None,
         coord_margin_mean: torch.Tensor | None,
+        coord_expected_bin_mae: torch.Tensor | None,
     ) -> None:
         mode = (
             "train"
@@ -852,6 +867,10 @@ class CoordSoftCEW1LossMixin:
         if coord_margin_mean is not None:
             metrics["coord_softce_w1/margin_mean"].update(
                 float(coord_margin_mean.detach().cpu().item())
+            )
+        if coord_expected_bin_mae is not None:
+            metrics["coord_expected_bin_mae"].update(
+                float(coord_expected_bin_mae.detach().cpu().item())
             )
 
         # Per-sample normalization (packed units).

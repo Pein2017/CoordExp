@@ -37,6 +37,7 @@ class Config:
     pred_jsonl: str = "output/infer/coord/pred.jsonl"  # Required
     save_dir: str = "vis_out"
     limit: int = 0  # Max samples to render (<=0 = all)
+    root_image_dir: str | None = None  # Optional override for resolving relative image paths
 
 
 CONFIG = Config()
@@ -214,28 +215,39 @@ def parse_args() -> Config:
     )
     parser.add_argument("--save_dir", default="vis_out")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--root_image_dir",
+        default=None,
+        help="Optional ROOT_IMAGE_DIR override to resolve relative image paths",
+    )
     args = parser.parse_args()
 
     cfg = Config(
         pred_jsonl=args.pred_jsonl,
         save_dir=args.save_dir,
         limit=args.limit,
+        root_image_dir=args.root_image_dir,
     )
     return cfg
 
 
 def main() -> None:
     cfg = parse_args()
+    if cfg.root_image_dir:
+        os.environ["ROOT_IMAGE_DIR"] = cfg.root_image_dir
     pred_path = run_inference_if_needed(cfg)
     records = load_jsonl(pred_path, cfg.limit)
     base_dir = pred_path.parent
     vis_dir = Path(cfg.save_dir)
     vis_dir.mkdir(parents=True, exist_ok=True)
 
+    skipped = 0
+    saved = 0
     for idx, rec in enumerate(tqdm(records, desc="Render", unit="img")):
         image_rel = rec.get("image") or (rec.get("images") or [None])[0]
         img_path = resolve_image_path(base_dir, image_rel)
         if not img_path or not img_path.exists():
+            skipped += 1
             continue
         item = VisItem(
             image_path=img_path,
@@ -247,6 +259,8 @@ def main() -> None:
         )
         save_path = vis_dir / f"vis_{idx:04d}.png"
         draw_sample(item, save_path)
+        saved += 1
+    print(f"[vis_coordexp] saved={saved} skipped_missing_image={skipped} out_dir={vis_dir}")
 
 
 if __name__ == "__main__":

@@ -15,13 +15,12 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 mkdir -p output
-
-RAW_LVIS_JSON_DIR="public_data/lvis/raw/annotations"
-RAW_IMG_DIR="public_data/lvis/raw/images"
+RAW_LVIS_JSON_DIR="${ROOT}/public_data/lvis/raw/annotations"
+RAW_IMG_DIR="${ROOT}/public_data/lvis/raw/images"
 MODEL_CKPT="model_cache/Qwen3-VL-8B-Instruct-coordexp"
 
 # Semantic guard thresholds (Balanced). Only used by poly-prefer policy.

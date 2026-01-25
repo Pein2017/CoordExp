@@ -246,6 +246,11 @@ The coord loss is:
   - **What:** mean `(max_logit - gt_logit)` within coord vocab (after temperature); lower is better.
   - **In loss:** NO (distribution-quality monitor).
 
+- `coord_expected_bin_mae`
+  - **What:** mean absolute error between the expected coord bin index (under the predicted
+    coord-vocab distribution) and the GT bin index. Units are **bins** (0..999).
+  - **In loss:** NO (distribution-quality monitor; often more informative than top-k early on).
+
 - `coord_softce_w1/coord_tokens_per_sample`
   - **What:** `coord_softce_w1/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
   - **In loss:** NO (diagnostic only).
