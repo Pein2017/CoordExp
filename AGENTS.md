@@ -34,6 +34,11 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Do not edit upstream HF model files like `modeling_qwen3_vl.py` (off-limits).
 - For architectural/contract changes, follow OpenSpec governance.
 
+## Repo Safety (Prevent Data Loss)
+- Never run destructive cleanup commands unless the user explicitly asked (examples: `git restore`, `git clean -fd`, `git reset --hard`, `git checkout -- <path>`, `rm -rf`). If suggesting such a command, warn that it can delete uncommitted/untracked work.
+- Before making edits, check `git status --porcelain` and call out any dirty files; if there are unexpected changes (especially in files we didn’t touch), stop and ask how to proceed.
+- Prefer small, incremental commits (or a `git stash`) during large refactors so work can’t be accidentally discarded.
+
 ## Environment
 - Repo root: `/data/home/xiaoyan/AIteam/data/CoordExp`.
 - Use `conda run -n ms python ...` for commands (e.g., tests).
