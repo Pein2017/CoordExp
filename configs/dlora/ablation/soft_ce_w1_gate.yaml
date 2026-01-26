@@ -1,6 +1,17 @@
 extends: ../sft_stage1_softce_w1-bbox-only.yaml
 
 training:
-  output_dir: ./output/1-24/stage_1/poly_prefer_semantic_max60-soft_ce_w1_gate
+  output_dir: ./output/1-26/stage_1/poly_prefer_semantic_max60-soft_ce_w1_gate
   run_name: epoch_4-softce_w1_gate-LRs-2e-4_1e-4_4e-4-from-base-4B
-  logging_dir: ./tb/1-24/stage_1/poly_prefer_semantic_max60-soft_ce_w1_gate
+  logging_dir: ./tb/1-26/stage_1/poly_prefer_semantic_max60-soft_ce_w1_gate
+
+
+custom:
+  coord_soft_ce_w1:
+    enabled: true
+    soft_ce_weight: 2.0
+    w1_weight: 1.0
+    gate_weight: 2.0
+    temperature: 0.7
+    target_sigma: 1
+    target_truncate: 8

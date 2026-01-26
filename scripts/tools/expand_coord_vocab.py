@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -94,6 +95,23 @@ def main() -> None:
     model.resize_token_embeddings(len(tokenizer))
 
     args.dst.mkdir(parents=True, exist_ok=True)
+    # Keep the expanded checkpoint self-contained for multimodal loaders (e.g. AutoProcessor).
+    # Qwen3-VL relies on image/video preprocessor config files that are NOT written by
+    # tokenizer.save_pretrained() / model.save_pretrained().
+    extra_files = [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json",
+        "chat_template.json",
+        "README.md",
+        "configuration.json",
+    ]
+    for name in extra_files:
+        src_path = args.src / name
+        dst_path = args.dst / name
+        if src_path.exists() and not dst_path.exists():
+            shutil.copy2(src_path, dst_path)
+            print(f"[+] Copied {name} from src -> dst")
+
     print(f"[+] Saving tokenizer to {args.dst}")
     tokenizer.save_pretrained(args.dst)
     print(f"[+] Saving model to {args.dst}")
