@@ -1,8 +1,8 @@
-#!/root/miniconda3/envs/ms/bin/python
+#!/usr/bin/env python3
 """Dump offending JSONL records referenced by instability monitor events.
 
 Usage:
-  /root/miniconda3/envs/ms/bin/python scripts/dump_instability_samples.py \
+  conda run -n ms python scripts/analysis/dump_instability_samples.py \
     --events output/.../instability_dumps/events.jsonl \
     --train_jsonl public_data/.../train.coord.jsonl \
     --val_jsonl public_data/.../val.coord.jsonl
@@ -118,4 +118,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

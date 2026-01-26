@@ -11,15 +11,15 @@ Why this exists:
   - This script lets you derive the correct module paths from the checkpoint itself to avoid repeated guesswork.
 
 Usage (from repo root):
-  conda run -n ms python scripts/inspect_checkpoint_modules.py output/.../ckpt-3106
+  conda run -n ms python scripts/tools/inspect_checkpoint_modules.py output/.../ckpt-3106
 
 Examples:
   # Suggest a regex for: last 8 LLM blocks + aligner MLPs (freeze ViT in YAML)
-  conda run -n ms python scripts/inspect_checkpoint_modules.py output/.../ckpt-3106 \\
+  conda run -n ms python scripts/tools/inspect_checkpoint_modules.py output/.../ckpt-3106 \\
     --llm-last 8 --aligner-mlp --print-target-regex
 
   # Suggest a regex for: last 12 ViT blocks + last 8 LLM blocks + aligner MLPs
-  conda run -n ms python scripts/inspect_checkpoint_modules.py output/.../ckpt-3106 \\
+  conda run -n ms python scripts/tools/inspect_checkpoint_modules.py output/.../ckpt-3106 \\
     --vit-last 12 --llm-last 8 --aligner-mlp --print-target-regex
 """
 
@@ -236,4 +236,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

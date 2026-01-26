@@ -4,7 +4,7 @@ Inspect how a JSONL sample plus the CoordExp prompts are rendered by the Qwen3-V
 chat template and tokenizer.
 
 Example:
-    python scripts/inspect_chat_template.py \\
+    python scripts/tools/inspect_chat_template.py \\
         --jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \\
         --index 0
 """
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

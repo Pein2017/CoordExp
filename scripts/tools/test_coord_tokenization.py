@@ -8,7 +8,7 @@ This script specifically checks:
 3. Round-trip encoding/decoding preserves coordinate tokens
 
 Usage:
-    python scripts/test_coord_tokenization.py --checkpoint model_cache/Qwen3-VL-8B-Instruct-coordexp
+    python scripts/tools/test_coord_tokenization.py --checkpoint model_cache/Qwen3-VL-8B-Instruct-coordexp
 """
 
 from __future__ import annotations

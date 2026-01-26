@@ -7,7 +7,7 @@ Default output:
   /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
 
 Run inside the `ms` conda environment:
-  python scripts/expand_coord_vocab.py
+  python scripts/tools/expand_coord_vocab.py
 """
 
 from __future__ import annotations
