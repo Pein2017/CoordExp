@@ -5,14 +5,7 @@
 
 set -euo pipefail
 
-# CUDA / NCCL runtime defaults (can be overridden by caller)
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Set CUDA_HOME for DeepSpeed (CUDA installed via conda in ms environment)
-export CUDA_HOME=${CUDA_HOME:-/root/miniconda3/envs/ms/targets/x86_64-linux}
-
-export NCCL_ASYNC_ERROR_HANDLING=${NCCL_ASYNC_ERROR_HANDLING:-1}
-export TORCH_NCCL_TRACE_BUFFER_SIZE=${TORCH_NCCL_TRACE_BUFFER_SIZE:-67108864}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
 # Resolve repository root from this script's location and set PYTHONPATH
