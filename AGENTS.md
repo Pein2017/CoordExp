@@ -5,10 +5,12 @@
 
 These instructions are for AI assistants working in this project.
 
-Always open `@/openspec/AGENTS.md` when the request:
+Only open `@/openspec/AGENTS.md` when the request/task is spec-relevant, for example it:
 - Mentions planning or proposals (words like proposal, spec, change, plan)
 - Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
 - Sounds ambiguous and you need the authoritative spec before coding
+
+Do **not** open `@/openspec/AGENTS.md` for routine, non-spec work (e.g., small bugfixes, straightforward refactors, code review, running tests, updating configs) to avoid wasting context window.
 
 Use `@/openspec/AGENTS.md` to learn:
 - How to create and apply change proposals
