@@ -192,28 +192,6 @@ class AggregateTokenTypeMetricsMixin:
         else:
             coord_mask = self._infer_coord_mask(labels_next, logits_next)
 
-        # Align aggregate accuracy metrics with the *effective* base-loss supervision.
-        #
-        # When Stage-1 coord_softce_w1 is enabled, we mask GT coord tokens to -100 for
-        # the base CE term. ms-swift's built-in `token_acc` is computed on that masked
-        # label tensor. To keep `token_acc_top5` comparable, we exclude GT coord-token
-        # positions here as well.
-        mask_base = mask_all
-        if log_top5:
-            try:
-                cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
-                if cfg is not None and bool(getattr(cfg, "enabled", False)):
-                    coord_map_fn = getattr(self, "_get_coord_id_map", None)
-                    if callable(coord_map_fn):
-                        coord_id_map = coord_map_fn(logits_next.shape[-1], logits_next.device)
-                        if coord_id_map is not None:
-                            labels_safe = labels_next
-                            if labels_safe.numel() > 0 and labels_safe.min().item() < 0:
-                                labels_safe = labels_safe.clamp(min=0)
-                            is_gt_coord = (coord_id_map[labels_safe] >= 0) & mask_all
-                            mask_base = mask_all & (~is_gt_coord)
-            except Exception:
-                mask_base = mask_all
 
         with torch.no_grad():
             preds = logits_next.argmax(dim=-1)
@@ -226,16 +204,12 @@ class AggregateTokenTypeMetricsMixin:
             if log_top5 and flat_logits_all.numel() > 0:
                 k = min(5, flat_logits_all.shape[-1])
                 topk_indices = flat_logits_all.topk(k=k, dim=-1).indices
-                base_sel = mask_base[mask_all]
-                if base_sel.any().item():
-                    top5_acc = (
-                        (topk_indices[base_sel] == labels_masked[base_sel].unsqueeze(-1))
-                        .any(dim=-1)
-                        .float()
-                        .mean()
-                    )
-                else:
-                    top5_acc = logits_next.new_tensor(0.0)
+                top5_acc = (
+                    (topk_indices == labels_masked.unsqueeze(-1))
+                    .any(dim=-1)
+                    .float()
+                    .mean()
+                )
             else:
                 top5_acc = logits_next.new_tensor(0.0)
 
@@ -873,6 +847,9 @@ class CoordSoftCEW1LossMixin:
             )
 
         labels_orig = labels
+        # Use the unmasked labels for ms-swift's token_acc computation.
+        setattr(self, "_coordexp_labels_for_acc", labels_orig)
+
         masked_labels = self._mask_coord_targets(labels_orig, coord_token_ids)
         inputs["labels"] = masked_labels
 
@@ -917,8 +894,22 @@ class CoordSoftCEW1LossMixin:
             raise
         finally:
             inputs["labels"] = labels_orig
+            setattr(self, "_coordexp_labels_for_acc", None)
 
         return (loss, outputs) if return_outputs else loss
+
+    def _compute_acc(self, outputs, labels, cu_seqlens=None) -> None:
+        """Force ms-swift token_acc to use unmasked labels (incl. coord tokens).
+
+        coord_soft_ce_w1 masks coord-token targets to -100 for the base CE loss.
+        For reporting consistency, token_acc should always be computed on the original
+        supervised labels (labels != -100), including coord-token positions.
+        """
+
+        labels_for_acc = getattr(self, "_coordexp_labels_for_acc", None)
+        if isinstance(labels_for_acc, torch.Tensor):
+            labels = labels_for_acc
+        return super()._compute_acc(outputs, labels, cu_seqlens=cu_seqlens)
 
     def _log_base_ce_metrics(
         self, *, loss_base: torch.Tensor, masked_labels: torch.Tensor
