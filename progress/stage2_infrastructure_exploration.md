@@ -2,7 +2,7 @@
 
 ## Context
 
-I have completed **Stage-1 training** (see `progress/pretrain/first_stage_v2.md`), which implements standard SFT with coord token distribution losses (softCE + W1 + gate). The model now reliably outputs structured detection format with `<|coord_k|>` tokens.
+I have completed **Stage-1 training** (see `progress/pretrain/first_stage.md`), which implements standard SFT with coord token distribution losses (softCE + W1 + gate). The model now reliably outputs structured detection format with `<|coord_k|>` tokens.
 
 ## Goal
 
@@ -59,8 +59,7 @@ The infrastructure should provide:
 
 ## References
 
-- Stage-1 spec: `progress/pretrain/first_stage_v2.md`
+- Stage-1 spec: `progress/pretrain/first_stage.md`
 - Stage-2 design: `progress/full_idea.md` (sections 6-8)
 - Current training entry: `src/sft.py`
 - Loss mixins: `src/metrics/dataset_metrics.py`
-

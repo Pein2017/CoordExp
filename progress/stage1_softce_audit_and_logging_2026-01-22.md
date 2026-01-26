@@ -148,4 +148,4 @@ Training implication:
 - Trainer entry: `src/sft.py`
 - Metrics/loss mixins: `src/metrics/dataset_metrics.py`
 - Metrics doc: `docs/TRAINING_METRICS_AND_LOSSES.md`
-- Stage-1 idea doc: `progress/pretrain/first_stage_v2.md`
+- Stage-1 idea doc: `progress/pretrain/first_stage.md`

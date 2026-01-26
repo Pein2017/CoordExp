@@ -5,7 +5,7 @@ This proposal introduces a rollout-matching SFT trainer variant (alias: `stage_2
 
 **Prerequisite (stage_1):** A stable model that already outputs valid JSON and `<|coord_*|>` tokens reliably is required before enabling rollout-matching. Stage_2 assumes the stage_1 format is largely correct and focuses on matching + self-context refinement.
 
-Baseline training (alias: `stage_1`, see `progress/pretrain/first_stage_v2.md`) stabilizes **JSON-only** structured outputs and teaches the model to emit `<|coord_k|>` tokens reliably using **distributional coord supervision** (`softCE + W1 + gate`) while applying standard CE to non-coord tokens. Stage_2 is intended to run only after this stability is achieved.
+Baseline training (alias: `stage_1`, see `progress/pretrain/first_stage.md`) stabilizes **JSON-only** structured outputs and teaches the model to emit `<|coord_k|>` tokens reliably using **distributional coord supervision** (`softCE + W1 + gate`) while applying standard CE to non-coord tokens. Stage_2 is intended to run only after this stability is achieved.
 
 `progress/full_idea.md` motivates an **EM-ish** refinement loop:
 - **E-step**: rollout the current model to obtain a hypothesis output (and its tokenization),
