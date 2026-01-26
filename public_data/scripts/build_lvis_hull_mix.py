@@ -172,6 +172,26 @@ def _clean_int_poly(flat: List[int]) -> List[int]:
     return out
 
 
+def _poly_area2_flat_int(flat: List[int]) -> int:
+    """Return twice the signed area (shoelace) for a flat [x0,y0,x1,y1,...] list.
+
+    Used as a strict degeneracy check (0 => degenerate) after scaling+rounding.
+    """
+    if len(flat) < 6 or len(flat) % 2 != 0:
+        return 0
+    pts: List[Point] = [(float(flat[i]), float(flat[i + 1])) for i in range(0, len(flat), 2)]
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return 0
+    a2 = 0.0
+    for i in range(len(pts)):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % len(pts)]
+        a2 += x1 * y2 - x2 * y1
+    return int(a2)
+
+
 def _fix_bbox_xyxy(b: List[int], width: int, height: int) -> List[int]:
     """Mirror resize.py bbox fix-up: enforce x2>x1,y2>y1 after rounding/clamping."""
     if len(b) != 4:
@@ -664,7 +684,7 @@ def main() -> None:
                         flat_hull.extend([float(x0), float(y0)])
                     poly_scaled = clamp_points(scale_points(flat_hull, sx, sy), tgt_w, tgt_h)
                     poly_scaled = _clean_int_poly(poly_scaled)
-                    if not poly_scaled:
+                    if (not poly_scaled) or (_poly_area2_flat_int(poly_scaled) == 0):
                         stats.bad_hull += 1
                         objects.append({"bbox_2d": bbox_scaled, "desc": cat_name})
                         stats.objects_written += 1
@@ -695,7 +715,7 @@ def main() -> None:
                     flat_hull.extend([float(x0), float(y0)])
                 poly_scaled = clamp_points(scale_points(flat_hull, sx, sy), tgt_w, tgt_h)
                 poly_scaled = _clean_int_poly(poly_scaled)
-                if not poly_scaled:
+                if (not poly_scaled) or (_poly_area2_flat_int(poly_scaled) == 0):
                     stats.bad_hull += 1
                     objects.append({"bbox_2d": bbox_scaled, "desc": cat_name})
                     stats.objects_written += 1

@@ -190,7 +190,57 @@ def _canonicalize_and_sort_objects_in_place(record: dict) -> dict:
 
     Doing this in the *norm1000 integer* domain ensures that the ordering matches
     what we actually train/evaluate on (coord tokens / ints).
+
+    Robustness note:
+    - After normalization+rounding, a very thin/small polygon can collapse to a
+      degenerate (zero-area) polygon in norm1000 space. When that happens, we
+      deterministically fall back to `bbox_2d` derived from the polygon extent.
+      This keeps the "single geometry key" invariant and avoids invalid GT.
     """
+
+    def poly_area2(poly: List[int]) -> int:
+        # Return twice the signed area (shoelace); 0 => degenerate.
+        if len(poly) < 6 or len(poly) % 2 != 0:
+            return 0
+        pts = [(int(poly[i]), int(poly[i + 1])) for i in range(0, len(poly), 2)]
+        if len(pts) >= 2 and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        if len(pts) < 3:
+            return 0
+        a2 = 0
+        for i in range(len(pts)):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % len(pts)]
+            a2 += x1 * y2 - x2 * y1
+        return int(a2)
+
+    def bbox_from_poly(poly: List[int]) -> List[int]:
+        xs = poly[0::2]
+        ys = poly[1::2]
+        if not xs or not ys:
+            return [0, 0, 1, 1]
+        x1 = int(min(xs))
+        y1 = int(min(ys))
+        x2 = int(max(xs))
+        y2 = int(max(ys))
+        # Enforce strict bbox validity for downstream consumers.
+        if x2 <= x1:
+            if x1 < MAX_VALUE:
+                x2 = x1 + 1
+            else:
+                x1 = max(0, x1 - 1)
+        if y2 <= y1:
+            if y1 < MAX_VALUE:
+                y2 = y1 + 1
+            else:
+                y1 = max(0, y1 - 1)
+        # Clamp to norm1000 domain.
+        x1 = max(0, min(MAX_VALUE, x1))
+        y1 = max(0, min(MAX_VALUE, y1))
+        x2 = max(0, min(MAX_VALUE, x2))
+        y2 = max(0, min(MAX_VALUE, y2))
+        return [x1, y1, x2, y2]
+
     objects = record.get("objects") or []
     if not isinstance(objects, list) or not objects:
         return record
@@ -199,6 +249,7 @@ def _canonicalize_and_sort_objects_in_place(record: dict) -> dict:
     for obj in objects:
         if not isinstance(obj, dict):
             continue
+
         if obj.get("poly") is not None:
             poly = obj.get("poly")
             if not isinstance(poly, list):
@@ -213,9 +264,15 @@ def _canonicalize_and_sort_objects_in_place(record: dict) -> dict:
                 continue
 
             updated = dict(obj)
-            updated["poly"] = canon_ints
-            if "poly_points" in updated:
-                updated["poly_points"] = len(canon_ints) // 2
+            # If the canonicalized polygon collapses under rounding, fallback to bbox.
+            if poly_area2(canon_ints) == 0:
+                updated.pop("poly", None)
+                updated.pop("poly_points", None)
+                updated["bbox_2d"] = bbox_from_poly(canon_ints)
+            else:
+                updated["poly"] = canon_ints
+                if "poly_points" in updated:
+                    updated["poly_points"] = len(canon_ints) // 2
             processed.append(updated)
         else:
             processed.append(obj)

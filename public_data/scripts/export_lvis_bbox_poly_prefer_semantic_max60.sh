@@ -10,10 +10,31 @@
 # Usage (from repo root):
 #   bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
 #
+# Force rebuild (overwrite outputs even if they already exist):
+#   bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh --force
+#   # or
+#   FORCE_REBUILD=1 bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
+#
 # Or in tmux:
-#   tmux new -s lvis_reexport 'bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh'
+#   tmux new -s lvis_reexport 'bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh --force'
 
 set -euo pipefail
+
+FORCE_REBUILD="${FORCE_REBUILD:-0}"
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  echo "Usage: bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh [--force]"
+  echo "  --force: overwrite outputs even if they already exist"
+  echo "  (or set FORCE_REBUILD=1)"
+  exit 0
+fi
+if [ "${1:-}" = "--force" ]; then
+  FORCE_REBUILD=1
+  shift
+fi
+if [ $# -ne 0 ]; then
+  echo "[error] unexpected args: $*"
+  exit 2
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
@@ -21,7 +42,7 @@ cd "${ROOT}"
 mkdir -p output
 RAW_LVIS_JSON_DIR="${ROOT}/public_data/lvis/raw/annotations"
 RAW_IMG_DIR="${ROOT}/public_data/lvis/raw/images"
-MODEL_CKPT="model_cache/Qwen3-VL-8B-Instruct-coordexp"
+MODEL_CKPT="model_cache/Qwen3-VL-4B-Instruct-coordexp"
 
 # Semantic guard thresholds (Balanced). Only used by poly-prefer policy.
 GUARD_ARGS=( \
@@ -44,6 +65,9 @@ exec > >(tee -a "${LOG}") 2>&1
 
 echo "[run_lvis_bbox_poly_prefer_pipeline] start: $(date)"
 echo "[run_lvis_bbox_poly_prefer_pipeline] log:   ${LOG}"
+if [ "${FORCE_REBUILD}" -eq 1 ]; then
+  echo "[run_lvis_bbox_poly_prefer_pipeline] FORCE_REBUILD=1 (will overwrite existing outputs)"
+fi
 
 if [ ! -f "${RAW_LVIS_JSON_DIR}/lvis_v1_train.json" ] || [ ! -f "${RAW_LVIS_JSON_DIR}/lvis_v1_val.json" ]; then
   echo "[error] Missing LVIS annotation JSONs under: ${RAW_LVIS_JSON_DIR}"
@@ -103,6 +127,9 @@ convert_if_needed() {
   local norm_out="$2"
   local coord_out="$3"
   local needs=0
+  if [ "${FORCE_REBUILD}" -eq 1 ]; then
+    needs=1
+  fi
   if [ ! -s "${norm_out}" ] || [ ! -s "${coord_out}" ]; then
     needs=1
   else
@@ -111,8 +138,11 @@ convert_if_needed() {
     fi
   fi
   if [ "${needs}" -eq 1 ]; then
+    if [ "${FORCE_REBUILD}" -eq 1 ]; then
+      rm -f "${norm_out}" "${coord_out}"
+    fi
     echo "[convert] ${raw_in} -> ${norm_out} + ${coord_out}"
-    PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
+    PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
       --input "${raw_in}" \
       --output-norm "${norm_out}" \
       --output-tokens "${coord_out}"
@@ -134,10 +164,20 @@ build_bbox_only_split() {
   local norm_out="${out_dir}/${split}.bbox_only.max60.jsonl"
   local coord_out="${out_dir}/${split}.bbox_only.max60.coord.jsonl"
 
-  if [ ! -s "${raw_out}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ]; then
+    rm -f \
+      "${raw_out}" \
+      "${build_stats}" \
+      "${max60_raw}" \
+      "${max60_stats}" \
+      "${norm_out}" \
+      "${coord_out}"
+  fi
+
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
     echo ""
     echo "[build:bbox_only] ${split}"
-    PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
+    PYTHONPATH=. python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
@@ -149,9 +189,9 @@ build_bbox_only_split() {
     echo "[build:bbox_only] skip existing: ${raw_out}"
   fi
 
-  if [ ! -s "${max60_raw}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
     echo "[filter] ${split} bbox_only max_objects=60"
-    PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
+    PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
       --input "${raw_out}" \
       --output "${max60_raw}" \
       --max-objects 60 \
@@ -177,10 +217,20 @@ build_poly_prefer_split() {
   local norm_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.jsonl"
   local coord_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.coord.jsonl"
 
-  if [ ! -s "${raw_out}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ]; then
+    rm -f \
+      "${raw_out}" \
+      "${build_stats}" \
+      "${max60_raw}" \
+      "${max60_stats}" \
+      "${norm_out}" \
+      "${coord_out}"
+  fi
+
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
     echo ""
     echo "[build:poly_prefer] ${split} cap=${cap}"
-    PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
+    PYTHONPATH=. python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
@@ -193,9 +243,9 @@ build_poly_prefer_split() {
     echo "[build:poly_prefer] skip existing: ${raw_out}"
   fi
 
-  if [ ! -s "${max60_raw}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
     echo "[filter] ${split} cap=${cap} max_objects=60"
-    PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
+    PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
       --input "${raw_out}" \
       --output "${max60_raw}" \
       --max-objects 60 \
@@ -222,21 +272,21 @@ build_poly_prefer_split val 20
 echo ""
 echo "== Token length sanity (GT assistant, coord jsonl) =="
 if [ -d "${MODEL_CKPT}" ]; then
-  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
     --batch_size 128 --topk 10 \
     --save_json public_data/lvis/rescale_32_768_bbox_max60/length.bbox_only.max60.assistant_tokens.json
 
-  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap10.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap10.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
     --batch_size 128 --topk 10 \
     --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap10.max60.assistant_tokens.json
 
-  PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
