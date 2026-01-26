@@ -19,6 +19,169 @@ from src.common.geometry import (
 
 GEOM_KEYS = ("bbox_2d", "poly")
 
+_SPECIAL_TOKEN_RE = re.compile(r"<\|.*?\|>")
+
+
+def extract_special_tokens(text: str) -> List[str]:
+    """Extract special tokens like ``<|im_end|>`` / ``<|coord_123|>`` in order.
+
+    Deduplicates while preserving first-seen order.
+    """
+
+    out: List[str] = []
+    seen: set[str] = set()
+    for m in _SPECIAL_TOKEN_RE.finditer(text):
+        tok = m.group(0)
+        if tok not in seen:
+            seen.add(tok)
+            out.append(tok)
+    return out
+
+
+def load_prediction_dict(text: str) -> Dict[str, Any] | None:
+    """Load the model's prediction JSON dict from a generation string.
+
+    This is a best-effort loader that tries, in order:
+    1) the largest balanced JSON block,
+    2) salvaging complete top-level entries from a truncated block,
+    3) (only if an explicit terminator exists) closing missing braces.
+
+    Returns:
+      A dict mapping object ids -> object payloads, or None if nothing usable
+      can be recovered.
+    """
+
+    block = extract_json_block(text)
+    obj: Any | None = None
+    if block:
+        obj = _load_json_loose(block)
+
+    if obj is None:
+        obj = _salvage_top_level_entries(text)
+
+    if obj is None:
+        # Final fallback: heuristically close braces only when the model emitted
+        # an explicit terminator (e.g. "<im_end>"). If truncated without a
+        # terminator, prefer returning None.
+        if "<im_end>" in text and "{" in text:
+            start = text.find("{")
+            candidate = text[start:]
+            missing = candidate.count("{") - candidate.count("}")
+            if missing > 0:
+                obj = _load_json_loose(candidate + ("}" * missing))
+
+    if isinstance(obj, dict):
+        return obj
+    return None
+
+
+def _salvage_top_level_entries(text: str) -> Dict[str, Any] | None:
+    """Best-effort salvage of top-level ``{key: {..}, ...}`` entries from a truncated output.
+
+    Motivation:
+    - Inference can truncate mid-object, making the full JSON dict unparseable.
+    - We still want to keep any *complete* earlier objects, instead of dropping the
+      whole sample.
+
+    This parser is intentionally conservative:
+    - Only salvages entries whose value is a balanced JSON object ``{...}``.
+    - Stops at the first incomplete value object.
+    - Ignores entries that cannot be ``json.loads``'d.
+    """
+
+    start = text.find("{")
+    if start < 0:
+        return None
+
+    i = start + 1
+    n = len(text)
+    out: Dict[str, Any] = {}
+
+    def skip_ws_and_commas(pos: int) -> int:
+        while pos < n and text[pos] in " \t\r\n,":
+            pos += 1
+        return pos
+
+    def parse_json_string(pos: int) -> Tuple[str | None, int]:
+        # Expects text[pos] == '"'
+        if pos >= n or text[pos] != '"':
+            return None, pos
+        j = pos + 1
+        escaped = False
+        while j < n:
+            ch = text[j]
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                return text[pos : j + 1], j + 1  # include quotes
+            j += 1
+        return None, pos
+
+    def extract_balanced_object(pos: int) -> Tuple[str | None, int]:
+        # Extracts a balanced {...} object starting at pos.
+        if pos >= n or text[pos] != "{":
+            return None, pos
+        depth = 0
+        j = pos
+        in_str = False
+        escaped = False
+        while j < n:
+            ch = text[j]
+            if in_str:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_str = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[pos : j + 1], j + 1
+            j += 1
+        return None, pos
+
+    while True:
+        i = skip_ws_and_commas(i)
+        if i >= n:
+            break
+        if text[i] == "}":
+            break
+
+        key_raw, i2 = parse_json_string(i)
+        if key_raw is None:
+            break
+        key = None
+        try:
+            key = json.loads(key_raw)
+        except Exception:
+            break
+        i = skip_ws_and_commas(i2)
+        if i >= n or text[i] != ":":
+            break
+        i = skip_ws_and_commas(i + 1)
+
+        val_raw, i3 = extract_balanced_object(i)
+        if val_raw is None:
+            # Incomplete value -> stop; keep earlier complete entries.
+            break
+
+        try:
+            out[str(key)] = json.loads(val_raw)
+        except Exception:
+            # Bad entry; ignore and continue.
+            pass
+        i = i3
+
+    return out or None
+
 
 def extract_json_block(text: str) -> str | None:
     """Return the largest balanced {...} block, or None if not found.
@@ -110,27 +273,8 @@ def _load_json_loose(payload: str) -> Any | None:
 
 def parse_prediction(text: str) -> List[Dict[str, Any]]:
     """Parse model output JSON into a list of objects with integer coords."""
-    block = extract_json_block(text)
-    if not block:
-        # Try closing braces heuristically
-        # Only attempt to heuristically close unmatched braces when the model
-        # emitted an explicit terminator (e.g. "<im_end>"). If the output was
-        # truncated (no terminator), prefer returning no block so downstream code
-        # can treat the prediction as empty / malformed rather than repairing a
-        # likely-broken final object.
-        if "<im_end>" in text and "{" in text:
-            start = text.find("{")
-            candidate = text[start:]
-            missing = candidate.count("{") - candidate.count("}")
-            if missing > 0:
-                block = candidate + ("}" * missing)
-        if not block:
-            return []
-    obj = _load_json_loose(block)
+    obj = load_prediction_dict(text)
     if obj is None:
-        return []
-
-    if not isinstance(obj, dict):
         return []
 
     parsed: List[Dict[str, Any]] = []

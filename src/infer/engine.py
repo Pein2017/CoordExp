@@ -20,7 +20,9 @@ Schema (per line of ``gt_vs_pred.jsonl``)
   "coord_mode": "norm1000" | "pixel" | null,  # optional trace/debug
   "gt": [ {"type","points","desc","score"} ],
   "pred": [ {"type","points","desc","score"} ],
-  "raw_output": str,         # generation text (may be empty on early skip)
+  "raw_output_json": dict | null,  # parsed prediction dict (best-effort)
+  "raw_special_tokens": [str],     # e.g. <|im_end|>, <|coord_123|>, ...
+  "raw_ends_with_im_end": bool,
   "errors": ["..."]         # empty when none
 }
 ```
@@ -61,6 +63,7 @@ from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
+from src.eval.parsing import extract_special_tokens, load_prediction_dict
 from src.utils import get_logger
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -649,7 +652,9 @@ class InferenceEngine:
                         "coord_mode": None,
                         "gt": [],
                         "pred": [],
-                        "raw_output": "",
+                        "raw_output_json": None,
+                        "raw_special_tokens": [],
+                        "raw_ends_with_im_end": False,
                         "errors": errors,
                     }
                     fout.write(json.dumps(output, ensure_ascii=False) + "\n")
@@ -684,9 +689,17 @@ class InferenceEngine:
 
                 raw_output = ""
                 pred: List[Dict[str, Any]] = []
+                raw_output_json: Dict[str, Any] | None = None
+                raw_special_tokens: List[str] = []
+                raw_ends_with_im_end = False
                 if run_generation:
                     try:
                         raw_output = self._generate(image)
+                        raw_special_tokens = extract_special_tokens(raw_output)
+                        raw_ends_with_im_end = raw_output.endswith("<|im_end|>")
+                        # Keep a parseable JSON snapshot so truncated outputs
+                        # don't poison downstream debug/visualization.
+                        raw_output_json = load_prediction_dict(raw_output)
                         pred_errors: List[str] = []
                         pred = self._process_pred(
                             raw_output, width=width, height=height, errors=pred_errors
@@ -709,7 +722,9 @@ class InferenceEngine:
                     "coord_mode": "pixel",
                     "gt": gt,
                     "pred": pred,
-                    "raw_output": raw_output,
+                    "raw_output_json": raw_output_json,
+                    "raw_special_tokens": raw_special_tokens,
+                    "raw_ends_with_im_end": raw_ends_with_im_end,
                     "errors": errors,
                 }
                 fout.write(json.dumps(output, ensure_ascii=False) + "\n")
