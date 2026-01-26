@@ -28,7 +28,7 @@ infer:
   pred_coord_mode: auto  # auto | norm1000 | pixel
 
   backend:
-    type: vllm  # hf | vllm
+    type: hf  # hf | vllm
     # vllm options (OpenAI-compatible server):
     base_url: http://127.0.0.1:8000
     # model: Qwen3-VL-<served-name>   # defaults to infer.model_checkpoint
@@ -60,12 +60,12 @@ infer:
   generation:
     temperature: 0.1
     top_p: 0.95
-    max_new_tokens: 8192
+    max_new_tokens: 2048
     repetition_penalty: 1.1
     seed: 42
 
   device: cuda:0
-  limit: 20
+  limit: 10
   detect_samples: 128
 
 # Optional explicit paths. If omitted, they derive deterministically from run.*.
