@@ -44,7 +44,7 @@ eval_packing: true
 
 ## How to regenerate stats
 ```
-conda run -n ms python scripts/token_length_analysis.py \
+conda run -n ms python scripts/analysis/token_length_analysis.py \
   --config configs/dlora/sft_text_only.yaml --binsize 512
 ```
 - Outputs mean/median/p95/p99, histograms, and packing sims for 12k/16k/20k with world=4, per_device=1.

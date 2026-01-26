@@ -181,7 +181,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py \
 - Prompt/template compliance on coord-token JSONL:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/inspect_chat_template.py \
+PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py \
   --jsonl public_data/vg/rescale_32_768_bbox/train.coord.jsonl \
   --index 0
 ```

@@ -11,7 +11,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 ## Repo layout
 - `src/` – training stack (datasets, callbacks, config loader, SFT entry `sft.py`; optional fusion dataset support)
 - `configs/` – YAMLs (base, LoRA variants)
-- `scripts/` – model utilities (e.g., `expand_coord_vocab.py`)
+- `scripts/` – model utilities (e.g., `scripts/tools/expand_coord_vocab.py`)
 - `public_data/scripts/` – data utilities (converters, resize, coord-token conversion)
 - `patent/` – background draft for CoordExp method
 - `AGENTS.md` – project instructions
@@ -21,7 +21,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 2) **Expand vocab once** (creates coord tokens 0–999 + optional wildcard and saves a new checkpoint):
    ```bash
    cd /data/home/xiaoyan/AIteam/data/CoordExp
-   python scripts/expand_coord_vocab.py \
+   python scripts/tools/expand_coord_vocab.py \
      --src /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
      --dst /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
@@ -84,6 +84,8 @@ What it does:
 - Runs `swift export` to merge LoRA.
 - Patches `embed_tokens.weight` and `lm_head.weight` shards with the trained coord offsets (no full model load).
 - Rewrites only the affected safetensor shards; final merged model lives in `$OUTPUT_DIR`.
+Notes:
+- If `$OUTPUT_DIR` already exists, `scripts/merge_coord.sh` will refuse to overwrite it unless you set `ALLOW_OVERWRITE=1`.
 
 ## Notes
 - Uses the model’s native chat templates; no custom tokenizer hacks beyond added coord tokens.
