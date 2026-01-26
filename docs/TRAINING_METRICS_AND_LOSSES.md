@@ -256,6 +256,12 @@ The coord loss is:
     coord-vocab distribution) and the GT bin index. Units are **bins** (0..999).
   - **In loss:** NO (distribution-quality monitor; often more informative than top-k early on).
 
+- `coord_diag/expected_bin_abs_err_p90`
+  - **What:** 90th percentile (p90) of the per-token absolute error
+    `abs(expected_bin - gt_bin)` at GT coord positions. Units are **bins** (0..999).
+  - **Why:** tail-sensitive complement to `expected_bin_mae` (mean-only summaries can hide heavy tails).
+  - **In loss:** NO (distribution-quality monitor).
+
 - `coord_diag/coord_tokens_per_sample`
   - **What:** `coord_diag/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
   - **In loss:** NO (diagnostic only).

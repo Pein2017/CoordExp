@@ -16,20 +16,17 @@ logger = get_logger(__name__)
 
 
 class GradAccumLossScaleMixin:
-    """Fix gradient-accumulation loss scaling for transformers>=4.57 w/ model_accepts_loss_kwargs.
+    """CoordExp Trainer compatibility shim for packing-aware metrics.
 
     Background
-    - In transformers>=4.57, `Trainer.training_step()` only divides the loss by
-      `current_gradient_accumulation_steps` when `model_accepts_loss_kwargs` is False
-      (or `num_items_in_batch` is None).
-    - ms-swift uses `Seq2SeqTrainer` for causal_lm and forces `model_accepts_loss_kwargs=True`,
-      which disables the trainer-side division. If the underlying `compute_loss()` does not
-      handle this, gradients (and logged `loss`) become scaled by grad-accum steps.
+    - We attach additional logging/diagnostic behavior without editing upstream model files.
+    - For transformers>=4.57 + ms-swift, gradient-accumulation scaling is handled in the
+      underlying ms-swift trainer (via the `num_items_in_batch` plumbing). We intentionally
+      do NOT rescale the returned loss here to avoid double-scaling.
 
-    This mixin restores the expected behavior:
-    - Train: divide the returned loss by `current_gradient_accumulation_steps` so that
-      optimizer updates see the mean (not sum) loss across micro-batches.
-    - Eval: do not scale.
+    Responsibilities
+    - Pop packing metadata (`pack_num_samples`) and stash it on `self` for later metrics.
+    - Log a few optimizer/runtime scalars as metrics so they appear in both train/eval logs.
     """
 
     def compute_loss(
@@ -73,28 +70,6 @@ class GradAccumLossScaleMixin:
                 cur_gas = getattr(self, "current_gradient_accumulation_steps", None)
                 if cur_gas is not None:
                     metrics["accum/current_grad_steps"].update(float(cur_gas))
-        except Exception:
-            # Best-effort only; never block training.
-            pass
-
-        # Train-only scaling fix.
-        try:
-            if getattr(self, "model", None) is not None and bool(self.model.training):
-                # Match transformers training_step gating:
-                # - only skip division when model_accepts_loss_kwargs AND num_items_in_batch is not None
-                # - and when there is no custom compute_loss_func to handle scaling itself.
-                if (
-                    bool(getattr(self, "model_accepts_loss_kwargs", False))
-                    and num_items_in_batch is not None
-                    and getattr(self, "compute_loss_func", None) is None
-                ):
-                    gas = getattr(self, "current_gradient_accumulation_steps", None)
-                    if gas is None:
-                        args = getattr(self, "args", None)
-                        gas = getattr(args, "gradient_accumulation_steps", None)
-                    gas_int = int(gas or 1)
-                    if gas_int > 1:
-                        loss = loss / float(gas_int)
         except Exception:
             # Best-effort only; never block training.
             pass
@@ -583,6 +558,7 @@ class AggregateTokenTypeMetricsMixin:
                     coord_p_gt_mean = None
                     coord_margin_mean = None
                     coord_expected_bin_mae = None
+                    coord_expected_bin_abs_err_p90 = None
                     try:
                         k = min(5, int(flat_logits_coord.shape[-1]))
                         topk = flat_logits_coord.topk(k=k, dim=-1).indices
@@ -601,9 +577,12 @@ class AggregateTokenTypeMetricsMixin:
                             dtype=out.pred_probs.dtype,
                         )
                         pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
-                        coord_expected_bin_mae = (
-                            pred_expected.float() - flat_target_bins.float()
-                        ).abs().mean()
+                        abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
+                        coord_expected_bin_mae = abs_err.mean()
+                        if abs_err.numel() > 0:
+                            coord_expected_bin_abs_err_p90 = torch.quantile(
+                                abs_err.to(dtype=torch.float32), 0.9
+                            )
                         temp = float(temperature) if float(temperature) > 0 else 1.0
                         logits_scaled = flat_logits_coord.float() / temp
                         gt_logit = logits_scaled.gather(
@@ -616,6 +595,7 @@ class AggregateTokenTypeMetricsMixin:
                         coord_p_gt_mean = None
                         coord_margin_mean = None
                         coord_expected_bin_mae = None
+                        coord_expected_bin_abs_err_p90 = None
 
                     softce_sum = out.soft_ce_per_token.sum()
                     w1_sum = out.w1_per_token.sum()
@@ -724,6 +704,9 @@ class AggregateTokenTypeMetricsMixin:
                     if coord_expected_bin_mae is not None:
                         v = float(coord_expected_bin_mae.detach().cpu().item())
                         metrics["coord_diag/expected_bin_mae"].update(v)
+                    if coord_expected_bin_abs_err_p90 is not None:
+                        v = float(coord_expected_bin_abs_err_p90.detach().cpu().item())
+                        metrics["coord_diag/expected_bin_abs_err_p90"].update(v)
 
                     # Per-sample helpers (packed runs).
                     try:
@@ -883,6 +866,36 @@ class CoordSoftCEW1LossMixin:
                 coord_token_ids=coord_token_ids,
                 num_items_in_batch=passed_num_items,
             )
+            # ------------------------------------------------------------------
+            # Gradient-accumulation scaling (train-only)
+            # ------------------------------------------------------------------
+            # When coord_soft_ce_w1 is enabled we override `num_items_in_batch` passed
+            # to ms-swift to enforce packing-safe mean normalization for the base CE.
+            #
+            # That override prevents transformers>=4.57 from applying its usual
+            # gradient-accumulation scaling (it only divides when num_items_in_batch is None).
+            # To keep `loss` and `eval_loss` on the same scale (and keep gradients stable),
+            # we manually divide by the current accumulation steps here.
+            #
+            # NOTE: we only do this in TRAIN mode, and only when the outer trainer did pass
+            # a non-None `num_items_in_batch` (i.e. we're in the 4.57+ scaling path).
+            try:
+                if getattr(self, "model", None) is not None and bool(self.model.training):
+                    if (
+                        bool(getattr(self, "model_accepts_loss_kwargs", False))
+                        and num_items_in_batch is not None
+                        and getattr(self, "compute_loss_func", None) is None
+                    ):
+                        gas = getattr(self, "current_gradient_accumulation_steps", None)
+                        if gas is None:
+                            args = getattr(self, "args", None)
+                            gas = getattr(args, "gradient_accumulation_steps", None)
+                        gas_int = int(gas or 1)
+                        if gas_int > 1:
+                            loss = loss / float(gas_int)
+            except Exception:
+                # Best-effort only; never block training.
+                pass
         except Exception as exc:
             if not getattr(self, "_coord_softce_w1_error_warned", False):
                 logger.warning(
@@ -1043,6 +1056,7 @@ class CoordSoftCEW1LossMixin:
         coord_p_gt_mean = None
         coord_margin_mean = None
         coord_expected_bin_mae = None
+        coord_expected_bin_abs_err_p90 = None
         try:
             with torch.no_grad():
                 k = min(5, int(flat_logits.shape[-1]))
@@ -1064,9 +1078,13 @@ class CoordSoftCEW1LossMixin:
                     dtype=out.pred_probs.dtype,
                 )
                 pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
-                coord_expected_bin_mae = (
-                    pred_expected.float() - flat_target_bins.float()
-                ).abs().mean()
+                abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
+                coord_expected_bin_mae = abs_err.mean()
+                # Tail diagnostic: complements mean-only expected_bin_mae.
+                if abs_err.numel() > 0:
+                    coord_expected_bin_abs_err_p90 = torch.quantile(
+                        abs_err.to(dtype=torch.float32), 0.9
+                    )
                 temp = float(temperature) if float(temperature) > 0 else 1.0
                 logits_scaled = flat_logits.float() / temp
                 gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
@@ -1077,6 +1095,7 @@ class CoordSoftCEW1LossMixin:
             coord_p_gt_mean = None
             coord_margin_mean = None
             coord_expected_bin_mae = None
+            coord_expected_bin_abs_err_p90 = None
 
         softce_sum = out.soft_ce_per_token.sum()
         w1_sum = out.w1_per_token.sum()
@@ -1162,6 +1181,7 @@ class CoordSoftCEW1LossMixin:
             coord_p_gt_mean=coord_p_gt_mean,
             coord_margin_mean=coord_margin_mean,
             coord_expected_bin_mae=coord_expected_bin_mae,
+            coord_expected_bin_abs_err_p90=coord_expected_bin_abs_err_p90,
         )
 
         return loss + coord_loss.to(dtype=loss.dtype)
@@ -1182,6 +1202,7 @@ class CoordSoftCEW1LossMixin:
         coord_p_gt_mean: torch.Tensor | None,
         coord_margin_mean: torch.Tensor | None,
         coord_expected_bin_mae: torch.Tensor | None,
+        coord_expected_bin_abs_err_p90: torch.Tensor | None,
     ) -> None:
         mode = (
             "train"
@@ -1227,6 +1248,10 @@ class CoordSoftCEW1LossMixin:
         if coord_expected_bin_mae is not None:
             metrics["coord_diag/expected_bin_mae"].update(
                 float(coord_expected_bin_mae.detach().cpu().item())
+            )
+        if coord_expected_bin_abs_err_p90 is not None:
+            metrics["coord_diag/expected_bin_abs_err_p90"].update(
+                float(coord_expected_bin_abs_err_p90.detach().cpu().item())
             )
 
         # Per-sample normalization (packed units).

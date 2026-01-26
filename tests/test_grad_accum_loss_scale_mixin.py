@@ -1,7 +1,7 @@
 import torch
 
 
-def test_grad_accum_loss_scale_mixin_scales_train_loss() -> None:
+def test_grad_accum_loss_scale_mixin_does_not_scale_train_loss() -> None:
     from collections import defaultdict
 
     from src.metrics.dataset_metrics import GradAccumLossScaleMixin
@@ -47,7 +47,7 @@ def test_grad_accum_loss_scale_mixin_scales_train_loss() -> None:
     trainer = DummyTrainer(training=True, gas=4)
     loss = trainer.compute_loss(None, {}, return_outputs=False, num_items_in_batch=123)
     assert torch.is_tensor(loss)
-    assert loss.item() == 2.0
+    assert loss.item() == 8.0
 
 
 def test_grad_accum_loss_scale_mixin_does_not_scale_eval_loss() -> None:
