@@ -19,8 +19,17 @@ For legacy (flag-only) inference runs (no YAML):
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
+import subprocess
+import sys
+import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict
+
+import requests
+import yaml
 
 from src.infer.pipeline import run_pipeline
 
@@ -181,7 +190,8 @@ def main() -> None:
 
     if args.config is not None:
         overrides = _yaml_overrides_from_args(args)
-        artifacts = run_pipeline(config_path=Path(args.config), overrides=overrides)
+        with _maybe_launch_vllm_server(Path(args.config), overrides):
+            artifacts = run_pipeline(config_path=Path(args.config), overrides=overrides)
         print(f"Pipeline complete. run_dir={artifacts.run_dir}")
         return
 
@@ -190,6 +200,161 @@ def main() -> None:
     _add_legacy_infer_flags(ap2, required=True)
     args2 = ap2.parse_args()
     _run_legacy_infer(args2)
+
+
+def _apply_overrides(cfg: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply dotted overrides in-place (shallow utility; no schema awareness)."""
+
+    for dotted_key, value in (overrides or {}).items():
+        cursor = cfg
+        parts = str(dotted_key).split(".")
+        for part in parts[:-1]:
+            cursor = cursor.setdefault(part, {})
+        cursor[parts[-1]] = value
+    return cfg
+
+
+def _load_cfg_with_overrides(config_path: Path, overrides: Dict[str, Any]) -> Dict[str, Any]:
+    raw = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
+    if raw is None:
+        raw = {}
+    return _apply_overrides(raw, overrides)
+
+
+def _base_url_to_host_port(url: str) -> tuple[str, int]:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or 8000
+    return host, port
+
+
+def _models_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    return (base + "/models") if base.endswith("/v1") else (base + "/v1/models")
+
+
+def _is_local_base_url(base_url: str) -> bool:
+    host, _ = _base_url_to_host_port(base_url)
+    return host in {"127.0.0.1", "localhost", "0.0.0.0"}
+
+
+def _server_cmd_from_cfg(
+    model: str, host: str, port: int, server_opts: Dict[str, Any]
+) -> list[str]:
+    cmd = [
+        sys.executable,
+        "-m",
+        "vllm.entrypoints.openai.api_server",
+        "--model",
+        model,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--trust-remote-code",
+    ]
+
+    def _add(flag: str, val: Any) -> None:
+        if val is None:
+            return
+        cmd.extend([flag, str(val)])
+
+    def _add_bool(flag: str, enabled: bool | None) -> None:
+        if enabled is None:
+            return
+        cmd.append(flag if enabled else flag.replace("--", "--no-"))
+
+    _add("--tensor-parallel-size", server_opts.get("vllm_tensor_parallel_size"))
+    _add("--data-parallel-size", server_opts.get("vllm_data_parallel_size"))
+    _add("--gpu-memory-utilization", server_opts.get("vllm_gpu_memory_utilization"))
+    _add("--max-model-len", server_opts.get("vllm_max_model_len"))
+    _add("--max-num-batched-tokens", server_opts.get("max_num_batched_tokens"))
+    _add("--max-num-seqs", server_opts.get("vllm_max_num_seqs"))
+    _add_bool("--enable-prefix-caching", server_opts.get("vllm_enable_prefix_caching"))
+
+    return cmd
+
+
+@contextlib.contextmanager
+def _maybe_launch_vllm_server(config_path: Path, overrides: Dict[str, Any]):
+    """
+    Auto-launch a local vLLM server when infer.backend.type=vllm targets localhost
+    and no server is reachable. Keeps CLI unchanged; tears down after pipeline.
+    """
+
+    cfg = _load_cfg_with_overrides(config_path, overrides)
+    infer_cfg = cfg.get("infer") or {}
+    backend_cfg = infer_cfg.get("backend") or {}
+    backend_type = str(backend_cfg.get("type") or "").strip().lower()
+    base_url = str(
+        backend_cfg.get("base_url") or os.environ.get("VLLM_BASE_URL") or ""
+    ).strip()
+
+    if backend_type != "vllm":
+        yield None
+        return
+
+    if not base_url:
+        # Let downstream validation raise the canonical error.
+        yield None
+        return
+
+    if not _is_local_base_url(base_url):
+        yield None
+        return
+
+    # Fast preflight: if server already up, skip auto-launch.
+    try:
+        resp = requests.get(_models_url(base_url), timeout=1.5)
+        if resp.status_code < 400:
+            yield None
+            return
+    except Exception:
+        pass
+
+    host, port = _base_url_to_host_port(base_url)
+    model = str(backend_cfg.get("model") or infer_cfg.get("model_checkpoint") or "").strip()
+    if not model:
+        yield None
+        return
+
+    server_opts = backend_cfg.get("server_options") or {}
+    cmd = _server_cmd_from_cfg(model, host, port, server_opts)
+
+    log_path = Path("temp/vllm_server.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w") as log_fp:
+        proc = subprocess.Popen(cmd, stdout=log_fp, stderr=subprocess.STDOUT)
+
+    try:
+        deadline = time.time() + float(server_opts.get("startup_timeout_s", 120))
+        last_exc: Exception | None = None
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                raise RuntimeError(
+                    f"vLLM server exited early with code {proc.returncode}; log: {log_path}"
+                )
+            try:
+                resp = requests.get(_models_url(base_url), timeout=2.0)
+                if resp.status_code < 400:
+                    break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+            time.sleep(1.0)
+        else:
+            raise RuntimeError(
+                f"Timed out waiting for vLLM server on {base_url}; "
+                f"last error={last_exc}; see log {log_path}"
+            )
+
+        yield {"process": proc, "log": log_path}
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
 
 if __name__ == "__main__":

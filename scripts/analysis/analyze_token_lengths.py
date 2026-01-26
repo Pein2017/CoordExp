@@ -13,7 +13,7 @@ Key Features:
 5. Provides configuration recommendations for packing mode
 
 Usage:
-    python scripts/analyze_token_lengths.py \
+    python scripts/analysis/analyze_token_lengths.py \
         --model_path model_cache/Qwen3-VL-8B-Instruct-coordexp \
         --train_jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \
         --output_dir docs/temp_packed_dataset \

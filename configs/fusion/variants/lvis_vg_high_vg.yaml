@@ -1,7 +1,0 @@
-# Variant example: override VG ratio via extends (merge-by-dataset-ID).
-
-extends: ../examples/lvis_vg.yaml
-
-targets:
-  - name: vg
-    ratio: 1.0

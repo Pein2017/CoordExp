@@ -1,6 +1,7 @@
 # Scripts
 
-This directory intentionally contains only stable, user-facing entrypoints.
+This directory contains stable, user-facing entrypoints plus a small set of
+organized utilities used by docs and research workflows.
 
 ## Core entrypoints
 
@@ -8,17 +9,18 @@ This directory intentionally contains only stable, user-facing entrypoints.
 - Unified inference pipeline (YAML-first): `scripts/run_infer.py`.
 - Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.
 - Visualization wrapper: `scripts/run_vis.sh` (calls `vis_tools/vis_coordexp.py`).
+- Export helper (merge LoRA + coord offsets): `scripts/merge_coord.sh`.
 
 ## Shared helpers
 
 - `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
 
-## Legacy scripts
+## Utilities (organized)
 
-Non-core analysis and one-off utilities have been moved under:
-- `scripts/_legacy/analysis/`
-- `scripts/_legacy/tools/`
-- `scripts/_legacy/pipelines/`
+- Analysis helpers: `scripts/analysis/`
+- Tooling helpers: `scripts/tools/`
+- Small pipelines / workflow wrappers: `scripts/pipelines/`
 
-The original paths under `scripts/` remain as small forwarders for backward
-compatibility and print a deprecation notice.
+## Deprecated
+
+Deprecated wrappers are kept under `scripts/deprecated/` for reference.

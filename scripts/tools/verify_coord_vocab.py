@@ -2,7 +2,7 @@
 Verification script to check if coordinate tokens were successfully added to the vocabulary.
 
 Usage:
-    python scripts/verify_coord_vocab.py [--checkpoint PATH]
+    python scripts/tools/verify_coord_vocab.py [--checkpoint PATH]
 """
 
 from __future__ import annotations

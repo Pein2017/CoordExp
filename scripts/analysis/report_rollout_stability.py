@@ -7,7 +7,7 @@ This script is meant as a lightweight "are we EM-ish ready?" gate:
 - optionally reads inference `summary.json` and evaluator `eval/metrics.json`
 
 Example:
-  /root/miniconda3/envs/ms/bin/python scripts/report_rollout_stability.py \\
+  conda run -n ms python scripts/analysis/report_rollout_stability.py \\
     --pred_jsonl output/infer/coord_loss_ckpt3106_val200/pred.jsonl
 """
 

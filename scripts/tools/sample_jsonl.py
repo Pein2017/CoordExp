@@ -1,11 +1,11 @@
-#!/root/miniconda3/envs/ms/bin/python
+#!/usr/bin/env python3
 """
 Uniformly sample N lines from a JSONL file (without replacement).
 
 Uses reservoir sampling so it works for large files without loading everything into memory.
 
 Example:
-  /root/miniconda3/envs/ms/bin/python scripts/sample_jsonl.py \
+  conda run -n ms python scripts/tools/sample_jsonl.py \
     --input public_data/lvis/rescale_32_768_poly_20/train.coord.jsonl \
     --output public_data/lvis/rescale_32_768_poly_20/train_5k.coord.jsonl \
     --num-samples 5000 --seed 42 --write-meta
@@ -123,4 +123,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

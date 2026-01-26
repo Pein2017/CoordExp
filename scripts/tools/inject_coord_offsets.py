@@ -4,7 +4,7 @@ Inject coord_offset embeddings/logits directly into merged safetensor shards
 without loading the full model.
 
 Usage:
-  python scripts/inject_coord_offsets.py \
+  python scripts/tools/inject_coord_offsets.py \
       --merged_dir output/debug/coord_merged \
       --adapter_dir output/debug/coord/v0-20251203-054636/epoch_30-dlora-lrs_4_2_8-sft_base/checkpoint-6
 """

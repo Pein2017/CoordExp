@@ -14,24 +14,24 @@ Features:
 
 Usage:
   # Basic: Verify coordinate tokens were trained
-  python verify_coord_tokens.py \\
+  conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
     --merged output/debug/coord_merged
 
   # With adapter checkpoint verification
-  python verify_coord_tokens.py \\
+  conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
     --merged output/debug/coord_merged \\
     --adapter output/debug/coord/checkpoint-15
 
   # Also check other layers (vision, LLM, aligner)
-  python verify_coord_tokens.py \\
+  conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
     --merged output/debug/coord_merged \\
     --check-layers
 
   # Use GPU for faster loading
-  python verify_coord_tokens.py \\
+  conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
     --merged output/debug/coord_merged \\
     --device cuda:0
@@ -50,8 +50,9 @@ from safetensors import safe_open
 from transformers import AutoConfig, AutoTokenizer
 
 # Add repo root to path
-REPO_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def find_safetensors_files(model_path: Path):

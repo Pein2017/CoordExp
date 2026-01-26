@@ -59,5 +59,5 @@ All future domains MUST emit this contract to remain compatible with the shared 
 
 For an exact view of how a record plus the default prompts are rendered by the Qwen3-VL chat template, run:
 ```
-python scripts/inspect_chat_template.py --jsonl <path/to/data.jsonl> --index 0
+python scripts/tools/inspect_chat_template.py --jsonl <path/to/data.jsonl> --index 0
 ```

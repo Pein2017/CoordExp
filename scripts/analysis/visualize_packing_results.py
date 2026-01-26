@@ -9,7 +9,7 @@ This script takes the output from analyze_token_lengths.py and generates:
 4. Memory estimation for different configurations
 
 Usage:
-    python scripts/visualize_packing_results.py \
+    python scripts/analysis/visualize_packing_results.py \
         --input_dir docs/temp_packed_dataset \
         --output_dir docs/temp_packed_dataset/figures
 """

@@ -58,7 +58,7 @@ tuner:
 ```
 
 **Avoid repeated guesswork**:
-- Use `scripts/inspect_checkpoint_modules.py` to inspect a checkpoint and generate a correct `target_regex`
+- Use `scripts/tools/inspect_checkpoint_modules.py` to inspect a checkpoint and generate a correct `target_regex`
   based on the checkpoint’s actual module keys (works without loading tensors).
 
 ---

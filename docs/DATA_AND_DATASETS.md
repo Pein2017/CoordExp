@@ -138,7 +138,7 @@ If your source is a human-annotation export, start with the intake guide (`docs/
 - **Visualization**:
   - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
 - **Chat template inspection**:
-  - `scripts/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
+  - `scripts/tools/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
 
 **Fusion status**: Multi-dataset fusion is supported via `custom.fusion_config`. When set, the runner builds train/eval datasets from the fusion config and ignores `custom.train_jsonl` / `custom.val_jsonl`. See `docs/data/FUSION_DATASET.md`.
 

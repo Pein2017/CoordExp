@@ -2,7 +2,7 @@ extends: ../base.yaml
 
 
 model:
-  model: model_cache/Qwen3-VL-8B-Instruct-coordexp  
+  model: model_cache/Qwen3-VL-4B-Instruct-coordexp  
 
 tuner:
   train_type: lora
