@@ -506,11 +506,8 @@ class CustomConfig:
             raise TypeError("custom.val_sample_with_replacement must be a boolean value")
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
-        if self.coord_tokens.enabled and not self.coord_soft_ce_w1.enabled:
-            raise ValueError(
-                "custom.coord_tokens.enabled requires custom.coord_soft_ce_w1.enabled "
-                "(coord tokens must be supervised with distribution losses)."
-            )
+        # NOTE: Coord tokens can be supervised either via distribution losses
+        # (custom.coord_soft_ce_w1) or via the base CE objective (ablations).
         # NOTE: We intentionally do not validate val_sample_with_replacement sizing here
         # because runtime may override sample limits (e.g. via debug.*). The runner
         # performs the strict check after resolving the active sample-limit namespace.

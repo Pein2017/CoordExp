@@ -450,6 +450,337 @@ class AggregateTokenTypeMetricsMixin:
             # Best-effort only; never block training.
             pass
 
+        # ------------------------------------------------------------------
+        # Coord distribution diagnostics (metrics-only; for pure-CE ablations)
+        # ------------------------------------------------------------------
+        # When coord_soft_ce_w1 is disabled, coord tokens are trained with pure CE.
+        # Log the distribution-loss components anyway so we can compare training dynamics.
+        try:
+            cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+            if cfg is not None and not bool(getattr(cfg, "enabled", False)):
+                metrics["coord_diag/enabled"].update(0.0)
+
+                vocab_size = int(logits_next.shape[-1])
+                if vocab_size <= 0:
+                    coord_positions_mask = None
+                else:
+                    # Cache coord-token ids so we don't call tokenizer.convert_tokens_to_ids()
+                    # on every step when running pure-CE baselines.
+                    coord_token_ids = getattr(self, "_coordexp_coord_token_ids", None)
+                    if not isinstance(coord_token_ids, list) or not coord_token_ids:
+                        coord_token_ids = []
+                        coord_ids_fn = getattr(self, "_get_coord_token_ids", None)
+                        if callable(coord_ids_fn):
+                            coord_token_ids = coord_ids_fn()
+                        else:
+                            tokenizer = getattr(getattr(self, "template", None), "tokenizer", None)
+                            if tokenizer is not None:
+                                coord_token_ids = get_coord_token_ids(tokenizer)
+                        try:
+                            setattr(self, "_coordexp_coord_token_ids", list(coord_token_ids))
+                        except Exception:
+                            pass
+
+                    if not coord_token_ids:
+                        coord_positions_mask = None
+                    else:
+                        # Cache small coord-vocab tensors per device/vocab_size.
+                        cache = getattr(self, "_coordexp_coord_vocab_cache", None)
+                        if not isinstance(cache, dict):
+                            cache = {}
+                            try:
+                                setattr(self, "_coordexp_coord_vocab_cache", cache)
+                            except Exception:
+                                cache = {}
+                        cache_key = (str(logits_next.device), int(vocab_size))
+                        entry = cache.get(cache_key)
+                        if not isinstance(entry, dict):
+                            # `coord_token_ids` are in *bin order* (0..999); build:
+                            # - ids_bin: ids in bin order (for slicing logits -> K bins)
+                            # - ids_sorted/bins_sorted: ids sorted by token id with bin mapping (for labels -> bin)
+                            valid_pairs = []
+                            for bin_idx, tok_id in enumerate(coord_token_ids):
+                                try:
+                                    tok_id_i = int(tok_id)
+                                except Exception:
+                                    continue
+                                if 0 <= tok_id_i < vocab_size:
+                                    valid_pairs.append((bin_idx, tok_id_i))
+                            if len(valid_pairs) != len(coord_token_ids):
+                                entry = None
+                            else:
+                                valid_pairs.sort(key=lambda x: x[0])
+                                ids_bin_list = [tid for _, tid in valid_pairs]
+                                ids_bin = torch.tensor(
+                                    ids_bin_list,
+                                    device=logits_next.device,
+                                    dtype=torch.long,
+                                )
+                                # Searchsorted mapping (id -> bin) without allocating a full vocab-sized lookup.
+                                sorted_pairs = sorted(
+                                    [(tid, bin_idx) for bin_idx, tid in valid_pairs],
+                                    key=lambda x: x[0],
+                                )
+                                ids_sorted = torch.tensor(
+                                    [tid for tid, _ in sorted_pairs],
+                                    device=logits_next.device,
+                                    dtype=torch.long,
+                                )
+                                bins_sorted = torch.tensor(
+                                    [bin_idx for _, bin_idx in sorted_pairs],
+                                    device=logits_next.device,
+                                    dtype=torch.long,
+                                )
+                                contig = False
+                                start = None
+                                k = int(ids_bin.numel())
+                                if k > 0:
+                                    start_i = int(ids_bin_list[0])
+                                    contig = all(
+                                        int(ids_bin_list[i]) == start_i + i for i in range(k)
+                                    )
+                                    if contig:
+                                        start = start_i
+                                entry = {
+                                    "ids_bin": ids_bin,
+                                    "ids_sorted": ids_sorted,
+                                    "bins_sorted": bins_sorted,
+                                    "contig": bool(contig),
+                                    "start": start,
+                                }
+                                cache[cache_key] = entry
+
+                        if not isinstance(entry, dict):
+                            coord_positions_mask = None
+                        else:
+                            ids_sorted = entry["ids_sorted"]
+                            bins_sorted = entry["bins_sorted"]
+                            k = int(ids_sorted.numel())
+                            if k <= 0:
+                                coord_positions_mask = None
+                            else:
+                                labels_safe = labels_next
+                                if labels_safe.numel() > 0 and labels_safe.min().item() < 0:
+                                    labels_safe = labels_safe.clamp(min=0)
+                                labels_clamped = labels_safe.clamp(min=0, max=vocab_size - 1)
+                                pos = torch.searchsorted(ids_sorted, labels_clamped)
+                                pos_safe = pos.clamp(max=k - 1)
+                                match = (pos < k) & (ids_sorted[pos_safe] == labels_clamped) & mask_all
+                                target_bins_all = torch.where(
+                                    match, bins_sorted[pos_safe], pos_safe.new_full(pos_safe.shape, -1)
+                                )
+                                coord_positions_mask = target_bins_all >= 0
+
+                if not isinstance(coord_positions_mask, torch.Tensor) or not coord_positions_mask.any().item():
+                    coord_positions_mask = None
+
+                with torch.no_grad():
+                    if coord_positions_mask is None:
+                        return
+
+                    flat_logits_full = logits_next[coord_positions_mask]
+                    flat_target_bins = target_bins_all[coord_positions_mask].to(dtype=torch.long)
+                    ids_bin = entry["ids_bin"]
+                    start = entry.get("start", None)
+                    if entry.get("contig", False) and isinstance(start, int):
+                        flat_logits_coord = flat_logits_full[..., start : start + ids_bin.numel()]
+                    else:
+                        flat_logits_coord = flat_logits_full.index_select(-1, ids_bin)
+
+                    temperature = float(getattr(cfg, "temperature", 1.0))
+                    soft_ce_weight = float(getattr(cfg, "soft_ce_weight", 1.0))
+                    w1_weight = float(getattr(cfg, "w1_weight", 1.0))
+                    gate_weight = float(getattr(cfg, "gate_weight", 0.0))
+
+                    out = coord_soft_ce_w1(
+                        flat_logits_coord,
+                        flat_target_bins,
+                        sigma=float(getattr(cfg, "target_sigma", 2.0)),
+                        truncate=getattr(cfg, "target_truncate", None),
+                        temperature=temperature,
+                        # Weighting is applied at the metric level so we can include the gate term.
+                        soft_ce_weight=1.0,
+                        w1_weight=1.0,
+                        normalize_w1=True,
+                    )
+
+                    # Distribution monitors (coord vocab only).
+                    coord_acc_top5 = None
+                    coord_p_gt_mean = None
+                    coord_margin_mean = None
+                    coord_expected_bin_mae = None
+                    try:
+                        k = min(5, int(flat_logits_coord.shape[-1]))
+                        topk = flat_logits_coord.topk(k=k, dim=-1).indices
+                        coord_acc_top5 = (
+                            (topk == flat_target_bins.unsqueeze(-1))
+                            .any(dim=-1)
+                            .float()
+                            .mean()
+                        )
+                        coord_p_gt_mean = out.pred_probs.gather(
+                            1, flat_target_bins.view(-1, 1)
+                        ).mean()
+                        bins = torch.arange(
+                            int(out.pred_probs.shape[-1]),
+                            device=out.pred_probs.device,
+                            dtype=out.pred_probs.dtype,
+                        )
+                        pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
+                        coord_expected_bin_mae = (
+                            pred_expected.float() - flat_target_bins.float()
+                        ).abs().mean()
+                        temp = float(temperature) if float(temperature) > 0 else 1.0
+                        logits_scaled = flat_logits_coord.float() / temp
+                        gt_logit = logits_scaled.gather(
+                            1, flat_target_bins.view(-1, 1)
+                        ).squeeze(1)
+                        max_logit = logits_scaled.max(dim=-1).values
+                        coord_margin_mean = (max_logit - gt_logit).mean()
+                    except Exception:
+                        coord_acc_top5 = None
+                        coord_p_gt_mean = None
+                        coord_margin_mean = None
+                        coord_expected_bin_mae = None
+
+                    softce_sum = out.soft_ce_per_token.sum()
+                    w1_sum = out.w1_per_token.sum()
+                    gate_sum = softce_sum.new_tensor(0.0)
+                    gate_mass_mean = None
+                    if gate_weight != 0.0:
+                        temp = float(temperature) if float(temperature) > 0 else 1.0
+                        full = torch.nan_to_num(
+                            flat_logits_full.float(),
+                            nan=0.0,
+                            posinf=1e4,
+                            neginf=-1e4,
+                        ).clamp(min=-1e4, max=1e4) / float(temp)
+                        coord = torch.nan_to_num(
+                            flat_logits_coord.float(),
+                            nan=0.0,
+                            posinf=1e4,
+                            neginf=-1e4,
+                        ).clamp(min=-1e4, max=1e4) / float(temp)
+                        lse_all = torch.logsumexp(full, dim=-1)
+                        lse_coord = torch.logsumexp(coord, dim=-1)
+                        gate_per_token = (lse_all - lse_coord).clamp(min=0.0)
+                        gate_sum = gate_per_token.sum()
+                        gate_mass_mean = torch.exp(
+                            (-gate_per_token).clamp(min=-50.0, max=50.0)
+                        ).mean()
+
+                    denom = coord_positions_mask.sum().to(dtype=torch.float32)
+                    if (
+                        getattr(getattr(self, "args", None), "average_tokens_across_devices", False)
+                        and getattr(self, "model_accepts_loss_kwargs", False)
+                        and dist.is_available()
+                        and dist.is_initialized()
+                    ):
+                        denom_global = denom.detach().clone()
+                        dist.all_reduce(denom_global, op=dist.ReduceOp.SUM)
+                        denom = denom_global
+                    denom = torch.where(denom > 0, denom, denom.new_tensor(1.0))
+
+                    softce_loss = softce_sum / denom
+                    w1_loss = w1_sum / denom
+                    gate_loss = gate_sum / denom
+
+                    softce_contrib = soft_ce_weight * softce_loss
+                    w1_contrib = w1_weight * w1_loss
+                    gate_contrib = gate_weight * gate_loss
+                    coord_loss = softce_contrib + w1_contrib + gate_contrib
+
+                    if (
+                        getattr(getattr(self, "args", None), "average_tokens_across_devices", False)
+                        and getattr(self, "model_accepts_loss_kwargs", False)
+                    ):
+                        try:
+                            if dist.is_available() and dist.is_initialized():
+                                scale = float(dist.get_world_size())
+                            else:
+                                scale = float(self.accelerator.num_processes)
+                        except Exception:
+                            scale = 1.0
+                        coord_loss = coord_loss * scale
+                        softce_contrib = softce_contrib * scale
+                        w1_contrib = w1_contrib * scale
+                        gate_contrib = gate_contrib * scale
+
+                    coord_loss = torch.nan_to_num(
+                        coord_loss, nan=0.0, posinf=1e4, neginf=0.0
+                    )
+                    softce_contrib = torch.nan_to_num(
+                        softce_contrib, nan=0.0, posinf=1e4, neginf=0.0
+                    )
+                    w1_contrib = torch.nan_to_num(
+                        w1_contrib, nan=0.0, posinf=1e4, neginf=0.0
+                    )
+                    gate_contrib = torch.nan_to_num(
+                        gate_contrib, nan=0.0, posinf=1e4, neginf=0.0
+                    )
+
+                    coord_tokens = int(coord_positions_mask.sum().detach().item())
+                    metrics["coord_diag/loss"].update(
+                        float(coord_loss.detach().cpu().item())
+                    )
+                    metrics["coord_diag/soft_ce"].update(
+                        float(softce_contrib.detach().cpu().item())
+                    )
+                    metrics["coord_diag/w1"].update(float(w1_contrib.detach().cpu().item()))
+                    metrics["coord_diag/gate"].update(
+                        float(gate_contrib.detach().cpu().item())
+                    )
+                    metrics["coord_diag/coord_tokens"].update(float(coord_tokens))
+                    if gate_mass_mean is not None:
+                        metrics["coord_diag/coord_vocab_mass"].update(
+                            float(gate_mass_mean.detach().cpu().item())
+                        )
+                    if coord_acc_top5 is not None:
+                        metrics["coord_diag/acc_top5"].update(
+                            float(coord_acc_top5.detach().cpu().item())
+                        )
+                    if coord_p_gt_mean is not None:
+                        metrics["coord_diag/p_gt_mean"].update(
+                            float(coord_p_gt_mean.detach().cpu().item())
+                        )
+                    if coord_margin_mean is not None:
+                        metrics["coord_diag/margin_mean"].update(
+                            float(coord_margin_mean.detach().cpu().item())
+                        )
+                    if coord_expected_bin_mae is not None:
+                        v = float(coord_expected_bin_mae.detach().cpu().item())
+                        metrics["coord_diag/expected_bin_mae"].update(v)
+                        metrics["coord_expected_bin_mae"].update(v)
+
+                    # Per-sample helpers (packed runs).
+                    try:
+                        total_samples = None
+                        pack_n = getattr(self, "_coordexp_pack_num_samples", None)
+                        if isinstance(pack_n, torch.Tensor):
+                            total_samples = float(pack_n.detach().sum().cpu().item())
+                        elif isinstance(pack_n, (list, tuple)):
+                            total_samples = float(sum(int(v) for v in pack_n))
+                        elif isinstance(pack_n, (int, float)):
+                            total_samples = float(pack_n)
+                        if total_samples is None:
+                            total_samples = float(labels_next.shape[0])
+                        total_samples = max(1.0, float(total_samples))
+
+                        metrics["coord_diag/coord_tokens_per_sample"].update(
+                            float(coord_tokens) / float(total_samples)
+                        )
+                        coord_loss_per_sample = float(
+                            coord_loss.detach().cpu().item()
+                        ) * float(coord_tokens) / float(total_samples)
+                        metrics["coord_diag/loss_per_sample"].update(
+                            float(coord_loss_per_sample)
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            # Best-effort only; never block training.
+            pass
+
         # Only split text vs coord; do not emit per-subtype metrics.
 
     def _infer_coord_mask(
@@ -873,6 +1204,34 @@ class CoordSoftCEW1LossMixin:
                 float(coord_expected_bin_mae.detach().cpu().item())
             )
 
+        # Aliases for ablation comparisons: stable tag across loss modes.
+        metrics["coord_diag/enabled"].update(1.0)
+        metrics["coord_diag/loss"].update(float(loss_total.detach().cpu().item()))
+        metrics["coord_diag/soft_ce"].update(float(loss_softce.detach().cpu().item()))
+        metrics["coord_diag/w1"].update(float(loss_w1.detach().cpu().item()))
+        metrics["coord_diag/gate"].update(float(loss_gate.detach().cpu().item()))
+        metrics["coord_diag/coord_tokens"].update(float(coord_tokens))
+        if gate_mass_mean is not None:
+            metrics["coord_diag/coord_vocab_mass"].update(
+                float(gate_mass_mean.detach().cpu().item())
+            )
+        if coord_acc_top5 is not None:
+            metrics["coord_diag/acc_top5"].update(
+                float(coord_acc_top5.detach().cpu().item())
+            )
+        if coord_p_gt_mean is not None:
+            metrics["coord_diag/p_gt_mean"].update(
+                float(coord_p_gt_mean.detach().cpu().item())
+            )
+        if coord_margin_mean is not None:
+            metrics["coord_diag/margin_mean"].update(
+                float(coord_margin_mean.detach().cpu().item())
+            )
+        if coord_expected_bin_mae is not None:
+            metrics["coord_diag/expected_bin_mae"].update(
+                float(coord_expected_bin_mae.detach().cpu().item())
+            )
+
         # Per-sample normalization (packed units).
         try:
             total_samples = None
@@ -890,10 +1249,14 @@ class CoordSoftCEW1LossMixin:
             metrics["coord_softce_w1/coord_tokens_per_sample"].update(
                 float(coord_tokens) / float(total_samples)
             )
+            metrics["coord_diag/coord_tokens_per_sample"].update(
+                float(coord_tokens) / float(total_samples)
+            )
             coord_loss_per_sample = float(loss_total.detach().cpu().item()) * float(
                 coord_tokens
             ) / float(total_samples)
             metrics["coord_softce_w1/loss_per_sample"].update(float(coord_loss_per_sample))
+            metrics["coord_diag/loss_per_sample"].update(float(coord_loss_per_sample))
 
             base_loss_per_sample = getattr(self, "_coordexp_last_base_loss_per_sample", None)
             if isinstance(base_loss_per_sample, (int, float)):
