@@ -20,7 +20,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 1) **Environment**: activate `ms` conda env (`/root/miniconda3/envs/ms`), transformers in that env, ms-swift at `/data/ms-swift`.
 2) **Expand vocab once** (creates coord tokens 0–999 + optional wildcard and saves a new checkpoint):
    ```bash
-   cd /data/home/xiaoyan/AIteam/data/CoordExp
+   cd .
    python scripts/tools/expand_coord_vocab.py \
      --src /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
      --dst /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp

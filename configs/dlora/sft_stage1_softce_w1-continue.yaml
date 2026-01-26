@@ -11,9 +11,9 @@ model:
   model: output/1-24/stage_1/poly_prefer_semantic_max60/epoch_4-softce_w1-LRs-2e-4_1e-4_4e-4-from-base-4B/checkpoint-1520_merged
 
 training:
-  output_dir: ./output/1-24/stage_1-continue/
+  output_dir: ./output/1-24/stage_1-continue-zero-area-removed/
   run_name: epoch_2-softCE-3-W1-1-gate-1-llm_lr-1e-4-vit_lr-0.5e-4-aligner_lr-2e-4
-  logging_dir: ./tb/1-24/stage_1-continue/
+  logging_dir: ./tb/1-24/stage_1-continue-zero-area-removed/
   num_train_epochs: 2
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1

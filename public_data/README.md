@@ -7,7 +7,7 @@ The preferred interface is the unified runner:
 `./public_data/run.sh <dataset> <command> ...`
 
 ## Scope & Prereqs
-- Repo root: `/data/home/xiaoyan/AIteam/data/CoordExp` (run `./public_data/run.sh` from here).
+- Repo root: `.` (run `./public_data/run.sh` from here).
 - Conda env: `ms` (python steps run via `conda run -n ms python ...` by default).
 - Tools: dataset-dependent (`wget`, `unzip`, etc.); disk requirements depend on dataset.
 

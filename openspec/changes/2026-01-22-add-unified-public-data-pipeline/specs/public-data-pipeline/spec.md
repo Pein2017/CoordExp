@@ -6,7 +6,7 @@ The system SHALL provide a unified shell entrypoint at `public_data/run.sh` to r
 The runner SHALL be executed from the CoordExp repository root (the directory that contains `public_data/` and `src/`).
 
 #### Scenario: User runs unified entrypoint from repo root
-- **GIVEN** the user is in the repo root (`/data/home/xiaoyan/AIteam/data/CoordExp`)
+- **GIVEN** the user is in the repo root (`.`)
 - **WHEN** the user runs `public_data/run.sh <dataset> <command> [args...]`
 - **THEN** the runner executes the requested command for the specified dataset and exits non-zero on failure.
 

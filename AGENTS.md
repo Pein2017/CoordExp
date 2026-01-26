@@ -40,7 +40,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Prefer small, incremental commits (or a `git stash`) during large refactors so work can’t be accidentally discarded.
 
 ## Environment
-- Repo root: `/data/home/xiaoyan/AIteam/data/CoordExp`.
+- Repo root: `.`.
 - Use `conda run -n ms python ...` for commands (e.g., tests).
 - Target models: `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
 - Use `temp/` for one-off debug artifacts; clean up when done.

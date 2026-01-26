@@ -29,7 +29,7 @@ run_cmd() {
 require_repo_root() {
   # Repo-root anchored by design: ensures PYTHONPATH=. works and paths stay consistent.
   if [[ ! -d "public_data" || ! -d "src" || ! -f "public_data/run.sh" ]]; then
-    die "Run this from the CoordExp repo root (directory containing public_data/ and src/). Example: cd /data/home/xiaoyan/AIteam/data/CoordExp"
+    die "Run this from the CoordExp repo root (directory containing public_data/ and src/). Example: cd ."
   fi
 }
 

@@ -7,7 +7,7 @@ Visual Genome is supported via a downloader + converter script that follows the 
 ## Quick Start
 
 All commands should be run from the repo root:
-`/data/home/xiaoyan/AIteam/data/CoordExp`
+`.`
 
 ## Datasets supported
 

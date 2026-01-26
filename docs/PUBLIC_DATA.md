@@ -15,7 +15,7 @@ The preferred way to prepare public datasets is the unified runner:
 ```
 
 Key design points:
-- Run from the repo root (`/data/home/xiaoyan/AIteam/data/CoordExp`) so `PYTHONPATH=.` is consistent.
+- Run from the repo root (`.`) so `PYTHONPATH=.` is consistent.
 - Dataset-specific logic lives in shell plugins under `public_data/datasets/<dataset>.sh`.
 - Shared preprocessing steps are reused across datasets:
   - `public_data/scripts/rescale_jsonl.py`
