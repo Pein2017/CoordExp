@@ -21,19 +21,38 @@
 set -euo pipefail
 
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
-if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  echo "Usage: bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh [--force]"
-  echo "  --force: overwrite outputs even if they already exist"
-  echo "  (or set FORCE_REBUILD=1)"
-  exit 0
-fi
-if [ "${1:-}" = "--force" ]; then
-  FORCE_REBUILD=1
-  shift
-fi
-if [ $# -ne 0 ]; then
-  echo "[error] unexpected args: $*"
+JOBS="${LVIS_EXPORT_JOBS:-${JOBS:-1}}"
+
+# Args (keep defaults safe; no parallelism unless user opts in).
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      echo "Usage: bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh [--force] [--jobs N]"
+      echo "  --force: overwrite outputs even if they already exist (or set FORCE_REBUILD=1)"
+      echo "  --jobs N: run N dataset splits concurrently (or set LVIS_EXPORT_JOBS=N)"
+      exit 0
+      ;;
+    --force)
+      FORCE_REBUILD=1
+      shift
+      ;;
+    --jobs)
+      JOBS="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "[error] unexpected arg: $1"
+      exit 2
+      ;;
+  esac
+done
+
+if ! [[ "${JOBS}" =~ ^[0-9]+$ ]]; then
+  echo "[error] --jobs must be an integer, got: ${JOBS}"
   exit 2
+fi
+if [ "${JOBS}" -lt 1 ]; then
+  JOBS=1
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -100,6 +119,49 @@ ensure_images_link() {
   fi
 }
 
+# Lightweight parallel job runner (bash-only; no external deps).
+# NOTE: stdout/stderr from concurrent jobs will interleave in the shared log.
+_pids=()
+_names=()
+
+_running_jobs() {
+  jobs -pr | wc -l | tr -d ' '
+}
+
+_wait_for_slot() {
+  local max_jobs="$1"
+  while [ "$(_running_jobs)" -ge "${max_jobs}" ]; do
+    sleep 0.2
+  done
+}
+
+_run_bg() {
+  local name="$1"; shift
+  _wait_for_slot "${JOBS}"
+  echo "[job] start ${name}"
+  (
+    set -euo pipefail
+    "$@"
+  ) &
+  _pids+=("$!")
+  _names+=("${name}")
+}
+
+_wait_all() {
+  local fail=0
+  for i in "${!_pids[@]}"; do
+    local pid="${_pids[$i]}"
+    local name="${_names[$i]}"
+    if wait "${pid}"; then
+      echo "[job] done ${name}"
+    else
+      echo "[job] FAIL ${name} (pid=${pid})"
+      fail=1
+    fi
+  done
+  return "${fail}"
+}
+
 last_json_ok() {
   local path="$1"
   python - "$path" <<'PY'
@@ -142,7 +204,7 @@ convert_if_needed() {
       rm -f "${norm_out}" "${coord_out}"
     fi
     echo "[convert] ${raw_in} -> ${norm_out} + ${coord_out}"
-    PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
+    PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
       --input "${raw_in}" \
       --output-norm "${norm_out}" \
       --output-tokens "${coord_out}"
@@ -177,7 +239,7 @@ build_bbox_only_split() {
   if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
     echo ""
     echo "[build:bbox_only] ${split}"
-    PYTHONPATH=. python public_data/scripts/build_lvis_hull_mix.py \
+    PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
@@ -191,7 +253,7 @@ build_bbox_only_split() {
 
   if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
     echo "[filter] ${split} bbox_only max_objects=60"
-    PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
+    PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
       --input "${raw_out}" \
       --output "${max60_raw}" \
       --max-objects 60 \
@@ -230,7 +292,7 @@ build_poly_prefer_split() {
   if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
     echo ""
     echo "[build:poly_prefer] ${split} cap=${cap}"
-    PYTHONPATH=. python public_data/scripts/build_lvis_hull_mix.py \
+    PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
       --output-jsonl "${raw_out}" \
@@ -245,7 +307,7 @@ build_poly_prefer_split() {
 
   if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
     echo "[filter] ${split} cap=${cap} max_objects=60"
-    PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
+    PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
       --input "${raw_out}" \
       --output "${max60_raw}" \
       --max-objects 60 \
@@ -259,34 +321,41 @@ build_poly_prefer_split() {
 
 echo ""
 echo "== Build bbox-only (max60) =="
-build_bbox_only_split train
-build_bbox_only_split val
+_run_bg bbox_only_train build_bbox_only_split train
+_run_bg bbox_only_val build_bbox_only_split val
 
 echo ""
 echo "== Build poly-prefer semantic (max60) cap10/cap20 =="
-build_poly_prefer_split train 10
-build_poly_prefer_split val 10
-build_poly_prefer_split train 20
-build_poly_prefer_split val 20
+_run_bg poly_prefer_cap10_train build_poly_prefer_split train 10
+_run_bg poly_prefer_cap10_val build_poly_prefer_split val 10
+_run_bg poly_prefer_cap20_train build_poly_prefer_split train 20
+_run_bg poly_prefer_cap20_val build_poly_prefer_split val 20
+
+echo ""
+echo "== Wait for all jobs (JOBS=${JOBS}) =="
+if ! _wait_all; then
+  echo "[error] one or more export jobs failed"
+  exit 1
+fi
 
 echo ""
 echo "== Token length sanity (GT assistant, coord jsonl) =="
 if [ -d "${MODEL_CKPT}" ]; then
-  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. conda run -n ms python scripts/analysis/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
     --batch_size 128 --topk 10 \
     --save_json public_data/lvis/rescale_32_768_bbox_max60/length.bbox_only.max60.assistant_tokens.json
 
-  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. conda run -n ms python scripts/analysis/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap10.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap10.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
     --batch_size 128 --topk 10 \
     --save_json public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/length.poly_prefer_semantic_cap10.max60.assistant_tokens.json
 
-  PYTHONPATH=. python scripts/measure_gt_max_new_tokens.py \
+  PYTHONPATH=. conda run -n ms python scripts/analysis/measure_gt_max_new_tokens.py \
     --train_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl \
     --val_jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
     --checkpoint "${MODEL_CKPT}" \
