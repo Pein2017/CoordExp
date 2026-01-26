@@ -750,7 +750,6 @@ class AggregateTokenTypeMetricsMixin:
                     if coord_expected_bin_mae is not None:
                         v = float(coord_expected_bin_mae.detach().cpu().item())
                         metrics["coord_diag/expected_bin_mae"].update(v)
-                        metrics["coord_expected_bin_mae"].update(v)
 
                     # Per-sample helpers (packed runs).
                     try:
@@ -1179,32 +1178,9 @@ class CoordSoftCEW1LossMixin:
             return
         metrics = custom_metrics[mode]
 
-        metrics["coord_softce_w1/loss"].update(float(loss_total.detach().cpu().item()))
-        metrics["coord_softce_w1/soft_ce"].update(float(loss_softce.detach().cpu().item()))
-        metrics["coord_softce_w1/w1"].update(float(loss_w1.detach().cpu().item()))
-        metrics["coord_softce_w1/gate"].update(float(loss_gate.detach().cpu().item()))
         coord_tokens = int(coord_positions_mask.sum().detach().item())
-        metrics["coord_softce_w1/coord_tokens"].update(float(coord_tokens))
-        if gate_mass_mean is not None:
-            metrics["coord_softce_w1/coord_vocab_mass"].update(
-                float(gate_mass_mean.detach().cpu().item())
-            )
-        if coord_acc_top5 is not None:
-            metrics["coord_softce_w1/acc_top5"].update(float(coord_acc_top5.detach().cpu().item()))
-        if coord_p_gt_mean is not None:
-            metrics["coord_softce_w1/p_gt_mean"].update(
-                float(coord_p_gt_mean.detach().cpu().item())
-            )
-        if coord_margin_mean is not None:
-            metrics["coord_softce_w1/margin_mean"].update(
-                float(coord_margin_mean.detach().cpu().item())
-            )
-        if coord_expected_bin_mae is not None:
-            metrics["coord_expected_bin_mae"].update(
-                float(coord_expected_bin_mae.detach().cpu().item())
-            )
 
-        # Aliases for ablation comparisons: stable tag across loss modes.
+        # Stable tags across loss modes (pure CE vs softCE+W1+gate).
         metrics["coord_diag/enabled"].update(1.0)
         metrics["coord_diag/loss"].update(float(loss_total.detach().cpu().item()))
         metrics["coord_diag/soft_ce"].update(float(loss_softce.detach().cpu().item()))
@@ -1246,16 +1222,12 @@ class CoordSoftCEW1LossMixin:
                 total_samples = float(labels_next.shape[0])
             total_samples = max(1.0, float(total_samples))
 
-            metrics["coord_softce_w1/coord_tokens_per_sample"].update(
-                float(coord_tokens) / float(total_samples)
-            )
             metrics["coord_diag/coord_tokens_per_sample"].update(
                 float(coord_tokens) / float(total_samples)
             )
             coord_loss_per_sample = float(loss_total.detach().cpu().item()) * float(
                 coord_tokens
             ) / float(total_samples)
-            metrics["coord_softce_w1/loss_per_sample"].update(float(coord_loss_per_sample))
             metrics["coord_diag/loss_per_sample"].update(float(coord_loss_per_sample))
 
             base_loss_per_sample = getattr(self, "_coordexp_last_base_loss_per_sample", None)

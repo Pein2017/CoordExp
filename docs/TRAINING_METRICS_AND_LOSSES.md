@@ -5,7 +5,7 @@ training/evaluation runs.
 
 Notes:
 - Keys shown here are the *train* names. During evaluation, ms-swift prefixes keys with
-  `eval_` (e.g. `coord_softce_w1/loss` -> `eval_coord_softce_w1/loss`).
+  `eval_` (e.g. `coord_diag/loss` -> `eval_coord_diag/loss`).
 - Unless otherwise stated, metrics are computed on **supervised next-token positions**
   (i.e. `labels[:, 1:] != -100`).
 
@@ -200,68 +200,73 @@ Diagnostics (logged as metrics, prefixed with `eval_` during evaluation):
 - **Normalization:** mean over the number of GT coord-token positions (packing-safe).
 - **In loss:** YES (added to the base loss).
 
-### Coord-token loss breakdown (`coord_softce_w1/*`)
+### Coord-token loss breakdown (`coord_diag/*`)
 
 The coord loss is:
 
-`coord_softce_w1/loss = soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate`
+`coord_diag/loss = soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate`
 
-- `coord_softce_w1/loss`
-  - **What:** total coord loss added to the training loss (already includes weights).
-  - **In loss:** YES (train and eval_loss when `custom.coord_soft_ce_w1.enabled: true`).
+- `coord_diag/enabled`
+  - **What:** whether coord-gated softCE+W1(+gate) is active (`1.0`) or this is a pure-CE ablation (`0.0`).
+  - **In loss:** NO (this is a tag for grouping/comparability across ablations).
 
-- `coord_softce_w1/soft_ce`
+- `coord_diag/loss`
+  - **What:** coord loss term (already includes weights). When `coord_diag/enabled=1`, this is the
+    coord term *added* to the training loss. When `coord_diag/enabled=0`, this is diagnostic-only.
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` (otherwise diagnostic-only).
+
+- `coord_diag/soft_ce`
   - **What:** soft cross-entropy between the predicted coord distribution and a Gaussian
     soft target centered at the GT bin.
-  - **In loss:** YES (train and eval_loss).
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` (otherwise diagnostic-only).
 
-- `coord_softce_w1/w1`
+- `coord_diag/w1`
   - **What:** 1D Wasserstein-1 distance computed via CDF differences on the ordered bins.
-  - **In loss:** YES (train and eval_loss).
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` (otherwise diagnostic-only).
 
-- `coord_softce_w1/gate`
+- `coord_diag/gate`
   - **What:** coord-vocab "mass leak" penalty at GT coord positions:
       `gate = -log(sum_{i in coord_vocab} softmax(full_logits / T)[i])`
-  - **In loss:** YES iff `gate_weight != 0` (train and eval_loss).
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` and `gate_weight != 0` (otherwise diagnostic-only).
 
-- `coord_softce_w1/coord_vocab_mass`
+- `coord_diag/coord_vocab_mass`
   - **What:** mean probability mass inside the coord sub-vocabulary at GT coord positions.
     This is derived from the gate computation (approximately `exp(-gate)`).
   - **In loss:** NO (diagnostic only).
 
-- `coord_softce_w1/coord_tokens`
+- `coord_diag/coord_tokens`
   - **What:** number of GT coord-token positions in the current batch (or mean count over
     logging windows). Useful for sanity-checking the denominator.
   - **In loss:** NO (diagnostic only).
 
-- `coord_softce_w1/acc_top5`
+- `coord_diag/acc_top5`
   - **What:** top-5 accuracy within the 1000-bin coord sub-vocabulary at GT coord positions.
   - **In loss:** NO (distribution-quality monitor).
 
-- `coord_softce_w1/p_gt_mean`
+- `coord_diag/p_gt_mean`
   - **What:** mean predicted probability assigned to the GT coord bin (after temperature).
   - **In loss:** NO (distribution-quality monitor).
 
-- `coord_softce_w1/margin_mean`
+- `coord_diag/margin_mean`
   - **What:** mean `(max_logit - gt_logit)` within coord vocab (after temperature); lower is better.
   - **In loss:** NO (distribution-quality monitor).
 
-- `coord_expected_bin_mae`
+- `coord_diag/expected_bin_mae`
   - **What:** mean absolute error between the expected coord bin index (under the predicted
     coord-vocab distribution) and the GT bin index. Units are **bins** (0..999).
   - **In loss:** NO (distribution-quality monitor; often more informative than top-k early on).
 
-- `coord_softce_w1/coord_tokens_per_sample`
-  - **What:** `coord_softce_w1/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
+- `coord_diag/coord_tokens_per_sample`
+  - **What:** `coord_diag/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
   - **In loss:** NO (diagnostic only).
 
-- `coord_softce_w1/loss_per_sample`
+- `coord_diag/loss_per_sample`
   - **What:** approximate coord-loss contribution per original sample:
-    `coord_softce_w1/loss * coord_softce_w1/coord_tokens / pack/num_samples`.
+    `coord_diag/loss * coord_diag/coord_tokens / pack/num_samples`.
   - **In loss:** NO (diagnostic only).
 
 - `stage1/total_loss_per_sample_est`
-  - **What:** `base_ce/loss_per_sample + coord_softce_w1/loss_per_sample` (approx. total per-sample objective).
+  - **What:** `base_ce/loss_per_sample + coord_diag/loss_per_sample` (approx. total per-sample objective).
   - **In loss:** NO (diagnostic only; useful for packed runs).
 
 ## Token Accuracy and Token-Type Metrics

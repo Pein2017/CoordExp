@@ -332,7 +332,7 @@ custom:
 Notes:
 - Coord-token positions are identified from **labels** (teacher forcing), never from model predictions.
 - No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
-- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, plus `coord_softce_w1/coord_vocab_mass` and `coord_softce_w1/coord_tokens`.
+- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`.
 
 ---
 
