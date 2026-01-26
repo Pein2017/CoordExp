@@ -121,9 +121,11 @@ class CoordTokensConfig:
 
 @dataclass(frozen=True)
 class CoordSoftCEW1Config:
-    """Coord-token supervision: softCE(Gaussian) + W1(CDF) + coord-vocab gate."""
+    """Coord-token supervision: CE (optional) + softCE(Gaussian) + W1(CDF) + coord-vocab gate."""
 
     enabled: bool = False
+    # Optional hard CE (on coord-only logits, at coord-token positions).
+    ce_weight: float = 0.0
     soft_ce_weight: float = 1.0
     w1_weight: float = 1.0
     gate_weight: float = 1.0
@@ -147,6 +149,7 @@ class CoordSoftCEW1Config:
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"coord_soft_ce_w1.{key} must be numeric") from exc
 
+        ce_weight = _parse_float("ce_weight", cls.ce_weight)
         soft_ce_weight = _parse_float("soft_ce_weight", cls.soft_ce_weight)
         w1_weight = _parse_float("w1_weight", cls.w1_weight)
         gate_weight = _parse_float("gate_weight", cls.gate_weight)
@@ -163,15 +166,17 @@ class CoordSoftCEW1Config:
             except (TypeError, ValueError) as exc:
                 raise ValueError("coord_soft_ce_w1.target_truncate must be an integer or null") from exc
 
+        if ce_weight < 0:
+            raise ValueError("coord_soft_ce_w1.ce_weight must be >= 0")
         if soft_ce_weight < 0:
             raise ValueError("coord_soft_ce_w1.soft_ce_weight must be >= 0")
         if w1_weight < 0:
             raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
         if gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
-        if enabled and soft_ce_weight == 0 and w1_weight == 0 and gate_weight == 0:
+        if enabled and ce_weight == 0 and soft_ce_weight == 0 and w1_weight == 0 and gate_weight == 0:
             raise ValueError(
-                "coord_soft_ce_w1 is enabled but soft_ce_weight, w1_weight, and gate_weight are all 0"
+                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, and gate_weight are all 0"
             )
         if temperature <= 0:
             raise ValueError("coord_soft_ce_w1.temperature must be > 0")
@@ -182,6 +187,7 @@ class CoordSoftCEW1Config:
 
         return cls(
             enabled=enabled,
+            ce_weight=ce_weight,
             soft_ce_weight=soft_ce_weight,
             w1_weight=w1_weight,
             gate_weight=gate_weight,

@@ -1015,6 +1015,7 @@ class CoordSoftCEW1LossMixin:
         flat_logits = flat_logits_full.index_select(-1, idx)
 
         temperature = float(getattr(cfg, "temperature", 1.0))
+        ce_weight = float(getattr(cfg, "ce_weight", 0.0))
         soft_ce_weight = float(getattr(cfg, "soft_ce_weight", 1.0))
         w1_weight = float(getattr(cfg, "w1_weight", 1.0))
         gate_weight = float(getattr(cfg, "gate_weight", 0.0))
@@ -1073,6 +1074,17 @@ class CoordSoftCEW1LossMixin:
 
         softce_sum = out.soft_ce_per_token.sum()
         w1_sum = out.w1_per_token.sum()
+
+        ce_sum = softce_sum.new_tensor(0.0)
+        if ce_weight != 0.0:
+            ce_per_token = F.cross_entropy(
+                flat_logits.float(), flat_target_bins, reduction="none"
+            )
+            ce_per_token = torch.nan_to_num(
+                ce_per_token, nan=0.0, posinf=1e4, neginf=0.0
+            )
+            ce_sum = ce_per_token.sum()
+
         gate_sum = softce_sum.new_tensor(0.0)
         gate_mass_mean = None
         if gate_weight != 0.0:
@@ -1098,12 +1110,14 @@ class CoordSoftCEW1LossMixin:
 
         softce_loss = softce_sum / denom
         w1_loss = w1_sum / denom
+        ce_loss = ce_sum / denom
         gate_loss = gate_sum / denom
 
         softce_contrib = soft_ce_weight * softce_loss
         w1_contrib = w1_weight * w1_loss
+        ce_contrib = ce_weight * ce_loss
         gate_contrib = gate_weight * gate_loss
-        coord_loss = softce_contrib + w1_contrib + gate_contrib
+        coord_loss = ce_contrib + softce_contrib + w1_contrib + gate_contrib
 
         if (
             getattr(getattr(self, "args", None), "average_tokens_across_devices", False)
@@ -1119,11 +1133,13 @@ class CoordSoftCEW1LossMixin:
             coord_loss = coord_loss * scale
             softce_contrib = softce_contrib * scale
             w1_contrib = w1_contrib * scale
+            ce_contrib = ce_contrib * scale
             gate_contrib = gate_contrib * scale
 
         coord_loss = torch.nan_to_num(coord_loss, nan=0.0, posinf=1e4, neginf=0.0)
         softce_contrib = torch.nan_to_num(softce_contrib, nan=0.0, posinf=1e4, neginf=0.0)
         w1_contrib = torch.nan_to_num(w1_contrib, nan=0.0, posinf=1e4, neginf=0.0)
+        ce_contrib = torch.nan_to_num(ce_contrib, nan=0.0, posinf=1e4, neginf=0.0)
         gate_contrib = torch.nan_to_num(gate_contrib, nan=0.0, posinf=1e4, neginf=0.0)
 
         self._log_coord_softce_w1_metrics(
@@ -1133,6 +1149,7 @@ class CoordSoftCEW1LossMixin:
             loss_total=coord_loss,
             loss_softce=softce_contrib,
             loss_w1=w1_contrib,
+            loss_ce=ce_contrib,
             loss_gate=gate_contrib,
             gate_mass_mean=gate_mass_mean,
             coord_acc_top5=coord_acc_top5,
@@ -1152,6 +1169,7 @@ class CoordSoftCEW1LossMixin:
         loss_total: torch.Tensor,
         loss_softce: torch.Tensor,
         loss_w1: torch.Tensor,
+        loss_ce: torch.Tensor,
         loss_gate: torch.Tensor,
         gate_mass_mean: torch.Tensor | None,
         coord_acc_top5: torch.Tensor | None,
@@ -1169,6 +1187,11 @@ class CoordSoftCEW1LossMixin:
             return
         metrics = custom_metrics[mode]
 
+        metrics["coord_softce_w1/loss"].update(float(loss_total.detach().cpu().item()))
+        metrics["coord_softce_w1/soft_ce"].update(float(loss_softce.detach().cpu().item()))
+        metrics["coord_softce_w1/w1"].update(float(loss_w1.detach().cpu().item()))
+        metrics["coord_softce_w1/ce"].update(float(loss_ce.detach().cpu().item()))
+        metrics["coord_softce_w1/gate"].update(float(loss_gate.detach().cpu().item()))
         coord_tokens = int(coord_positions_mask.sum().detach().item())
 
         # Stable tags across loss modes (pure CE vs softCE+W1+gate).
@@ -1176,6 +1199,7 @@ class CoordSoftCEW1LossMixin:
         metrics["coord_diag/loss"].update(float(loss_total.detach().cpu().item()))
         metrics["coord_diag/soft_ce"].update(float(loss_softce.detach().cpu().item()))
         metrics["coord_diag/w1"].update(float(loss_w1.detach().cpu().item()))
+        metrics["coord_diag/ce"].update(float(loss_ce.detach().cpu().item()))
         metrics["coord_diag/gate"].update(float(loss_gate.detach().cpu().item()))
         metrics["coord_diag/coord_tokens"].update(float(coord_tokens))
         if gate_mass_mean is not None:
