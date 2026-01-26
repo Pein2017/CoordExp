@@ -73,12 +73,19 @@ def extract_json_block(text: str) -> str | None:
                 pass
 
         # Strategy 3: Count braces and try to close (last resort)
-        open_braces = candidate.count("{")
-        close_braces = candidate.count("}")
-        missing = open_braces - close_braces
-        if missing > 0:
-            repaired = candidate + "}" * missing
-            return repaired
+        # If the generator emitted an explicit terminator like "<im_end>", we're
+        # more tolerant and will attempt to close unmatched braces. However when
+        # the output was truncated (no "<im_end>"), prefer dropping the final
+        # incomplete object instead of fabricating closing braces that can leave
+        # a malformed last entry. Only attempt brace-closing as a last resort
+        # if the terminator exists.
+        if "<im_end>" in text:
+            open_braces = candidate.count("{")
+            close_braces = candidate.count("}")
+            missing = open_braces - close_braces
+            if missing > 0:
+                repaired = candidate + "}" * missing
+                return repaired
 
     return None
 
@@ -106,7 +113,12 @@ def parse_prediction(text: str) -> List[Dict[str, Any]]:
     block = extract_json_block(text)
     if not block:
         # Try closing braces heuristically
-        if "{" in text:
+        # Only attempt to heuristically close unmatched braces when the model
+        # emitted an explicit terminator (e.g. "<im_end>"). If the output was
+        # truncated (no terminator), prefer returning no block so downstream code
+        # can treat the prediction as empty / malformed rather than repairing a
+        # likely-broken final object.
+        if "<im_end>" in text and "{" in text:
             start = text.find("{")
             candidate = text[start:]
             missing = candidate.count("{") - candidate.count("}")
@@ -126,11 +138,13 @@ def parse_prediction(text: str) -> List[Dict[str, Any]]:
         if not isinstance(val, dict):
             continue
         if "line" in val or "line_points" in val:
-            parsed.append({
-                "desc": str(val.get("desc", "")),
-                "line": val.get("line"),
-                "line_points": val.get("line_points"),
-            })
+            parsed.append(
+                {
+                    "desc": str(val.get("desc", "")),
+                    "line": val.get("line"),
+                    "line_points": val.get("line_points"),
+                }
+            )
             continue
         geom_keys = [g for g in GEOM_KEYS if g in val]
         if len(geom_keys) != 1:

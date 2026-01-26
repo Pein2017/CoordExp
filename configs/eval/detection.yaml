@@ -1,17 +1,32 @@
 # Offline detection evaluator configuration (CoordExp)
-gt_jsonl: "path/to/gt.jsonl"
-pred_jsonl: "path/to/pred.jsonl"
-out_dir: "eval_out"
+#
+# Unified pipeline contract: evaluation consumes the inference artifact JSONL
+# that embeds both GT and predictions per sample.
 
-# Coord handling
-mode: "coord"               # coord -> norm1000 GT+pred; text -> pixel GT/pred
-use_segm: true              # include segmentation metrics when polygons exist
-unknown_policy: "bucket"    # "bucket" -> map to unknown, "drop" -> drop unknown desc
-strict_parse: false         # abort on first parse error
+pred_jsonl: path/to/gt_vs_pred.jsonl
+out_dir: eval_out
 
 # Metrics
-iou_thrs: []                # empty -> COCO defaults
+metrics: both                  # coco | f1ish | both
+use_segm: true                 # include segmentation metrics when polygons exist
+unknown_policy: semantic       # bucket | drop | semantic
+strict_parse: false            # abort on first parse error
+
+# Optional COCO IoU thresholds override (null -> COCO defaults)
+iou_thrs: null
 
 # Diagnostics / overlays
 overlay: false
 overlay_k: 12
+num_workers: 0
+
+# Semantic matching (used when unknown_policy=semantic)
+semantic_model: sentence-transformers/all-MiniLM-L6-v2
+semantic_threshold: 0.6
+semantic_fallback: bucket
+semantic_device: auto
+semantic_batch_size: 64
+
+# F1-ish settings
+f1ish_iou_thrs: [0.3, 0.5]
+f1ish_pred_scope: annotated

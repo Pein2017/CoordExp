@@ -1,44 +1,17 @@
-#!/bin/bash
-# Wrapper to run vis_tools/vis_coordexp.py.
-# Tune the constants below before execution; no CLI args are parsed.
-
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Fixed python interpreter
-PYTHON_BIN="/root/miniconda3/envs/ms/bin/python"
+# NOTE: This wrapper historically ran inference+vis for coord-mode checkpoints.
+# It drifted over time; the unified pipeline supersedes it.
+#
+# Replacement (recommended):
+#   python scripts/run_infer.py --config configs/infer/pipeline.yaml
+#
+# Or, for vis-only from an existing artifact:
+#   PRED_JSONL=<run_dir>/gt_vs_pred.jsonl SAVE_DIR=<out_dir> ROOT_IMAGE_DIR=<img_root> scripts/run_vis.sh
 
-# --------- Edit these constants as needed ---------
-CUDA_DEVICES="1"
-JSONL="public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl"
-SAVE_DIR="output/eval/12-4/det_eval_coord_ck1632"
-CKPT="output/12-4/coord_merged_ck1632"
-MODE="coord"  # coord | text
-# --------------------------------------------------
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "CUDA devices : $CUDA_DEVICES"
-echo "JSONL        : $JSONL"
-echo "Save dir     : $SAVE_DIR"
-echo "Checkpoint   : $CKPT"
+echo "[DEPRECATED] scripts/run_vis_coord.sh is superseded by the unified YAML pipeline." >&2
 
-TMP_SCRIPT=$(mktemp /tmp/vis_coordexp.XXXXXX.py)
-cat > "$TMP_SCRIPT" <<PY
-from vis_tools import vis_coordexp as vc
-
-vc.CONFIG = vc.Config(
-    ckpt="${CKPT}",
-    jsonl="${JSONL}",
-    device="cuda:0",  # index within CUDA_VISIBLE_DEVICES
-    limit=0,
-    temperature=0.001,
-    repetition_penalty=1.05,
-    save_dir="${SAVE_DIR}",
-    mode="${MODE}",
-)
-
-vc.main()
-PY
-
-CUDA_VISIBLE_DEVICES="$CUDA_DEVICES" "$PYTHON_BIN" "$TMP_SCRIPT"
-rm -f "$TMP_SCRIPT"
-
-echo "Done. Outputs in ${SAVE_DIR}"
+exec "$SCRIPT_DIR/run_vis.sh"

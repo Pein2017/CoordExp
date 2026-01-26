@@ -1,183 +1,195 @@
 #!/usr/bin/env python
-"""Unified inference CLI for CoordExp.
+"""Unified pipeline runner for CoordExp inference/eval/vis (YAML-first).
 
-This script wraps ``src.infer.InferenceEngine`` and produces:
-- ``pred.jsonl``: pixel-space geometries for both GT and predictions.
-- ``pred.summary.json``: counters and error codes.
+Primary usage:
+  python scripts/run_infer.py --config configs/infer/<exp>.yaml
 
-Usage (inside repo root, ms env):
+The YAML config is treated as a single file (no extends/inherit, no variable
+interpolation). Legacy CLI flags are supported during a transition period:
+- If both --config and legacy flags are provided, legacy flags override YAML.
+
+For legacy (flag-only) inference runs (no YAML):
   python scripts/run_infer.py \
-      --gt_jsonl public_data/lvis/rescale_32_768_poly_20/val.coord.jsonl \
-      --model_checkpoint output/ckpts/coord_lora \
-      --mode coord \
-      --out output/pred.jsonl \
-      --temperature 0.01 --top_p 0.95 --max_new_tokens 1024 --repetition_penalty 1.05 --seed 42
-
-Notes:
-- ``--mode`` is required (no auto-detect).
-- Generation config is flag-driven only; no external config files.
+      --gt_jsonl <path> \
+      --model_checkpoint <ckpt> \
+      --mode coord|text|auto \
+      --out <path/to/gt_vs_pred.jsonl>
 """
 
 from __future__ import annotations
 
 import argparse
-from typing import Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict
 
-from src.common.geometry import flatten_points, has_coord_tokens
-from src.infer import GenerationConfig, InferenceConfig, InferenceEngine
-
-
-def _detect_mode_from_gt(jsonl_path: str, *, sample_size: int = 128) -> Tuple[str, str]:
-    """Heuristic to choose coord vs text mode based on GT.
-
-    - coord if any coord tokens or values go beyond image size.
-    - otherwise text.
-    """
-    has_tokens = False
-    out_of_image = 0
-    checked = 0
-
-    try:
-        with open(jsonl_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if checked >= sample_size:
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = eval(line) if line.startswith("{") else None  # noqa: S307
-                except Exception:
-                    continue
-                if not isinstance(rec, dict):
-                    continue
-                width = rec.get("width")
-                height = rec.get("height")
-                max_dim = None
-                try:
-                    max_dim = max(int(width), int(height))
-                except Exception:
-                    pass
-                objs = rec.get("objects") or rec.get("gt") or []
-                for obj in objs:
-                    pts = flatten_points(
-                        obj.get("bbox_2d") or obj.get("poly") or obj.get("points") or []
-                    )
-                    if pts is None or len(pts) == 0:
-                        continue
-                    if has_coord_tokens(pts):
-                        has_tokens = True
-                        break
-                    if max_dim is not None and max(pts) > max_dim:
-                        out_of_image += 1
-                        break
-                checked += 1
-    except FileNotFoundError:
-        return "coord", "file_not_found"
-
-    if has_tokens:
-        return "coord", "coord_tokens_found"
-    if out_of_image > 0:
-        return "coord", f"points_exceed_image ({out_of_image})"
-    return "text", "within_image_bounds"
+from src.infer.pipeline import run_pipeline
 
 
-def parse_args() -> tuple[InferenceConfig, GenerationConfig, Optional[str]]:
-    ap = argparse.ArgumentParser(description="Unified inference for CoordExp")
-    ap.add_argument("--gt_jsonl", required=True, help="Path to ground-truth JSONL")
-    ap.add_argument("--model_checkpoint", required=True, help="Checkpoint path")
+def _add_legacy_infer_flags(ap: argparse.ArgumentParser, *, required: bool) -> None:
+    ap.add_argument("--gt_jsonl", required=required, help="Path to ground-truth JSONL")
+    ap.add_argument("--model_checkpoint", required=required, help="Checkpoint path")
     ap.add_argument(
         "--mode",
-        required=True,
+        required=required,
         choices=["coord", "text", "auto"],
         help="Model/GT mode (coord-token vs pixel GT), or auto-detect",
-    )
-    ap.add_argument("--out", default="pred.jsonl", help="Output predictions JSONL")
-    ap.add_argument(
-        "--summary",
-        default=None,
-        help="Optional summary path (defaults to pred.jsonl sibling)",
-    )
-    ap.add_argument("--device", default="cuda:0", help="Device for inference")
-    ap.add_argument(
-        "--limit", type=int, default=10, help="Max samples to process (0 = all)"
-    )
-    ap.add_argument(
-        "--detect-samples",
-        type=int,
-        default=128,
-        help="Samples to scan for auto mode detection (runs even if limit is small)",
-    )
-    ap.add_argument(
-        "--force-mode",
-        action="store_true",
-        help="Keep user-specified mode even if detector disagrees",
     )
     ap.add_argument(
         "--pred-coord-mode",
         choices=["auto", "pixel", "norm1000"],
-        default="auto",
+        default=None if not required else "auto",
         help="Override how prediction coords are interpreted before scaling",
     )
+    ap.add_argument("--device", default=None if not required else "cuda:0")
+    ap.add_argument(
+        "--limit", type=int, default=None if not required else 0, help="0 = all"
+    )
+    ap.add_argument(
+        "--detect-samples",
+        type=int,
+        default=None if not required else 128,
+        help="When mode=auto, how many GT records to scan",
+    )
 
-    # Generation flags (CLI only)
-    ap.add_argument("--temperature", type=float, default=0.1)
-    ap.add_argument("--top_p", type=float, default=0.95)
-    ap.add_argument("--max_new_tokens", type=int, default=2048)
-    ap.add_argument("--repetition_penalty", type=float, default=1.05)
+    # Artifacts (legacy-only; in YAML mode these map to artifacts.* overrides)
+    ap.add_argument(
+        "--out",
+        default=None if not required else "gt_vs_pred.jsonl",
+        help="Output JSONL path (defaults to gt_vs_pred.jsonl)",
+    )
+    ap.add_argument(
+        "--summary",
+        default=None,
+        help="Optional summary path (defaults to <out_dir>/summary.json)",
+    )
+
+    # Backend
+    ap.add_argument(
+        "--backend",
+        choices=["hf", "vllm"],
+        default=None if not required else "hf",
+        help="Generation backend: hf (default) or vllm",
+    )
+    ap.add_argument(
+        "--vllm-base-url",
+        default=None,
+        help="(vllm backend) OpenAI-compatible base URL, e.g. http://127.0.0.1:8000",
+    )
+    ap.add_argument(
+        "--vllm-model",
+        default=None,
+        help="(vllm backend) Served model name; defaults to --model_checkpoint",
+    )
+
+    # Generation flags
+    ap.add_argument("--temperature", type=float, default=None if not required else 0.01)
+    ap.add_argument("--top_p", type=float, default=None if not required else 0.95)
+    ap.add_argument(
+        "--max_new_tokens", type=int, default=None if not required else 1024
+    )
+    ap.add_argument(
+        "--repetition_penalty", type=float, default=None if not required else 1.05
+    )
     ap.add_argument("--seed", type=int, default=None)
 
-    args = ap.parse_args()
 
-    detected_mode, reason = _detect_mode_from_gt(
-        args.gt_jsonl, sample_size=max(args.detect_samples, args.limit or 0)
-    )
-    resolved_mode = args.mode
-    note: Optional[str] = None
+def _yaml_overrides_from_args(args: argparse.Namespace) -> Dict[str, Any]:
+    o: Dict[str, Any] = {}
 
-    if args.mode == "auto":
-        resolved_mode = detected_mode
-        note = f"auto-detected mode={resolved_mode} ({reason})"
-    else:
-        if detected_mode != args.mode and not args.force_mode:
-            note = (
-                f"detector suggested mode={detected_mode} ({reason}); "
-                f"overriding user choice '{args.mode}'"
-            )
-            resolved_mode = detected_mode
-        elif detected_mode != args.mode:
-            note = (
-                f"detector suggested mode={detected_mode} ({reason}); "
-                f"kept user mode '{args.mode}' due to --force-mode"
-            )
+    def _set(k: str, v: Any) -> None:
+        if v is not None:
+            o[k] = v
+
+    # Run/artifacts overrides
+    _set("artifacts.gt_vs_pred_jsonl", args.out)
+    _set("artifacts.summary_json", args.summary)
+
+    # Infer overrides
+    _set("infer.gt_jsonl", args.gt_jsonl)
+    _set("infer.model_checkpoint", args.model_checkpoint)
+    _set("infer.mode", args.mode)
+    _set("infer.pred_coord_mode", args.pred_coord_mode)
+    _set("infer.device", args.device)
+    _set("infer.limit", args.limit)
+    _set("infer.detect_samples", args.detect_samples)
+
+    # Backend overrides
+    _set("infer.backend.type", args.backend)
+    _set("infer.backend.base_url", args.vllm_base_url)
+    _set("infer.backend.model", args.vllm_model)
+
+    # Generation overrides
+    _set("infer.generation.temperature", args.temperature)
+    _set("infer.generation.top_p", args.top_p)
+    _set("infer.generation.max_new_tokens", args.max_new_tokens)
+    _set("infer.generation.repetition_penalty", args.repetition_penalty)
+    _set("infer.generation.seed", args.seed)
+
+    return o
+
+
+def _run_legacy_infer(args: argparse.Namespace) -> None:
+    from src.infer import GenerationConfig, InferenceConfig, InferenceEngine
 
     gen_cfg = GenerationConfig(
-        temperature=args.temperature,
-        top_p=args.top_p,
-        max_new_tokens=args.max_new_tokens,
-        repetition_penalty=args.repetition_penalty,
+        temperature=float(args.temperature),
+        top_p=float(args.top_p),
+        max_new_tokens=int(args.max_new_tokens),
+        repetition_penalty=float(args.repetition_penalty),
         seed=args.seed,
     )
+
+    backend_cfg: Dict[str, Any] = {}
+    if args.backend == "vllm":
+        if args.vllm_base_url:
+            backend_cfg["base_url"] = str(args.vllm_base_url)
+        if args.vllm_model:
+            backend_cfg["model"] = str(args.vllm_model)
+
     inf_cfg = InferenceConfig(
-        gt_jsonl=args.gt_jsonl,
-        model_checkpoint=args.model_checkpoint,
-        mode=resolved_mode,
-        pred_coord_mode=args.pred_coord_mode,
-        out_path=args.out,
-        summary_path=args.summary,
-        device=args.device,
-        limit=args.limit,
+        gt_jsonl=str(args.gt_jsonl),
+        model_checkpoint=str(args.model_checkpoint),
+        mode=str(args.mode),
+        pred_coord_mode=str(args.pred_coord_mode),
+        out_path=str(args.out),
+        summary_path=str(args.summary) if args.summary else None,
+        device=str(args.device),
+        limit=int(args.limit),
+        backend_type=str(args.backend),
+        backend=backend_cfg,
+        detect_samples=int(args.detect_samples),
     )
-    return inf_cfg, gen_cfg, note
 
-
-def main() -> None:
-    inf_cfg, gen_cfg, note = parse_args()
-    if note:
-        print(note)
     engine = InferenceEngine(inf_cfg, gen_cfg)
     out_path, summary_path = engine.infer()
     print(f"Wrote predictions to {out_path} and summary to {summary_path}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Unified inference pipeline runner")
+    ap.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML pipeline config (YAML-first).",
+    )
+
+    # If --config is provided, legacy flags become optional overrides.
+    _add_legacy_infer_flags(ap, required=False)
+
+    args = ap.parse_args()
+
+    if args.config is not None:
+        overrides = _yaml_overrides_from_args(args)
+        artifacts = run_pipeline(config_path=Path(args.config), overrides=overrides)
+        print(f"Pipeline complete. run_dir={artifacts.run_dir}")
+        return
+
+    # Legacy flag-only mode: require the classic inputs.
+    ap2 = argparse.ArgumentParser(description="Legacy inference (no YAML)")
+    _add_legacy_infer_flags(ap2, required=True)
+    args2 = ap2.parse_args()
+    _run_legacy_infer(args2)
 
 
 if __name__ == "__main__":

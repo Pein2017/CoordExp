@@ -40,17 +40,43 @@ Artifacts (when F1-ish is enabled via `--metrics f1ish|both`):
 - `per_image.json` gains a stable `f1ish` field keyed by IoU threshold strings (e.g. `"0.50"`), containing per-image TP/FP/FN and semantic-on-matched counts.
 
 ## Staged workflow
-1) Run unified inference to get `pred.jsonl` (pixel-space, with inline gt):
+
+The unified artifact is `gt_vs_pred.jsonl` (pixel-space, with inline GT).
+
+1) Run inference to produce `gt_vs_pred.jsonl`:
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+  --gt_jsonl <data.jsonl> \
+  --model_checkpoint <ckpt> \
+  --mode auto \
+  --out output/infer/<run_name>/gt_vs_pred.jsonl \
+  --summary output/infer/<run_name>/summary.json
 ```
-bash scripts/infer.sh --gt <data.jsonl> --ckpt <ckpt> --mode coord|text --out output/pred.jsonl
+
+2) Evaluate (consumes inline GT from the artifact; no separate GT path):
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
+  --pred_jsonl output/infer/<run_name>/gt_vs_pred.jsonl \
+  --out_dir output/infer/<run_name>/eval \
+  --metrics both
 ```
-2) Evaluate (uses inline gt):
+
+3) Visualize (consumes inline GT from the artifact):
+
+```bash
+PYTHONPATH=. conda run -n ms python vis_tools/vis_coordexp.py \
+  --pred_jsonl output/infer/<run_name>/gt_vs_pred.jsonl \
+  --save_dir output/infer/<run_name>/vis \
+  --limit 20 \
+  --root_image_dir <image_root>
 ```
-bash scripts/eval.sh --pred output/pred.jsonl --out_dir eval_out
-```
-3) Visualize (uses inline gt):
-```
-bash scripts/vis.sh --pred output/pred.jsonl --save_dir vis_out
+
+Tip: you can also run infer+eval+vis from a single YAML pipeline config:
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/infer/pipeline.yaml
 ```
 
 ## Training hook

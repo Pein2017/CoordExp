@@ -4,13 +4,12 @@ Features
 --------
 - Single entrypoint that works for coord-token (normalized) and pure-text
   checkpoints via an explicit ``mode`` switch.
-- Standardized ``pred.jsonl`` with pixel-space geometries for both GT and
+- Standardized ``gt_vs_pred.jsonl`` with pixel-space geometries for both GT and
   predictions; polygons are preserved.
 - Per-sample error reporting plus run-level counters and summary JSON.
-- Deterministic generation when ``--seed`` is provided (torch + CUDA +
-  generator passed into ``model.generate``).
+- Deterministic generation when ``--seed`` is provided (torch + CUDA seeding).
 
-Schema (per line of ``pred.jsonl``)
+Schema (per line of ``gt_vs_pred.jsonl``)
 -----------------------------------
 ```
 {
@@ -26,7 +25,7 @@ Schema (per line of ``pred.jsonl``)
 }
 ```
 
-Summary (``pred.summary.json``)
+Summary (``summary.json``)
 -------------------------------
 ```
 {
@@ -50,7 +49,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -60,6 +59,7 @@ from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 from src.common.coord_standardizer import CoordinateStandardizer
+from src.common.geometry import flatten_points, has_coord_tokens
 from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
 from src.utils import get_logger
 
@@ -95,12 +95,99 @@ class GenerationConfig:
 class InferenceConfig:
     gt_jsonl: str
     model_checkpoint: str
-    mode: Literal["coord", "text"]
+    mode: Literal["coord", "text", "auto"]
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
-    out_path: str = "pred.jsonl"
+
+    # Canonical unified artifact names (can be overridden by pipeline runner).
+    out_path: str = "gt_vs_pred.jsonl"
     summary_path: Optional[str] = None
+
     device: str = "cuda:0"
     limit: int = 0
+
+    backend_type: Literal["hf", "vllm"] = "hf"
+    backend: Dict[str, Any] = field(default_factory=dict)
+
+    # When mode=auto, how many GT records to scan (see OpenSpec for rules).
+    detect_samples: int = 128
+
+
+def detect_mode_from_gt(
+    gt_jsonl: str,
+    *,
+    sample_size: int = 128,
+) -> Tuple[Literal["coord", "text"], str]:
+    """Deterministically resolve coord vs text from GT JSONL (OpenSpec).
+
+    Scan the first N *valid* records:
+    - ignore invalid JSON
+    - ignore records with no objects
+    - ignore records without valid int width/height
+
+    Resolution:
+    - coord if any coord tokens are found in any geometry
+    - coord if any numeric coordinate exceeds max(width, height)
+    - else text
+    """
+
+    checked = 0
+    path = Path(gt_jsonl)
+
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if checked >= sample_size:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(rec, dict):
+                continue
+
+            width = rec.get("width")
+            height = rec.get("height")
+            try:
+                width_i = int(width)
+                height_i = int(height)
+            except Exception:
+                continue
+            if width_i <= 0 or height_i <= 0:
+                continue
+
+            objs = rec.get("objects") or rec.get("gt") or []
+            if not isinstance(objs, list) or len(objs) == 0:
+                continue
+
+            max_dim = max(width_i, height_i)
+            for obj in objs:
+                if not isinstance(obj, dict):
+                    continue
+                pts_raw = flatten_points(
+                    obj.get("bbox_2d")
+                    or obj.get("poly")
+                    or obj.get("points")
+                    or []
+                )
+                if not pts_raw:
+                    continue
+
+                if has_coord_tokens(pts_raw):
+                    return "coord", "coord_tokens_found"
+
+                # Only consider numeric coordinates for bounds check.
+                numeric = [v for v in pts_raw if isinstance(v, (int, float))]
+                if numeric and max(numeric) > max_dim:
+                    return "coord", "points_exceed_image"
+
+            checked += 1
+
+    if checked == 0:
+        return "text", "no_valid_records"
+
+    return "text", "within_image_bounds"
 
 
 class RunCounters:
@@ -136,25 +223,96 @@ class InferenceEngine:
         self.cfg = cfg
         self.gen_cfg = gen_cfg
         self.logger = logger or get_logger(__name__)
+
+        self.requested_mode = cfg.mode
+        self.resolved_mode = cfg.mode
+        self.mode_reason: Optional[str] = None
+        if cfg.mode == "auto":
+            self.resolved_mode, self.mode_reason = detect_mode_from_gt(
+                cfg.gt_jsonl, sample_size=int(cfg.detect_samples or 128)
+            )
+
+        # Shared parser/standardizer: always emit pixel-space points.
         self.coord = CoordinateStandardizer(
-            cfg.mode, pred_coord_mode=cfg.pred_coord_mode
+            self.resolved_mode, pred_coord_mode=cfg.pred_coord_mode
         )
+
         self.processor: AutoProcessor | None = None
         self.model: Qwen3VLForConditionalGeneration | None = None
-        self.generator: torch.Generator | None = None
 
     def _seed(self) -> None:
         if self.gen_cfg.seed is None:
             return
-        torch.manual_seed(self.gen_cfg.seed)
+
+        seed = int(self.gen_cfg.seed)
+        torch.manual_seed(seed)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.gen_cfg.seed)
-        self.generator = torch.Generator(device=self.cfg.device)
-        self.generator.manual_seed(self.gen_cfg.seed)
+            torch.cuda.manual_seed_all(seed)
+
+        # Best-effort determinism for HF generation.
+        # (vLLM backend does not guarantee byte-identical outputs.)
+        try:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        except Exception:
+            pass
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
+        except Exception:
+            pass
+
+
+    def _validate_vllm_backend(self) -> None:
+        """Fail fast on global vLLM backend misconfiguration/unavailability."""
+        base_url = str(
+            self.cfg.backend.get("base_url")
+            or os.environ.get("VLLM_BASE_URL")
+            or ""
+        ).strip()
+        if not base_url:
+            raise RuntimeError(
+                "infer.backend.type=vllm requires infer.backend.base_url (or env VLLM_BASE_URL). "
+                "To disable vLLM, set infer.backend.type=hf."
+            )
+
+        try:
+            import requests
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "vLLM backend requires the 'requests' package. Install it in the ms env, or set infer.backend.type=hf."
+            ) from exc
+
+        # Best-effort preflight connectivity check to avoid per-sample generation_failed.
+        # We keep it lightweight and do not require any specific response schema.
+        timeout_s = float(self.cfg.backend.get("timeout_s", 3.0))
+        root = base_url.rstrip("/")
+        models_url = (root + "/models") if root.endswith("/v1") else (root + "/v1/models")
+        try:
+            resp = requests.get(models_url, timeout=timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Failed to reach vLLM server for infer.backend.type=vllm. "
+                f"Tried GET {models_url}. To disable vLLM, set infer.backend.type=hf."
+            ) from exc
+        if int(getattr(resp, "status_code", 0) or 0) >= 400:
+            raise RuntimeError(
+                "vLLM server preflight check failed for infer.backend.type=vllm. "
+                f"GET {models_url} returned status={resp.status_code}. To disable vLLM, set infer.backend.type=hf."
+            )
 
     def load_model(self) -> None:
+        backend = str(self.cfg.backend_type).lower().strip()
+
+        # HF backend loads model+processor; vLLM backend does not.
+        if backend == "vllm":
+            self._seed()
+            self._validate_vllm_backend()
+            return
+
         if self.model is not None:
             return
+
         self._seed()
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             self.cfg.model_checkpoint,
@@ -189,6 +347,15 @@ class InferenceEngine:
         ]
 
     def _generate(self, image: Image.Image) -> str:
+        backend = str(self.cfg.backend_type).strip().lower()
+        if backend == "hf":
+            return self._generate_hf(image)
+        if backend == "vllm":
+            return self._generate_vllm(image)
+        raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
+
+
+    def _generate_hf(self, image: Image.Image) -> str:
         assert self.model is not None and self.processor is not None
 
         messages = self._build_messages(image)
@@ -209,14 +376,14 @@ class InferenceEngine:
         )
         if self.gen_cfg.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+
         # NOTE: Do not pass `generator=` into `model.generate()`.
         #
         # Some upstream / remote-code model implementations (incl. some Qwen3-VL
         # checkpoints) treat unknown kwargs as `model_kwargs` and raise:
         #   "The following `model_kwargs` are not used by the model: ['generator']"
         #
-        # We still seed torch/CUDA globally in `_seed()` for deterministic sampling.
-
+        # We seed torch/CUDA globally in `_seed()` for deterministic sampling.
         with torch.inference_mode():
             gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
 
@@ -226,6 +393,102 @@ class InferenceEngine:
             gen_only, skip_special_tokens=False, clean_up_tokenization_spaces=False
         )[0]
         return raw_text
+
+    def _generate_vllm(self, image: Image.Image) -> str:
+        """Generate via an OpenAI-compatible vLLM server (best-effort).
+
+        Config:
+        - infer.backend.base_url: e.g. http://127.0.0.1:8000 or http://127.0.0.1:8000/v1
+        - infer.backend.model: optional; defaults to infer.model_checkpoint
+        - infer.backend.timeout_s: optional
+        """
+
+        try:
+            import base64
+            import io
+
+            import requests
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "vLLM backend requires the 'requests' package. Install it in the ms env, or set infer.backend.type=hf."
+            ) from exc
+
+        base_url = str(self.cfg.backend.get("base_url") or os.environ.get("VLLM_BASE_URL") or "").strip()
+        if not base_url:
+            raise RuntimeError(
+                "infer.backend.type=vllm requires infer.backend.base_url (or env VLLM_BASE_URL). "
+                "To disable vLLM, set infer.backend.type=hf."
+            )
+
+        model = str(self.cfg.backend.get("model") or self.cfg.model_checkpoint).strip()
+        timeout_s = float(self.cfg.backend.get("timeout_s", 180.0))
+
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": USER_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    },
+                ],
+            },
+        ]
+
+        base_url = base_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            url = base_url + "/chat/completions"
+        else:
+            url = base_url + "/v1/chat/completions"
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": float(self.gen_cfg.temperature),
+            "top_p": float(self.gen_cfg.top_p),
+            "max_tokens": int(self.gen_cfg.max_new_tokens),
+            "stream": False,
+        }
+        if self.gen_cfg.repetition_penalty is not None:
+            payload["repetition_penalty"] = float(self.gen_cfg.repetition_penalty)
+        if self.gen_cfg.seed is not None:
+            payload["seed"] = int(self.gen_cfg.seed)
+
+        headers = {"Content-Type": "application/json"}
+
+        resp = requests.post(url, json=payload, headers=headers, timeout=timeout_s)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"vLLM server error status={resp.status_code}: {resp.text[:2000]}"
+            )
+
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"vLLM server returned no choices: {data}")
+
+        c0 = choices[0] if isinstance(choices, list) else choices
+        if isinstance(c0, dict) and isinstance(c0.get("message"), dict):
+            content = c0["message"].get("content", "")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts = []
+                for p in content:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        parts.append(str(p.get("text", "")))
+                return "".join(parts)
+
+        if isinstance(c0, dict) and "text" in c0:
+            return str(c0.get("text") or "")
+
+        raise RuntimeError(f"Unrecognized vLLM response schema: {data}")
 
     def _process_gt(
         self,
@@ -253,7 +516,7 @@ class InferenceEngine:
 
     @staticmethod
     def _compact_objects(objs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Strip internal fields to the unified pred.jsonl schema."""
+        """Strip internal fields to the unified gt_vs_pred.jsonl schema."""
         compact: List[Dict[str, Any]] = []
         for obj in objs:
             if not isinstance(obj, dict):
@@ -292,7 +555,7 @@ class InferenceEngine:
         jsonl_path = Path(self.cfg.gt_jsonl)
         out_path = Path(self.cfg.out_path)
         summary_path = Path(
-            self.cfg.summary_path or out_path.with_suffix(".summary.json")
+            self.cfg.summary_path or (out_path.parent / "summary.json")
         )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,8 +563,43 @@ class InferenceEngine:
         if not os.environ.get("ROOT_IMAGE_DIR"):
             os.environ["ROOT_IMAGE_DIR"] = str(jsonl_path.parent.resolve())
 
+        backend = str(self.cfg.backend_type).strip().lower()
+        determinism = "strict" if backend == "hf" else "best_effort"
+
         counters = RunCounters()
         self.load_model()
+
+        resolved_meta = {
+            "mode": self.resolved_mode,
+            "mode_resolution_reason": self.mode_reason,
+            "backend": backend,
+            "model_checkpoint": self.cfg.model_checkpoint,
+            "gt_jsonl": self.cfg.gt_jsonl,
+            "pred_coord_mode": self.cfg.pred_coord_mode,
+            "device": self.cfg.device,
+            "limit": self.cfg.limit,
+            "generation": {
+                "temperature": self.gen_cfg.temperature,
+                "top_p": self.gen_cfg.top_p,
+                "max_new_tokens": self.gen_cfg.max_new_tokens,
+                "repetition_penalty": self.gen_cfg.repetition_penalty,
+                "seed": self.gen_cfg.seed,
+            },
+            "artifacts": {
+                "gt_vs_pred_jsonl": str(out_path),
+                "summary_json": str(summary_path),
+            },
+        }
+        if backend == "vllm":
+            # Persist only non-sensitive backend fields (allowlist).
+            allowed = {"base_url", "model", "timeout_s"}
+            resolved_meta["backend_cfg"] = {
+                k: v
+                for k, v in (self.cfg.backend or {}).items()
+                if str(k) in allowed
+            }
+
+        self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
 
         pbar_total = self.cfg.limit if self.cfg.limit > 0 else None
         with (
@@ -347,7 +645,7 @@ class InferenceEngine:
                         "image": (record.get("images") or [None])[0],
                         "width": width,
                         "height": height,
-                        "mode": self.cfg.mode,
+                        "mode": self.resolved_mode,
                         "coord_mode": None,
                         "gt": [],
                         "pred": [],
@@ -361,7 +659,6 @@ class InferenceEngine:
                     continue
 
                 # Process GT first to catch mode mismatches early.
-                # Validate GT geometries early.
                 gt_errors: List[str] = []
                 gt = self._process_gt(
                     record, width=width, height=height, errors=gt_errors
@@ -400,7 +697,6 @@ class InferenceEngine:
                         errors.append("generation_failed")
                         raw_output = str(exc)
 
-                # Aggregate per-sample errors into counters.
                 for code in errors:
                     counters.add(ERROR_CANONICAL.get(code, code))
 
@@ -408,7 +704,7 @@ class InferenceEngine:
                     "image": (record.get("images") or [None])[0],
                     "width": width,
                     "height": height,
-                    "mode": self.cfg.mode,
+                    "mode": self.resolved_mode,
                     # Points are emitted in pixel space; hint downstream to skip re-denorm.
                     "coord_mode": "pixel",
                     "gt": gt,
@@ -419,10 +715,31 @@ class InferenceEngine:
                 fout.write(json.dumps(output, ensure_ascii=False) + "\n")
                 counters.total_emitted += 1
 
-        summary_payload = {
-            "mode": self.cfg.mode,
+        summary_payload: Dict[str, Any] = {
+            "mode": self.resolved_mode,
+            "determinism": determinism,
             **counters.to_summary(),
+            "backend": {
+                "type": backend,
+                "model_checkpoint": self.cfg.model_checkpoint,
+            },
+            "generation": {
+                "temperature": self.gen_cfg.temperature,
+                "top_p": self.gen_cfg.top_p,
+                "max_new_tokens": self.gen_cfg.max_new_tokens,
+                "repetition_penalty": self.gen_cfg.repetition_penalty,
+                "seed": self.gen_cfg.seed,
+            },
+            "infer": {
+                "gt_jsonl": self.cfg.gt_jsonl,
+                "pred_coord_mode": self.cfg.pred_coord_mode,
+                "device": self.cfg.device,
+                "limit": self.cfg.limit,
+            },
         }
+        if self.requested_mode == "auto":
+            summary_payload["mode_resolution_reason"] = self.mode_reason
+
         summary_path.write_text(
             json.dumps(summary_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",

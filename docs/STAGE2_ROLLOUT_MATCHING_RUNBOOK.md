@@ -47,7 +47,7 @@ Key policies:
 ## Rollout Parsing Policy (Current Rollouts)
 
 The current rollout behavior (20-sample smoke at
-`output/infer/rollout_ckpt3106_smoke/pred.jsonl`) commonly includes a trailing
+`output/infer/rollout_ckpt3106_smoke/gt_vs_pred.jsonl`) commonly includes a trailing
 `<|im_end|>` token and occasionally true truncation mid-object.
 
 Parsing policy:

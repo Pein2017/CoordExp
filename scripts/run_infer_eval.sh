@@ -2,8 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PYTHON_BIN="/root/miniconda3/envs/ms/bin/python"
+source "${SCRIPT_DIR}/_lib/backbone.sh"
 
 # ----------- Declare runtime configuration -----------
 # Required (no default)
@@ -47,18 +46,9 @@ if [[ -z "$SEMANTIC_DEVICE" ]]; then
   fi
 fi
 
-PRED_JSONL="$OUTPUT_BASE_DIR/pred.jsonl"
+PRED_JSONL="$OUTPUT_BASE_DIR/gt_vs_pred.jsonl"
 SUMMARY_JSON="$OUTPUT_BASE_DIR/summary.json"
 EVAL_OUT_DIR="$OUTPUT_BASE_DIR/eval"
-
-ensure_required() {
-  local name="$1"
-  local value="$2"
-  if [[ -z "$value" ]]; then
-    echo "ERROR: $name must be set."
-    exit 1
-  fi
-}
 
 ensure_required "CKPT" "$CKPT"
 ensure_required "GT_JSONL" "$GT_JSONL"
@@ -79,7 +69,7 @@ echo "  Eval out dir:       $EVAL_OUT_DIR"
 cd "$REPO_ROOT"
 
 CMD_INF=(
-  "$PYTHON_BIN" "$REPO_ROOT/scripts/run_infer.py"
+  "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/run_infer.py"
   --gt_jsonl "$GT_JSONL"
   --model_checkpoint "$CKPT"
   --mode "$MODE"
@@ -106,7 +96,7 @@ PYTHONPATH="$REPO_ROOT" "${CMD_INF[@]}"
 echo "Inference finished, predictions saved to $PRED_JSONL"
 
 CMD_EVAL=(
-  "$PYTHON_BIN" "$REPO_ROOT/scripts/evaluate_detection.py"
+  "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/evaluate_detection.py"
   --pred_jsonl "$PRED_JSONL"
   --out_dir "$EVAL_OUT_DIR"
   --unknown-policy "$UNKNOWN_POLICY"

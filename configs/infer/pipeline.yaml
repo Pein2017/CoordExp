@@ -1,0 +1,97 @@
+# Unified inference pipeline configuration (infer -> eval and/or vis)
+#
+# This config is treated as a single YAML file:
+# - no `extends` / `inherit`
+# - no variable interpolation
+
+run:
+  # Used to construct the canonical run directory: <run.output_dir>/<run.name>
+  name: lvis_val_ckpt1520
+  output_dir: output/infer
+
+stages:
+  infer: true
+  eval: true
+  vis: true
+
+infer:
+  # Dataset input
+  gt_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl
+
+  # HF checkpoint path OR a served model name (for vllm backend)
+  model_checkpoint: output/1-24/stage_1/poly_prefer_semantic_max60/epoch_4-softce_w1-LRs-2e-4_1e-4_4e-4-from-base-4B/checkpoint-1520_merged
+
+  # coord | text | auto
+  mode: auto
+
+  # How to interpret prediction coords before scaling (usually keep auto)
+  pred_coord_mode: auto  # auto | norm1000 | pixel
+
+  backend:
+    type: vllm  # hf | vllm
+    # vllm options (OpenAI-compatible server):
+    base_url: http://127.0.0.1:8000
+    # model: Qwen3-VL-<served-name>   # defaults to infer.model_checkpoint
+    # Client-side timeout for vLLM HTTP requests (seconds)
+    timeout_s: 180.0
+    # (Optional) number of concurrent client workers to use when issuing
+    # requests to the vLLM server. This repo does not automatically create
+    # multiple workers, but you can read this value in a custom client or
+    # use it as documentation for your load-test tooling.
+    client_concurrency: 8
+    # Server-side tuning knobs (for your vLLM server config; not used directly
+    # by the client). Keep here for reproducible experiments.
+    server_options:
+      max_batch_size: 32
+      batch_timeout_ms: 20
+      max_num_batched_tokens: 65536
+      # Advanced vLLM server-side tuning (informational / for reproducibility).
+      vllm_tensor_parallel_size: 1
+      vllm_data_parallel_size: 1
+      # Server-side concurrency cap *per rollout worker* (per DP replica).
+      # Keep this low to reduce KV-cache pressure and avoid OOM/disconnects.
+      vllm_max_num_seqs: 1
+      # Target fraction of GPU memory to attempt to use (server should enforce).
+      vllm_gpu_memory_utilization: 0.80
+      # Keep aligned with global_max_length (total input+output budget).
+      vllm_max_model_len: 12000
+      vllm_enable_prefix_caching: true
+
+  generation:
+    temperature: 0.1
+    top_p: 0.95
+    max_new_tokens: 8192
+    repetition_penalty: 1.1
+    seed: 42
+
+  device: cuda:0
+  limit: 20
+  detect_samples: 128
+
+# Optional explicit paths. If omitted, they derive deterministically from run.*.
+artifacts:
+  # run_dir: output/infer/lvis_val_ckpt1632
+  # gt_vs_pred_jsonl: output/infer/lvis_val_ckpt1632/gt_vs_pred.jsonl
+  # summary_json: output/infer/lvis_val_ckpt1632/summary.json
+
+# Evaluation stage (consumes gt_vs_pred.jsonl; does not load the model)
+eval:
+  output_dir: null  # defaults to <run_dir>/eval
+  metrics: both     # coco | f1ish | both
+  unknown_policy: semantic  # bucket | drop | semantic
+  use_segm: true
+  overlay: false
+  overlay_k: 12
+  num_workers: 0
+
+  # Semantic matching (used when unknown_policy=semantic)
+  semantic_model: sentence-transformers/all-MiniLM-L6-v2
+  semantic_threshold: 0.6
+  semantic_fallback: bucket
+  semantic_device: auto
+  semantic_batch_size: 64
+
+# Visualization stage (consumes gt_vs_pred.jsonl; does not load the model)
+vis:
+  output_dir: null  # defaults to <run_dir>/vis
+  limit: 20
