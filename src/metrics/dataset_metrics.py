@@ -904,12 +904,18 @@ class CoordSoftCEW1LossMixin:
         coord_soft_ce_w1 masks coord-token targets to -100 for the base CE loss.
         For reporting consistency, token_acc should always be computed on the original
         supervised labels (labels != -100), including coord-token positions.
+
+        Note: The current pinned ms-swift (swift==3.10.0.dev0) implements
+        `SwiftMixin._compute_acc(self, outputs, labels)` without a `cu_seqlens` kwarg.
+        Some call sites may still pass `cu_seqlens`; we accept it but intentionally
+        *do not forward it*.
         """
 
         labels_for_acc = getattr(self, "_coordexp_labels_for_acc", None)
         if isinstance(labels_for_acc, torch.Tensor):
             labels = labels_for_acc
-        return super()._compute_acc(outputs, labels, cu_seqlens=cu_seqlens)
+
+        return super()._compute_acc(outputs, labels)
 
     def _log_base_ce_metrics(
         self, *, loss_base: torch.Tensor, masked_labels: torch.Tensor
