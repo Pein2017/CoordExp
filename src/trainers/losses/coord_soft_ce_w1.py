@@ -146,7 +146,6 @@ def compute_coord_soft_ce_w1_loss(
 
     logits_next = logits[:, :seq_len, :]
     labels_next = labels[:, 1 : seq_len + 1]
-    masked_labels_next = masked_labels[:, 1 : seq_len + 1]
 
     vocab_size = int(logits_next.shape[-1])
     if not coord_token_ids:

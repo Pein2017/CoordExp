@@ -1,14 +1,9 @@
-import json
-import math
-import os
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
 
 from src.coord_tokens.codec import get_coord_token_ids
-from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 from src.data_collators.token_types import TokenType
 from src.utils.logger import get_logger
 
