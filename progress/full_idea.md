@@ -384,15 +384,23 @@ This path handles:
 
 ## 8. Stage-2 Total Objective
 
-Combine both paths:
+Combine both channels:
 
-- `L_stage2 = L_CE(y_GT_reordered) + λ_geo * L_geo_self + λ_coordCE * L_CE_coord + λ_ent * L_entropy(optional)`
+- Stage-2 is a mixture objective:
+  - `L_stage2 = (1-ρ) * L_A + ρ * L_B`
+  - where `ρ` is the Channel-B frequency/probability (small, e.g. 0.05).
+
+Expanded:
+- `L_A = L_CE(y_GT) + λ_geo^A * L_geo_soft + λ_coord^A * L_coord_sharp(optional)`
+- `L_B = L_CE(y_GT_reordered) + λ_geo^B * L_geo_roll + λ_coord^B * L_coord_sharp(optional)`
 
 Where:
-- `L_CE(y_GT_reordered)` includes text + structure + optional EOS weighting.
-- `L_geo_self` provides continuous geometric gradients under self context.
-- `L_CE_coord` sharpens coord distributions and reduces multi-peak ambiguity.
-- `L_entropy` (optional) regularizes coord distributions.
+- Channel-A geo term improves coord calibration cheaply under soft self-conditioning.
+- Channel-B terms fix true self-context + set-level discrete problems (order/missing/extras/format).
+
+Practical defaults (based on current evidence that hard-CE is not weak):
+- Keep `L_CE` as the anchor in both channels.
+- Treat coord-distribution losses (softCE/W1/gate/entropy/top-k) as optional regularizers, not mandatory.
 
 ---
 
@@ -420,6 +428,13 @@ Given image + prompt:
 - Parser: predicted sequence → list of objects + coord token indices
 - Coord vocab index list: indices of `<|coord_0|>.. <|coord_999|>` in tokenizer
 
+### 10.1.1 (New) Soft self-context utilities (Channel-A)
+- A packing-safe way to get `coord_positions` (from labels/template).
+- `E_coord` gather: embedding rows for coord token IDs (K=1000).
+- Build `inputs_embeds` where coord positions are replaced by `ē_t = Σ_k p_{t,k} * E_coord[k]`.
+- Control whether `p_t` is stop-grad (recommended early) via config flag.
+- Model forward must support `inputs_embeds` (Qwen3-VL does; ensure your trainer path passes it correctly).
+
 ### 10.2 Matching utilities
 - Cost matrix builder:
   - geometry cost from discrete coords (fast IoU/L1)
@@ -431,9 +446,10 @@ Given image + prompt:
 - Return continuous scalar in [0,1] (or [0,999] if you prefer working in index space)
 
 ### 10.4 Loss module
-- `L_geo_self`: L1 + GIoU over continuous boxes from CoordExp
+- `L_geo_soft`: Channel-A L1 + GIoU over continuous boxes from CoordExp under soft self-context
+- `L_geo_roll`: Channel-B L1 + GIoU over continuous boxes from CoordExp under rollout self-context (matched via Hungarian)
 - `L_CE`: standard token CE (with optional position-wise weights)
-- optional entropy regularizer and/or top-k expectation
+- optional coord-distribution regularizers (entropy, top-k expectation, softCE/W1, etc.)
 
 ---
 
@@ -452,6 +468,10 @@ Given image + prompt:
   - localization improvement (IoU distribution, GIoU loss reduction)
   - robustness to permutation/order
   - reduced sensitivity to quantization boundary cases
+
+**Update:** run Stage-2 as Channel-A/Channel-B mixture:
+- Channel-A provides high-throughput, stable geometry calibration without rollout.
+- Channel-B provides sparse but essential “true self-context + set correction”.
 
 ### Optional Stage-3 (light rollout consistency)
 - Low-frequency additional rollouts with the same machinery.
