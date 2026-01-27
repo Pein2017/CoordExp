@@ -14,7 +14,7 @@
 
 ### 0.2 What “EM-ish” means here
 - We separate **continuous / smooth geometry calibration** from **discrete / set-level correction**:
-  - **Channel-A (hot path):** no autoregressive rollout; do **N× forwards** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
+  - **Channel-A (hot path):** no autoregressive rollout; do **N× forward** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
   - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to handle **permutation / missing / extra / malformed JSON** and to ground “true self-context” learning.
 
 Under this view:
@@ -180,7 +180,7 @@ For each (single) image in a record we can think in terms of an abstract GT obje
 
 When we choose to supervise in coord-token space, we convert normalized coordinates to discrete bins:
 - `coord_bin(c) = round(999 * c)` with clamp to `[0, 999]`
-- Use `<|coord_coord_bin|>` as the GT coord token.
+- Use `<|coord_k|>` as the GT coord token, where `k = coord_bin(c)` (clamped to [0,999]).
 
 ---
 
@@ -190,7 +190,7 @@ When we choose to supervise in coord-token space, we convert normalized coordina
 We separate training into two conceptual stages:
 - **Stage-1:** Pure SFT / format stabilization / coord token adaptation.
 - **Stage-2:** two-channel mixture:
-  - **Channel-A (default):** N× forward (no rollout), geometry calibration under iterative “soft self-context” on coord slots.
+  - **Channel-A (default):** N× forward iterative soft self-context (no rollout), with default n_softctx_iter=2; n_softctx_iter=1 degenerates to pure teacher-forcing.
   - **Channel-B (sparse):** rollout + matching + GT-supervised geometric calibration under true self-context + reordered-GT SFT for set-level correction.
 
 ---
@@ -251,6 +251,7 @@ Definitions / hyperparameters:
   - `n_softctx_iter=1`: only Step A1 (pure teacher forcing), a degenerate / control variant (no soft self-context).
   - `n_softctx_iter=2`: the original Channel-A (A1 → A2 → A3 → A4).
   - `n_softctx_iter>2`: iterate the A2 ↔ A3 loop multiple times (fixed-point / Jacobi-style intuition).
+- Iteration indexing: we use `m = 0..n_softctx_iter-1`, where `m=0` corresponds to the teacher-forced GT forward in Step A1. The **final iteration** logits used for CoordExp decode and geometric loss are `z^(n_softctx_iter-1)`.
 - (Optional) `softctx_damping_alpha` : damping coefficient for coord-slot embedding updates:
   - `E_new = (1-α) * E_old + α * ē`, default `α=1`.
 - (Optional) Adaptive iterations: run extra iterations only for low-confidence coord slots (e.g., high entropy or low `max_prob`). This is a suggestion; keep the default deterministic.
@@ -308,7 +309,7 @@ Use final logits z^(n_softctx_iter-1) for CoordExp decode + losses
 Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=F_θ(e^(m))`, that repeatedly refreshes coord embeddings from the model’s own belief while keeping the GT text/structure scaffold. Increasing `n_softctx_iter` pushes the effect of self-conditioning further along the coord chain without sampling.
 
 #### Step A4 — Geometry + (optional) coord sharpening losses
-6) Default: decode continuous coords only from the **final** logits `z^(n_softctx_iter-1)` at coord slots via CoordExp, and assemble boxes per object.
+6) Default: decode continuous coords only from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1) at coord slots via CoordExp, and assemble boxes per object.
 7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
    - `L_geo_soft = Σ_obj [ α||b̂_obj^cont - b_obj^gt||_1 + β(1-GIoU(...)) ]`
 
@@ -344,8 +345,10 @@ Channel-A uses the **N× forward** construction from Section 6.2:
 - First forward: teacher-forced GT to obtain `p_t^(0)` over coord bins (and initial expected embeddings `ē^(0)`).
 - Subsequent forward(s): replace coord token embeddings by expected embeddings and forward again, optionally iterating (`n_softctx_iter >= 1`).
 
-We denote the second-forward logits as:
-- `z_t^self = z_t^soft`
+We denote the final-iteration logits as:
+- `z_t^self = z_t^(n_softctx_iter-1)`
+- Default: all CoordExp decodes, `L_geo_soft`, and any coord sharpening terms use `z_t^self` (final iteration logits) only.
+  (Optional, not default): you may also supervise intermediate iterates via a weighted sum across `m`, but keep the default single-shot on the final iteration for simplicity.
 
 #### Step D — CoordExp decode on coord positions
 7) For each GT object `i` and each of its 4 coord token positions `t` in the template:
@@ -472,8 +475,8 @@ Practical defaults (based on current evidence that hard-CE is not weak):
 Given image + prompt:
 1) Autoregressively generate sequence `y_pred` (greedy/beam).
 2) Parse objects:
-   - extract `<desc>` text
-   - extract `<|coord_k|>` tokens for x1,y1,x2,y2
+   - parse the JSON dict and read each object's `desc` string
+   - parse `bbox_2d` as 4 coord-token strings `"<|coord_k|>"` (x1,y1,x2,y2)
 3) Convert coord tokens to box values:
    - discrete: `k/999`
    - optional: if you want continuous decode at inference, you can compute CoordExp from logits during generation, but simplest is discrete token readout.
@@ -548,22 +551,32 @@ Given image + prompt:
 
 ## 12. Minimal Working Example (Two objects: “black cat” and “yellow dog”)
 
-### GT sequence
+### GT (JSON-only assistant payload; bbox only)
+```json
+{
+  "object_1": {
+    "desc": "black cat",
+    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"]
+  },
+  "object_2": {
+    "desc": "yellow dog",
+    "bbox_2d": ["<|coord_520|>", "<|coord_285|>", "<|coord_890|>", "<|coord_660|>"]
+  }
+}
 ```
 
-<bos>
-<obj><desc> black cat </desc><box> <coord_110> <coord_310> <coord_410> <coord_705> </box></obj>
-<obj><desc> yellow dog </desc><box> <coord_520> <coord_285> <coord_890> <coord_660> </box></obj>
-<eos>
-```
-
-### Rollout (model output)
-
-```
-<bos>
-<obj><desc> black cat </desc><box> <coord_120> <coord_300> <coord_420> <coord_700> </box></obj>
-<obj><desc> yellow dog </desc><box> <coord_500> <coord_280> <coord_880> <coord_650> </box></obj>
-<eos>
+### Rollout (model output; JSON-only, bbox only)
+```json
+{
+  "object_1": {
+    "desc": "black cat",
+    "bbox_2d": ["<|coord_120|>", "<|coord_300|>", "<|coord_420|>", "<|coord_700|>"]
+  },
+  "object_2": {
+    "desc": "yellow dog",
+    "bbox_2d": ["<|coord_500|>", "<|coord_280|>", "<|coord_880|>", "<|coord_650|>"]
+  }
+}
 ```
 
 ### Matching
