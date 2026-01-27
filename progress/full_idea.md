@@ -13,13 +13,24 @@
 - Training should remain compatible with standard SFT infrastructure (teacher forcing, token CE), with additional losses computed from LM logits.
 
 ### 0.2 What “EM-ish” means here
-- **E-step (latent alignment):** model generates a hypothesis output (rollout). Parse it into a set of predicted objects. Use Hungarian matching to align predictions to GT objects (latent correspondence).
-- **M-step (parameter update):** update model parameters using (i) standard SFT on reordered GT for generation/format, and (ii) differentiable geometric losses computed from the model’s logits under the model’s own rollout context (“self-context forward”).
+- We separate **continuous / smooth geometry calibration** from **discrete / set-level correction**:
+  - **Channel-A (hot path):** no autoregressive rollout; do **two parallel forwards** to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
+  - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to handle **permutation / missing / extra / malformed JSON** and to ground “true self-context” learning.
+
+Under this view:
+- **E-step (latent alignment):** performed only on Channel-B steps via rollout → set → Hungarian (stop-grad correspondence).
+- **M-step (parameter update):** always uses SFT-compatible losses; geometry losses can be applied under:
+  - Channel-A: “soft self-context proxy” (no sampling)
+  - Channel-B: “true self-context” (teacher-forced on rollout tokens)
 
 ### 0.3 Why “self-context forward”
 Hungarian matching is computed from the model’s rollout output. To make the geometric gradient consistent with the same context that produced that rollout, we recompute logits using teacher forcing on the rollout tokens (`ŷ`) and apply GT-based geometric supervision there.
 
 This avoids supervising coordinates under a mismatched context (pure GT teacher forcing) and behaves like a policy-improvement loop, but stays fully differentiable (no REINFORCE/PPO).
+
+**Update (practical):** in large V-LLMs, “true self-context forward” is expensive because it requires autoregressive rollout.
+We therefore introduce a **soft self-context proxy** that replaces only `<|coord_*|>` token embeddings by their expected embedding
+under the model’s own coord distribution, enabling a *non-sampling* approximation that is compatible with Qwen3’s tied weights.
 
 ---
 
@@ -154,7 +165,9 @@ When we choose to supervise in coord-token space, we convert normalized coordina
 ### Overview
 We separate training into two conceptual stages:
 - **Stage-1:** Pure SFT / format stabilization / coord token adaptation.
-- **Stage-2:** EM-ish loop with rollout + matching + GT-supervised geometric calibration under self-context.
+- **Stage-2:** two-channel mixture:
+  - **Channel-A (default):** 2× forward (no rollout), geometry calibration under “soft self-context proxy” on coord slots.
+  - **Channel-B (sparse):** rollout + matching + GT-supervised geometric calibration under true self-context + reordered-GT SFT for set-level correction.
 
 ---
 
@@ -188,37 +201,73 @@ Teacher forcing on GT sequence:
 
 ## 6. Stage-2: EM-ish Training Loop (Rollout → Match → Update)
 
-### 6.1 Per-sample loop (single image)
+### 6.1 Two-channel schedule (recommended)
+We run Stage-2 as a **mixture** over steps / samples:
+- **Channel-A (hot path, e.g., 95% steps):** no rollout; always available and fast.
+- **Channel-B (cold path, e.g., 5% steps or 1/P batches):** true rollout + Hungarian to fix discrete failure modes.
 
-#### Step A — Rollout (E-step hypothesis, no grad)
-1) Run autoregressive generation using current model θ:
-   - `ŷ = Rollout(f_θ, image, prompt)` (greedy or beam)
-2) Parse rollout into predicted objects:
-   - `Ô = Parse(ŷ)` returns a list:
-     - `Ô = { (d̂_i, b̂_i_disc, idx_i) }_{i=1..N}`
-   Where:
-  - `d̂_i`: decoded description string/tokens from `<desc> ... </desc>`
-  - `b̂_i_disc`: discrete box from the 4 coord tokens (ints 0..999, or normalized to [0,1])
-   - `idx_i`: token indices for the 4 coord positions in the rollout sequence (used later)
+Rationale:
+- In practice, “hard CE on coord tokens” is already strong in Stage-1/SFT, so Stage-2 should not assume coord-distribution losses will dominate.
+- The main remaining instability is typically **self-context generation** (long JSON, permutation, missing/extras/format).
+  Channel-B targets that directly; Channel-A provides a cheap, smooth geometry signal to stabilize coord decoding and reduce drift.
 
-> Notes:
-> - If parsing fails, optionally fall back to Stage-1 SFT only for that sample.
+---
 
-#### Step B — Hungarian matching (E-step correspondence, no grad)
-3) Build cost matrix `C ∈ R^{N×M}` between predicted objects `i` and GT objects `j`:
-   - Geometry cost: `L_geo_disc(b̂_i_disc, b_j_gt)` (can be L1 on norm1000 + IoU-based term)
-   - Optional semantic cost: `D_sem(d̂_i, d_j_gt)` (use frozen text encoder; keep small early)
-   - `C_{i,j} = λ_geo * L_geo_disc + λ_sem * D_sem`
-4) Run Hungarian to get assignment:
-   - `σ = Hungarian(C)`
-   - Produces a set of matched pairs `(i -> j)`.
+### 6.2 Channel-A (hot): Soft self-context proxy via 2× forward (no rollout)
 
-5) Optional gating for stability:
-   - Only accept a match if (IoU_disc(b̂_i_disc, b_j_gt) > iou_thr) or (L1 < thr).
-   - Let `ValidMatched = { i | match accepted }`.
+Key idea: approximate “self-context” only where it matters most (coord slots), without sampling.
+We keep all **text/struct** tokens teacher-forced as GT, but feed **coord tokens** as *soft embeddings*
+derived from the model’s own coord distribution.
 
-> Purpose:
-> - Avoid wrong matches producing wrong geometric gradients.
+#### Step A1 — Teacher-forced GT forward (with grad)
+1) Teacher force on GT (or reordered-GT if you already have one) to get logits:
+   - `z_t^gt = f_θ(image, prompt, y_GT_<t)`
+
+2) Identify coord positions `t ∈ coord_positions` from labels/template (packing-safe).
+   For each coord position `t`, gather coord-subspace logits:
+   - `s_t ∈ R^K`, `s_{t,k} = z_t^gt[coord_k]`
+   - `p_t = softmax(s_t / τ_A)` over `k=0..999`
+
+> Note (stability): early in Stage-2, **detach** the soft distribution:
+> - `p_t^stop = stopgrad(p_t)`
+> This keeps Channel-A “EM-ish”: the soft context is treated like an E-step artifact,
+> while gradients come from the second forward + the usual SFT CE.
+
+#### Step A2 — Build soft coord embeddings (no sampling)
+3) Let `E_coord ∈ R^{K×d}` be the embedding table restricted to `<|coord_k|>`.
+   Construct the expected coord embedding at each coord slot:
+   - `ē_t = Σ_k p_{t,k}^stop * E_coord[k]`
+
+4) Prepare `inputs_embeds` for a second forward:
+   - Start from standard embeddings of `y_GT` (or from the model’s embedding lookup).
+   - For coord positions, **replace** token embedding by `ē_t`.
+   - Keep attention mask unchanged.
+
+This is cheap because `K=1000` and coord slots are sparse compared to total tokens.
+
+#### Step A3 — Soft self-context forward (with grad)
+5) Second forward using the mixed embeddings:
+   - `z_t^soft = f_θ(image, prompt, inputs_embeds=ȳ_<t)`
+
+Interpretation: the model is now conditioned on “its own” coord belief (softly),
+while still anchored to GT text/structure → a controlled self-conditioning.
+
+#### Step A4 — Geometry + (optional) coord sharpening losses
+6) Decode continuous coords from `z_t^soft` at coord slots via CoordExp, assemble boxes per object.
+7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
+   - `L_geo_soft = Σ_obj [ α||b̂_obj^cont - b_obj^gt||_1 + β(1-GIoU(...)) ]`
+
+8) (Optional) add a *light* coord-distribution sharpening term computed from `z_t^soft`:
+   - `L_coordCE_soft = -Σ_{t∈coord_positions} log p_θ(y_t^gt | ... , softctx)`
+   - or your existing (softCE/W1/gate) but keep it small; treat as regularizer, not the main driver.
+
+Channel-A per-sample loss:
+- `L_A = L_CE(y_GT) + λ_geo^A L_geo_soft + λ_coord^A L_coord_sharp(optional)`
+
+> Why this is “unified” with rollout-matching:
+> - Channel-A trains geometry under a form of self-conditioning (but without sampling).
+> - Channel-B trains under true self-conditioning (rollout tokens), but sparsely.
+> Together they approximate “train on what you infer” while keeping throughput high.
 
 ---
 
