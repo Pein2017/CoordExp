@@ -36,30 +36,45 @@ under the model’s own coord distribution, enabling a *non-sampling* approximat
 
 ## 1. Output Format / Token Protocol
 
-### 1.1 Canonical object record format
-Each object is encoded as a fixed-structure token subsequence:
+### 1.1 Canonical object record format (JSON-only, dense mode)
+CoordExp uses JSON-only assistant outputs (no wrapper tags like `<obj>`/`<box>`). In dense mode, the assistant emits a single top-level JSON object mapping `"object_1"`, `"object_2"`, ... to per-object payloads. This payload is derived from the dataset JSONL record contract (`docs/DATA_JSONL_CONTRACT.md` / `docs/DATA_AND_DATASETS.md`), which stores objects as a list; the template enumerates that list and assigns stable `object_i` keys.
 
-```
+Each `object_i` value is a JSON object with:
+- `desc` (string, required): open-vocabulary description / class phrase.
+- Exactly one geometry field (required, mutually exclusive):
+  - `bbox_2d`: `[x1, y1, x2, y2]`
+  - `poly`: polygon vertices (>= 3 points). In text it may appear as a flat list `[x1, y1, ...]` or as paired points `[[x1, y1], ...]` as long as it flattens to an even-length list. JSONL records may also include `poly_points` as metadata, but the assistant output does not need it (and strict parsing may drop unexpected keys).
 
-<obj> <desc> ...desc tokens... </desc> <box> x1 y1 x2 y2 </box> </obj>
+Coordinate representation (norm1000):
+- Coord-token mode (recommended for Stage-2): each coordinate is a string `"<|coord_k|>"` where `k ∈ [0, 999]`.
+- Numeric mode: coordinates are integers in `[0, 999]` (pre-normalized offline; runtime normalization is disabled).
 
-```
+Example (coord-token mode, bbox only):
 
-- `x1 y1 x2 y2` are each a single `<|coord_k|>` token (k=0..999).
-- Multiple objects are concatenated:
-```
-
-<bos>  OBJ_1  OBJ_2  ...  OBJ_N  <eos>
-
+```json
+{
+  "object_1": {
+    "desc": "black cat",
+    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"]
+  },
+  "object_2": {
+    "desc": "yellow dog",
+    "bbox_2d": ["<|coord_520|>", "<|coord_285|>", "<|coord_890|>", "<|coord_660|>"]
+  }
+}
 ```
 
 ### 1.2 Parsing invariants
-- Records must be parseable deterministically:
-  - Find `<obj> ... </obj>` segments.
-  - Inside each segment, find `<desc> ... </desc>` (text) and `<box> ... </box>` (4 coord tokens).
-- During training and evaluation, only parse objects that satisfy:
-  - exactly 4 coord tokens inside `<box> ... </box>`
-  - optional additional formatting constraints as needed.
+- The response MUST contain a top-level JSON object.
+- Valid objects are entries whose keys match `object_<N>` (1-indexed).
+- Each object MUST contain:
+  - a non-empty `desc`, and
+  - exactly one geometry field: `bbox_2d` or `poly`.
+- Objects SHOULD NOT contain extra keys beyond `desc` + the geometry field (strict parsing may drop them).
+- Geometry arity rules (after flattening nested lists, if any):
+  - `bbox_2d` must contain exactly 4 coordinates.
+  - `poly` must flatten to an even-length list with length >= 6.
+- In coord-token mode, geometry values MUST be coord-token strings `"<|coord_k|>"` with `k ∈ [0, 999]`. Malformed objects are dropped (no repair).
 
 ---
 
