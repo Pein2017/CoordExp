@@ -50,7 +50,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Navigation (Progressive)
 - Source of truth: `docs/` (do not duplicate docs into global instructions).
 - Use the `coordexp-codebase` skill for doc index, entrypoints, and config workflow pointers.
-- Use Serena MCP for symbol-aware edits; use `rg`/`cat` for greps and docs.
+- For exploring and editing Python files, **use Serena MCP (symbol-aware navigation and edits) as the required tool** — Serena MCP is the authoritative, more accurate and precise method for Python code exploration and symbol-aware edits. Only use `rg`/`cat` for non-Python quick checks or when Serena MCP is unavailable; document exceptions and request approval.
+- Use Serena's `activate_project` to switch to external Python library projects when exploring code outside the current work directory.
 
 ## Scope
 - In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.
