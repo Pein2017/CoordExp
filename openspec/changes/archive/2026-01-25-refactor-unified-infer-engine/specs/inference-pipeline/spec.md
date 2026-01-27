@@ -39,7 +39,7 @@ Compatibility guidance (non-normative):
 - **WHEN** evaluation or visualization consumes that record
 - **THEN** it uses `gt` and `pred` `points` as pixel coordinates without denormalization.
 
-### Requirement: Staged pipeline (infer → eval and/or vis)
+### Requirement: Staged pipeline (inference → eval and/or viz)
 The system SHALL provide a unified pipeline runner that can execute stages:
 - `infer`: run generation and write the pipeline artifact (`gt_vs_pred.jsonl`) and a run summary (`summary.json`),
 - `eval`: compute metrics from the pipeline artifact and write outputs under `eval/`,

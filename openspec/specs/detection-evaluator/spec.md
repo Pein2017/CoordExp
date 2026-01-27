@@ -4,20 +4,19 @@
 TBD - created by archiving change add-detection-evaluator. Update Purpose after archive.
 ## Requirements
 ### Requirement: Ingestion and validation
-- The evaluator SHALL accept ground-truth JSONL that follows `docs/DATA_JSONL_CONTRACT.md` and predictions either as parsed JSONL (e.g., from `vis_tools/vis_coordexp.py`) or raw generation text parsed with the shared utility.
-- For records with multiple images, the evaluator SHALL use only the first image entry (index 0) to match current generation tooling, count the skip as `multi_image_ignored`, and continue.
-- Width/height from GT SHALL be the source of truth; conflicting width/height in predictions SHALL be ignored and counted as `size_mismatch`.
-- Entries missing width/height, containing multiple geometries, degenerate/zero-area shapes, or with coords outside 0–999 SHALL be dropped and counted (e.g., `invalid_geometry`, `invalid_coord`, `missing_size`).
+For the unified pipeline workflow, the evaluator SHALL treat the pipeline artifact `gt_vs_pred.jsonl` (containing embedded `gt` and `pred` per sample) as the primary evaluation input.
 
-#### Scenario: Malformed prediction is counted and skipped
-- GIVEN a prediction object with both `bbox_2d` and `poly`
-- WHEN the evaluator ingests the predictions JSONL
-- THEN that object is dropped, increments an "invalid_geometry" counter, and does not appear in the COCO outputs.
+The public CLI/pipeline integration SHALL NOT expose a separate-GT mode (`gt_jsonl` separate from predictions); GT MUST be embedded inline per record.
 
-#### Scenario: Multi-image record handled deterministically
-- GIVEN a JSONL record with `images: ["a.jpg", "b.jpg"]`
-- WHEN the evaluator ingests the record
-- THEN it evaluates only `a.jpg`, logs one `multi_image_ignored`, and proceeds without failure.
+Coordinate handling:
+- If a record contains `coord_mode: "pixel"`, the evaluator SHALL interpret `gt` and `pred` `points` as pixel-space coordinates and SHALL NOT denormalize again.
+- If a record contains `coord_mode: "norm1000"`, the evaluator SHALL denormalize using per-record `width` and `height` and then clamp/round.
+- Records missing `width` or `height` (or with null width/height) SHALL be skipped (counted) because denormalization and validation are undefined.
+
+#### Scenario: Pixel-ready artifact is evaluated without rescaling
+- **GIVEN** a `gt_vs_pred.jsonl` record with `coord_mode: "pixel"` and valid `width`/`height`
+- **WHEN** the evaluator ingests the record
+- **THEN** it evaluates `gt` and `pred` using the provided pixel coordinates without denormalization.
 
 ### Requirement: Parsing and coordinate handling
 - The evaluator SHALL reuse the shared coord-processing module (via `src/common/geometry`/`src/common/schemas`) used by inference/visualization, supporting coord tokens or ints in 0–999 with one geometry per object.
@@ -91,15 +90,14 @@ Macro definition (required for reproducibility):
 - **THEN** `metrics.json` includes `f1ish@{iou_thr}_*` keys and `per_image.json` includes `matched/missing/hallucination` counts for each requested `iou_thr`.
 
 ### Requirement: CLI, configuration, and outputs
-- The evaluator SHALL provide a CLI (`scripts/evaluate_detection.py` or `python -m src.eval.detection`) that accepts GT/pred paths, cat map, score mode, IoU thresholds, polygon/segm toggle, unknown policy, strict-parse, and output directory.
-- A reproducible YAML config template SHALL be added under `configs/eval/detection.yaml` and may be passed to the CLI.
-- The evaluator SHALL emit `metrics.json`, `per_class.csv` (per-class AP), `per_image.json` (matches/unmatched with reasons), and MAY emit overlay PNG/HTML samples for top-K FP/FN when enabled (default disabled).
-- The default training loop remains unchanged; an eval hook MAY be enabled explicitly to call the same evaluator offline.
+The evaluator SHALL support a YAML config template under `configs/eval/` and SHOULD accept `--config` to run evaluation reproducibly.
 
-#### Scenario: CLI run produces artifacts
-- GIVEN GT and prediction JSONL files and an output directory
-- WHEN `python -m src.eval.detection --gt_jsonl ... --pred_jsonl ... --out_dir ...` is executed
-- THEN the output directory contains `metrics.json`, `per_class.csv`, and `per_image.json` (and overlays if enabled).
+If both CLI flags and YAML are provided, CLI flags SHALL override YAML values, and the evaluator SHALL log the resolved configuration.
+
+#### Scenario: Evaluate via YAML config
+- **GIVEN** `configs/eval/detection.yaml` and a prediction JSONL artifact
+- **WHEN** the user runs evaluator with `--config configs/eval/detection.yaml`
+- **THEN** it produces `metrics.json`, `per_class.csv`, `per_image.json` under the configured output directory.
 
 ### Requirement: Tests and fixtures
 - The change SHALL include a small fixture dataset (2–3 images) with deterministic predictions and a CI smoke test that exercises parsing, category mapping, COCOeval (AP50 threshold), and robustness counters.
@@ -196,4 +194,12 @@ Semantic closeness SHALL use the same embedding model and `semantic_thr` as F1-i
 - **AND** predictions contain `chair` and `table` with valid boxes
 - **WHEN** F1-ish runs with prediction scope `annotated`
 - **THEN** the `table` prediction is ignored and does not contribute to `hallucination` (FP).
+
+### Requirement: Pipeline integration
+The evaluator SHALL be callable as a stage from the unified inference pipeline runner, using the same resolved run directory and artifact conventions.
+
+#### Scenario: Pipeline stage calls evaluator
+- **GIVEN** a unified pipeline run directory containing `gt_vs_pred.jsonl`
+- **WHEN** the pipeline runner executes the eval stage
+- **THEN** evaluation outputs are written under the run directory (or a deterministic subdirectory) without requiring additional user inputs.
 

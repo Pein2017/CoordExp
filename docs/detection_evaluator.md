@@ -79,6 +79,82 @@ Tip: you can also run infer+eval+vis from a single YAML pipeline config:
 PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/infer/pipeline.yaml
 ```
 
+## Validation checklist (unified pipeline)
+
+This is a lightweight checklist intended for paper-ready runs and to prevent
+silent contract drift between infer/eval/vis stages.
+
+1) Artifact layout (deterministic)
+- Confirm `<run_dir>/gt_vs_pred.jsonl` and `<run_dir>/summary.json` exist.
+- If you ran the YAML pipeline, confirm `<run_dir>/resolved_config.json` exists
+  (this records the effective config/stages/artifacts for reproducibility).
+- If `eval` ran, confirm `<run_dir>/eval/metrics.json` exists.
+- If `vis` ran, confirm `<run_dir>/vis/vis_0000.png` exists (or more, depending on limit).
+
+2) Schema sanity (quick spot-check)
+- `gt_vs_pred.jsonl` lines are JSON dicts with canonical keys: `image`, `width`, `height`,
+  `gt` (list), `pred` (list), and `errors` (list).
+- Geometry is pixel-ready:
+  - `coord_mode` is `"pixel"` (or `null` for records without geometries),
+  - `gt[*].points` / `pred[*].points` are flat numeric lists,
+  - bbox points are length 4; polygon points are even-length and >= 6.
+
+3) Determinism + provenance
+- Prefer setting `infer.generation.seed` (or `--seed` in legacy mode) for best-effort
+  determinism under the HF backend.
+- Record the backend choice and generation config in run artifacts:
+  - YAML pipeline: `<run_dir>/resolved_config.json`
+  - Legacy: `<run_dir>/summary.json` + your shell logs.
+- Note: `infer.backend.type=vllm` does not guarantee byte-identical outputs; treat it as
+  schema-stable, not token-stable.
+
+4) Metric sanity (small subset)
+- Run with a small limit (e.g., 10) and check that:
+  - COCO metrics are present when enabled, and are finite numbers,
+  - counters (invalid_json / invalid_geometry / etc.) are not exploding,
+  - overlays render when enabled (optional).
+
+## Comparison recipe (limit=10): YAML pipeline vs legacy wrapper
+
+Goal: verify that the unified YAML pipeline produces the same contract and
+comparable metrics as the legacy wrapper scripts on a tiny subset.
+
+1) Legacy wrapper (flag-only inference + evaluator)
+
+```bash
+CKPT=<ckpt_path> \
+GT_JSONL=<gt_jsonl_path> \
+OUTPUT_BASE_DIR=output/infer/compare_legacy \
+MODE=auto \
+LIMIT=10 \
+SEED=42 \
+scripts/run_infer_eval.sh
+```
+
+2) YAML pipeline (infer + eval + vis)
+
+Create a small one-off config (recommended to keep experiments reproducible):
+
+```bash
+cp configs/infer/pipeline.yaml temp/compare_infer.yaml
+# Edit temp/compare_infer.yaml:
+# - run.name: compare_yaml
+# - infer.gt_jsonl / infer.model_checkpoint
+# - infer.limit: 10
+# - infer.generation.seed: 42
+PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config temp/compare_infer.yaml
+```
+
+3) Compare outputs
+- Line counts should match `limit`:
+  - `wc -l output/infer/compare_legacy/gt_vs_pred.jsonl`
+  - `wc -l output/infer/compare_yaml/gt_vs_pred.jsonl`
+- Compare summary + metrics for large drift:
+  - `cat .../summary.json`
+  - `cat .../eval/metrics.json`
+- If using HF backend + fixed seed, the JSONL should be *very* similar; if using vLLM,
+  expect different raw text but stable schema and reasonable metric proximity.
+
 ## Training hook
 Use `src.callbacks.DetectionEvalCallback` with pre-generated prediction JSONL:
 ```python

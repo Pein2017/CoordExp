@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Unified inference CLI (YAML-first)
+### Requirement: Unified inference CLI
 The system SHALL provide a single inference entrypoint that is primarily configured via YAML under `configs/` (with a minimal CLI wrapper that accepts `--config`).
 
 The entrypoint MUST:
@@ -40,26 +40,7 @@ Transition support:
 - **WHEN** a user runs the inference entrypoint with `--config configs/infer/<exp>.yaml`
 - **THEN** the run executes and writes `gt_vs_pred.jsonl` and `summary.json` under the resolved run directory.
 
-### Requirement: Mode auto-detection (infer.mode=auto)
-If `infer.mode` is set to `auto`, the engine SHALL resolve the effective mode deterministically from the GT JSONL.
-
-Auto-detect algorithm (normative):
-- Scan the first N records from `infer.gt_jsonl` (default N=128).
-- Ignore records that are invalid JSON, have no objects, or do not have valid integer `width` and `height`.
-- For each scanned record, inspect GT geometries from `objects` (or `gt` as a fallback):
-  - If any geometry contains coord tokens (`"<|coord_...|>"`), resolve mode to `coord` with reason `coord_tokens_found`.
-  - Else if any numeric coordinate value exceeds `max(width, height)`, resolve mode to `coord` with reason `points_exceed_image`.
-- If no record triggers coord mode, resolve mode to `text` with reason `within_image_bounds`.
-- If zero valid records were scanned, resolve mode to `text` with reason `no_valid_records`.
-
-The engine SHALL log the resolved mode and reason and SHALL include them in `summary.json`.
-
-#### Scenario: Auto mode resolves to coord due to coord tokens
-- **GIVEN** `infer.mode=auto` and a GT record whose geometry contains `"<|coord_10|>"` tokens
-- **WHEN** inference starts
-- **THEN** the engine resolves `mode=coord` and logs a reason indicating coord tokens were found.
-
-### Requirement: Unified output schema (gt_vs_pred.jsonl)
+### Requirement: Unified output schema
 Each output line in `gt_vs_pred.jsonl` SHALL contain:
 - `gt` and `pred` arrays of objects with fields:
   - `type` (`bbox_2d` or `poly`),
@@ -97,7 +78,7 @@ vLLM determinism scope:
 - **WHEN** inference is executed
 - **THEN** `summary.json` records a determinism note that does not claim byte-identical repeatability (e.g., `determinism: best_effort`).
 
-### Requirement: Run-level counters and summary (summary.json)
+### Requirement: Run-level counters and summary
 The engine SHALL aggregate run-level counters (e.g., invalid_json, invalid_geometry, invalid_coord, size_mismatch, empty_pred, mode_gt_mismatch) and emit a summary artifact (`summary.json`) alongside `gt_vs_pred.jsonl`.
 
 The summary SHALL include at least:
@@ -129,6 +110,25 @@ The emitted `gt_vs_pred.jsonl` SHALL contain pixel-space `gt` and `pred` geometr
 - **THEN** it can use the pixel-space geometries directly (no denorm or mode inference needed) to render or compute metrics.
 
 ## ADDED Requirements
+
+### Requirement: Mode auto-detection (infer.mode=auto)
+If `infer.mode` is set to `auto`, the engine SHALL resolve the effective mode deterministically from the GT JSONL.
+
+Auto-detect algorithm (normative):
+- Scan the first N records from `infer.gt_jsonl` (default N=128).
+- Ignore records that are invalid JSON, have no objects, or do not have valid integer `width` and `height`.
+- For each scanned record, inspect GT geometries from `objects` (or `gt` as a fallback):
+  - If any geometry contains coord tokens (`"<|coord_...|>"`), resolve mode to `coord` with reason `coord_tokens_found`.
+  - Else if any numeric coordinate value exceeds `max(width, height)`, resolve mode to `coord` with reason `points_exceed_image`.
+- If no record triggers coord mode, resolve mode to `text` with reason `within_image_bounds`.
+- If zero valid records were scanned, resolve mode to `text` with reason `no_valid_records`.
+
+The engine SHALL log the resolved mode and reason and SHALL include them in `summary.json`.
+
+#### Scenario: Auto mode resolves to coord due to coord tokens
+- **GIVEN** `infer.mode=auto` and a GT record whose geometry contains `"<|coord_10|>"` tokens
+- **WHEN** inference starts
+- **THEN** the engine resolves `mode=coord` and logs a reason indicating coord tokens were found.
 
 ### Requirement: Generation backends
 The inference engine SHALL support:
