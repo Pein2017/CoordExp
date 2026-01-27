@@ -14,7 +14,7 @@
 
 ### 0.2 What “EM-ish” means here
 - We separate **continuous / smooth geometry calibration** from **discrete / set-level correction**:
-  - **Channel-A (hot path):** no autoregressive rollout; do **two parallel forwards** to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
+  - **Channel-A (hot path):** no autoregressive rollout; do **N× forwards** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
   - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to handle **permutation / missing / extra / malformed JSON** and to ground “true self-context” learning.
 
 Under this view:
@@ -31,6 +31,15 @@ This avoids supervising coordinates under a mismatched context (pure GT teacher 
 **Update (practical):** in large V-LLMs, “true self-context forward” is expensive because it requires autoregressive rollout.
 We therefore introduce a **soft self-context proxy** that replaces only `<|coord_*|>` token embeddings by their expected embedding
 under the model’s own coord distribution, enabling a *non-sampling* approximation that is compatible with Qwen3’s tied weights.
+
+**Iterative variant (Channel-A):** the same soft self-context proxy can be run as an *iteration* (no rollout) to reduce “GT leakage / lag” and move closer to on-policy self-conditioning.
+
+- Let `e^(m)` denote the (soft) embeddings used at coord slots in iteration `m` (text/struct tokens remain teacher-forced under GT embeddings).
+- Define a mapping `e^(m+1) = F_θ(e^(m))` where `F_θ` is: one full forward under `e^(m)` → extract coord-slot distributions → form expected coord embeddings.
+  - For coord slot `t`: `p_t^(m) = softmax(s_t^(m) / τ_A)` and `ē_t^(m) = Σ_k p_{t,k}^(m) * E_coord[k]`.
+- Using `n_softctx_iter = N` total forwards corresponds to `N-1` applications of `F_θ` (Jacobi-style fixed-point intuition).
+- Larger `N` is *closer* to rollout/self-context (because the coord context is repeatedly updated from the model’s own belief), but it is still not equivalent to autoregressive rollout because it is soft (expectation), non-sampled, and keeps the GT text/structure scaffold.
+- In practice, bbox chains are short (4 coords). `N=2` is often sufficient; `N=3` is a useful ablation to test whether the teacher-forcing vs rollout gap shrinks further.
 
 ---
 
@@ -94,8 +103,8 @@ Softmax (temperature τ):
 - `p_{t,k} = exp(s_{t,k}/τ) / Σ_m exp(s_{t,m}/τ)`
 
 ### 2.3 Expectation decode (continuous coord)
-Map `k -> k/1000`:
-- `φ(k) = k/1000 ∈ [0,1]`
+Map `k -> k/999`:
+- `φ(k) = k/999 ∈ [0,1]`
 
 Expectation:
 - `ĉ_t = Σ_k p_{t,k} * φ(k)`
@@ -170,7 +179,7 @@ For each (single) image in a record we can think in terms of an abstract GT obje
   - `b_j`: GT box in normalized coordinates `[0,1]` or norm1000 integers (after optional preprocessing).
 
 When we choose to supervise in coord-token space, we convert normalized coordinates to discrete bins:
-- `coord_bin(c) = round(1000 * c)` with clamp to `[0, 999]`
+- `coord_bin(c) = round(999 * c)` with clamp to `[0, 999]`
 - Use `<|coord_coord_bin|>` as the GT coord token.
 
 ---
@@ -181,7 +190,7 @@ When we choose to supervise in coord-token space, we convert normalized coordina
 We separate training into two conceptual stages:
 - **Stage-1:** Pure SFT / format stabilization / coord token adaptation.
 - **Stage-2:** two-channel mixture:
-  - **Channel-A (default):** 2× forward (no rollout), geometry calibration under “soft self-context proxy” on coord slots.
+  - **Channel-A (default):** N× forward (no rollout), geometry calibration under iterative “soft self-context” on coord slots.
   - **Channel-B (sparse):** rollout + matching + GT-supervised geometric calibration under true self-context + reordered-GT SFT for set-level correction.
 
 ---
@@ -226,55 +235,89 @@ Rationale:
 - The main remaining instability is typically **self-context generation** (long JSON, permutation, missing/extras/format).
   Channel-B targets that directly; Channel-A provides a cheap, smooth geometry signal to stabilize coord decoding and reduce drift.
 
+Practical suggestion: default Channel-A uses `n_softctx_iter=2`, and run an ablation `1 vs 2 vs 3` to quantify the teacher-forcing vs self-context gap (still no rollout). Optionally, increase iterations for samples/objects with high coord entropy or low `max_prob` (a heuristic; not required).
+
 ---
 
-### 6.2 Channel-A (hot): Soft self-context proxy via 2× forward (no rollout)
+### 6.2 Channel-A (hot): Iterative soft self-context via N× forward (no rollout)
 
 Key idea: approximate “self-context” only where it matters most (coord slots), without sampling.
 We keep all **text/struct** tokens teacher-forced as GT, but feed **coord tokens** as *soft embeddings*
 derived from the model’s own coord distribution.
 
+Definitions / hyperparameters:
+
+- `n_softctx_iter` : total number of full-sequence forwards in Channel-A (`>= 1`).
+  - `n_softctx_iter=1`: only Step A1 (pure teacher forcing), a degenerate / control variant (no soft self-context).
+  - `n_softctx_iter=2`: the original Channel-A (A1 → A2 → A3 → A4).
+  - `n_softctx_iter>2`: iterate the A2 ↔ A3 loop multiple times (fixed-point / Jacobi-style intuition).
+- (Optional) `softctx_damping_alpha` : damping coefficient for coord-slot embedding updates:
+  - `E_new = (1-α) * E_old + α * ē`, default `α=1`.
+- (Optional) Adaptive iterations: run extra iterations only for low-confidence coord slots (e.g., high entropy or low `max_prob`). This is a suggestion; keep the default deterministic.
+
 #### Step A1 — Teacher-forced GT forward (with grad)
 1) Teacher force on GT (or reordered-GT if you already have one) to get logits:
    - `z_t^gt = f_θ(image, prompt, y_GT_<t)`
 
-2) Identify coord positions `t ∈ coord_positions` from labels/template (packing-safe).
-   For each coord position `t`, gather coord-subspace logits:
-   - `s_t ∈ R^K`, `s_{t,k} = z_t^gt[coord_k]`
-   - `p_t = softmax(s_t / τ_A)` over `k=0..999`
+2) Identify coord positions `t ∈ coord_positions` from labels/template (packing-safe). For each coord position `t`:
+   - `s_t^(0) ∈ R^K`, `s_{t,k}^(0) = z_t^gt[coord_k]`
+   - `p_t^(0) = softmax(s_t^(0) / τ_A)` over `k=0..999`
 
-> Note (stability): early in Stage-2, **detach** the soft distribution:
-> - `p_t^stop = stopgrad(p_t)`
-> This keeps Channel-A “EM-ish”: the soft context is treated like an E-step artifact,
-> while gradients come from the second forward + the usual SFT CE.
+> Note (stability): early in Stage-2, **detach** the coord distribution used to build soft embeddings:
+> - `p_t^(m,stop) = stopgrad(p_t^(m))`
+> This keeps Channel-A “EM-ish”: the soft context is treated like an E-step artifact, while gradients come from the (final) softctx forward + the usual SFT CE.
 
 #### Step A2 — Build soft coord embeddings (no sampling)
 3) Let `E_coord ∈ R^{K×d}` be the embedding table restricted to `<|coord_k|>`.
    Construct the expected coord embedding at each coord slot:
-   - `ē_t = Σ_k p_{t,k}^stop * E_coord[k]`
+   - `ē_t^(m) = Σ_k p_{t,k}^(m,stop) * E_coord[k]`
 
-4) Prepare `inputs_embeds` for a second forward:
-   - Start from standard embeddings of `y_GT` (or from the model’s embedding lookup).
-   - For coord positions, **replace** token embedding by `ē_t`.
+4) Prepare the initial embedding tensor (full sequence) for iterative soft self-context:
+   - Start from standard embeddings of `y_GT` (or from the model’s embedding lookup): `emb^0`.
+   - For coord positions, you have two valid initializations:
+     - (A) **Start from GT** (recommended): keep coord slots as GT in `emb^0`, and only start replacing after the first update.
+     - (B) Start from `ē^(0)`: immediately replace coord slots in `emb^0` by `ē_t^(0)` before the first softctx forward.
    - Keep attention mask unchanged.
 
 This is cheap because `K=1000` and coord slots are sparse compared to total tokens.
 
-#### Step A3 — Soft self-context forward (with grad)
-5) Second forward using the mixed embeddings:
-   - `z_t^soft = f_θ(image, prompt, inputs_embeds=ȳ_<t)`
+#### Step A3 — Iterative soft self-context forwards (with grad)
+5) Run a Jacobi-style “soft self-conditioning” iteration using full-sequence forwards (NOT token-by-token autoregressive generation):
 
-Interpretation: the model is now conditioned on “its own” coord belief (softly),
-while still anchored to GT text/structure → a controlled self-conditioning.
+```text
+# Inputs: GT tokens y_GT, coord_positions, E_coord, n_softctx_iter >= 1
+# Output: final logits z^(n_softctx_iter-1)
+
+# (Forward #0) already computed in A1:
+z^(0) := z^gt
+Compute p^(0) from z^(0) at coord_positions
+Compute ē^(0) from p^(0)
+
+emb^0 := Embed(y_GT)               # full GT embeddings
+Optional: replace coord slots with ē^(0)  # init variant (B); default is (A) start-from-GT
+
+for m in 1 .. (n_softctx_iter - 1):
+    z^(m) := f_θ(image, prompt, inputs_embeds=emb^(m-1))   # full forward
+    Compute p^(m) from z^(m) at coord_positions
+    Compute ē^(m) from p^(m)
+    emb^(m) := UpdateCoordSlots(emb^(m-1), ē^(m), damping_alpha=α)  # α=1 by default
+
+Use final logits z^(n_softctx_iter-1) for CoordExp decode + losses
+```
+
+Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=F_θ(e^(m))`, that repeatedly refreshes coord embeddings from the model’s own belief while keeping the GT text/structure scaffold. Increasing `n_softctx_iter` pushes the effect of self-conditioning further along the coord chain without sampling.
 
 #### Step A4 — Geometry + (optional) coord sharpening losses
-6) Decode continuous coords from `z_t^soft` at coord slots via CoordExp, assemble boxes per object.
+6) Default: decode continuous coords only from the **final** logits `z^(n_softctx_iter-1)` at coord slots via CoordExp, and assemble boxes per object.
 7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
    - `L_geo_soft = Σ_obj [ α||b̂_obj^cont - b_obj^gt||_1 + β(1-GIoU(...)) ]`
 
-8) (Optional) add a *light* coord-distribution sharpening term computed from `z_t^soft`:
+8) (Optional) add a *light* coord-distribution sharpening term computed from the final logits:
    - `L_coordCE_soft = -Σ_{t∈coord_positions} log p_θ(y_t^gt | ... , softctx)`
    - or your existing (softCE/W1/gate) but keep it small; treat as regularizer, not the main driver.
+
+Optional enhancement (not required): supervise intermediate iterates as well:
+- `L_geo_soft_total = Σ_m w_m * L_geo_soft^(m)` with `w_m` increasing over `m` (late iterates matter more).
 
 Channel-A per-sample loss:
 - `L_A = L_CE(y_GT) + λ_geo^A L_geo_soft + λ_coord^A L_coord_sharp(optional)`
@@ -284,6 +327,11 @@ Channel-A per-sample loss:
 > - Channel-B trains under true self-conditioning (rollout tokens), but sparsely.
 > Together they approximate “train on what you infer” while keeping throughput high.
 
+Why `N×` helps (intuition, bbox case):
+- `N=2` mainly constrains `y1` under a soft (model-derived) `x1` context instead of the GT `x1`.
+- `N=3` further constrains `x2/y2` under a context where `y1` (and partially `x2`) is closer to on-policy soft self-conditioning.
+- This is not “sampling error accumulation”; it targets “GT leakage / lag” that grows with chain length. One more iteration can reduce the lag without performing autoregressive rollouts.
+
 ---
 
 ## 7. Stage-2 Updates (M-step): Two complementary supervision paths
@@ -292,9 +340,9 @@ Stage-2 consists of **two complementary paths** (Channel-A hot path + Channel-B 
 
 ### 7.1 Channel-A (hot path): Geometric calibration under soft self-context (CoordExp + L1/GIoU)
 
-Channel-A uses the **2× forward** construction from Section 6.2:
-- First forward: teacher-forced GT to obtain `p_t` over coord bins.
-- Second forward: replace coord token embeddings by expected embedding `ē_t` and forward again.
+Channel-A uses the **N× forward** construction from Section 6.2:
+- First forward: teacher-forced GT to obtain `p_t^(0)` over coord bins (and initial expected embeddings `ē^(0)`).
+- Subsequent forward(s): replace coord token embeddings by expected embeddings and forward again, optionally iterating (`n_softctx_iter >= 1`).
 
 We denote the second-forward logits as:
 - `z_t^self = z_t^soft`
@@ -427,7 +475,7 @@ Given image + prompt:
    - extract `<desc>` text
    - extract `<|coord_k|>` tokens for x1,y1,x2,y2
 3) Convert coord tokens to box values:
-   - discrete: `k/1000`
+   - discrete: `k/999`
    - optional: if you want continuous decode at inference, you can compute CoordExp from logits during generation, but simplest is discrete token readout.
 4) Output:
    - `{ desc_i, box_i }` for each object.
@@ -446,8 +494,12 @@ Given image + prompt:
 ### 10.1.1 (New) Soft self-context utilities (Channel-A)
 - A packing-safe way to get `coord_positions` (from labels/template).
 - `E_coord` gather: embedding rows for coord token IDs (K=1000).
-- Build `inputs_embeds` where coord positions are replaced by `ē_t = Σ_k p_{t,k} * E_coord[k]`.
-- Control whether `p_t` is stop-grad (recommended early) via config flag.
+- `n_softctx_iter` config + loop logic (support `>= 1` full forwards).
+- Build `inputs_embeds` and an update function where coord positions are replaced by `ē_t^(m) = Σ_k p_{t,k}^(m) * E_coord[k]` and iterated.
+- Control whether `p_t^(m)` is stop-grad (recommended early) via config flag.
+- (Optional) damping `softctx_damping_alpha` for `E_new = (1-α)E_old + α ē` to improve stability.
+- (Optional) entropy / `max_prob`-based extra-iteration trigger (per-sample or per-object), still no-rollout (documented as a heuristic, not required).
+- Each iteration is a **full forward** using `inputs_embeds` (NOT token-by-token generation); KV-cache reuse is an optional optimization and not required for correctness.
 - Model forward must support `inputs_embeds` (Qwen3-VL does; ensure your trainer path passes it correctly).
 
 ### 10.2 Matching utilities
