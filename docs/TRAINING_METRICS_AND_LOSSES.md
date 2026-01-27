@@ -204,7 +204,11 @@ Diagnostics (logged as metrics, prefixed with `eval_` during evaluation):
 
 The coord loss is:
 
-`coord_diag/loss = soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate`
+`coord_diag/loss = soft_ce_weight * softCE + w1_weight * W1 + ce_weight * CE + gate_weight * gate`
+
+Compatibility note:
+- The same breakdown is also logged under `coord_softce_w1/*` keys (legacy alias):
+  - `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/ce`, `coord_softce_w1/gate`
 
 - `coord_diag/enabled`
   - **What:** whether coord-gated softCE+W1(+gate) is active (`1.0`) or this is a pure-CE ablation (`0.0`).
@@ -223,6 +227,10 @@ The coord loss is:
 - `coord_diag/w1`
   - **What:** 1D Wasserstein-1 distance computed via CDF differences on the ordered bins.
   - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` (otherwise diagnostic-only).
+
+- `coord_diag/ce`
+  - **What:** optional CE-on-bins term (pure cross-entropy over the 1000-bin coord vocab).
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` and `ce_weight != 0` (otherwise diagnostic-only).
 
 - `coord_diag/gate`
   - **What:** coord-vocab "mass leak" penalty at GT coord positions:
