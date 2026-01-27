@@ -559,6 +559,7 @@ class AggregateTokenTypeMetricsMixin:
                     coord_margin_mean = None
                     coord_expected_bin_mae = None
                     coord_expected_bin_abs_err_p90 = None
+                    coord_w1_to_delta = None
                     try:
                         k = min(5, int(flat_logits_coord.shape[-1]))
                         topk = flat_logits_coord.topk(k=k, dim=-1).indices
@@ -579,6 +580,11 @@ class AggregateTokenTypeMetricsMixin:
                         pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
                         abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
                         coord_expected_bin_mae = abs_err.mean()
+                        # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
+                        probs = out.pred_probs.to(dtype=torch.float32)
+                        bins_f = bins.to(dtype=torch.float32)
+                        dist = (bins_f.view(1, -1) - flat_target_bins.to(torch.float32).view(-1, 1)).abs()
+                        coord_w1_to_delta = (probs * dist).sum(dim=-1).mean()
                         if abs_err.numel() > 0:
                             coord_expected_bin_abs_err_p90 = torch.quantile(
                                 abs_err.to(dtype=torch.float32), 0.9
@@ -596,6 +602,7 @@ class AggregateTokenTypeMetricsMixin:
                         coord_margin_mean = None
                         coord_expected_bin_mae = None
                         coord_expected_bin_abs_err_p90 = None
+                        coord_w1_to_delta = None
 
                     softce_sum = out.soft_ce_per_token.sum()
                     w1_sum = out.w1_per_token.sum()
@@ -707,6 +714,10 @@ class AggregateTokenTypeMetricsMixin:
                     if coord_expected_bin_abs_err_p90 is not None:
                         v = float(coord_expected_bin_abs_err_p90.detach().cpu().item())
                         metrics["coord_diag/expected_bin_abs_err_p90"].update(v)
+                    if coord_w1_to_delta is not None:
+                        metrics["coord_diag/w1_to_delta"].update(
+                            float(coord_w1_to_delta.detach().cpu().item())
+                        )
 
                     # Per-sample helpers (packed runs).
                     try:
@@ -1057,6 +1068,7 @@ class CoordSoftCEW1LossMixin:
         coord_margin_mean = None
         coord_expected_bin_mae = None
         coord_expected_bin_abs_err_p90 = None
+        coord_w1_to_delta = None
         try:
             with torch.no_grad():
                 k = min(5, int(flat_logits.shape[-1]))
@@ -1080,6 +1092,11 @@ class CoordSoftCEW1LossMixin:
                 pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
                 abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
                 coord_expected_bin_mae = abs_err.mean()
+                # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
+                probs = out.pred_probs.to(dtype=torch.float32)
+                bins_f = bins.to(dtype=torch.float32)
+                dist = (bins_f.view(1, -1) - flat_target_bins.to(torch.float32).view(-1, 1)).abs()
+                coord_w1_to_delta = (probs * dist).sum(dim=-1).mean()
                 # Tail diagnostic: complements mean-only expected_bin_mae.
                 if abs_err.numel() > 0:
                     coord_expected_bin_abs_err_p90 = torch.quantile(
@@ -1096,6 +1113,7 @@ class CoordSoftCEW1LossMixin:
             coord_margin_mean = None
             coord_expected_bin_mae = None
             coord_expected_bin_abs_err_p90 = None
+            coord_w1_to_delta = None
 
         softce_sum = out.soft_ce_per_token.sum()
         w1_sum = out.w1_per_token.sum()
@@ -1182,6 +1200,7 @@ class CoordSoftCEW1LossMixin:
             coord_margin_mean=coord_margin_mean,
             coord_expected_bin_mae=coord_expected_bin_mae,
             coord_expected_bin_abs_err_p90=coord_expected_bin_abs_err_p90,
+            coord_w1_to_delta=coord_w1_to_delta,
         )
 
         return loss + coord_loss.to(dtype=loss.dtype)
@@ -1203,6 +1222,7 @@ class CoordSoftCEW1LossMixin:
         coord_margin_mean: torch.Tensor | None,
         coord_expected_bin_mae: torch.Tensor | None,
         coord_expected_bin_abs_err_p90: torch.Tensor | None,
+        coord_w1_to_delta: torch.Tensor | None,
     ) -> None:
         mode = (
             "train"
@@ -1252,6 +1272,10 @@ class CoordSoftCEW1LossMixin:
         if coord_expected_bin_abs_err_p90 is not None:
             metrics["coord_diag/expected_bin_abs_err_p90"].update(
                 float(coord_expected_bin_abs_err_p90.detach().cpu().item())
+            )
+        if coord_w1_to_delta is not None:
+            metrics["coord_diag/w1_to_delta"].update(
+                float(coord_w1_to_delta.detach().cpu().item())
             )
 
         # Per-sample normalization (packed units).

@@ -262,6 +262,13 @@ The coord loss is:
   - **Why:** tail-sensitive complement to `expected_bin_mae` (mean-only summaries can hide heavy tails).
   - **In loss:** NO (distribution-quality monitor).
 
+- `coord_diag/w1_to_delta`
+  - **What:** W1 distance from the predicted coord distribution `p(k)` to a delta at the GT bin `t`,
+    i.e. `E_p[|k - t|]`. Units are **bins** (0..999).
+  - **Why:** expectation-friendly proxy for continuous geometry: distinguishes "flat but not closer"
+    from "flat and near-GT mass". More shape-sensitive than `abs(E[k] - t)`.
+  - **In loss:** NO (distribution-quality monitor).
+
 - `coord_diag/coord_tokens_per_sample`
   - **What:** `coord_diag/coord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
   - **In loss:** NO (diagnostic only).
