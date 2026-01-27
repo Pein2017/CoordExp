@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import torch
 
@@ -69,7 +69,8 @@ def build_dataset_metrics_collator(
         packs: List[Sequence[Any]]
         if packed:
             packs = [
-                pack if isinstance(pack, (list, tuple)) else [pack] for pack in raw_batch
+                pack if isinstance(pack, (list, tuple)) else [pack]
+                for pack in raw_batch
             ]
         else:
             packs = [[row] for row in raw_batch]

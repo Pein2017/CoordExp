@@ -273,39 +273,86 @@ Channel-A per-sample loss:
 
 ## 7. Stage-2 Updates (M-step): Two complementary supervision paths
 
-Stage-2 consists of **two backprop-able losses** that target different failure modes:
+Stage-2 consists of **two complementary paths** (Channel-A hot path + Channel-B cold path) that target different failure modes:
 
-### 7.1 Path A: Geometric calibration under self-context (CoordExp + L1/GIoU)
+### 7.1 Channel-A (hot path): Geometric calibration under soft self-context (CoordExp + L1/GIoU)
 
-#### Step C — Self-context forward (with grad)
-6) Run a teacher-forced forward pass using **the rollout tokens** as context:
-   - Input tokens: `ŷ_{<t}` (rollout prefix)
-   - Compute logits for all positions:
-     - `z_t^self = f_θ(image, prompt, ŷ_<t)`
-   - This is standard teacher forcing, but the sequence is `ŷ` (model’s own outputs), not GT.
+Channel-A uses the **2× forward** construction from Section 6.2:
+- First forward: teacher-forced GT to obtain `p_t` over coord bins.
+- Second forward: replace coord token embeddings by expected embedding `ē_t` and forward again.
+
+We denote the second-forward logits as:
+- `z_t^self = z_t^soft`
 
 #### Step D — CoordExp decode on coord positions
-7) For each predicted object `i` and each of its 4 coord token positions `t ∈ idx_i`:
+7) For each GT object `i` and each of its 4 coord token positions `t` in the template:
    - Gather coord logits: `s_{t,k} = z_t^self[coord_k]`
    - Softmax → `p_{t,k}`
    - Expectation → `ĉ_t`
 8) Assemble continuous predicted box:
    - `b̂_i_cont = (ĉ_{t_x1}, ĉ_{t_y1}, ĉ_{t_x2}, ĉ_{t_y2})`
 
-#### Step E — Geometric loss using matched GT (GT supervision)
-9) For each accepted match `(i -> j)` with `i ∈ ValidMatched`:
-   - `ℓ_geo(i,j) = α * || b̂_i_cont - b_j_gt ||_1 + β * (1 - GIoU(b̂_i_cont, b_j_gt))`
+#### Step E — Geometric loss using GT (identity alignment)
+9) For Channel-A, object indices come from the GT template, so we use direct alignment:
+   - `ℓ_geo(i) = α * || b̂_i_cont - b_i_gt ||_1 + β * (1 - GIoU(b̂_i_cont, b_i_gt))`
 10) Sum:
-   - `L_geo_self = Σ_{(i->j), i∈ValidMatched} ℓ_geo(i,j)`
+   - `L_geo_soft = Σ_i ℓ_geo(i)`
 
-> Key property:
-> - Context tokens are `ŷ` (self context).
-> - Supervision target is GT box `b_j_gt`.
-> - No coordinate pseudo-labeling from `ŷ`.
+> Key properties:
+> - Context is **partially self-conditioned** (coord embeddings come from model belief).
+> - Supervision target is GT box.
+> - No sampling; stable gradients; throughput-friendly.
 
 ---
 
-### 7.2 Path B: Generation / format / recall control via reordered GT SFT
+### 7.2 Channel-B (cold path): Rollout-matching for set-level / discrete correction
+
+Channel-B is the original EM-ish loop, run sparsely to correct:
+- permutation/order mismatch,
+- missing GT objects / extra predicted objects,
+- malformed JSON / broken segments,
+- true “self-context degeneration” that Channel-A cannot expose.
+
+#### Step B0 — Rollout (E-step hypothesis, no grad)
+1) Run autoregressive generation using current model θ:
+   - `ŷ = Rollout(f_θ, image, prompt)` (greedy / low-T sampling / beam)
+2) Parse rollout into predicted objects:
+   - `Ô = Parse(ŷ)` returns:
+     - `Ô = { (d̂_i, b̂_i_disc, idx_i) }_{i=1..N}`
+
+> Notes:
+> - If parsing fails, fall back to Channel-A only for that sample, and log it as “invalid-rollout”.
+
+#### Step B1 — Hungarian matching (E-step correspondence, no grad)
+3) Build cost matrix `C ∈ R^{N×M}` between predicted objects `i` and GT objects `j`:
+   - Geometry cost: `L_geo_disc(b̂_i_disc, b_j_gt)` (L1 on norm1000 + IoU term)
+   - Optional semantic cost: `D_sem(d̂_i, d_j_gt)` (frozen encoder; keep small early)
+   - `C_{i,j} = λ_geo * L_geo_disc + λ_sem * D_sem`
+4) Hungarian:
+   - `σ = Hungarian(C)` → matched pairs `(i -> j)`
+5) Gating:
+   - accept only if IoU/L1 passes thresholds
+   - `ValidMatched = { i | match accepted }`
+
+#### Step B2 — True self-context forward (with grad)
+6) Teacher force on rollout tokens to recompute logits:
+   - `z_t^roll = f_θ(image, prompt, ŷ_<t)`
+
+7) CoordExp decode on coord positions `t ∈ idx_i`, assemble `b̂_i_cont`.
+8) Apply geo loss on matched GT targets:
+   - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} [ α||b̂_i_cont - b_j_gt||_1 + β(1-GIoU) ]`
+
+#### Step B3 — Reordered-GT SFT (with grad)
+9) Build `y_GT_reordered` following predicted order + append missing GT objects (see Section 7.3).
+10) Standard SFT on `y_GT_reordered`:
+   - `L_CE_text`, `L_CE_coord(optional)`, `L_CE_eos(optional)`
+
+Channel-B per-sample loss:
+- `L_B = L_CE(y_GT_reordered) + λ_geo^B L_geo_roll + λ_coord^B L_coord_sharp(optional)`
+
+---
+
+### 7.3 Path B (within Channel-B): Generation / format / recall control via reordered GT SFT
 
 This path handles:
 - Missing objects (not generated in rollout, thus no coord positions exist)
