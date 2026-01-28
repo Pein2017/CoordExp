@@ -15,11 +15,12 @@ Example:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 
 def _load_line(path: Path, line_no: int) -> Dict[str, Any]:
@@ -46,6 +47,85 @@ def _bbox_to_poly(b: List[int]) -> List[Tuple[int, int]]:
     return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 
 
+def _legend_lines(objects: List[Dict[str, Any]], *, mode: str) -> List[str]:
+    if mode not in ("counts", "list"):
+        raise ValueError(f"Unsupported legend mode: {mode}")
+
+    if mode == "list":
+        lines: List[str] = []
+        for i, obj in enumerate(objects, start=1):
+            desc = obj.get("desc")
+            if isinstance(desc, str) and desc.strip():
+                lines.append(f"{i:>3}: {desc.strip()}")
+            else:
+                lines.append(f"{i:>3}: <missing desc>")
+        return lines
+
+    counts: Counter[str] = Counter()
+    for obj in objects:
+        desc = obj.get("desc")
+        if isinstance(desc, str):
+            d = desc.strip()
+            if d:
+                counts[d] += 1
+
+    items = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    lines = []
+    for desc, n in items:
+        if n == 1:
+            lines.append(desc)
+        else:
+            lines.append(f"{desc} x{n}")
+    return lines
+
+
+def _render_legend_panel(
+    *,
+    height: int,
+    width: int,
+    header_lines: List[str],
+    body_lines: List[str],
+    max_lines: int,
+) -> Image.Image:
+    panel = Image.new("RGB", (int(width), int(height)), (255, 255, 255))
+    draw = ImageDraw.Draw(panel)
+    font = ImageFont.load_default()
+
+    pad = 8
+    line_h = int(getattr(font, "size", 10)) + 4
+    y = pad
+
+    def draw_line(text: str, *, bold: bool = False) -> None:
+        nonlocal y
+        if y + line_h > height - pad:
+            return
+        # Pillow default font has no bold; use a darker fill for headers.
+        fill = (0, 0, 0) if not bold else (0, 0, 0)
+        draw.text((pad, y), text, fill=fill, font=font)
+        y += line_h
+
+    for h in header_lines:
+        draw_line(h, bold=True)
+
+    if header_lines:
+        y += 2  # small gap
+
+    shown = 0
+    for line in body_lines:
+        if shown >= int(max_lines):
+            break
+        if y + line_h > height - pad:
+            break
+        draw_line(line)
+        shown += 1
+
+    remaining = max(0, len(body_lines) - shown)
+    if remaining > 0 and y + line_h <= height - pad:
+        draw_line(f"... (+{remaining} more)")
+
+    return panel
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--jsonl", type=Path, required=True)
@@ -55,6 +135,29 @@ def main() -> None:
     ap.add_argument("--draw-bbox", type=int, default=1, help="0/1")
     ap.add_argument("--draw-poly", type=int, default=1, help="0/1")
     ap.add_argument("--width", type=int, default=2, help="Line width (pixels)")
+    ap.add_argument(
+        "--legend",
+        action="store_true",
+        help="Append a right-side legend panel listing object desc strings",
+    )
+    ap.add_argument(
+        "--legend-mode",
+        choices=["counts", "list"],
+        default="counts",
+        help="Legend content: 'counts' groups desc with xN; 'list' shows one line per object",
+    )
+    ap.add_argument(
+        "--legend-width",
+        type=int,
+        default=320,
+        help="Legend panel width (pixels) when --legend is set",
+    )
+    ap.add_argument(
+        "--legend-max-lines",
+        type=int,
+        default=60,
+        help="Max legend body lines to render",
+    )
     args = ap.parse_args()
 
     rec = _load_line(args.jsonl, int(args.line))
@@ -106,6 +209,24 @@ def main() -> None:
     out = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     vis = Image.alpha_composite(img, overlay).convert("RGB")
+
+    if bool(args.legend):
+        header = [
+            f"line: {int(args.line)}",
+            f"objects drawn: {len(objects)}",
+        ]
+        body = _legend_lines(objects, mode=str(args.legend_mode))
+        panel = _render_legend_panel(
+            height=vis.height,
+            width=int(args.legend_width),
+            header_lines=header,
+            body_lines=body,
+            max_lines=int(args.legend_max_lines),
+        )
+        combined = Image.new("RGB", (vis.width + panel.width, vis.height), (255, 255, 255))
+        combined.paste(vis, (0, 0))
+        combined.paste(panel, (vis.width, 0))
+        vis = combined
     vis.save(out)
 
     print(
@@ -127,4 +248,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
