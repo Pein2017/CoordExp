@@ -94,6 +94,29 @@ def main() -> None:
     print("[+] Resizing model embeddings...")
     model.resize_token_embeddings(len(tokenizer))
 
+    # Qwen3-VL default: tie-head (single shared lookup table for embedding + lm_head).
+    # After resizing, force tie_word_embeddings and re-tie weights so new tokens
+    # are consistent across embed_tokens and lm_head.
+    if getattr(model.config, "tie_word_embeddings", None) is not True:
+        print("[!] Forcing tie_word_embeddings=True (Qwen3-VL tie-head default).")
+        model.config.tie_word_embeddings = True
+
+    try:
+        model.tie_weights()
+    except Exception as e:
+        raise RuntimeError(f"Failed to tie weights after resize: {e}") from e
+
+    input_embeddings = model.get_input_embeddings()
+    output_embeddings = model.get_output_embeddings()
+    if output_embeddings is None:
+        raise RuntimeError("Model has no output embeddings; cannot verify tie-head.")
+
+    if output_embeddings.weight.data_ptr() != input_embeddings.weight.data_ptr():
+        raise RuntimeError(
+            "tie-head check failed: input embeddings and lm_head weights are not tied."
+        )
+    print("[+] Verified tie-head: embed_tokens.weight and lm_head.weight are tied.")
+
     args.dst.mkdir(parents=True, exist_ok=True)
     # Keep the expanded checkpoint self-contained for multimodal loaders (e.g. AutoProcessor).
     # Qwen3-VL relies on image/video preprocessor config files that are NOT written by

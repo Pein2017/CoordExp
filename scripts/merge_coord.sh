@@ -107,16 +107,33 @@ if [[ -f "$BASE_MODEL/coord_tokens.json" && ! -f "$OUTPUT_DIR/coord_tokens.json"
   cp "$BASE_MODEL/coord_tokens.json" "$OUTPUT_DIR/coord_tokens.json"
 fi
 
-# 2) Optionally bake coord_offset into embed_tokens/lm_head if present
-HAS_COORD_OFFSETS=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    print(\"no\")\n    sys.exit(0)\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"no\")\n    sys.exit(0)\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        has = any(\"coord_offset_adapter\" in k for k in f.keys())\nexcept Exception:\n    has = False\n\nprint(\"yes\" if has else \"no\")\n' "$ADAPTERS")
+# 2) Optionally bake coord_offset into embed_tokens/lm_head if present.
+#    Also warn when the output will break Qwen3-VL's default tie-head behavior.
+COORD_OFFSETS_MODE=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"none\")\n    raise SystemExit(0)\n\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    # If safetensors is missing, injection will fail anyway; treat as unknown and let the\n    # caller attempt injection (so we fail loudly rather than silently skipping).\n    print(\"unknown\")\n    raise SystemExit(0)\n\nhas_coord = False\nhas_head = False\nhas_embed = False\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        for k in f.keys():\n            if \"coord_offset_adapter\" not in k:\n                continue\n            has_coord = True\n            if \".head_offset\" in k or k.endswith(\"head_offset\"):\n                has_head = True\n            if \".embed_offset\" in k or k.endswith(\"embed_offset\"):\n                has_embed = True\nexcept Exception:\n    print(\"unknown\")\n    raise SystemExit(0)\n\nif not has_coord:\n    print(\"none\")\nelif has_head:\n    print(\"untied\")\nelif has_embed:\n    print(\"tied\")\nelse:\n    print(\"unknown\")\n' "$ADAPTERS")
 
-if [[ "$HAS_COORD_OFFSETS" == "yes" ]]; then
+if [[ "$COORD_OFFSETS_MODE" != "none" ]]; then
+  if [[ "$COORD_OFFSETS_MODE" == "untied" ]]; then
+    echo "[WARN] Adapter contains separate coord_offset head updates (untied embed/head)." >&2
+    echo "[WARN] This will likely DISABLE tie_word_embeddings in the merged checkpoint to preserve behavior." >&2
+    echo "[WARN] Qwen3-VL default is tie-head (single shared lookup table)." >&2
+  elif [[ "$COORD_OFFSETS_MODE" == "unknown" ]]; then
+    echo "[WARN] Could not determine coord_offset adapter mode; attempting injection anyway." >&2
+  fi
+
   echo "Injecting coord_offset offsets into merged weights..."
   "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/tools/inject_coord_offsets.py" \
     --merged_dir "$OUTPUT_DIR" \
     --adapter_dir "$ADAPTERS"
 else
   echo "No coord_offset tensors found in adapter; skipping coord-token injection."
+fi
+
+# Best-effort: warn if the merged checkpoint config indicates tie-head is broken.
+TIE_WORD_EMBEDDINGS=$("${COORDEXP_PYTHON[@]}" -c $'import json\nimport sys\nfrom pathlib import Path\n\np = Path(sys.argv[1])\nfor name in (\"config.json\", \"configuration.json\"):\n    f = p / name\n    if not f.exists():\n        continue\n    cfg = json.loads(f.read_text(encoding=\"utf-8\"))\n    if \"tie_word_embeddings\" in cfg:\n        v = cfg[\"tie_word_embeddings\"]\n        print(\"true\" if v else \"false\")\n        raise SystemExit(0)\n    if \"tie_embeddings\" in cfg:\n        v = cfg[\"tie_embeddings\"]\n        print(\"true\" if v else \"false\")\n        raise SystemExit(0)\n    print(\"unknown\")\n    raise SystemExit(0)\n\nprint(\"unknown\")\n' "$OUTPUT_DIR")
+
+if [[ "$TIE_WORD_EMBEDDINGS" != "true" ]]; then
+  echo "[WARN] tie-head appears disabled in merged config (tie_word_embeddings=${TIE_WORD_EMBEDDINGS})." >&2
+  echo "[WARN] This is expected if you merged an untied coord_offset adapter, but NOT Qwen3-VL default." >&2
 fi
 
 echo "Merged model (with coord offsets) saved to: $OUTPUT_DIR"
