@@ -142,4 +142,5 @@ conda run -n ms bash public_data/tests/run_tests.sh
 ## Troubleshooting
 - If `validate` fails on missing images, re-run with `--skip-image-check` to validate structure first.
 - If `all` fails because `scripts/inspect_chat_template.py` cannot run (no cached model), it will warn+skip; the JSONL contract validation still runs.
+- If `validate` fails on `*.coord.jsonl` with `x2 <= x1` / `y2 <= y1`, it is typically caused by very thin (1px) boxes collapsing under norm1000 quantization in older coord conversion logic. Re-run `./public_data/run.sh <ds> coord --preset <preset>` after updating `public_data/scripts/convert_to_coord_tokens.py`.
 - Disk pressure: use `public_data/scripts/sample_dataset.py` to produce smaller JSONLs before training.

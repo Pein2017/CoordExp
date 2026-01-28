@@ -1,9 +1,10 @@
 ## 0) Prereqs / quick sanity
 
-- **Smoke test** (no download; validates the whole pipeline wiring):
+- **Runner sanity** (no dataset required; validates the runner wiring):
   ```bash
-  PYTHONPATH=. conda run -n ms python public_data/vg/smoke_test.py
-````
+  ./public_data/run.sh help
+  ./public_data/run.sh vg help
+  ```
 
 * **Disk check**: VG raw images + resized images are large
 
@@ -29,8 +30,9 @@ You run this; nothing is downloaded automatically.
   * `public_data/vg/raw/annotations/`
   * `public_data/vg/raw/`
 
-  the step verifies `sha256` and skips re-downloading
-  (see `public_data/scripts/prepare_visual_genome.py:123` + `public_data/vg/checksums.py:1`).
+  the step uses `wget --continue` so it can resume partial downloads. If a file is
+  already complete, `wget` may print `416 Requested Range Not Satisfiable` which
+  means "nothing left to download".
 
 * For annotation-only (not trainable), add `--skip-images`.
   For real training, download images.
@@ -60,11 +62,8 @@ You run this; nothing is downloaded automatically.
 
 * **Split**: `image_id % val_mod == 0` → val
 * **Boxes**: converted to `xyxy` and clipped to `[0,W-1] / [0,H-1]`
-* **Dedupe**: exact duplicate `(desc, bbox_2d)` per image removed
-* **Junk labels**: high-confidence placeholders (`this`, `the`, `it`, …) dropped by default
-
-  * Opt-out: `--no-filter-junk-descs`
-  * Source: `public_data/vg/junk_descs.py:1`
+* **Paths**: images are referenced as relative paths under `public_data/vg/raw/`
+  (e.g. `images/VG_100K/1.jpg`) to match `docs/DATA_JSONL_CONTRACT.md`
 
 **Optional: write stats**
 
@@ -75,26 +74,7 @@ You run this; nothing is downloaded automatically.
 
 ---
 
-## 3) Audit “junk desc” before/after (recommended once)
-
-* **Report only** (no modification):
-
-  ```bash
-  conda run -n ms python public_data/vg/collect_junk_descs.py \
-    --jsonl public_data/vg/raw/train.jsonl \
-    --top-k 50
-  ```
-
-  (`public_data/vg/collect_junk_descs.py:1`)
-
-* To expand the list, edit **only**:
-
-  * `public_data/vg/junk_descs.py:1`
-    Keep it conservative / high-confidence.
-
----
-
-## 4) Rescale images + rewrite geometry (offline)
+## 3) Rescale images + rewrite geometry (offline)
 
 Produces resized images under the preset and JSONLs that still reference
 `images/...` relative to the preset directory
@@ -118,7 +98,7 @@ Produces resized images under the preset and JSONLs that still reference
 
 ---
 
-## 5) Export training-ready JSONL variants
+## 4) Export training-ready JSONL variants
 
 Two common training modes:
 
@@ -153,7 +133,7 @@ Converter: `public_data/scripts/convert_to_coord_tokens.py:1`
 
 ---
 
-## 6) Validate (fail-fast before training)
+## 5) Validate (fail-fast before training)
 
 ```bash
 ./public_data/run.sh vg validate --preset rescale_32_768_bbox
@@ -166,9 +146,29 @@ Runs `public_data/scripts/validate_jsonl.py:1` on:
 * Coord-token train / val
   …and best-effort `scripts/inspect_chat_template.py` if a cached model exists.
 
+**Troubleshooting: `*.coord.jsonl` invalid bbox**
+
+If you see errors like `x2 <= x1` / `y2 <= y1` in `train.coord.jsonl`, it's usually
+because very thin (1px) boxes can collapse under norm1000 quantization when
+converted into coord tokens.
+
+Current pipeline behavior is designed to be robust:
+
+* `public_data/scripts/convert_to_coord_tokens.py` uses floor/ceil rules for
+  `bbox_2d` in norm1000 space to preserve extents.
+* As a safety net, it drops objects whose `bbox_2d` is still invalid after
+  normalization (should be extremely rare).
+
+If you updated the code and want to regenerate coord files:
+
+```bash
+./public_data/run.sh vg coord --preset rescale_32_768_bbox
+./public_data/run.sh vg validate --preset rescale_32_768_bbox
+```
+
 ---
 
-## 7) Train: minimal config changes
+## 6) Train: minimal config changes
 
 ### Coord-token training (recommended default)
 
@@ -197,7 +197,7 @@ custom:
 
 ---
 
-## 8) Visual QA (optional but useful)
+## 7) Visual QA (optional but useful)
 
 * **One-record overlay + legend** (counts or list):
 
