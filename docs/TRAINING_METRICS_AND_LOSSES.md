@@ -171,6 +171,14 @@ Config tip:
 
 ## Loss Composition (Stage-1 / Scheme A)
 
+Coord-offset adapter note (tie-head):
+- Some stage-1 configs use `custom.coord_offset.enabled: true` to train coord-token rows via a lightweight
+  offset adapter (instead of updating the full vocab embedding/head).
+- By default `custom.coord_offset.tie_head: true`, which enforces a **single shared offset table** used for
+  both embedding lookup and lm_head logits (Qwen-family tie-head semantics).
+- Set `custom.coord_offset.tie_head: false` only for ablations that intentionally train embedding vs head
+  offsets separately (export/merge then may need to materialize `lm_head.weight` and disable tying).
+
 When `custom.coord_soft_ce_w1.enabled: true`:
 
 1) Base LM loss (full vocab CE)

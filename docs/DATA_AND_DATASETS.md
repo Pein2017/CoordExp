@@ -334,6 +334,46 @@ Notes:
 - No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
 - Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`.
 
+### Coord-offset adapter (tie-head / single shared table)
+
+When training with coord tokens, CoordExp can optionally avoid updating the full vocabulary embedding
+and instead learn a small **offset adapter** over just the coord-token id range.
+
+Key idea:
+- Freeze the base `embed_tokens.weight` and `lm_head.weight`.
+- Train a compact offset table only for `<|coord_0|>.. <|coord_999|>` token ids.
+
+Config:
+```yaml
+custom:
+  coord_offset:
+    enabled: true
+    # Default: Qwen3-VL-style tie-head (single/shared lookup table for embed + head).
+    tie_head: true
+    ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
+    # Optional: learning-rate overrides for the offset parameters.
+    # When tie_head: true, only embed_lr is used (head_lr is ignored).
+    embed_lr: 1.0e-4
+    head_lr: 1.0e-4
+    weight_decay: 0.0
+```
+
+Semantics:
+- `tie_head: true` (recommended; default)
+  - The adapter trains a **single** offset table and uses it for both:
+    - embedding lookup (adds offsets to hidden states for coord tokens), and
+    - output projection (adds logits for coord tokens via `hidden @ offset^T`).
+  - This is equivalent to applying a single delta to the tied embedding/head table for coord tokens,
+    which matches the intended tie-head routine of Qwen-family LMs.
+- `tie_head: false` (legacy/ablation)
+  - Trains separate `embed_offset` and `head_offset` tables (two independent deltas).
+  - Export/merge may need to materialize `lm_head.weight` and disable tying to preserve separate behavior.
+
+Export/merge:
+- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the coord-offset adapter into a merged HF checkpoint.
+  - With `tie_head: true`, the merged checkpoint can keep tied embeddings (single table).
+  - With `tie_head: false`, the merged checkpoint may need an explicit `lm_head.weight` tensor and `tie_word_embeddings: false`.
+
 ---
 
 ## See Also

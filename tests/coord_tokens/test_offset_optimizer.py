@@ -38,10 +38,17 @@ class ToyModel(nn.Module):
 
 def test_optimizer_groups_separate_coord_offsets():
     model = ToyModel()
-    adapter = install_coord_offset_adapter(model, coord_ids=[3, 4], dtype="float32")
+    adapter = install_coord_offset_adapter(
+        model, coord_ids=[3, 4], tie_head=True, dtype="float32"
+    )
 
     coord_cfg = CoordOffsetConfig(
-        enabled=True, ids=(3, 4), embed_lr=1e-3, head_lr=2e-3, weight_decay=0.0
+        enabled=True,
+        tie_head=True,
+        ids=(3, 4),
+        embed_lr=1e-3,
+        head_lr=2e-3,
+        weight_decay=0.0,
     )
 
     # HF TrainingArguments with extra attrs expected by the optimizer
@@ -67,8 +74,9 @@ def test_optimizer_groups_separate_coord_offsets():
             lr_by_param[id(p)] = lr
             wd_by_param[id(p)] = wd
 
+    # Tie-head: only a single shared offset table should exist.
+    assert adapter.head_offset is None
     assert lr_by_param[id(adapter.embed_offset)] == coord_cfg.embed_lr
-    assert lr_by_param[id(adapter.head_offset)] == coord_cfg.head_lr
     assert wd_by_param[id(adapter.embed_offset)] == coord_cfg.weight_decay
 
     # Vision/aligner/llm params follow their respective LRs
@@ -79,3 +87,41 @@ def test_optimizer_groups_separate_coord_offsets():
     assert lr_by_param[id(vision_weight)] == args.vit_lr
     assert lr_by_param[id(aligner_weight)] == args.aligner_lr
     assert lr_by_param[id(llm_weight)] == args.learning_rate
+
+
+def test_optimizer_groups_untied_offsets_use_two_buckets():
+    model = ToyModel()
+    adapter = install_coord_offset_adapter(
+        model, coord_ids=[3, 4], tie_head=False, dtype="float32"
+    )
+
+    coord_cfg = CoordOffsetConfig(
+        enabled=True,
+        tie_head=False,
+        ids=(3, 4),
+        embed_lr=1e-3,
+        head_lr=2e-3,
+        weight_decay=0.0,
+    )
+
+    args = TrainingArguments(
+        output_dir="tmp",
+        per_device_train_batch_size=1,
+        learning_rate=5e-4,
+        weight_decay=0.01,
+    )
+    args.vit_lr = 2e-4
+    args.aligner_lr = 8e-4
+    args.coord_offset_config = coord_cfg
+
+    optimizer, _ = create_multimodal_coord_offset_optimizer(args, model, dataset=None)
+
+    lr_by_param = {}
+    for group in optimizer.param_groups:
+        lr = group["lr"]
+        for p in group["params"]:
+            lr_by_param[id(p)] = lr
+
+    assert adapter.head_offset is not None
+    assert lr_by_param[id(adapter.embed_offset)] == coord_cfg.embed_lr
+    assert lr_by_param[id(adapter.head_offset)] == coord_cfg.head_lr

@@ -33,6 +33,7 @@ custom:
   val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
   coord_offset:
     enabled: true
+    tie_head: true
     ids: { start: 151670, end: 152669 }  # excludes 151669 internally
     embed_lr: 1.0e-3   # placeholder; tune per run
     head_lr: 1.0e-3    # placeholder; tune per run

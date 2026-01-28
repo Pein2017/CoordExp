@@ -26,14 +26,14 @@ def parse_args():
     return p.parse_args()
 
 
-def load_offsets(adapter_dir: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def load_offsets(adapter_dir: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     ck = os.path.join(adapter_dir, "adapter_model.safetensors")
     if not os.path.isfile(ck):
         raise FileNotFoundError(f"adapter_model.safetensors not found at {ck}")
     d = st.load_file(ck)
     coord_ids = d["base_model.model.coord_offset_adapter.coord_ids"].long()
     embed_offset = d["base_model.model.coord_offset_adapter.embed_offset"]
-    head_offset = d["base_model.model.coord_offset_adapter.head_offset"]
+    head_offset = d.get("base_model.model.coord_offset_adapter.head_offset")
     return coord_ids, embed_offset, head_offset
 
 
@@ -83,8 +83,11 @@ def main():
     args = parse_args()
 
     coord_ids, embed_offset, head_offset = load_offsets(args.adapter_dir)
-    dtype = embed_offset.dtype
-    tied = is_tied_embeddings(args.merged_dir)
+    adapter_tie_head = head_offset is None
+    if adapter_tie_head:
+        # Single/shared lookup table: the same offset should be applied to both embedding lookup
+        # and output projection (tie-head semantics).
+        head_offset = embed_offset
 
     shard_paths = sorted(glob.glob(os.path.join(args.merged_dir, "model-*.safetensors")))
     if not shard_paths:
@@ -103,57 +106,98 @@ def main():
 
     if embed_key is None:
         raise ValueError("Could not find embed_tokens.weight in merged shards.")
-    if head_key is None:
-        if tied:
-            print(
-                "lm_head.weight not found, but tie_word_embeddings=True; "
-                "will patch embed_tokens.weight for both embed_offset and head_offset."
-            )
-        else:
-            print(
-                "WARNING: lm_head.weight not found and tie_word_embeddings!=True; "
-                "only embedding will be patched (logit offsets may be missing)."
-            )
+
+    # If we need distinct head offsets but the export omitted lm_head.weight (typical when
+    # tie_word_embeddings=True), materialize lm_head.weight so we can preserve training semantics.
+    materialize_head = False
+    if head_key is None and not adapter_tie_head:
+        head_key = "lm_head.weight"
+        head_shard = embed_shard
+        materialize_head = True
+        print(
+            f"lm_head.weight not found; will materialize {head_key} into {os.path.basename(embed_shard)}"
+        )
+    elif head_key is None and adapter_tie_head:
+        print(
+            "lm_head.weight not found; adapter uses tie_head=True, so only embed_tokens.weight will be patched."
+        )
 
     # Patch embedding shard
     tensors_e, meta_e = load_shard(embed_shard)
-    emb = tensors_e[embed_key].to(dtype)
+    emb_base = tensors_e[embed_key]
+    emb = emb_base.clone()
     with torch.no_grad():
-        emb[coord_ids] += embed_offset.to(emb.dtype)
-        # If lm_head is tied and not stored separately, apply head_offset to the same
-        # rows. This is equivalent to patching lm_head.weight when weights are tied:
-        # logits = hidden @ W^T, so updating W rows updates per-token logits.
-        if head_key is None and tied:
-            if emb.shape[1] != head_offset.shape[1]:
-                raise ValueError(
-                    f"head_offset dim {head_offset.shape[1]} != embed dim {emb.shape[1]}"
-                )
-            emb[coord_ids] += head_offset.to(emb.dtype)
+        emb[coord_ids] = emb[coord_ids] + embed_offset.to(emb.dtype)
     tensors_e[embed_key] = emb
 
     if head_key is not None and head_shard == embed_shard:
-        # Patch head in same shard
-        head_t = tensors_e[head_key].to(dtype)
+        # Create or patch lm_head in the same shard.
+        if materialize_head:
+            head_base = emb_base
+        else:
+            head_base = tensors_e[head_key]
+        head_t = head_base.clone()
         with torch.no_grad():
-            head_t[coord_ids] += head_offset.to(head_t.dtype)
+            head_t[coord_ids] = head_t[coord_ids] + head_offset.to(head_t.dtype)
         tensors_e[head_key] = head_t
+
         st.save_file(tensors_e, embed_shard, metadata=meta_e)
-        print(f"Patched embedding and lm_head in {embed_shard}")
+        print(f"Patched embed_tokens and lm_head in {embed_shard}")
     else:
-        # Save embedding shard first
         st.save_file(tensors_e, embed_shard, metadata=meta_e)
         print(f"Patched embedding in {embed_shard}")
 
         if head_key is not None:
             tensors_h, meta_h = load_shard(head_shard)
-            head_t = tensors_h[head_key].to(dtype)
+            if head_key not in tensors_h:
+                raise ValueError(f"Could not find {head_key} in {head_shard}")
+            head_t = tensors_h[head_key].clone()
             with torch.no_grad():
-                head_t[coord_ids] += head_offset.to(head_t.dtype)
+                head_t[coord_ids] = head_t[coord_ids] + head_offset.to(head_t.dtype)
             tensors_h[head_key] = head_t
             st.save_file(tensors_h, head_shard, metadata=meta_h)
             print(f"Patched lm_head in {head_shard}")
         else:
-            print("Skipped lm_head patch (not found).")
+            print("Skipped lm_head patch (not present and not materialized).")
+
+    # If we materialized lm_head.weight, update the safetensors index so HF loaders can find it.
+    if materialize_head:
+        index_path = os.path.join(args.merged_dir, "model.safetensors.index.json")
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                index = json.load(f)
+            weight_map = index.get("weight_map") or {}
+            shard_name = os.path.basename(embed_shard)
+            if head_key not in weight_map:
+                weight_map[head_key] = shard_name
+                index["weight_map"] = weight_map
+                with open(index_path, "w", encoding="utf-8") as f:
+                    json.dump(index, f, ensure_ascii=False, indent=2)
+                print(f"Updated index: mapped {head_key} -> {shard_name}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to update safetensors index at {index_path}: {e}")
+
+    # If embedding and head differ (separate offsets), ensure the exported config does not re-tie them.
+    if not adapter_tie_head:
+        cfg_path = os.path.join(args.merged_dir, "config.json")
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            changed = False
+            if cfg.get("tie_word_embeddings") is True:
+                cfg["tie_word_embeddings"] = False
+                changed = True
+            text_cfg = cfg.get("text_config")
+            if isinstance(text_cfg, dict) and text_cfg.get("tie_word_embeddings") is True:
+                text_cfg["tie_word_embeddings"] = False
+                cfg["text_config"] = text_cfg
+                changed = True
+            if changed:
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                print("Set tie_word_embeddings=False in merged config.json")
+        except Exception as e:
+            print(f"WARNING: Failed to update tie_word_embeddings in {cfg_path}: {e}")
 
     print("Coord offsets injected into merged shards.")
 

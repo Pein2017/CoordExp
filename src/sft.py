@@ -44,13 +44,16 @@ from .optim import register_coord_offset_optimizer
 
 def resolve_trainer_cls(train_args):
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant == "rollout_matching_sft":
+    if trainer_variant == "stage2_ab_training":
+        from .trainers.stage2_ab_training import Stage2ABTrainingTrainer
+
+        trainer_cls = Stage2ABTrainingTrainer
+    elif trainer_variant == "rollout_matching_sft":
         from .trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
 
         trainer_cls = RolloutMatchingSFTTrainer
     elif (
-        getattr(train_args, "rlhf_type", None) == "gkd"
-        and trainer_variant == "gkd_monitor"
+        getattr(train_args, "rlhf_type", None) == "gkd" and trainer_variant == "gkd_monitor"
     ):
         from .trainers.gkd_monitor import GKDTrainerWithMetrics
 
@@ -360,6 +363,7 @@ def main():
         adapter = install_coord_offset_adapter(
             sft.model,
             coord_ids=coord_offset_cfg.ids or None,
+            tie_head=getattr(coord_offset_cfg, "tie_head", True),
             dtype=coord_offset_cfg.dtype,
         )
         modules_to_save: list[str] = list(getattr(train_args, "modules_to_save", []) or [])
@@ -381,6 +385,7 @@ def main():
             f"Coord-offset adapter enabled: ids={adapter.coord_ids.numel()}, "
             f"embed_lr={coord_offset_cfg.embed_lr or getattr(train_args, 'learning_rate', None)}, "
             f"head_lr={coord_offset_cfg.head_lr or getattr(train_args, 'learning_rate', None)}, "
+            f"tie_head={getattr(coord_offset_cfg, 'tie_head', True)}, "
             f"dtype={coord_offset_cfg.dtype or 'auto'}"
         )
     logger.info(f"Model: {train_args.model}")
@@ -593,7 +598,7 @@ def main():
         base_dataset_len = None
     # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
     # Do not apply dataset-level packing wrappers for this trainer variant.
-    if packing_cfg.enabled and trainer_variant != "rollout_matching_sft":
+    if packing_cfg.enabled and trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
         orig_bs = getattr(train_args, "per_device_train_batch_size", None)
         if orig_bs != 1:
             logger.warning(
@@ -674,13 +679,17 @@ def main():
             packing_cfg.drop_last,
             packing_cfg.allow_single_long,
         )
-    elif packing_cfg.enabled and trainer_variant == "rollout_matching_sft":
+    elif packing_cfg.enabled and trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         logger.info(
             "Packing enabled for rollout-matching: dataset packing is disabled; "
             "trainer will apply dynamic post-rollout packing for the teacher-forced forward pass."
         )
 
-    if packing_cfg.enabled and packing_cfg.eval_packing and trainer_variant != "rollout_matching_sft":
+    if (
+        packing_cfg.enabled
+        and packing_cfg.eval_packing
+        and trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}
+    ):
         eval_bs = getattr(train_args, "per_device_eval_batch_size", None)
         if eval_bs != 1:
             logger.warning(
@@ -1000,7 +1009,7 @@ def main():
         packing_cfg.enabled
         and packing_cfg.eval_packing
         and eval_dataset is not None
-        and trainer_variant != "rollout_matching_sft"
+        and trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}
     ):
         eval_dataset = build_packed_dataset(
             eval_dataset,
@@ -1041,7 +1050,7 @@ def main():
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant == "rollout_matching_sft":
+    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
         try:
             if getattr(train_args, "training_args", None) is not None:
@@ -1067,7 +1076,7 @@ def main():
             instability_monitor_cfg = raw_instab
     except Exception:
         instability_monitor_cfg = None
-    if trainer_variant == "rollout_matching_sft":
+    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
     else:
@@ -1079,7 +1088,7 @@ def main():
         )
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
-    if trainer_variant != "rollout_matching_sft":
+    if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
         # Fix transformers>=4.57 grad-accum scaling when model_accepts_loss_kwargs=True
         # (ms-swift uses Seq2SeqTrainer for causal_lm). This keeps train `loss` comparable to eval_loss.
         mixins.append(GradAccumLossScaleMixin)
@@ -1157,7 +1166,7 @@ def main():
     # For rollout-matching we still want stable eval-time monitoring (and to support
     # `metric_for_best_model: eval_token_acc` from the base config).
     if (
-        trainer_variant == "rollout_matching_sft"
+        trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
         and "token_acc" in str(getattr(train_args.training_args, "metric_for_best_model", ""))
@@ -1178,7 +1187,7 @@ def main():
                 "Failed to enable eval token accuracy for rollout-matching: %s", exc
             )
 
-    if trainer_variant == "rollout_matching_sft":
+    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         try:
             extra_cfg = getattr(custom_config, "extra", {})
             rollout_cfg_raw = (
@@ -1205,6 +1214,29 @@ def main():
             )
         except Exception as exc:
             logger.warning("Failed to inject rollout_matching_cfg into trainer: %s", exc)
+
+    if trainer_variant == "stage2_ab_training":
+        try:
+            extra_cfg = getattr(custom_config, "extra", {})
+            stage2_ab_raw = (
+                extra_cfg.get("stage2_ab", {}) if isinstance(extra_cfg, Mapping) else {}
+            )
+            stage2_ab_cfg: dict[str, Any] = (
+                dict(stage2_ab_raw) if isinstance(stage2_ab_raw, Mapping) else {}
+            )
+            setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
+            try:
+                sched = stage2_ab_cfg.get("schedule")
+                pattern = sched.get("pattern") if isinstance(sched, Mapping) else None
+            except Exception:
+                pattern = None
+            logger.info(
+                "Stage2-AB config injected: pattern=%s n_softctx_iter=%s",
+                pattern,
+                stage2_ab_cfg.get("n_softctx_iter"),
+            )
+        except Exception as exc:
+            logger.warning("Failed to inject stage2_ab_cfg into trainer: %s", exc)
     if coord_soft_ce_w1_cfg is not None:
         try:
             setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)

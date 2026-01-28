@@ -21,6 +21,7 @@ DEFAULT_EXCLUDE_IDS = {151_669}  # <|coord_*|>
 @dataclass
 class CoordOffsetConfig:
     enabled: bool = False
+    tie_head: bool = True
     ids: Sequence[int] = ()
     embed_lr: float | None = None
     head_lr: float | None = None
@@ -56,6 +57,7 @@ class CoordOffsetAdapter(nn.Module):
         self,
         *,
         coord_ids: Sequence[int],
+        tie_head: bool = True,
         embed_dim: int,
         head_dim: int,
         base_dtype: torch.dtype,
@@ -66,13 +68,22 @@ class CoordOffsetAdapter(nn.Module):
         if not coord_ids:
             raise ValueError("coord_offset ids must be non-empty when enabled")
 
+        self.tie_head = bool(tie_head)
+        if self.tie_head and embed_dim != head_dim:
+            raise ValueError(
+                f"tie_head requires embed_dim == head_dim (got {embed_dim} vs {head_dim})"
+            )
+
         self.register_buffer("coord_ids", torch.tensor(coord_ids, dtype=torch.long))
         self.embed_offset = nn.Parameter(
             torch.zeros(len(coord_ids), embed_dim, device=device, dtype=base_dtype)
         )
-        self.head_offset = nn.Parameter(
-            torch.zeros(len(coord_ids), head_dim, device=device, dtype=base_dtype)
-        )
+        if self.tie_head:
+            self.head_offset = None
+        else:
+            self.head_offset = nn.Parameter(
+                torch.zeros(len(coord_ids), head_dim, device=device, dtype=base_dtype)
+            )
         self._embed_hook_handle = None
         self._head_hook_handle = None
 
@@ -116,7 +127,10 @@ class CoordOffsetAdapter(nn.Module):
             if not torch.is_tensor(hidden_states):
                 return output
 
-            head_offset = self.head_offset.to(hidden_states.device)
+            head_offset = self.embed_offset if self.tie_head else self.head_offset
+            if head_offset is None:
+                return output
+            head_offset = head_offset.to(hidden_states.device)
             if head_offset.numel() == 0:
                 return output
 
@@ -147,6 +161,7 @@ def install_coord_offset_adapter(
     model: nn.Module,
     *,
     coord_ids: Iterable[int] | None,
+    tie_head: bool = True,
     dtype: str | None = None,
 ) -> CoordOffsetAdapter:
     """Install coord offset adapter onto the model.
@@ -176,6 +191,7 @@ def install_coord_offset_adapter(
 
     adapter = CoordOffsetAdapter(
         coord_ids=_sanitize_ids(coord_ids),
+        tie_head=tie_head,
         embed_dim=embed_weight.size(1),
         head_dim=head_weight.size(1),
         base_dtype=target_dtype,

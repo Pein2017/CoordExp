@@ -200,6 +200,7 @@ class CoordSoftCEW1Config:
 @dataclass(frozen=True)
 class CoordOffsetConfig:
     enabled: bool = False
+    tie_head: bool = True
     ids: tuple[int, ...] = ()
     embed_lr: Optional[float] = None
     head_lr: Optional[float] = None
@@ -218,6 +219,14 @@ class CoordOffsetConfig:
             raise TypeError("coord_offset section must be a mapping when provided")
 
         enabled = bool(payload.get("enabled", False))
+
+        tie_head_raw = payload.get("tie_head", True)
+        if tie_head_raw is None:
+            tie_head = True
+        elif isinstance(tie_head_raw, bool):
+            tie_head = tie_head_raw
+        else:
+            raise TypeError("coord_offset.tie_head must be a boolean when provided")
 
         ids_raw = payload.get("ids")
         ids: tuple[int, ...]
@@ -271,6 +280,7 @@ class CoordOffsetConfig:
 
         return cls(
             enabled=enabled,
+            tie_head=tie_head,
             ids=ids,
             embed_lr=embed_lr,
             head_lr=head_lr,

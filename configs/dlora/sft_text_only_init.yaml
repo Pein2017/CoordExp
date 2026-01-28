@@ -40,3 +40,4 @@ custom:
   # ABLATION: Disable coord_offset adapter (no need to tune lm_head/token_embedding for pure strings)
   coord_offset:
     enabled: false
+    tie_head: true

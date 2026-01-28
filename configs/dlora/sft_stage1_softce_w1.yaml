@@ -43,6 +43,7 @@ custom:
   # (keeps the adapter small vs saving full embed/lm_head matrices).
   coord_offset:
     enabled: true
+    tie_head: true
     ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
     # Optional: override per-bucket lrs; defaults to training.learning_rate when omitted.
     embed_lr: 1.0e-4

@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Merge LoRA + coord_offset into a single checkpoint.
 #
+# Coord-offset note (tie-head):
+# - Newer runs default to a tie-head coord_offset adapter (single shared offset table),
+#   which is compatible with Qwen-family tied embeddings.
+# - Older/ablation runs may have separate embed_offset/head_offset; in that case the
+#   injector may materialize lm_head.weight and disable tying in the merged config
+#   to preserve distinct embedding vs head updates.
+#
 # Preferred usage (env vars):
 #   ADAPTERS=output/.../checkpoint-XXX \
 #   OUTPUT_DIR=output/.../merged_ckXXX \
@@ -62,12 +69,13 @@ else
 fi
 
 # Extract base model path from adapter_config.json
-BASE_MODEL=$("${COORDEXP_PYTHON[@]}" - <<PY
-import json, sys
-cfg = json.load(open("${ADAPTERS}/adapter_config.json"))
-print(cfg["base_model_name_or_path"])
-PY
-)
+BASE_MODEL=$("${COORDEXP_PYTHON[@]}" -c "import json; cfg=json.load(open('${ADAPTERS}/adapter_config.json')); print(cfg.get('base_model_name_or_path',''))")
+
+if [[ -z "${BASE_MODEL}" ]]; then
+  echo "ERROR: Failed to read base_model_name_or_path from: ${ADAPTERS}/adapter_config.json" >&2
+  echo "Hint: If you're running under conda, this script requires python execution to work under conda run." >&2
+  exit 1
+fi
 
 echo "Base model : $BASE_MODEL"
 echo "Adapters   : $ADAPTERS"
@@ -94,31 +102,13 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICES "${COORDEXP_SWIFT[@]}" export \
   --safe_serialization true \
   --max_shard_size "$MAX_SHARD_SIZE"
 
+# Keep CoordExp-specific token metadata if available (swift export may not copy it).
+if [[ -f "$BASE_MODEL/coord_tokens.json" && ! -f "$OUTPUT_DIR/coord_tokens.json" ]]; then
+  cp "$BASE_MODEL/coord_tokens.json" "$OUTPUT_DIR/coord_tokens.json"
+fi
+
 # 2) Optionally bake coord_offset into embed_tokens/lm_head if present
-HAS_COORD_OFFSETS=$("${COORDEXP_PYTHON[@]}" - <<'PY' "$ADAPTERS"
-import sys
-from pathlib import Path
-try:
-    from safetensors import safe_open
-except Exception:
-    print("no")
-    sys.exit(0)
-
-adapter_dir = Path(sys.argv[1])
-weights = adapter_dir / "adapter_model.safetensors"
-if not weights.exists():
-    print("no")
-    sys.exit(0)
-
-try:
-    with safe_open(weights, framework="pt", device="cpu") as f:
-        has = any("coord_offset_adapter" in k for k in f.keys())
-except Exception:
-    has = False
-
-print("yes" if has else "no")
-PY
-)
+HAS_COORD_OFFSETS=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    print(\"no\")\n    sys.exit(0)\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"no\")\n    sys.exit(0)\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        has = any(\"coord_offset_adapter\" in k for k in f.keys())\nexcept Exception:\n    has = False\n\nprint(\"yes\" if has else \"no\")\n' "$ADAPTERS")
 
 if [[ "$HAS_COORD_OFFSETS" == "yes" ]]; then
   echo "Injecting coord_offset offsets into merged weights..."
