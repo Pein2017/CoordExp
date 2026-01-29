@@ -1,0 +1,81 @@
+# Smoke: Stage-2 AB mixed A/B schedule on LVIS bbox-only max60 (coord-token) from stage-1 merged ckpt-1516,
+# using vLLM **server mode** (rollouts on separate GPUs via `swift rollout`).
+#
+# Topology (single node, 4 GPUs recommended):
+# - server_gpus: 0,1,2  (swift rollout --infer_backend vllm --vllm_data_parallel_size 3)
+# - train_gpus:  3      (python -m src.sft ...), world_size==1 (no torchrun)
+#
+# NOTE: vLLM server backend currently supports decode_mode=greedy only.
+extends: ab_mixed.yaml
+
+global_max_length: 8192
+
+model:
+  model: output/1-26/checkpoint-1516-merged
+
+tuner:
+  # Keep this light for smoke runs.
+  train_type: lora
+  use_swift_lora: false
+  use_dora: false
+  freeze_llm: false
+  freeze_vit: false
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 8
+  lora_alpha: 16
+  lora_dropout: 0.0
+  lora_bias: none
+
+deepspeed:
+  enabled: false
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516
+  run_name: ab_mixed_vllm_server_3v1_smoke
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/ab_mixed_vllm_server_3v1_smoke
+
+  # Few-step smoke to exercise both channels (pattern A,A,B repeats).
+  max_steps: 6
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 1
+
+  logging_steps: 1
+  logging_first_step: true
+
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 32
+  val_sample_limit: 8
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      rollout_generate_batch_size: 1
+      decode_mode: greedy
+      max_new_tokens: 256
+      temperature: 0.0
+      repetition_penalty: 1.05
+
+      vllm:
+        mode: server
+        # Full merged-weight sync is the robust default for multimodal models.
+        enable_lora: false
+        sync:
+          mode: full
+          fallback_to_full: true
+        server:
+          timeout_s: 240.0
+          infer_timeout_s: null
+          servers:
+            - base_url: http://127.0.0.1:8000
+              group_port: 51216

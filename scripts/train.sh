@@ -13,6 +13,35 @@ export NCCL_ASYNC_ERROR_HANDLING=${NCCL_ASYNC_ERROR_HANDLING:-1}
 export TORCH_NCCL_TRACE_BUFFER_SIZE=${TORCH_NCCL_TRACE_BUFFER_SIZE:-67108864}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
+# Proxy hygiene: local vLLM server-mode uses localhost HTTP endpoints (health + infer).
+# A global http(s)_proxy can route localhost traffic and break training.
+DISABLE_PROXY="${disable_proxy:-true}"
+if [[ "${DISABLE_PROXY}" == "true" || "${DISABLE_PROXY}" == "1" ]]; then
+  # Merge existing NO_PROXY/no_proxy and ensure localhost entries are present.
+  _np_raw="${NO_PROXY:-${no_proxy:-}}"
+  IFS=',' read -r -a _np_split <<< "${_np_raw}"
+  _np_tokens=()
+  for _tok in "${_np_split[@]}"; do
+    _tok="${_tok//[[:space:]]/}"
+    [[ -n "${_tok}" ]] && _np_tokens+=("${_tok}")
+  done
+  for _need in "127.0.0.1" "localhost"; do
+    _found="false"
+    for _tok in "${_np_tokens[@]}"; do
+      if [[ "${_tok}" == "${_need}" ]]; then
+        _found="true"
+        break
+      fi
+    done
+    if [[ "${_found}" == "false" ]]; then
+      _np_tokens+=("${_need}")
+    fi
+  done
+  export NO_PROXY="$(IFS=','; echo "${_np_tokens[*]}")"
+  export no_proxy="${NO_PROXY}"
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+fi
+
 # Resolve repository root from this script's location and set PYTHONPATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -85,6 +114,7 @@ echo "[INFO] Master port: ${MASTER_PORT}"
 fi
 echo "[INFO] Python: ${PYTHON_BIN}"
 echo "[INFO] Debug mode: ${DEBUG}"
+echo "[INFO] disable_proxy: ${DISABLE_PROXY}"
 echo "========================================================================"
 echo ""
 echo "[RUN] (cwd=${REPO_DIR}) ${CMD}"
