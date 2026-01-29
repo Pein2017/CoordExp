@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import sys
 import types
+
 pytest.importorskip("pycocotools")
 
 # Some eval modules historically imported yaml/swift/torch at import time.
@@ -96,7 +97,12 @@ def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):
         "height": 48,
         "objects": [
             {
-                "bbox_2d": ["<|coord_0|>", "<|coord_0|>", "<|coord_999|>", "<|coord_999|>"],
+                "bbox_2d": [
+                    "<|coord_0|>",
+                    "<|coord_0|>",
+                    "<|coord_999|>",
+                    "<|coord_999|>",
+                ],
                 "desc": "box",
             }
         ],

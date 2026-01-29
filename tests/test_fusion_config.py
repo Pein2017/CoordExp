@@ -469,15 +469,23 @@ def test_offline_merge_is_reproducible_across_python_hash_seeds(tmp_path: Path):
     env2 = dict(os.environ)
     env2["PYTHONHASHSEED"] = "2"
 
-    digest1 = subprocess.check_output(
-        [sys.executable, "-c", script],
-        env=env1,
-        cwd=str(Path(__file__).resolve().parents[1]),
-    ).decode("utf-8").strip()
-    digest2 = subprocess.check_output(
-        [sys.executable, "-c", script],
-        env=env2,
-        cwd=str(Path(__file__).resolve().parents[1]),
-    ).decode("utf-8").strip()
+    digest1 = (
+        subprocess.check_output(
+            [sys.executable, "-c", script],
+            env=env1,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+        .decode("utf-8")
+        .strip()
+    )
+    digest2 = (
+        subprocess.check_output(
+            [sys.executable, "-c", script],
+            env=env2,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+        .decode("utf-8")
+        .strip()
+    )
 
     assert digest1 == digest2

@@ -95,7 +95,9 @@ def _generate_colors(labels: List[str]) -> Dict[str, str]:
     return colors
 
 
-def _draw(ax, img: Image.Image, objs: List[Dict[str, Any]], color_map: Dict[str, str]) -> None:
+def _draw(
+    ax, img: Image.Image, objs: List[Dict[str, Any]], color_map: Dict[str, str]
+) -> None:
     import matplotlib.patches as patches
 
     ax.imshow(img)
@@ -183,7 +185,9 @@ def draw_compare(
     for lab in active[:30]:  # cap legend length for readability
         gt_c, hf_c, vv_c = counts[lab]
         legend_label = f"{lab} (gt {gt_c} / hf {hf_c} / vllm {vv_c})"
-        handle = patches.Patch(facecolor="none", edgecolor=color_map[lab], label=legend_label)
+        handle = patches.Patch(
+            facecolor="none", edgecolor=color_map[lab], label=legend_label
+        )
         legend_handles.append(handle)
     if legend_handles:
         ax_leg.legend(handles=legend_handles, loc="center", framealpha=0.95, fontsize=9)
@@ -195,7 +199,9 @@ def draw_compare(
 
 
 def parse_args() -> Config:
-    p = argparse.ArgumentParser(description="Compare rollout outputs between HF and vLLM")
+    p = argparse.ArgumentParser(
+        description="Compare rollout outputs between HF and vLLM"
+    )
     p.add_argument("--compare_jsonl", required=True)
     p.add_argument("--save_dir", default="vis_out/rollout_backend_compare")
     p.add_argument("--limit", type=int, default=0)

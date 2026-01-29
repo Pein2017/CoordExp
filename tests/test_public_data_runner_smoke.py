@@ -89,7 +89,9 @@ def test_public_data_runner_smoke() -> None:
 
         vg_preset = "rescale_32_768_bbox_smoke"
         _run_runner("smoke_vg", "help")
-        _run_runner("smoke_vg", "rescale", "--preset", vg_preset, "--", "--num-workers", "1")
+        _run_runner(
+            "smoke_vg", "rescale", "--preset", vg_preset, "--", "--num-workers", "1"
+        )
         _run_runner("smoke_vg", "coord", "--preset", vg_preset)
 
         assert (vg_ds / vg_preset / "train.jsonl").is_file()

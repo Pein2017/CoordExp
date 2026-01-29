@@ -139,7 +139,9 @@ def _safe_mkdir(path: Path) -> None:
 
 
 def _json_dump(path: Path, obj: Any) -> None:
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -322,7 +324,9 @@ def _to_pixel(points_norm1000: Sequence[int], width: int, height: int) -> List[i
     return out
 
 
-def _gt_to_vis(gt_objs: Sequence[GTObject], width: int, height: int) -> List[Dict[str, Any]]:
+def _gt_to_vis(
+    gt_objs: Sequence[GTObject], width: int, height: int
+) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for obj in gt_objs:
         pts = _to_pixel(obj.points_norm1000, width, height)
@@ -400,7 +404,9 @@ def _load_bench_config(args: argparse.Namespace) -> BenchConfig:
     truncation_strategy = str(template_cfg.get("truncation_strategy", "right"))
     max_pixels_raw = template_cfg.get("max_pixels", None)
     try:
-        template_max_pixels = int(max_pixels_raw) if max_pixels_raw is not None else None
+        template_max_pixels = (
+            int(max_pixels_raw) if max_pixels_raw is not None else None
+        )
     except Exception:
         template_max_pixels = None
 
@@ -438,7 +444,11 @@ def _load_bench_config(args: argparse.Namespace) -> BenchConfig:
     warmup_steps = _get_int("warmup_steps", 2)
     repeats = _get_int("repeats", 3)
     batch_size = _get_int("batch_size", 1)
-    output_dir = str(args.output_dir or extra.get("output_dir") or "output/bench/rollout_backend_bench")
+    output_dir = str(
+        args.output_dir
+        or extra.get("output_dir")
+        or "output/bench/rollout_backend_bench"
+    )
 
     hf_kwargs = extra.get("hf") or {}
     vllm_kwargs = extra.get("vllm") or {}
@@ -451,7 +461,9 @@ def _load_bench_config(args: argparse.Namespace) -> BenchConfig:
     if max_length_raw is None and isinstance(vllm_kwargs, Mapping):
         max_length_raw = vllm_kwargs.get("max_model_len", None)
     try:
-        template_max_length = int(max_length_raw) if max_length_raw is not None else None
+        template_max_length = (
+            int(max_length_raw) if max_length_raw is not None else None
+        )
     except Exception:
         template_max_length = None
 
@@ -525,7 +537,10 @@ def _build_infer_requests_and_gt(
         merged = builder.build_many([rec])
         messages = list(merged.get("messages") or [])
         if bench.system_prompt is not None:
-            messages = [{"role": "system", "content": str(bench.system_prompt)}, *messages]
+            messages = [
+                {"role": "system", "content": str(bench.system_prompt)},
+                *messages,
+            ]
         # Minimal fields required by rollout parsing/matching utilities.
         sample = {
             "messages": messages,
@@ -570,7 +585,9 @@ def _init_hf_engine(bench: BenchConfig):
     from src.coord_tokens.template_adapter import apply_coord_template_adapter
     from src.config.schema import CoordTokensConfig
 
-    coord_cfg = CoordTokensConfig(enabled=bench.coord_tokens_enabled, skip_bbox_norm=bench.coord_skip_bbox_norm)
+    coord_cfg = CoordTokensConfig(
+        enabled=bench.coord_tokens_enabled, skip_bbox_norm=bench.coord_skip_bbox_norm
+    )
     apply_coord_template_adapter(template, coord_cfg)
 
     attn_impl = str((bench.hf_kwargs or {}).get("attn_impl", "flash_attention_2"))
@@ -614,7 +631,9 @@ def _init_vllm_engine(bench: BenchConfig):
     from src.coord_tokens.template_adapter import apply_coord_template_adapter
     from src.config.schema import CoordTokensConfig
 
-    coord_cfg = CoordTokensConfig(enabled=bench.coord_tokens_enabled, skip_bbox_norm=bench.coord_skip_bbox_norm)
+    coord_cfg = CoordTokensConfig(
+        enabled=bench.coord_tokens_enabled, skip_bbox_norm=bench.coord_skip_bbox_norm
+    )
     apply_coord_template_adapter(template, coord_cfg)
 
     engine = VllmEngine(
@@ -624,7 +643,8 @@ def _init_vllm_engine(bench: BenchConfig):
         gpu_memory_utilization=float(vcfg.get("gpu_memory_utilization", 0.85)),
         tensor_parallel_size=int(vcfg.get("tensor_parallel_size", 1)),
         max_model_len=int(vcfg.get("max_model_len", bench.template_max_length or 4096))
-        if vcfg.get("max_model_len") is not None or bench.template_max_length is not None
+        if vcfg.get("max_model_len") is not None
+        or bench.template_max_length is not None
         else None,
         max_num_seqs=int(vcfg.get("max_num_seqs", 256)),
         enforce_eager=bool(vcfg.get("enforce_eager", False)),
@@ -660,7 +680,9 @@ def _infer_one_pass(
     # Tokenizer is needed for strict parsing.
     tokenizer = getattr(engine, "tokenizer", None)
     if tokenizer is None:
-        tokenizer = getattr(getattr(engine, "default_template", None), "tokenizer", None)
+        tokenizer = getattr(
+            getattr(engine, "default_template", None), "tokenizer", None
+        )
     if tokenizer is None:
         raise RuntimeError("Unable to locate tokenizer on engine")
 
@@ -676,7 +698,9 @@ def _infer_one_pass(
     while idx < n:
         chunk = list(infer_requests[idx : idx + batch_size])
         t0 = time.perf_counter()
-        outputs = engine.infer(list(chunk), request_config=request_config, use_tqdm=False)
+        outputs = engine.infer(
+            list(chunk), request_config=request_config, use_tqdm=False
+        )
         dt = time.perf_counter() - t0
         # Approx per-sample latency for the chunk (end-to-end on this process).
         per = dt / max(1, len(chunk))
@@ -702,7 +726,9 @@ def _infer_one_pass(
 
             meta = sample_meta[idx + j]
             if collect_details:
-                parse = parse_rollout_for_matching(tokenizer=tokenizer, response_token_ids=token_ids)
+                parse = parse_rollout_for_matching(
+                    tokenizer=tokenizer, response_token_ids=token_ids
+                )
                 preds_for_match: List[GTObject] = []
                 pred_meta = list(parse.valid_objects)
 
@@ -710,7 +736,9 @@ def _infer_one_pass(
                 from src.coord_tokens.codec import get_coord_token_ids
 
                 coord_ids = get_coord_token_ids(tokenizer)
-                coord_id_to_bin = {int(tok_id): int(i) for i, tok_id in enumerate(coord_ids)}
+                coord_id_to_bin = {
+                    int(tok_id): int(i) for i, tok_id in enumerate(coord_ids)
+                }
 
                 for pobj in pred_meta:
                     pts = _points_from_coord_tokens(
@@ -744,7 +772,9 @@ def _infer_one_pass(
                     fn_cost=fn_cost,
                 )
 
-                gt_vis = _gt_to_vis(gts, int(meta.get("width") or 0), int(meta.get("height") or 0))
+                gt_vis = _gt_to_vis(
+                    gts, int(meta.get("width") or 0), int(meta.get("height") or 0)
+                )
                 pred_vis = _pred_from_parse_for_vis(
                     tokenizer=tokenizer,
                     sample=meta,
@@ -843,7 +873,9 @@ def _run_backend(
     # Warmup (excluded from timing).
     warmup = max(0, int(bench.warmup_steps))
     if warmup > 0:
-        logger.info("[%s] warmup: %s steps (batch_size=%s)", backend, warmup, bench.batch_size)
+        logger.info(
+            "[%s] warmup: %s steps (batch_size=%s)", backend, warmup, bench.batch_size
+        )
     for _ in range(warmup):
         _ = engine.infer([infer_requests[0]], request_config=req_cfg, use_tqdm=False)
 
@@ -864,7 +896,9 @@ def _run_backend(
             collect_details=collect_details,
         )
         end_to_end = time.perf_counter() - t0
-        infer_time_s = float(np.sum(np.asarray(latencies, dtype=np.float64))) if latencies else 0.0
+        infer_time_s = (
+            float(np.sum(np.asarray(latencies, dtype=np.float64))) if latencies else 0.0
+        )
 
         # Fill line_idx for stable backend merges.
         if sample_results:
@@ -1052,7 +1086,9 @@ def _run_single_process(args: argparse.Namespace) -> int:
     # The config seed lives under extra; use that as the default.
     # (args.seed overrides)
     raw = ConfigLoader.load_yaml_with_extends(args.config)
-    extra = ((raw.get("custom") or {}).get("extra") or {}).get("rollout_backend_bench") or {}
+    extra = ((raw.get("custom") or {}).get("extra") or {}).get(
+        "rollout_backend_bench"
+    ) or {}
     if isinstance(extra, dict) and args.seed is None:
         try:
             seed = int(extra.get("seed", seed))
@@ -1060,14 +1096,20 @@ def _run_single_process(args: argparse.Namespace) -> int:
             pass
 
     _set_all_seeds(seed)
-    line_indices, infer_requests, sample_meta = _build_infer_requests_and_gt(bench=bench, seed=seed)
+    line_indices, infer_requests, sample_meta = _build_infer_requests_and_gt(
+        bench=bench, seed=seed
+    )
     # Attach line_idx to meta for matching helpers.
     for i, meta in enumerate(sample_meta):
         meta["line_idx"] = int(line_indices[i])
 
     # If output_dir is explicitly provided (driver mode), treat it as the run directory.
     explicit_out_dir = args.output_dir is not None
-    run_dir = Path(bench.output_dir) if explicit_out_dir else (Path(bench.output_dir) / _now_tag())
+    run_dir = (
+        Path(bench.output_dir)
+        if explicit_out_dir
+        else (Path(bench.output_dir) / _now_tag())
+    )
     _safe_mkdir(run_dir)
 
     write_vis_jsonl = not bool(args.no_vis_jsonl)
@@ -1086,10 +1128,18 @@ def _run_single_process(args: argparse.Namespace) -> int:
     for b in backends:
         out_dir = run_dir / f"{run_id}_{b}"
         _safe_mkdir(out_dir)
-        logger.info("Running backend=%s on physical_gpu=%s (seed=%s)", b, physical_gpu_id, seed)
+        logger.info(
+            "Running backend=%s on physical_gpu=%s (seed=%s)", b, physical_gpu_id, seed
+        )
         res = _run_backend(
-            backend=b, bench=bench, seed=seed, line_indices=line_indices, infer_requests=infer_requests,
-            sample_meta=sample_meta, write_vis_jsonl=write_vis_jsonl, out_dir=out_dir,
+            backend=b,
+            bench=bench,
+            seed=seed,
+            line_indices=line_indices,
+            infer_requests=infer_requests,
+            sample_meta=sample_meta,
+            write_vis_jsonl=write_vis_jsonl,
+            out_dir=out_dir,
         )
         results.append(res)
 
@@ -1122,7 +1172,11 @@ def _run_multi_gpu(args: argparse.Namespace) -> int:
         # Fall back to nvidia-smi list.
         try:
             out = subprocess.check_output(["nvidia-smi", "-L"], text=True)
-            gpu_ids = [i for i, _ in enumerate(out.splitlines()) if _.strip().startswith("GPU ")]
+            gpu_ids = [
+                i
+                for i, _ in enumerate(out.splitlines())
+                if _.strip().startswith("GPU ")
+            ]
         except Exception:
             gpu_ids = [0]
     gpu_ids = [int(i) for i in gpu_ids]
@@ -1130,8 +1184,14 @@ def _run_multi_gpu(args: argparse.Namespace) -> int:
 
     # Config seed.
     raw = ConfigLoader.load_yaml_with_extends(args.config)
-    extra = ((raw.get("custom") or {}).get("extra") or {}).get("rollout_backend_bench") or {}
-    base_seed = int(args.seed) if args.seed is not None else int(extra.get("seed", 17) if isinstance(extra, dict) else 17)
+    extra = ((raw.get("custom") or {}).get("extra") or {}).get(
+        "rollout_backend_bench"
+    ) or {}
+    base_seed = (
+        int(args.seed)
+        if args.seed is not None
+        else int(extra.get("seed", 17) if isinstance(extra, dict) else 17)
+    )
     per_gpu_offset = int(args.per_gpu_seed_offset)
 
     # Spawn one subprocess per GPU per backend (two waves) to keep cleanup simple.

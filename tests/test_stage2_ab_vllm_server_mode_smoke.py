@@ -145,7 +145,9 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     """
 
     if not _env_flag("COORDEXP_RUN_4GPU_SMOKE"):
-        pytest.skip("Set COORDEXP_RUN_4GPU_SMOKE=1 to run the 4-GPU server-mode smoke test.")
+        pytest.skip(
+            "Set COORDEXP_RUN_4GPU_SMOKE=1 to run the 4-GPU server-mode smoke test."
+        )
 
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available in this environment.")
@@ -156,15 +158,21 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
 
     swift_bin = shutil.which("swift")
     if not swift_bin:
-        pytest.skip("`swift` CLI not found on PATH; required to launch the rollout server.")
+        pytest.skip(
+            "`swift` CLI not found on PATH; required to launch the rollout server."
+        )
 
     repo_root = Path(__file__).resolve().parent.parent
     ms_swift_root = _find_ms_swift_root(repo_root)
 
     model_dir = _select_model_dir()
 
-    server_visible = os.environ.get("COORDEXP_STAGE2_AB_SERVER_CUDA_VISIBLE_DEVICES", "0")
-    learner_visible = os.environ.get("COORDEXP_STAGE2_AB_LEARNER_CUDA_VISIBLE_DEVICES", "1")
+    server_visible = os.environ.get(
+        "COORDEXP_STAGE2_AB_SERVER_CUDA_VISIBLE_DEVICES", "0"
+    )
+    learner_visible = os.environ.get(
+        "COORDEXP_STAGE2_AB_LEARNER_CUDA_VISIBLE_DEVICES", "1"
+    )
 
     server_dp = int(os.environ.get("COORDEXP_STAGE2_AB_SERVER_DP", "1"))
     if server_dp <= 0:
@@ -318,8 +326,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         jsonl_paths = sorted(out_root.rglob("logging.jsonl"))
         assert jsonl_paths, (
             f"No logging.jsonl produced under {out_root}. "
-            "Check learner logs for trainer init failures.\n\n"
-            + _tail(learner_log)
+            "Check learner logs for trainer init failures.\n\n" + _tail(learner_log)
         )
         if len(jsonl_paths) > 1:
             raise AssertionError(
@@ -327,7 +334,9 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
             )
 
         records: list[dict[str, Any]] = []
-        for line in jsonl_paths[0].read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in (
+            jsonl_paths[0].read_text(encoding="utf-8", errors="replace").splitlines()
+        ):
             line = line.strip()
             if not line:
                 continue
@@ -344,7 +353,9 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
 
         assert float(merged.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
         assert float(merged.get("rollout/backend_vllm", 0.0)) == pytest.approx(1.0)
-        assert float(merged.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(1.0)
+        assert float(merged.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(
+            1.0
+        )
 
         assert "rollout/seed_base" in merged
         assert float(merged.get("rollout/rollout_len_mean", 0.0)) > 0.0
