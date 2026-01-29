@@ -157,12 +157,12 @@ to the early collapse.
 
 ## Interpreting the "Floor" (bins -> pixels, patch scale intuition)
 
-With norm1000 bins (`0..999`), 1 bin corresponds to ~1/1000 of image width/height in normalized coordinates.
+With 1000 bins (`0..999`) under the canonical mapping `c = k/999`, 1 bin step is ~1/999 in normalized coordinates.
 
-For intuition, using a 640px image dimension:
+For intuition, using a 640px image dimension (pixel coordinate uses `(W-1)*c`):
 
-- 24 bins  ~= 24/1000 * 640 ~= 15.4 px
-- 55 bins  ~= 55/1000 * 640 ~= 35.2 px
+- 24 bins  ~= 24/999 * (640-1) ~= 15.4 px
+- 55 bins  ~= 55/999 * (640-1) ~= 35.2 px
 
 This aligns closely with a 32x32 patch representation:
 

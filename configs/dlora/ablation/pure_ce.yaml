@@ -2,7 +2,7 @@ extends: ../sft_stage1_softce_w1-bbox-only.yaml
 
 training:
   output_dir: ./output/1-26/stage_1/poly_prefer_semantic_max60-pure_ce
-  run_name: epoch_4-pure_ce-LRs-2e-4_1e-4_4e-4-from-base-4B
+  run_name: epoch_4-pure_ce-LRs-2e-4_1e-4_4e-4-from-base-4B-tie_head
   logging_dir: ./tb/1-26/stage_1/poly_prefer_semantic_max60-pure_ce
 
 custom:

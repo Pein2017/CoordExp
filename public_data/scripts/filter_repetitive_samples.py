@@ -120,8 +120,8 @@ def _select_spatially_diverse(
             fallback.append(idx)
             continue
         x, y = c
-        gx = int(max(0, min(grid - 1, math.floor((x / 1000.0) * grid))))
-        gy = int(max(0, min(grid - 1, math.floor((y / 1000.0) * grid))))
+        gx = int(max(0, min(grid - 1, math.floor((x / 999.0) * grid))))
+        gy = int(max(0, min(grid - 1, math.floor((y / 999.0) * grid))))
         buckets[(gx, gy)].append(idx)
 
     # deterministic but slightly randomized within cell (seeded rng)
