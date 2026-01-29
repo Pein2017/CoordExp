@@ -13,12 +13,12 @@ Design goals (repo conventions):
 
 Example (single GPU):
   CUDA_VISIBLE_DEVICES=0 /root/miniconda3/envs/ms/bin/python \
-    analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+    scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py \
     --config configs/bench/rollout_backend_bench.yaml --backend both
 
 Example (use all GPUs in parallel; recommended):
   /root/miniconda3/envs/ms/bin/python \
-    analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+    scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py \
     --config configs/bench/rollout_backend_bench.yaml --multi_gpu
 """
 

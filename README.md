@@ -13,7 +13,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - `configs/` – YAMLs (base, LoRA variants)
 - `scripts/` – model utilities (e.g., `scripts/tools/expand_coord_vocab.py`)
 - `public_data/scripts/` – data utilities (converters, resize, coord-token conversion)
-- `patent/` – background draft for CoordExp method
+- `docs/notes/patent/` – background draft for CoordExp method
 - `AGENTS.md` – project instructions
 
 ## Quick start

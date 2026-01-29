@@ -7,7 +7,6 @@
 !docs/
 !demo/
 !scripts/
-!analysis/
 !openspec/
 !vis_tools/
 !data_conversion/
@@ -16,7 +15,6 @@
 !.cursor/
 !references/
 !public_data/
-!patent/
 !progress/
 !README.md
 !.cursor/**
@@ -27,7 +25,6 @@
 !docs/**/*
 !demo/**
 !scripts/**
-!analysis/**
 !openspec/**
 !vis_tools/**
 !data_conversion/**
@@ -43,7 +40,6 @@
 !public_data/**/*.py
 !public_data/**/*.md
 !public_data/**/*.sh
-!patent/**/*.md
 !progress/**
 
 # Ignore common Python cache folders

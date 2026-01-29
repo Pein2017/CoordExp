@@ -1,7 +1,7 @@
 # Rollout backend benchmark (ckpt-3106) with reduced vLLM KV-cache reservation.
 #
 # Usage (CUDA 0,1):
-#   /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+#   /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py \
 #     --config configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml --multi_gpu --gpus 0,1
 
 extends: rollout_backend_bench_ckpt3106.yaml
@@ -12,4 +12,3 @@ custom:
       vllm:
         # Reduce reserved GPU memory for KV cache to lower peak VRAM.
         gpu_memory_utilization: 0.5
-

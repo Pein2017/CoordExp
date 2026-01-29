@@ -197,7 +197,7 @@ These are known footgun locations to update when applying the refinements:
   - `src/datasets/preprocessors/augmentation.py` (restoring `_coord_token_norm`)
   - tests referencing `/1000` (e.g., `tests/coord_tokens/test_augmentation_roundtrip.py`)
   - `src/trainers/rollout_matching_sft.py` (`_mask_iou_norm1000` projects with `R/1000` today; re-express with `/999` + `(R-1)` scaling)
-  - `analysis/rollout_backend_bench/benchmark_rollout_backends.py` (bin->pixel projection uses `/1000` today)
+  - `scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py` (bin->pixel projection uses `/1000` today)
   - `public_data/scripts/filter_repetitive_samples.py` (grid projection uses `/1000` today)
   - `public_data/scripts/convert_to_coord_tokens.py` (binning uses `*1000.0` today; must become `*999.0`)
   - OpenSpec / docs references that still claim `k/1000` normalization (must be updated by the spec agent):

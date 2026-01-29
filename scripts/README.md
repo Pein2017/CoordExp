@@ -18,9 +18,11 @@ organized utilities used by docs and research workflows.
 ## Utilities (organized)
 
 - Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/`
+- Tooling helpers: `scripts/tools/` (incl. `scripts/tools/workspace_gc.sh`)
 - Small pipelines / workflow wrappers: `scripts/pipelines/`
 
 ## Deprecated
 
-Deprecated wrappers are kept under `scripts/deprecated/` for reference.
+Deprecated wrappers are removed. Prefer:
+- `scripts/run_vis.sh`
+- `vis_tools/vis_coordexp.py`

@@ -1,10 +1,10 @@
 # Rollout backend benchmark: HF (transformers) vs vLLM for rollout-stage inference.
 #
 # NOTE: This YAML is for analysis/benchmarking only (not an "official" launch config).
-# The runner lives under `analysis/rollout_backend_bench/`.
+# The runner lives under `scripts/analysis/rollout_backend_bench/`.
 #
 # Usage:
-#   /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+#   /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py \
 #     --config configs/bench/rollout_backend_bench.yaml --multi_gpu
 #
 # Notes:
@@ -67,4 +67,3 @@ custom:
         max_num_seqs: 64
         enforce_eager: true
         disable_custom_all_reduce: true
-

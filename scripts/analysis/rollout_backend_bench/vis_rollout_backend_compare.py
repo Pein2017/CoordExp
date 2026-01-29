@@ -1,7 +1,7 @@
 """Visualization: compare rollout predictions between HF and vLLM backends.
 
 Input is the `compare_*.jsonl` produced by:
-  analysis/rollout_backend_bench/benchmark_rollout_backends.py
+  scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py
 
 Each record should contain:
   - image, width, height
@@ -10,7 +10,7 @@ Each record should contain:
   - pred_vllm: List[{type, points, desc}]     (pixel-space)
 
 Usage:
-  /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/vis_rollout_backend_compare.py \\
+  /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/vis_rollout_backend_compare.py \\
     --compare_jsonl output/bench/rollout_backend_bench/<run>/compare_gpu0_seed17.jsonl \\
     --save_dir vis_out/rollout_backend_compare --limit 50
 """

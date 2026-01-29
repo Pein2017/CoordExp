@@ -9,7 +9,7 @@ It is intentionally *not* wired as an "official" launch script.
 
 ## Runner
 
-- `analysis/rollout_backend_bench/benchmark_rollout_backends.py`
+- `scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py`
   - HF backend: `swift.llm.PtEngine`
   - vLLM backend: `swift.llm.VllmEngine`
 
@@ -32,4 +32,3 @@ Lowering it:
 - reduces peak VRAM usage (KV cache shrinks)
 - may reduce throughput only when you rely on high concurrency
 - can fail if too low to support the chosen `max_model_len`
-

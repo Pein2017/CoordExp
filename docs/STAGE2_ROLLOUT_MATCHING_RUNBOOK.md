@@ -330,7 +330,7 @@ with either:
 - vLLM backend: `swift.llm.VllmEngine`
 
 Benchmark runner (analysis-only, not an official launch script):
-- `analysis/rollout_backend_bench/benchmark_rollout_backends.py`
+- `scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py`
 
 Configs used:
 - `configs/bench/rollout_backend_bench_ckpt3106.yaml` (vLLM `gpu_memory_utilization=0.85`)
@@ -358,9 +358,9 @@ Interpretation / gotchas:
   a vLLM engine on the same GPU as stage-2 training forward/backward unless you have ample headroom.
 
 Reproduce (CUDA 0,1):
-- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106.yaml --multi_gpu --gpus 0,1`
-- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml --multi_gpu --gpus 0,1`
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106.yaml --multi_gpu --gpus 0,1`
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py --config configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml --multi_gpu --gpus 0,1`
 
 Optional visual sanity check (renders GT vs HF vs vLLM):
 - `export ROOT_IMAGE_DIR=public_data/lvis/rescale_32_768_poly_20`
-- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python analysis/rollout_backend_bench/vis_rollout_backend_compare.py --compare_jsonl output/bench/rollout_backend_bench/<run>/compare_gpu0_seed17.jsonl --save_dir vis_out/rollout_backend_compare --limit 50`
+- `PYTHONPATH=. /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/vis_rollout_backend_compare.py --compare_jsonl output/bench/rollout_backend_bench/<run>/compare_gpu0_seed17.jsonl --save_dir vis_out/rollout_backend_compare --limit 50`
