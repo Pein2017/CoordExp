@@ -1,6 +1,10 @@
 # Ignore everything by default
 *
 
+# IMPORTANT:
+# - This repo uses an allowlist below to decide what is tracked.
+# - If you add a new top-level folder that should be versioned, add it to the allowlist.
+#
 # But track these specific folders
 !src/
 !configs/
