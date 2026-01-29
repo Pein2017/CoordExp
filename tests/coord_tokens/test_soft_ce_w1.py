@@ -36,6 +36,6 @@ def test_wasserstein_1_cdf_matches_dirac_shift_distance():
     q[0, 12] = 1.0
 
     w1 = wasserstein_1_cdf(p, q, normalize=True)
-    # With normalization by K=1000, a 2-bin shift yields 2/1000.
-    assert abs(float(w1.item()) - (2.0 / 1000.0)) < 1e-6
+    # With normalization by (K-1)=999, a 2-bin shift yields 2/999.
+    assert abs(float(w1.item()) - (2.0 / 999.0)) < 1e-6
 

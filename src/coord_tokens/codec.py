@@ -62,24 +62,57 @@ def ints_to_tokens(values: Iterable[int]) -> List[str]:
     return [int_to_token(int(v)) for v in values]
 
 
-def normalized_from_ints(values: Sequence[int], scale: float = 1000.0) -> List[float]:
+def normalized_from_ints(values: Sequence[int], scale: float = 999.0) -> List[float]:
     return [float(v) / float(scale) for v in values]
 
 
-def get_coord_token_ids(tokenizer: Any) -> List[int]:
+def get_coord_token_ids(tokenizer: Any, *, validate: bool = False) -> List[int]:
+    """Return tokenizer ids for `<|coord_0|>` ... `<|coord_999|>`.
+
+    If `validate=True`, fail fast when the tokenizer does not contain the full coord
+    sub-vocabulary (e.g. missing tokens mapping to `unk_token_id` or a shared id).
+    """
     tokens = ints_to_tokens(range(0, 1000))
-    return tokenizer.convert_tokens_to_ids(tokens)
+    ids_raw = tokenizer.convert_tokens_to_ids(tokens)
+    # HF tokenizers return a list for list input, but keep this defensive for custom tokenizers.
+    if isinstance(ids_raw, int):
+        ids = [int(ids_raw)]
+    else:
+        ids = [int(x) if x is not None else -1 for x in list(ids_raw)]
+
+    if validate:
+        if len(ids) != 1000:
+            raise ValueError(
+                f"coord token id lookup must return 1000 ids; got {len(ids)}. "
+                "Check tokenizer.convert_tokens_to_ids implementation."
+            )
+        if any(int(i) < 0 for i in ids):
+            bad = [j for j, i in enumerate(ids) if int(i) < 0][:5]
+            raise ValueError(
+                "Tokenizer is missing required coord tokens <|coord_0|>.. <|coord_999|> "
+                f"(example missing indices: {bad}). Ensure vocab expansion/special tokens include coord tokens."
+            )
+        if len(set(ids)) != 1000:
+            # Most commonly happens when coord tokens map to unk_token_id.
+            raise ValueError(
+                "Tokenizer does not map coord tokens to 1000 distinct ids. "
+                "This will silently break coord-bin semantics; ensure coord tokens are added to the tokenizer vocab."
+            )
+
+    return ids
 
 
 def build_coord_token_id_mask(tokenizer: Any, *, device=None):
     import torch
 
-    ids = get_coord_token_ids(tokenizer)
+    ids = get_coord_token_ids(tokenizer, validate=False)
     vocab_size = getattr(tokenizer, "vocab_size", None)
     if vocab_size is None:
         vocab_size = max(ids) + 1 if ids else 0
     mask = torch.zeros(int(vocab_size), dtype=torch.bool, device=device)
     for idx in ids:
-        if idx < mask.numel():
-            mask[idx] = True
+        if int(idx) < 0:
+            continue
+        if int(idx) < mask.numel():
+            mask[int(idx)] = True
     return mask

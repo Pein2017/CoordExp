@@ -752,7 +752,7 @@ class CoordSoftCEW1LossMixin:
         tokenizer = getattr(getattr(self, "template", None), "tokenizer", None)
         if tokenizer is None:
             return []
-        ids = get_coord_token_ids(tokenizer)
+        ids = get_coord_token_ids(tokenizer, validate=True)
         setattr(self, "_coord_token_ids", ids)
         return ids
 

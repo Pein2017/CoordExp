@@ -30,7 +30,7 @@ def annotate_coord_tokens(
     When coord tokens (or pre-quantized ints) are detected, the function stores:
       - obj["_coord_tokens"][<geom>]    -> list[str] tokens
       - obj["_coord_token_ints"][<geom>] -> list[int]
-      - obj["_coord_token_norm"][<geom>] -> list[float] normalized (k/1000)
+      - obj["_coord_token_norm"][<geom>] -> list[float] normalized (k/999)
 
     Returns True if any coord-token geometry was found.
     """

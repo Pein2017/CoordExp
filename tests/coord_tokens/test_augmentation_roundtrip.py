@@ -170,4 +170,4 @@ def test_coord_tokens_roundtrip_after_affine(monkeypatch):
     objs = out["objects"]
 
     assert objs[0]["bbox_2d"] == ["<|coord_11|>", "<|coord_21|>", "<|coord_31|>", "<|coord_41|>"]
-    assert objs[0]["_coord_token_norm"]["bbox_2d"] == [v / 1000.0 for v in [11, 21, 31, 41]]
+    assert objs[0]["_coord_token_norm"]["bbox_2d"] == [v / 999.0 for v in [11, 21, 31, 41]]

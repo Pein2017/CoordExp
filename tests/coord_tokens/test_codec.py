@@ -31,7 +31,7 @@ def test_token_round_trip_default_range():
     token = int_to_token(123)
     assert token == "<|coord_123|>"
     assert token_to_int(token) == 123
-    assert normalized_from_ints([123]) == [0.123]
+    assert normalized_from_ints([123]) == pytest.approx([123.0 / 999.0])
 
 
 def test_token_1000_rejected():

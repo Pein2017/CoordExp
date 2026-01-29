@@ -159,7 +159,7 @@ def wasserstein_1_cdf(
     Args:
         pred_probs: [N, K] predicted distribution (sum to 1)
         target_probs: [N, K] target distribution (sum to 1)
-        normalize: if True, divide by K (so distances are ~in "normalized bin" units)
+        normalize: if True, divide by (K-1) so distances are in [0,1] for one-hot shifts
 
     Returns:
         w1: [N] per-token Wasserstein-1 distance
@@ -185,9 +185,11 @@ def wasserstein_1_cdf(
 
     w1 = (cdf_p - cdf_q).abs().sum(dim=-1)
     if normalize:
+        # Normalize from "bin units" to [0,1] by dividing by the max possible shift.
+        # For K ordered bins (0..K-1), the maximum distance is (K-1).
         k = int(pred_probs.shape[-1])
-        if k > 0:
-            w1 = w1 / float(k)
+        if k > 1:
+            w1 = w1 / float(k - 1)
     w1 = torch.nan_to_num(w1, nan=0.0, posinf=LOGIT_CLAMP_ABS, neginf=0.0)
     return w1
 
