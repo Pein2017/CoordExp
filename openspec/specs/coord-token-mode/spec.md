@@ -47,13 +47,13 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - THEN validation, template normalization, and losses behave exactly as today (pixel → norm1000 in template; text untouched).
 
 ### Requirement: Coord token codec utilities
-- The system SHALL provide a reusable codec that maps `<|coord_k|>` ↔ int k ↔ normalized float k/1000 and builds a coord-token id mask for CE/logit restriction.
+- The system SHALL provide a reusable codec that maps `<|coord_k|>` ↔ int k ↔ normalized float k/999 and builds a coord-token id mask for CE/logit restriction.
 - The supported k range SHALL be 0..999 inclusive.
 
 #### Scenario: Token round-trip
 - GIVEN a coord token string `<|coord_123|>`
 - WHEN passed through the codec
-- THEN it returns int 123 and normalized 0.123, and converting back yields the same token string.
+- THEN it returns int 123 and normalized 123/999 (≈ 0.123123...), and converting back yields the same token string.
 
 ### Requirement: Token-aware validation
 - The loader/validator SHALL accept geometry expressed as coord tokens (arrays of `<|coord_k|>`), provided width/height metadata is present to allow pixel recovery.
@@ -73,7 +73,7 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - THEN it does not rescale bbox values and leaves the coord tokens untouched in text.
 
 ### Requirement: Offline numeric→coord-token converter
-- The system SHALL provide a CLI/utility to convert numeric JSONL geometry to `<|coord_k|>` tokens using the same rounding rule as the current pipeline (`round(x/width*1000)`), optionally preserving a numeric copy for losses. Default output tokens SHALL lie in 0..999 inclusive; if any value would round to 1000 the converter SHALL either allow it via a flag or raise clearly.
+- The system SHALL provide a CLI/utility to convert numeric JSONL geometry to `<|coord_k|>` tokens using the same rounding rule as the current pipeline (`round(999 * x / max(1, width-1))` for x and `round(999 * y / max(1, height-1))` for y), optionally preserving a numeric copy for losses. Output tokens SHALL lie in 0..999 inclusive (no 1000 bin exists under this convention).
 
 #### Scenario: Conversion produces tokenized JSONL
 - GIVEN a numeric JSONL file
@@ -141,4 +141,3 @@ The system SHALL provide utilities to build unimodal soft targets over ordered c
 - **GIVEN** two identical normalized distributions over coord bins
 - **WHEN** W1(CDF) is computed
 - **THEN** the result is exactly zero (up to numerical tolerance).
-

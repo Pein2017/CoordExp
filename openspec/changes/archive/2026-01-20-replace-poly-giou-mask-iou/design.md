@@ -57,6 +57,6 @@ This yields values in [0,1] with smooth gradients near boundaries.
 - Eval uses `eval_` prefix via existing metric wrapper.
 
 ## Compatibility Notes
-- Coordinates are normalized from coord tokens by `/1000`; clamping ensures valid [0,1] input.
+- Coordinates are normalized from coord tokens by `/999`; clamping ensures valid [0,1] input.
 - Packing is unaffected: spans remain aligned with coord positions in labels.
 - Bbox GIoU and line L1 paths are unchanged.

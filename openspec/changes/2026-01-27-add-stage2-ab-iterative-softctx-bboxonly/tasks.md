@@ -1,0 +1,42 @@
+## 1. Implementation
+- [x] 1.1 Add a new trainer variant entrypoint (e.g., `stage2_ab_training`) and runtime wiring in `src/sft.py`:
+  - [x] 1.1.1 Trainer class selection via `resolve_trainer_cls`.
+  - [x] 1.1.2 Treat Stage-2 AB as a rollout-style trainer where needed: identity collator + `remove_unused_columns=False`, dataset packing disabled (trainer does dynamic post-rollout packing), and `custom.extra.rollout_matching` config injection.
+- [x] 1.2 Implement deterministic Stage-2 channel scheduler (A/B selection) driven purely by `global_step` + YAML config.
+- [x] 1.3 Implement Channel-A batch preparation (GT teacher-forced sequence; JSON-only) and iterative soft self-context N× forwards:
+  - [x] 1.3.1 Default early iterations to `no_grad` and final iteration with grad.
+  - [x] 1.3.2 Use Qwen3-VL compatible forward semantics (`input_ids` XOR `inputs_embeds`) and correct `position_ids` handling under padding_free packing.
+  - [x] 1.3.3 Multimodal safety guardrail: rebuild fresh base `inputs_embeds` each iteration (embedding-module call on teacher-forced `input_ids`), then scatter-update only coord-slot rows; never reuse post-forward embeddings.
+  - [x] 1.3.4 Cache safety: force `use_cache=False` for Channel-A training forwards and assert no `past_key_values` are carried across iterations.
+- [x] 1.4 Implement bbox-only decoded-geometry loss utilities:
+  - [x] 1.4.1 CoordExp expectation decode (`k = clamp(round(999*c),0,999)`; decode `k/999`) -> bbox.
+  - [x] 1.4.2 Bbox L1 + (generalized) IoU loss (no DETR head).
+- [x] 1.5 Implement Channel-B integration by reusing rollout-matching infra while adding bbox-geometry loss on matched pairs:
+  - [x] 1.5.1 Enforce bbox-only v1: GT non-bbox geometry (poly/unknown/other) or malformed bbox raises; predicted non-bbox/malformed bboxes are dropped + counted.
+  - [x] 1.5.2 Extend meta to carry per-object bbox coord positions grouped by object for loss.
+  - [x] 1.5.3 Implement deterministic invalid-rollout fallback: if rollout parsing is not append-ready (e.g., missing `{`), use empty prefix `{`, count `invalid_rollout`, and continue via FN append.
+- [x] 1.6 Implement CE masking/weighting for `desc` tokens while keeping JSON structure tokens supervised:
+  - [x] 1.6.1 Keep existing FN-append tail construction.
+  - [x] 1.6.2 Make `desc` CE weight configurable (including “fully masked” ablation).
+- [x] 1.7 Add unit tests (fast, deterministic):
+  - [x] 1.7.1 Coord bin encode/decode consistency (k/999 only).
+  - [x] 1.7.2 Iterative softctx loop shape/offset correctness (pos vs logits shift).
+  - [x] 1.7.3 Bbox-only v1 guardrail (GT non-bbox geometry, out-of-range bins, or invalid bbox ordering raises).
+  - [x] 1.7.4 Invalid-rollout fallback uses `{` deterministically and increments counters.
+  - [x] 1.7.5 Rollout seed base derivation is deterministic and matches the spec formula.
+  - [x] 1.7.6 Expectation decode is `c_hat = E[k]/999` (not argmax) and geometry losses operate in normalized `[0,1]` space.
+  - [x] 1.7.7 Packing/mRoPE regression: every Channel-A iteration forward passes correct 4-row `position_ids` (`[text_position_ids; mRoPE]`) and respects packed boundaries (no cross-segment leakage).
+  - [x] 1.7.8 Channel-A cache safety: training forwards must have `use_cache=False` and `outputs.past_key_values is None`.
+  - [x] 1.7.9 Multimodal strict regression: placeholder embedding invariance (bitwise). For batches with `pixel_values`, placeholder rows MUST remain bitwise unchanged after coord-slot scatter-update (only coord-slot rows may differ).
+  - [x] 1.7.10 Logits coverage guardrail: ensure no `logits_to_keep`-style slicing is enabled for training forwards (full seq logits required for CE + coord decoding).
+
+- [x] 1.8 Repo-wide `/999` normalization cleanup (delete `/1000`-based bin normalization)
+  - [x] 1.8.1 Update `src/coord_tokens/codec.py` and all tests so any "bin -> normalized float" uses `/999` (not `/1000`).
+  - [x] 1.8.2 Update `src/coord_tokens/validator.py` / augmentation / any metadata helpers that normalize coord bins so they use `/999` (or remove the concept of "normalized bin by /1000" entirely).
+  - [x] 1.8.3 Update analysis/scripts that project bins to pixels/grids so they use `/999` normalized floats and scale by `(R-1)` (avoid reintroducing `/1000`).
+  - [x] 1.8.4 Update OpenSpec / docs that mention `/1000` normalization (e.g., coord-token-mode spec) so the entire repo has a single canonical convention.
+
+## 2. Validation
+- [x] 2.1 Run `openspec validate 2026-01-27-add-stage2-ab-iterative-softctx-bboxonly --strict`.
+- [x] 2.2 Add a minimal config YAML example (under `configs/`) that exercises both channels deterministically (A-only, B-only, and mixed schedule).
+- [x] 2.3 Run the tensor-flow audit script used in `progress/analysis-report.md` (or an adapted equivalent) to verify packing/position/caching invariants end-to-end for the new trainer.

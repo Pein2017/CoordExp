@@ -4,11 +4,11 @@
 - JSONL contract today: geometry fields are numeric pixel coords; templates normalize to norm1000 and the text path may emit `emit_norm` converted numbers.
 - Research goal: run training where the assistant text already contains `<|coord_k|>` tokens and the raw JSONL geometry may be stored as those tokens. We still need numeric forms for geometry losses and eval.
 - We must not break the existing numeric path; instead add a gated “coord-token mode.”
-- Token range decision: coord vocab is currently expanded to `<|coord_0|>` .. `<|coord_999|>` (no 1000 by default; optional if needed).
+- Token range decision: coord vocab is expanded to `<|coord_0|>` .. `<|coord_999|>` (no 1000 bin exists under the canonical convention).
 
 ## Proposed Components (under `src/`)
 1) **coord_tokens/codec.py**
-   - Bidirectional mapping: token string ↔ int k ↔ normalized float k/1000.
+   - Bidirectional mapping: token string ↔ int k ↔ normalized float k/999.
    - Helper to detect tokenized coord lists and convert to numeric tensors.
    - Mask builder to identify coord token ids for CE masking / logit restriction.
 
@@ -23,7 +23,7 @@
 
 4) **tools/convert_to_coord_tokens.py** (or `scripts/coord_tokens/convert.py`)
    - Offline converter: numeric bbox/poly/line → coord-token arrays in assistant text and/or geometry fields, preserving a numeric copy for losses.
-   - Deterministic rounding rule: round(x/width*1000) consistent with current pipeline.
+   - Deterministic rounding rule: `round(999 * x / max(1, width-1))` (and similarly for y/height).
 
 5) **loss helpers** (extend existing loss module or new `coord_tokens/loss.py`)
    - Expectation decoder over coord-token logits.
