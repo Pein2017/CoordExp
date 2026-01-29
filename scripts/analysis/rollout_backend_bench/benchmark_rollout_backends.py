@@ -35,7 +35,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -207,7 +207,7 @@ def _nvidia_smi_mem_used_mb(physical_gpu_id: int) -> int:
         out = subprocess.check_output(
             [
                 "nvidia-smi",
-                f"--query-gpu=memory.used",
+                "--query-gpu=memory.used",
                 "--format=csv,nounits,noheader",
                 "-i",
                 str(int(physical_gpu_id)),

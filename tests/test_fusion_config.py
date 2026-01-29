@@ -135,7 +135,7 @@ def test_fusion_extends_diamond_is_not_a_cycle(tmp_path: Path):
     d_path = base_dir / "d.yaml"
     d_path.write_text(
         textwrap.dedent(
-            f"""
+            """
             targets:
               - dataset: jsonl
                 name: toy

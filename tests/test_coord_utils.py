@@ -49,7 +49,6 @@ except Exception:
 from src.common.geometry import (
     bbox_from_points,
     bbox_to_quadrilateral,
-    coerce_point_list,
     denorm_and_clamp,
     is_degenerate_bbox,
 )
