@@ -21,7 +21,7 @@ This branch includes:
 
 Use this checkpoint as the initial model:
 
-`output/1-26/stage_1/poly_prefer_semantic_max60-pure_ce/v0-20260126-162638/epoch_4-pure_ce-LRs-2e-4_1e-4_4e-4-from-base-4B/merged_checkpoint-1516_20260128-130701`
+`output/1-26/checkpoint-1516-merged`
 
 ## Dataset for Stage-2 AB (bbox-only, coord-token JSONL)
 
@@ -171,4 +171,3 @@ so keep one `base_url`).
   - reduce `--vllm_max_model_len`, reduce `--vllm_gpu_memory_utilization`, reduce `max_new_tokens` in learner YAML.
 - Rollout outputs missing or non-JSON:
   - ensure dataset uses correct `ROOT_IMAGE_DIR` (runner auto-sets it to JSONL parent).
-
