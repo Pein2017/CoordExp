@@ -306,13 +306,19 @@ def _to_pixel(points_norm1000: Sequence[int], width: int, height: int) -> List[i
     out: List[int] = []
     w = max(1, int(width))
     h = max(1, int(height))
+
+    # Mirror core conversion: frac=v/999, then scale by (W-1)/(H-1).
+    denom_x = max(1, w - 1)
+    denom_y = max(1, h - 1)
+
     for i, v in enumerate(points_norm1000):
         vv = int(v)
         vv = 0 if vv < 0 else 999 if vv > 999 else vv
+        frac = float(vv) / 999.0
         if i % 2 == 0:
-            out.append(int(round(vv / 1000.0 * w)))
+            out.append(int(round(frac * denom_x)))
         else:
-            out.append(int(round(vv / 1000.0 * h)))
+            out.append(int(round(frac * denom_y)))
     return out
 
 

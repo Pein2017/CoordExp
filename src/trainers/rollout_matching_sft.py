@@ -818,8 +818,10 @@ def _mask_iou_norm1000(
         return [float(min(max(int(v), 0), 999)) for v in values]
 
     def _project(values: Sequence[float]) -> List[float]:
-        # Project [0,999] -> [0,R) continuous coordinates.
-        scale = float(r) / 1000.0
+        # Project [0,999] -> [0,R-1] continuous coordinates.
+        # Mirror ints_to_pixels_norm1000: frac=v/999, then scale by (R-1).
+        denom = 999.0
+        scale = float(max(r - 1, 1)) / denom
         return [float(v) * scale for v in values]
 
     def _as_poly(kind: GeomType, pts: Sequence[int]) -> List[float]:
@@ -2646,6 +2648,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _packing_drop_last(self) -> bool:
         return bool(self._cfg("packing_drop_last", True))
 
+    def _post_rollout_pack_scope(self) -> str:
+        """Scope for post-rollout packing.
+
+        - "micro" (default): pack within the current micro-batch (no dataloader lookahead).
+        - "window": pack across one gradient-accumulation window (requires lookahead wrapper).
+
+        Config key: custom.extra.rollout_matching.post_rollout_pack_scope
+        """
+
+        scope_raw = self._cfg("post_rollout_pack_scope", "micro")
+        scope = str(scope_raw).strip().lower()
+        if scope in {"window"}:
+            return "window"
+        if scope in {"micro", "step", "batch"}:
+            return "micro"
+        logger.warning(
+            "Unknown post_rollout_pack_scope=%r; defaulting to 'micro'", scope_raw
+        )
+        return "micro"
+
     @staticmethod
     def _extract_encoded_len(encoded: Mapping[str, Any]) -> int:
         length = encoded.get("length")
@@ -2788,7 +2810,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         tok = getattr(getattr(self, "template", None), "tokenizer", None)
         if tok is None:
             return []
-        ids = get_coord_token_ids(tok)
+        ids = get_coord_token_ids(tok, validate=True)
         self._coord_token_ids = [int(i) for i in ids]
         self._coord_id_to_bin = {int(tok_id): int(i) for i, tok_id in enumerate(ids)}
         return self._coord_token_ids
@@ -3212,6 +3234,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             vllm_engine_kwargs or {},
         )
 
+        dist_backend_raw = vcfg.get("distributed_executor_backend")
+        if dist_backend_raw is None:
+            dist_backend = "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
+        else:
+            dist_backend = str(dist_backend_raw).strip() or (
+                "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
+            )
+
         try:
             from swift.llm import VllmEngine
 
@@ -3232,9 +3262,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 max_lora_rank=max_lora_rank,
                 enable_prefix_caching=enable_prefix_caching,
                 engine_kwargs=vllm_engine_kwargs or None,
-                distributed_executor_backend="external_launcher",
+                distributed_executor_backend=dist_backend,
             )
         except Exception as exc:
+            logger.exception(
+                "vLLM engine init failed (backend=%s): %s", dist_backend, exc
+            )
             raise RuntimeError(
                 "Failed to initialize vLLM engine for rollout generation. "
                 "Set rollout_backend: hf to bypass vLLM."

@@ -1,0 +1,23 @@
+# Stage-2 AB training (bbox-only v1): Channel-A only (iterative soft self-context)
+#
+# This is a minimal YAML example intended for smoke testing the trainer wiring.
+
+extends: ../rollout_matching_sft_template.yaml
+
+custom:
+  trainer_variant: stage2_ab_training
+
+  # Bbox-only LVIS dataset (coord-token JSONL).
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+
+  # Rollout config is unused in A-only runs, but kept for schema compatibility.
+  extra:
+    stage2_ab:
+      schedule:
+        pattern: ["A"]
+      n_softctx_iter: 2
+      desc_ce_weight: 1.0
+      bbox_l1_weight: 1.0
+      bbox_giou_weight: 1.0
+      softctx_temperature: 1.0

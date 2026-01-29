@@ -1,0 +1,61 @@
+# Smoke: stage2-ab B-only on LVIS bbox-only max60 (coord-token) starting from stage-1 merged ckpt-1516.
+#
+# Validates: HF rollout -> parse/match -> FN append -> teacher-forced loss (real backward).
+extends: b_only.yaml
+
+global_max_length: 8192
+
+model:
+  model: output/1-26/stage_1/poly_prefer_semantic_max60-pure_ce/v0-20260126-162638/epoch_4-pure_ce-LRs-2e-4_1e-4_4e-4-from-base-4B/merged_checkpoint-1516_20260128-130701
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  use_dora: false
+  freeze_llm: false
+  freeze_vit: false
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 8
+  lora_alpha: 16
+  lora_dropout: 0.0
+  lora_bias: none
+
+deepspeed:
+  enabled: false
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516
+  run_name: b_only_hf_sample_smoke
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/b_only_hf_sample_smoke
+
+  max_steps: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 1
+
+  logging_steps: 1
+  logging_first_step: true
+
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 4
+  val_sample_limit: 2
+  extra:
+    rollout_matching:
+      rollout_backend: hf
+      rollout_generate_batch_size: 1
+      decode_mode: greedy
+      max_new_tokens: 256
+      # Enable sampling so we exercise the HF seed save/restore context.
+      temperature: 0.7
+      repetition_penalty: 1.05
