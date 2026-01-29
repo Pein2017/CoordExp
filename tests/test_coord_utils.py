@@ -75,11 +75,10 @@ def test_degenerate_bbox_flagged():
     assert is_degenerate_bbox(0, 0, 0, 5)
 
 
-def test_parse_prediction_repairs_truncated_json():
+def test_parse_prediction_drops_truncated_json_without_terminator():
     raw = '{"object_1":{"bbox_2d":["<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"], "desc":"box"'
     parsed = parse_prediction(raw)
-    assert len(parsed) == 1
-    assert parsed[0]["points"] == [10, 20, 30, 40]
+    assert parsed == []
 
 
 def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):

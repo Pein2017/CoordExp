@@ -68,12 +68,12 @@ def test_fusion_config_parses_targets_and_sources_and_preserves_order(tmp_path: 
               - dataset: jsonl
                 name: a
                 train_jsonl: a.jsonl
-                template: aux_dense
+                template: bbox_only
             sources:
               - dataset: jsonl
                 name: b
                 train_jsonl: b.jsonl
-                template: aux_dense
+                template: bbox_only
             """
         ).strip()
         + "\n",
@@ -94,7 +94,7 @@ def test_fusion_extends_merges_by_dataset_id(tmp_path: Path):
                 name: vg
                 train_jsonl: vg_train.jsonl
                 val_jsonl: null
-                template: aux_dense
+                template: bbox_only
                 ratio: 0.2
             """
         ).strip()
@@ -140,7 +140,7 @@ def test_fusion_extends_diamond_is_not_a_cycle(tmp_path: Path):
               - dataset: jsonl
                 name: toy
                 train_jsonl: ./train.jsonl
-                template: aux_dense
+                template: bbox_only
             """
         ).strip()
         + "\n",
@@ -200,11 +200,11 @@ def test_fusion_duplicate_dataset_ids_error(tmp_path: Path):
               - dataset: jsonl
                 name: dup
                 train_jsonl: a.jsonl
-                template: aux_dense
+                template: bbox_only
               - dataset: jsonl
                 name: dup
                 train_jsonl: b.jsonl
-                template: aux_dense
+                template: bbox_only
             """
         ).strip()
         + "\n",
@@ -253,7 +253,7 @@ def test_fusion_resolves_dot_paths_relative_to_config_dir(tmp_path: Path):
               - dataset: jsonl
                 name: toy
                 train_jsonl: ./train.jsonl
-                template: aux_dense
+                template: bbox_only
             """
         ).strip()
         + "\n",
@@ -286,7 +286,7 @@ def test_fusion_val_jsonl_null_skips_eval(tmp_path: Path):
                 name: a
                 train_jsonl: a.jsonl
                 val_jsonl: null
-                template: aux_dense
+                template: bbox_only
             """
         ).strip()
         + "\n",
@@ -326,7 +326,7 @@ def test_fusion_dataset_smoke_iterates_and_packs(tmp_path: Path):
                 name: toy
                 train_jsonl: {train_jsonl}
                 val_jsonl: {val_jsonl}
-                template: aux_dense
+                template: bbox_only
                 ratio: 1.0
             """.format(train_jsonl=str(train_jsonl), val_jsonl=str(val_jsonl))
         ).strip()
@@ -443,7 +443,7 @@ def test_offline_merge_is_reproducible_across_python_hash_seeds(tmp_path: Path):
               - dataset: jsonl
                 name: toy
                 train_jsonl: {train_jsonl}
-                template: aux_dense
+                template: bbox_only
                 ratio: 1.0
             """
         ).strip()

@@ -79,14 +79,11 @@ def test_public_data_runner_smoke() -> None:
             shutil.rmtree(p)
 
     try:
-        # --- VG smoke dataset (derived from the existing VG sample JSONL) ---
+        # --- VG-like smoke dataset (fully synthetic; no bundled VG JSONL required) ---
         vg_raw = vg_ds / "raw"
         vg_raw.mkdir(parents=True, exist_ok=True)
-        sample_train = ROOT / "public_data" / "vg" / "sample" / "raw" / "train.jsonl"
-        sample_val = ROOT / "public_data" / "vg" / "sample" / "raw" / "val.jsonl"
-        assert sample_train.is_file(), f"Missing VG sample: {sample_train}"
-        shutil.copyfile(sample_train, vg_raw / "train.jsonl")
-        shutil.copyfile(sample_val, vg_raw / "val.jsonl")
+        _write_tiny_lvis_jsonl(vg_raw / "train.jsonl")
+        _write_tiny_lvis_jsonl(vg_raw / "val.jsonl")
         _write_dummy_images_for_jsonl(vg_raw / "train.jsonl")
         _write_dummy_images_for_jsonl(vg_raw / "val.jsonl")
 
