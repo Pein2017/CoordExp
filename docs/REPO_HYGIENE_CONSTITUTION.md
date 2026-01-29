@@ -15,7 +15,7 @@ Tracked, reviewable:
 - `progress/`: short research notes / decision logs (keep concise; link to `docs/` when something becomes stable).
 
 Not tracked (workspace artifacts; safe to delete):
-- `output/`: training/infer outputs (checkpoints, reports).
+- `output/`: training/infer outputs (checkpoints, reports). **Do not delete**; treat as valuable artifacts.
 - `tb/`: TensorBoard event files.
 - `vis_out/`: visualization outputs.
 - `temp/`, `tmp/`: one-off scratch work.
@@ -60,10 +60,12 @@ For any run you might cite:
 - Log the exact git SHA and config used.
 - Keep evaluation scripts deterministic and versioned.
 
+Retention note:
+- `output/` is considered a persistent workspace artifact (checkpoints + logs). Do not delete it via cleanup scripts.
+
 ## 6) Contract guardrails (do not violate)
 
 - Preserve geometry: never drop/reorder coords; use `src/datasets/geometry.py`.
 - Training uses `do_resize: false` unless explicitly justified in config/docs.
 - Maintain Qwen3-VL chat-template compatibility.
 - Do not edit upstream HF model files (e.g., `modeling_qwen3_vl.py` is off-limits).
-
