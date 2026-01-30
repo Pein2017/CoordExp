@@ -1,0 +1,11 @@
+# Production-like smoke: Stage-2 AB mixed schedule (A,A,B) (bbox-only max60, ckpt-1516),
+# using vLLM server mode (same rollout hyperparameters as prod).
+extends:
+  - ../prod/ab_mixed.yaml
+  - common_prodlike.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516/ab_mixed_vllm_server
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/ab_mixed_vllm_server
+  run_name: smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server
+

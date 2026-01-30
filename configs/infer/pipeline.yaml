@@ -52,7 +52,7 @@ infer:
       # Keep this low to reduce KV-cache pressure and avoid OOM/disconnects.
       vllm_max_num_seqs: 1
       # Target fraction of GPU memory to attempt to use (server should enforce).
-      vllm_gpu_memory_utilization: 0.80
+      vllm_gpu_memory_utilization: 0.7
       # Keep aligned with global_max_length (total input+output budget).
       vllm_max_model_len: 12000
       vllm_enable_prefix_caching: true

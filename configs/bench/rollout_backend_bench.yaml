@@ -14,7 +14,7 @@
 
 extends: ../base.yaml
 
-global_max_length: 4096
+global_max_length: 12000
 
 deepspeed:
   enabled: false
@@ -27,7 +27,7 @@ model:
 
 custom:
   # Use coord-token JSONL so rollout parsing/matching is exercised.
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
 
   # Coord-token mode is required to exercise rollout coord supervision parsing.
   coord_tokens:
@@ -61,7 +61,7 @@ custom:
         attn_impl: flash_attention_2
       vllm:
         # Passed to swift.llm.VllmEngine (vLLM backend)
-        gpu_memory_utilization: 0.85
+        gpu_memory_utilization: 0.7
         tensor_parallel_size: 1
         max_model_len: 4096
         max_num_seqs: 64

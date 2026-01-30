@@ -1,0 +1,11 @@
+# Production-like smoke: Stage-2 AB Channel-A only (bbox-only max60, ckpt-1516).
+# Diff vs prod: only runtime knobs (steps, sample caps, output dirs).
+extends:
+  - ../prod/a_only.yaml
+  - common_prodlike.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516/a_only
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/a_only
+  run_name: smoke_bbox_max60_ckpt1516_a_only
+

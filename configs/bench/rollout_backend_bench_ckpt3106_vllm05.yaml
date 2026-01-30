@@ -11,5 +11,5 @@ custom:
     rollout_backend_bench:
       vllm:
         # Reduce reserved GPU memory for KV cache to lower peak VRAM.
-        gpu_memory_utilization: 0.5
+        gpu_memory_utilization: 0.7
 
