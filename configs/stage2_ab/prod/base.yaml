@@ -1,0 +1,119 @@
+# Production Stage-2 AB ablation base: LVIS bbox-only max60 from ckpt-1516 (merged),
+# vLLM server mode, DoRA ("dlora"), and num_train_epochs=2.
+#
+# This file is meant to be extended by schedule variants so that only the
+# stage2_ab schedule changes across runs (A-only / B-only / AB-mixed).
+extends: ../rollout_matching_sft_template.yaml
+
+# Learner packing length cap (prompt + response + image tokens). One packed sequence per backward.
+global_max_length: 12000
+
+model:
+  model: output/1-26/checkpoint-1516-merged
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  use_dora: true
+  freeze_llm: false
+  freeze_vit: false
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+deepspeed:
+  enabled: false
+
+training:
+  # Variants should override output_dir/logging_dir to avoid clobbering checkpoints.
+  output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2
+  logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2
+
+  num_train_epochs: 2
+  # GPU memory constraint: one packed sequence per backward.
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+
+  # Auto-computes gradient_accumulation_steps based on world_size:
+  # effective_batch_size = per_device_train_batch_size * world_size * grad_accum
+  effective_batch_size: 32
+
+  # Dense logging for apples-to-apples throughput + stability comparison.
+  logging_steps: 1
+  logging_first_step: true
+
+  # Stage-2 AB already logs core rollout/matching metrics on B steps.
+  eval_strategy: "no"
+
+  save_strategy: "steps"
+  save_steps: 200
+  save_total_limit: 2
+  save_delay_steps: 100
+
+  optimizer: multimodal
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  weight_decay: 0.1
+
+custom:
+  trainer_variant: stage2_ab_training
+
+  # Full LVIS bbox-only coord-token JSONLs.
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+
+  # Full dataset (no smoke sampling caps).
+  train_sample_limit: null
+  val_sample_limit: null
+
+  extra:
+    # Default schedule is AB-mixed; variants override this only.
+    stage2_ab:
+      schedule:
+        pattern: ["A", "A", "B"]
+      n_softctx_iter: 2
+      desc_ce_weight: 1.0
+      bbox_l1_weight: 2.0
+      bbox_giou_weight: 1.0
+      softctx_temperature: 1.0
+
+    rollout_matching:
+      rollout_backend: vllm
+      decode_mode: greedy
+      max_new_tokens: 3084
+      temperature: 0.0
+      repetition_penalty: 1.08
+      # How many raw samples feed into ONE packed sequence (per micro-step).
+      # Increasing this improves packing fill but increases total rollouts per optimizer step.
+      rollout_generate_batch_size: 4
+      # Rollout request batching is independent of learner microbatch (packed SFT).
+      rollout_infer_batch_size: 4
+      # Post-rollout packing scope:
+      # - micro (default): each micro-step builds one packed batch (recommended).
+      # - window: pack across one grad-accum window (optional).
+      post_rollout_pack_scope: window
+
+      vllm:
+        mode: server
+        # vLLM engine max_model_len for rollout (prompt + max_new_tokens). Keep this
+        # much smaller than learner `global_max_length` for speed and KV-cache capacity.
+        max_model_len: 4096
+        # Full merged-weight sync is the robust default for multimodal models.
+        # NOTE: vLLM LoRA enablement is not required for full sync.
+        enable_lora: false
+        sync:
+          mode: full
+          fallback_to_full: true
+        server:
+          timeout_s: 240.0
+          # If null, the trainer defaults to timeout_s (never infinite).
+          infer_timeout_s: null
+          servers:
+            - base_url: http://127.0.0.1:8000
+              group_port: 51216

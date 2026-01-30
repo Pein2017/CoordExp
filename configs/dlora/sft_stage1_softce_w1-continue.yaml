@@ -3,7 +3,7 @@ extends: sft_base.yaml
 # Scheme A (Stage-1 retrain): CE on non-coord tokens + coord-gated softCE+W1 on coord tokens.
 # This config is intentionally placeholder-heavy; tune per run.
 
-global_max_length: 16000
+global_max_length: 12000
 
 model:
   # Base checkpoint (expanded vocab with <|coord_*|> tokens)
@@ -34,8 +34,8 @@ training:
   save_delay_steps: 400
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
   val_sample_limit: 1000
   val_sample_with_replacement: false
   token_type_metrics:

@@ -2,7 +2,7 @@
 #
 # This is a minimal YAML example intended for smoke testing the trainer wiring.
 
-extends: ../rollout_matching_sft_template.yaml
+extends: rollout_matching_sft_template.yaml
 
 custom:
   trainer_variant: stage2_ab_training

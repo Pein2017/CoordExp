@@ -1,0 +1,14 @@
+# Stage-2 AB ablation: Channel-A only (expectation loop), epoch=2.
+# Only the stage2_ab schedule differs from other ablation variants.
+extends: base.yaml
+
+training:
+  output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only
+  logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only
+  run_name: prod_a_only_bbox_max60_ckpt1516_ep2
+
+custom:
+  extra:
+    stage2_ab:
+      schedule:
+        pattern: ["A"]

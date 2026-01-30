@@ -8,7 +8,7 @@ extends: sft_base.yaml
 #   configs/dlora/smoke_stage2_rollout_matching_ckpt3106.yaml
 
 # Keep length long (packing length is derived from this value).
-global_max_length: 16000
+global_max_length: 12000
 
 tuner:
   # DoRA ("dlora"): restrict LoRA injection to:
@@ -87,8 +87,8 @@ custom:
   trainer_variant: rollout_matching_sft
 
   # Real LVIS coord-token dataset (update paths if needed).
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
 
   # Limit samples for monitoring runs.
   train_sample_limit: 128
@@ -117,7 +117,7 @@ custom:
 
         tensor_parallel_size: 1
         # Keep this modest to leave headroom for the training model on the same GPU.
-        gpu_memory_utilization: 0.45
+        gpu_memory_utilization: 0.7
         # Chunk TP-group gathered requests to reduce peak multimodal prefill VRAM in colocate mode.
         # Must cover prompt_len + max_new_tokens (vLLM requirement).
         #

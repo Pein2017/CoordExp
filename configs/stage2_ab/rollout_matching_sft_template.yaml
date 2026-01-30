@@ -3,7 +3,7 @@
 # This is a PLACEHOLDER config intended for YAML-first iteration.
 # Fill in paths/checkpoints and tune rollout/matching knobs as needed.
 
-extends: base.yaml
+extends: ../base.yaml
 
 training:
   # Stage_2 supports *post-rollout* packing for the teacher-forced forward pass.
@@ -20,8 +20,8 @@ custom:
   trainer_variant: rollout_matching_sft
 
   # Update these paths for your run.
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.filtered_max100_dense50_u3_t095.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
 
   # Rollout-matching assumes coord-token mode for coord supervision.
   coord_tokens:
@@ -74,7 +74,7 @@ custom:
       vllm:
         mode: colocate  # colocate|server
         tensor_parallel_size: 4
-        gpu_memory_utilization: 0.45
+        gpu_memory_utilization: 0.7
         # REQUIRED: must cover prompt_len + max_new_tokens for stage_2 rollouts.
         max_model_len: 12000
         # REQUIRED for on-policy LoRA sync.

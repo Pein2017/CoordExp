@@ -1,7 +1,7 @@
 extends: sft_base.yaml
 
 # Debug/tiny dataset smoke: keep packed length short for speed and FlashAttention2 stability.
-global_max_length: 2048
+global_max_length: 12000
 
 model:
   model: output/12-4/coord_offset_merged_ck777
@@ -34,8 +34,8 @@ training:
   eval_packing: true
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_poly_20/train_tiny.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_poly_20/val_tiny.coord.jsonl
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
   token_type_metrics:
     enabled: true
     include: ["dataset", "default", "lvis"]

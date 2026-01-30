@@ -1,0 +1,7 @@
+# Transitional wrapper: keep the legacy smoke config path stable.
+# Authoritative production-like smoke config lives under `configs/stage2_ab/smoke/`.
+#
+# Topology note: the "3v1" naming refers to launcher GPU allocation, not YAML content.
+# Use: `scripts/stage2_ab_server_train.sh server_gpus=<three> train_gpus=<one>`.
+extends: smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml
+

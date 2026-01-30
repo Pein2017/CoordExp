@@ -1,0 +1,20 @@
+# Backend-coverage smoke: Stage-2 AB Channel-B only (bbox-only max60, ckpt-1516),
+# using HF generate() sampling path (tests sampling/seeding/parse robustness).
+#
+# NOTE: This intentionally differs from production only in rollout backend + decoding.
+extends:
+  - ../prod/b_only.yaml
+  - common_prodlike.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516/b_only_hf_sample
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/b_only_hf_sample
+  run_name: smoke_bbox_max60_ckpt1516_b_only_hf_sample
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: hf
+      # Exercise stochastic decode + deterministic seeding context.
+      temperature: 0.7
+

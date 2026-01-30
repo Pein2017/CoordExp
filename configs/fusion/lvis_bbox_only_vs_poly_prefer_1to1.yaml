@@ -35,8 +35,8 @@ targets:
     name: lvis_poly_prefer_semantic_cap20_max60
     template: poly_preferred
     ratio: 1.0
-    train_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl
-    val_jsonl: public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl
+    train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+    val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
     user_prompt: >-
       Detect and list every object in the image, ordered top-to-bottom then left-to-right.
       Return a single JSON object.

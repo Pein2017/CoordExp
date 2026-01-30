@@ -145,6 +145,22 @@ def test_rollout_parse_truncated_tail_is_suffix_trimmed():
     assert parsed.prefix_text.endswith("}")
 
 
+def test_rollout_parse_truncated_tail_keeps_all_previous_complete_objects():
+    tok = _DummyTokenizerRM()
+    # Truncated mid-object_3: object_1 and object_2 should remain.
+    text = (
+        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
+        '"object_2": {"desc": "b", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>", "<|coord_8|>"]}, '
+        '"object_3": {"desc": "c", "bbox_2d": ["<|coord_9|>"'
+    )
+    ids = tok.encode(text, add_special_tokens=False)
+    parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
+    assert parsed.truncated is True
+    assert [o.index for o in parsed.valid_objects] == [1, 2]
+    assert "object_3" not in parsed.prefix_text
+    assert parsed.prefix_text.endswith("}")
+
+
 def test_rollout_parse_handles_fused_closing_braces_token_internal_cut():
     tok = _DummyTokenizerRM()
     base = '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}'
@@ -445,3 +461,31 @@ def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
             coord_id_set=coord_id_set,
             coord_id_to_bin=coord_id_to_bin,
         )
+
+
+def test_adaptive_raw_microbatch_stacker_bumps_on_underfill() -> None:
+    from src.trainers.rollout_matching_sft import _AdaptiveRawMicroBatchStacker
+
+    class _DummyTrainer:
+        def __init__(self) -> None:
+            # Overestimated avg length would otherwise pick too few raw samples.
+            self._rm_avg_segment_len = 1100.0
+            # Last pack stats indicate underfill with 8 segments and an empty buffer.
+            self._rm_last_pack_fill = 0.579
+            self._rm_last_pack_segments = 8
+            self._rm_last_pack_buffer_after = 0
+
+        def _packing_length(self) -> int:
+            return 12000
+
+        def _packing_min_fill_ratio(self) -> float:
+            return 0.7
+
+        def _packing_buffer_cap(self) -> int:
+            return 256
+
+    trainer = _DummyTrainer()
+    stacker = _AdaptiveRawMicroBatchStacker(dataloader=[], trainer=trainer)
+
+    # Need >= ceil(8 * 0.7 / 0.579) == 10 to avoid repeating the same underfill.
+    assert stacker._target_microbatch_size() >= 10

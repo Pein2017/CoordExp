@@ -57,6 +57,8 @@ Important semantics:
 - `time/rollout_parse_match_s`
 - `time/rollout_teacher_encode_s`
   - **Note:** these are forced to 0.0 on buffer reuse steps to avoid double counting.
+  - **Stage-2 AB note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
+    When diagnosing rollout throughput, filter to steps where `stage2/channel_b == 1`.
 
 - `rollout/gen_new_tokens_total|mean|p90|p99`
   - **What:** generated assistant token counts (after stage_2 suffix trimming).
@@ -372,6 +374,18 @@ To make scales more intuitive, CoordExp logs a pack-size helper:
 - `pack/num_samples`
   - **What:** number of original samples concatenated into the current unit (batch-wide aggregate).
   - **Note:** in non-packed runs, this is effectively the batch size.
+
+Stage_2 (rollout-matching / Stage2-AB) also logs packing-aware step helpers that are stable even when
+post-rollout packing is used:
+- `train/samples_total`
+  - **What:** total number of raw (unpacked) samples that contributed to the current optimizer step.
+  - **Channel-A:** dataset samples packed into the learner sequences.
+  - **Channel-B:** rollout samples packed into the learner sequences (after parse/match/FN-append).
+- `train/samples_seen`
+  - **What:** cumulative `train/samples_total` over the run (rank-local in multi-GPU; exact in server-mode world_size=1).
+  - **Why:** use this as a packing-aware "progress" axis for eval scheduling and throughput comparisons.
+- `train/micro_steps`
+  - **What:** number of micro-steps accumulated into the current optimizer step (≈ `gradient_accumulation_steps`).
 
 ## Reduction / Aggregation Semantics (Important)
 

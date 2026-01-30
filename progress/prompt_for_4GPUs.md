@@ -171,4 +171,3 @@ so keep one `base_url`).
   - reduce `--vllm_max_model_len`, reduce `--vllm_gpu_memory_utilization`, reduce `max_new_tokens` in learner YAML.
 - Rollout outputs missing or non-JSON:
   - ensure dataset uses correct `ROOT_IMAGE_DIR` (runner auto-sets it to JSONL parent).
-
