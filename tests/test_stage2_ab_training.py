@@ -568,3 +568,67 @@ def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
     loss = t.training_step(m, [sample])
     assert float(loss.detach().cpu().item()) == pytest.approx(3.0)
     assert called == [{"n": 4, "gs": 0}]
+
+
+def test_channel_b_step_mode_stable_order_and_seed_base_deterministic(monkeypatch):
+    # Regression: in step-budgeted mode, raw sample ordering across micro-steps is stable
+    # and the step-level seed base is deterministic.
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {"schedule": {"pattern": ["B"]}, "channel_b": {"mode": "step"}}
+
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._stage2_channel_override = None
+
+    # Required by helper methods.
+    t._stage2_post_rollout_segments = {"A": [], "B": []}
+    t._stage2_b_step_gs = None
+    t._stage2_b_step_micro = 0
+    t._stage2_b_step_raw = []
+
+    t.args = types.SimpleNamespace(
+        gradient_accumulation_steps=4,
+        train_batch_size=1,
+        per_device_train_batch_size=1,
+        seed=123,
+    )
+    t.state = types.SimpleNamespace(global_step=7)
+
+    # training_step uses self.model.device for the dummy 0-loss tensor.
+    t.model = types.SimpleNamespace(device=torch.device("cpu"))
+
+    # Disable rollout-buffer path.
+    t._maybe_init_rollout_buffer = lambda: None
+
+    called = []
+
+    def _fake_budgeted_train(model, *, raw_samples, global_step):
+        ids = [int(s.get("id", -1)) for s in raw_samples]
+        gs = int(global_step)
+        seed_base = int(t._derive_rollout_seed_base(global_step=gs))
+        called.append({"ids": ids, "gs": gs, "seed_base": seed_base})
+        return torch.tensor(3.0)
+
+    t._stage2_b_step_budgeted_train = _fake_budgeted_train
+
+    class _M:
+        training = True
+
+    m = _M()
+
+    def _run_cycle() -> None:
+        for i in range(3):
+            loss = t.training_step(m, [{"id": i, "messages": []}])
+            assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
+
+        loss = t.training_step(m, [{"id": 3, "messages": []}])
+        assert float(loss.detach().cpu().item()) == pytest.approx(3.0)
+
+    _run_cycle()
+    _run_cycle()
+
+    expected_seed_base = int((123 + 7 * 1000003) & 0x7FFFFFFF)
+    assert called == [
+        {"ids": [0, 1, 2, 3], "gs": 7, "seed_base": expected_seed_base},
+        {"ids": [0, 1, 2, 3], "gs": 7, "seed_base": expected_seed_base},
+    ]
