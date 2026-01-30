@@ -1,0 +1,35 @@
+# Public data pipeline defaults: Visual Genome (VG)
+#
+# This file is a config-first record of the recommended parameters for preparing
+# VG into the CoordExp JSONL contract via `public_data/run.sh`.
+#
+# See: `public_data/vg/README.md`
+
+dataset: vg
+
+# Conversion (raw annotations -> raw/train.jsonl + raw/val.jsonl)
+conversion:
+  mode: objects              # objects | regions (regions corresponds to `vg_ref`)
+  objects_version: "1.2.0"   # Visual Genome objects annotation release
+
+  # Deterministic split (VG has no official split): val if image_id % val_mod == 0
+  val_mod: 5                 # ~20% val (default in the converter); set 100 for ~1% val
+
+  # Filtering / hygiene
+  min_box_area: 1.0
+  min_box_dim: 1.0
+  clip_boxes: true           # clip to [0,W-1]/[0,H-1] (avoids coord bin 1000)
+  dedupe_objects: true       # drop exact-duplicate (bbox_2d, desc) pairs per image
+  filter_junk_descs: true    # drop high-confidence placeholder labels (e.g., 'this', 'the')
+
+download:
+  skip_images: false         # true for annotation-only conversion / quick tests
+  verify_checksums: true     # verify downloaded zips against expected sha256
+
+# Shared preset (smart-resize + coord tokens)
+preset:
+  name: rescale_32_768_bbox
+  image_factor: 32
+  max_pixels: 786432         # 32*32*768
+  min_pixels: 4096           # 32*32*4
+  num_workers: 8

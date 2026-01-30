@@ -28,12 +28,15 @@ Notes:
 - Bounding boxes are converted from (x,y,w,h) to (x1,y1,x2,y2) and clipped into
   [0,width-1]/[0,height-1] by default to ensure `convert_to_coord_tokens.py`
   never produces the out-of-range bin 1000.
+- High-confidence junk labels like articles/pronouns (e.g., "this", "the") are
+  dropped by default to reduce supervision noise (opt-out: --no-filter-junk-descs).
 - For quick smoke tests, pass `--max-seconds 300` to stop downloads early.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -43,6 +46,19 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from public_data.converters.sorting import sort_objects_tlbr
+from src.datasets.geometry import clamp_points, round_points
+
+try:
+    from public_data.vg.checksums import EXPECTED_SHA256 as _VG_EXPECTED_SHA256
+except Exception:
+    _VG_EXPECTED_SHA256 = {}
+
+try:
+    from public_data.vg.junk_descs import is_high_conf_junk_desc as _is_high_conf_junk_desc
+except Exception:
+
+    def _is_high_conf_junk_desc(desc: str) -> bool:  # type: ignore
+        return False
 
 # URLs are copied from the HF dataset loader `visual_genome.py` (snapshot).
 VG_BASE = "https://homes.cs.washington.edu/~ranjay/visualgenome/data/dataset"
@@ -73,6 +89,62 @@ def _now() -> float:
 
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def _sha256_file(path: Path, *, chunk_bytes: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(chunk_bytes)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_sha256(path: Path) -> bool:
+    expected = _VG_EXPECTED_SHA256.get(path.name)
+    if not expected:
+        print(f"[warning] No expected sha256 for {path.name}; skipping checksum verification.")
+        return True
+    if not path.exists():
+        print(f"[error] Missing file for checksum verification: {path}")
+        return False
+    actual = _sha256_file(path)
+    if actual.lower() != expected.lower():
+        print(f"[error] sha256 mismatch for {path.name}")
+        print(f"  expected: {expected}")
+        print(f"  actual:   {actual}")
+        return False
+    print(f"[checksum] OK: {path.name}")
+    return True
+
+
+def _download_then_verify(
+    url: str,
+    out_path: Path,
+    *,
+    timeout_s: int | None,
+    no_proxy: bool,
+    verify_checksums: bool,
+) -> bool:
+    if out_path.exists() and verify_checksums:
+        if _verify_sha256(out_path):
+            print(f"[skip] Already present and checksum OK: {out_path.name}")
+            return True
+        print(f"[warning] Existing file has wrong checksum; re-downloading: {out_path.name}")
+
+    ok = _download_with_wget(
+        url,
+        out_path,
+        timeout_s=timeout_s,
+        no_proxy=no_proxy,
+    )
+    if not ok:
+        return False
+    if verify_checksums and not _verify_sha256(out_path):
+        return False
+    return True
 
 
 def _run(cmd: list[str], *, timeout_s: int | None = None) -> int:
@@ -182,19 +254,19 @@ def _clip_bbox_xyxy(
     *,
     width: int,
     height: int,
-) -> Optional[List[float]]:
-    """Clip bbox into [0,width-1]/[0,height-1] to avoid norm bin 1000."""
+) -> Optional[List[int]]:
+    """Clip + round bbox into [0,width-1]/[0,height-1] to avoid norm bin 1000.
+
+    This uses the repo's canonical geometry helpers (`src/datasets/geometry.py`)
+    to preserve coordinate semantics.
+    """
     if width <= 1 or height <= 1:
         return None
-    max_x = float(width - 1)
-    max_y = float(height - 1)
-    x1c = max(0.0, min(float(x1), max_x))
-    y1c = max(0.0, min(float(y1), max_y))
-    x2c = max(0.0, min(float(x2), max_x))
-    y2c = max(0.0, min(float(y2), max_y))
+    pts = clamp_points([x1, y1, x2, y2], width, height)
+    x1c, y1c, x2c, y2c = pts
     if x2c <= x1c or y2c <= y1c:
         return None
-    return [x1c, y1c, x2c, y2c]
+    return pts
 
 
 def _sanitize_desc(value: Any) -> Optional[str]:
@@ -212,6 +284,22 @@ def _sanitize_desc(value: Any) -> Optional[str]:
     if not s:
         return None
     return s
+
+
+def _finalize_metadata(objects: List[Dict[str, Any]]) -> None:
+    """Remove non-contract fields from objects in-place.
+
+    The global JSONL contract only allows `desc` plus exactly one geometry field
+    (`bbox_2d` or `poly`, with optional `poly_points`). Any additional fields are
+    dropped here so downstream validators and builders remain schema-strict.
+    """
+
+    for o in objects:
+        if not isinstance(o, dict):
+            continue
+        for k in ("object_id", "region_id"):
+            if k in o:
+                o.pop(k, None)
 
 
 def _pick_name(names: Any) -> Optional[str]:
@@ -328,6 +416,7 @@ class ConvertStats:
     images_skipped_missing_ann: int = 0
     images_skipped_bad_url: int = 0
     objects_kept: int = 0
+    objects_deduped: int = 0
 
     def to_dict(self) -> Dict[str, int]:
         return {
@@ -337,6 +426,7 @@ class ConvertStats:
             "images_skipped_missing_ann": self.images_skipped_missing_ann,
             "images_skipped_bad_url": self.images_skipped_bad_url,
             "objects_kept": self.objects_kept,
+            "objects_deduped": self.objects_deduped,
         }
 
 
@@ -347,8 +437,10 @@ def _convert_pair_to_record(
     min_box_area: float,
     min_box_dimension: float,
     clip_boxes: bool,
-) -> Tuple[Optional[Dict[str, Any]], int]:
-    """Return (record, kept_objects)."""
+    dedupe_objects: bool,
+    filter_junk_descs: bool,
+) -> Tuple[Optional[Dict[str, Any]], int, int]:
+    """Return (record, kept_objects, deduped_objects)."""
     image_id = img_meta.get("image_id")
     url = img_meta.get("url")
     width = img_meta.get("width")
@@ -400,11 +492,11 @@ def _convert_pair_to_record(
         x2 = xf + wf
         y2 = yf + hf
 
-        bbox: Optional[List[float]]
+        bbox: Optional[List[int]]
         if clip_boxes:
             bbox = _clip_bbox_xyxy(x1, y1, x2, y2, width=width, height=height)
         else:
-            bbox = [x1, y1, x2, y2]
+            bbox = round_points([x1, y1, x2, y2])
 
         if bbox is None or len(bbox) != 4:
             continue
@@ -423,14 +515,45 @@ def _convert_pair_to_record(
         desc = _pick_name(names)
         if not desc:
             continue
+        if filter_junk_descs and _is_high_conf_junk_desc(desc):
+            continue
 
-        out_objs.append({"bbox_2d": [bx1, by1, bx2, by2], "desc": desc})
+        out_objs.append(
+            {
+                "bbox_2d": [bx1, by1, bx2, by2],
+                "desc": desc,
+                "object_id": obj_dict.get("object_id"),
+            }
+        )
         kept += 1
 
     if not out_objs:
-        return None, 0
+        return None, 0, 0
 
     out_objs = sort_objects_tlbr(out_objs)
+    deduped = 0
+    if dedupe_objects:
+        before = len(out_objs)
+        seen: set[tuple[str, int, int, int, int]] = set()
+        deduped: List[Dict[str, Any]] = []
+        for o in out_objs:
+            bb = o.get("bbox_2d")
+            desc = o.get("desc")
+            if not (
+                isinstance(desc, str)
+                and isinstance(bb, list)
+                and len(bb) == 4
+                and all(isinstance(v, int) for v in bb)
+            ):
+                deduped.append(o)
+                continue
+            key = (desc, bb[0], bb[1], bb[2], bb[3])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(o)
+        out_objs = deduped
+        deduped = before - len(out_objs)
 
     record: Dict[str, Any] = {
         "images": [rel],
@@ -441,9 +564,11 @@ def _convert_pair_to_record(
             "dataset": "visual_genome",
             "image_id": int(image_id),
             "url": url,
+            "annotation": "objects",
         },
     }
-    return record, kept
+    _finalize_metadata(record["objects"])
+    return record, len(out_objs), deduped
 
 
 def _convert_pair_to_region_record(
@@ -453,8 +578,10 @@ def _convert_pair_to_region_record(
     min_box_area: float,
     min_box_dimension: float,
     clip_boxes: bool,
-) -> Tuple[Optional[Dict[str, Any]], int]:
-    """Return (record, kept_objects) for region descriptions."""
+    dedupe_objects: bool,
+    filter_junk_descs: bool,
+) -> Tuple[Optional[Dict[str, Any]], int, int]:
+    """Return (record, kept_objects, deduped_objects) for region descriptions."""
     image_id = img_meta.get("image_id")
     url = img_meta.get("url")
     width = img_meta.get("width")
@@ -506,11 +633,11 @@ def _convert_pair_to_region_record(
         x2 = xf + wf
         y2 = yf + hf
 
-        bbox: Optional[List[float]]
+        bbox: Optional[List[int]]
         if clip_boxes:
             bbox = _clip_bbox_xyxy(x1, y1, x2, y2, width=width, height=height)
         else:
-            bbox = [x1, y1, x2, y2]
+            bbox = round_points([x1, y1, x2, y2])
 
         if bbox is None or len(bbox) != 4:
             continue
@@ -529,14 +656,45 @@ def _convert_pair_to_region_record(
         desc = _sanitize_phrase(phrase)
         if not desc:
             continue
+        if filter_junk_descs and _is_high_conf_junk_desc(desc):
+            continue
 
-        out_objs.append({"bbox_2d": [bx1, by1, bx2, by2], "desc": desc})
+        out_objs.append(
+            {
+                "bbox_2d": [bx1, by1, bx2, by2],
+                "desc": desc,
+                "region_id": region_dict.get("region_id"),
+            }
+        )
         kept += 1
 
     if not out_objs:
-        return None, 0
+        return None, 0, 0
 
     out_objs = sort_objects_tlbr(out_objs)
+    deduped = 0
+    if dedupe_objects:
+        before = len(out_objs)
+        seen: set[tuple[str, int, int, int, int]] = set()
+        deduped: List[Dict[str, Any]] = []
+        for o in out_objs:
+            bb = o.get("bbox_2d")
+            desc = o.get("desc")
+            if not (
+                isinstance(desc, str)
+                and isinstance(bb, list)
+                and len(bb) == 4
+                and all(isinstance(v, int) for v in bb)
+            ):
+                deduped.append(o)
+                continue
+            key = (desc, bb[0], bb[1], bb[2], bb[3])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(o)
+        out_objs = deduped
+        deduped = before - len(out_objs)
 
     record: Dict[str, Any] = {
         "images": [rel],
@@ -550,7 +708,8 @@ def _convert_pair_to_region_record(
             "annotation": "regions",
         },
     }
-    return record, kept
+    _finalize_metadata(record["objects"])
+    return record, len(out_objs), deduped
 
 
 def convert(
@@ -564,6 +723,8 @@ def convert(
     min_box_area: float,
     min_box_dimension: float,
     clip_boxes: bool,
+    dedupe_objects: bool,
+    filter_junk_descs: bool,
     stats_path: Optional[Path],
 ) -> ConvertStats:
     stats = ConvertStats()
@@ -582,13 +743,22 @@ def convert(
 
             if not isinstance(img_meta, dict) or not isinstance(ann, dict):
                 continue
+            meta_id = img_meta.get("image_id")
+            ann_id = ann.get("image_id")
+            if meta_id != ann_id:
+                raise ValueError(
+                    "Misaligned VG arrays: image_data.json and objects.json are not aligned.\n"
+                    f"index={idx} image_data.image_id={meta_id!r} objects.image_id={ann_id!r}"
+                )
 
-            record, kept = _convert_pair_to_record(
+            record, kept, deduped = _convert_pair_to_record(
                 img_meta,  # type: ignore
                 ann,  # type: ignore
                 min_box_area=min_box_area,
                 min_box_dimension=min_box_dimension,
                 clip_boxes=clip_boxes,
+                dedupe_objects=dedupe_objects,
+                filter_junk_descs=filter_junk_descs,
             )
             if record is None:
                 url = img_meta.get("url") if isinstance(img_meta, dict) else None
@@ -599,6 +769,7 @@ def convert(
                 continue
 
             stats.objects_kept += kept
+            stats.objects_deduped += deduped
             image_id = int(record.get("metadata", {}).get("image_id") or 0)
             if val_mod > 0 and (image_id % val_mod) == 0:
                 fout_val.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -628,6 +799,8 @@ def convert_regions(
     min_box_area: float,
     min_box_dimension: float,
     clip_boxes: bool,
+    dedupe_objects: bool,
+    filter_junk_descs: bool,
     stats_path: Optional[Path],
 ) -> ConvertStats:
     stats = ConvertStats()
@@ -646,13 +819,22 @@ def convert_regions(
 
             if not isinstance(img_meta, dict) or not isinstance(ann, dict):
                 continue
+            meta_id = img_meta.get("image_id")
+            ann_id = ann.get("image_id")
+            if meta_id != ann_id:
+                raise ValueError(
+                    "Misaligned VG arrays: image_data.json and region_descriptions.json are not aligned.\n"
+                    f"index={idx} image_data.image_id={meta_id!r} regions.image_id={ann_id!r}"
+                )
 
-            record, kept = _convert_pair_to_region_record(
+            record, kept, deduped = _convert_pair_to_region_record(
                 img_meta,  # type: ignore
                 ann,  # type: ignore
                 min_box_area=min_box_area,
                 min_box_dimension=min_box_dimension,
                 clip_boxes=clip_boxes,
+                dedupe_objects=dedupe_objects,
+                filter_junk_descs=filter_junk_descs,
             )
 
             if record is None:
@@ -660,6 +842,7 @@ def convert_regions(
                 continue
 
             stats.objects_kept += kept
+            stats.objects_deduped += deduped
             image_id = int(record.get("metadata", {}).get("image_id") or 0)
             if val_mod > 0 and (image_id % val_mod) == 0:
                 fout_val.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -719,6 +902,21 @@ def main() -> None:
         "--skip-images",
         action="store_true",
         help="Skip downloading images (annotations only)",
+    )
+    parser.add_argument(
+        "--no-verify-checksums",
+        action="store_true",
+        help="Skip sha256 checksum verification for downloaded zips (not recommended)",
+    )
+    parser.add_argument(
+        "--no-dedupe-objects",
+        action="store_true",
+        help="Disable per-image exact deduping of (desc, bbox_2d) pairs",
+    )
+    parser.add_argument(
+        "--no-filter-junk-descs",
+        action="store_true",
+        help="Disable dropping high-confidence junk desc labels (e.g., 'this')",
     )
     parser.add_argument(
         "--max-seconds",
@@ -783,6 +981,7 @@ def main() -> None:
         return rem if rem > 0 else 0
 
     if args.download:
+        verify_checksums = not bool(args.no_verify_checksums)
         # 1) Annotation zips
         meta_zip = ann_dir / "image_data.json.zip"
         print(f"Downloading annotations into: {ann_dir}")
@@ -790,8 +989,12 @@ def main() -> None:
         if t == 0:
             print("Time budget exhausted before downloads started.")
             return
-        if not _download_with_wget(
-            VG_IMAGE_META_URL, meta_zip, timeout_s=t, no_proxy=bool(args.wget_no_proxy)
+        if not _download_then_verify(
+            VG_IMAGE_META_URL,
+            meta_zip,
+            timeout_s=t,
+            no_proxy=bool(args.wget_no_proxy),
+            verify_checksums=verify_checksums,
         ):
             print("Stopped during image metadata download (timeout or error).")
             return
@@ -807,21 +1010,23 @@ def main() -> None:
             obj_zip = (
                 ann_dir / f"objects_v{args.objects_version.replace('.', '_')}.json.zip"
             )
-            if not _download_with_wget(
+            if not _download_then_verify(
                 VG_OBJECTS_URLS[args.objects_version],
                 obj_zip,
                 timeout_s=t,
                 no_proxy=bool(args.wget_no_proxy),
+                verify_checksums=verify_checksums,
             ):
                 print("Stopped during objects annotation download (timeout or error).")
                 return
         else:
             reg_zip = ann_dir / "region_descriptions.json.zip"
-            if not _download_with_wget(
+            if not _download_then_verify(
                 VG_REGION_DESCRIPTIONS_URL,
                 reg_zip,
                 timeout_s=t,
                 no_proxy=bool(args.wget_no_proxy),
+                verify_checksums=verify_checksums,
             ):
                 print("Stopped during region_descriptions download (timeout or error).")
                 return
@@ -862,8 +1067,12 @@ def main() -> None:
                     break
                 zip_path = img_dir / fname
                 print(f"Downloading: {fname} from {url}")
-                ok = _download_with_wget(
-                    url, zip_path, timeout_s=t, no_proxy=bool(args.wget_no_proxy)
+                ok = _download_then_verify(
+                    url,
+                    zip_path,
+                    timeout_s=t,
+                    no_proxy=bool(args.wget_no_proxy),
+                    verify_checksums=verify_checksums,
                 )
                 if not ok:
                     print(
@@ -912,6 +1121,8 @@ def main() -> None:
 
     out_train = raw_root / "train.jsonl"
     out_val = raw_root / "val.jsonl"
+    dedupe_objects = not bool(args.no_dedupe_objects)
+    filter_junk_descs = not bool(args.no_filter_junk_descs)
     if args.mode == "objects":
         objects_json = _find_one(
             ann_dir, ["objects.json", "objects_v1.json", "objects_v1_2.json"]
@@ -926,6 +1137,8 @@ def main() -> None:
             min_box_area=float(args.min_box_area),
             min_box_dimension=float(args.min_box_dim),
             clip_boxes=not bool(args.no_clip_boxes),
+            dedupe_objects=dedupe_objects,
+            filter_junk_descs=filter_junk_descs,
             stats_path=args.stats_json,
         )
     else:
@@ -942,6 +1155,8 @@ def main() -> None:
             min_box_area=float(args.min_box_area),
             min_box_dimension=float(args.min_box_dim),
             clip_boxes=not bool(args.no_clip_boxes),
+            dedupe_objects=dedupe_objects,
+            filter_junk_descs=filter_junk_descs,
             stats_path=args.stats_json,
         )
 
