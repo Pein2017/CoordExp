@@ -153,6 +153,12 @@ Rollout backend:
       - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
       - `sync.mode: adapter`: adapter-only sync (requires server launched with `--vllm_enable_lora true`).
       - `sync.fallback_to_full: true` will permanently fall back to full sync if adapter sync fails at runtime.
+    - Recommended launcher: `scripts/stage2_ab_server_train.sh`
+      - Starts `swift rollout` + learner in one entrypoint, waits for `/health/`, and kills the server process group on exit.
+      - Disables global proxies by default (sets `NO_PROXY=127.0.0.1,localhost` and unsets `http_proxy/https_proxy/...`) to prevent localhost routing surprises.
+      - Exposes vLLM safety knob: `vllm_gpu_memory_utilization` (default `0.75`).
+      - Uses `global_max_length` from the YAML as vLLM `--vllm_max_model_len`:
+        ensure `global_max_length >= prompt_len + max_new_tokens` for long dense JSON generations.
 - Fallback (explicit): HF (`custom.extra.rollout_matching.rollout_backend: hf`)
   - To get *batched* HF rollouts, you must also increase `training.per_device_train_batch_size` (otherwise each rank rolls out 1 sample).
   - `custom.extra.rollout_matching.rollout_generate_batch_size` controls the per-rank microbatch size for HF generate().
@@ -179,6 +185,38 @@ From repo root:
 
 Server-mode splits rollouts (actors) from training (learner).
 The learner still owns parse/match/`Y_train` construction and post-rollout packing; only rollouts + weight sync cross the boundary.
+
+### Recommended: helper launcher (starts server + learner)
+
+This repo includes `scripts/stage2_ab_server_train.sh`, which launches both processes with consistent proxy hygiene and readiness checks.
+
+Example (single node, 4 GPUs; server DP=3, learner=1):
+
+```bash
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+export NO_PROXY=127.0.0.1,localhost
+
+bash scripts/stage2_ab_server_train.sh \
+  server_gpus=0,1,2 train_gpus=3 \
+  vllm_gpu_memory_utilization=0.75 \
+  config=configs/stage2_ab/smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server_3v1.yaml
+```
+
+Example (single node, 8 GPUs; server DP=7, learner=1):
+
+```bash
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+export NO_PROXY=127.0.0.1,localhost
+
+bash scripts/stage2_ab_server_train.sh \
+  server_gpus=0,1,2,3,4,5,6 train_gpus=7 \
+  vllm_gpu_memory_utilization=0.75 \
+  config=configs/stage2_ab/prod/b_only.yaml
+```
+
+Notes:
+- Server GPUs may show ~0% utilization on steps that do not call the rollout backend (e.g., Stage-2 AB Channel-A steps). This is expected.
+- If you request a long rollout budget (e.g., `max_new_tokens: 3084`), `global_max_length: 2048` is typically too small; use `global_max_length: 4096` (or higher) so `prompt_len + max_new_tokens` fits.
 
 1) Launch rollout server on 3 GPUs (example):
 
@@ -209,6 +247,27 @@ Common failure modes:
 - `/health/` unreachable: server not running, wrong `base_url`, firewall/port issue.
 - Communicator init fails: `group_port` blocked/in-use, NCCL env issues, mismatched host networking.
 - Adapter sync fails: server launched with `--vllm_enable_lora false` but `vllm.sync.mode: adapter` requested.
+
+### Troubleshooting: `/health/` is OK but learner hangs (0% GPU util)
+
+Symptom (common in server mode):
+- `/health/` returns 200, but training appears “stuck” and GPUs sit near 0% utilization.
+- Learner log shows a timeout or connection refused on the configured `group_port`, e.g.:
+  - `The client socket has timed out ... trying to connect to (127.0.0.1, 51216)`
+
+Interpretation:
+- `/health/` validates the HTTP server, but `group_port` is a separate TCP port used by the ms-swift `VLLMClient` to initialize a communicator for weight sync.
+- If `group_port` is not listening/reachable, the learner will block before the first rollout B-step.
+
+Checks:
+1) Confirm HTTP health:
+   - `curl --noproxy '*' -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/health/`
+2) Confirm `group_port` is open (works even when `ss/netstat` are missing):
+   - `python - <<'PY'\nimport socket\nhost='127.0.0.1'; port=51216\ns=socket.socket(); s.settimeout(2)\ntry:\n    s.connect((host, port))\n    print('group_port connect: ok')\nexcept Exception as e:\n    print('group_port connect: failed', e)\nfinally:\n    s.close()\nPY`
+
+Mitigations:
+- Change `vllm.server.servers[].group_port` to an unused port and restart the server and learner.
+- Ensure you are not accidentally routing localhost connections through a proxy (prefer the helper launcher; or unset `http_proxy/https_proxy` + set `NO_PROXY`).
 
 ## Evaluation (Production-Style)
 
