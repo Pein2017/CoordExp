@@ -514,3 +514,57 @@ def test_compute_loss_raises_on_sliced_logits():
                 "text_position_ids": text_position_ids,
             },
         )
+
+
+def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
+    # Minimal trainer stub: verify step-mode buffers raw samples and executes only
+    # on the final micro-step of the accumulation window.
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {"schedule": {"pattern": ["B"]}, "channel_b": {"mode": "step"}}
+
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._stage2_channel_override = None
+
+    # Required by helper methods.
+    t._stage2_post_rollout_segments = {"A": [], "B": []}
+    t._stage2_b_step_gs = None
+    t._stage2_b_step_micro = 0
+    t._stage2_b_step_raw = []
+
+    t.args = types.SimpleNamespace(
+        gradient_accumulation_steps=4,
+        train_batch_size=1,
+        per_device_train_batch_size=1,
+        seed=123,
+    )
+    t.state = types.SimpleNamespace(global_step=0)
+
+    # training_step uses self.model.device for the dummy 0-loss tensor.
+    t.model = types.SimpleNamespace(device=torch.device("cpu"))
+
+    # Disable rollout-buffer path.
+    t._maybe_init_rollout_buffer = lambda: None
+
+    called = []
+
+    def _fake_budgeted_train(model, *, raw_samples, global_step):
+        called.append({"n": len(raw_samples), "gs": int(global_step)})
+        return torch.tensor(3.0)
+
+    t._stage2_b_step_budgeted_train = _fake_budgeted_train
+
+    class _M:
+        training = True
+
+    m = _M()
+    sample = {"messages": []}
+
+    for _ in range(3):
+        loss = t.training_step(m, [sample])
+        assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
+        assert called == []
+
+    loss = t.training_step(m, [sample])
+    assert float(loss.detach().cpu().item()) == pytest.approx(3.0)
+    assert called == [{"n": 4, "gs": 0}]

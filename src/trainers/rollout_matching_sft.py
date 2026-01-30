@@ -2058,11 +2058,22 @@ def schedule_post_rollout_segment_indices_window(
     gas: int,
     select_indices_fn: Any,
 ) -> List[List[int]]:
-    """Pure helper for window-aware post-rollout packing.
+    """Schedule post-rollout segments into exactly `gas` micro-packs.
 
-    `select_indices_fn(encoded_lens_remaining, packing_length) -> List[int]` must be
-    deterministic and include index 0 (oldest) when non-empty.
+    This is used when `post_rollout_pack_scope == "window"`: we already have one
+    gradient-accumulation window worth of segments and must emit exactly one packed
+    batch per micro-step.
+
+    Important: this differs from the "micro" packer, which tries to greedily fill a
+    single pack to maximize utilization. For "window" packing we *must* distribute
+    segments across a fixed number of micro-steps.
+
+    `select_indices_fn` is accepted for backward compatibility but is not used in the
+    window scheduler.
     """
+
+    _ = select_indices_fn
+
     packing_length = int(packing_length)
     gas = int(gas)
     if packing_length <= 0:
@@ -2071,35 +2082,74 @@ def schedule_post_rollout_segment_indices_window(
         raise ValueError("gas must be positive")
 
     lens = [int(x) for x in encoded_lens]
+    if not lens:
+        raise ValueError("window scheduling requires at least one segment")
+
+    for sl in lens:
+        if sl <= 0:
+            raise ValueError("encoded_len must be positive")
+        if sl > packing_length:
+            raise ValueError(
+                f"post-rollout window packing cannot fit a single segment: encoded_len={sl} > packing_length={packing_length}. "
+                "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
+            )
+
     total = int(sum(lens))
     if total > gas * packing_length:
         raise ValueError(
             f"infeasible window: sum_encoded_len={total} > gas*packing_length={gas * packing_length}"
         )
 
-    remaining: List[Tuple[int, int]] = [
-        (int(i), int(seg_len)) for i, seg_len in enumerate(lens)
-    ]
-    packs: List[List[int]] = []
+    n = int(len(lens))
+    if n < gas:
+        raise ValueError(
+            f"window post-rollout packing requires at least gas segments: segments={n} < gas={gas}. "
+            "Mitigations: increase rollout_generate_batch_size (more raw samples per micro-step) or disable window packing."
+        )
 
-    for _ in range(gas):
-        if not remaining:
-            break
-        rem_lens = [int(seg_len) for _, seg_len in remaining]
-        sel_local = list(select_indices_fn(rem_lens, packing_length) or [])
-        if not sel_local:
-            raise ValueError("window scheduling selected empty pack")
-        # Map local indices to original indices.
-        sel_orig = [int(remaining[i][0]) for i in sel_local]
-        packs.append(sel_orig)
-        for i in sorted(sel_local, reverse=True):
-            remaining.pop(int(i))
+    # Greedy LPT-style load balancing with a hard capacity constraint.
+    # Items are (index, encoded_len).
+    items: List[Tuple[int, int]] = [(int(i), int(sl)) for i, sl in enumerate(lens)]
+    items.sort(key=lambda t: (-int(t[1]), int(t[0])))
 
-    if remaining:
-        raise ValueError("window scheduling could not schedule all segments")
+    seeds = items[:gas]
+    remaining = items[gas:]
 
-    while len(packs) < gas:
-        packs.append([])
+    bins: List[List[int]] = [[int(idx)] for idx, _ in seeds]
+    bin_sums: List[int] = [int(sl) for _, sl in seeds]
+
+    for idx, sl in remaining:
+        best_bin: Optional[int] = None
+        best_sum: Optional[int] = None
+        for b in range(gas):
+            if int(bin_sums[b]) + int(sl) <= packing_length:
+                s = int(bin_sums[b])
+                if best_bin is None or best_sum is None or s < best_sum:
+                    best_bin = int(b)
+                    best_sum = int(s)
+        if best_bin is None:
+            raise ValueError(
+                "window post-rollout packing could not fit all segments into the fixed number of micro-packs. "
+                "Even if sum_encoded_len <= gas*packing_length, indivisible segments can still make packing infeasible. "
+                "Mitigations: reduce max_new_tokens, increase packing_length (global_max_length), or switch post_rollout_pack_scope to 'micro'."
+            )
+        bins[int(best_bin)].append(int(idx))
+        bin_sums[int(best_bin)] += int(sl)
+
+    packs: List[List[int]] = [sorted(b) for b in bins]
+
+    # Sanity checks: non-empty packs and exact cover.
+    if any(len(p) == 0 for p in packs):
+        raise ValueError("window post-rollout packing produced an empty micro-pack")
+
+    used: List[int] = sorted(int(i) for p in packs for i in p)
+    if used != list(range(n)):
+        raise ValueError("window post-rollout packing produced an invalid segment index cover")
+
+    for p in packs:
+        p_total = int(sum(int(lens[i]) for i in p))
+        if p_total > packing_length:
+            raise ValueError("window post-rollout packing overflowed packing_length")
 
     return packs
 
@@ -6200,6 +6250,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def get_train_dataloader(self):
         dl = super().get_train_dataloader()
+
+        try:
+            per_dev = int(getattr(self.args, "per_device_train_batch_size", 1) or 1)
+        except Exception:
+            per_dev = 1
 
         # Fixed raw batching for post-rollout packing.
         #

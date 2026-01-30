@@ -210,11 +210,15 @@ Teacher forcing on GT sequence:
   - `L_CE_all = -Σ_t log p_θ(y_t | image, prompt, y_<t)`
 - Optional: extra weight on coord token positions (coord-focused CE):
   - `L_CE_coord = -Σ_{t∈coord_positions} log p_θ(y_t | ...)`
-- Optional (light): CoordExp-L1 on coord positions to introduce continuous geometry early:
-  - decode `ĉ_t` from logits at coord positions
-  - `L_L1_coord = Σ_{t∈coord_positions} |ĉ_t - c_gt|`
+- Optional (light): expected coord loss (expected loss; distribution-level) on coord positions to introduce smooth geometry early:
+  - gather coord logits `s_t ∈ R^K` at coord positions, `p_{t} = softmax(s_t / τ)` over bins `k=0..999`
+  - let `v_k = k/999` (or use `k` directly if working in norm1000 index space)
+  - expected-L1:
+    - `L_E-L1_coord = Σ_{t∈coord_positions} Σ_k p_{t,k} * |v_k - c_gt|`
+  - (baseline / not recommended when multi-peak) loss-on-expectation:
+    - `ĉ_t = Σ_k p_{t,k} v_k`, `|ĉ_t - c_gt|`
 - Stage-1 total:
-  - `L_stage1 = L_CE_all + λ_coordCE * L_CE_coord + λ_L1 * L_L1_coord`
+  - `L_stage1 = L_CE_all + λ_coordCE * L_CE_coord + λ_EL1 * L_E-L1_coord`
 
 ### 5.4 Purpose
 - Make the model reliably output the structured format.
@@ -303,15 +307,18 @@ for m in 1 .. (n_softctx_iter - 1):
     Compute ē^(m) from p^(m)
     emb^(m) := UpdateCoordSlots(emb^(m-1), ē^(m), damping_alpha=α)  # α=1 by default
 
-Use final logits z^(n_softctx_iter-1) for CoordExp decode + losses
+Use final logits z^(n_softctx_iter-1) for coord distributions + losses (and optionally CoordExp expectations for box-level terms)
 ```
 
 Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=F_θ(e^(m))`, that repeatedly refreshes coord embeddings from the model’s own belief while keeping the GT text/structure scaffold. Increasing `n_softctx_iter` pushes the effect of self-conditioning further along the coord chain without sampling.
 
 #### Step A4 — Geometry + (optional) coord sharpening losses
-6) Default: decode continuous coords only from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1) at coord slots via CoordExp, and assemble boxes per object.
-7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
-   - `L_geo_soft = Σ_obj [ α||b̂_obj^cont - b_obj^gt||_1 + β(1-GIoU(...)) ]`
+6) Default: compute coord distributions only from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1) at coord slots:
+   - `p_t = softmax(z_t^self[coord_k] / τ_A)`
+   - (Optional) compute expectations `ĉ_t = Σ_k p_{t,k} v_k` only if you want a box-level auxiliary term.
+7) Apply geometry loss against GT **by identity alignment** (no Hungarian in Channel-A):
+   - expected coord loss (recommended): `L_geo_soft = Σ_t Σ_k p_{t,k} * |v_k - c_t^gt|`
+   - (optional; small weight) box-level loss on expectations, e.g., `Σ_obj (1 - GIoU(b̂_obj^cont, b_obj^gt))`
 
 8) (Optional) add a *light* coord-distribution sharpening term computed from the final logits:
    - `L_coordCE_soft = -Σ_{t∈coord_positions} log p_θ(y_t^gt | ... , softctx)`
@@ -339,7 +346,7 @@ Why `N×` helps (intuition, bbox case):
 
 Stage-2 consists of **two complementary paths** (Channel-A hot path + Channel-B cold path) that target different failure modes:
 
-### 7.1 Channel-A (hot path): Geometric calibration under soft self-context (CoordExp + L1/GIoU)
+### 7.1 Channel-A (hot path): Geometric calibration under soft self-context (expected loss + optional box loss)
 
 Channel-A uses the **N× forward** construction from Section 6.2:
 - First forward: teacher-forced GT to obtain `p_t^(0)` over coord bins (and initial expected embeddings `ē^(0)`).
@@ -347,22 +354,32 @@ Channel-A uses the **N× forward** construction from Section 6.2:
 
 We denote the final-iteration logits as:
 - `z_t^self = z_t^(n_softctx_iter-1)`
-- Default: all CoordExp decodes, `L_geo_soft`, and any coord sharpening terms use `z_t^self` (final iteration logits) only.
+- Default: all coord distributions for expected loss, any optional CoordExp expectations, and any coord sharpening terms use `z_t^self` (final iteration logits) only.
   (Optional, not default): you may also supervise intermediate iterates via a weighted sum across `m`, but keep the default single-shot on the final iteration for simplicity.
 
-#### Step D — CoordExp decode on coord positions
+#### Step D — Coord distributions + (optional) CoordExp expectations
 7) For each GT object `i` and each of its 4 coord token positions `t` in the template:
    - Gather coord logits: `s_{t,k} = z_t^self[coord_k]`
-   - Softmax → `p_{t,k}`
-   - Expectation → `ĉ_t`
-8) Assemble continuous predicted box:
+   - Softmax → `p_{t,k}` over `k=0..999`
+   - (Optional) expectation for downstream box-level terms:
+     - `ĉ_t = Σ_k p_{t,k} * v_k`, with `v_k = k/999` (or `k` in norm1000 index space)
+8) (Optional) assemble a continuous predicted box from expectations:
    - `b̂_i_cont = (ĉ_{t_x1}, ĉ_{t_y1}, ĉ_{t_x2}, ĉ_{t_y2})`
 
 #### Step E — Geometric loss using GT (identity alignment)
-9) For Channel-A, object indices come from the GT template, so we use direct alignment:
-   - `ℓ_geo(i) = α * || b̂_i_cont - b_i_gt ||_1 + β * (1 - GIoU(b̂_i_cont, b_i_gt))`
+9) For Channel-A, object indices come from the GT template, so we use direct alignment.
+
+The core geometry term is **expected loss** (distribution-level), replacing “loss on expectation”:
+- For each coord slot `t` with GT value `c_t^gt`:
+  - `ℓ_E(t) = Σ_k p_{t,k} * |v_k - c_t^gt|`
+- Per object:
+  - `ℓ_geo(i) = Σ_{t∈coords(i)} ℓ_E(t)`
+
+Optional (small weight; still a loss-on-expectation approximation):
+- `ℓ_box(i) = (1 - GIoU(b̂_i_cont, b_i_gt))` (requires `b̂_i_cont` from Step D)
+
 10) Sum:
-   - `L_geo_soft = Σ_i ℓ_geo(i)`
+   - `L_geo_soft = Σ_i [ α * ℓ_geo(i) + β * ℓ_box(i) ]`
 
 > Key properties:
 > - Context is **partially self-conditioned** (coord embeddings come from model belief).
@@ -404,13 +421,31 @@ Channel-B is the original EM-ish loop, run sparsely to correct:
 6) Teacher force on rollout tokens to recompute logits:
    - `z_t^roll = f_θ(image, prompt, ŷ_<t)`
 
-7) CoordExp decode on coord positions `t ∈ idx_i`, assemble `b̂_i_cont`.
-8) Apply geo loss on matched GT targets:
-   - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} [ α||b̂_i_cont - b_j_gt||_1 + β(1-GIoU) ]`
+7) For each predicted object `i`, compute coord distributions at its coord positions `t ∈ idx_i`:
+   - `s_{t,k} = z_t^roll[coord_k]`, `p_{t} = softmax(s_t / τ_B)`
+
+8) Compute two *separated* post-rollout signals:
+- **Reward (stop-grad; selection/gating only):**
+  - bbox reward: `R_i = IoU(b̂_i_disc, b_j_gt)` (or `-L_geo_disc`), stop-grad
+  - poly reward (later): `R_i = maskIoU(polŷ_i, poly_j_gt)` after rasterization, stop-grad
+- **Gradient (differentiable; credit assignment):**
+  - bbox: expected coord loss under rollout self-context:
+    - `ℓ_geo(i) = Σ_{t∈coords(i)} Σ_k p_{t,k} * |v_k - c_t^gt|`
+    - (Optional) box-level `GIoU` on expected `b̂_i_cont` as a small auxiliary
+  - poly (Channel-B extension / preparation): **Sinkhorn-OT boundary loss** between predicted points and GT segments (no need to match vertex counts):
+    - Pred points: `U = {û_a}` decoded from coord slots (as expectations `û_a = (ĉ_x, ĉ_y)`).
+    - GT segments: `S = { [v_b, v_{b+1}] }` from GT polygon vertices.
+    - Cost: `C_{a,b} = d(û_a, segment_b)^2` (point-to-segment distance; analytic, piecewise differentiable)
+    - Solve entropic OT: `Π* = Sinkhorn(a, b, C, ε)`; use `L_OT = ⟨Π*, C⟩`
+    - Practical stabilization: treat `Π*` as an E-step artifact (optionally `stopgrad(Π*)`) and backprop through `C → û`.
+
+9) Use reward to gate/weight gradients (reward-gradient separation):
+   - `w_i = 1[R_i ≥ r0]` (or `w_i = clip(R_i, 0, 1)`), stop-grad
+   - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} w_i * ( α * ℓ_geo(i) + γ * L_OT(i) + β * ℓ_box(i) )`
 
 #### Step B3 — Reordered-GT SFT (with grad)
-9) Build `y_GT_reordered` following predicted order + append missing GT objects (see Section 7.3).
-10) Standard SFT on `y_GT_reordered`:
+10) Build `y_GT_reordered` following predicted order + append missing GT objects (see Section 7.3).
+11) Standard SFT on `y_GT_reordered`:
    - `L_CE_text`, `L_CE_coord(optional)`, `L_CE_eos(optional)`
 
 Channel-B per-sample loss:
@@ -426,16 +461,16 @@ This path handles:
 - Caption correctness and formatting robustness
 
 #### Step F — Reorder GT according to matching
-11) Build a “reordered GT sequence” `y_GT_reordered`:
+12) Build a “reordered GT sequence” `y_GT_reordered`:
    - The first `N` GT slots are arranged to correspond to predicted object order:
      - if predicted object `i` matched to GT `j`, place GT object `j` at position `i`
    - For GT objects that were not matched (misses), append them as “completion objects” at the end (optional, controlled by policy).
    - For predicted objects that were unmatched (extras), optionally enforce early stop behaviors (see below).
 
 #### Step G — Standard SFT (with grad)
-12) Teacher forcing on `y_GT_reordered`:
+13) Teacher forcing on `y_GT_reordered`:
    - `z_t^gt = f_θ(image, prompt, y_GT_reordered_<t)`
-13) Compute CE losses:
+14) Compute CE losses:
    - `L_CE_text`: CE on description tokens + structure tokens
    - `L_CE_coord`: optional CE on coord tokens (discrete supervision)
    - `L_CE_eos`: optional targeted CE encouraging `<eos>` at end-of-sequence when appropriate
@@ -516,8 +551,8 @@ Given image + prompt:
 - Return continuous scalar in [0,1] (or [0,999] if you prefer working in index space)
 
 ### 10.4 Loss module
-- `L_geo_soft`: Channel-A L1 + GIoU over continuous boxes from CoordExp under soft self-context
-- `L_geo_roll`: Channel-B L1 + GIoU over continuous boxes from CoordExp under rollout self-context (matched via Hungarian)
+- `L_geo_soft`: Channel-A expected coord loss (distribution-level) under soft self-context, plus optional box-level loss (e.g., `GIoU` on expected boxes)
+- `L_geo_roll`: Channel-B expected coord loss under rollout self-context + (optional) reward-gated weighting; for `poly`, use reward (maskIoU, stop-grad) + differentiable Sinkhorn-OT boundary loss (point-to-segment)
 - `L_CE`: standard token CE (with optional position-wise weights)
 - optional coord-distribution regularizers (entropy, top-k expectation, softCE/W1, etc.)
 
@@ -587,8 +622,7 @@ Given image + prompt:
 ### Self-context geometric update
 
 * teacher force on rollout tokens to compute logits at coord positions
-* CoordExp decode continuous boxes
-* apply L1+GIoU to matched GT boxes
+* compute expected coord losses from the coord distributions (recommended), optionally plus a small box-level `GIoU` term on expected boxes
 * backprop to LM head coord logits and upstream θ
 
 ### Reordered-GT SFT update
@@ -634,6 +668,7 @@ This pipeline:
 
 * Use coord CE auxiliary.
 * Temperature anneal.
+* Prefer expected loss (E-L1/Huber) over loss-on-expectation when distributions are multi-modal.
 * Optional entropy regularization / top-k expectation.
 
 ---
