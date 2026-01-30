@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -65,17 +64,15 @@ def _set_no_proxy(env: dict[str, str]) -> None:
 
 
 def _pick_free_port() -> int:
+    import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
 
 def _http_get(url: str, *, timeout_s: float) -> tuple[int, bytes]:
-    """HTTP GET that bypasses env proxies.
-
-    This repo commonly runs with `http_proxy/https_proxy` set, which can break
-    localhost health checks.
-    """
+    """HTTP GET that bypasses env proxies."""
 
     import urllib.request
 
@@ -132,7 +129,6 @@ def _select_model_dir() -> Path:
     if override:
         return Path(override)
 
-    # Prefer the stable stage-1 merged ckpt dir if present (mentioned in progress/prompt_for_4GPUs.md).
     candidates = [
         Path("output/1-26/checkpoint-1516-merged"),
         Path(
@@ -153,19 +149,42 @@ def _select_model_dir() -> Path:
     )
 
 
-def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
-    """End-to-end Stage-2 AB Channel-B smoke with vLLM **server mode**.
+def _parse_jsonl_dicts(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            records.append(obj)
+    return records
 
-    This is intentionally gated behind an env flag because it requires GPUs + a local checkpoint.
+
+def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
+    """End-to-end Stage-2 AB mixed A/B schedule with vLLM **server mode**.
+
+    This is a *diagnostic* integration test (longer than the B-only smoke) and is gated
+    behind an env flag because it requires GPUs + a local checkpoint.
+
+    Environment knobs:
+    - COORDEXP_RUN_8GPU_DIAG=1 to enable.
+    - COORDEXP_STAGE2_AB_DIAG_SERVER_CUDA_VISIBLE_DEVICES (default: 0,1,2)
+    - COORDEXP_STAGE2_AB_DIAG_LEARNER_CUDA_VISIBLE_DEVICES (default: 3)
+    - COORDEXP_STAGE2_AB_DIAG_SERVER_DP (default: len(server_gpus))
+    - COORDEXP_STAGE2_AB_DIAG_MAX_STEPS (default: 12)
+    - COORDEXP_STAGE2_AB_DIAG_MAX_NEW_TOKENS (default: 512)
+    - COORDEXP_STAGE2_AB_DIAG_TRAIN_SAMPLE_LIMIT (default: 128)
     """
 
-    if not _env_flag("COORDEXP_RUN_4GPU_SMOKE"):
-        pytest.skip("Set COORDEXP_RUN_4GPU_SMOKE=1 to run the 4-GPU server-mode smoke test.")
+    if not _env_flag("COORDEXP_RUN_8GPU_DIAG"):
+        pytest.skip("Set COORDEXP_RUN_8GPU_DIAG=1 to run the 8-GPU server-mode diagnostic test.")
 
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available in this environment.")
-    if _nvidia_gpu_count() < 2:
-        pytest.skip("Need >=2 GPUs for 1 rollout server + 1 learner.")
 
     pytest.importorskip("vllm")
 
@@ -178,21 +197,40 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
 
     model_dir = _select_model_dir()
 
-    server_visible = os.environ.get("COORDEXP_STAGE2_AB_SERVER_CUDA_VISIBLE_DEVICES", "0")
-    learner_visible = os.environ.get("COORDEXP_STAGE2_AB_LEARNER_CUDA_VISIBLE_DEVICES", "1")
-
-    server_dp = int(os.environ.get("COORDEXP_STAGE2_AB_SERVER_DP", "1"))
-    if server_dp <= 0:
-        raise ValueError("COORDEXP_STAGE2_AB_SERVER_DP must be >= 1")
+    server_visible = os.environ.get(
+        "COORDEXP_STAGE2_AB_DIAG_SERVER_CUDA_VISIBLE_DEVICES", "0,1,2"
+    )
+    learner_visible = os.environ.get(
+        "COORDEXP_STAGE2_AB_DIAG_LEARNER_CUDA_VISIBLE_DEVICES", "3"
+    )
 
     server_visible_ids = [
         s.strip() for s in str(server_visible).split(",") if s.strip()
     ]
+
+    server_dp = int(
+        os.environ.get("COORDEXP_STAGE2_AB_DIAG_SERVER_DP", str(len(server_visible_ids)))
+    )
+    if server_dp <= 0:
+        raise ValueError("COORDEXP_STAGE2_AB_DIAG_SERVER_DP must be >= 1")
     if len(server_visible_ids) < server_dp:
         raise ValueError(
-            f"COORDEXP_STAGE2_AB_SERVER_DP={server_dp} requires at least {server_dp} "
-            f"GPUs in COORDEXP_STAGE2_AB_SERVER_CUDA_VISIBLE_DEVICES; got {server_visible!r}"
+            f"COORDEXP_STAGE2_AB_DIAG_SERVER_DP={server_dp} requires at least {server_dp} "
+            f"GPUs in COORDEXP_STAGE2_AB_DIAG_SERVER_CUDA_VISIBLE_DEVICES; got {server_visible!r}"
         )
+
+    # Basic sanity: ensure the machine has enough visible GPUs to satisfy the default 3v1 topology.
+    if _nvidia_gpu_count() < (server_dp + 1):
+        pytest.skip(
+            f"Need >={server_dp + 1} GPUs for server_dp={server_dp} + 1 learner. "
+            f"Found {_nvidia_gpu_count()}."
+        )
+
+    max_steps = int(os.environ.get("COORDEXP_STAGE2_AB_DIAG_MAX_STEPS", "12"))
+    max_new_tokens = int(os.environ.get("COORDEXP_STAGE2_AB_DIAG_MAX_NEW_TOKENS", "512"))
+    train_sample_limit = int(
+        os.environ.get("COORDEXP_STAGE2_AB_DIAG_TRAIN_SAMPLE_LIMIT", "128")
+    )
 
     vllm_max_model_len = int(os.environ.get("COORDEXP_STAGE2_AB_VLLM_MAX_MODEL_LEN", "2048"))
     vllm_gpu_memory_utilization = float(
@@ -216,17 +254,13 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     out_root.mkdir(parents=True, exist_ok=True)
     tb_root.mkdir(parents=True, exist_ok=True)
 
-    run_name = f"b_only_vllm_server_smoke_test_{int(time.time())}"
+    run_name = f"ab_mixed_vllm_server_diag_{int(time.time())}"
 
-    # Override the stock smoke config with a temp config that:
-    # - uses a local checkpoint (model_dir)
-    # - uses a free server port + group_port
-    # - writes outputs under tmp_path
-    cfg_path = tmp_path / "stage2_ab_b_only_vllm_server_smoke.yaml"
+    cfg_path = tmp_path / "stage2_ab_ab_mixed_vllm_server_diag.yaml"
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_ab/smoke_bbox_max60_ckpt1516_b_only_vllm_server_1v1.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_ab/smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server_3v1.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
@@ -234,9 +268,13 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 f"  output_dir: {out_root}",
                 f"  run_name: {run_name}",
                 f"  logging_dir: {tb_root}",
+                f"  max_steps: {max_steps}",
                 "custom:",
+                f"  train_sample_limit: {train_sample_limit}",
+                "  val_sample_limit: 0",
                 "  extra:",
                 "    rollout_matching:",
+                f"      max_new_tokens: {max_new_tokens}",
                 "      vllm:",
                 "        server:",
                 "          servers:",
@@ -256,7 +294,6 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     _unset_proxies(server_env)
     _set_no_proxy(server_env)
 
-    # Prefer explicit PYTHONPATH so that both this repo and a sibling ms-swift checkout resolve.
     py_path_parts = [str(repo_root)]
     if ms_swift_root is not None:
         py_path_parts.append(str(ms_swift_root))
@@ -297,16 +334,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 text=True,
             )
 
-        # Wait until the HTTP server is healthy (model load can be slow).
-        try:
-            info = _wait_for_rollout_server(base_url, timeout_s=15 * 60, proc=proc)
-        except BaseException as exc:
-            rc = None if proc is None else proc.poll()
-            raise AssertionError(
-                f"rollout server failed to become healthy (returncode={rc}); last server logs:\n"
-                + _tail(server_log)
-            ) from exc
-
+        info = _wait_for_rollout_server(base_url, timeout_s=20 * 60, proc=proc)
         assert int(info.get("world_size", -1)) == server_dp
 
         learner_env = os.environ.copy()
@@ -331,7 +359,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 stdout=fp,
                 stderr=subprocess.STDOUT,
                 text=True,
-                timeout=45 * 60,
+                timeout=90 * 60,
             )
 
         assert out.returncode == 0, (
@@ -355,32 +383,24 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 f"Expected 1 logging.jsonl under {out_root}, found {len(jsonl_paths)}: {jsonl_paths}"
             )
 
-        records: list[dict[str, Any]] = []
-        for line in jsonl_paths[0].read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                records.append(obj)
+        records = _parse_jsonl_dicts(jsonl_paths[0])
 
-        merged: dict[str, Any] = {}
-        for rec in records:
-            merged.update(rec)
+        a_records = [
+            r for r in records if float(r.get("stage2/channel_a", 0.0)) == pytest.approx(1.0)
+        ]
+        b_records = [
+            r for r in records if float(r.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+        ]
 
-        assert float(merged.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
-        assert float(merged.get("rollout/backend_vllm", 0.0)) == pytest.approx(1.0)
-        assert float(merged.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(1.0)
+        assert a_records, "No Channel-A logs found; schedule may be misconfigured."
+        assert b_records, "No Channel-B logs found; schedule may be misconfigured."
 
-        assert "rollout/seed_base" in merged
-        assert float(merged.get("rollout/rollout_len_mean", 0.0)) > 0.0
+        assert any(float(r.get("rollout/rollout_len_mean", 0.0)) > 0.0 for r in b_records)
+        assert any("rollout/seed_base" in r for r in b_records)
+        assert any(float(r.get("rollout/max_new_tokens", 0.0)) == float(max_new_tokens) for r in b_records)
 
-        # Bbox-only v1 invariant: do not drop polygons (there should be none).
-        assert float(merged.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0)
-        assert float(merged.get("stage2/invalid_rollout", 0.0)) >= 0.0
+        # Bbox-only v1 invariant: do not drop polygons.
+        assert all(float(r.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0) for r in b_records)
 
     finally:
         if proc is not None:

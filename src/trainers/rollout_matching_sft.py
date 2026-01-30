@@ -71,6 +71,68 @@ def _contiguous_chunk_slices(n: int, num_chunks: int) -> List[Tuple[int, int]]:
     return out
 
 
+def _strip_trailing_assistant_turns_for_rollout(messages: Any) -> List[Any]:
+    """Build a prompt-only message list for rollout generation.
+
+    Many training datasets include a teacher-forced assistant answer inside
+    `sample["messages"]`. For rollouts (on-policy decoding), we must generate from
+    the prompt, which should end with a user turn. This helper keeps all messages
+    up to the last user turn and drops any trailing assistant turns.
+
+    This is intentionally conservative: it preserves any earlier assistant turns
+    that may be part of the conversational context.
+    """
+
+    if not isinstance(messages, list):
+        return list(messages) if messages is not None else []
+
+    last_user_idx: int | None = None
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if isinstance(m, dict) and m.get("role") == "user":
+            last_user_idx = int(i)
+            break
+
+    if last_user_idx is None:
+        # Best-effort: drop assistant messages entirely (rare in our datasets).
+        trimmed: List[Any] = []
+        for m in messages:
+            if isinstance(m, dict) and m.get("role") == "assistant":
+                continue
+            trimmed.append(m)
+        return trimmed if trimmed else list(messages)
+
+    return list(messages[: last_user_idx + 1])
+
+
+def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any]:
+    """Prepend a system prompt message when absent.
+
+    HF template.encode() injects the resolved template/system prompt internally.
+    In vLLM backends (colocate/server), we send raw OpenAI-style messages to
+    ms-swift/vLLM, so we must include the system instruction explicitly to keep
+    output formatting stable (e.g., top-level object_k keys).
+
+    NOTE: ms-swift's rollout server expects the system message `content` to be a
+    plain string (OpenAI-style), not the multimodal `[{'type':'text',...}]` list.
+    """
+
+    if not system_prompt:
+        return list(messages) if isinstance(messages, list) else []
+
+    if not isinstance(messages, list):
+        messages_list: List[Any] = []
+    else:
+        messages_list = list(messages)
+
+    for m in messages_list:
+        if isinstance(m, dict) and m.get("role") == "system":
+            return messages_list
+
+    sys_msg = {"role": "system", "content": str(system_prompt)}
+    return [sys_msg, *messages_list]
+
+
 GeomType = Literal["bbox_2d", "poly"]
 
 
@@ -1564,6 +1626,59 @@ class _AccumulationWindowRepeater:
         return getattr(self._dataloader, name)
 
 
+class _FixedRawMicroBatchStacker:
+    """Stack identity-collated raw micro-batches into fixed-size lists.
+
+    Stage_2 trainers often keep `training.per_device_train_batch_size=1` so the learner
+    does exactly one packed forward/backward per micro-step (global_max_length capped).
+
+    However, post-rollout packing needs *multiple* raw samples to form a meaningfully
+    filled pack. This wrapper allows us to decouple those two concerns in a way that is
+    compatible with epoch-based training: `__len__` is adjusted to reflect the reduced
+    number of emitted micro-batches.
+
+    Expected input from the underlying dataloader: a list of raw samples.
+    Output: a list of raw samples of size `target_raw_batch_size` (last one may be smaller).
+    """
+
+    def __init__(
+        self,
+        dataloader,
+        *,
+        target_raw_batch_size: int,
+        base_raw_batch_size: int,
+    ):
+        self.dataloader = dataloader
+        self.target_raw_batch_size = max(1, int(target_raw_batch_size))
+        self.base_raw_batch_size = max(1, int(base_raw_batch_size))
+
+    def __iter__(self):
+        buf: List[Any] = []
+        for b in self.dataloader:
+            if not isinstance(b, list):
+                raise ValueError(
+                    "fixed raw microbatch stacker expects identity-collated train batches (list of raw samples)"
+                )
+            buf.extend(b)
+            while len(buf) >= self.target_raw_batch_size:
+                out = buf[: self.target_raw_batch_size]
+                del buf[: self.target_raw_batch_size]
+                yield out
+
+        if buf:
+            yield buf
+
+    def __len__(self) -> int:
+        # Underlying dataloader length is in units of micro-batches. Convert to a raw
+        # sample count using the base batch size, then divide by the target size.
+        n_micro = int(len(self.dataloader))
+        n_raw = int(n_micro) * int(self.base_raw_batch_size)
+        return int((n_raw + self.target_raw_batch_size - 1) // self.target_raw_batch_size)
+
+    def __getattr__(self, name: str):
+        return getattr(self.dataloader, name)
+
+
 class _RolloutMatchingPackWindow:
     """Holds one accumulation window worth of raw micro-batches and cached prepared batches.
 
@@ -2012,6 +2127,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # vLLM server-mode rollout backend state (lazy init).
         self._vllm_server_client: Any = None
         self._vllm_server_last_synced_step: int = -1
+        self._vllm_server_debug_dump_count: int = 0
+        self._vllm_server_debug_last_step: Optional[int] = None
         self._vllm_server_last_logged_step: int = -1
         self._vllm_server_force_full_sync: bool = False
 
@@ -2546,7 +2663,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             for u, gp in zip(base_urls, group_ports)
         ]
 
-    def _vllm_server_timeouts(self) -> Tuple[float, Optional[float]]:
+    def _vllm_server_timeouts(self) -> Tuple[float, float]:
         scfg = self._vllm_server_cfg()
 
         timeout_raw = scfg.get("timeout_s", None)
@@ -2565,9 +2682,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         infer_timeout_raw = scfg.get("infer_timeout_s", None)
-        infer_timeout_s: Optional[float]
         if infer_timeout_raw is None:
-            infer_timeout_s = None
+            infer_timeout_s = float(timeout_s)
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
@@ -2576,9 +2692,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "custom.extra.rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
             if infer_timeout_s <= 0:
-                infer_timeout_s = None
+                infer_timeout_s = float(timeout_s)
 
-        return float(timeout_s), infer_timeout_s
+        return float(timeout_s), float(infer_timeout_s)
 
     def _vllm_server_sync_cfg(self) -> Tuple[str, bool]:
         vcfg_raw = self._cfg("vllm", {}) or {}
@@ -3553,6 +3669,132 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._vllm_server_client = client
         return client
 
+
+    def _maybe_debug_dump_vllm_server_rollouts(
+        self,
+        *,
+        global_step: int,
+        seed_base: int,
+        infer_requests: Sequence[Mapping[str, Any]],
+        outputs: Sequence[Tuple[List[int], str, str, List[int]]],
+    ) -> None:
+        """Optional raw rollout dump for diagnosing vLLM server-mode formatting.
+
+        Controlled via:
+          custom.extra.rollout_matching.vllm.server.debug_dump:
+            enabled: true
+            max_events: 3
+            max_samples: 1
+            max_chars: 4000
+            out_dir: null  # defaults to <output_dir>/vllm_server_debug
+        """
+
+        try:
+            scfg_raw = self._vllm_server_cfg()
+        except Exception:
+            return
+
+        debug_raw = scfg_raw.get("debug_dump", {}) if isinstance(scfg_raw, Mapping) else {}
+        if not isinstance(debug_raw, Mapping) or not bool(debug_raw.get("enabled", False)):
+            return
+
+        max_events = int(debug_raw.get("max_events", 3) or 0)
+        if max_events > 0 and int(self._vllm_server_debug_dump_count) >= int(max_events):
+            return
+
+        gs = int(global_step)
+        if self._vllm_server_debug_last_step is not None and int(
+            self._vllm_server_debug_last_step
+        ) == gs:
+            return
+
+        out_dir = debug_raw.get("out_dir")
+        if not isinstance(out_dir, str) or not out_dir.strip():
+            out_dir = os.path.join(
+                str(getattr(self.args, "output_dir", ".")), "vllm_server_debug"
+            )
+        os.makedirs(out_dir, exist_ok=True)
+
+        self._vllm_server_debug_last_step = int(gs)
+        self._vllm_server_debug_dump_count += 1
+
+        max_samples = int(debug_raw.get("max_samples", 1) or 1)
+        max_chars = int(debug_raw.get("max_chars", 4000) or 4000)
+
+        tok = self.template.tokenizer
+
+        samples_dump: List[Dict[str, Any]] = []
+        for i, (req, out) in enumerate(zip(infer_requests, outputs)):
+            if i >= max_samples:
+                break
+
+            resp_ids, resp_text, decode_mode, prompt_ids = out
+
+            parse_dump: Dict[str, Any] = {}
+            try:
+                parse = parse_rollout_for_matching(
+                    tokenizer=tok, response_token_ids=list(resp_ids)
+                )
+                parse_dump = {
+                    "truncated": bool(parse.truncated),
+                    "dropped_invalid": int(parse.dropped_invalid),
+                    "dropped_ambiguous": int(parse.dropped_ambiguous),
+                    "response_len": int(len(parse.response_token_ids)),
+                    "prefix_len": int(len(parse.prefix_token_ids)),
+                    "response_text_head": str(parse.response_text)[:max_chars],
+                    "prefix_text_head": str(parse.prefix_text)[:max_chars],
+                    "valid_objects": [
+                        {
+                            "key": str(o.key),
+                            "index": int(o.index),
+                            "geom_type": str(o.geom_type),
+                            "coord_token_count": int(len(o.coord_token_indices)),
+                            "coord_token_indices_head": [
+                                int(x) for x in list(o.coord_token_indices)[:32]
+                            ],
+                        }
+                        for o in list(parse.valid_objects)[:16]
+                    ],
+                }
+            except Exception as exc:
+                parse_dump = {"error": repr(exc)}
+
+            samples_dump.append(
+                {
+                    "i": int(i),
+                    "messages": req.get("messages"),
+                    "images": req.get("images"),
+                    "decode_mode": str(decode_mode),
+                    "seed_base": int(seed_base),
+                    "prompt_len": int(len(prompt_ids)),
+                    "prompt_ids_head": [int(x) for x in list(prompt_ids)[:64]],
+                    "resp_text_head": str(resp_text)[:max_chars],
+                    "resp_len": int(len(resp_ids)),
+                    "resp_ids_head": [int(x) for x in list(resp_ids)[:256]],
+                    "parse": parse_dump,
+                }
+            )
+
+        payload = {
+            "global_step": int(gs),
+            "seed_base": int(seed_base),
+            "event": int(self._vllm_server_debug_dump_count),
+            "max_samples": int(max_samples),
+            "samples": samples_dump,
+        }
+
+        path = os.path.join(
+            out_dir, f"step_{int(gs):06d}_event_{int(self._vllm_server_debug_dump_count):03d}.json"
+        )
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=True, indent=2)
+            logger.warning(
+                "vLLM server debug dump wrote %s (samples=%s)", path, len(samples_dump)
+            )
+        except Exception:
+            return
+
     def _sync_vllm_server_rollout_model_if_needed(self) -> None:
         """Sync weights/adapters to rollout server for vLLM server mode."""
         step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -4353,10 +4595,41 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             url = f"{base_url}/infer/"
             session = client.sessions[server_idx]
-            if infer_timeout_s is None:
-                resp = session.post(url, json=payload)
-            else:
-                resp = session.post(url, json=payload, timeout=float(infer_timeout_s))
+            req_timeout_s = float(infer_timeout_s)
+            # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
+            req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
+            try:
+                resp = session.post(url, json=payload, timeout=req_timeout)
+            except Exception as exc:
+                # Retry once with a fresh session. This helps when the server was idle for A steps
+                # (AAB schedules) and the underlying keep-alive connection was dropped.
+                try:
+                    import requests
+
+                    client.sessions[server_idx] = requests.Session()
+                    session = client.sessions[server_idx]
+                    resp = session.post(url, json=payload, timeout=req_timeout)
+                except Exception as exc2:
+                    # If this was a batched request, fall back to smaller batches. This is a
+                    # common failure mode when a few samples hit max_new_tokens and the read
+                    # timeout is exceeded.
+                    if int(end - start) > 1:
+                        mid = int((start + end) // 2)
+                        logger.warning(
+                            "vLLM server infer request failed; splitting batch: url=%s start=%s end=%s mid=%s exc=%r",
+                            url,
+                            int(start),
+                            int(end),
+                            int(mid),
+                            exc2,
+                        )
+                        _infer_on_server(int(server_idx), int(start), int(mid))
+                        _infer_on_server(int(server_idx), int(mid), int(end))
+                        return
+
+                    raise RuntimeError(
+                        f"vLLM server infer request failed after retry: url={url} exc={exc!r}"
+                    ) from exc2
 
             if int(getattr(resp, "status_code", 0) or 0) != 200:
                 raise RuntimeError(
@@ -4395,6 +4668,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "vLLM server failed to produce outputs for all requests"
                 )
             out.append(r)
+
+        self._maybe_debug_dump_vllm_server_rollouts(
+            global_step=gs,
+            seed_base=seed_base,
+            infer_requests=infer_requests,
+            outputs=out,
+        )
+
         return out
 
     @torch.no_grad()
@@ -4402,10 +4683,60 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         backend = self._rollout_backend()
-        if backend == "hf":
-            return self._rollout_many_hf(samples)
+
+        # vLLM backends receive raw OpenAI-style messages; ensure the resolved
+        # system prompt is present so output formatting is stable.
+        system_prompt: str | None = None
         if backend == "vllm":
-            return self._rollout_many_vllm(samples)
+            sp = getattr(self.template, "system", None)
+            if isinstance(sp, str) and sp.strip():
+                system_prompt = sp
+            else:
+                # Fallback: ms-swift templates may not expose the resolved system prompt
+                # as `template.system` in all execution contexts. Use CoordExp's
+                # canonical dense system prompt to stabilize server-mode rollouts.
+                try:
+                    from src.config.prompts import SYSTEM_PROMPT_SORTED_TOKENS
+
+                    system_prompt = str(SYSTEM_PROMPT_SORTED_TOKENS)
+                except Exception:
+                    system_prompt = None
+
+        # IMPORTANT: generate from a prompt that ends with a user turn.
+        # Many datasets include a teacher-forced assistant answer in `messages` for training.
+        # For rollouts, we must drop any trailing assistant turns.
+        samples_for_rollout: List[Mapping[str, Any]] = []
+        for s in samples:
+            msgs = s.get("messages")
+            if isinstance(msgs, list):
+                modified = False
+
+                trimmed = _strip_trailing_assistant_turns_for_rollout(msgs)
+                if len(trimmed) != len(msgs):
+                    modified = True
+                    msgs_out: List[Any] = trimmed
+                else:
+                    msgs_out = msgs
+
+                if backend == "vllm" and system_prompt is not None:
+                    msgs_sys = _ensure_system_prompt_message(msgs_out, system_prompt)
+                    if len(msgs_sys) != len(msgs_out):
+                        modified = True
+                        msgs_out = msgs_sys
+
+                if modified:
+                    s2 = dict(s)
+                    s2["messages"] = msgs_out
+                    samples_for_rollout.append(s2)
+                else:
+                    samples_for_rollout.append(s)
+            else:
+                samples_for_rollout.append(s)
+
+        if backend == "hf":
+            return self._rollout_many_hf(samples_for_rollout)
+        if backend == "vllm":
+            return self._rollout_many_vllm(samples_for_rollout)
         raise AssertionError("unreachable")
 
     def _append_post_rollout_segments(
@@ -4571,6 +4902,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         fill = float(total_len) / float(packing_length) if packing_length > 0 else 0.0
         target = float(self._packing_min_fill_ratio())
+
+        # Expose last-pack stats for adaptive raw batching.
+        try:
+            self._rm_last_pack_fill = float(fill)
+            self._rm_last_pack_segments = int(len(selected))
+            self._rm_last_pack_buffer_after = int(len(self._post_rollout_segments))
+        except Exception:
+            pass
+
         if fill < target:
             logger.warning(
                 "post-rollout packing underfilled: fill=%.3f target=%.3f segments=%s buffer=%s",
@@ -4586,6 +4926,31 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "packing/post_rollout_segments": float(len(selected)),
             "packing/post_rollout_buffer": float(len(self._post_rollout_segments)),
         }
+
+        # Update a running average segment length estimate for adaptive raw batching.
+        try:
+            seg_count = int(len(selected))
+            if seg_count > 0:
+                avg = float(total_len) / float(seg_count)
+                prev = float(getattr(self, "_rm_avg_segment_len", 0.0) or 0.0)
+
+                # If we're underfilled *and* the buffer emptied, we were supply-limited.
+                # Update aggressively downward so the next raw batch is larger.
+                supply_limited = bool(fill < target and len(self._post_rollout_segments) == 0)
+
+                alpha = 0.2
+                if supply_limited:
+                    alpha = 0.5
+
+                ema = float(avg) if prev <= 0 else float((1.0 - alpha) * prev + alpha * avg)
+                if supply_limited:
+                    ema = min(float(ema), float(avg))
+
+                self._rm_avg_segment_len = float(ema)
+                pack_metrics["packing/avg_segment_len_last"] = float(avg)
+                pack_metrics["packing/avg_segment_len_ema"] = float(ema)
+        except Exception:
+            pass
 
         return selected, pack_metrics
 
@@ -5296,7 +5661,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._rm_pending_train_logs.pop(step, None)
                 if pending is not None:
+                    sample_step = int(len(getattr(pending, "meta", []) or []))
+                    try:
+                        self._rm_train_samples_seen = int(
+                            getattr(self, "_rm_train_samples_seen", 0) or 0
+                        ) + sample_step
+                    except Exception:
+                        self._rm_train_samples_seen = sample_step
+
                     logs.update(self._build_train_rollout_log_payload(pending))
+                    logs["train/samples_seen"] = float(
+                        getattr(self, "_rm_train_samples_seen", 0) or 0
+                    )
         except Exception:
             pass
 
@@ -5545,6 +5921,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, pending: _PendingTrainRolloutLog
     ) -> Dict[str, float]:
         payload = self._build_rollout_metrics_from_meta(pending.meta)
+
+        sample_total = float(len(pending.meta))
+        payload["train/samples_total"] = float(sample_total)
+        payload["train/micro_steps"] = float(pending.n_micro)
+        payload["train/samples_per_micro"] = (
+            float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
+        )
 
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
@@ -5817,6 +6200,27 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def get_train_dataloader(self):
         dl = super().get_train_dataloader()
+
+        # Fixed raw batching for post-rollout packing.
+        #
+        # Stage_2 trainers use identity collator, so the dataloader yields lists of raw
+        # samples. With per_device_train_batch_size==1 this would otherwise produce only
+        # one segment per micro-step, making it impossible to reach reasonable packing
+        # fill ratios.
+        #
+        # We use `custom.extra.rollout_matching.rollout_generate_batch_size` to control
+        # how many raw samples feed into ONE packed sequence (learner microbatch stays 1).
+        try:
+            rollout_gen_bs = int(self._cfg("rollout_generate_batch_size", 1) or 1)
+        except Exception:
+            rollout_gen_bs = 1
+        if self._packing_enabled() and per_dev == 1 and int(rollout_gen_bs) > 1:
+            dl = _FixedRawMicroBatchStacker(
+                dl,
+                target_raw_batch_size=int(rollout_gen_bs),
+                base_raw_batch_size=int(per_dev),
+            )
+
         try:
             enabled, m_steps = self._rollout_buffer_settings()
         except Exception:

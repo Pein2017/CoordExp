@@ -90,7 +90,14 @@ if [[ "${NUM_GPUS}" -gt 1 ]]; then
   if [[ -z "${MASTER_PORT:-}" ]]; then
     MASTER_PORT=$((10000 + RANDOM % 55536))
   fi
-  CMD="CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} ${TORCHRUN_BIN} --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} -m src.sft --config ${CONFIG_PATH}"
+  # Ensure MASTER_ADDR/MASTER_PORT are exported so DeepSpeed (used by ms-swift in some trainers)
+  # does not fall back to MPI discovery (which requires libmpi/mpi4py on the system).
+  if [[ -z "${MASTER_ADDR:-}" ]]; then
+    MASTER_ADDR="127.0.0.1"
+  fi
+  export MASTER_ADDR MASTER_PORT
+
+  CMD="CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} ${TORCHRUN_BIN} --nproc_per_node=${NUM_GPUS} --master_addr=${MASTER_ADDR} --master_port=${MASTER_PORT} -m src.sft --config ${CONFIG_PATH}"
 else
   CMD="CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} ${PYTHON_BIN} -m src.sft --config ${CONFIG_PATH}"
 fi

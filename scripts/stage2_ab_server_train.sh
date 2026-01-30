@@ -187,11 +187,21 @@ model_path = model.get("model")
 if not model_path:
     die("model.model must be set (rollout model path).")
 
-max_model_len = cfg.get("global_max_length") or 8192
+max_model_len = None
+try:
+    if isinstance(vllm, dict):
+        max_model_len = vllm.get("max_model_len")
+except Exception:
+    max_model_len = None
+
+# Fallback for legacy configs that did not set vLLM max_model_len explicitly.
+if max_model_len is None:
+    max_model_len = cfg.get("global_max_length") or 8192
+
 try:
     max_model_len = int(max_model_len)
 except Exception as exc:
-    die(f"global_max_length must be an int if provided: {exc}")
+    die(f"vllm.max_model_len (or global_max_length fallback) must be an int: {exc}")
 
 enable_lora = vllm.get("enable_lora", False)
 enable_lora = bool(enable_lora)
@@ -236,7 +246,8 @@ done
 SERVER_DP="${server_dp:-${#server_gpu_array[@]}}"
 SERVER_TP="${server_tp:-1}"
 
-VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-0.90}"
+# Default lower utilization for stability (avoid borderline OOM on busy nodes).
+VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-0.75}"
 
 echo "========================================================================"
 echo "  Stage-2 AB vLLM Server + Learner Launcher"
