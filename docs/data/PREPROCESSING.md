@@ -17,7 +17,7 @@ Raw annotations/images
   → training (custom.train_jsonl / custom.val_jsonl)
 ```
 
-For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other datasets, add a matching converter that outputs the same JSONL contract (see docs/DATA_JSONL_CONTRACT.md), then feed it into the steps below.
+For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other datasets, add a matching converter that outputs the same JSONL contract (see JSONL_CONTRACT.md), then feed it into the steps below.
 
 ## Smart resize (budget + grid)
 ```bash
@@ -109,7 +109,7 @@ Outputs:
 - `${OUTPUT_ROOT}/train_tiny.coord.jsonl`
 
 ## Quality checklist (before training)
-- JSONL matches `docs/DATA_JSONL_CONTRACT.md` (width/height present; one geometry field per object).
+- JSONL matches `JSONL_CONTRACT.md` (width/height present; one geometry field per object).
 - No coord tokens outside 0–999.
 - Resized images exist and match paths in JSONL.
 - Tiny splits load without errors.

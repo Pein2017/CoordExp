@@ -1,4 +1,4 @@
-# Packing Mode Guide (Default: 16k, eff_bs=12)
+# Packing Mode Guide (Default: 12k, eff_bs=12)
 
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
@@ -9,7 +9,7 @@ Note:
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
   - carry-only mode requires `training.packing_drop_last: true`,
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
-- Stage_2 runbook: `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
+- Stage_2 runbook: `../training/STAGE2_ROLLOUT.md`.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
@@ -29,11 +29,11 @@ packing_drop_last: true
 eval_packing: true
 ```
 - For logging/checkpoint cadence at ~852 opt steps/epoch: `eval_steps: 80`, `save_steps: 80`, `save_delay_steps: 200`.
-- Run name example: `epoch_4-dlora-lrs_2_1_4-sorted-text_only-packed-16k`.
+- Run name example: `epoch_4-dlora-lrs_2_1_4-sorted-text_only-packed-12k`.
 
 ## Equivalence vs padding
 - Padding baseline (per_device=2, eff_bs=128, world=4): grad_accum=16, ~777 opt steps/epoch.
-- Packing 16k: packs/epoch ≈10,224 → micro steps/epoch ≈2,556; grad_accum≈3 → opt steps/epoch ≈852.
+- Packing 12k: packs/epoch ≈10,224 → micro steps/epoch ≈2,556; grad_accum≈3 → opt steps/epoch ≈852.
 - Base samples/update ≈ 9.72 (samples/pack) × 4 GPUs × 3 accum ≈ 117 (close to 128 baseline).
 - Formula: `grad_accum_packed ≈ ceil(128 / (avg_pack_samples * world * per_device))`.
 
@@ -61,5 +61,4 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 4) Keep ROOT_IMAGE_DIR set for dataset paths; packing requires non-lazy tokenize.
 5) If comparing to padding runs, match total samples (epochs) rather than optimizer steps.
 
-## Deprecation note
-- The detailed temporary artifacts in `docs/temp_packed_dataset/` are superseded by this guide and will be removed once downstream consumers migrate. All key numbers and formulas are summarized here.
+

@@ -21,7 +21,7 @@ training:
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   effective_batch_size: 12
-  # Packing knobs (see docs/PACKING_MODE_GUIDE.md for defaults/tuning)
+  # Packing knobs (see docs/data/PACKING.md for defaults/tuning)
   packing_buffer: 256
   packing_min_fill_ratio: 0.7
   packing_drop_last: true

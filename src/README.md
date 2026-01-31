@@ -62,7 +62,7 @@ src/
 │   ├── geometry.py        # Affine transforms, normalization
 │   ├── augment.py         # Image + geometry augmentation
 │   ├── collators.py       # Data collators (padding-free, etc.)
-│   └── data_details.md    # JSONL schema specification
+│   └── data_details.md    # JSONL schema specification (see docs/data/JSONL_CONTRACT.md)
 ├── utils/
 │   └── auto_detect_aligners.py  # Utility to list aligner modules
 ├── sft.py                  # Training entry point (YAML-driven)
@@ -142,7 +142,7 @@ print(adapter_cfg["modules_to_save"])  # Should list your aligner modules
 ```
 
 ## Data Contract (JSONL)
-JSONL records (see `data_details.md`):
+JSONL records (see `docs/data/JSONL_CONTRACT.md`):
 - `images`: List[str] — paths resolved via `ROOT_IMAGE_DIR`
 - `objects`: List — each has one geometry (`bbox_2d`/`poly`) + `desc`
 - `width`, `height`: image dimensions
@@ -283,7 +283,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
 ```bash
 python -m src.sft --config /abs/path/to/your_config.yaml
 ```
-For config structure and inheritance, see the YAML examples below and `docs/MS_SWIFT_TRAINING_GUIDE.md`.
+For config structure and inheritance, see the YAML examples below and `docs/training/STAGE2_AB.md`.
 
 **YAML Structure** (explicit values required; you can factor shared fields into `configs/base.yaml`):
 ```yaml
@@ -393,15 +393,15 @@ custom:
   use_summary: true
 ```
 
-For details, see `docs/DATA_FORMATS.md#dense-vs-summary-modes`.
+For details, see `docs/data/README.md#dense-vs-summary-modes`.
 
 
 ### Further reading
 
-- **Training workflows**: See `docs/TRAINING_GUIDE.md` for complete training guide
-- **Inference & deployment**: See `docs/INFERENCE_GUIDE.md` for inference and adapter merging
-- **Data preparation**: See `docs/DATA_FORMATS.md` for JSONL schemas and validation
-- **Advanced topics**: See `docs/REFERENCE.md` for performance tuning and troubleshooting
+- **Training workflows**: See `docs/training/STAGE2_AB.md` for complete training guide
+- **Inference & deployment**: See `docs/eval/README.md` for inference and adapter merging
+- **Data preparation**: See `docs/data/README.md` for JSONL schemas and validation
+- **Advanced topics**: See `src/README.md` for performance tuning and troubleshooting
 
 ## Utilities
 

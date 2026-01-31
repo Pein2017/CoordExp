@@ -3,7 +3,7 @@
 Smoke test for polygon cap functionality.
 
 Tests that polygons with more than poly_max_points vertices are converted to bbox_2d.
-Verifies alignment with DATA_JSONL_CONTRACT.md (only bbox_2d and poly, no line/quad).
+Verifies alignment with docs/data/JSONL_CONTRACT.md (only bbox_2d and poly, no line/quad).
 """
 
 import json
@@ -261,7 +261,7 @@ def test_poly_cap_functionality():
 
 
 def test_data_contract_compliance():
-    """Test that output conforms to DATA_JSONL_CONTRACT.md."""
+    """Test that output conforms to docs/data/JSONL_CONTRACT.md."""
     print("\n" + "=" * 60)
     print("Test 2: Data Contract Compliance")
     print("=" * 60)
@@ -379,7 +379,7 @@ def test_data_contract_compliance():
                 print(f"      ... and {len(errors) - 10} more")
             return False
         else:
-            print("  ✓ All records comply with DATA_JSONL_CONTRACT.md")
+            print("  ✓ All records comply with docs/data/JSONL_CONTRACT.md")
             return True
 
 

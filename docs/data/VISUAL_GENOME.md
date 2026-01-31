@@ -1,6 +1,6 @@
 # Visual Genome (VG) -> CoordExp JSONL
 
-This repo consumes detection/grounding data via a single JSONL contract (`docs/DATA_JSONL_CONTRACT.md`).
+This repo consumes detection/grounding data via a single JSONL contract (`JSONL_CONTRACT.md`).
 Visual Genome is supported via a downloader + converter script that follows the HuggingFace dataset loader:
 `ranjaykrishna/visual_genome` (the HF repo hosts the loader; the data are downloaded from the official VG mirrors).
 
@@ -76,7 +76,7 @@ Outputs:
 
 ### 2) Smart-resize (recommended)
 
-Follow the shared intake pipeline (`docs/DATA_PREPROCESSING_PIPELINE.md`).
+Follow the shared intake pipeline (`PREPROCESSING.md`).
 
 Example:
 

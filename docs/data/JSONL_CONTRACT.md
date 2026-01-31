@@ -3,7 +3,7 @@
 This document defines the universal JSONL format consumed by all CoordExp training/eval datasets (public detection/grounding and any legacy sources). Every record MUST adhere to this contract so the shared chat-template pipeline can process all sources.
 
 ## Top-Level Record
-- **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then optionally resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see `docs/DATA_PREPROCESSING_PIPELINE.md`). Regardless of source, they MUST match this contract.
+- **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then optionally resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see `PREPROCESSING.md`). Regardless of source, they MUST match this contract.
 - `images` (list[str], required): Relative paths to image files; resolved against the JSONL directory.
 - `objects` (list[object], required): Structured annotations (see below).
 - `width` (int, required): Image width in pixels (original or post-resize if applied offline).

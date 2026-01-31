@@ -63,7 +63,7 @@ You run this; nothing is downloaded automatically.
 * **Split**: `image_id % val_mod == 0` → val
 * **Boxes**: converted to `xyxy` and clipped to `[0,W-1] / [0,H-1]`
 * **Paths**: images are referenced as relative paths under `public_data/vg/raw/`
-  (e.g. `images/VG_100K/1.jpg`) to match `docs/DATA_JSONL_CONTRACT.md`
+  (e.g. `images/VG_100K/1.jpg`) to match `docs/data/JSONL_CONTRACT.md`
 
 **Optional: write stats**
 

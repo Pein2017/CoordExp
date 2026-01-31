@@ -103,7 +103,7 @@ As new public datasets are added (Objects365, Open Images, ...), they should fol
 
 1) **Convert raw annotations → pixel JSONL**
    - LVIS: `public_data/scripts/convert_lvis.py --split train --use-polygon --smart-resize ...`
-   - COCO/Objects365: add a dataset-specific converter that emits the same JSONL contract (see `docs/DATA_JSONL_CONTRACT.md`).
+   - COCO/Objects365: add a dataset-specific converter that emits the same JSONL contract (see `JSONL_CONTRACT.md`).
 
 2) **Smart resize (budget + grid, dataset-agnostic)**
    ```bash

@@ -13,7 +13,7 @@ Outputs (default):
   public_data/vg/raw/train.jsonl
   public_data/vg/raw/val.jsonl
 
-Each JSONL record matches `docs/DATA_JSONL_CONTRACT.md`:
+Each JSONL record matches `docs/data/JSONL_CONTRACT.md`:
   {
     "images": ["images/VG_100K/1.jpg"],
     "objects": [{"bbox_2d": [x1,y1,x2,y2], "desc": "person"}],

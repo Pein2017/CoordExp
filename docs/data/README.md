@@ -2,9 +2,9 @@
 
 Comprehensive guide to data format, schema, dataset builders, and preprocessing pipeline.
 
-**Source of truth**: `src/datasets/`, `src/datasets/data_details.md`, `src/datasets/geometry.py`
+**Source of truth**: `src/datasets/`, `JSONL_CONTRACT.md`, `src/datasets/geometry.py`
 
-**Raw annotation intake** is covered in `DATA_PREPROCESSING_PIPELINE.md` (how dataset converters + `public_data/scripts/rescale_jsonl.py`/`convert_to_coord_tokens.py` produce the train/val JSONL that feed this pipeline).
+**Raw annotation intake** is covered in `PREPROCESSING.md` (how dataset converters + `public_data/scripts/rescale_jsonl.py`/`convert_to_coord_tokens.py` produce the train/val JSONL that feed this pipeline).
 
 ---
 
@@ -125,7 +125,7 @@ custom:
 
 ## Conversion & QA Tooling
 
-If your source is a human-annotation export, start with the intake guide (`docs/DATA_PREPROCESSING_PIPELINE.md`) and run the dataset converter plus `public_data/scripts/rescale_jsonl.py` (and optionally coord-token conversion) to produce train/val/tiny JSONL that already satisfy this contract.
+If your source is a human-annotation export, start with the intake guide (`PREPROCESSING.md`) and run the dataset converter plus `public_data/scripts/rescale_jsonl.py` (and optionally coord-token conversion) to produce train/val/tiny JSONL that already satisfy this contract.
 
 - **Public datasets (`public_data/`)**:
   - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
@@ -134,15 +134,15 @@ If your source is a human-annotation export, start with the intake guide (`docs/
     - `bbox_only` (every instance emits `bbox_2d`)
     - `poly_prefer_semantic` (prefer a capped single poly; fallback-to-bbox for semantic edge cases)
     See `public_data/lvis/README.md` and `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh`.
-  - For sequence-length control, prefer transparent record-level caps like `max_objects=60` (see `public_data/scripts/filter_jsonl_max_objects.py` and `docs/DATA_PREPROCESSING_PIPELINE.md`). Low-diversity filtering remains optional.
+  - For sequence-length control, prefer transparent record-level caps like `max_objects=60` (see `public_data/scripts/filter_jsonl_max_objects.py` and `PREPROCESSING.md`). Low-diversity filtering remains optional.
 - **Visualization**:
   - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
 - **Chat template inspection**:
   - `scripts/tools/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
 
-**Fusion status**: Multi-dataset fusion is supported via `custom.fusion_config`. When set, the runner builds train/eval datasets from the fusion config and ignores `custom.train_jsonl` / `custom.val_jsonl`. See `docs/data/FUSION_DATASET.md`.
+**Fusion status**: Multi-dataset fusion is supported via `custom.fusion_config`. When set, the runner builds train/eval datasets from the fusion config and ignores `custom.train_jsonl` / `custom.val_jsonl`. See `FUSION_DATASET.md`.
 
-For the universal JSONL record contract shared by all domains, see `docs/DATA_JSONL_CONTRACT.md`.
+For the universal JSONL record contract shared by all domains, see `JSONL_CONTRACT.md`.
 
 ---
 
@@ -196,7 +196,7 @@ For the universal JSONL record contract shared by all domains, see `docs/DATA_JS
 **Features**:
 - Atomic updates (image + geometries transformed together)
 - Preserves coordinate alignment
-- See [DATA_AUGMENTATION.md](DATA_AUGMENTATION.md) for details
+- See `src/datasets/augmentation/` for details
 - Reads standardized telemetry (`AugmentationTelemetry`) with crop coverage, kept indices, and skip reasons to audit augmentation pipelines.
 
 **Example**:
@@ -378,10 +378,10 @@ Export/merge:
 
 ## See Also
 
-- **Augmentation**: [DATA_AUGMENTATION.md](DATA_AUGMENTATION.md) - Geometry-aware transforms
-- **Training**: [REFERENCE.md](REFERENCE.md#training) - Full training guide
-- **Architecture**: [README.md](README.md#architecture) - End-to-end pipeline
-- **Upstream Models**: [UPSTREAM_DEPENDENCIES.md](UPSTREAM_DEPENDENCIES.md) - HF Qwen3-VL + ms-swift background
+- **Augmentation**: `src/datasets/augmentation/` - Geometry-aware transforms
+- **Training**: [README.md](../../src/README.md#training) - Full training guide
+- **Architecture**: [README.md](../../src/README.md#architecture) - End-to-end pipeline
+- **Upstream Models**: [UPSTREAM.md](../standards/UPSTREAM.md) - HF Qwen3-VL + ms-swift background
 
 ---
 

@@ -9,7 +9,7 @@ It composes:
 - **Channel-B**: rollout -> parse -> match -> FN-append -> teacher-forced losses (rollout-matching SFT).
 
 This runbook focuses on **end-to-end infrastructure correctness** (server-mode, GPU allocation, and key health metrics).
-For rollout-matching details, see `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`.
+For rollout-matching details, see `STAGE2_ROLLOUT.md`.
 
 ## Current Architecture (Scheduler + Channels)
 
@@ -65,7 +65,7 @@ Important constraints for `mode: step`:
 Stage-2 AB consumes the same JSONL contract as other public detection sources (no embedded `messages` required):
 - `images`, `objects`, `width`, `height`
 
-See: `docs/DATA_JSONL_CONTRACT.md`.
+See: `../data/JSONL_CONTRACT.md`.
 
 ## Recommended GPU Topology (Single Node)
 
@@ -133,4 +133,4 @@ Throughput (where your wall time goes):
 
 If training is stuck at the first B-step (server mode):
 - `/health/` can be OK while the **communicator `group_port` is not listening**.
-- See the troubleshooting section in `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` for checks and mitigation steps.
+- See the troubleshooting section in `STAGE2_ROLLOUT.md` for checks and mitigation steps.

@@ -178,7 +178,7 @@ class JSONLValidator:
                         ValidationError(
                             line_num,
                             "images[0]",
-                            "Image path must be relative to the JSONL directory (docs/DATA_JSONL_CONTRACT.md)",
+                            "Image path must be relative to the JSONL directory (docs/data/JSONL_CONTRACT.md)",
                         )
                     )
                     sample_valid = False
@@ -238,7 +238,7 @@ class JSONLValidator:
         img_width: int,
         img_height: int,
     ) -> bool:
-        """Validate one object annotation against docs/DATA_JSONL_CONTRACT.md."""
+        """Validate one object annotation against docs/data/JSONL_CONTRACT.md."""
         prefix = f"objects[{obj_idx}]"
 
         if not isinstance(obj, dict):

@@ -1,7 +1,7 @@
 # Visual Genome (VG)
 
 This folder documents how to prepare **Visual Genome** into the CoordExp
-JSONL contract (`docs/DATA_JSONL_CONTRACT.md`) using the unified public-data
+JSONL contract (`docs/data/JSONL_CONTRACT.md`) using the unified public-data
 runner (`public_data/run.sh`).
 
 We support two closely related dataset flavors:

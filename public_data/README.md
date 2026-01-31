@@ -27,7 +27,7 @@ For a dataset id `<ds>`:
   - `public_data/<ds>/<preset>/val.coord.jsonl` (optional)
 
 Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
-(`docs/DATA_JSONL_CONTRACT.md`).
+(`docs/data/JSONL_CONTRACT.md`).
 
 ## Quick Start (Unified Runner)
 
@@ -93,7 +93,7 @@ Details, rationale, and output paths:
 - `public_data/lvis/README.md`
 
 ## JSONL Contract (Produced Here)
-See `docs/DATA_JSONL_CONTRACT.md` for the authoritative schema.
+See `docs/data/JSONL_CONTRACT.md` for the authoritative schema.
 
 Produced records look like:
 ```json
