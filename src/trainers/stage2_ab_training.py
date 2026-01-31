@@ -18,6 +18,8 @@ from .rollout_matching_sft import (
     RolloutMatchingSFTTrainer,
     _PendingTrainRolloutLog,
     _WindowedMicroBatch,
+    _decode_pieces,
+    _find_desc_value_char_spans,
     _find_desc_value_token_positions,
     _fingerprint_raw_micro_batch,
     _points_from_coord_tokens,
@@ -155,7 +157,9 @@ def _find_subsequence(haystack: Sequence[int], needle: Sequence[int]) -> int:
         if list(haystack[i : i + n]) == list(needle):
             last = i
     if last < 0:
-        raise ValueError("unable to locate assistant token ids inside encoded input_ids")
+        raise ValueError(
+            "unable to locate assistant token ids inside encoded input_ids"
+        )
     return int(last)
 
 
@@ -194,9 +198,7 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
 
         # Enforce exactly one geometry key, bbox-only.
         geom_keys = [
-            k
-            for k in ("bbox_2d", "poly")
-            if k in entry and entry.get(k) is not None
+            k for k in ("bbox_2d", "poly") if k in entry and entry.get(k) is not None
         ]
         if len(geom_keys) != 1:
             raise ValueError(
@@ -209,7 +211,9 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
 
         pts = _coerce_bbox_bins(entry.get("bbox_2d"))
         if pts is None:
-            raise ValueError(f"invalid bbox_2d for {key}; expected 4 bins in [0,999] and ordered xyxy")
+            raise ValueError(
+                f"invalid bbox_2d for {key}; expected 4 bins in [0,999] and ordered xyxy"
+            )
 
         desc = entry.get("desc", "")
         objs.append(
@@ -267,6 +271,12 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         self._stage2_b_step_gs: Optional[int] = None
         self._stage2_b_step_micro: int = 0
         self._stage2_b_step_raw: List[Mapping[str, Any]] = []
+
+        # Channel-A step-budgeted packing state: accumulate raw samples across micro-steps
+        # and execute packing+learning only on the final micro-step of the accumulation window.
+        self._stage2_a_step_gs: Optional[int] = None
+        self._stage2_a_step_micro: int = 0
+        self._stage2_a_step_raw: List[Mapping[str, Any]] = []
 
     def _maybe_seed_hf_sampling_rollout(
         self, *, seed_base: int, backend: str, do_sample: bool
@@ -528,7 +538,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         return int(base + (1 if rank < rem else 0))
 
     def _stage2_channel_for_step(self, global_step: int) -> Literal["A", "B"]:
-        if isinstance(self._stage2_channel_override, str) and self._stage2_channel_override in {
+        if isinstance(
+            self._stage2_channel_override, str
+        ) and self._stage2_channel_override in {
             "A",
             "B",
         }:
@@ -642,6 +654,137 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         }
         return selected, pack_metrics
 
+    def _stage2_a_step_budgeted_train(
+        self,
+        model,
+        *,
+        raw_samples: List[Mapping[str, Any]],
+        global_step: int,
+    ) -> torch.Tensor:
+        """Run one Channel-A optimizer step worth of work from a raw sample batch.
+
+        Step-budgeted semantics:
+        - build teacher-forced segments for the raw batch
+        - pack into a variable number of packed sequences (<= packing_length)
+        - run forward/backward once per pack and accumulate gradients
+        - outer Trainer performs the single optimizer.step()
+        """
+        if not raw_samples:
+            raise ValueError(
+                "stage2-ab Channel-A step mode requires non-empty raw_samples"
+            )
+
+        packing_enabled = False
+        try:
+            packing_enabled = bool(self._packing_enabled())
+        except Exception:
+            packing_enabled = False
+        if not packing_enabled:
+            raise ValueError(
+                "stage2-ab Channel-A step mode requires training.packing=true "
+                "(learner microbatch=1 under global_max_length)."
+            )
+
+        # Step-budgeted mode: do NOT carry segments across optimizer steps.
+        buf = self._stage2_post_rollout_buffer(channel="A")
+        if buf:
+            raise ValueError(
+                "stage2-ab Channel-A step mode requires an empty post-rollout buffer at step start; "
+                "disable carry across steps or investigate unexpected leftovers"
+            )
+
+        total_segments_target = int(len(raw_samples))
+        if total_segments_target <= 0:
+            raise AssertionError("unexpected empty raw_samples")
+
+        from swift.llm import to_device
+
+        def _train_one_pack(
+            *,
+            selected: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
+            pack_metrics: Mapping[str, float],
+            step_totals: Mapping[str, float],
+            sync_gradients: bool,
+        ) -> torch.Tensor:
+            with self._template_packing_enabled():
+                packed = self.template.data_collator([enc for enc, _, _ in selected])
+            batch = to_device(packed, self.model.device)
+            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
+
+            bm: Dict[str, float] = {}
+            # Attach step-level totals (time/*, packing settings, etc) sparingly.
+            bm.update({str(k): float(v) for k, v in step_totals.items()})
+            bm.update({str(k): float(v) for k, v in pack_metrics.items()})
+
+            batch["_rollout_matching_batch_metrics"] = bm
+            batch["_stage2_ab_channel"] = "A"
+
+            pack_segments = int(len(selected))
+            weight = float(pack_segments) / float(total_segments_target)
+
+            cm = contextlib.nullcontext()
+            if not bool(sync_gradients):
+                acc = getattr(self, "accelerator", None)
+                if acc is not None and hasattr(acc, "no_sync"):
+                    cm = acc.no_sync(model)
+                else:
+                    no_sync = getattr(model, "no_sync", None)
+                    if callable(no_sync):
+                        cm = model.no_sync()
+
+            with cm:
+                loss = self.compute_loss(model, batch)
+                if not isinstance(loss, torch.Tensor):
+                    raise TypeError("compute_loss must return a torch.Tensor")
+
+                loss_scaled = loss * float(weight)
+
+                acc = getattr(self, "accelerator", None)
+                if acc is not None and hasattr(acc, "backward"):
+                    acc.backward(loss_scaled)
+                else:
+                    loss_scaled.backward()
+
+            return loss.detach() * float(weight)
+
+        segments, batch_metrics = self._prepare_batch_inputs_a(
+            list(raw_samples), _segments_only=True
+        )
+        if not isinstance(segments, list) or not segments:
+            raise ValueError(
+                "stage2-ab Channel-A step mode produced no segments; check dataset contract"
+            )
+
+        step_totals = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
+
+        self._stage2_append_post_rollout_segments(channel="A", segments=segments)
+
+        loss_total = None
+        first_pack = True
+        while self._stage2_post_rollout_buffer(channel="A"):
+            t_pack0 = time.perf_counter()
+            selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="A")
+            pack_metrics = dict(pack_metrics)
+            pack_metrics["time/post_rollout_pack_s"] = float(
+                time.perf_counter() - t_pack0
+            )
+
+            step_totals_pack = step_totals if first_pack else {}
+            sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="A"))
+            loss_pack = _train_one_pack(
+                selected=selected,
+                pack_metrics=pack_metrics,
+                step_totals=step_totals_pack,
+                sync_gradients=sync_gradients,
+            )
+
+            loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
+            first_pack = False
+
+        if loss_total is None:
+            raise AssertionError("stage2-ab Channel-A step mode produced no packs")
+        return loss_total
+
     def _stage2_b_step_budgeted_train(
         self,
         model,
@@ -660,7 +803,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         - outer Trainer performs the single optimizer.step()
         """
         if not raw_samples:
-            raise ValueError("stage2-ab Channel-B step mode requires non-empty raw_samples")
+            raise ValueError(
+                "stage2-ab Channel-B step mode requires non-empty raw_samples"
+            )
 
         packing_enabled = False
         try:
@@ -673,9 +818,13 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "(learner microbatch=1 under global_max_length)."
             )
 
-        enable_pipeline = bool(self._ab_channel_b_get("enable_pipeline", False) or False)
+        enable_pipeline = bool(
+            self._ab_channel_b_get("enable_pipeline", False) or False
+        )
         if enable_pipeline:
-            backend = str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
+            backend = (
+                str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
+            )
             mode = str(getattr(self, "_vllm_mode", lambda: "")()).strip().lower()
             if backend != "vllm" or mode != "server":
                 raise ValueError(
@@ -814,7 +963,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     sync_gradients=sync_gradients,
                 )
 
-                loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
+                loss_total = (
+                    loss_pack if loss_total is None else (loss_total + loss_pack)
+                )
                 first_pack = False
 
             if loss_total is None:
@@ -843,7 +994,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         th.start()
 
         rollout_static: Dict[str, float] = {}
-        pending_totals: Dict[str, float] = {"stage2/raw_rollouts": float(total_segments_target)}
+        pending_totals: Dict[str, float] = {
+            "stage2/raw_rollouts": float(total_segments_target)
+        }
 
         buf_total_len = 0
         seen_segments = 0
@@ -853,7 +1006,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         while (not producer_done) or self._stage2_post_rollout_buffer(channel="B"):
             # Fill the buffer until we can build a reasonably full pack, or until producer finishes.
-            while (not producer_done) and (buf_total_len < float(target_fill) * float(packing_length)):
+            while (not producer_done) and (
+                buf_total_len < float(target_fill) * float(packing_length)
+            ):
                 item = q.get()
                 if item is None:
                     producer_done = True
@@ -880,7 +1035,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
                 # Accumulate step-level totals to be attached to the next trained pack.
                 for k, v in step_tot.items():
-                    pending_totals[str(k)] = float(pending_totals.get(str(k), 0.0)) + float(v)
+                    pending_totals[str(k)] = float(
+                        pending_totals.get(str(k), 0.0)
+                    ) + float(v)
 
             # Train one pack if available.
             if not self._stage2_post_rollout_buffer(channel="B"):
@@ -891,7 +1048,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             buf_total_len -= int(sum(int(sl) for _, _, sl in selected))
 
             pack_metrics = dict(pack_metrics)
-            pack_metrics["time/post_rollout_pack_s"] = float(time.perf_counter() - t_pack0)
+            pack_metrics["time/post_rollout_pack_s"] = float(
+                time.perf_counter() - t_pack0
+            )
 
             # Attach accumulated totals to this pack, then reset.
             step_totals_pack = dict(pending_totals)
@@ -924,6 +1083,50 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         if loss_total is None:
             raise AssertionError("stage2-ab Channel-B pipelined step produced no packs")
         return loss_total
+
+    def _stage2_training_step_a_step_mode(
+        self,
+        model,
+        raw_micro_batch: List[Mapping[str, Any]],
+        *,
+        global_step: int,
+    ) -> torch.Tensor:
+        """Channel-A step-budgeted training_step shim.
+
+        Collect raw samples across micro-steps and execute the full packing+learning loop
+        only on the final micro-step of the accumulation window.
+
+        This keeps one optimizer update per optimizer step, while still allowing packing
+        multiple samples per backward under global_max_length.
+        """
+        gs = int(global_step)
+        if self._stage2_a_step_gs is None or int(self._stage2_a_step_gs) != gs:
+            self._stage2_a_step_gs = int(gs)
+            self._stage2_a_step_micro = 0
+            self._stage2_a_step_raw = []
+
+        self._stage2_a_step_micro += 1
+        self._stage2_a_step_raw.extend(list(raw_micro_batch))
+
+        try:
+            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+        except Exception:
+            gas = 1
+        gas = max(1, int(gas))
+
+        # Execute only on the final micro-step so the outer Trainer performs exactly one
+        # optimizer.step() after we have accumulated gradients for all packs.
+        if int(self._stage2_a_step_micro) < int(gas):
+            return torch.tensor(0.0, device=self.model.device)
+
+        # Reset state eagerly so exceptions do not poison the next step.
+        raw_all = list(self._stage2_a_step_raw)
+        self._stage2_a_step_raw = []
+        self._stage2_a_step_micro = 0
+
+        return self._stage2_a_step_budgeted_train(
+            model, raw_samples=raw_all, global_step=gs
+        )
 
     def _stage2_training_step_b_step_mode(
         self,
@@ -1055,14 +1258,17 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     "stage2-ab Channel-B step mode is incompatible with rollout_buffer reuse; "
                     "disable custom.extra.rollout_matching.rollout_buffer or use channel_b.mode='micro'"
                 )
-            return self._stage2_training_step_b_step_mode(
-                model, inputs, global_step=gs
-            )
+            return self._stage2_training_step_b_step_mode(model, inputs, global_step=gs)
 
         if ch_sched == "A":
             prev = self._stage2_channel_override
             self._stage2_channel_override = "A"
             try:
+                packing_enabled = bool(self._packing_enabled())
+                if packing_enabled:
+                    return self._stage2_training_step_a_step_mode(
+                        model, inputs, global_step=gs
+                    )
                 prepared = self._prepare_batch_inputs(inputs)
             finally:
                 self._stage2_channel_override = prev
@@ -1167,7 +1373,6 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             model, batch, *args, **kwargs
         )
 
-
     def _prepare_window_packed_batches(
         self,
         *,
@@ -1230,7 +1435,13 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             bm: Dict[str, float] = {}
             if i == 0 and isinstance(bm_total, Mapping):
-                bm.update({k: float(v) for k, v in bm_total.items() if isinstance(v, (int, float))})
+                bm.update(
+                    {
+                        k: float(v)
+                        for k, v in bm_total.items()
+                        if isinstance(v, (int, float))
+                    }
+                )
                 bm.update(window_pack_metrics)
                 bm["time/post_rollout_pack_s"] = float(t_pack_s)
                 bm["packing/post_rollout_scope_window"] = 1.0
@@ -1239,7 +1450,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 bm["packing/post_rollout_scope_window"] = 0.0
 
             sel_total = int(sum(int(sl) for _, _, sl in selected))
-            fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            fill = (
+                float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+            )
             bm.update(
                 {
                     "packing/post_rollout_fill": float(fill),
@@ -1308,7 +1521,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     "desc": str(obj.desc),
                     "bbox_2d": [f"<|coord_{int(v)}|>" for v in obj.points_norm1000],
                 }
-            assistant_text = json.dumps(payload, ensure_ascii=False, separators=(", ", ": "))
+            assistant_text = json.dumps(
+                payload, ensure_ascii=False, separators=(", ", ": ")
+            )
             y_train_ids = tok.encode(assistant_text, add_special_tokens=False)
 
             # Desc spans for CE weighting (relative to tail ids).
@@ -1498,6 +1713,16 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         fp_cost = float(self._cfg("fp_cost", 1.0))
         fn_cost = float(self._cfg("fn_cost", 1.0))
 
+        # Optional (Channel-B): reordered-GT SFT (B3/7.3 from progress/full_idea.md).
+        # When enabled, we build a GT sequence arranged in the *predicted* object order so CE can
+        # supervise matched objects and encourage early stop when rollouts include extras.
+        reordered_gt_sft = bool(
+            self._ab_channel_b_get("reordered_gt_sft", False) or False
+        )
+        reordered_append_missing = bool(
+            self._ab_channel_b_get("reordered_gt_append_missing", True) or True
+        )
+
         packing_enabled = self._packing_enabled()
         if packing_enabled and not self._packing_drop_last():
             raise ValueError(
@@ -1537,7 +1762,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             if rollout_infer_bs_raw is None:
                 rollout_infer_bs_raw = self._cfg("rollout_generate_batch_size", None)
             try:
-                rollout_infer_bs = int(rollout_infer_bs_raw) if rollout_infer_bs_raw is not None else 0
+                rollout_infer_bs = (
+                    int(rollout_infer_bs_raw) if rollout_infer_bs_raw is not None else 0
+                )
             except Exception:
                 rollout_infer_bs = 0
             if rollout_infer_bs <= 0:
@@ -1632,58 +1859,186 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             )
 
             prefix_bbox_groups: List[Dict[str, Any]] = []
+            fn_bbox_groups: List[Dict[str, Any]] = []
             prefix_pos: List[int] = []
             prefix_bins: List[int] = []
             matched_gt_for_supervision: set[int] = set()
-            for pred_i, gt_i in match.matched_pairs:
-                if pred_i < 0 or pred_i >= len(pred_meta):
-                    continue
-                if gt_i < 0 or gt_i >= len(gts):
-                    continue
-                pobj = pred_meta[pred_i]
-                if len(pobj.coord_token_indices) != 4:
-                    continue
-                matched_gt_for_supervision.add(int(gt_i))
-                gt_bins = list(gts[gt_i].points_norm1000)
-                pos_seg = [int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices]
-                prefix_bbox_groups.append({"pos": pos_seg, "gt_bins": gt_bins})
-                for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
-                    prefix_pos.append(int(local_idx))
-                    prefix_bins.append(int(tbin))
 
-            fn_gt_indices_final = [
-                i for i in range(len(gts)) if i not in matched_gt_for_supervision
-            ]
-            fn_objs = [gts[i] for i in fn_gt_indices_final]
+            # Optional: Reordered-GT SFT (B3/7.3). Build a GT sequence arranged in the
+            # *predicted* object order so CE can supervise matched objects.
+            prefix_bbox_groups_rel: List[Dict[str, Any]] = []
+            fn_bbox_groups_rel: List[Dict[str, Any]] = []
+            prefix_len_raw_local = int(len(parse.prefix_token_ids))
 
-            max_idx = parse.max_object_index_in_prefix
-            start_idx = (max_idx + 1) if max_idx is not None else 1
-            append_text = _serialize_append_fragment(
-                fn_objects=fn_objs, start_index=start_idx, prefix_text=parse.prefix_text
-            )
-            append_ids = tok.encode(append_text, add_special_tokens=False)
+            tail_desc_pos_matched: List[int] = []
+            tail_desc_pos_missing: List[int] = []
 
-            tail_desc_pos = _find_desc_value_token_positions(
-                tokenizer=tok, token_ids=append_ids
-            )
+            fn_count_for_meta = 0
 
-            y_train_ids = list(parse.prefix_token_ids) + [int(t) for t in append_ids]
+            if bool(reordered_gt_sft):
+                pred_to_gt: Dict[int, int] = {
+                    int(pi): int(gi) for pi, gi in match.matched_pairs
+                }
 
-            # FN bbox groups in the appended tail.
-            rel_groups = _bbox_groups_from_token_ids(
-                token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
-            )
-            fn_bbox_groups: List[Dict[str, Any]] = []
-            for obj, rel_pos in zip(fn_objs, rel_groups):
-                fn_bbox_groups.append(
-                    {
-                        "pos": [
-                            int(len(prompt_ids) + int(len(parse.prefix_token_ids)) + p)
-                            for p in rel_pos
-                        ],
-                        "gt_bins": list(obj.points_norm1000),
+                matched_objs: List[GTObject] = []
+                for pred_i in range(len(pred_meta)):
+                    gt_i = pred_to_gt.get(int(pred_i))
+                    if gt_i is None:
+                        continue
+                    if gt_i < 0 or gt_i >= len(gts):
+                        continue
+                    matched_objs.append(gts[int(gt_i)])
+                    matched_gt_for_supervision.add(int(gt_i))
+
+                fn_gt_indices_final = list(match.fn_gt_indices)
+                fn_objs_all = [gts[i] for i in fn_gt_indices_final]
+                fn_count_for_meta = int(len(fn_gt_indices_final))
+                fn_objs = fn_objs_all if bool(reordered_append_missing) else []
+
+                all_objs = matched_objs + list(fn_objs)
+                if not all_objs:
+                    # Safety: avoid training on an empty JSON when append_missing is disabled.
+                    all_objs = list(gts)
+
+                payload: Dict[str, Any] = {}
+                for out_i, obj in enumerate(all_objs, start=1):
+                    payload[f"object_{int(out_i)}"] = {
+                        "desc": str(obj.desc),
+                        "bbox_2d": [f"<|coord_{int(v)}|>" for v in obj.points_norm1000],
                     }
+                assistant_text = json.dumps(
+                    payload, ensure_ascii=False, separators=(", ", ": ")
                 )
+                y_train_ids = tok.encode(assistant_text, add_special_tokens=False)
+
+                # Desc spans for CE weighting (relative to y_train_ids since prefix_len=0).
+                tail_desc_pos = _find_desc_value_token_positions(
+                    tokenizer=tok, token_ids=y_train_ids
+                )
+
+                # Split desc tokens into matched (reordered prefix) vs missing (FN appended).
+                # This enables downweighting matched-object desc CE without weakening strict
+                # JSON format supervision.
+                n_prefix_objs = int(len(matched_objs))
+                try:
+                    pieces = _decode_pieces(tok, [int(t) for t in y_train_ids])
+                    token_start_chars: List[int] = []
+                    cursor = 0
+                    for p in pieces:
+                        token_start_chars.append(cursor)
+                        cursor += len(p)
+                    text = "".join(pieces)
+                    spans = _find_desc_value_char_spans(text)
+                    if spans:
+                        by_span: List[List[int]] = [[] for _ in spans]
+                        for ti, (start, piece) in enumerate(
+                            zip(token_start_chars, pieces)
+                        ):
+                            end = start + len(piece)
+                            for si, (s, e) in enumerate(spans):
+                                if start < e and end > s:
+                                    by_span[si].append(int(ti))
+                                    break
+
+                        n_split = max(0, min(int(n_prefix_objs), int(len(by_span))))
+                        for pos_list in by_span[:n_split]:
+                            tail_desc_pos_matched.extend(pos_list)
+                        for pos_list in by_span[n_split:]:
+                            tail_desc_pos_missing.extend(pos_list)
+
+                        tail_desc_pos_matched = sorted(
+                            {int(p) for p in tail_desc_pos_matched}
+                        )
+                        tail_desc_pos_missing = sorted(
+                            {int(p) for p in tail_desc_pos_missing}
+                        )
+                except Exception:
+                    tail_desc_pos_matched = []
+                    tail_desc_pos_missing = []
+
+                rel_groups_all = _bbox_groups_from_token_ids(
+                    token_ids=y_train_ids, coord_id_set=coord_id_set, gt_objs=all_objs
+                )
+                for i_obj, (obj, rel_pos) in enumerate(zip(all_objs, rel_groups_all)):
+                    try:
+                        rel_pos_i = [int(p) for p in rel_pos]
+                    except Exception:
+                        continue
+                    if len(rel_pos_i) != 4:
+                        continue
+
+                    grp = {"pos": rel_pos_i, "gt_bins": list(obj.points_norm1000)}
+                    if i_obj < n_prefix_objs:
+                        prefix_bbox_groups_rel.append(grp)
+                        for local_idx, tbin in zip(rel_pos_i, obj.points_norm1000):
+                            prefix_pos.append(int(local_idx))
+                            prefix_bins.append(int(tbin))
+                    else:
+                        fn_bbox_groups_rel.append(grp)
+
+                # Apply CE over the full assistant span (no rollout prefix masking).
+                prefix_len_raw_local = 0
+
+            else:
+                for pred_i, gt_i in match.matched_pairs:
+                    if pred_i < 0 or pred_i >= len(pred_meta):
+                        continue
+                    if gt_i < 0 or gt_i >= len(gts):
+                        continue
+                    pobj = pred_meta[pred_i]
+                    if len(pobj.coord_token_indices) != 4:
+                        continue
+                    matched_gt_for_supervision.add(int(gt_i))
+                    gt_bins = list(gts[gt_i].points_norm1000)
+                    pos_seg = [
+                        int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices
+                    ]
+                    prefix_bbox_groups.append({"pos": pos_seg, "gt_bins": gt_bins})
+                    for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
+                        prefix_pos.append(int(local_idx))
+                        prefix_bins.append(int(tbin))
+
+                fn_gt_indices_final = [
+                    i for i in range(len(gts)) if i not in matched_gt_for_supervision
+                ]
+                fn_objs = [gts[i] for i in fn_gt_indices_final]
+                fn_count_for_meta = int(len(fn_objs))
+
+                max_idx = parse.max_object_index_in_prefix
+                start_idx = (max_idx + 1) if max_idx is not None else 1
+                append_text = _serialize_append_fragment(
+                    fn_objects=fn_objs,
+                    start_index=start_idx,
+                    prefix_text=parse.prefix_text,
+                )
+                append_ids = tok.encode(append_text, add_special_tokens=False)
+
+                tail_desc_pos = _find_desc_value_token_positions(
+                    tokenizer=tok, token_ids=append_ids
+                )
+
+                y_train_ids = list(parse.prefix_token_ids) + [
+                    int(t) for t in append_ids
+                ]
+
+                # FN bbox groups in the appended tail.
+                rel_groups = _bbox_groups_from_token_ids(
+                    token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
+                )
+                for obj, rel_pos in zip(fn_objs, rel_groups):
+                    fn_bbox_groups.append(
+                        {
+                            "pos": [
+                                int(
+                                    len(prompt_ids)
+                                    + int(len(parse.prefix_token_ids))
+                                    + int(p)
+                                )
+                                for p in rel_pos
+                            ],
+                            "gt_bins": list(obj.points_norm1000),
+                        }
+                    )
 
             t_parse_match_s += time.perf_counter() - t_pm0
 
@@ -1745,7 +2100,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 0, min(train_len_eff, int(encoded_len) - int(prompt_len))
             )
 
-            prefix_len_raw = int(len(parse.prefix_token_ids))
+            prefix_len_raw = int(prefix_len_raw_local)
             prefix_len_eff = int(min(prefix_len_raw, train_len_eff))
 
             if int(encoded_len) <= int(prompt_len):
@@ -1757,47 +2112,87 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             prompt_ids_local = enc_ids_list[:prompt_len]
             delta_prompt = int(prompt_len) - int(len(prompt_ids))
 
-            # Shift bbox groups based on local prompt_len, and drop any out-of-range groups.
-            def _shift_groups(
-                groups: Sequence[Mapping[str, Any]], *, lower: int, upper: int
-            ) -> List[Dict[str, Any]]:
-                out: List[Dict[str, Any]] = []
-                for g in groups:
-                    if not isinstance(g, Mapping):
-                        continue
-                    pos = g.get("pos")
-                    gb = g.get("gt_bins")
-                    if not isinstance(pos, Sequence) or not isinstance(gb, Sequence):
-                        continue
-                    if len(pos) != 4 or len(gb) != 4:
-                        continue
-                    try:
-                        pos_i = [int(p) for p in pos]
-                        gb_i = [int(x) for x in gb]
-                    except Exception:
-                        continue
-                    pos_i = [int(p + delta_prompt) for p in pos_i]
-                    if any(p < int(lower) or p >= int(upper) for p in pos_i):
-                        continue
-                    if any(p >= int(encoded_len) for p in pos_i):
-                        continue
-                    out.append({"pos": pos_i, "gt_bins": gb_i})
-                return out
+            if bool(reordered_gt_sft):
+                # Convert bbox groups from assistant-relative positions (y_train_ids) to absolute
+                # positions in the encoded input_ids.
+                def _abs_groups_from_rel(
+                    groups: Sequence[Mapping[str, Any]],
+                ) -> List[Dict[str, Any]]:
+                    out: List[Dict[str, Any]] = []
+                    for g in groups:
+                        if not isinstance(g, Mapping):
+                            continue
+                        pos = g.get("pos")
+                        gb = g.get("gt_bins")
+                        if not isinstance(pos, Sequence) or not isinstance(
+                            gb, Sequence
+                        ):
+                            continue
+                        if len(pos) != 4 or len(gb) != 4:
+                            continue
+                        try:
+                            pos_i = [int(p) for p in pos]
+                            gb_i = [int(x) for x in gb]
+                        except Exception:
+                            continue
+                        if any(p < 0 or p >= int(train_len_eff) for p in pos_i):
+                            continue
+                        abs_pos = [int(prompt_len + p) for p in pos_i]
+                        if any(p >= int(encoded_len) for p in abs_pos):
+                            continue
+                        out.append({"pos": abs_pos, "gt_bins": gb_i})
+                    return out
 
-            bbox_groups_prefix = _shift_groups(
-                prefix_bbox_groups,
-                lower=int(prompt_len),
-                upper=int(prompt_len + prefix_len_eff),
-            )
-            bbox_groups_fn = _shift_groups(
-                fn_bbox_groups,
-                lower=int(prompt_len + prefix_len_eff),
-                upper=int(prompt_len + train_len_eff),
-            )
+                bbox_groups_prefix = _abs_groups_from_rel(prefix_bbox_groups_rel)
+                bbox_groups_fn = _abs_groups_from_rel(fn_bbox_groups_rel)
+
+            else:
+                # Shift bbox groups based on local prompt_len, and drop any out-of-range groups.
+                def _shift_groups(
+                    groups: Sequence[Mapping[str, Any]], *, lower: int, upper: int
+                ) -> List[Dict[str, Any]]:
+                    out: List[Dict[str, Any]] = []
+                    for g in groups:
+                        if not isinstance(g, Mapping):
+                            continue
+                        pos = g.get("pos")
+                        gb = g.get("gt_bins")
+                        if not isinstance(pos, Sequence) or not isinstance(
+                            gb, Sequence
+                        ):
+                            continue
+                        if len(pos) != 4 or len(gb) != 4:
+                            continue
+                        try:
+                            pos_i = [int(p) for p in pos]
+                            gb_i = [int(x) for x in gb]
+                        except Exception:
+                            continue
+                        pos_i = [int(p + delta_prompt) for p in pos_i]
+                        if any(p < int(lower) or p >= int(upper) for p in pos_i):
+                            continue
+                        if any(p >= int(encoded_len) for p in pos_i):
+                            continue
+                        out.append({"pos": pos_i, "gt_bins": gb_i})
+                    return out
+
+                bbox_groups_prefix = _shift_groups(
+                    prefix_bbox_groups,
+                    lower=int(prompt_len),
+                    upper=int(prompt_len + prefix_len_eff),
+                )
+                bbox_groups_fn = _shift_groups(
+                    fn_bbox_groups,
+                    lower=int(prompt_len + prefix_len_eff),
+                    upper=int(prompt_len + train_len_eff),
+                )
 
             # Tail desc spans for CE weighting (relative to tail ids).
             tail_desc_pos_eff: List[int] = []
+            tail_desc_pos_matched_eff: List[int] = []
+            tail_desc_pos_missing_eff: List[int] = []
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
+
             for rel in tail_desc_pos:
                 try:
                     rel_i = int(rel)
@@ -1805,6 +2200,22 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     continue
                 if 0 <= rel_i < tail_cap:
                     tail_desc_pos_eff.append(rel_i)
+
+            for rel in tail_desc_pos_matched:
+                try:
+                    rel_i = int(rel)
+                except Exception:
+                    continue
+                if 0 <= rel_i < tail_cap:
+                    tail_desc_pos_matched_eff.append(rel_i)
+
+            for rel in tail_desc_pos_missing:
+                try:
+                    rel_i = int(rel)
+                except Exception:
+                    continue
+                if 0 <= rel_i < tail_cap:
+                    tail_desc_pos_missing_eff.append(rel_i)
 
             invalid_rollout_total += int(invalid_rollout)
 
@@ -1827,13 +2238,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "matched_maskiou_sum": float(match.matched_maskiou_sum),
                 "matched_maskiou_count": int(match.matched_maskiou_count),
                 "gt_objects": int(len(gts)),
-                "fn_count": int(len(fn_objs)),
+                "fn_count": int(fn_count_for_meta),
                 "gating_rejections": int(match.gating_rejections),
                 "excluded_from_supervision": int(0),
                 "prefix_coord_pos": prefix_pos,
                 "prefix_coord_target_bins": prefix_bins,
                 "tail_ignore_pos": [],
                 "tail_desc_pos": tail_desc_pos_eff,
+                "tail_desc_pos_matched": tail_desc_pos_matched_eff,
+                "tail_desc_pos_missing": tail_desc_pos_missing_eff,
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
             }
@@ -1855,7 +2268,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             "rollout/seed_base": float(seed_base),
             "rollout/backend_hf": float(1.0 if backend == "hf" else 0.0),
             "rollout/backend_vllm": float(1.0 if backend == "vllm" else 0.0),
-            "rollout/decode_mode_greedy": float(1.0 if decode_mode == "greedy" else 0.0),
+            "rollout/decode_mode_greedy": float(
+                1.0 if decode_mode == "greedy" else 0.0
+            ),
             "rollout/decode_mode_beam": float(1.0 if decode_mode == "beam" else 0.0),
             "rollout/hf_seeded_global": float(hf_seeded_global),
             "rollout/temperature": float(temperature),
@@ -1924,10 +2339,33 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         n_softctx_iter = max(1, n_softctx_iter)
         desc_ce_weight = float(self._ab_get("desc_ce_weight", 1.0) or 0.0)
         desc_ce_weight = max(0.0, desc_ce_weight)
+        desc_ce_weight_matched = desc_ce_weight
+        if channel == "B":
+            desc_ce_weight_matched_raw = self._ab_channel_b_get(
+                "desc_ce_weight_matched", desc_ce_weight
+            )
+            if desc_ce_weight_matched_raw is None:
+                desc_ce_weight_matched_raw = desc_ce_weight
+            desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
+            desc_ce_weight_matched = max(0.0, desc_ce_weight_matched)
+
         bbox_l1_w = float(self._ab_get("bbox_l1_weight", 1.0) or 0.0)
         bbox_l1_w = max(0.0, bbox_l1_w)
         bbox_giou_w = float(self._ab_get("bbox_giou_weight", 1.0) or 0.0)
         bbox_giou_w = max(0.0, bbox_giou_w)
+
+        # Optional coord-distribution losses/regularizers (multi-peak stability).
+        coord_ce_w = float(self._ab_get("coord_ce_weight", 0.0) or 0.0)
+        coord_ce_w = max(0.0, coord_ce_w)
+        coord_el1_w = float(self._ab_get("coord_el1_weight", 0.0) or 0.0)
+        coord_el1_w = max(0.0, coord_el1_w)
+        coord_ehuber_w = float(self._ab_get("coord_ehuber_weight", 0.0) or 0.0)
+        coord_ehuber_w = max(0.0, coord_ehuber_w)
+        coord_huber_delta = float(self._ab_get("coord_huber_delta", 0.001) or 0.001)
+        coord_huber_delta = max(1e-6, coord_huber_delta)
+        # Entropy regularizer (sign controls direction): +w increases entropy, -w sharpens.
+        coord_entropy_w = float(self._ab_get("coord_entropy_weight", 0.0) or 0.0)
+
         temperature = float(self._ab_get("softctx_temperature", 1.0) or 1.0)
         if temperature <= 0:
             raise ValueError(f"softctx_temperature must be > 0; got {temperature}")
@@ -2056,8 +2494,12 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     if it > 0 and logits_prev is not None and p_slots.numel() > 0:
                         logit_pos = (p_slots - 1).clamp(min=0)
                         logits_next = logits_prev[b_slots, logit_pos]
-                        coord_logits = logits_next.index_select(dim=-1, index=coord_ids_t)
-                        probs = torch.softmax(coord_logits.float() / temperature, dim=-1)
+                        coord_logits = logits_next.index_select(
+                            dim=-1, index=coord_ids_t
+                        )
+                        probs = torch.softmax(
+                            coord_logits.float() / temperature, dim=-1
+                        )
                         exp_emb = probs @ coord_table_f
                         exp_emb = exp_emb.to(base_embeds.dtype)
                         exp_emb = exp_emb.detach()
@@ -2110,6 +2552,8 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             prefix_len = int(m.get("prefix_len", 0))
             train_len = int(m.get("train_len", 0))
             tail_desc_pos = list(m.get("tail_desc_pos") or [])
+            tail_desc_pos_matched = list(m.get("tail_desc_pos_matched") or [])
+            tail_desc_pos_missing = list(m.get("tail_desc_pos_missing") or [])
 
             tail_start = int(prompt_len + prefix_len)
             tail_end = int(prompt_len + train_len)
@@ -2128,17 +2572,45 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 weights_masked[b, p] = 1.0
 
             # Apply desc weighting on tail desc value tokens.
-            for rel in tail_desc_pos:
-                try:
-                    rel_i = int(rel)
-                except Exception:
-                    continue
-                p = int(seg_start + prompt_len + prefix_len + rel_i)
-                if p < tail_start or p >= tail_end:
-                    continue
-                if labels_masked[b, p].item() == -100:
-                    continue
-                weights_masked[b, p] = float(desc_ce_weight)
+            # Prefer split matched/missing weights when available; otherwise fall back to
+            # a single global desc_ce_weight.
+            if tail_desc_pos_matched or tail_desc_pos_missing:
+                for rel in tail_desc_pos_missing:
+                    try:
+                        rel_i = int(rel)
+                    except Exception:
+                        continue
+                    p = int(seg_start + prompt_len + prefix_len + rel_i)
+                    if p < tail_start or p >= tail_end:
+                        continue
+                    if labels_masked[b, p].item() == -100:
+                        continue
+                    weights_masked[b, p] = float(desc_ce_weight)
+
+                for rel in tail_desc_pos_matched:
+                    try:
+                        rel_i = int(rel)
+                    except Exception:
+                        continue
+                    p = int(seg_start + prompt_len + prefix_len + rel_i)
+                    if p < tail_start or p >= tail_end:
+                        continue
+                    if labels_masked[b, p].item() == -100:
+                        continue
+                    weights_masked[b, p] = float(desc_ce_weight_matched)
+
+            else:
+                for rel in tail_desc_pos:
+                    try:
+                        rel_i = int(rel)
+                    except Exception:
+                        continue
+                    p = int(seg_start + prompt_len + prefix_len + rel_i)
+                    if p < tail_start or p >= tail_end:
+                        continue
+                    if labels_masked[b, p].item() == -100:
+                        continue
+                    weights_masked[b, p] = float(desc_ce_weight)
 
         if len(meta) == bsz:
             for b in range(bsz):
@@ -2182,7 +2654,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                             continue
                         pos = g.get("pos")
                         gb = g.get("gt_bins")
-                        if not isinstance(pos, Sequence) or not isinstance(gb, Sequence):
+                        if not isinstance(pos, Sequence) or not isinstance(
+                            gb, Sequence
+                        ):
                             continue
                         if len(pos) != 4 or len(gb) != 4:
                             continue
@@ -2214,19 +2688,30 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 offset += enc_len
             return b_list, pos_list, bins_list
 
-        def _decode_groups(key: str) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        def _decode_groups(
+            key: str,
+        ) -> Tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            int,
+            int,
+        ]:
             b_list, pos_list, bins_list = _flatten_groups(key)
             if not pos_list:
                 z = logits.new_tensor(0.0)
-                return z, z, 0
+                return z, z, z, z, z, z, 0, 0
             if len(pos_list) % 4 != 0:
                 raise ValueError(f"{key} coord slots must be a multiple of 4 (bbox_2d)")
 
             b_t = torch.tensor(b_list, device=logits.device, dtype=torch.long)
             pos_t = torch.tensor(pos_list, device=logits.device, dtype=torch.long)
-            bin_t = torch.tensor(bins_list, device=logits.device, dtype=torch.long).clamp(
-                min=0, max=999
-            )
+            bin_t = torch.tensor(
+                bins_list, device=logits.device, dtype=torch.long
+            ).clamp(min=0, max=999)
 
             # Drop any groups with invalid positions to avoid device-side asserts.
             b_g = b_t.reshape(-1, 4)
@@ -2243,7 +2728,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             n_groups = int(pos_g.shape[0])
             if n_groups == 0:
                 z = logits.new_tensor(0.0)
-                return z, z, 0
+                return z, z, z, z, z, z, 0, 0
 
             b_t = b_g.reshape(-1)
             pos_t = pos_g.reshape(-1)
@@ -2251,6 +2736,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             logits_prev = logits[b_t, pos_t - 1]
             coord_logits = logits_prev.index_select(dim=-1, index=coord_ids_t)
+
             pred = _expectation_decode_coords(
                 coord_logits=coord_logits, temperature=temperature
             )
@@ -2258,10 +2744,72 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             pred_xyxy = pred.reshape(-1, 4)
             gt_xyxy = gt.reshape(-1, 4)
             l1, giou = _bbox_l1_giou_loss(pred_xyxy=pred_xyxy, gt_xyxy=gt_xyxy)
-            return l1, giou, n_groups
 
-        l1_p, giou_p, n_p = _decode_groups("bbox_groups_prefix")
-        l1_t, giou_t, n_t = _decode_groups("bbox_groups_fn")
+            # Optional coord-distribution losses/regularizers.
+            coord_ce = l1.new_tensor(0.0)
+            el1 = l1.new_tensor(0.0)
+            ehuber = l1.new_tensor(0.0)
+            entropy = l1.new_tensor(0.0)
+
+            if coord_ce_w != 0.0:
+                coord_ce = F.cross_entropy(
+                    coord_logits.float(), bin_t, reduction="mean"
+                ).to(dtype=l1.dtype)
+
+            if (
+                (coord_el1_w != 0.0)
+                or (coord_ehuber_w != 0.0)
+                or (coord_entropy_w != 0.0)
+            ):
+                probs = torch.softmax(coord_logits.float() / float(temperature), dim=-1)
+
+                if coord_entropy_w != 0.0:
+                    p = probs.clamp(min=1e-12)
+                    entropy = (-(p * p.log()).sum(dim=-1)).mean().to(dtype=l1.dtype)
+
+                if (coord_el1_w != 0.0) or (coord_ehuber_w != 0.0):
+                    bins_f = (
+                        torch.arange(0, 1000, device=probs.device, dtype=torch.float32)
+                        / 999.0
+                    )
+                    diff = bins_f.unsqueeze(0) - gt.unsqueeze(1)
+
+                    if coord_el1_w != 0.0:
+                        el1 = (probs * diff.abs()).sum(dim=-1).mean().to(dtype=l1.dtype)
+
+                    if coord_ehuber_w != 0.0:
+                        delta = float(coord_huber_delta)
+                        absd = diff.abs()
+                        huber = torch.where(
+                            absd < delta,
+                            0.5 * (absd**2) / delta,
+                            absd - 0.5 * delta,
+                        )
+                        ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=l1.dtype)
+
+            n_slots = int(pos_t.numel())
+            return l1, giou, el1, ehuber, coord_ce, entropy, n_groups, n_slots
+
+        (
+            l1_p,
+            giou_p,
+            el1_p,
+            ehuber_p,
+            coord_ce_p,
+            ent_p,
+            n_p,
+            s_p,
+        ) = _decode_groups("bbox_groups_prefix")
+        (
+            l1_t,
+            giou_t,
+            el1_t,
+            ehuber_t,
+            coord_ce_t,
+            ent_t,
+            n_t,
+            s_t,
+        ) = _decode_groups("bbox_groups_fn")
 
         n_all = int(n_p + n_t)
         if n_all > 0:
@@ -2271,8 +2819,30 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             l1 = logits.new_tensor(0.0)
             giou = logits.new_tensor(0.0)
 
+        s_all = int(s_p + s_t)
+        if s_all > 0:
+            coord_el1 = (el1_p * float(s_p) + el1_t * float(s_t)) / float(s_all)
+            coord_ehuber = (ehuber_p * float(s_p) + ehuber_t * float(s_t)) / float(
+                s_all
+            )
+            coord_ce = (coord_ce_p * float(s_p) + coord_ce_t * float(s_t)) / float(
+                s_all
+            )
+            coord_entropy = (ent_p * float(s_p) + ent_t * float(s_t)) / float(s_all)
+        else:
+            coord_el1 = logits.new_tensor(0.0)
+            coord_ehuber = logits.new_tensor(0.0)
+            coord_ce = logits.new_tensor(0.0)
+            coord_entropy = logits.new_tensor(0.0)
+
         bbox_loss = bbox_l1_w * l1 + bbox_giou_w * giou
-        total = ce_loss + bbox_loss
+        coord_reg_loss = (
+            coord_ce_w * coord_ce
+            + coord_el1_w * coord_el1
+            + coord_ehuber_w * coord_ehuber
+            + coord_entropy_w * coord_entropy
+        )
+        total = ce_loss + bbox_loss + coord_reg_loss
 
         # Buffer Stage-2 logs to merge into post-optimizer-step train log line.
         try:
@@ -2289,6 +2859,11 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
                 "loss/bbox_l1": float(l1.detach().cpu().item()),
                 "loss/bbox_giou": float(giou.detach().cpu().item()),
+                "loss/coord_ce": float(coord_ce.detach().cpu().item()),
+                "loss/coord_el1": float(coord_el1.detach().cpu().item()),
+                "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
+                "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
+                "loss/coord_reg": float(coord_reg_loss.detach().cpu().item()),
             }
             if isinstance(batch_metrics, Mapping):
                 for k in (
@@ -2320,19 +2895,30 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         # Also feed the base rollout-matching pending log so its timing/packing/buffer plots stay intact.
         try:
-            pending = self._rm_pending_train_logs.get(int(getattr(getattr(self, "state", None), "global_step", 0) or 0) + 1)
+            pending = self._rm_pending_train_logs.get(
+                int(getattr(getattr(self, "state", None), "global_step", 0) or 0) + 1
+            )
             if pending is None:
                 pending = _PendingTrainRolloutLog()
-                self._rm_pending_train_logs[int(getattr(getattr(self, "state", None), "global_step", 0) or 0) + 1] = pending
+                self._rm_pending_train_logs[
+                    int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+                    + 1
+                ] = pending
             pending.add_micro(
                 meta=meta,
                 ce_loss=float(ce_loss.detach().cpu().item()),
-                coord_loss=float(bbox_loss.detach().cpu().item()),
-                coord_prefix=float((bbox_l1_w * l1_p + bbox_giou_w * giou_p).detach().cpu().item()),
-                coord_tail=float((bbox_l1_w * l1_t + bbox_giou_w * giou_t).detach().cpu().item()),
+                coord_loss=float((bbox_loss + coord_reg_loss).detach().cpu().item()),
+                coord_prefix=float(
+                    (bbox_l1_w * l1_p + bbox_giou_w * giou_p).detach().cpu().item()
+                ),
+                coord_tail=float(
+                    (bbox_l1_w * l1_t + bbox_giou_w * giou_t).detach().cpu().item()
+                ),
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),
-                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
+                batch_metrics=batch_metrics
+                if isinstance(batch_metrics, Mapping)
+                else None,
             )
         except Exception:
             pass

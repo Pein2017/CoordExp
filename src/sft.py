@@ -2,11 +2,15 @@
 
 import argparse
 import copy
+import json
 import logging
 import math
 import os
 import re
+import subprocess
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from multiprocessing import Manager
 from typing import Any, Mapping
 
@@ -53,7 +57,8 @@ def resolve_trainer_cls(train_args):
 
         trainer_cls = RolloutMatchingSFTTrainer
     elif (
-        getattr(train_args, "rlhf_type", None) == "gkd" and trainer_variant == "gkd_monitor"
+        getattr(train_args, "rlhf_type", None) == "gkd"
+        and trainer_variant == "gkd_monitor"
     ):
         from .trainers.gkd_monitor import GKDTrainerWithMetrics
 
@@ -366,13 +371,17 @@ def main():
             tie_head=getattr(coord_offset_cfg, "tie_head", True),
             dtype=coord_offset_cfg.dtype,
         )
-        modules_to_save: list[str] = list(getattr(train_args, "modules_to_save", []) or [])
+        modules_to_save: list[str] = list(
+            getattr(train_args, "modules_to_save", []) or []
+        )
         if adapter.module_name not in modules_to_save:
             modules_to_save.append(adapter.module_name)
             try:
                 setattr(train_args, "modules_to_save", modules_to_save)
             except Exception:
-                logger.warning("Failed to attach coord_offset module to modules_to_save on train_args")
+                logger.warning(
+                    "Failed to attach coord_offset module to modules_to_save on train_args"
+                )
         # Sanity check against vocab size when available
         vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
         max_id = int(adapter.coord_ids.max().item())
@@ -464,7 +473,9 @@ def main():
     # When debug.enabled=true, use debug.{train,val}_sample_limit (optional) and
     # ignore custom.* limits. Otherwise use custom.{train,val}_sample_limit with
     # no shared fallback (explicit is better than implicit).
-    debug_enabled = bool(debug_config is not None and getattr(debug_config, "enabled", False))
+    debug_enabled = bool(
+        debug_config is not None and getattr(debug_config, "enabled", False)
+    )
     if debug_enabled:
         train_sample_limit = getattr(debug_config, "train_sample_limit", None)
         val_sample_limit = getattr(debug_config, "val_sample_limit", None)
@@ -502,7 +513,9 @@ def main():
     # Build training dataset (single JSONL or fusion config)
     # Require minimal explicit keys; others have sane defaults
     if not custom_config.user_prompt:
-        raise ValueError("custom.user_prompt must be provided (emit_norm is fixed to 'none')")
+        raise ValueError(
+            "custom.user_prompt must be provided (emit_norm is fixed to 'none')"
+        )
 
     # Extract mode control parameters
     use_summary = bool(custom_config.use_summary)
@@ -598,7 +611,10 @@ def main():
         base_dataset_len = None
     # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
     # Do not apply dataset-level packing wrappers for this trainer variant.
-    if packing_cfg.enabled and trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
+    if packing_cfg.enabled and trainer_variant not in {
+        "rollout_matching_sft",
+        "stage2_ab_training",
+    }:
         orig_bs = getattr(train_args, "per_device_train_batch_size", None)
         if orig_bs != 1:
             logger.warning(
@@ -610,7 +626,9 @@ def main():
                 if getattr(train_args, "training_args", None) is not None:
                     train_args.training_args.per_device_train_batch_size = 1
             except Exception:
-                logger.warning("Failed to set per_device_train_batch_size on train_args")
+                logger.warning(
+                    "Failed to set per_device_train_batch_size on train_args"
+                )
 
         # Ensure max_steps is finite when using iterable packed dataset
         max_steps = getattr(train_args, "max_steps", None)
@@ -679,7 +697,10 @@ def main():
             packing_cfg.drop_last,
             packing_cfg.allow_single_long,
         )
-    elif packing_cfg.enabled and trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+    elif packing_cfg.enabled and trainer_variant in {
+        "rollout_matching_sft",
+        "stage2_ab_training",
+    }:
         logger.info(
             "Packing enabled for rollout-matching: dataset packing is disabled; "
             "trainer will apply dynamic post-rollout packing for the teacher-forced forward pass."
@@ -873,7 +894,9 @@ def main():
                                 record_clone = copy.deepcopy(pool[0])
                                 break
                 if record_clone is None:
-                    raise ValueError("No base record available for assistant GT extraction")
+                    raise ValueError(
+                        "No base record available for assistant GT extraction"
+                    )
                 builder = dataset._create_builder(dataset.mode)
                 merged = builder.build_many([record_clone])
                 assistant_turn = next(
@@ -932,7 +955,9 @@ def main():
             logger.info(
                 "Loading validation datasets from fusion config (val_jsonl entries only)"
             )
-            eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
+            eval_sample_limit = (
+                None if val_sample_with_replacement else val_sample_limit
+            )
             fusion_eval_limit: int | None = None
             if isinstance(eval_sample_limit, int) and eval_sample_limit > 0:
                 fusion_eval_limit = eval_sample_limit
@@ -971,7 +996,9 @@ def main():
             else:
                 logger.info(f"Validation dataset size: {base_eval_len}")
         else:
-            logger.info("Fusion config has no val_jsonl entries; skipping evaluation dataset.")
+            logger.info(
+                "Fusion config has no val_jsonl entries; skipping evaluation dataset."
+            )
             val_jsonl = None
     elif val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
@@ -1040,11 +1067,15 @@ def main():
         try:
             reattached = reattach_coord_offset_hooks(sft.model)
             if reattached is None:
-                logger.warning("coord_offset_adapter not found after prepare_model; hooks not reattached")
+                logger.warning(
+                    "coord_offset_adapter not found after prepare_model; hooks not reattached"
+                )
             else:
                 logger.info("Reattached coord_offset hooks on wrapped model")
         except Exception as exc:
-            logger.warning(f"Failed to reattach coord_offset hooks after prepare_model: {exc}")
+            logger.warning(
+                f"Failed to reattach coord_offset hooks after prepare_model: {exc}"
+            )
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
@@ -1092,9 +1123,8 @@ def main():
         # Fix transformers>=4.57 grad-accum scaling when model_accepts_loss_kwargs=True
         # (ms-swift uses Seq2SeqTrainer for causal_lm). This keeps train `loss` comparable to eval_loss.
         mixins.append(GradAccumLossScaleMixin)
-        if (
-            isinstance(instability_monitor_cfg, dict)
-            and bool(instability_monitor_cfg.get("enabled", False))
+        if isinstance(instability_monitor_cfg, dict) and bool(
+            instability_monitor_cfg.get("enabled", False)
         ):
             mixins.append(InstabilityMonitorMixin)
         if token_type_cfg and getattr(token_type_cfg, "enabled", False):
@@ -1169,7 +1199,8 @@ def main():
         trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
-        and "token_acc" in str(getattr(train_args.training_args, "metric_for_best_model", ""))
+        and "token_acc"
+        in str(getattr(train_args.training_args, "metric_for_best_model", ""))
     ):
         try:
             from .metrics.simple_token_accuracy import (
@@ -1179,7 +1210,9 @@ def main():
 
             # Attach lazily so we don't change other trainer variants' behavior.
             if getattr(trainer, "preprocess_logits_for_metrics", None) is None:
-                trainer.preprocess_logits_for_metrics = preprocess_logits_for_token_accuracy
+                trainer.preprocess_logits_for_metrics = (
+                    preprocess_logits_for_token_accuracy
+                )
             if getattr(trainer, "compute_metrics", None) is None:
                 trainer.compute_metrics = compute_token_accuracy_metrics
         except Exception as exc:
@@ -1191,7 +1224,9 @@ def main():
         try:
             extra_cfg = getattr(custom_config, "extra", {})
             rollout_cfg_raw = (
-                extra_cfg.get("rollout_matching", {}) if isinstance(extra_cfg, Mapping) else {}
+                extra_cfg.get("rollout_matching", {})
+                if isinstance(extra_cfg, Mapping)
+                else {}
             )
             rollout_cfg: dict[str, Any] = (
                 dict(rollout_cfg_raw) if isinstance(rollout_cfg_raw, Mapping) else {}
@@ -1213,7 +1248,9 @@ def main():
                 rollout_cfg.get("packing_enabled", False),
             )
         except Exception as exc:
-            logger.warning("Failed to inject rollout_matching_cfg into trainer: %s", exc)
+            logger.warning(
+                "Failed to inject rollout_matching_cfg into trainer: %s", exc
+            )
 
     if trainer_variant == "stage2_ab_training":
         try:
@@ -1296,6 +1333,67 @@ def main():
             "  Effective batch size: unavailable (missing batch or accumulation settings)"
         )
     logger.info("=" * 70)
+
+    # Reproducibility: record git SHA and dirty flag (rank 0 only).
+    try:
+        rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+        is_rank0 = True if rank_raw is None else (int(rank_raw) == 0)
+    except Exception:
+        is_rank0 = True
+
+    if is_rank0:
+        try:
+            out_dir = getattr(train_args, "output_dir", None)
+            if out_dir:
+                repo_root = Path(__file__).resolve().parents[1]
+
+                def _git(*argv: str) -> str:
+                    return subprocess.check_output(
+                        ["git", *argv],
+                        cwd=str(repo_root),
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    ).strip()
+
+                git_sha = None
+                git_branch = None
+                git_dirty = None
+                status_lines = []
+                try:
+                    git_sha = _git("rev-parse", "HEAD")
+                    git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+                    status = _git("status", "--porcelain")
+                    status_lines = [
+                        line for line in status.splitlines() if line.strip()
+                    ]
+                    git_dirty = bool(status_lines)
+                except Exception:
+                    git_sha = None
+                    git_branch = None
+                    git_dirty = None
+                    status_lines = []
+
+                meta = {
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "config": str(getattr(args, "config", "") or ""),
+                    "base_config": str(getattr(args, "base_config", "") or ""),
+                    "run_name": str(getattr(train_args, "run_name", "") or ""),
+                    "output_dir": str(out_dir),
+                    "git_sha": git_sha,
+                    "git_branch": git_branch,
+                    "git_dirty": git_dirty,
+                    "git_status_porcelain": status_lines[:200],
+                }
+
+                out_path = Path(str(out_dir)) / "run_metadata.json"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                logger.info("Wrote run metadata: %s", str(out_path))
+        except Exception as exc:
+            logger.warning("Failed to write run metadata: %s", exc)
 
     try:
         sft.train(trainer)

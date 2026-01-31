@@ -12,9 +12,34 @@ custom:
   extra:
     stage2_ab:
       schedule:
-        pattern: ["A", "A", "B"]
+        # Channel-B should be sparse (~5%) to stay a cold path.
+        pattern:
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - B
       n_softctx_iter: 2
       desc_ce_weight: 1.0
       bbox_l1_weight: 1.0
       bbox_giou_weight: 1.0
       softctx_temperature: 1.0
+      channel_b:
+        reordered_gt_sft: true
+        reordered_gt_append_missing: true
+        desc_ce_weight_matched: 0.2

@@ -1756,6 +1756,41 @@ class _AccumulationWindowLookahead:
                 yield _WindowedMicroBatch(b, window=window, idx=int(i))
 
 
+class _DropRemainderAccumulationWindow:
+    """Drop the final partial gradient-accumulation window.
+
+    HF/Swift will still perform an optimizer step on a partial accumulation window at
+    the end of an epoch. For stage_2 step-budgeted trainers we typically want fixed
+    raw-sample budgets per optimizer step, so when `training.dataloader_drop_last` is
+    enabled we truncate the train dataloader to a multiple of
+    `gradient_accumulation_steps`.
+
+    This is intentionally a lightweight wrapper that preserves epoch semantics by
+    dropping the remainder *per epoch*.
+    """
+
+    def __init__(self, dataloader, *, gas: int):
+        self.dataloader = dataloader
+        self.gas = max(1, int(gas))
+
+    def __len__(self) -> int:
+        inner_len = getattr(self.dataloader, "__len__", None)
+        if inner_len is None:
+            raise TypeError("wrapped dataloader has no __len__")
+        n = int(len(self.dataloader))
+        return int((n // int(self.gas)) * int(self.gas))
+
+    def __iter__(self):
+        n_keep = int(len(self))
+        for i, b in enumerate(self.dataloader):
+            if i >= n_keep:
+                break
+            yield b
+
+    def __getattr__(self, name: str):
+        return getattr(self.dataloader, name)
+
+
 class _RolloutWindowBuffer:
     """Cache one completed accumulation window of prepared micro-step batches.
 
@@ -6290,6 +6325,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Optional window-aware post-rollout packing requires lookahead over one accumulation window.
         if self._packing_enabled() and self._post_rollout_pack_scope() == "window":
             dl = _AccumulationWindowLookahead(dl, gas=gas)
+
+        # Drop the final partial accumulation window when requested.
+        #
+        # This keeps optimizer-step semantics consistent for step-budgeted stage_2 runs
+        # (fixed samples per step) and avoids a trailing underfull/no-op step.
+        try:
+            drop_last = bool(getattr(self.args, "dataloader_drop_last", False))
+        except Exception:
+            drop_last = False
+        if self._packing_enabled() and drop_last and int(gas) > 1:
+            dl = _DropRemainderAccumulationWindow(dl, gas=gas)
 
         return dl
 

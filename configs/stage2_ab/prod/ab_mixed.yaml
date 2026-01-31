@@ -11,4 +11,25 @@ custom:
   extra:
     stage2_ab:
       schedule:
-        pattern: ["A", "A", "B"]
+        # Channel-B should be sparse (~5%) to stay a cold path.
+        pattern:
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - B

@@ -50,7 +50,7 @@ training:
   logging_first_step: true
 
   # Stage-2 AB already logs core rollout/matching metrics on B steps.
-  eval_strategy: "no"
+  eval_strategy: "steps"
 
   save_strategy: "steps"
   save_steps: 200
@@ -78,7 +78,28 @@ custom:
     # Default schedule is AB-mixed; variants override this only.
     stage2_ab:
       schedule:
-        pattern: ["A", "A", "B"]
+        # Channel-B should be sparse (~5%) to stay a cold path.
+        pattern:
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - A
+          - B
       n_softctx_iter: 2
       desc_ce_weight: 1.0
       bbox_l1_weight: 2.0
@@ -103,6 +124,11 @@ custom:
         enable_pipeline: true
         # Batch decode size per rollout request (independent of learner microbatch=1).
         rollout_decode_batch_size: 2
+        # Reordered-GT SFT (B3/7.3): apply CE over a GT sequence arranged in predicted order.
+        reordered_gt_sft: true
+        reordered_gt_append_missing: true
+        # Downweight desc CE for matched objects only; keep missing-object recall learning strict.
+        desc_ce_weight_matched: 0.2
 
     rollout_matching:
       rollout_backend: vllm

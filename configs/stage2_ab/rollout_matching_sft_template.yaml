@@ -26,6 +26,8 @@ custom:
   # Rollout-matching assumes coord-token mode for coord supervision.
   coord_tokens:
     enabled: true
+    # Coord-token JSONLs are pre-normalized; avoid double-normalization.
+    skip_bbox_norm: true
   coord_soft_ce_w1:
     enabled: true
 

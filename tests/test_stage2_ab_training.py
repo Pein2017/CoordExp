@@ -20,7 +20,9 @@ class _DummyOut:
 
 
 class _DummyModel(nn.Module):
-    def __init__(self, *, vocab: int = 1200, hidden: int = 8, model_type: str = "qwen3_vl"):
+    def __init__(
+        self, *, vocab: int = 1200, hidden: int = 8, model_type: str = "qwen3_vl"
+    ):
         super().__init__()
         self.config = types.SimpleNamespace(model_type=model_type)
         self.embed = nn.Embedding(vocab, hidden)
@@ -68,6 +70,45 @@ class _DummySlicedModel(_DummyModel):
         return out
 
 
+class _DummyAlwaysTokenModel(nn.Module):
+    def __init__(
+        self,
+        *,
+        pred_id: int = 1100,
+        vocab: int = 1200,
+        model_type: str = "qwen3_vl",
+    ):
+        super().__init__()
+        self.config = types.SimpleNamespace(model_type=model_type)
+        self.pred_id = int(pred_id)
+        self.vocab = int(vocab)
+
+    def forward(
+        self,
+        *,
+        input_ids=None,
+        position_ids=None,
+        use_cache=None,
+        past_key_values=None,
+        **kwargs,
+    ):
+        assert input_ids is not None
+        assert use_cache is False
+        assert past_key_values is None
+        if position_ids is not None:
+            assert position_ids.shape[0] == 4
+
+        bsz, seqlen = input_ids.shape
+        logits = torch.full(
+            (bsz, seqlen, self.vocab),
+            -100.0,
+            dtype=torch.float32,
+            device=input_ids.device,
+        )
+        logits[..., self.pred_id] = 0.0
+        return _DummyOut(logits)
+
+
 class _DummyConstantCoord999Model(nn.Module):
     """Dummy model that makes softctx updates deterministic.
 
@@ -75,17 +116,15 @@ class _DummyConstantCoord999Model(nn.Module):
     coord embedding is embedding(999) for every coord slot on iteration >=1.
     """
 
-    def __init__(self, *, vocab: int = 1200, hidden: int = 8, model_type: str = "qwen3_vl"):
+    def __init__(
+        self, *, vocab: int = 1200, hidden: int = 8, model_type: str = "qwen3_vl"
+    ):
         super().__init__()
         self.config = types.SimpleNamespace(model_type=model_type)
         self.embed = nn.Embedding(vocab, hidden)
         # Make embeddings deterministic/unique so bitwise equality checks are meaningful.
         with torch.no_grad():
-            w = (
-                torch.arange(vocab, dtype=torch.float32)
-                .unsqueeze(1)
-                .repeat(1, hidden)
-            )
+            w = torch.arange(vocab, dtype=torch.float32).unsqueeze(1).repeat(1, hidden)
             self.embed.weight.copy_(w)
         self.vocab = int(vocab)
         self.calls = []
@@ -155,7 +194,11 @@ class _DummyTokenizer:
 
     def encode(self, text: str, add_special_tokens: bool = False):
         # Keep coord tokens as single ids when present; otherwise char-level.
-        if isinstance(text, str) and text.startswith("<|coord_") and text.endswith("|>"):
+        if (
+            isinstance(text, str)
+            and text.startswith("<|coord_")
+            and text.endswith("|>")
+        ):
             try:
                 n = int(text[len("<|coord_") : -len("|>")])
                 return [int(n)]
@@ -399,7 +442,9 @@ def test_hf_sampling_seeding_calls_seed_everything(monkeypatch):
     tu = pytest.importorskip("transformers.trainer_utils")
     monkeypatch.setattr(tu, "set_seed", _fake_set_seed, raising=True)
 
-    with t._hf_sampling_seed_context(seed_base=123, backend="hf", do_sample=True) as seeded:
+    with t._hf_sampling_seed_context(
+        seed_base=123, backend="hf", do_sample=True
+    ) as seeded:
         assert seeded is True
     assert called["seed"] == 123
 
@@ -414,7 +459,9 @@ def test_hf_sampling_seeding_restores_python_rng_state():
         random.seed(0)
         saved = random.getstate()
 
-        with t._hf_sampling_seed_context(seed_base=123, backend="hf", do_sample=True) as seeded:
+        with t._hf_sampling_seed_context(
+            seed_base=123, backend="hf", do_sample=True
+        ) as seeded:
             assert seeded is True
             _ = random.random()  # mutate RNG under the seeded context
 
@@ -514,6 +561,67 @@ def test_compute_loss_raises_on_sliced_logits():
                 "text_position_ids": text_position_ids,
             },
         )
+
+
+def test_channel_b_desc_ce_split_allows_downweight_matched_desc_only():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"pattern": ["B"]},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        # Turn off bbox losses so CE effect is isolated.
+        "bbox_l1_weight": 0.0,
+        "bbox_giou_weight": 0.0,
+        "channel_b": {"desc_ce_weight_matched": 0.0},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+
+    # Targets at positions 2,3 are 'hard' (1101) under pred_id=1100.
+    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
+
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": int(input_ids.shape[1]),
+            "encoded_len": int(input_ids.shape[1]),
+            # Provide both lists so compute_loss prefers the split behavior.
+            "tail_desc_pos": [2, 3],
+            "tail_desc_pos_matched": [2, 3],
+            "tail_desc_pos_missing": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+        }
+    ]
+
+    loss_down = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+
+    t.stage2_ab_cfg["channel_b"]["desc_ce_weight_matched"] = 1.0
+    loss_full = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_down.detach().cpu().item()) < float(
+        loss_full.detach().cpu().item()
+    )
 
 
 def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
