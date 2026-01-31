@@ -46,11 +46,12 @@ training:
   dataloader_drop_last: true
 
   # Dense logging for apples-to-apples throughput + stability comparison.
-  logging_steps: 1
+  logging_steps: 10
   logging_first_step: true
 
   # Stage-2 AB already logs core rollout/matching metrics on B steps.
   eval_strategy: "steps"
+  eval_steps: 80
 
   save_strategy: "steps"
   save_steps: 200
@@ -147,7 +148,7 @@ custom:
         mode: server
         # vLLM engine max_model_len for rollout (prompt + max_new_tokens). Keep this
         # much smaller than learner `global_max_length` for speed and KV-cache capacity.
-        max_model_len: 4096
+        max_model_len: 12000
         # Full merged-weight sync is the robust default for multimodal models.
         # NOTE: vLLM LoRA enablement is not required for full sync.
         enable_lora: false
