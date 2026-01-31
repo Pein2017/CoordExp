@@ -1,4 +1,0 @@
-# Transitional wrapper: keep the legacy smoke config path stable.
-# Authoritative backend-coverage smoke config lives under `configs/stage2_ab/smoke/`.
-extends: smoke/bbox_max60_ckpt1516_b_only_hf_sample.yaml
-

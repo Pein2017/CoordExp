@@ -1,4 +1,0 @@
-# Transitional wrapper: keep the legacy smoke config path stable.
-# This now points to the production-like vLLM server-mode smoke config (greedy decode).
-extends: smoke/bbox_max60_ckpt1516_b_only_vllm_server.yaml
-
