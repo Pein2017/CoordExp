@@ -6,6 +6,10 @@ training:
   output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only_iter3
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only_iter3
   run_name: prod_a_only_bbox_max60_ckpt1516_ep2_iter3
+  # A-only ablation doesn't use Channel-B rollouts; avoid triggering rollout-based eval
+  # (which would require a vLLM server or a single-process learner).
+  eval_strategy: "no"
+  do_eval: false
 
 custom:
   extra:
@@ -13,3 +17,7 @@ custom:
       schedule:
         pattern: ["A"]
       n_softctx_iter: 3
+    # Safety: if any code path tries to rollout (e.g., accidental eval), use HF generate
+    # instead of vLLM server-mode (which requires world_size==1).
+    rollout_matching:
+      rollout_backend: hf

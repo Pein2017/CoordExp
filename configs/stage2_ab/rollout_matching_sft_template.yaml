@@ -10,7 +10,7 @@ training:
   # Rollout generation remains un-packed (padded batch) inside the trainer.
   packing: true
   packing_buffer: 256
-  packing_min_fill_ratio: 0.7
+  packing_min_fill_ratio: 0.5
   packing_drop_last: true
   # eval_packing is ignored for rollout-matching (trainer handles its own collation).
   eval_packing: false
