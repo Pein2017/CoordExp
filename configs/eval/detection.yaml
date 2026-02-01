@@ -9,7 +9,6 @@ out_dir: eval_out
 # Metrics
 metrics: both                  # coco | f1ish | both
 use_segm: true                 # include segmentation metrics when polygons exist
-unknown_policy: semantic       # bucket | drop | semantic
 strict_parse: false            # abort on first parse error
 
 # Optional COCO IoU thresholds override (null -> COCO defaults)
@@ -20,10 +19,9 @@ overlay: false
 overlay_k: 12
 num_workers: 0
 
-# Semantic matching (used when unknown_policy=semantic)
+# Description matching always uses sentence-transformers/all-MiniLM-L6-v2; unmatched predictions are dropped (no bucket/drop fallback).
 semantic_model: sentence-transformers/all-MiniLM-L6-v2
 semantic_threshold: 0.6
-semantic_fallback: bucket
 semantic_device: auto
 semantic_batch_size: 64
 

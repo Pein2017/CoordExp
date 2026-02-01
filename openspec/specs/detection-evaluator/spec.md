@@ -33,18 +33,15 @@ Coordinate handling:
 - WHEN the evaluator derives a bbox/segmentation via the shared helper
 - THEN the polygon prediction is eligible for IoU matching against the bbox GT instead of being discarded for geometry mismatch.
 
-### Requirement: Category mapping and unknown handling
-The evaluator SHALL support an `unknown_policy` configuration with modes:
-- `bucket`: map unknown desc to a synthetic `unknown` category id (COCO export only),
-- `drop`: drop unknown desc predictions (COCO export only),
-- `semantic`: keep predicted desc unchanged, but for COCO export MAY map unknown predicted desc to the nearest GT-desc category by embedding similarity.
+### Requirement: Semantic description matching
+The evaluator SHALL always run description matching via `sentence-transformers/all-MiniLM-L6-v2` when deriving COCO annotations. Predictions whose normalized descriptions are not mapped with cosine similarity ≥ `semantic_threshold` SHALL be dropped (counted in `unknown_dropped`) rather than assigned to synthetic categories. Legacy configuration keys such as `unknown_policy`/`semantic_fallback` are deprecated and ignored; evaluation logging SHOULD warn when these keys remain in user-provided configs.
 
-If `unknown_policy=semantic` is requested and the embedding model cannot be loaded, the evaluator SHALL fail loudly with a clear error message (it SHALL NOT silently degrade into bucketing).
+If the semantic encoder cannot be loaded (missing from the HuggingFace cache and download is not possible), the evaluator SHALL fail loudly with a clear error message (it SHALL NOT silently degrade into bucketed or dropped defaults).
 
-#### Scenario: Semantic unknown handling fails loudly when model is missing
-- **GIVEN** `unknown_policy=semantic` and the configured semantic model is not available in local cache and cannot be downloaded
-- **WHEN** the evaluator is executed
-- **THEN** it raises a runtime error describing how to disable semantic mapping or provide the model.
+#### Scenario: Description matching fails when the encoder is unavailable
+- **GIVEN** any evaluation run and `sentence-transformers/all-MiniLM-L6-v2` cannot be loaded from caches or downloads
+- **WHEN** the evaluator starts mapping descriptions
+- **THEN** it raises a runtime error describing that the encoder is mandatory for evaluation and advising the user to ensure the model is cached/downloadable.
 
 ### Requirement: COCO artifacts and scoring modes
 - The evaluator SHALL emit `coco_gt.json` and `coco_preds.json` with images, annotations, categories, and predictions using xywh bbox format; segmentation is included when polygons are present.
@@ -202,4 +199,3 @@ The evaluator SHALL be callable as a stage from the unified inference pipeline r
 - **GIVEN** a unified pipeline run directory containing `gt_vs_pred.jsonl`
 - **WHEN** the pipeline runner executes the eval stage
 - **THEN** evaluation outputs are written under the run directory (or a deterministic subdirectory) without requiring additional user inputs.
-

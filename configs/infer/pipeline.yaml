@@ -31,6 +31,10 @@ infer:
     type: hf  # hf | vllm
     # vllm options (OpenAI-compatible server):
     base_url: http://127.0.0.1:8000
+    # If true (default), `scripts/run_infer.py` may auto-launch a local vLLM server
+    # when base_url targets localhost and no server is reachable.
+    # Set false to require an externally managed server (avoids spawning processes).
+    auto_launch: true
     # model: Qwen3-VL-<served-name>   # defaults to infer.model_checkpoint
     # Client-side timeout for vLLM HTTP requests (seconds)
     timeout_s: 180.0
@@ -62,6 +66,10 @@ infer:
     top_p: 0.95
     max_new_tokens: 2048
     repetition_penalty: 1.1
+    # Micro-batch size for decoding. For HF this enables batched `model.generate()`.
+    # For vLLM this controls how many samples we issue concurrently per flush.
+    # Keep small to avoid OOM; start with 2-4 and tune.
+    batch_size: 1
     seed: 42
 
   device: cuda:0
@@ -78,16 +86,14 @@ artifacts:
 eval:
   output_dir: null  # defaults to <run_dir>/eval
   metrics: both     # coco | f1ish | both
-  unknown_policy: semantic  # bucket | drop | semantic
   use_segm: true
   overlay: false
   overlay_k: 12
   num_workers: 0
 
-  # Semantic matching (used when unknown_policy=semantic)
+  # Description matching always uses sentence-transformers/all-MiniLM-L6-v2; unmatched predictions are dropped.
   semantic_model: sentence-transformers/all-MiniLM-L6-v2
   semantic_threshold: 0.6
-  semantic_fallback: bucket
   semantic_device: auto
   semantic_batch_size: 64
 
