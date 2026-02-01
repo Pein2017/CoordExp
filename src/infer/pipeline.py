@@ -52,9 +52,7 @@ def _get_bool(cfg: Mapping[str, Any], key: str, default: bool) -> bool:
     raise ValueError(f"{key} must be a bool")
 
 
-def _get_str(
-    cfg: Mapping[str, Any], key: str, default: Optional[str] = None
-) -> Optional[str]:
+def _get_str(cfg: Mapping[str, Any], key: str, default: Optional[str] = None) -> Optional[str]:
     if key not in cfg:
         return default
     val = cfg.get(key)
@@ -72,9 +70,7 @@ def _require_str(cfg: Mapping[str, Any], key: str) -> str:
     return val
 
 
-def _require_choice(
-    cfg: Mapping[str, Any], key: str, allowed: set[str], default: Optional[str] = None
-) -> str:
+def _require_choice(cfg: Mapping[str, Any], key: str, allowed: set[str], default: Optional[str] = None) -> str:
     val = _get_str(cfg, key, default)
     if val is None:
         raise ValueError(f"{key} is required and must be one of {sorted(allowed)}")
@@ -132,16 +128,12 @@ class ResolvedStages:
     vis: bool
 
 
-def resolve_artifacts(
-    cfg: Mapping[str, Any],
-) -> Tuple[ResolvedArtifacts, ResolvedStages]:
+def resolve_artifacts(cfg: Mapping[str, Any]) -> Tuple[ResolvedArtifacts, ResolvedStages]:
     # Stages: if `stages` is provided, it must specify all three toggles.
     if "stages" in cfg:
         raw = cfg.get("stages")
         if raw is None:
-            raise ValueError(
-                "stages must be a mapping with infer/eval/vis (or omit stages)"
-            )
+            raise ValueError("stages must be a mapping with infer/eval/vis (or omit stages)")
         if not isinstance(raw, Mapping):
             raise ValueError("stages must be a mapping")
         for k in ("infer", "eval", "vis"):
@@ -199,6 +191,7 @@ def _load_or_raise_artifact(path: Path) -> Path:
     raise FileNotFoundError(f"Required artifact not found: {path}")
 
 
+
 _SENSITIVE_KEYS = {
     "access_token",
     "hf_token",
@@ -228,7 +221,6 @@ def redact_config(obj: Any) -> Any:
     if isinstance(obj, list):
         return [redact_config(x) for x in obj]
     return obj
-
 
 def run_pipeline(
     *,
@@ -301,9 +293,7 @@ def run_pipeline(
     return artifacts
 
 
-def apply_overrides(
-    cfg: Mapping[str, Any], overrides: Mapping[str, Any]
-) -> Dict[str, Any]:
+def apply_overrides(cfg: Mapping[str, Any], overrides: Mapping[str, Any]) -> Dict[str, Any]:
     """Apply dotted-path overrides into a nested dict (copy-on-write)."""
 
     def _set(root: Dict[str, Any], dotted: str, value: Any) -> None:
@@ -372,7 +362,6 @@ def _run_infer_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> No
         top_p=_f("top_p", 0.95),
         max_new_tokens=_i("max_new_tokens", 1024),
         repetition_penalty=_f("repetition_penalty", 1.05),
-        batch_size=_i("batch_size", 1),
         seed=seed,
     )
 
@@ -398,20 +387,13 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
     from src.eval.detection import EvalOptions, evaluate_and_save
 
     eval_cfg = _get_map(cfg, "eval")
-    for deprecated_key in ("unknown_policy", "semantic_fallback"):
-        if deprecated_key in eval_cfg:
-            val = eval_cfg[deprecated_key]
-            if val is not None and str(val).strip():
-                logger.warning(
-                    "Eval config key '%s' is deprecated and ignored; description matching always uses sentence-transformers/all-MiniLM-L6-v2.",
-                    deprecated_key,
-                )
 
     # Unified pipeline contract: evaluator consumes artifact with embedded GT.
     pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
     options = EvalOptions(
         metrics=str(eval_cfg.get("metrics", "both")),
+        unknown_policy=str(eval_cfg.get("unknown_policy", "semantic")),
         strict_parse=bool(eval_cfg.get("strict_parse", False)),
         use_segm=bool(eval_cfg.get("use_segm", True)),
         iou_thrs=eval_cfg.get("iou_thrs", None),
@@ -427,6 +409,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
             eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
         ),
         semantic_threshold=float(eval_cfg.get("semantic_threshold", 0.6)),
+        semantic_fallback=str(eval_cfg.get("semantic_fallback", "bucket")),
         semantic_device=str(eval_cfg.get("semantic_device", "auto")),
         semantic_batch_size=int(eval_cfg.get("semantic_batch_size", 64)),
     )

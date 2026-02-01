@@ -99,12 +99,6 @@ def _add_legacy_infer_flags(ap: argparse.ArgumentParser, *, required: bool) -> N
     ap.add_argument(
         "--repetition_penalty", type=float, default=None if not required else 1.05
     )
-    ap.add_argument(
-        "--batch-size",
-        type=int,
-        default=None if not required else 1,
-        help="Generation micro-batch size (HF batched generate, vLLM request micro-batch)",
-    )
     ap.add_argument("--seed", type=int, default=None)
 
 
@@ -138,7 +132,6 @@ def _yaml_overrides_from_args(args: argparse.Namespace) -> Dict[str, Any]:
     _set("infer.generation.top_p", args.top_p)
     _set("infer.generation.max_new_tokens", args.max_new_tokens)
     _set("infer.generation.repetition_penalty", args.repetition_penalty)
-    _set("infer.generation.batch_size", args.batch_size)
     _set("infer.generation.seed", args.seed)
 
     return o
@@ -152,7 +145,6 @@ def _run_legacy_infer(args: argparse.Namespace) -> None:
         top_p=float(args.top_p),
         max_new_tokens=int(args.max_new_tokens),
         repetition_penalty=float(args.repetition_penalty),
-        batch_size=int(args.batch_size),
         seed=args.seed,
     )
 
@@ -222,9 +214,7 @@ def _apply_overrides(cfg: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str
     return cfg
 
 
-def _load_cfg_with_overrides(
-    config_path: Path, overrides: Dict[str, Any]
-) -> Dict[str, Any]:
+def _load_cfg_with_overrides(config_path: Path, overrides: Dict[str, Any]) -> Dict[str, Any]:
     raw = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     if raw is None:
         raw = {}
@@ -296,13 +286,6 @@ def _maybe_launch_vllm_server(config_path: Path, overrides: Dict[str, Any]):
     infer_cfg = cfg.get("infer") or {}
     backend_cfg = infer_cfg.get("backend") or {}
     backend_type = str(backend_cfg.get("type") or "").strip().lower()
-
-    mode = str(backend_cfg.get("mode") or "server").strip().lower()
-    if mode == "local":
-        # In-process vLLM mode (no HTTP server) - nothing to auto-launch.
-        yield None
-        return
-
     base_url = str(
         backend_cfg.get("base_url") or os.environ.get("VLLM_BASE_URL") or ""
     ).strip()
@@ -320,17 +303,6 @@ def _maybe_launch_vllm_server(config_path: Path, overrides: Dict[str, Any]):
         yield None
         return
 
-    auto_launch_raw = backend_cfg.get("auto_launch", True)
-    if isinstance(auto_launch_raw, str):
-        auto_launch = auto_launch_raw.strip().lower() not in {"0", "false", "no", "off"}
-    else:
-        auto_launch = bool(auto_launch_raw)
-
-    if not auto_launch:
-        # Respect user choice: do not spawn a local server process.
-        yield None
-        return
-
     # Fast preflight: if server already up, skip auto-launch.
     try:
         resp = requests.get(_models_url(base_url), timeout=1.5)
@@ -341,9 +313,7 @@ def _maybe_launch_vllm_server(config_path: Path, overrides: Dict[str, Any]):
         pass
 
     host, port = _base_url_to_host_port(base_url)
-    model = str(
-        backend_cfg.get("model") or infer_cfg.get("model_checkpoint") or ""
-    ).strip()
+    model = str(backend_cfg.get("model") or infer_cfg.get("model_checkpoint") or "").strip()
     if not model:
         yield None
         return

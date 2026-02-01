@@ -41,6 +41,14 @@ logger = get_logger(__name__)
 _DEFAULT_SEMANTIC_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
+def _include_unknown_category(options: "EvalOptions") -> bool:
+    if options.unknown_policy == "bucket":
+        return True
+    if options.unknown_policy == "semantic" and options.semantic_fallback == "bucket":
+        return True
+    return False
+
+
 def _normalize_desc(desc: str) -> str:
     """Normalize LVIS-like category strings for semantic matching."""
     s = str(desc or "").strip().lower()
@@ -249,18 +257,18 @@ def _build_semantic_desc_mapping(
     bs = max(1, int(options.semantic_batch_size))
 
     try:
-        pred_emb = _encode_texts_mean_pool(
-            pred_norm, model_name=model_name, device=device, batch_size=bs
-        )
-        cand_emb = _encode_texts_mean_pool(
-            cand_norm, model_name=model_name, device=device, batch_size=bs
-        )
+        pred_emb = _encode_texts_mean_pool(pred_norm, model_name=model_name, device=device, batch_size=bs)
+        cand_emb = _encode_texts_mean_pool(cand_norm, model_name=model_name, device=device, batch_size=bs)
     except Exception as exc:  # noqa: BLE001
+        # Semantic matching is an explicit evaluation policy. If we can't load the
+        # embedding model, fail loudly so the run doesn't silently degrade into
+        # `unknown` bucketing.
         raise RuntimeError(
-            "Description matching requires the semantic encoder "
-            f"'{model_name}', but loading failed. Ensure the model exists "
-            "in the local HuggingFace cache or that the runtime has network access. "
-            "The evaluator no longer supports bucket/drop fallbacks."
+            "Semantic desc matching requested, but failed to load the embedding model "
+            f"'{model_name}'. Ensure the model is available in the local HF cache or "
+            "that you have network/proxy access for download. "
+            "If you want to disable semantic matching, run with "
+            "`--unknown-policy bucket` or `--unknown-policy drop`."
         ) from exc
 
     if pred_emb.size == 0 or cand_emb.size == 0:
@@ -284,7 +292,7 @@ def _build_semantic_desc_mapping(
         report = {
             "semantic_model": model_name,
             "semantic_threshold": float(options.semantic_threshold),
-            "semantic_behavior": "map-or-drop",
+            "semantic_fallback": str(options.semantic_fallback),
             "unique_unknown_desc": len(pred_names),
             "unknown_total_preds": int(sum(unknown_counts.values())),
             "rows": [
@@ -394,6 +402,7 @@ class EvalCounters:
 @dataclass
 class EvalOptions:
     metrics: str = "coco"  # coco | f1ish | both
+    unknown_policy: str = "semantic"  # bucket | drop | semantic
     strict_parse: bool = False
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")
@@ -408,8 +417,9 @@ class EvalOptions:
     overlay_k: int = 12
     open_vocab_recall: bool = False  # class-agnostic recall
     num_workers: int = 0  # parallelize pred parsing/denorm on CPU
-    semantic_model: str = _DEFAULT_SEMANTIC_MODEL  # forced semantic matcher (unmatched descs are dropped)
+    semantic_model: str = _DEFAULT_SEMANTIC_MODEL
     semantic_threshold: float = 0.6
+    semantic_fallback: str = "bucket"  # bucket | drop
     semantic_device: str = "auto"
     semantic_batch_size: int = 64
 
@@ -617,7 +627,9 @@ def _prepare_pred_objects_detached(
     return image_id, preds, invalid, local_counts.to_dict()
 
 
-def _build_categories(gt_samples: List[Sample]) -> Dict[str, int]:
+def _build_categories(
+    gt_samples: List[Sample], *, include_unknown: bool
+) -> Dict[str, int]:
     cats: Dict[str, int] = {}
     next_id = 1
     for sample in gt_samples:
@@ -626,6 +638,8 @@ def _build_categories(gt_samples: List[Sample]) -> Dict[str, int]:
             if desc not in cats:
                 cats[desc] = next_id
                 next_id += 1
+    if include_unknown and "unknown" not in cats:
+        cats["unknown"] = next_id
     return cats
 
 
@@ -690,26 +704,45 @@ def _to_coco_preds(
     counters: EvalCounters,
 ) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
-    semantic_map = _build_semantic_desc_mapping(
-        pred_samples, categories, options=options, counters=counters
-    )
-    sem_thr = float(options.semantic_threshold)
+    include_unknown = _include_unknown_category(options)
+    unknown_id = categories.get("unknown")
+
+    semantic_map: Dict[str, Tuple[Optional[str], float, int]] = {}
+    if options.unknown_policy == "semantic":
+        semantic_map = _build_semantic_desc_mapping(
+            pred_samples, categories, options=options, counters=counters
+        )
 
     for image_id, preds in pred_samples:
         for pred in preds:
             desc = (pred.get("desc") or "").strip()
             cat_id = categories.get(desc)
             if cat_id is None:
-                best_name, score, _ = semantic_map.get(desc, (None, 0.0, 0))
-                if best_name is not None and score >= sem_thr:
-                    candidate_id = categories.get(best_name)
-                    if candidate_id is not None:
-                        cat_id = candidate_id
-                        counters.semantic_mapped += 1
-                if cat_id is None:
-                    counters.semantic_unmapped += 1
-                    counters.unknown_dropped += 1
-                    continue
+                if options.unknown_policy == "semantic" and semantic_map:
+                    best_name, score, _ = semantic_map.get(desc, (None, 0.0, 0))
+                    if best_name is not None and score >= float(options.semantic_threshold):
+                        cat_id = categories.get(best_name)
+                        if cat_id is not None:
+                            counters.semantic_mapped += 1
+                    if cat_id is None:
+                        counters.semantic_unmapped += 1
+                        if options.semantic_fallback == "drop":
+                            counters.unknown_dropped += 1
+                            continue
+                        # fallback == bucket
+                        if include_unknown and unknown_id is not None:
+                            cat_id = unknown_id
+                            counters.unknown_desc += 1
+                        else:
+                            counters.unknown_dropped += 1
+                            continue
+                else:
+                    if include_unknown and unknown_id is not None:
+                        cat_id = unknown_id
+                        counters.unknown_desc += 1
+                    else:
+                        counters.unknown_dropped += 1
+                        continue
             x1, y1, x2, y2 = pred["bbox"]
             w = x2 - x1
             h = y2 - y1
@@ -958,7 +991,8 @@ def _prepare_all(
             per_image,
         )
 
-    categories = _build_categories(gt_samples)
+    include_unknown = _include_unknown_category(options)
+    categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
     )
@@ -1036,7 +1070,8 @@ def _prepare_all_separate(
             per_image,
         )
 
-    categories = _build_categories(gt_samples)
+    include_unknown = _include_unknown_category(options)
+    categories = _build_categories(gt_samples, include_unknown=include_unknown)
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
     )
