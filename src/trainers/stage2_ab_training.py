@@ -1,5 +1,6 @@
 import contextlib
 import json
+import os
 import re
 import time
 import threading
@@ -11,6 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Literal
 import torch
 import torch.nn.functional as F
 
+from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
 
 from .rollout_matching_sft import (
@@ -1568,8 +1570,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 data_for_encode["messages"] = list(messages) + [
                     {"role": "assistant", "content": y_train_ids}
                 ]
-            with self._template_train_mode():
-                encoded = template.encode(data_for_encode, return_length=True)
+            try:
+                with self._template_train_mode():
+                    encoded = template.encode(data_for_encode, return_length=True)
+            except MaxLengthError as e:
+                max_len = getattr(template, "max_length", None)
+                raise MaxLengthError(
+                    "stage2-ab teacher-forced encode exceeded max_length="
+                    f"{max_len}. SFT forbids truncation; pre-filter long samples or increase global_max_length."
+                ) from e
             t_encode_s += time.perf_counter() - t_enc0
 
             encoded_len = self._extract_encoded_len(encoded)
@@ -1599,12 +1608,20 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 prompt_len = _find_subsequence(enc_ids_list, y_train_ids)
                 train_len_eff = int(len(y_train_ids))
 
-            # Clamp to encoded length (e.g. when template truncates).
             prompt_len = int(prompt_len)
             train_len_eff = int(train_len_eff or 0)
-            train_len_eff = max(
-                0, min(train_len_eff, int(encoded_len) - int(prompt_len))
-            )
+            max_train_len = int(encoded_len) - int(prompt_len)
+            if max_train_len < int(len(y_train_ids)):
+                raise ValueError(
+                    "stage2-ab SFT forbids truncation: teacher-forced assistant span was truncated. "
+                    f"encoded_len={int(encoded_len)} prompt_len={int(prompt_len)} max_train_len={int(max_train_len)} y_train_len={int(len(y_train_ids))}"
+                )
+            train_len_eff = max(0, min(train_len_eff, int(max_train_len)))
+            if train_len_eff < int(len(y_train_ids)):
+                raise ValueError(
+                    "stage2-ab teacher-forced labels span shorter than assistant token ids (possible masking). "
+                    f"train_len={int(train_len_eff)} y_train_len={int(len(y_train_ids))}"
+                )
 
             prompt_ids = enc_ids_list[:prompt_len]
 
@@ -1626,10 +1643,16 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 if len(rel_pos_int) != 4:
                     continue
                 if any(p < 0 or p >= train_len_eff for p in rel_pos_int):
-                    continue
+                    raise ValueError(
+                        "stage2-ab bbox group pos out of range in teacher-forced encode (possible truncation). "
+                        f"rel_pos={rel_pos_int} train_len={int(train_len_eff)} y_train_len={int(len(y_train_ids))}"
+                    )
                 abs_pos = [int(prompt_len + p) for p in rel_pos_int]
                 if any(p >= int(encoded_len) for p in abs_pos):
-                    continue
+                    raise ValueError(
+                        "stage2-ab bbox group absolute pos exceeds encoded_len (possible truncation/misalignment). "
+                        f"abs_pos={abs_pos} encoded_len={int(encoded_len)} prompt_len={int(prompt_len)}"
+                    )
                 bbox_groups_fn.append(
                     {
                         "pos": abs_pos,
@@ -1813,9 +1836,21 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             if "messages" not in sample:
                 raise ValueError("stage2-ab requires 'messages' in dataset samples")
 
+            # If generation stopped due to max_new_tokens, it may lack EOS.
+            # For Channel-B rollout this is acceptable; append EOS to make downstream parsing deterministic.
+            resp_ids_local = [int(t) for t in resp_ids]
+            eos_id = getattr(tok, "eos_token_id", None)
+            if int(max_new_tokens) > 0 and int(len(resp_ids_local)) >= int(max_new_tokens):
+                try:
+                    eos = int(eos_id) if eos_id is not None else -1
+                except Exception:
+                    eos = -1
+                if eos >= 0 and (not resp_ids_local or int(resp_ids_local[-1]) != eos):
+                    resp_ids_local.append(int(eos))
+
             t_pm0 = time.perf_counter()
             parse = parse_rollout_for_matching(
-                tokenizer=tok, response_token_ids=resp_ids
+                tokenizer=tok, response_token_ids=resp_ids_local
             )
 
             # Invalid rollout fallback detection: prefix is exactly "{" and no valid objects.
@@ -2075,8 +2110,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 data_for_encode["messages"] = list(messages) + [
                     {"role": "assistant", "content": y_train_ids}
                 ]
-            with self._template_train_mode():
-                encoded = template.encode(data_for_encode, return_length=True)
+            try:
+                with self._template_train_mode():
+                    encoded = template.encode(data_for_encode, return_length=True)
+            except MaxLengthError as e:
+                max_len = getattr(template, "max_length", None)
+                raise MaxLengthError(
+                    "stage2-ab teacher-forced encode exceeded max_length="
+                    f"{max_len}. SFT forbids truncation; pre-filter long samples or increase global_max_length."
+                ) from e
             t_encode_s += time.perf_counter() - t_enc0
 
             encoded_len = self._extract_encoded_len(encoded)
@@ -2148,10 +2190,16 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         except Exception:
                             continue
                         if any(p < 0 or p >= int(train_len_eff) for p in pos_i):
-                            continue
+                            raise ValueError(
+                                "stage2-ab bbox group pos out of range after teacher-forced encode. "
+                                f"pos={pos_i} train_len={int(train_len_eff)} y_train_len={int(len(y_train_ids))}"
+                            )
                         abs_pos = [int(prompt_len + p) for p in pos_i]
                         if any(p >= int(encoded_len) for p in abs_pos):
-                            continue
+                            raise ValueError(
+                                "stage2-ab bbox group absolute pos exceeds encoded_len after teacher-forced encode. "
+                                f"abs_pos={abs_pos} encoded_len={int(encoded_len)} prompt_len={int(prompt_len)}"
+                            )
                         out.append({"pos": abs_pos, "gt_bins": gb_i})
                     return out
 
@@ -2182,9 +2230,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                             continue
                         pos_i = [int(p + delta_prompt) for p in pos_i]
                         if any(p < int(lower) or p >= int(upper) for p in pos_i):
-                            continue
+                            raise ValueError(
+                                "stage2-ab bbox group pos escaped expected span after prompt shift (possible truncation/misalignment). "
+                                f"pos={pos_i} span=[{int(lower)},{int(upper)}) delta_prompt={int(delta_prompt)}"
+                            )
                         if any(p >= int(encoded_len) for p in pos_i):
-                            continue
+                            raise ValueError(
+                                "stage2-ab bbox group pos exceeds encoded_len after prompt shift (possible truncation/misalignment). "
+                                f"pos={pos_i} encoded_len={int(encoded_len)}"
+                            )
                         out.append({"pos": pos_i, "gt_bins": gb_i})
                     return out
 
@@ -2440,6 +2494,41 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     "Mitigations: disable training.packing or check the chat template/packing pipeline."
                 )
 
+        # Debug-only: validate packing boundaries against meta to catch leakage/misalignment.
+        debug_asserts = str(os.environ.get("COORDEXP_DEBUG_STAGE2_ASSERTS", "") or "").strip()
+        if packing_enabled and debug_asserts not in {"", "0"}:
+            cu = inputs.get("cu_seq_lens_q")
+            if not isinstance(cu, torch.Tensor) or cu.ndim != 1:
+                raise ValueError(
+                    "COORDEXP_DEBUG_STAGE2_ASSERTS=1: expected cu_seq_lens_q[segments+1] for packed batch"
+                )
+            cu_list = [int(x) for x in cu.detach().cpu().tolist()]
+            seqlen_in = int(input_ids.shape[1])
+            if not cu_list or cu_list[0] != 0 or cu_list[-1] != seqlen_in:
+                raise ValueError(
+                    f"Invalid cu_seq_lens_q boundaries: {cu_list} (expected 0..{seqlen_in})"
+                )
+            if any(b <= a for a, b in zip(cu_list, cu_list[1:])):
+                raise ValueError(
+                    f"cu_seq_lens_q must be strictly increasing; got {cu_list}"
+                )
+            if len(meta) != len(cu_list) - 1:
+                raise ValueError(
+                    f"meta segments ({len(meta)}) must match cu_seq_lens_q-1 ({len(cu_list)-1})"
+                )
+            for i, m in enumerate(meta):
+                exp = int(m.get("encoded_len") or 0)
+                got = int(cu_list[i + 1] - cu_list[i])
+                if exp != got:
+                    raise ValueError(
+                        f"packed segment {i} length mismatch: meta.encoded_len={exp} vs cu_seq_lens_q diff={got}"
+                    )
+                seg_chan = m.get("stage2_channel")
+                if seg_chan is not None and str(seg_chan) != str(channel):
+                    raise ValueError(
+                        f"packed segment {i} has stage2_channel={seg_chan!r} but batch channel={channel!r}"
+                    )
+
         t_fwd0 = time.perf_counter()
         outputs = None
 
@@ -2648,11 +2737,13 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             ignore_index=-100,
             reduction="none",
         ).reshape(bsz, -1)
-        denom = float(weights_next.sum().detach().cpu().item())
+        denom_t = weights_next.sum()
+        denom = float(denom_t.detach().cpu().item())
         if denom <= 0:
             ce_loss = per_tok.new_tensor(0.0)
         else:
-            ce_loss = (per_tok * weights_next).sum() / weights_next.sum().clamp(min=1.0)
+            # NOTE: do not clamp to 1.0 here; it would silently shrink loss when sum(weights) < 1.
+            ce_loss = (per_tok * weights_next).sum() / denom_t.clamp(min=1e-6)
 
         def _flatten_groups(key: str) -> Tuple[List[int], List[int], List[int]]:
             b_list: List[int] = []
@@ -2725,7 +2816,6 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 bins_list, device=logits.device, dtype=torch.long
             ).clamp(min=0, max=999)
 
-            # Drop any groups with invalid positions to avoid device-side asserts.
             b_g = b_t.reshape(-1, 4)
             pos_g = pos_t.reshape(-1, 4)
             bin_g = bin_t.reshape(-1, 4)
@@ -2733,9 +2823,13 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             valid = (pos_g > 0).all(dim=1)
             valid &= (pos_g < int(seq_len)).all(dim=1)
             if not bool(valid.all().item()):
-                b_g = b_g[valid]
-                pos_g = pos_g[valid]
-                bin_g = bin_g[valid]
+                # SFT teacher-forced batches must never truncate/drop; treat this as a hard error.
+                bad_i = int((~valid).nonzero(as_tuple=False)[0].item())
+                bad_pos = [int(x) for x in pos_g[bad_i].detach().cpu().tolist()]
+                raise ValueError(
+                    f"{key} contains out-of-range bbox group positions (example={bad_pos}, seq_len={int(seq_len)}). "
+                    "This usually indicates truncation or corrupted packing/meta."
+                )
 
             n_groups = int(pos_g.shape[0])
             if n_groups == 0:

@@ -5,6 +5,10 @@
 
 extends: ../base.yaml
 
+template:
+  # Stage-2 SFT must never silently truncate; fail fast on any over-length sample.
+  truncation_strategy: raise
+
 training:
   # Stage_2 supports *post-rollout* packing for the teacher-forced forward pass.
   # Rollout generation remains un-packed (padded batch) inside the trainer.
