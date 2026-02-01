@@ -9,7 +9,7 @@ Note:
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
   - carry-only mode requires `training.packing_drop_last: true`,
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
-- Stage_2 runbook: `../training/STAGE2_ROLLOUT.md`.
+- Stage_2 runbook: `../training/STAGE2_RUNBOOK.md`.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
@@ -60,5 +60,4 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 3) Monitor GPU memory; if headroom shrinks, drop to `global_max_length: 12000` and keep eff_bs=12.
 4) Keep ROOT_IMAGE_DIR set for dataset paths; packing requires non-lazy tokenize.
 5) If comparing to padding runs, match total samples (epochs) rather than optimizer steps.
-
 

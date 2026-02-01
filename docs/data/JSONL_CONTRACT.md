@@ -3,7 +3,7 @@
 This document defines the universal JSONL format consumed by all CoordExp training/eval datasets (public detection/grounding and any legacy sources). Every record MUST adhere to this contract so the shared chat-template pipeline can process all sources.
 
 ## Top-Level Record
-- **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then optionally resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see `PREPROCESSING.md`). Regardless of source, they MUST match this contract.
+- **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see [`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)). Regardless of source, they MUST match this contract.
 - `images` (list[str], required): Relative paths to image files; resolved against the JSONL directory.
 - `objects` (list[object], required): Structured annotations (see below).
 - `width` (int, required): Image width in pixels (original or post-resize if applied offline).
@@ -23,11 +23,14 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 
 ### Geometry keys and coordinate space (canonical)
 - Accepted geometry keys are **only** `bbox_2d` or `poly` (plus optional `poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
-- Coordinate space is either pixel (floating point) or normalized coord tokens `<|coord_k|>` where `k ∈ [0, 999]`. The loader infers pixel vs normalized using image `width`/`height`. Avoid mixing pixel floats and coord tokens in the same object.
-- When pre-tokenizing (`custom.coord_tokens.enabled: true`), keep geometry in tokens and set `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
+- **Training coordinate space is pre-normalized norm1000**:
+  - Numeric coords must be integers in `0..999`, OR
+  - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
+  Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
+- When pre-tokenizing (`custom.coord_tokens.enabled: true`), keep geometry in tokens and keep `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
 
 ## Invariants
-- Coordinates can be pixel-space numbers or pre-tokenized `<|coord_k|>` values (0–999). Width/height must be present so pixel values can be reconstructed for losses.
+- For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Polygon vertices should be canonicalized offline for determinism:
@@ -59,5 +62,5 @@ All future domains MUST emit this contract to remain compatible with the shared 
 
 For an exact view of how a record plus the default prompts are rendered by the Qwen3-VL chat template, run:
 ```
-python scripts/tools/inspect_chat_template.py --jsonl <path/to/data.jsonl> --index 0
+PYTHONPATH=. conda run -n ms python scripts/inspect_chat_template.py --jsonl <path/to/data.jsonl> --index 0
 ```

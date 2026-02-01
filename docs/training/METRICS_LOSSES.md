@@ -17,7 +17,7 @@ Stage-2 note (rollout-matching SFT):
     and CE for `desc` string *values* is intentionally masked out to avoid amplifying noisy GT labels.
 - As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` may be near-zero
   or not meaningful for stage_2 runs (because those positions are not supervised).
-- Stage_2 runbook: `STAGE2_ROLLOUT.md`.
+- Stage_2 runbook: `STAGE2_RUNBOOK.md`.
 
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
 
@@ -304,6 +304,13 @@ Compatibility note:
 
 These metrics help interpret "does it output the correct token id", separated by token
 categories. They are all **metrics-only** (not part of the loss).
+
+**Config**:
+- Enable with `custom.token_type_metrics.enabled: true`.
+- Defaults: `include: ["lvis"]`, `exclude: []`.
+- Set `custom.token_type_metrics.log_top5: false` to skip top-k metrics (can reduce logging overhead).
+- Works on padded and packed batches: token types are computed per sample pre-pack and concatenated; if alignment fails the metrics are skipped (training continues).
+- NaN-safe: batches with zero supervised tokens are skipped.
 
 - `token_acc` (from ms-swift)
   - **What:** top-1 token accuracy over supervised tokens (argmax vs GT).

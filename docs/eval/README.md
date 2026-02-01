@@ -16,11 +16,11 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
   - By default (`--f1ish-pred-scope annotated`), predictions whose `desc` is **not semantically close to any GT `desc` in the image** are **ignored** (not counted as FP). This makes F1-ish behave like “how well do we recover annotated objects” on partially-annotated / open-vocab settings.
   - Use `--f1ish-pred-scope all` for strict counting that penalizes any extra predictions as FP.
-- GPU is required (CUDA must be available) for the CLI and the training callback.
+- GPU is optional. Only semantic matching needs extra compute; set `--semantic-device cpu` (default: `auto`) if you want to force CPU.
 
 ## CLI
 ```
-python scripts/evaluate_detection.py \
+PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --pred_jsonl <path> \
   --out_dir eval_out \
   [--metrics coco|f1ish|both] \
@@ -79,6 +79,15 @@ Tip: you can also run infer+eval+vis from a single YAML pipeline config:
 PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/infer/pipeline.yaml
 ```
 
+Tip: for benchmarkable runs (like the ones driven by `scripts/run_infer_eval.sh`), prefer the dedicated configs under `configs/bench/` instead of re-typing long env/flag lists. For example:
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+  --config configs/bench/a_only_ckpt_6064_infer_eval.yaml
+```
+
+These configs already pin `run.name`, `output_dir`, checkpoints, generation, and eval knobs so the inferred artifacts stay consistent and the `resolved_config.json` captures the full run metadata without having to repeat dozens of terminal arguments.
+
 ## Validation checklist (unified pipeline)
 
 This is a lightweight checklist intended for paper-ready runs and to prevent
@@ -102,6 +111,10 @@ silent contract drift between infer/eval/vis stages.
 3) Determinism + provenance
 - Prefer setting `infer.generation.seed` (or `--seed` in legacy mode) for best-effort
   determinism under the HF backend.
+- For throughput, you can batch decoding:
+  - HF backend: set `infer.generation.batch_size` (>1) to use batched `model.generate()`.
+  - vLLM backend: set `infer.generation.batch_size` and (optionally) `infer.backend.client_concurrency`
+    to issue multiple requests concurrently (server-side batching still depends on your vLLM server settings).
 - Record the backend choice and generation config in run artifacts:
   - YAML pipeline: `<run_dir>/resolved_config.json`
   - Legacy: `<run_dir>/summary.json` + your shell logs.

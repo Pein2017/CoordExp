@@ -283,7 +283,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
 ```bash
 python -m src.sft --config /abs/path/to/your_config.yaml
 ```
-For config structure and inheritance, see the YAML examples below and `docs/training/STAGE2_AB.md`.
+For config structure and inheritance, see the YAML examples below and `docs/training/STAGE2_RUNBOOK.md`.
 
 **YAML Structure** (explicit values required; you can factor shared fields into `configs/base.yaml`):
 ```yaml
@@ -398,7 +398,7 @@ For details, see `docs/data/README.md#dense-vs-summary-modes`.
 
 ### Further reading
 
-- **Training workflows**: See `docs/training/STAGE2_AB.md` for complete training guide
+- **Training workflows**: See `docs/training/STAGE2_RUNBOOK.md` for the Stage-2 training runbook
 - **Inference & deployment**: See `docs/eval/README.md` for inference and adapter merging
 - **Data preparation**: See `docs/data/README.md` for JSONL schemas and validation
 - **Advanced topics**: See `src/README.md` for performance tuning and troubleshooting

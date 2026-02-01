@@ -1,388 +1,133 @@
 # Data & Datasets
 
-Comprehensive guide to data format, schema, dataset builders, and preprocessing pipeline.
+This page is a concise roadmap to CoordExp's data pipeline. It intentionally
+stays "pointer-first": short, efficient, and aligned with the current codebase.
 
-**Source of truth**: `src/datasets/`, `JSONL_CONTRACT.md`, `src/datasets/geometry.py`
+If you are onboarding a new dataset, follow the links in order and avoid ad-hoc
+scripts/flags so runs stay reproducible and paper-ready.
 
-**Raw annotation intake** is covered in `PREPROCESSING.md` (how dataset converters + `public_data/scripts/rescale_jsonl.py`/`convert_to_coord_tokens.py` produce the train/val JSONL that feed this pipeline).
-
----
-
-## Table of Contents
-- [Data Format](#data-format)
-- [Dataset Pipeline](#dataset-pipeline)
-- [Builders](#builders)
-- [Preprocessors](#preprocessors)
-- [Best Practices](#best-practices)
+**Source of truth**:
+- Docs: [`JSONL_CONTRACT.md`](JSONL_CONTRACT.md), [`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)
+- Code: `src/datasets/`, `src/datasets/geometry.py`, `src/datasets/builders/jsonlines.py`
 
 ---
 
-## Data Format
+## Roadmap (Do This In Order)
 
-### JSONL Schema
+1) **Pick / produce a JSONL that matches the contract**
+   - Contract: [`JSONL_CONTRACT.md`](JSONL_CONTRACT.md)
+2) **Prepare data offline (convert -> resize -> normalize -> tokens)**
+   - Pipeline: [`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)
+3) **Train from YAML**
+   - Start point: `configs/base.yaml`
+   - Packing: [`PACKING.md`](PACKING.md)
+4) **(Optional) Multi-dataset fusion**
+   - Fusion: [`FUSION_DATASET.md`](FUSION_DATASET.md)
 
-Each record in your training data follows this structure:
+---
 
-```json
-{
-  "images": ["path/to/img1.jpg", "path/to/img2.jpg"],
-  "objects": [
-    {"bbox_2d": [x1, y1, x2, y2], "desc": "object description"},
-    {"poly": [x1, y1, x2, y2, x3, y3, ...], "poly_points": M, "desc": "polygon description"}
-  ],
-  "width": 1920,
-  "height": 1080,
-  "summary": "optional: single-line English summary"
-}
-```
+## Core Contract (What Training Assumes)
 
-**Key Rules**:
-- Image paths resolve relative to JSONL file directory (absolute paths also allowed)
-- Exactly ONE geometry field per object (`bbox_2d` or `poly`)
-- For polygons: `poly` is a flat, even-length list (≥6 values / ≥3 points). `poly_points` is optional metadata but should match `len(poly) / 2` when present.
-- Coordinates are in pixel space with original `width`/`height`
+The dataset/trainer stack consumes JSONL records with:
+- `images` (paths), `objects` (each has `desc` + exactly one geometry: `bbox_2d` or `poly`), `width`, `height`
 
-### Geometry Types
+See: [`JSONL_CONTRACT.md`](JSONL_CONTRACT.md).
 
-| Type | Format | Use Case |
-|------|--------|----------|
-| **bbox_2d** | `[x1, y1, x2, y2]` | Axis-aligned boxes |
-| **poly** | `[x1,y1, x2,y2, x3,y3, ...]` | Arbitrary polygons (even-length list, ≥3 points). Use `poly_points` to record vertex count. |
+### Coordinate Conventions (Critical)
 
-### Coordinate Normalization
+CoordExp disables runtime normalization:
+- You must set `custom.emit_norm: none` (enforced by config validation).
+- Numeric coords that appear in JSON must already be **norm1000 integer values** in `0..999`.
+- Coord-token mode is opt-in (`<|coord_k|>` where `k in [0,999]`) via `custom.coord_tokens.enabled: true`.
 
-**Pipeline default (post-conversion):**
-- All public data JSONLs we ship/train on are pre-normalized to norm1000 `[0, 999]` for both numeric text and coord-token files. Pixel-space intermediates are temporary only.
-- Training should therefore set `custom.emit_norm: none` for numeric runs (no runtime scaling). Coord-token runs bypass numeric scaling entirely.
+Why this is strict:
+- Prevents silent scaling drift between datasets/runs.
+- Keeps training/eval comparable across pipelines and makes debugging easier.
 
-**If you bring your own pixel JSONL:**
-- You must either pre-normalize offline or set `custom.emit_norm: norm1000` to let the builder normalize; mixed coord systems are not supported.
+### Geometry Preservation (Why We Are Picky)
 
-**Enforcement:**
-- Numeric runs with pre-normalized data are validated to be within `[0, 999]` and will raise if out-of-range.
+Geometry is treated as first-class data:
+- Augmentations must update images and geometry atomically.
+- Do not drop or reorder coordinates in custom code; use `src/datasets/geometry.py`.
 
-### Modes: Dense vs Summary
+---
 
-**Dense Mode** (default):
-```json
-{
-  "object_1": {"bbox_2d": [100, 200, 300, 400], "desc": "..."},
-  "object_2": {"poly": [50, 60, 80, 60, 80, 120, 50, 120], "poly_points": 4, "desc": "..."}
-}
-```
-## Dataset Pipeline
+## Minimal YAML Skeleton (Single Dataset)
 
-### Critical Configuration Requirement
+Start from `configs/base.yaml` and override only what you need.
 
-**REQUIRED in all config files**:
 ```yaml
 data:
-  dataset: ["dummy"]  # NEVER REMOVE - required for ms-swift TrainArguments validation
-```
+  dataset: ["dummy"]
+  val_dataset: ["dummy"]  # keep eval_strategy stable in ms-swift
 
-**Why this is needed**:
-- ms-swift's `TrainArguments.__post_init__()` validates that `dataset` or `cached_dataset` is non-empty
-- This check happens during config initialization, before custom dataset loading
-- Even though we load actual datasets via `custom.train_jsonl` and pass them directly to the trainer, the validation must pass first
-- The `["dummy"]` placeholder satisfies the validation but is never actually used
-- Removing this will cause: `ValueError: self.dataset: [], self.cached_dataset: []. Please input the training dataset.`
-
-**Source**: `/data/ms-swift/swift/llm/argument/train_args.py:162-164`
-
-### Architecture Overview
-
-```
-JSONL → DenseCaptionDataset → Collator → Trainer
-```
-
-**Key Components**:
-1. **DenseCaptionDataset**: Mode selection (dense/summary), augmentation config, per-item orchestration
-2. **Preprocessors**: Validation, augmentation (plugged into the dataset)
-3. **Builder**: Message formatting (JSONLinesBuilder)
-4. **Collator**: Tensor preparation with standard padding; optional packing wrapper flattens pre-packed lists when enabled.
-
-### Visual Feature Distillation (optional)
-
-- Enable via `custom.visual_kd` when you want to lock the vision/aligner stack to a teacher while giving the language tower more room.
-- The dataset already supplies `pixel_values` and `image_grid_thw`; as long as a record contains images, the trainer captures and distills the corresponding activations automatically.
-- Batches without images (e.g., summary-only validation groups) skip the extra loss—no action required.
-
-### DenseCaptionDataset
-
-**Role**:
-- Selects dense vs summary mode per sample
-- Applies augmentation/preprocessing
-- Attaches metadata for downstream processing and template encoding
-
-**Configuration**:
-```yaml
 custom:
+  user_prompt: <prompt_id>           # required (see src/config/prompts.py)
   train_jsonl: /path/to/train.jsonl
   val_jsonl: /path/to/val.jsonl
-  use_summary: false                # true → summary-only mode
-  emit_norm: norm1000              # Coordinate format in text
-```
-
-## Conversion & QA Tooling
-
-If your source is a human-annotation export, start with the intake guide (`PREPROCESSING.md`) and run the dataset converter plus `public_data/scripts/rescale_jsonl.py` (and optionally coord-token conversion) to produce train/val/tiny JSONL that already satisfy this contract.
-
-- **Public datasets (`public_data/`)**:
-  - See `PUBLIC_DATA.md` + `public_data/README.md` for LVIS/COCO/Objects365 download, conversion, sampling, visualization, and pytest coverage.
-  - Each converter produces JSONL that matches this document’s schema; polygons include `poly_points`. **Legacy toggle**: `--poly-max-points N` can downgrade very high-vertex polygons to `bbox_2d`, but it is disabled by default and **not used by training** (we rely on sequence-length limits + dataset-level filtering instead).
-  - For LVIS, we maintain dataset-fixed geometry exports for ablations:
-    - `bbox_only` (every instance emits `bbox_2d`)
-    - `poly_prefer_semantic` (prefer a capped single poly; fallback-to-bbox for semantic edge cases)
-    See `public_data/lvis/README.md` and `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh`.
-  - For sequence-length control, prefer transparent record-level caps like `max_objects=60` (see `public_data/scripts/filter_jsonl_max_objects.py` and `PREPROCESSING.md`). Low-diversity filtering remains optional.
-- **Visualization**:
-  - `vis_tools/vis_augment_compare.py` and friends overlay objects/summaries to validate augmentation and JSONL integrity. See `vis_tools/README_CROP_VIS.md`.
-- **Chat template inspection**:
-  - `scripts/tools/inspect_chat_template.py --jsonl <path> --index 0` shows the exact rendered chat text and token IDs for a sample with the current prompts and Qwen3-VL chat template.
-
-**Fusion status**: Multi-dataset fusion is supported via `custom.fusion_config`. When set, the runner builds train/eval datasets from the fusion config and ignores `custom.train_jsonl` / `custom.val_jsonl`. See `FUSION_DATASET.md`.
-
-For the universal JSONL record contract shared by all domains, see `JSONL_CONTRACT.md`.
-
----
-
-## Builders
-
-### JSONLinesBuilder
-
-**Purpose**: Formats single-image records into single-turn conversation messages
-
-**Dense Mode**:
-```python
-# User message: embed the image followed by the prompt
-[
-  {"type": "image", "image": "path"},
-  {"type": "text", "text": prompt}
-]
-
-# Assistant message: minimal object hierarchy (no per-image wrapper)
-{
-  "object_1": {"bbox_2d": [...], "desc": "类型/属性/..."},
-  "object_2": {"poly": [...], "poly_points": 4, "desc": "..."}
-}
-```
-
-
-**Key Behavior**:
-- Attaches top-level `objects` with pixel coords (for template normalization)
-- Geometries normalized based on `emit_norm` setting
-- Deterministic ordering of object indices (`object_1`, `object_2`, ...)
-- Consumes validated `ConversationRecord` objects and exposes augmentation telemetry (`pipeline.last_summary`) for downstream health checks.
-
----
-
-## Preprocessors
-
-### DenseCaptionPreprocessor
-
-**Purpose**: Validation and light filtering
-
-**Checks**:
-- Schema validity (required fields present)
-- Geometry field uniqueness (exactly one per object)
-- Image paths resolve correctly
-
-**Action**: Raises `ValueError` on invalid records (fail-fast)
-
-### AugmentationPreprocessor
-
-**Purpose**: Apply geometry-aware augmentations
-
-**Features**:
-- Atomic updates (image + geometries transformed together)
-- Preserves coordinate alignment
-- See `src/datasets/augmentation/` for details
-- Reads standardized telemetry (`AugmentationTelemetry`) with crop coverage, kept indices, and skip reasons to audit augmentation pipelines.
-
-**Example**:
-```yaml
-custom:
-  augmentation:
-    enabled: true
-    bypass_prob: 0.1              # 10% clean samples
-    ops:
-      - name: hflip
-        params: { prob: 0.5 }
-      - name: rotate
-        params: { max_deg: 25.0, prob: 0.4 }
-      - name: random_crop
-        params: { scale: [0.7, 1.0], prob: 0.3 }
-      - name: resize_by_scale
-        params: { lo: 0.9, hi: 1.1, prob: 0.5 }
-      - name: color_jitter
-        params: { brightness: [0.75, 1.25], prob: 0.5 }
-      # ✅ MUST be last: ensures final padding to multiple of 32
-      - name: expand_to_fit_affine
-        params: { multiple: 32 }
-```
-
-### Domain Context
-
-CoordExp now targets general open-domain detection/grounding (public datasets such as LVIS/COCO/Objects365). Legacy telecom corpora are still supported via the same JSONL contract but no longer drive prompt wording or hierarchy requirements.
-
----
-
-## Best Practices
-
-### Data Preparation
-
-✅ **Do**:
-- Keep pixel coords on disk (template normalizes during training)
-- Use relative image paths when possible
-- Validate schema before training
-- Include `width`/`height` metadata
-- Test with small dataset first
-
-❌ **Don't**:
-- Mix coordinate systems in same file
-- Omit required fields (`width`, `height`)
-- Use absolute paths unnecessarily
-- Skip validation (fail early is better)
-
-### Schema Validation
-
-```bash
-# Recommended: validate before training
-python -m src.datasets.validate_jsonl --input train.jsonl --verbose
-```
-
-**Common Issues**:
-- Multiple geometry fields per object
-- Path resolution failures
-- Width/height mismatch
-
-### Performance Tips
-
-1. **Image Loading**: Use relative paths from JSONL directory for portability
-2. **Augmentation**: Enable only needed ops (each adds overhead)
-3. **Packing**: Optional via the packing wrapper (training.packing). Enables padding_free collation with packed sequences; leave disabled for evaluation unless explicitly testing packed eval.
-
-### Debugging
-
-**Enable debug mode**:
-```bash
-python -m src.sft --config config.yaml --debug
-```
-
-**Check first batch**:
-```python
-from src.datasets import DenseCaptionDataset
-ds = DenseCaptionDataset(config)
-item = ds[0]
-print(item.keys())  # input_ids, labels, pixel_values, ...
-```
-
----
-
-## Collation (padding vs. packing)
-
-- **Default**: Standard padded batches (`padding_free=false`).
-- **Packing (opt-in)**: Set `training.packing: true` plus `packing_length/buffer/min_fill_ratio` to enable the packing wrapper; this sets `template.packing=true` and uses padding_free collation. Training metrics are aggregate-only when packing is on; per-dataset telemetry is dropped. Evaluation stays un-packed unless explicitly enabled.
-
----
-
-## Verification Checklist
-
-Before training:
-
-- [ ] JSONL schema valid (all required fields present)
-- [ ] Geometry fields correct (one per object)
-- [ ] Image paths resolve correctly
-- [ ] Width/height metadata present
-- [ ] Summary field present (if using summary mode)
-- [ ] Coordinates pre-normalized to `[0, 999]` (or plan to normalize offline before training)
-- [ ] No duplicate objects or malformed geometries
-- [ ] Test with `--debug` flag first
-
-### Token-type metrics (coord vs text)
-
-- Enable with `custom.token_type_metrics.enabled: true`; defaults to `include: ["lvis"]`, `exclude: []`.
-- Works on padded and packed batches: token types are computed per sample pre-pack and concatenated; if alignment fails the metrics are skipped (training continues).
-- Metrics are aggregate-only: logs `token_acc_top5`, `text_token_acc`, and per-type breakdowns (`desc_token_frac`, `format_token_frac`, `coord_token_frac`, plus `desc_token_acc` / `format_token_acc` and their top-5 variants); no per-dataset buckets.
-- NaN-safe: batches with zero supervised tokens are skipped.
-
-### Coord distribution loss (coord tokens)
-
-CoordExp trains coordinate tokens with **distribution-based supervision** only:
-
-- Standard full-vocab CE is applied **only to non-coordinate tokens** (text + JSON structure).
-- At `<|coord_*|>` positions, the model is supervised via:
-  - `softCE`: soft cross-entropy between predicted coord-bin distribution `p` and a unimodal Gaussian soft label `q`
-  - `W1`: 1D Wasserstein-1 distance on discrete bins via CDF differences between `p` and `q`
-  - `gate`: coord-vocab gate loss that penalizes probability mass leaking to non-coord tokens
-
-```yaml
-custom:
-  coord_soft_ce_w1:
-    enabled: true
-    # total_loss += soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate
-    soft_ce_weight: 1.0
-    w1_weight: 1.0
-    gate_weight: 1.0
-    temperature: 1.0
-    target_sigma: 2.0
-    target_truncate: 16
+  emit_norm: none                    # required (runtime normalization is disabled)
+  object_ordering: sorted            # sorted|random
+  coord_tokens:
+    enabled: false                   # true if JSONL uses <|coord_k|> strings
+    skip_bbox_norm: true             # keep true if pre-normalized/tokenized
 ```
 
 Notes:
-- Coord-token positions are identified from **labels** (teacher forcing), never from model predictions.
-- No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
-- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`.
+- `data.dataset: ["dummy"]` is a placeholder to satisfy ms-swift argument validation; training data is loaded from `custom.train_jsonl`.
+- Training encodes with `do_resize=False` (images should already be prepared offline).
 
-### Coord-offset adapter (tie-head / single shared table)
+---
 
-When training with coord tokens, CoordExp can optionally avoid updating the full vocabulary embedding
-and instead learn a small **offset adapter** over just the coord-token id range.
+## Implementation Pointers (Where This Lives In Code)
 
-Key idea:
-- Freeze the base `embed_tokens.weight` and `lm_head.weight`.
-- Train a compact offset table only for `<|coord_0|>.. <|coord_999|>` token ids.
+If you need to understand or change behavior, these are the first files to read:
 
-Config:
-```yaml
-custom:
-  coord_offset:
-    enabled: true
-    # Default: Qwen3-VL-style tie-head (single/shared lookup table for embed + head).
-    tie_head: true
-    ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
-    # Optional: learning-rate overrides for the offset parameters.
-    # When tie_head: true, only embed_lr is used (head_lr is ignored).
-    embed_lr: 1.0e-4
-    head_lr: 1.0e-4
-    weight_decay: 0.0
+- Dataset orchestration: `src/datasets/dense_caption.py`
+- Message / assistant payload formatting: `src/datasets/builders/jsonlines.py`
+- Geometry transforms + helpers: `src/datasets/geometry.py`
+- Augmentation ops: `src/datasets/augmentation/`
+- Preprocessors / validators: `src/datasets/preprocessors/`
+- Config validation and invariants (including `custom.emit_norm`): `src/config/schema.py`
+
+---
+
+## Debugging / Verification (Fast, Reproducible)
+
+Validate JSONL structure early (before training):
+
+```bash
+PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.jsonl>
 ```
 
-Semantics:
-- `tie_head: true` (recommended; default)
-  - The adapter trains a **single** offset table and uses it for both:
-    - embedding lookup (adds offsets to hidden states for coord tokens), and
-    - output projection (adds logits for coord tokens via `hidden @ offset^T`).
-  - This is equivalent to applying a single delta to the tied embedding/head table for coord tokens,
-    which matches the intended tie-head routine of Qwen-family LMs.
-- `tie_head: false` (legacy/ablation)
-  - Trains separate `embed_offset` and `head_offset` tables (two independent deltas).
-  - Export/merge may need to materialize `lm_head.weight` and disable tying to preserve separate behavior.
+Inspect the exact rendered chat text + tokenization for one sample:
 
-Export/merge:
-- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the coord-offset adapter into a merged HF checkpoint.
-  - With `tie_head: true`, the merged checkpoint can keep tied embeddings (single table).
-  - With `tie_head: false`, the merged checkpoint may need an explicit `lm_head.weight` tensor and `tie_word_embeddings: false`.
+```bash
+PYTHONPATH=. conda run -n ms python scripts/inspect_chat_template.py --jsonl <path.jsonl> --index 0
+```
+
+Smoke a training config (dumps template/prompt/debug artifacts):
+
+```bash
+PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> --debug
+```
+
+---
+
+## Packing (Efficiency Lever)
+
+Packing is the primary efficiency lever for long dense JSON outputs.
+
+- Stage-1 / baseline packing: [`PACKING.md`](PACKING.md)
+- Stage-2 packing is trainer-internal (post-rollout): [`../training/STAGE2_RUNBOOK.md`](../training/STAGE2_RUNBOOK.md)
 
 ---
 
 ## See Also
 
-- **Augmentation**: `src/datasets/augmentation/` - Geometry-aware transforms
-- **Training**: [README.md](../../src/README.md#training) - Full training guide
-- **Architecture**: [README.md](../../src/README.md#architecture) - End-to-end pipeline
-- **Upstream Models**: [UPSTREAM.md](../standards/UPSTREAM.md) - HF Qwen3-VL + ms-swift background
+- Intake pipeline: [`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)
+- Coord objectives + adapters: [`../training/COORD_OBJECTIVE_AND_ADAPTER.md`](../training/COORD_OBJECTIVE_AND_ADAPTER.md)
 
 ---
 
-**Last Updated**: 2025-11-24 (geometry schema + links)
+**Last Updated**: 2026-02-01
+
