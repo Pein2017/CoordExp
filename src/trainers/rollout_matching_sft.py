@@ -1673,7 +1673,104 @@ class _FixedRawMicroBatchStacker:
         # sample count using the base batch size, then divide by the target size.
         n_micro = int(len(self.dataloader))
         n_raw = int(n_micro) * int(self.base_raw_batch_size)
-        return int((n_raw + self.target_raw_batch_size - 1) // self.target_raw_batch_size)
+        return int(
+            (n_raw + self.target_raw_batch_size - 1) // self.target_raw_batch_size
+        )
+
+    def __getattr__(self, name: str):
+        return getattr(self.dataloader, name)
+
+
+class _AdaptiveRawMicroBatchStacker:
+    """Stack identity-collated raw micro-batches into adaptive-size lists.
+
+    This helper is intentionally lightweight: it chooses a target raw microbatch size
+    based on the trainer's observed post-rollout packing fill, so repeated underfilled
+    packs can automatically increase the raw sample budget.
+
+    The class is currently used for unit tests and diagnostics; production runs
+    typically use an explicit `rollout_generate_batch_size`.
+    """
+
+    def __init__(self, dataloader, *, trainer: Any):
+        self.dataloader = dataloader
+        self.trainer = trainer
+
+    def _target_microbatch_size(self) -> int:
+        packing_length = int(self.trainer._packing_length())
+        min_fill = float(self.trainer._packing_min_fill_ratio())
+        buf_cap = int(self.trainer._packing_buffer_cap())
+
+        # Base estimate from the rolling average segment length.
+        avg_len = float(getattr(self.trainer, "_rm_avg_segment_len", 0.0) or 0.0)
+        if avg_len > 0.0:
+            base = int(math.ceil((packing_length * min_fill) / avg_len))
+        else:
+            base = 1
+        base = max(1, base)
+
+        # Bump estimate from last-pack underfill (only when there is no carry buffer).
+        bump = 0
+        last_fill = float(getattr(self.trainer, "_rm_last_pack_fill", 0.0) or 0.0)
+        last_segments = int(getattr(self.trainer, "_rm_last_pack_segments", 0) or 0)
+        last_buf_after = int(
+            getattr(self.trainer, "_rm_last_pack_buffer_after", 0) or 0
+        )
+        if (
+            last_buf_after == 0
+            and last_segments > 0
+            and min_fill > 0.0
+            and 0.0 < last_fill < min_fill
+        ):
+            bump = int(math.ceil((last_segments * min_fill) / last_fill))
+
+        target = max(base, bump)
+        if buf_cap > 0:
+            target = min(target, buf_cap)
+        return max(1, target)
+
+    def __iter__(self):
+        buf: List[Any] = []
+        target = int(self._target_microbatch_size())
+        for b in self.dataloader:
+            if not isinstance(b, list):
+                raise ValueError(
+                    "adaptive raw microbatch stacker expects identity-collated train batches (list of raw samples)"
+                )
+            buf.extend(b)
+            while len(buf) >= target:
+                out = buf[:target]
+                del buf[:target]
+                yield out
+
+        if buf:
+            yield buf
+
+    def __len__(self) -> int:
+        # Best-effort length; if the underlying dataloader does not implement __len__,
+        # fall back to 0 (PyTorch IterableDataset semantics).
+        try:
+            n_micro = int(len(self.dataloader))
+        except Exception:
+            return 0
+
+        # Identity collator yields raw samples; base microbatch size defaults to 1.
+        base_raw_batch_size = 1
+        try:
+            base_raw_batch_size = int(
+                getattr(
+                    getattr(self.trainer, "args", None),
+                    "per_device_train_batch_size",
+                    1,
+                )
+                or 1
+            )
+        except Exception:
+            base_raw_batch_size = 1
+
+        n_raw = int(n_micro) * int(base_raw_batch_size)
+        target = int(self._target_microbatch_size())
+        return int((n_raw + target - 1) // target)
 
     def __getattr__(self, name: str):
         return getattr(self.dataloader, name)
@@ -2179,7 +2276,9 @@ def schedule_post_rollout_segment_indices_window(
 
     used: List[int] = sorted(int(i) for p in packs for i in p)
     if used != list(range(n)):
-        raise ValueError("window post-rollout packing produced an invalid segment index cover")
+        raise ValueError(
+            "window post-rollout packing produced an invalid segment index cover"
+        )
 
     for p in packs:
         p_total = int(sum(int(lens[i]) for i in p))
@@ -3437,7 +3536,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         dist_backend_raw = vcfg.get("distributed_executor_backend")
         if dist_backend_raw is None:
-            dist_backend = "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
+            dist_backend = (
+                "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
+            )
         else:
             dist_backend = str(dist_backend_raw).strip() or (
                 "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
@@ -3754,7 +3855,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._vllm_server_client = client
         return client
 
-
     def _maybe_debug_dump_vllm_server_rollouts(
         self,
         *,
@@ -3779,18 +3879,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             return
 
-        debug_raw = scfg_raw.get("debug_dump", {}) if isinstance(scfg_raw, Mapping) else {}
-        if not isinstance(debug_raw, Mapping) or not bool(debug_raw.get("enabled", False)):
+        debug_raw = (
+            scfg_raw.get("debug_dump", {}) if isinstance(scfg_raw, Mapping) else {}
+        )
+        if not isinstance(debug_raw, Mapping) or not bool(
+            debug_raw.get("enabled", False)
+        ):
             return
 
         max_events = int(debug_raw.get("max_events", 3) or 0)
-        if max_events > 0 and int(self._vllm_server_debug_dump_count) >= int(max_events):
+        if max_events > 0 and int(self._vllm_server_debug_dump_count) >= int(
+            max_events
+        ):
             return
 
         gs = int(global_step)
-        if self._vllm_server_debug_last_step is not None and int(
-            self._vllm_server_debug_last_step
-        ) == gs:
+        if (
+            self._vllm_server_debug_last_step is not None
+            and int(self._vllm_server_debug_last_step) == gs
+        ):
             return
 
         out_dir = debug_raw.get("out_dir")
@@ -3869,7 +3976,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         }
 
         path = os.path.join(
-            out_dir, f"step_{int(gs):06d}_event_{int(self._vllm_server_debug_dump_count):03d}.json"
+            out_dir,
+            f"step_{int(gs):06d}_event_{int(self._vllm_server_debug_dump_count):03d}.json",
         )
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -5021,13 +5129,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                 # If we're underfilled *and* the buffer emptied, we were supply-limited.
                 # Update aggressively downward so the next raw batch is larger.
-                supply_limited = bool(fill < target and len(self._post_rollout_segments) == 0)
+                supply_limited = bool(
+                    fill < target and len(self._post_rollout_segments) == 0
+                )
 
                 alpha = 0.2
                 if supply_limited:
                     alpha = 0.5
 
-                ema = float(avg) if prev <= 0 else float((1.0 - alpha) * prev + alpha * avg)
+                ema = (
+                    float(avg)
+                    if prev <= 0
+                    else float((1.0 - alpha) * prev + alpha * avg)
+                )
                 if supply_limited:
                     ema = min(float(ema), float(avg))
 
@@ -5748,9 +5862,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if pending is not None:
                     sample_step = int(len(getattr(pending, "meta", []) or []))
                     try:
-                        self._rm_train_samples_seen = int(
-                            getattr(self, "_rm_train_samples_seen", 0) or 0
-                        ) + sample_step
+                        self._rm_train_samples_seen = (
+                            int(getattr(self, "_rm_train_samples_seen", 0) or 0)
+                            + sample_step
+                        )
                     except Exception:
                         self._rm_train_samples_seen = sample_step
 
@@ -6110,6 +6225,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "loss_scale",
             "text_position_ids",
             "channel",
+            "logits_to_keep",
         }
         inputs_for_model = {k: v for k, v in inputs.items() if k not in ignored_keys}
 
@@ -6141,12 +6257,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             inputs_for_model["position_ids"] = torch.cat(
                 [text_position_ids.unsqueeze(0), position_ids], dim=0
             )
+        # Disable KV cache during training to reduce memory and avoid accidental PKV returns.
+        inputs_for_model["use_cache"] = False
+        inputs_for_model.pop("past_key_values", None)
+
         t_fwd0 = time.perf_counter()
         outputs = model(**inputs_for_model)
         t_fwd_s = time.perf_counter() - t_fwd0
         logits = outputs.logits
         if logits is None:
             raise ValueError("model did not return logits")
+
+        input_ids = inputs.get("input_ids")
+        if (
+            isinstance(input_ids, torch.Tensor)
+            and logits.shape[:2] != input_ids.shape[:2]
+        ):
+            raise ValueError(
+                "model returned sliced logits (logits_to_keep-style). Disable logits slicing for rollout-matching training."
+            )
 
         bsz, seq_len, vocab = logits.shape
         coord_token_ids = self._get_coord_token_ids()

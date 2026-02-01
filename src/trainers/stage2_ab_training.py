@@ -674,6 +674,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "stage2-ab Channel-A step mode requires non-empty raw_samples"
             )
 
+        # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
+        model.train()
+
         packing_enabled = False
         try:
             packing_enabled = bool(self._packing_enabled())
@@ -733,7 +736,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         cm = model.no_sync()
 
             with cm:
-                loss = self.compute_loss(model, batch)
+                loss_cm = getattr(self, "compute_loss_context_manager", None)
+                loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
+                with loss_ctx:
+                    loss = self.compute_loss(model, batch)
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
@@ -806,6 +812,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             raise ValueError(
                 "stage2-ab Channel-B step mode requires non-empty raw_samples"
             )
+
+        # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
+        model.train()
 
         packing_enabled = False
         try:
@@ -911,7 +920,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         cm = model.no_sync()
 
             with cm:
-                loss = self.compute_loss(model, batch)
+                loss_cm = getattr(self, "compute_loss_context_manager", None)
+                loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
+                with loss_ctx:
+                    loss = self.compute_loss(model, batch)
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
