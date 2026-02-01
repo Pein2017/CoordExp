@@ -14,7 +14,7 @@ Public datasets in `public_data/` (e.g., LVIS, Visual Genome) currently have per
   - Add or extend a contract validator to support both `bbox_2d` and `poly` plus coord-token values (current `public_data/scripts/validate_jsonl.py` is bbox-only), and keep minimal inspection via `scripts/inspect_chat_template.py`
 
 ## Non-Goals
-- No change to the global data contract (`docs/DATA_JSONL_CONTRACT.md`).
+- No change to the global data contract (`docs/data/JSONL_CONTRACT.md`).
 - No refactor of existing dataset converters unless needed to fit the runner interface (wrapping is preferred).
 - No new “fusion training” default; dataset mixing remains offline and explicit (e.g., `public_data/scripts/merge_jsonl.py`).
 

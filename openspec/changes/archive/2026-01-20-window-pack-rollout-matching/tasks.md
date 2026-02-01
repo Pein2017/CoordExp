@@ -12,4 +12,4 @@
 - [x] 2.2 Add a small deterministic test or debug harness to compare old vs new scheduling on a fixed set of rollouts (greedy) and assert identical labels masks and comparable loss.
 
 ## 3. Docs
-- [x] 3.1 Update `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` to document the new knob and intended use.
+- [x] 3.1 Update `docs/training/STAGE2_RUNBOOK.md` to document the new knob and intended use.

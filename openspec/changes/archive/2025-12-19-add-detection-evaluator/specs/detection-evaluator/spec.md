@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Ingestion and validation
-- The evaluator SHALL accept ground-truth JSONL that follows `docs/DATA_JSONL_CONTRACT.md` and predictions either as parsed JSONL (e.g., from `vis_tools/vis_coordexp.py`) or raw generation text parsed with the shared utility.
+- The evaluator SHALL accept ground-truth JSONL that follows `docs/data/JSONL_CONTRACT.md` and predictions either as parsed JSONL (e.g., from `vis_tools/vis_coordexp.py`) or raw generation text parsed with the shared utility.
 - For records with multiple images, the evaluator SHALL use only the first image entry (index 0) to match current generation tooling, count the skip as `multi_image_ignored`, and continue.
 - Width/height from GT SHALL be the source of truth; conflicting width/height in predictions SHALL be ignored and counted as `size_mismatch`.
 - Entries missing width/height, containing multiple geometries, degenerate/zero-area shapes, or with coords outside 0–999 SHALL be dropped and counted (e.g., `invalid_geometry`, `invalid_coord`, `missing_size`).

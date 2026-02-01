@@ -38,8 +38,8 @@
   - [x] THEN it fails fast with actionable guidance (install `binpacking` or disable `training.packing`).
 
 ## 3. Docs
-- [x] 3.1 Update `docs/PACKING_MODE_GUIDE.md` or `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` to note that stage-2 post-rollout packing uses binpacking selection (ms-swift-like).
-  - [x] If updating `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`, also add this change-id to its "Authoritative requirements live under:" list so readers can discover it.
+- [x] 3.1 Update `docs/data/PACKING.md` or `docs/training/STAGE2_RUNBOOK.md` to note that stage-2 post-rollout packing uses binpacking selection (ms-swift-like).
+  - [x] If updating `docs/training/STAGE2_RUNBOOK.md`, also add this change-id to its "Authoritative requirements live under:" list so readers can discover it.
 
 ## 4. Validation
 - [x] 4.1 Run `openspec validate 2026-01-19-update-stage2-post-rollout-packing-binpacking --strict`.

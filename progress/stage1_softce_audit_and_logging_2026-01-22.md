@@ -147,5 +147,5 @@ Training implication:
 - Stage-1 configs: `configs/dlora/sft_stage1_softce_w1*.yaml`
 - Trainer entry: `src/sft.py`
 - Metrics/loss mixins: `src/metrics/dataset_metrics.py`
-- Metrics doc: `docs/TRAINING_METRICS_AND_LOSSES.md`
+- Metrics doc: `docs/training/METRICS_LOSSES.md`
 - Stage-1 idea doc: `progress/pretrain/first_stage.md`

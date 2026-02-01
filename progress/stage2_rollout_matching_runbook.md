@@ -3,4 +3,4 @@
 This note is kept only to preserve old links.
 
 Authoritative doc:
-- `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md`
+- `docs/training/STAGE2_RUNBOOK.md`

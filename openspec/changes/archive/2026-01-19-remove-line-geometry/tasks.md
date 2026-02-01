@@ -1,7 +1,7 @@
 ## 1. Implementation
 - [x] 1.1 Remove `line`/`line_points` from prompts and user-facing docs:
   - [x] Update `src/config/prompts.py` to remove all `line` mentions and examples.
-  - [x] Update `docs/DATA_JSONL_CONTRACT.md`, `README.md`, and `AGENTS.md` to state the contract is `bbox_2d|poly` only.
+  - [x] Update `docs/data/JSONL_CONTRACT.md`, `README.md`, and `AGENTS.md` to state the contract is `bbox_2d|poly` only.
 - [x] 1.2 Remove `line` from shared schemas and geometry utilities:
   - [x] Update `src/common/schemas.py` and `src/common/coord_standardizer.py` to drop `line` and `line_points`.
   - [x] Update `src/common/geometry/*` to remove polyline helpers (e.g., `line_to_bbox`) and exports.
@@ -26,4 +26,3 @@
 ## 3. Validation
 - [x] 3.1 Run `openspec validate 2026-01-19-remove-line-geometry --strict`.
 - [x] 3.2 Run unit tests (`conda run -n ms python -m pytest -q`), at least covering datasets + eval parsing paths.
-

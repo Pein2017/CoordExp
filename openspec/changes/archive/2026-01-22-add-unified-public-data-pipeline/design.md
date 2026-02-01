@@ -8,7 +8,7 @@
 - Prefer thin wrappers around existing scripts over refactors.
 
 ## Non-Goals
-- No changes to `docs/DATA_JSONL_CONTRACT.md`.
+- No changes to `docs/data/JSONL_CONTRACT.md`.
 - No new training-time fusion defaults; dataset mixing remains offline (`public_data/scripts/merge_jsonl.py`).
 - No attempt to unify dataset *data sources* (mirrors/auth/etc. remain dataset-specific).
 
@@ -114,7 +114,7 @@ Validate is intended to prevent “silent bad data”:
 - Optional: run `scripts/inspect_chat_template.py` on `train.coord.jsonl` to confirm prompt/template rendering
 
 Implementation note:
-- `public_data/scripts/validate_jsonl.py` is currently bbox-only, so the runner should use (or add) a contract validator that supports both `bbox_2d` and `poly` plus coord-token values per `docs/DATA_JSONL_CONTRACT.md`.
+- `public_data/scripts/validate_jsonl.py` is currently bbox-only, so the runner should use (or add) a contract validator that supports both `bbox_2d` and `poly` plus coord-token values per `docs/data/JSONL_CONTRACT.md`.
 - Support `--skip-image-check` for annotation-only workflows (e.g., validating JSONL structure before images finish downloading).
 
 ## Geometry Normalization Notes

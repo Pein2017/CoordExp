@@ -116,7 +116,7 @@ Dataset conversion SHALL normalize source-specific geometry keys and formats int
 #### Scenario: Source provides polygon only
 - **GIVEN** a source dataset provides polygon geometry but not bounding boxes
 - **WHEN** the dataset plugin runs `convert`
-- **THEN** the plugin derives `bbox_2d` from the polygon (or emits `poly` when supported and enabled), and the record remains compliant with `docs/DATA_JSONL_CONTRACT.md`.
+- **THEN** the plugin derives `bbox_2d` from the polygon (or emits `poly` when supported and enabled), and the record remains compliant with `docs/data/JSONL_CONTRACT.md`.
 
 #### Scenario: Source provides both bbox and polygon
 - **GIVEN** a source dataset provides both bbox and polygon geometry
@@ -216,7 +216,7 @@ The system SHALL provide a `validate` step to verify that prepared datasets meet
 - raw outputs (`public_data/<dataset>/raw/*.jsonl`)
 - preset outputs (`public_data/<dataset>/<preset>/*.jsonl` and `*.coord.jsonl`)
 
-Validation SHALL enforce the structural requirements in `docs/DATA_JSONL_CONTRACT.md` for both `bbox_2d` and `poly` geometries.
+Validation SHALL enforce the structural requirements in `docs/data/JSONL_CONTRACT.md` for both `bbox_2d` and `poly` geometries.
 
 The validate step:
 - SHALL validate that required keys exist (`images`, `objects`, `width`, `height`).
@@ -267,4 +267,3 @@ The runner:
 - **GIVEN** a dataset download takes a long time (large image zips)
 - **WHEN** the user runs `public_data/run.sh <dataset> download`
 - **THEN** the runner prints stage banners and surfaces download progress from the dataset-specific logic.
-

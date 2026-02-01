@@ -25,4 +25,4 @@
 - [x] 6.1 Add unit tests for pack metadata + token-type alignment (packed and non-packed)
 - [x] 6.2 Add unit tests for coord-loss masking + loss composition on toy logits
 - [x] 6.3 Update any internal docs if new module layout affects contributor workflow
-- [x] 6.4 Parity check: verify metric key set matches `docs/TRAINING_METRICS_AND_LOSSES.md`, with no per-dataset buckets, across a small matrix (packed vs non-packed; token-type metrics on/off; coord_soft_ce_w1 on/off)
+- [x] 6.4 Parity check: verify metric key set matches `docs/training/METRICS_LOSSES.md`, with no per-dataset buckets, across a small matrix (packed vs non-packed; token-type metrics on/off; coord_soft_ce_w1 on/off)

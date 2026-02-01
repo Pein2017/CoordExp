@@ -29,7 +29,7 @@
   - [x] Verify offload context does not break training_step (smoke-level unit/integration test).
 
 ## 2. Docs & Examples
-- [x] 2.1 Update `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` with rollout_buffer/offload knobs and recommended settings.
+- [x] 2.1 Update `docs/training/STAGE2_RUNBOOK.md` with rollout_buffer/offload knobs and recommended settings.
 - [x] 2.2 Add/modify a stage_2 config example under `configs/dlora/` demonstrating buffered rollouts.
 
 ## 3. Validation

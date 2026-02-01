@@ -27,13 +27,13 @@ The contract MUST define the canonical set of batch extras keys. At minimum, it 
 - AND the trainer strips it before model forward
 
 ### Requirement: Stable metric and batch key names
-The system SHALL preserve the existing metric key names and semantics documented in `docs/TRAINING_METRICS_AND_LOSSES.md`.
+The system SHALL preserve the existing metric key names and semantics documented in `docs/training/METRICS_LOSSES.md`.
 The system SHALL preserve the existing batch-extra key names listed in "Stable batch extras contract".
 
 #### Scenario: Key parity
 - GIVEN a run with some features enabled/disabled (e.g. token-type metrics, coord loss, packing)
 - WHEN running training/evaluation with the refactor enabled
-- THEN every emitted metric key matches a documented train key in `docs/TRAINING_METRICS_AND_LOSSES.md`
+- THEN every emitted metric key matches a documented train key in `docs/training/METRICS_LOSSES.md`
 - OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
 - AND existing metric keys are not renamed
 - AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
@@ -74,4 +74,3 @@ If an enabled loss component cannot be computed, the system MUST raise an error 
 - WHEN coord loss computation fails for a batch
 - THEN the training step raises with a clear error message
 - AND training does not proceed with a silently altered objective
-

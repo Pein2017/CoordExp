@@ -12,7 +12,7 @@ CoordExp inference/evaluation/visualization is currently split across multiple s
 ## Non-Goals
 - No changes to training (`src/sft.py`) behavior.
 - No changes to upstream model code (e.g., `modeling_qwen3_vl.py` remains off-limits).
-- No new dataset formats; use existing `docs/DATA_JSONL_CONTRACT.md` and the existing inference JSONL dump schema.
+- No new dataset formats; use existing `docs/data/JSONL_CONTRACT.md` and the existing inference JSONL dump schema.
 
 ## Scope / Affected Areas
 - Specs impacted:

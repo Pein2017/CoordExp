@@ -43,7 +43,7 @@ This change refactors the implementation into minimal, composable components whi
 ## Constraints / Non-Goals
 
 - Aggregate-only metrics remain the default; this change MUST NOT introduce per-dataset buckets.
-- Preserve existing metric key names (see `docs/TRAINING_METRICS_AND_LOSSES.md`) and existing batch keys.
+- Preserve existing metric key names (see `docs/training/METRICS_LOSSES.md`) and existing batch keys.
 - Do not edit upstream HF model files (e.g. `modeling_qwen3_vl.py`).
 - Avoid new CLI flags; configuration stays YAML-first.
 
@@ -75,7 +75,7 @@ Mitigations:
 
 Refactor parity is validated via:
 - Unit tests (fast): token-type alignment (packed + padded), pack-size metadata, grad-accum loss scaling, coord loss masking/composition.
-- Key parity: ensure the emitted metric keys match `docs/TRAINING_METRICS_AND_LOSSES.md` and no per-dataset buckets appear.
+- Key parity: ensure the emitted metric keys match `docs/training/METRICS_LOSSES.md` and no per-dataset buckets appear.
 - NaN safety: ensure all diagnostics skip cleanly on empty supervision and do not introduce NaNs into metrics.
 
 ## Migration Strategy

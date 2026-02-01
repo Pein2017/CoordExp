@@ -36,7 +36,7 @@
   - strict prompt-prefix alignment
   - stable construction of `Y_train` (prefix + FN append)
   - deterministic multi-server chunking preserves output order
-- [x] 4.2 Update `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` with:
+- [x] 4.2 Update `docs/training/STAGE2_RUNBOOK.md` with:
   - how to launch `swift rollout` on 3 GPUs (server mode)
   - how to launch the learner on 1 GPU
   - sync-mode choices, fallback behavior, and common failure modes

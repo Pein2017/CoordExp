@@ -32,5 +32,5 @@ The goal is to keep rollout generation un-packed, but enable post-rollout packin
 - Affected code (expected):
   - `src/trainers/rollout_matching_sft.py` (rollout batching, post-rollout packing, packed loss metadata)
   - `src/sft.py` (remove/relax packing rejection for rollout-matching; wire YAML knobs)
-  - `configs/rollout_matching_sft_template.yaml` and `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` (document knobs and recommended settings)
+  - `configs/stage2_ab/rollout_matching_sft_template.yaml` and `docs/training/STAGE2_RUNBOOK.md` (document knobs and recommended settings)
   - tests: extend `tests/test_rollout_matching_sft.py` with packed-mode invariants

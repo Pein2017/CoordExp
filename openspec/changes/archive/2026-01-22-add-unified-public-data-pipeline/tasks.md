@@ -12,11 +12,11 @@
 - [x] Add `validate` step that:
   - validates BOTH raw and preset outputs by default (support `--raw-only` and `--preset-only`)
   - supports `--skip-image-check`
-  - validates both `bbox_2d` and `poly` geometries per `docs/DATA_JSONL_CONTRACT.md`
+  - validates both `bbox_2d` and `poly` geometries per `docs/data/JSONL_CONTRACT.md`
   - runs `scripts/inspect_chat_template.py --index 0` for `.coord.jsonl` outputs as a fast prompt/template sanity check.
 
 ## 2. Documentation
-- [x] Add a short guide in `docs/PUBLIC_DATA.md` (or `public_data/README.md`) documenting the new unified commands.
+- [x] Add a short guide in `docs/data/INTAKE_PIPELINE.md` (and `public_data/README.md`) documenting the unified runner commands.
 - [x] Update `docs/data/VISUAL_GENOME.md` to reference the unified runner as the preferred path (keep direct-script instructions as fallback).
 
 ## 3. Tests / Validation

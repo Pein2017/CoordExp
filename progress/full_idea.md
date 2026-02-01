@@ -46,7 +46,7 @@ under the model’s own coord distribution, enabling a *non-sampling* approximat
 ## 1. Output Format / Token Protocol
 
 ### 1.1 Canonical object record format (JSON-only, dense mode)
-CoordExp uses JSON-only assistant outputs (no wrapper tags like `<obj>`/`<box>`). In dense mode, the assistant emits a single top-level JSON object mapping `"object_1"`, `"object_2"`, ... to per-object payloads. This payload is derived from the dataset JSONL record contract (`docs/DATA_JSONL_CONTRACT.md` / `docs/DATA_AND_DATASETS.md`), which stores objects as a list; the template enumerates that list and assigns stable `object_i` keys.
+CoordExp uses JSON-only assistant outputs (no wrapper tags like `<obj>`/`<box>`). In dense mode, the assistant emits a single top-level JSON object mapping `"object_1"`, `"object_2"`, ... to per-object payloads. This payload is derived from the dataset JSONL record contract (`docs/data/JSONL_CONTRACT.md` / `docs/data/README.md`), which stores objects as a list; the template enumerates that list and assigns stable `object_i` keys.
 
 Each `object_i` value is a JSON object with:
 - `desc` (string, required): open-vocabulary description / class phrase.
@@ -132,7 +132,7 @@ We target **open-vocabulary detection and grounding** on top of existing public 
 - Detection / instance segmentation: COCO, LVIS, Objects365, etc.
 - Referring expressions / grounding: RefCOCO, RefCOCO+, RefCOCOg, etc.
 
-All sources are converted into a **shared JSONL contract** defined in `docs/DATA_JSONL_CONTRACT.md`. Conceptually, each record corresponds to one or more images plus a set of annotated objects.
+All sources are converted into a **shared JSONL contract** defined in `docs/data/JSONL_CONTRACT.md`. Conceptually, each record corresponds to one or more images plus a set of annotated objects.
 
 ### 3.2 JSONL data contract (high level)
 

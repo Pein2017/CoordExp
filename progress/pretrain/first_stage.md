@@ -29,7 +29,7 @@ with:
 
 Stage-1 uses the project’s **JSON-only assistant schema** (no wrapper tokens like `<obj_start>`).
 
-- Data schema (authoritative): `docs/DATA_JSONL_CONTRACT.md`
+- Data schema (authoritative): `docs/data/JSONL_CONTRACT.md`
 - Preprocessing pipeline (authoritative): `docs/DATA_PREPROCESSING_PIPELINE.md`
 
 At a high level, each record contains:
@@ -289,6 +289,6 @@ The older draft called out:
 - Coord distribution helpers: `src/coord_tokens/soft_ce_w1.py`
 - Config schema: `src/config/schema.py`
 - Stage-1 YAML: `configs/dlora/sft_stage1_softce_w1.yaml`
-- Data contract: `docs/DATA_JSONL_CONTRACT.md`
+- Data contract: `docs/data/JSONL_CONTRACT.md`
 - Preprocessing pipeline: `docs/DATA_PREPROCESSING_PIPELINE.md`
 - Offline evaluator: `docs/detection_evaluator.md`

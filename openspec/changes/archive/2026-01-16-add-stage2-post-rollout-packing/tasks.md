@@ -51,7 +51,7 @@
     - [x] prompt prefix sanity check still works under packing
 - [x] 1.6 Docs + configs:
   - [x] Update `configs/rollout_matching_sft_template.yaml` with the new knobs and recommended defaults
-  - [x] Update `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` and `docs/PACKING_MODE_GUIDE.md` to reflect stage_2 packing support (or the chosen config semantics)
+  - [x] Update `docs/training/STAGE2_RUNBOOK.md` and `docs/data/PACKING.md` to reflect stage_2 packing support (or the chosen config semantics)
 - [x] 1.7 Verification / profiling:
   - [x] Add lightweight timers around rollout/generate/parse/match/forward (rank-local)
   - [x] Run a 50-200 sample smoke and record:

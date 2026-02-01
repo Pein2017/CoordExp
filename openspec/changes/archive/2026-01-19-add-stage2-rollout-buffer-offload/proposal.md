@@ -37,7 +37,6 @@ token-aligned matching logic.
 - Affected code (expected):
   - `src/trainers/rollout_matching_sft.py` (buffering + offload context around rollouts)
   - `src/sft.py` (stage_2 dataloader wrapper wiring)
-  - `docs/STAGE2_ROLLOUT_MATCHING_RUNBOOK.md` (document new knobs)
+  - `docs/training/STAGE2_RUNBOOK.md` (document new knobs)
   - `configs/dlora/*` (example configs / defaults)
 - Risk: buffered rollouts are stale/off-policy across M-steps; must be explicitly enabled and bounded by config.
-
