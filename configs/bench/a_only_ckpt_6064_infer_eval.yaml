@@ -17,7 +17,7 @@ infer:
   pred_coord_mode: auto
 
   backend:
-    type: vllm
+    type: hf
     # vLLM modes:
     # - server: OpenAI-compatible HTTP server (requires base_url)
     # - local: in-process vLLM Python API (no HTTP server)

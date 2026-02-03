@@ -31,10 +31,10 @@ infer:
 
   backend:
     # hf | vllm
-    type: vllm
+    type: hf
 
     # If you switch to vllm, you typically want an externally managed server:
-    # type: vllm
+    # type: hf
     base_url: http://127.0.0.1:8000
     auto_launch: false
     timeout_s: 180.0

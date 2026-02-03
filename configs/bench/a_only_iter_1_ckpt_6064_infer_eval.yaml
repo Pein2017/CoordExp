@@ -15,7 +15,7 @@ infer:
   pred_coord_mode: auto
 
   backend:
-    type: vllm
+    type: hf
     mode: local
     server_options:
       vllm_tensor_parallel_size: 1
