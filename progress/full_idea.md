@@ -1,6 +1,6 @@
 # CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
 
-> Goal: Train a pretrained V-LLM (e.g., Qwen3-VL) to output **open-vocabulary object descriptions + norm1000 boxes** in a structured text format, while enabling **continuous geometric gradients** (L1 + (C)IoU) to flow back into the LM head via **CoordExp** and reducing order sensitivity via **Hungarian matching** in an **EM-ish** training loop—**without adding a DETR-style detection head**.
+> Goal: Train a pretrained V-LLM (e.g., Qwen3-VL) to output **open-vocabulary object descriptions + norm1000 boxes** in a structured text format, while enabling **continuous geometric gradients** (SmoothL1 + CIoU) to flow back into the LM head via **CoordExp** and reducing order sensitivity via **Hungarian matching** in an **EM-ish** training loop—**without adding a DETR-style detection head**.
 
 ---
 
@@ -13,15 +13,15 @@
 - Training should remain compatible with standard SFT infrastructure (teacher forcing, token CE), with additional losses computed from LM logits.
 
 ### 0.2 What “EM-ish” means here
-- We separate **continuous / smooth geometry calibration** from **discrete / set-level correction**:
-  - **Channel-A (hot path):** no autoregressive rollout; do **N× forward** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast).
-  - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to handle **permutation / missing / extra / malformed JSON** and to ground “true self-context” learning.
+- We separate **continuous / smooth geometry calibration** from **discrete / set-level alignment**, but we intentionally do **NOT** use token-level CE to suppress extra (unmatched) predicted objects in Channel-B.
+  - **Channel-A (hot path):** no autoregressive rollout; do **N× forward** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast). Channel-A remains responsible for normal SFT behaviors (including end-of-sequence / closure supervision).
+  - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to define a stop-grad **set alignment** between predicted objects and GT objects, then apply **matched-only geometry** and **selective text supervision** under the rollout’s true self-context.
 
 Under this view:
-- **E-step (latent alignment):** performed only on Channel-B steps via rollout → set → Hungarian (stop-grad correspondence).
-- **M-step (parameter update):** always uses SFT-compatible losses; geometry losses can be applied under:
+- **E-step (latent alignment):** performed only on Channel-B steps via rollout → parse → set → Hungarian (stop-grad correspondence). This defines `(pred_i → gt_j)` matches, FN, and FP sets.
+- **M-step (parameter update):** always uses SFT-compatible objectives; geometry losses are applied under:
   - Channel-A: “soft self-context proxy” (no sampling)
-  - Channel-B: “true self-context” (teacher-forced on rollout tokens)
+  - Channel-B: “true self-context” (teacher-forced on rollout tokens) with **matched-only geometry gradients**.
 
 **Important (Channel-A gradient semantics):** Channel-A supports two modes:
 - **A-UNROLL (default):** allow gradients through the soft self-context loop (no detach). This enables cross-step / cross-coord credit assignment. After Stage-1 pretraining this is typically stable.
@@ -49,6 +49,15 @@ This iterative proxy can be run in:
 - Using `n_softctx_iter = N` total forwards corresponds to `N-1` applications of `F_θ` (Jacobi-style fixed-point intuition).
 - Larger `N` is *closer* to rollout/self-context (because the coord context is repeatedly updated from the model’s own belief), but it is still not equivalent to autoregressive rollout because it is soft (expectation), non-sampled, and keeps the GT text/structure scaffold.
 - In practice, bbox chains are short (4 coords). `N=2` is often sufficient; `N=3` is a useful ablation to test whether the teacher-forcing vs rollout gap shrinks further.
+
+### 0.4 Channel-B “FP-neutral” principle (central)
+In real detection data, unmatched predicted objects (FP under Hungarian) may correspond to **unlabeled** true objects. Therefore, Channel-B must avoid using token-level CE to teach the model to “stop early” or to suppress extra objects.
+
+Concretely:
+- Channel-B geometry learning is **matched-only**: only matched `(pred_i → gt_j)` pairs contribute to geometric losses; FP objects do not receive geometric gradients.
+- Channel-B text supervision is **selective**: we may correct matched descriptions only when the predicted description is semantically far from GT; semantically-close variants are treated as correct (no penalty).
+- Channel-B is **stop-neutral** by default: token-level CE on the top-level JSON closing brace (`}`) and on the only turn-end token `<|im_end|>` is masked out, so Channel-B does not provide gradients for the stop/continue decision.
+- Channel-A remains responsible for normal “format + closure + end-of-sequence” supervision and for stabilizing structured generation.
 
 ---
 
@@ -254,7 +263,7 @@ Practical suggestion: default Channel-A uses `n_softctx_iter=2`, and run an abla
 Suggested ablations (high signal, low complexity):
 - Channel-A: `γ=1 (unroll)` vs `γ=0 (em_detach)` at fixed `n_softctx_iter=2`.
 - Channel-A: `n_softctx_iter = 1/2/3/4` at `γ=1` to measure propagation depth.
-- Channel-B (optional): `n_softctx_iter_B = 1` vs `2` with `softctx_grad_mode_B=em_detach` (or `mix` with small `γ`).
+- Channel-B (optional): `n_softctx_iter_B = 1` vs `2` with `softctx_grad_mode_B=em_detach`.
 
 ---
 
@@ -349,8 +358,8 @@ Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=
 #### Step A4 — Geometry + (optional) distribution-shape regularizers
 6) Default: decode continuous coords as CoordExp expectations (`ĉ_t = Σ_k p_{t,k} φ(k)`) from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1), and assemble boxes per object. (Discrete coord tokens / argmax are for parsing/matching, not for the main geometry gradient.)
 7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
-   - Recommended: `L_geo_soft = Σ_obj [ λ_l1 * ||b̂_obj^cont - b_obj^gt||_1 + λ_iou * L_(G/DI/CIoU)(b̂_obj^cont, b_obj^gt) ]`
-   - Use CIoU as a strong default; GIoU/DIoU are acceptable alternatives.
+   - Recommended: `L_geo_soft = Σ_obj [ λ_huber * SmoothL1(b̂_obj^cont - b_obj^gt; δ) + λ_ciou * L_CIoU(b̂_obj^cont, b_obj^gt) ]`
+- Use CIoU (mandatory for Stage-2 bbox training).
 8) (Optional) add *distribution-shape* regularizers computed from the final logits (shape control, not the main driver):
    - `L_dist`: e.g., DFL-style soft-label CE on coord bins, entropy penalty / temperature anneal, W1/cost-sensitive CE.
    - Goal: keep coord distributions sharp/unimodal enough for stable discrete decoding, while `L_geo` drives the main geometry accuracy.
@@ -407,9 +416,17 @@ We denote the final-iteration logits as:
 #### Step E — Geometric loss using GT (identity alignment)
 9) For Channel-A, object indices come from the GT template, so we use direct alignment.
 
+Box canonicalization (mandatory for all bbox losses):
+- CoordExp expectations may produce “swapped” corners early (e.g., `x1 > x2` or `y1 > y2`) and degenerate boxes.
+- Before computing SmoothL1/CIoU, canonicalize both predicted and GT boxes:
+  - `x_lo = min(x1, x2)`, `x_hi = max(x1, x2)`
+  - `y_lo = min(y1, y2)`, `y_hi = max(y1, y2)`
+  - Optional (stability): enforce non-zero size with `x_hi = max(x_hi, x_lo + eps)`, `y_hi = max(y_hi, y_lo + eps)`.
+This avoids NaNs and makes CIoU gradients well-behaved in early training.
+
 The core geometry term is box-level `L_geo_soft` on the continuous predicted boxes:
-- `L_geo_soft = Σ_i [ λ_l1 * ||b̂_i_cont - b_i_gt||_1 + λ_iou * L_(G/DI/CIoU)(b̂_i_cont, b_i_gt) ]`
-- Use CIoU as a strong default; GIoU/DIoU are acceptable alternatives.
+- `L_geo_soft = Σ_i [ λ_huber * SmoothL1(b̂_i_cont - b_i_gt; δ) + λ_ciou * L_CIoU(b̂_i_cont, b_i_gt) ]`
+- Use CIoU (mandatory for Stage-2 bbox training).
 
 Optional: add distribution-shape regularizers computed from `p_{t,k}`:
 - `L_dist`: DFL-style soft-label CE on coord bins, entropy penalty / temperature anneal, W1/cost-sensitive CE.
@@ -427,18 +444,29 @@ Optional: add distribution-shape regularizers computed from `p_{t,k}`:
 Channel-B is the original EM-ish loop, run sparsely to correct:
 - permutation/order mismatch,
 - missing GT objects / extra predicted objects,
-- malformed JSON / broken segments,
+- (rare) malformed JSON / broken segments,
 - true “self-context degeneration” that Channel-A cannot expose.
 
 #### Step B0 — Rollout (E-step hypothesis, no grad)
 1) Run autoregressive generation using current model θ:
    - `ŷ = Rollout(f_θ, image, prompt)` (greedy / low-T sampling / beam)
 2) Parse rollout into predicted objects:
-   - `Ô = Parse(ŷ)` returns:
-     - `Ô = { (d̂_i, b̂_i_disc, idx_i) }_{i=1..N}`
+   - `Ô_raw = Parse(ŷ)` returns a prefix + a list of candidate object instances.
+   - Apply **instance-level strict validation** and drop non-compliant objects (do not “repair”):
+     - wrong key / missing `desc` / missing geometry
+     - wrong geometry type (e.g. `poly` in bbox-only stage) or wrong arity
+     - geometry values not in coord-token form (when coord-token mode is required)
+   - Let `Ô = { (d̂_i, b̂_i_disc, idx_i) }_{i=1..N}` be the remaining **valid** predicted objects.
 
 > Notes:
-> - If parsing fails, fall back to Channel-A only for that sample, and log it as “invalid-rollout”.
+> - Because Stage-1 has already pretrained the JSON format, catastrophic parse failures should be rare; Stage-2 Channel-B does not rely on a complex parse-based gating policy.
+> - Strict-drop is intentionally “silent” at the object-instance level (no repair), but it must be made **visible** as diagnostics:
+>   - log `N_valid_pred`, `N_drop_invalid`, and reason buckets (missing_desc / wrong_arity / non_coord_token / poly_unsupported / key_invalid / etc.).
+> - Dropped-invalid instances do **not** participate in matching, but may upweight the B3 structure CE term (weak correction signal) to avoid “escaping” supervision via invalid instances.
+> - If `N_valid_pred = 0` (for any reason), treat it as an empty prediction set:
+>   - skip B2 (no matched-only geometry),
+>   - run B3 using the fallback `y_GT_reordered := y_GT_canonical` (equivalent to “FN append all GT”).
+> - Channel-A remains the primary source of closure / `<|im_end|>` supervision.
 
 #### Step B1 — Hungarian matching (E-step correspondence, no grad)
 3) Build cost matrix `C ∈ R^{N×M}` between predicted objects `i` and GT objects `j`:
@@ -452,16 +480,19 @@ Channel-B is the original EM-ish loop, run sparsely to correct:
    - `ValidMatched = { i | match accepted }`
 
 #### Step B2 — True self-context forward (with grad)
+Efficiency rule (required):
+- If `ValidMatched` is empty, do **not** run the B2 forward (B2 is geo-only; no matched pairs means `L_geo_roll = 0`). Run B3 only.
+
 6) Teacher force on rollout tokens to recompute logits:
    - `z_t^roll = f_θ(image, prompt, ŷ_<t)`
 
-Optional (recommended as a switch): soft self-context refinement under rollout scaffold:
+Optional (recommended as a switch): soft self-context refinement under rollout scaffold (coord slots only):
 - Motivation: keep the **on-policy rollout scaffold** (text/structure/order) but optionally refresh only coord-slot inputs using soft expectations (cheap `N_B`-step Jacobi, no sampling).
 - Hyperparameters:
   - `n_softctx_iter_B` (default 1): total forwards in B2. `=1` means the plain `z^roll` path. `=2` adds one soft-refinement forward.
-  - `softctx_grad_mode_B` (default `em_detach` or `mix` with small `γ`): keep cold path stable; enable full `unroll` only for hard-case ablations.
+  - `softctx_grad_mode_B` (default `em_detach` when `n_softctx_iter_B=2`): keep cold path stable; enable full `unroll` only for hard-case ablations.
 - Procedure (coord slots only; all other tokens remain the rollout tokens `ŷ`):
-  - Treat `z^(0) := z^roll`, compute `p^(0)` on coord positions, build `ē^(0)` via `p^(0,mix)` as in Channel-A.
+  - Treat `z^(0) := z^roll`, compute `p^(0)` on coord positions, and build expected coord embeddings `ē^(0)` under `softctx_grad_mode_B` (analogous to Channel-A’s semantics).
   - Replace coord-slot **input embeddings** by soft expectations and forward again to get `z^(1)`.
   - Repeat up to `n_softctx_iter_B-1` times. Use final logits `z^(n_softctx_iter_B-1)` for decode/loss.
 
@@ -472,36 +503,35 @@ We denote the logits used for decode/loss as `z^roll_final`:
 7) For each predicted object `i`, compute coord distributions at its coord positions `t ∈ idx_i`:
    - `s_{t,k} = z_t^roll_final[coord_k]`, `p_{t} = softmax(s_t / τ_B)`
 
-8) Compute two *separated* post-rollout signals:
-- **Reward (stop-grad; selection/gating only):**
-  - bbox reward: `R_i = IoU(b̂_i_disc, b_j_gt)` (or `-L_geo_disc`), stop-grad
-  - poly reward (later): `R_i = maskIoU(polŷ_i, poly_j_gt)` after rasterization, stop-grad
-- **Gradient (differentiable; credit assignment):**
-  - bbox: CoordExp decode + box-level geometry loss under rollout scaffold:
-    - decode continuous coords as CoordExp expectations from `z^roll_final` and assemble `b̂_i_cont`
-    - for a matched pair `(i -> j)`:
-      - `L_geo_bbox(i->j) = λ_l1 * ||b̂_i_cont - b_j_gt||_1 + λ_iou * L_(G/DI/CIoU)(b̂_i_cont, b_j_gt)`
-  - poly (Channel-B extension / preparation): **Sinkhorn-OT boundary loss** between predicted points and GT segments (no need to match vertex counts):
-    - Pred points: `U = {û_a}` decoded from coord slots (as expectations `û_a = (ĉ_x, ĉ_y)`).
-    - GT segments: `S = { [v_b, v_{b+1}] }` from GT polygon vertices.
-    - Cost: `C_{a,b} = d(û_a, segment_b)^2` (point-to-segment distance; analytic, piecewise differentiable)
-    - Solve entropic OT: `Π* = Sinkhorn(a, b, C, ε)`; use `L_OT = ⟨Π*, C⟩`
-    - Practical stabilization: treat `Π*` as an E-step artifact (optionally `stopgrad(Π*)`) and backprop through `C → û`.
-
-9) Use reward to gate/weight gradients (reward-gradient separation):
-   - `w_i = 1[R_i ≥ r0]` (or `w_i = clip(R_i, 0, 1)`), stop-grad
-   - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} w_i * ( L_geo_bbox(i->j) + λ_ot * L_OT(i->j) )`
+8) Compute differentiable geometric gradients under rollout scaffold (matched-only):
+- Decode continuous coords as CoordExp expectations from `z^roll_final` and assemble `b̂_i_cont`.
+- For a matched pair `(i -> j)`:
+  - `L_geo_bbox(i->j) = λ_huber * SmoothL1(b̂_i_cont - b_j_gt; δ) + λ_ciou * L_CIoU(b̂_i_cont, b_j_gt)`
+- Channel-B default is **FP-neutral in geometry**:
+  - FP objects (unmatched preds) receive no geometric loss term.
+- Aggregate (matched-only):
+  - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} L_geo_bbox(i->j)`
 
 Optional: distribution-shape regularizer under rollout scaffold:
 - `L_dist_roll` (DFL / entropy / W1, small weight).
 
 #### Step B3 — Reordered-GT SFT (with grad)
-10) Build `y_GT_reordered` following predicted order + append missing GT objects (see Section 7.3).
+10) Build `y_GT_reordered` following predicted order + **always append** missing GT objects (FN) (see Section 7.3).
 11) Standard SFT on `y_GT_reordered`:
-   - `L_CE_text`, `L_CE_coord(optional)`, `L_CE_eos(optional)`
+   - `L_CE_struct + L_CE_desc(selective) + L_CE_coord(optional)`
+
+Channel-B text supervision is **selective** and **stop-neutral** by default:
+- Structure tokens (JSON punctuation/keys) remain supervised to keep outputs parseable.
+- Matched-object `desc` supervision is gated (performed in **predicted order**):
+  - If predicted vs GT descriptions are semantically close (frozen encoder similarity ≥ threshold), treat as correct: do not penalize.
+  - If they are semantically far, apply a small CE weight to pull toward GT.
+- FN-appended objects are supervised normally (no semantic gating), since there is no competing predicted description for that object.
+- Channel-B does **not** supervise the stop/continue decision:
+  - Mask CE on the top-level JSON closing brace (`}`) and on `<|im_end|>`.
+  - “Top-level `}`” means the brace that closes the **outermost** JSON object in `y_GT_reordered`; locate it via brace-stack parsing on the rendered JSON text (not via “the last `}` token”, which is brittle).
 
 Channel-B per-sample loss:
-- `L_B = L_CE(y_GT_reordered) + λ_geo^B L_geo_roll + λ_dist^B L_dist_roll(optional)`
+- `L_B = L_CE(y_GT_reordered, stop-neutral) + λ_geo^B L_geo_roll + λ_dist^B L_dist_roll(optional)`
 
 ---
 
@@ -509,29 +539,28 @@ Channel-B per-sample loss:
 
 This path handles:
 - Missing objects (not generated in rollout, thus no coord positions exist)
-- Extra objects (hallucinations)
-- Caption correctness and formatting robustness
+- Caption correctness and formatting robustness (with semantic tolerance for near-matches)
+- (Intentionally) does NOT use CE to suppress extra predicted objects by early-stop, because FP may be unlabeled
 
 #### Step F — Reorder GT according to matching
 12) Build a “reordered GT sequence” `y_GT_reordered`:
    - The first `N` GT slots are arranged to correspond to predicted object order:
      - if predicted object `i` matched to GT `j`, place GT object `j` at position `i`
-   - For GT objects that were not matched (misses), append them as “completion objects” at the end (optional, controlled by policy).
-   - For predicted objects that were unmatched (extras), optionally enforce early stop behaviors (see below).
+   - For GT objects that were not matched (misses), **always append** them as “completion objects” at the end (FN append is mandatory).
+   - For predicted objects that were unmatched (extras), do not add an early-stop CE signal by default (FP-neutral).
+   - Fallback (no pred order): if `N_valid_pred = 0`, set `y_GT_reordered := y_GT_canonical` (Stage-1 canonical order over GT objects).
 
 #### Step G — Standard SFT (with grad)
 13) Teacher forcing on `y_GT_reordered`:
    - `z_t^gt = f_θ(image, prompt, y_GT_reordered_<t)`
 14) Compute CE losses:
-   - `L_CE_text`: CE on description tokens + structure tokens
-   - `L_CE_coord`: optional CE on coord tokens (discrete supervision)
-   - `L_CE_eos`: optional targeted CE encouraging `<eos>` at end-of-sequence when appropriate
+   - `L_CE_struct`: CE on JSON structure tokens (keys/punctuation), excluding stop/closure tokens per FP-neutral rule
+   - `L_CE_desc`: CE on description tokens, with semantic gating for matched objects
+   - `L_CE_coord`: optional CE on coord tokens (discrete supervision; typically small / ablation)
 
-> Optional handling policies:
-> - **Missing GT objects:** append as extra GT object records so CE teaches the model to include them.
-> - **Extra predicted objects:** encourage termination after expected objects:
->   - simplest: ensure GT ends with `<eos>`; the model is penalized if it keeps generating.
->   - optionally: add a rule that if rollout generates too many objects, the reordered GT truncates earlier and increases `<eos>` weight.
+> Optional handling policies (FP-neutral Channel-B):
+> - **Missing GT objects:** always append as extra GT object records so CE teaches the model to include them.
+> - **Extra predicted objects (FP under Hungarian):** do not apply early-stop CE by default. If you later need a stricter variant, treat “early stop CE” as an explicit ablation knob (off by default).
 
 ---
 
@@ -613,8 +642,8 @@ Given image + prompt:
 - Return continuous scalar in [0,1] (or [0,999] if you prefer working in index space)
 
 ### 10.4 Loss module
-- `L_geo_soft`: Channel-A box-level loss (e.g., `L1 + (C)IoU`) on continuous boxes decoded via CoordExp under soft self-context (identity-aligned).
-- `L_geo_roll`: Channel-B box-level loss (e.g., `L1 + (C)IoU`) on matched continuous boxes under rollout scaffold (optionally reward-gated).
+- `L_geo_soft`: Channel-A box-level loss (SmoothL1 + CIoU) on continuous boxes decoded via CoordExp under soft self-context (identity-aligned).
+- `L_geo_roll`: Channel-B box-level loss (SmoothL1 + CIoU) on matched continuous boxes under rollout scaffold (matched-only; FP-neutral).
 - For `poly` (optional extension): reward (maskIoU, stop-grad) + differentiable Sinkhorn-OT boundary loss (point-to-segment) as a geometry term.
 - `L_CE`: standard token CE (with optional position-wise weights)
 - `L_dist` / `L_dist_roll` (optional): coord distribution-shape regularizers (DFL-style soft-label CE, entropy penalty, W1/cost-sensitive CE, etc.), small weight.
@@ -633,7 +662,7 @@ Given image + prompt:
   - early: geometry-only matching, strict gating
   - later: relax gating; optionally add semantic term
 - Evaluate:
-  - localization improvement (IoU distribution, GIoU loss reduction)
+  - localization improvement (IoU distribution, CIoU loss reduction)
   - robustness to permutation/order
   - reduced sensitivity to quantization boundary cases
 
@@ -685,14 +714,14 @@ Given image + prompt:
 ### Self-context geometric update
 
 * teacher force on rollout tokens to compute logits at coord positions
-* decode continuous boxes via CoordExp expectations and apply box-level `L1 + (C)IoU` against matched GT targets
+* decode continuous boxes via CoordExp expectations and apply box-level SmoothL1 + CIoU against matched GT targets
 * (optional) add a small `L_dist_roll` regularizer to keep coord distributions sharp/unimodal
 * backprop to LM head coord logits and upstream θ
 
 ### Reordered-GT SFT update
 
 * reorder GT to follow predicted order (if needed)
-* standard CE to improve captions/format, fix misses/extras
+* standard CE to improve captions/format and teach recall via FN append (FP-neutral; no stop/continue supervision in Channel-B)
 
 ---
 
@@ -725,8 +754,10 @@ This pipeline:
 
 ### 14.3 Extra objects
 
-* Penalize continuation after GT end via EOS weighting.
-* Optionally truncate GT length and emphasize EOS when rollout over-generates.
+* In many detection datasets, “FP under Hungarian” may be **unlabeled true objects**. Therefore Channel-B should be **FP-neutral**:
+  - no geometric loss on unmatched predicted objects,
+  - no stop/continue supervision (mask top-level `}` and `<|im_end|>` in Channel-B CE).
+* If a closed-world dataset truly requires suppressing extras, treat “early-stop CE” as an explicit **ablation knob** (off by default) and document the dataset assumption.
 
 ### 14.4 Multi-peak coord distributions (“mean collapse”)
 
