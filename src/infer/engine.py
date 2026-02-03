@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -91,7 +92,16 @@ class GenerationConfig:
     top_p: float = 0.95
     max_new_tokens: int = 1024
     repetition_penalty: float = 1.05
+    # Number of samples to decode per forward pass (HF) / per client micro-batch (vLLM).
+    # Keep at 1 by default to preserve memory headroom.
+    batch_size: int = 1
     seed: Optional[int] = None
+
+
+@dataclass
+class GenerationResult:
+    text: str = ""
+    error: Optional[Exception] = None
 
 
 @dataclass
@@ -169,10 +179,7 @@ def detect_mode_from_gt(
                 if not isinstance(obj, dict):
                     continue
                 pts_raw = flatten_points(
-                    obj.get("bbox_2d")
-                    or obj.get("poly")
-                    or obj.get("points")
-                    or []
+                    obj.get("bbox_2d") or obj.get("poly") or obj.get("points") or []
                 )
                 if not pts_raw:
                     continue
@@ -242,6 +249,85 @@ class InferenceEngine:
 
         self.processor: AutoProcessor | None = None
         self.model: Qwen3VLForConditionalGeneration | None = None
+        self.vllm_llm: Any | None = None
+
+    def _vllm_mode(self) -> str:
+        mode_raw = (self.cfg.backend or {}).get("mode", "server")
+        mode = str(mode_raw or "server").strip().lower()
+        return "local" if mode == "local" else "server"
+
+    def _load_vllm_local(self) -> None:
+        if self.vllm_llm is not None:
+            return
+
+        # vLLM's CLI defaults to "spawn" for safety, but the library API does not.
+        # Without this, using vLLM inside a process that already touched CUDA can fail with:
+        #   "Cannot re-initialize CUDA in forked subprocess"
+        os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+
+        try:
+            from vllm import LLM
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "vLLM local backend requires the 'vllm' package. Install it in the ms env, or set infer.backend.type=hf."
+            ) from exc
+
+        model = str(self.cfg.backend.get("model") or self.cfg.model_checkpoint).strip()
+        if not model:
+            raise RuntimeError(
+                "infer.backend.model (or infer.model_checkpoint) is required for vLLM local mode"
+            )
+
+        # Reuse server_options-style knobs when present for reproducibility.
+        server_opts = self.cfg.backend.get("server_options") or {}
+        allowed_local_media_path = os.environ.get("ROOT_IMAGE_DIR") or ""
+
+        kwargs: Dict[str, Any] = {}
+        try:
+            tp = server_opts.get("vllm_tensor_parallel_size", None)
+            if tp is not None:
+                kwargs["tensor_parallel_size"] = int(tp)
+        except Exception:
+            pass
+        try:
+            util = server_opts.get("vllm_gpu_memory_utilization", None)
+            if util is not None:
+                kwargs["gpu_memory_utilization"] = float(util)
+        except Exception:
+            pass
+        # `max_model_len` is a vLLM kwarg (mirrors --max-model-len on the server).
+        try:
+            mml = server_opts.get("vllm_max_model_len", None)
+            if mml is not None:
+                kwargs["max_model_len"] = int(mml)
+        except Exception:
+            pass
+
+        # Note: local vLLM does not guarantee single OS process (it may manage workers
+        # internally), but avoids running a separate HTTP server.
+        self.vllm_llm = LLM(
+            model=model,
+            trust_remote_code=True,
+            allowed_local_media_path=str(allowed_local_media_path or ""),
+            seed=int(self.gen_cfg.seed) if self.gen_cfg.seed is not None else None,
+            **kwargs,
+        )
+
+    def _vllm_sampling_params(self):
+        try:
+            from vllm import SamplingParams
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "vLLM backend requires the 'vllm' package. Install it in the ms env, or set infer.backend.type=hf."
+            ) from exc
+
+        return SamplingParams(
+            temperature=float(self.gen_cfg.temperature),
+            top_p=float(self.gen_cfg.top_p),
+            max_tokens=int(self.gen_cfg.max_new_tokens),
+            repetition_penalty=float(self.gen_cfg.repetition_penalty or 1.0),
+            seed=int(self.gen_cfg.seed) if self.gen_cfg.seed is not None else None,
+        )
 
     def _seed(self) -> None:
         if self.gen_cfg.seed is None:
@@ -265,18 +351,19 @@ class InferenceEngine:
         except Exception:
             pass
 
-
     def _validate_vllm_backend(self) -> None:
         """Fail fast on global vLLM backend misconfiguration/unavailability."""
+        if self._vllm_mode() == "local":
+            # Local mode bypasses the HTTP connectivity checks.
+            return
+
         base_url = str(
-            self.cfg.backend.get("base_url")
-            or os.environ.get("VLLM_BASE_URL")
-            or ""
+            self.cfg.backend.get("base_url") or os.environ.get("VLLM_BASE_URL") or ""
         ).strip()
         if not base_url:
             raise RuntimeError(
-                "infer.backend.type=vllm requires infer.backend.base_url (or env VLLM_BASE_URL). "
-                "To disable vLLM, set infer.backend.type=hf."
+                "infer.backend.type=vllm requires infer.backend.base_url (or env VLLM_BASE_URL) when backend.mode=server. "
+                "To run without a server, set infer.backend.mode=local. To disable vLLM, set infer.backend.type=hf."
             )
 
         try:
@@ -290,7 +377,9 @@ class InferenceEngine:
         # We keep it lightweight and do not require any specific response schema.
         timeout_s = float(self.cfg.backend.get("timeout_s", 3.0))
         root = base_url.rstrip("/")
-        models_url = (root + "/models") if root.endswith("/v1") else (root + "/v1/models")
+        models_url = (
+            (root + "/models") if root.endswith("/v1") else (root + "/v1/models")
+        )
         try:
             resp = requests.get(models_url, timeout=timeout_s)
         except Exception as exc:  # noqa: BLE001
@@ -307,9 +396,14 @@ class InferenceEngine:
     def load_model(self) -> None:
         backend = str(self.cfg.backend_type).lower().strip()
 
-        # HF backend loads model+processor; vLLM backend does not.
+        # HF backend loads model+processor. For vLLM we support two modes:
+        # - server: OpenAI-compatible HTTP server (default)
+        # - local: in-process vLLM Python API (no HTTP server)
         if backend == "vllm":
             self._seed()
+            if self._vllm_mode() == "local":
+                self._load_vllm_local()
+                return
             self._validate_vllm_backend()
             return
 
@@ -357,6 +451,124 @@ class InferenceEngine:
             return self._generate_vllm(image)
         raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
 
+    def _generate_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
+        """Generate texts for a micro-batch.
+
+        For HF we do a single batched `model.generate()` when possible.
+        For vLLM (OpenAI-compatible server) we issue concurrent requests.
+        """
+
+        if not images:
+            return []
+
+        backend = str(self.cfg.backend_type).strip().lower()
+        if backend == "hf":
+            return self._generate_hf_batch(images)
+        if backend == "vllm":
+            return self._generate_vllm_batch(images)
+        raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
+
+    def _generate_hf_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
+        assert self.model is not None and self.processor is not None
+        if not images:
+            return []
+
+        # Best-effort batched generate; fall back to per-sample generation on error.
+        try:
+            messages = [self._build_messages(img) for img in images]
+            prompt_texts = [
+                self.processor.apply_chat_template(
+                    m, add_generation_prompt=True, tokenize=False
+                )
+                for m in messages
+            ]
+
+            model_inputs = self.processor(
+                text=prompt_texts,
+                images=images,
+                return_tensors="pt",
+                padding=True,
+            )
+            model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
+
+            if "attention_mask" in model_inputs:
+                prompt_lens = model_inputs["attention_mask"].sum(dim=1).tolist()
+            else:
+                # Fallback: assume no padding.
+                prompt_lens = [int(model_inputs["input_ids"].shape[1])] * int(
+                    len(images)
+                )
+
+            gen_kwargs = dict(
+                max_new_tokens=self.gen_cfg.max_new_tokens,
+                do_sample=self.gen_cfg.temperature > 0,
+                temperature=max(1e-4, self.gen_cfg.temperature),
+                top_p=self.gen_cfg.top_p,
+                use_cache=True,
+            )
+            if self.gen_cfg.repetition_penalty is not None:
+                gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+
+            with torch.inference_mode():
+                gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
+
+            out: List[GenerationResult] = []
+            for i in range(len(images)):
+                prompt_len = int(prompt_lens[i])
+                gen_only = gen_ids[i, prompt_len:]
+                raw_text = self.processor.tokenizer.decode(
+                    gen_only,
+                    skip_special_tokens=False,
+                    clean_up_tokenization_spaces=False,
+                )
+                out.append(GenerationResult(text=raw_text, error=None))
+            return out
+        except Exception:
+            out: List[GenerationResult] = []
+            for img in images:
+                try:
+                    out.append(
+                        GenerationResult(text=self._generate_hf(img), error=None)
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    out.append(GenerationResult(text="", error=exc))
+            return out
+
+    def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
+        if not images:
+            return []
+
+        if self._vllm_mode() == "local":
+            # Local mode supports true batched chat() in-process.
+            return self._generate_vllm_local_batch(images)
+
+        # Server mode: limit concurrency to avoid overwhelming the server.
+        max_workers_raw = self.cfg.backend.get("client_concurrency")
+        try:
+            max_workers = (
+                int(max_workers_raw)
+                if max_workers_raw is not None
+                else int(len(images))
+            )
+        except Exception:
+            max_workers = int(len(images))
+        max_workers = max(1, min(int(max_workers), int(len(images))))
+
+        out = [GenerationResult() for _ in images]
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            fut_to_idx = {
+                ex.submit(self._generate_vllm_server, img): i
+                for i, img in enumerate(images)
+            }
+            for fut in as_completed(fut_to_idx):
+                i = fut_to_idx[fut]
+                try:
+                    out[i].text = fut.result()
+                    out[i].error = None
+                except Exception as exc:  # noqa: BLE001
+                    out[i].text = ""
+                    out[i].error = exc
+        return out
 
     def _generate_hf(self, image: Image.Image) -> str:
         assert self.model is not None and self.processor is not None
@@ -398,6 +610,27 @@ class InferenceEngine:
         return raw_text
 
     def _generate_vllm(self, image: Image.Image) -> str:
+        """Generate via vLLM.
+
+        Modes:
+        - server (default): OpenAI-compatible HTTP server
+        - local: in-process vLLM Python API (no HTTP server)
+        """
+
+        if self._vllm_mode() == "local":
+            # Use the same OpenAI-style message structure as the server, but route
+            # through the in-process vLLM API.
+            out = self._generate_vllm_local_batch([image])
+            if not out:
+                return ""
+            if out[0].error is not None:
+                raise out[0].error
+            return out[0].text
+
+        # Server mode (OpenAI-compatible HTTP requests).
+        return self._generate_vllm_server(image)
+
+    def _generate_vllm_server(self, image: Image.Image) -> str:
         """Generate via an OpenAI-compatible vLLM server (best-effort).
 
         Config:
@@ -416,11 +649,13 @@ class InferenceEngine:
                 "vLLM backend requires the 'requests' package. Install it in the ms env, or set infer.backend.type=hf."
             ) from exc
 
-        base_url = str(self.cfg.backend.get("base_url") or os.environ.get("VLLM_BASE_URL") or "").strip()
+        base_url = str(
+            self.cfg.backend.get("base_url") or os.environ.get("VLLM_BASE_URL") or ""
+        ).strip()
         if not base_url:
             raise RuntimeError(
                 "infer.backend.type=vllm requires infer.backend.base_url (or env VLLM_BASE_URL). "
-                "To disable vLLM, set infer.backend.type=hf."
+                "To run without a server, set infer.backend.mode=local. To disable vLLM, set infer.backend.type=hf."
             )
 
         model = str(self.cfg.backend.get("model") or self.cfg.model_checkpoint).strip()
@@ -493,6 +728,80 @@ class InferenceEngine:
 
         raise RuntimeError(f"Unrecognized vLLM response schema: {data}")
 
+    def _generate_vllm_local_batch(
+        self, images: List[Image.Image]
+    ) -> List[GenerationResult]:
+        """Generate via the in-process vLLM Python API (no HTTP server)."""
+
+        if not images:
+            return []
+
+        self._load_vllm_local()
+        assert self.vllm_llm is not None
+
+        try:
+            import base64
+            import io
+        except Exception as exc:  # noqa: BLE001
+            return [GenerationResult(text="", error=exc) for _ in images]
+
+        # Build OpenAI-style messages; vLLM supports a batch of message lists.
+        msg_batch = []
+        for image in images:
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            msg_batch.append(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": USER_PROMPT},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"},
+                            },
+                        ],
+                    },
+                ]
+            )
+
+        sp = self._vllm_sampling_params()
+        try:
+            outs = self.vllm_llm.chat(msg_batch, sampling_params=sp, use_tqdm=False)
+        except Exception as exc:  # noqa: BLE001
+            return [GenerationResult(text="", error=exc) for _ in images]
+
+        results: List[GenerationResult] = []
+        for o in outs:
+            try:
+                seqs = getattr(o, "outputs", None) or []
+                text = seqs[0].text if seqs else ""
+                results.append(GenerationResult(text=text, error=None))
+            except Exception as exc:  # noqa: BLE001
+                results.append(GenerationResult(text="", error=exc))
+
+        # vLLM should return one output per request; enforce alignment.
+        if len(results) != len(images):
+            missing = len(images) - len(results)
+            if missing > 0:
+                results.extend(
+                    [
+                        GenerationResult(
+                            text="",
+                            error=RuntimeError(
+                                "vLLM returned fewer outputs than requests"
+                            ),
+                        )
+                        for _ in range(missing)
+                    ]
+                )
+            else:
+                results = results[: len(images)]
+
+        return results
+
     def _process_gt(
         self,
         record: Dict[str, Any],
@@ -557,9 +866,7 @@ class InferenceEngine:
     def infer(self) -> Tuple[Path, Path]:
         jsonl_path = Path(self.cfg.gt_jsonl)
         out_path = Path(self.cfg.out_path)
-        summary_path = Path(
-            self.cfg.summary_path or (out_path.parent / "summary.json")
-        )
+        summary_path = Path(self.cfg.summary_path or (out_path.parent / "summary.json"))
         out_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -568,6 +875,12 @@ class InferenceEngine:
 
         backend = str(self.cfg.backend_type).strip().lower()
         determinism = "strict" if backend == "hf" else "best_effort"
+
+        try:
+            batch_size = int(getattr(self.gen_cfg, "batch_size", 1) or 1)
+        except Exception:
+            batch_size = 1
+        batch_size = max(1, int(batch_size))
 
         counters = RunCounters()
         self.load_model()
@@ -586,6 +899,7 @@ class InferenceEngine:
                 "top_p": self.gen_cfg.top_p,
                 "max_new_tokens": self.gen_cfg.max_new_tokens,
                 "repetition_penalty": self.gen_cfg.repetition_penalty,
+                "batch_size": batch_size,
                 "seed": self.gen_cfg.seed,
             },
             "artifacts": {
@@ -595,16 +909,81 @@ class InferenceEngine:
         }
         if backend == "vllm":
             # Persist only non-sensitive backend fields (allowlist).
-            allowed = {"base_url", "model", "timeout_s"}
+            allowed = {"mode", "base_url", "model", "timeout_s", "client_concurrency"}
             resolved_meta["backend_cfg"] = {
-                k: v
-                for k, v in (self.cfg.backend or {}).items()
-                if str(k) in allowed
+                k: v for k, v in (self.cfg.backend or {}).items() if str(k) in allowed
             }
 
         self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
 
+        def _emit(output: Dict[str, Any], errors: List[str]) -> None:
+            fout.write(json.dumps(output, ensure_ascii=False) + "\n")
+            for code in errors:
+                counters.add(ERROR_CANONICAL.get(code, code))
+            counters.total_emitted += 1
+
+        def _flush_pending(pending: List[Dict[str, Any]]) -> None:
+            if not pending:
+                return
+
+            # Safety: avoid exceeding limit by flushing only the remainder.
+            if self.cfg.limit and self.cfg.limit > 0:
+                remaining = int(self.cfg.limit) - int(counters.total_emitted)
+                if remaining <= 0:
+                    return
+                if len(pending) > remaining:
+                    pending = pending[:remaining]
+
+            images = [p["image_obj"] for p in pending]
+            results = self._generate_batch(images)
+
+            for p, res in zip(pending, results):
+                errors = list(p["errors"])
+                raw_output_json: Dict[str, Any] | None = None
+                raw_special_tokens: List[str] = []
+                raw_ends_with_im_end = False
+                pred: List[Dict[str, Any]] = []
+
+                if res.error is not None:
+                    errors.append("generation_failed")
+                else:
+                    raw_text = res.text
+                    raw_special_tokens = extract_special_tokens(raw_text)
+                    raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
+                    raw_output_json = load_prediction_dict(raw_text)
+                    try:
+                        pred_errors: List[str] = []
+                        pred = self._process_pred(
+                            raw_text,
+                            width=int(p["width"]),
+                            height=int(p["height"]),
+                            errors=pred_errors,
+                        )
+                        pred = self._compact_objects(pred)
+                        errors.extend(pred_errors)
+                    except Exception:
+                        errors.append("generation_failed")
+                        pred = []
+
+                output = {
+                    "image": p["image"],
+                    "width": p["width"],
+                    "height": p["height"],
+                    "mode": self.resolved_mode,
+                    # Points are emitted in pixel space; hint downstream to skip re-denorm.
+                    "coord_mode": "pixel",
+                    "gt": p["gt"],
+                    "pred": pred,
+                    "raw_output_json": raw_output_json,
+                    "raw_special_tokens": raw_special_tokens,
+                    "raw_ends_with_im_end": raw_ends_with_im_end,
+                    "errors": errors,
+                }
+                _emit(output, errors)
+
         pbar_total = self.cfg.limit if self.cfg.limit > 0 else None
+        pending: List[Dict[str, Any]] = []
+
         with (
             jsonl_path.open("r", encoding="utf-8") as fin,
             out_path.open("w", encoding="utf-8") as fout,
@@ -621,10 +1000,14 @@ class InferenceEngine:
             for line in fin:
                 if self.cfg.limit and counters.total_emitted >= self.cfg.limit:
                     break
-                pbar.update(1)
+
                 line = line.strip()
                 if not line:
                     continue
+
+                # We update on non-empty lines for a smoother display.
+                pbar.update(1)
+
                 counters.total_read += 1
                 try:
                     record = json.loads(line)
@@ -642,10 +1025,12 @@ class InferenceEngine:
                     width = None
                     height = None
 
+                image_key = (record.get("images") or [None])[0]
+
                 if not width or not height:
                     errors.append("size_mismatch")
                     output = {
-                        "image": (record.get("images") or [None])[0],
+                        "image": image_key,
                         "width": width,
                         "height": height,
                         "mode": self.resolved_mode,
@@ -657,10 +1042,7 @@ class InferenceEngine:
                         "raw_ends_with_im_end": False,
                         "errors": errors,
                     }
-                    fout.write(json.dumps(output, ensure_ascii=False) + "\n")
-                    for code in errors:
-                        counters.add(ERROR_CANONICAL.get(code, code))
-                    counters.total_emitted += 1
+                    _emit(output, errors)
                     continue
 
                 # Process GT first to catch mode mismatches early.
@@ -675,60 +1057,57 @@ class InferenceEngine:
                 run_generation = "mode_gt_mismatch" not in errors
 
                 images = record.get("images") or []
-                img_path: Optional[Path]
-                image: Optional[Image.Image]
+                image_obj: Optional[Image.Image] = None
                 if len(images) != 1:
                     errors.append("multi_image_not_supported")
-                    img_path, image = None, None
                     run_generation = False
                 else:
-                    img_path, image = self._prepare_image(jsonl_path, record)
-                    if image is None:
+                    _, image_obj = self._prepare_image(jsonl_path, record)
+                    if image_obj is None:
                         errors.append("image_load_failed")
                         run_generation = False
 
-                raw_output = ""
-                pred: List[Dict[str, Any]] = []
-                raw_output_json: Dict[str, Any] | None = None
-                raw_special_tokens: List[str] = []
-                raw_ends_with_im_end = False
-                if run_generation:
-                    try:
-                        raw_output = self._generate(image)
-                        raw_special_tokens = extract_special_tokens(raw_output)
-                        raw_ends_with_im_end = raw_output.endswith("<|im_end|>")
-                        # Keep a parseable JSON snapshot so truncated outputs
-                        # don't poison downstream debug/visualization.
-                        raw_output_json = load_prediction_dict(raw_output)
-                        pred_errors: List[str] = []
-                        pred = self._process_pred(
-                            raw_output, width=width, height=height, errors=pred_errors
-                        )
-                        pred = self._compact_objects(pred)
-                        errors.extend(pred_errors)
-                    except Exception as exc:  # noqa: BLE001
-                        errors.append("generation_failed")
-                        raw_output = str(exc)
+                if not run_generation:
+                    output = {
+                        "image": image_key,
+                        "width": width,
+                        "height": height,
+                        "mode": self.resolved_mode,
+                        "coord_mode": "pixel",
+                        "gt": gt,
+                        "pred": [],
+                        "raw_output_json": None,
+                        "raw_special_tokens": [],
+                        "raw_ends_with_im_end": False,
+                        "errors": errors,
+                    }
+                    _emit(output, errors)
+                    continue
 
-                for code in errors:
-                    counters.add(ERROR_CANONICAL.get(code, code))
+                assert image_obj is not None
+                pending.append(
+                    {
+                        "image": image_key,
+                        "width": width,
+                        "height": height,
+                        "gt": gt,
+                        "errors": errors,
+                        "image_obj": image_obj,
+                    }
+                )
 
-                output = {
-                    "image": (record.get("images") or [None])[0],
-                    "width": width,
-                    "height": height,
-                    "mode": self.resolved_mode,
-                    # Points are emitted in pixel space; hint downstream to skip re-denorm.
-                    "coord_mode": "pixel",
-                    "gt": gt,
-                    "pred": pred,
-                    "raw_output_json": raw_output_json,
-                    "raw_special_tokens": raw_special_tokens,
-                    "raw_ends_with_im_end": raw_ends_with_im_end,
-                    "errors": errors,
-                }
-                fout.write(json.dumps(output, ensure_ascii=False) + "\n")
-                counters.total_emitted += 1
+                # Flush when we have a full micro-batch, but never overshoot the limit.
+                target = batch_size
+                if self.cfg.limit and self.cfg.limit > 0:
+                    remaining = int(self.cfg.limit) - int(counters.total_emitted)
+                    target = max(1, min(int(target), int(remaining)))
+
+                if len(pending) >= target:
+                    _flush_pending(pending)
+                    pending = []
+
+            # Flush any final partial batch.
+            _flush_pending(pending)
 
         summary_payload: Dict[str, Any] = {
             "mode": self.resolved_mode,
@@ -743,6 +1122,7 @@ class InferenceEngine:
                 "top_p": self.gen_cfg.top_p,
                 "max_new_tokens": self.gen_cfg.max_new_tokens,
                 "repetition_penalty": self.gen_cfg.repetition_penalty,
+                "batch_size": batch_size,
                 "seed": self.gen_cfg.seed,
             },
             "infer": {
