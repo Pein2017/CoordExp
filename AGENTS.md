@@ -54,6 +54,13 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Do **not** use Serena MCP for non-Python files (e.g., `*.md`, `*.sh`, `*.json`, `*.txt`). Use standard tools such as `rg`, `cat`, or appropriate editors for those.
 - Use Serena MCP’s `activate_project` when exploring Python code in external libraries or repositories outside the current working directory.
 
+## Codex Sub-Agents (Async Reviews)
+- Use sub-agents for narrow parallel audits (spec deltas, task lists, doc coverage) while the main agent runs Serena/shell verification.
+- Best-effort + text-only: results may be delayed/missing.
+- Prompt template: goal + explicit inputs (paths/snippets + assumptions) + requested output format (e.g., "findings by severity + concrete edits").
+- Always verify sub-agent suggestions against repo sources before acting.
+- Keep the main agent productive while awaiting sub-agent results by proceeding with implementation, testing, documentation, or related tasks that don't depend on the async audit outcomes.
+
 
 ## Scope
 - In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.
