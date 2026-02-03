@@ -427,7 +427,6 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
             eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
         ),
         semantic_threshold=float(eval_cfg.get("semantic_threshold", 0.6)),
-        semantic_fallback=str(eval_cfg.get("semantic_fallback", "bucket")),
         semantic_device=str(eval_cfg.get("semantic_device", "auto")),
         semantic_batch_size=int(eval_cfg.get("semantic_batch_size", 64)),
     )

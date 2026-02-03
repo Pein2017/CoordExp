@@ -19,6 +19,20 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 from src.eval.detection import EvalOptions, evaluate_and_save
+from src.utils import get_logger
+
+logger = get_logger(__name__)
+
+
+def _warn_deprecated_option(key: str, source: str, value: Any) -> None:
+    if value is None:
+        return
+    logger.warning(
+        "Ignoring %s=%s from %s; description matching always uses sentence-transformers/all-MiniLM-L6-v2 and drops unmatched predictions.",
+        key,
+        value,
+        source,
+    )
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -154,7 +168,6 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         raise ValueError("pred_jsonl must be set (either in YAML or via --pred_jsonl)")
 
     metrics = str(args.metrics or _get(ycfg, "metrics", "both"))
-    unknown_policy = str(args.unknown_policy or _get(ycfg, "unknown_policy", "semantic"))
 
     strict_parse = bool(args.strict_parse) if args.strict_parse else bool(_get(ycfg, "strict_parse", False))
 
@@ -164,9 +177,16 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         else bool(_get(ycfg, "use_segm", True))
     )
 
+    _warn_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
+    _warn_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
+    yaml_unknown_policy = _get(ycfg, "unknown_policy", None)
+    yaml_semantic_fallback = _get(ycfg, "semantic_fallback", None)
+    config_src = f"YAML config '{args.config}'"
+    _warn_deprecated_option("unknown_policy", config_src, yaml_unknown_policy)
+    _warn_deprecated_option("semantic_fallback", config_src, yaml_semantic_fallback)
+
     options = EvalOptions(
         metrics=metrics,
-        unknown_policy=unknown_policy,
         strict_parse=strict_parse,
         use_segm=use_segm,
         iou_thrs=args.iou_thrs or _get(ycfg, "iou_thrs", None),
@@ -184,7 +204,6 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         num_workers=int(args.num_workers or _get(ycfg, "num_workers", 0)),
         semantic_model=str(args.semantic_model or _get(ycfg, "semantic_model", "sentence-transformers/all-MiniLM-L6-v2")),
         semantic_threshold=float(args.semantic_threshold or _get(ycfg, "semantic_threshold", 0.6)),
-        semantic_fallback=str(args.semantic_fallback or _get(ycfg, "semantic_fallback", "bucket")),
         semantic_device=str(args.semantic_device or _get(ycfg, "semantic_device", "auto")),
         semantic_batch_size=int(args.semantic_batch_size or _get(ycfg, "semantic_batch_size", 64)),
     )
@@ -198,9 +217,11 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
 
     out_dir = args.out_dir or Path("eval_out")
 
+    _warn_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
+    _warn_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
+
     options = EvalOptions(
         metrics=str(args.metrics or "coco"),
-        unknown_policy=str(args.unknown_policy or "semantic"),
         strict_parse=bool(args.strict_parse),
         use_segm=bool(args.use_segm) if args.use_segm is not None else True,
         iou_thrs=args.iou_thrs,
@@ -212,7 +233,6 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
         num_workers=int(args.num_workers or 0),
         semantic_model=str(args.semantic_model or "sentence-transformers/all-MiniLM-L6-v2"),
         semantic_threshold=float(args.semantic_threshold or 0.6),
-        semantic_fallback=str(args.semantic_fallback or "bucket"),
         semantic_device=str(args.semantic_device or "auto"),
         semantic_batch_size=int(args.semantic_batch_size or 64),
     )
@@ -233,7 +253,6 @@ def main() -> None:
                     "pred_jsonl": str(pred_jsonl),
                     "out_dir": str(options.output_dir),
                     "metrics": options.metrics,
-                    "unknown_policy": options.unknown_policy,
                     "use_segm": options.use_segm,
                     "overlay": options.overlay,
                     "overlay_k": options.overlay_k,

@@ -32,14 +32,18 @@ class DetectionEvalCallback(TrainerCallback):
         *,
         pred_jsonl: str,
         out_dir: str = "eval_out",
-        unknown_policy: str = "bucket",
+        unknown_policy: str = "semantic",
         strict_parse: bool = False,
         use_segm: bool = True,
     ) -> None:
         self.pred_jsonl = Path(pred_jsonl)
         self.out_dir = Path(out_dir)
+        if unknown_policy not in (None, "semantic"):
+            logger.warning(
+                "DetectionEvalCallback unknown_policy=%s is deprecated and ignored; description matching always uses sentence-transformers/all-MiniLM-L6-v2.",
+                unknown_policy,
+            )
         self.options = EvalOptions(
-            unknown_policy=unknown_policy,
             strict_parse=strict_parse,
             use_segm=use_segm,
             output_dir=self.out_dir,
