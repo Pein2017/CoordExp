@@ -8,7 +8,7 @@
 
 ### 0.1 Constraints
 - Base model: pretrained V-LLM (Qwen3-VL).
-- Coordinate representation: existing `<|coord_k|>` tokens with `k ∈ {0..999}` (norm1000; 1000 bins, 0 = near edge, 999 = just inside far edge).
+- Coordinate representation: existing `<|coord_k|>` tokens with `k ∈ {0..999}` (norm1000; 1000 bins, 0 corresponds to 0.0 and 999 corresponds to 1.0).
 - Do NOT introduce a separate detection head or DETR-like query decoder.
 - Training should remain compatible with standard SFT infrastructure (teacher forcing, token CE), with additional losses computed from LM logits.
 
@@ -114,6 +114,7 @@ Softmax (temperature τ):
 ### 2.3 Expectation decode (continuous coord)
 Map `k -> k/999`:
 - `φ(k) = k/999 ∈ [0,1]`
+  - Closed-interval convention: `φ(0)=0.0` and `φ(999)=1.0`.
 
 Expectation:
 - `ĉ_t = Σ_k p_{t,k} * φ(k)`
@@ -298,6 +299,7 @@ Definitions / hyperparameters:
 > Note (gradient semantics): Channel-A can be run as `unroll`, `em_detach`, or `mix`:
 > - `p_t^(m,stop) = stopgrad(p_t^(m))`  (EM-ish)
 > - `p_t^(m,mix)  = (1-γ) * p_t^(m,stop) + γ * p_t^(m)`  (smooth transition)
+> - Default (`softctx_grad_mode=unroll`): `p_t^(m,mix) = p_t^(m)` (no stopgrad).
 > - set `γ=1` for full unroll; set `γ=0` for full detach.
 > Practical: if training is unstable, start with `em_detach` (or small `γ`) before changing other knobs.
 
@@ -309,8 +311,8 @@ Definitions / hyperparameters:
 4) Prepare the initial embedding tensor (full sequence) for iterative soft self-context:
    - Start from standard embeddings of `y_GT` (or from the model’s embedding lookup): `emb^0`.
    - For coord positions, you have two valid initializations:
-     - (A) **Start from GT** (recommended): keep coord slots as GT in `emb^0`, and only start replacing after the first update.
-     - (B) Start from `ē^(0)`: immediately replace coord slots in `emb^0` by `ē_t^(0)` before the first softctx forward.
+     - (B) **Start from `ē^(0)` (recommended default):** replace coord slots in `emb^0` by `ē_t^(0)` before the first softctx forward. This makes `n_softctx_iter=2` actually run one soft-context forward for the geometry loss.
+     - (A) Start from GT (stable fallback): keep coord slots as GT in `emb^0`, and only start replacing after the first update. Note this effectively shifts the soft-context effect by one iteration (e.g., `n_softctx_iter=2` becomes almost pure teacher forcing).
    - Keep attention mask unchanged.
 
 This is cheap because `K=1000` and coord slots are sparse compared to total tokens.
@@ -329,7 +331,8 @@ Compute p^(0,mix) from p^(0) per softctx_grad_mode
 Compute ē^(0) from p^(0,mix)
 
 emb^0 := Embed(y_GT)               # full GT embeddings
-Optional: replace coord slots with ē^(0)  # init variant (B); default is (A) start-from-GT
+emb^0 := UpdateCoordSlots(emb^0, ē^(0), damping_alpha=α)  # default init: start-from-ē^(0)
+Optional (fallback/ablation): keep GT coord slots for the first softctx forward (init=A); this shifts the effect by one iteration
 
 for m in 1 .. (n_softctx_iter - 1):
     z^(m) := f_θ(image, prompt, inputs_embeds=emb^(m-1))   # full forward
@@ -344,7 +347,7 @@ Use final logits z^(n_softctx_iter-1) for coord distributions + losses (includin
 Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=F_θ(e^(m))`, that repeatedly refreshes coord embeddings from the model’s own belief while keeping the GT text/structure scaffold. Increasing `n_softctx_iter` pushes the effect of self-conditioning further along the coord chain without sampling.
 
 #### Step A4 — Geometry + (optional) distribution-shape regularizers
-6) Default: decode continuous coords only from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1) at coord slots via CoordExp, and assemble boxes per object.
+6) Default: decode continuous coords as CoordExp expectations (`ĉ_t = Σ_k p_{t,k} φ(k)`) from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1), and assemble boxes per object. (Discrete coord tokens / argmax are for parsing/matching, not for the main geometry gradient.)
 7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
    - Recommended: `L_geo_soft = Σ_obj [ λ_l1 * ||b̂_obj^cont - b_obj^gt||_1 + λ_iou * L_(G/DI/CIoU)(b̂_obj^cont, b_obj^gt) ]`
    - Use CIoU as a strong default; GIoU/DIoU are acceptable alternatives.
@@ -356,7 +359,9 @@ Optional enhancement (not required): supervise intermediate iterates as well:
 - `L_geo_soft_total = Σ_m w_m * L_geo_soft^(m)` with `w_m` increasing over `m` (late iterates matter more).
 
 Channel-A per-sample loss:
-- `L_A = L_CE(y_GT) + λ_geo^A L_geo_soft + λ_dist^A L_dist(optional)`
+- `L_A = L_CE_A1(y_GT) + λ_geo^A L_geo_soft + λ_dist^A L_dist(optional)`
+
+CE anchor (default): compute `L_CE_A1` on the Step A1 teacher-forced forward (`z^(0)=z^gt`, GT context). Compute `L_geo_soft` and any `L_dist` from the final softctx logits `z^self = z^(n_softctx_iter-1)`.
 
 > Why this is “unified” with rollout-matching:
 > - Channel-A trains geometry under a form of self-conditioning (but without sampling).
@@ -371,6 +376,7 @@ Why `N×` helps (intuition, bbox case):
   - `N=3`: `x2` sees a context where `x1/y1` are more on-policy (soft-refreshed).
   - `N=4`: `y2` sees a context where `x1/y1/x2` have been soft-refreshed.
 - This targets “GT leakage / lag” without autoregressive sampling; stability/credit assignment depends on `softctx_grad_mode` (`unroll` vs `em_detach` vs `mix`).
+- Note: this interpretation assumes the default init (start-from-`ē^(0)`). If you use init=A (start-from-GT), the soft-context effect is delayed by one iteration (so you may need `N+1` to get the same propagation depth).
 
 ---
 
@@ -472,7 +478,7 @@ We denote the logits used for decode/loss as `z^roll_final`:
   - poly reward (later): `R_i = maskIoU(polŷ_i, poly_j_gt)` after rasterization, stop-grad
 - **Gradient (differentiable; credit assignment):**
   - bbox: CoordExp decode + box-level geometry loss under rollout scaffold:
-    - decode continuous coords from `p_{t,k}` (or directly from `z^roll_final`) and assemble `b̂_i_cont`
+    - decode continuous coords as CoordExp expectations from `z^roll_final` and assemble `b̂_i_cont`
     - for a matched pair `(i -> j)`:
       - `L_geo_bbox(i->j) = λ_l1 * ||b̂_i_cont - b_j_gt||_1 + λ_iou * L_(G/DI/CIoU)(b̂_i_cont, b_j_gt)`
   - poly (Channel-B extension / preparation): **Sinkhorn-OT boundary loss** between predicted points and GT segments (no need to match vertex counts):
@@ -538,7 +544,7 @@ Combine both channels:
   - where `ρ` is the Channel-B frequency/probability (small, e.g. 0.05).
 
 Expanded:
-- `L_A = L_CE(y_GT) + λ_geo^A * L_geo_soft + λ_dist^A * L_dist(optional)`
+- `L_A = L_CE_A1(y_GT) + λ_geo^A * L_geo_soft + λ_dist^A * L_dist(optional)`
 - `L_B = L_CE(y_GT_reordered) + λ_geo^B * L_geo_roll + λ_dist^B * L_dist_roll(optional)`
 
 Where:
@@ -546,7 +552,7 @@ Where:
 - Channel-B terms fix true self-context + set-level discrete problems (order/missing/extras/format).
 
 Practical defaults (based on current evidence that hard-CE is not weak):
-- Keep `L_CE` as the anchor in both channels.
+- Keep `L_CE` as the anchor in both channels (Channel-A uses `L_CE_A1` by default; Channel-B uses `L_CE(y_GT_reordered)`).
 - Treat coord-distribution losses (softCE/W1/gate/entropy/top-k) as optional regularizers, not mandatory.
 
 ---
@@ -727,6 +733,13 @@ This pipeline:
 * Use `L_dist` regularizers to keep coord distributions sharp/unimodal (DFL-style soft-label CE, entropy penalty, W1/cost-sensitive CE).
 * Temperature anneal (`τ_A`/`τ_B`) so expectation decode becomes meaningful.
 * If box-level `L_geo` on CoordExp expectations becomes unstable early, increase `L_dist` or fall back to `softctx_grad_mode=em_detach` / smaller `γ`.
+
+### 14.5 Cross-object gradient coupling (UNROLL mode)
+
+* In `softctx_grad_mode=unroll`, later objects' geometry losses may backprop through soft coord embeddings into earlier objects' coord slots (cross-object credit assignment).
+* Pros: encourages set-level consistency (e.g., fewer duplicate/overlapping boxes) and can improve global coherence.
+* Cons: may introduce order bias or instability for long sequences / many objects.
+* Mitigations / ablations: try `softctx_grad_mode=mix(γ)` or `em_detach`, reduce `n_softctx_iter`, add damping (`softctx_damping_alpha < 1`), use gradient clipping, and tune loss weights.
 
 ---
 
