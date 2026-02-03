@@ -1,0 +1,43 @@
+run:
+  name: a_only_iter_1_ckpt_6064
+  output_dir: output/bench
+
+stages:
+  infer: true
+  eval: true
+  vis: false
+
+infer:
+  gt_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+  model_checkpoint: output/stage2_ab/a_only_iter_1_ckpt_6064
+
+  mode: auto
+  pred_coord_mode: auto
+
+  backend:
+    type: vllm
+    mode: local
+    server_options:
+      vllm_tensor_parallel_size: 1
+      vllm_gpu_memory_utilization: 0.7
+      vllm_max_model_len: 12000
+
+  generation:
+    temperature: 0.1
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 64
+    seed: 42
+
+  device: cuda:0
+  limit: 0
+  detect_samples: 128
+
+eval:
+  output_dir: null
+  metrics: both
+  use_segm: false
+  overlay: false
+  overlay_k: 12
+  num_workers: 8
