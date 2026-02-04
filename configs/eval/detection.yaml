@@ -7,7 +7,7 @@ pred_jsonl: path/to/gt_vs_pred.jsonl
 out_dir: eval_out
 
 # Metrics
-metrics: both                  # coco | f1ish | both
+metrics: f1ish                 # coco | f1ish | both
 use_segm: true                 # include segmentation metrics when polygons exist
 strict_parse: false            # abort on first parse error
 
@@ -23,7 +23,7 @@ num_workers: 0
 semantic_model: sentence-transformers/all-MiniLM-L6-v2
 semantic_threshold: 0.6
 semantic_device: auto
-semantic_batch_size: 64
+semantic_batch_size: 32
 
 # F1-ish settings
 f1ish_iou_thrs: [0.3, 0.5]

@@ -242,7 +242,7 @@ custom:
         semantic_model: sentence-transformers/all-MiniLM-L6-v2
         semantic_threshold: 0.6
         semantic_device: cpu
-        semantic_batch_size: 64
+        semantic_batch_size: 32
         max_pairs: 64
 ```
 

@@ -85,7 +85,7 @@ artifacts:
 # Evaluation stage (consumes gt_vs_pred.jsonl; does not load the model)
 eval:
   output_dir: null  # defaults to <run_dir>/eval
-  metrics: both     # coco | f1ish | both
+  metrics: f1ish    # coco | f1ish | both
   use_segm: true
   overlay: false
   overlay_k: 12
@@ -95,7 +95,11 @@ eval:
   semantic_model: sentence-transformers/all-MiniLM-L6-v2
   semantic_threshold: 0.6
   semantic_device: auto
-  semantic_batch_size: 64
+  semantic_batch_size: 32
+
+  # F1-ish settings
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated
 
 # Visualization stage (consumes gt_vs_pred.jsonl; does not load the model)
 vis:
