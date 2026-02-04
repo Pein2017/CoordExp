@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -15,6 +16,42 @@ COCO2017_URLS: Dict[str, str] = {
     "annotations_trainval2017.zip": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
 }
 
+
+
+
+def _format_bytes(n: float) -> str:
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    x = float(n)
+    for u in units:
+        if x < 1024.0 or u == units[-1]:
+            return f"{x:,.1f}{u}" if u != "B" else f"{int(x)}B"
+        x /= 1024.0
+    return f"{x:,.1f}TiB"
+
+
+def _render_progress(
+    *,
+    filename: str,
+    downloaded: int,
+    total_bytes: int | None,
+    start_t: float,
+    bar_width: int = 30,
+) -> str:
+    elapsed = max(1e-6, time.monotonic() - start_t)
+    speed = downloaded / elapsed
+
+    if total_bytes is None or total_bytes <= 0:
+        return f"{filename}: {_format_bytes(downloaded)} ({_format_bytes(speed)}/s)"
+
+    frac = min(1.0, max(0.0, downloaded / float(total_bytes)))
+    filled = int(round(frac * bar_width))
+    bar = "#" * filled + "-" * (bar_width - filled)
+    pct = int(round(frac * 100))
+    return (
+        f"{filename}: [{bar}] {pct:3d}% "
+        f"({_format_bytes(downloaded)}/{_format_bytes(total_bytes)}) "
+        f"{_format_bytes(speed)}/s"
+    )
 
 @dataclass(frozen=True)
 class DownloadResult:
@@ -35,7 +72,13 @@ def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def _download(url: str, dst_path: Path, *, force: bool) -> DownloadResult:
+def _download(
+    url: str,
+    dst_path: Path,
+    *,
+    force: bool,
+    timeout_s: float = 60.0,
+) -> DownloadResult:
     dst_path.parent.mkdir(parents=True, exist_ok=True)
 
     if dst_path.exists() and not force:
@@ -52,7 +95,20 @@ def _download(url: str, dst_path: Path, *, force: bool) -> DownloadResult:
         tmp_path.unlink()
 
     req = urllib.request.Request(url, headers={"User-Agent": "CoordExp/public_data"})
-    with urllib.request.urlopen(req) as resp, tmp_path.open("wb") as f:
+
+    start_t = time.monotonic()
+    last_print_t = 0.0
+    print_interval_s = 0.25
+
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp, tmp_path.open("wb") as f:
+        content_len_hdr = resp.headers.get("Content-Length")
+        total_bytes: int | None = None
+        if content_len_hdr is not None:
+            try:
+                total_bytes = int(content_len_hdr)
+            except ValueError:
+                total_bytes = None
+
         h = hashlib.sha256()
         total = 0
         while True:
@@ -62,6 +118,26 @@ def _download(url: str, dst_path: Path, *, force: bool) -> DownloadResult:
             f.write(chunk)
             h.update(chunk)
             total += len(chunk)
+
+            now = time.monotonic()
+            if (now - last_print_t) >= print_interval_s:
+                last_print_t = now
+                msg = _render_progress(
+                    filename=dst_path.name,
+                    downloaded=total,
+                    total_bytes=total_bytes,
+                    start_t=start_t,
+                )
+                print(f"\r{msg}", end="", file=sys.stderr, flush=True)
+
+    msg = _render_progress(
+        filename=dst_path.name,
+        downloaded=total,
+        total_bytes=total_bytes,
+        start_t=start_t,
+    )
+    print(f"\r{msg}", file=sys.stderr, flush=True)
+    print("", file=sys.stderr, flush=True)
 
     tmp_path.replace(dst_path)
 
@@ -155,7 +231,12 @@ This script writes checksums for downloaded zips to:
     images_dir = raw_dir / "images"
 
     to_download: List[Tuple[str, str]] = []
-    to_download.append(("annotations_trainval2017.zip", COCO2017_URLS["annotations_trainval2017.zip"]))
+    to_download.append(
+        (
+            "annotations_trainval2017.zip",
+            COCO2017_URLS["annotations_trainval2017.zip"],
+        )
+    )
     if not args.annotations_only:
         to_download.append(("train2017.zip", COCO2017_URLS["train2017.zip"]))
         to_download.append(("val2017.zip", COCO2017_URLS["val2017.zip"]))
@@ -168,6 +249,7 @@ This script writes checksums for downloaded zips to:
     print(f"  annotations_only: {args.annotations_only}")
     print(f"  skip_extract: {args.skip_extract}")
     print(f"  force: {args.force}")
+    print("  progress: enabled")
     print("=" * 70)
 
     results: List[DownloadResult] = []
