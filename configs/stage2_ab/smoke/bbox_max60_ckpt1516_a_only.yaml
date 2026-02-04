@@ -9,3 +9,10 @@ training:
   logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/a_only
   run_name: smoke_bbox_max60_ckpt1516_a_only
 
+# Ensure smoke does not depend on a running vLLM server (Channel-A does not use rollouts,
+# but disabling eval + setting HF backend makes this smoke more robust).
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: hf
+      max_new_tokens: 512

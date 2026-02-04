@@ -7,9 +7,5 @@ training:
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only_iter1
   run_name: prod_a_only_bbox_max60_ckpt1516_ep2_iter1
 
-custom:
-  extra:
-    stage2_ab:
-      schedule:
-        pattern: ["A"]
-      n_softctx_iter: 1
+stage2_ab:
+  n_softctx_iter: 1

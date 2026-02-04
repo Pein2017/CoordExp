@@ -64,6 +64,45 @@ training:
   aligner_lr: 5.0e-5
   weight_decay: 0.1
 
+stage2_ab:
+  schedule:
+    # Channel-B should be sparse (~5%) to stay a cold path.
+    b_ratio: 0.05
+  n_softctx_iter: 2
+  desc_ce_weight: 1.0
+  bbox_smoothl1_weight: 2.0
+  bbox_ciou_weight: 1.0
+  softctx_temperature: 1.0
+  # Channel-B rollout refactor: step-budgeted rollouts + pipelined pack+learn.
+  channel_b:
+    # 'micro' preserves legacy behavior (one packed micro-batch per micro-step).
+    # 'step' collects ~effective_batch_size raw rollouts per optimizer step and
+    # trains on a variable number of packed sequences (<= global_max_length).
+    mode: step
+    # Global rollouts per optimizer step (split deterministically across train ranks).
+    #
+    # Notes:
+    # - vLLM server mode currently requires a single-process learner (world_size==1),
+    #   so this is effectively a per-optimizer-step budget on that one rank.
+    # - If null, defaults to the effective global batch size:
+    #   per_device_train_batch_size * world_size * gradient_accumulation_steps.
+    rollouts_per_step: null
+    # Overlap rollout generation (server GPUs) with learner forward/backward (learner GPU)
+    # within the same optimizer step using a bounded queue.
+    enable_pipeline: true
+    # Batch decode size per rollout request (independent of learner microbatch=1).
+    rollout_decode_batch_size: 2
+    # Reordered-GT SFT (B3/7.3): apply CE over a GT sequence arranged in predicted order.
+    reordered_gt_sft: true
+    # Downweight desc CE for matched objects only; keep missing-object recall learning strict.
+    desc_ce_weight_matched: 0.2
+    semantic_desc_gate:
+      # Enabled by default, but revision MUST be pinned for reproducibility.
+      enabled: true
+      model_name_or_path: sentence-transformers/all-MiniLM-L6-v2
+      threshold: 0.5
+      revision: c9745ed1d9f207416be6d2e6f8de32d1f16199bf
+
 custom:
   trainer_variant: stage2_ab_training
 
@@ -76,61 +115,6 @@ custom:
   val_sample_limit: null
 
   extra:
-    # Default schedule is AB-mixed; variants override this only.
-    stage2_ab:
-      schedule:
-        # Channel-B should be sparse (~5%) to stay a cold path.
-        pattern:
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - B
-      n_softctx_iter: 2
-      desc_ce_weight: 1.0
-      bbox_l1_weight: 2.0
-      bbox_giou_weight: 1.0
-      softctx_temperature: 1.0
-      # Channel-B rollout refactor: step-budgeted rollouts + pipelined pack+learn.
-      channel_b:
-        # 'micro' preserves legacy behavior (one packed micro-batch per micro-step).
-        # 'step' collects ~effective_batch_size raw rollouts per optimizer step and
-        # trains on a variable number of packed sequences (<= global_max_length).
-        mode: step
-        # Global rollouts per optimizer step (split deterministically across train ranks).
-        #
-        # Notes:
-        # - vLLM server mode currently requires a single-process learner (world_size==1),
-        #   so this is effectively a per-optimizer-step budget on that one rank.
-        # - If null, defaults to the effective global batch size:
-        #   per_device_train_batch_size * world_size * gradient_accumulation_steps.
-        rollouts_per_step: null
-        # Overlap rollout generation (server GPUs) with learner forward/backward (learner GPU)
-        # within the same optimizer step using a bounded queue.
-        enable_pipeline: true
-        # Batch decode size per rollout request (independent of learner microbatch=1).
-        rollout_decode_batch_size: 2
-        # Reordered-GT SFT (B3/7.3): apply CE over a GT sequence arranged in predicted order.
-        reordered_gt_sft: true
-        reordered_gt_append_missing: true
-        # Downweight desc CE for matched objects only; keep missing-object recall learning strict.
-        desc_ce_weight_matched: 0.2
-
     rollout_matching:
       rollout_backend: vllm
       decode_mode: greedy
