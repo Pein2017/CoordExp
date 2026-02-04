@@ -22,8 +22,11 @@ echo -e "\n[2/3] Running LVIS Converter Tests..."
 "${PYTHON_BIN}" tests/test_lvis_converter.py
 
 # Run polygon cap smoke tests
-echo -e "\n[3/3] Running Polygon Cap Smoke Tests..."
+echo -e "\n[3/4] Running Polygon Cap Smoke Tests..."
 "${PYTHON_BIN}" tests/test_poly_cap.py
+
+echo -e "\n[4/4] Running COCO Converter/Validator Smoke Tests..."
+"${PYTHON_BIN}" tests/test_coco_converter.py
 
 echo -e "\n======================================"
 echo "All tests completed!"

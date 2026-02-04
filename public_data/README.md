@@ -72,6 +72,7 @@ The runner executes the plugin (it does NOT `source` it). Plugins receive requir
 Existing plugins:
 - `public_data/datasets/lvis.sh`
 - `public_data/datasets/vg.sh`
+- `public_data/datasets/coco.sh`
 
 Tip: standard proxy env vars like `http_proxy`/`https_proxy` are still honored by underlying tools (wget/huggingface), but they are not part of the runner/plugin *contract*.
 
@@ -132,6 +133,10 @@ LVIS converter tests (no images required):
 ```bash
 conda run -n ms bash public_data/tests/run_tests.sh
 ```
+
+## COCO 2017 (Instances / 80 classes)
+Reproducer and details:
+- `public_data/coco/README.md`
 
 ## Extra Utilities
 - COIG-CQIA (ModelScope) downloader: `public_data/scripts/download_coig_cqia.py`
