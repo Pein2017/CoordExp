@@ -315,17 +315,16 @@ class ParsedPredObject:
 
 @dataclass
 class RolloutParseResult:
-    response_token_ids: List[
-        int
-    ]  # stripped stop tokens, full rollout (assistant-local)
+    response_token_ids: List[int]  # stripped stop tokens, full rollout (assistant-local)
     response_text: str
     prefix_token_ids: List[int]  # suffix-trimmed prefix (assistant-local, append-ready)
     prefix_text: str
     max_object_index_in_prefix: Optional[int]
     valid_objects: List[ParsedPredObject]
     dropped_invalid: int
-    dropped_ambiguous: int
-    truncated: bool
+    dropped_invalid_by_reason: Dict[str, int] = field(default_factory=dict)
+    dropped_ambiguous: int = 0
+    truncated: bool = False
 
 
 @dataclass
@@ -615,45 +614,70 @@ def _validate_objects_strict(
     response_text: str,
     objects_raw: Sequence[ParsedPredObject],
     prefix_char_end: int,
-) -> Tuple[List[ParsedPredObject], int]:
-    """Strict validation: drop malformed objects (no repair)."""
+) -> Tuple[List[ParsedPredObject], int, Dict[str, int]]:
+    """Strict validation: drop malformed objects (no repair).
+
+    Returns:
+      valid: objects that pass strict parsing/shape constraints
+      dropped: total count of dropped objects
+      dropped_by_reason: coarse reason buckets (diagnostics)
+    """
 
     valid: List[ParsedPredObject] = []
     dropped = 0
+    dropped_by_reason: Dict[str, int] = {}
+
+    def _drop(reason: str) -> None:
+        nonlocal dropped
+        dropped += 1
+        dropped_by_reason[str(reason)] = int(dropped_by_reason.get(str(reason), 0)) + 1
+
     for obj in objects_raw:
         start, end = obj.value_span
         if end <= 0 or end > prefix_char_end:
-            dropped += 1
+            _drop("key_invalid")
             continue
         snippet = response_text[start:end]
         try:
             parsed = json.loads(snippet)
         except Exception:
-            dropped += 1
+            _drop("key_invalid")
             continue
         if not isinstance(parsed, dict):
-            dropped += 1
+            _drop("key_invalid")
             continue
+
         desc = parsed.get("desc")
         if not isinstance(desc, str) or not desc.strip():
-            dropped += 1
+            _drop("missing_desc")
             continue
-        geom_keys = [k for k in ("bbox_2d", "poly") if k in parsed]
-        if len(geom_keys) != 1:
-            dropped += 1
-            continue
-        geom_key = geom_keys[0]
 
-        # Reject unexpected keys to keep strictness (no nested/unexpected).
-        allowed = {"desc", "bbox_2d", "poly"}
-        if any(k not in allowed for k in parsed.keys()):
-            dropped += 1
+        non_desc_keys = [k for k in parsed.keys() if k != "desc"]
+        if not non_desc_keys:
+            _drop("missing_geom")
             continue
+
+        known_geom = {"bbox_2d", "poly"}
+        geom_keys = [k for k in non_desc_keys if k in known_geom]
+        extra_keys = [k for k in parsed.keys() if k not in {"desc", *known_geom}]
+
+        if len(geom_keys) == 0:
+            # Some kind of geometry was present but not recognized.
+            _drop("unknown_geom")
+            continue
+        if len(geom_keys) != 1:
+            _drop("key_invalid")
+            continue
+        if extra_keys:
+            _drop("key_invalid")
+            continue
+
+        geom_key = geom_keys[0]
 
         # Geometry values must be coord tokens (strict; no ints in rollout-matching).
         flat = flatten_points(parsed.get(geom_key))
         if flat is None or len(flat) % 2 != 0:
-            dropped += 1
+            _drop("wrong_arity")
             continue
         token_bins: List[int] = []
         ok = True
@@ -667,14 +691,22 @@ def _validate_objects_strict(
                 ok = False
                 break
         if not ok:
-            dropped += 1
+            _drop("non_coord_token")
             continue
 
         # Ensure we captured coord-token indices and they match geometry arity.
         coord_idx = list(obj.coord_token_indices)
         if geom_key == "bbox_2d":
             if len(coord_idx) != 4 or len(token_bins) != 4:
-                dropped += 1
+                _drop("wrong_arity")
+                continue
+            # Basic bbox sanity: must be in-range and canonical (x2>=x1, y2>=y1).
+            if any((t < 0) or (t > 999) for t in token_bins):
+                _drop("bbox_invalid")
+                continue
+            x1, y1, x2, y2 = token_bins
+            if x2 < x1 or y2 < y1:
+                _drop("bbox_invalid")
                 continue
         else:  # poly
             if (
@@ -682,7 +714,7 @@ def _validate_objects_strict(
                 or (len(coord_idx) % 2 != 0)
                 or len(token_bins) != len(coord_idx)
             ):
-                dropped += 1
+                _drop("wrong_arity")
                 continue
 
         valid.append(
@@ -695,7 +727,8 @@ def _validate_objects_strict(
                 value_span=obj.value_span,
             )
         )
-    return valid, dropped
+
+    return valid, dropped, dropped_by_reason
 
 
 def parse_rollout_for_matching(
@@ -761,6 +794,7 @@ def parse_rollout_for_matching(
             max_object_index_in_prefix=None,
             valid_objects=[],
             dropped_invalid=0,
+            dropped_invalid_by_reason={},
             dropped_ambiguous=0,
             truncated=True,
         )
@@ -784,7 +818,7 @@ def parse_rollout_for_matching(
         prefix_token_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False
     )
 
-    valid_objects, dropped_invalid = _validate_objects_strict(
+    valid_objects, dropped_invalid, dropped_invalid_by_reason = _validate_objects_strict(
         tokenizer=tokenizer,
         response_text=response_text,
         objects_raw=objects_raw,
@@ -808,6 +842,7 @@ def parse_rollout_for_matching(
         max_object_index_in_prefix=max_in_prefix,
         valid_objects=valid_objects,
         dropped_invalid=int(dropped_invalid),
+        dropped_invalid_by_reason=dict(dropped_invalid_by_reason),
         dropped_ambiguous=int(dropped_ambiguous),
         truncated=bool(truncated),
     )

@@ -7,8 +7,6 @@ training:
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only
   run_name: prod_a_only_bbox_max60_ckpt1516_ep2
 
-custom:
-  extra:
-    stage2_ab:
-      schedule:
-        pattern: ["A"]
+stage2_ab:
+  schedule:
+    b_ratio: 0.0

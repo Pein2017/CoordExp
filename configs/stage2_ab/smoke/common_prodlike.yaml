@@ -8,7 +8,7 @@ training:
   # Keep smoke bounded while still exercising the trainer end-to-end.
   # NOTE: For dense AB schedules (e.g. b_ratio≈1/3), 3 steps is the minimum to hit a B step.
   # For sparse Channel-B (e.g. b_ratio=0.05), you may need ~20 steps to hit one B step.
-  max_steps: 3
+  max_steps: 5
 
   # Avoid disk churn for smoke/regression runs.
   save_strategy: "no"

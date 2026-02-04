@@ -11,12 +11,11 @@ training:
   eval_strategy: "no"
   do_eval: false
 
+stage2_ab:
+  n_softctx_iter: 3
+
 custom:
   extra:
-    stage2_ab:
-      schedule:
-        pattern: ["A"]
-      n_softctx_iter: 3
     # Safety: if any code path tries to rollout (e.g., accidental eval), use HF generate
     # instead of vLLM server-mode (which requires world_size==1).
     rollout_matching:

@@ -1,0 +1,28 @@
+# Scheduler-coverage smoke: Stage-2 AB with a dense A/B schedule so we hit both
+# channels within a few steps, using HF rollout backend (no vLLM server needed).
+#
+# Diff vs prod: only runtime knobs (steps, sample caps, output dirs) and the
+# schedule ratio (to exercise both channels quickly in smoke).
+extends:
+  - ../prod/base.yaml
+  - common_prodlike.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke_bbox_max60_ckpt1516/ab_dense_hf
+  logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/ab_dense_hf
+  run_name: smoke_bbox_max60_ckpt1516_ab_dense_hf
+  max_steps: 6
+
+stage2_ab:
+  schedule:
+    # Dense schedule to exercise both channels quickly (A,B,A,B,...).
+    b_ratio: 0.5
+  channel_b:
+    enable_pipeline: false
+    rollouts_per_step: 2
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: hf
+      max_new_tokens: 512

@@ -7,29 +7,7 @@ training:
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   run_name: prod_ab_mixed_bbox_max60_ckpt1516_ep2
 
-custom:
-  extra:
-    stage2_ab:
-      schedule:
-        # Channel-B should be sparse (~5%) to stay a cold path.
-        pattern:
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - A
-          - B
+stage2_ab:
+  schedule:
+    # Channel-B should be sparse (~5%) to stay a cold path.
+    b_ratio: 0.05

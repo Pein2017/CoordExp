@@ -659,11 +659,9 @@ class CustomConfig:
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
-        if "coord_loss" in data:
-            raise ValueError(
-                "custom.coord_loss has been removed (legacy expectation/L1/GIoU/poly losses). "
-                "Use custom.coord_soft_ce_w1 instead."
-            )
+        # Deprecated legacy knob: ignore to ease config refactors.
+        # (Stage-2 AB contract refactor requires this to be non-fatal.)
+        data.pop("coord_loss", None)
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
 
@@ -784,6 +782,361 @@ class DebugConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABScheduleConfig:
+    """Deterministic Stage-2 AB channel schedule."""
+
+    b_ratio: float
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABScheduleConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.schedule must be a mapping")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        if "pattern" in data:
+            raise ValueError(
+                "stage2_ab.schedule.pattern is not supported. "
+                "Use stage2_ab.schedule.b_ratio (float in [0,1]) instead."
+            )
+
+        if "b_ratio" not in data:
+            raise ValueError(
+                "stage2_ab.schedule.b_ratio must be provided (float in [0,1]); "
+                "e.g. 0.0=A-only, 1.0=B-only, 0.05=~5% B."
+            )
+        b_ratio_raw = data.pop("b_ratio", None)
+        try:
+            b_ratio = float(b_ratio_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.schedule.b_ratio must be a float in [0,1]") from exc
+
+        if not (0.0 <= b_ratio <= 1.0):
+            raise ValueError(
+                f"stage2_ab.schedule.b_ratio must be in [0,1], got {b_ratio!r}"
+            )
+
+        if data:
+            raise ValueError(
+                f"Unknown stage2_ab.schedule keys: {sorted(str(k) for k in data.keys())}"
+            )
+
+        return cls(b_ratio=b_ratio)
+
+
+@dataclass(frozen=True)
+class Stage2ABSemanticDescGateConfig:
+    """Semantic tolerance for matched desc supervision (Channel-B)."""
+
+    enabled: bool = True
+    threshold: float = 0.5
+    model_name_or_path: str = "sentence-transformers/all-MiniLM-L6-v2"
+    revision: Optional[str] = None
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABSemanticDescGateConfig":
+        if payload is None:
+            cfg = cls()
+            if cfg.enabled and not cfg.revision:
+                raise ValueError(
+                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
+                    "to pin the embedding model version for reproducibility."
+                )
+            return cfg
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stage2_ab.channel_b.semantic_desc_gate must be a mapping when provided"
+            )
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        enabled = bool(data.pop("enabled", cls.enabled))
+
+        threshold_raw = data.pop("threshold", cls.threshold)
+        try:
+            threshold = float(threshold_raw)
+        except Exception as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.semantic_desc_gate.threshold must be a float in [0,1]"
+            ) from exc
+        if not (0.0 <= threshold <= 1.0):
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate.threshold must be in [0,1]"
+            )
+
+        model_raw = data.pop("model_name_or_path", cls.model_name_or_path)
+        if not isinstance(model_raw, str):
+            raise TypeError(
+                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be a string"
+            )
+        model_name_or_path = model_raw.strip()
+        if not model_name_or_path:
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be non-empty"
+            )
+
+        revision_raw = data.pop("revision", None)
+        revision = None
+        if revision_raw not in (None, "", False):
+            if not isinstance(revision_raw, str):
+                raise TypeError(
+                    "stage2_ab.channel_b.semantic_desc_gate.revision must be a string when provided"
+                )
+            revision = revision_raw.strip() or None
+
+        if data:
+            raise ValueError(
+                "Unknown stage2_ab.channel_b.semantic_desc_gate keys: "
+                f"{sorted(str(k) for k in data.keys())}"
+            )
+
+        if enabled and not revision:
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
+                "to pin the embedding model version for reproducibility."
+            )
+
+        return cls(
+            enabled=enabled,
+            threshold=threshold,
+            model_name_or_path=model_name_or_path,
+            revision=revision,
+        )
+
+
+@dataclass(frozen=True)
+class Stage2ABChannelBConfig:
+    mode: Literal["micro", "step"] = "micro"
+    rollouts_per_step: Optional[int] = None
+    enable_pipeline: bool = False
+    rollout_decode_batch_size: int = 2
+    reordered_gt_sft: bool = False
+    desc_ce_weight_matched: Optional[float] = None
+    drop_invalid_struct_ce_multiplier: float = 1.0
+    semantic_desc_gate: Stage2ABSemanticDescGateConfig = field(
+        default_factory=Stage2ABSemanticDescGateConfig
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
+        if payload is None:
+            cfg = cls()
+            if cfg.semantic_desc_gate.enabled and not cfg.semantic_desc_gate.revision:
+                raise ValueError(
+                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
+                )
+            return cfg
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.channel_b must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        mode_raw = data.pop("mode", cls.mode)
+        mode = str(mode_raw).strip().lower()
+        if mode not in {"micro", "step"}:
+            raise ValueError("stage2_ab.channel_b.mode must be one of {'micro','step'}")
+
+        rollouts_per_step_raw = data.pop("rollouts_per_step", None)
+        rollouts_per_step: Optional[int] = None
+        if rollouts_per_step_raw is not None:
+            try:
+                rollouts_per_step = int(rollouts_per_step_raw)
+            except Exception as exc:
+                raise TypeError(
+                    "stage2_ab.channel_b.rollouts_per_step must be an int when provided"
+                ) from exc
+            if rollouts_per_step <= 0:
+                raise ValueError(
+                    "stage2_ab.channel_b.rollouts_per_step must be > 0 when provided"
+                )
+
+        enable_pipeline = bool(data.pop("enable_pipeline", cls.enable_pipeline))
+
+        rollout_decode_batch_size_raw = data.pop(
+            "rollout_decode_batch_size", cls.rollout_decode_batch_size
+        )
+        try:
+            rollout_decode_batch_size = int(rollout_decode_batch_size_raw)
+        except Exception as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.rollout_decode_batch_size must be an int"
+            ) from exc
+        if rollout_decode_batch_size <= 0:
+            raise ValueError("stage2_ab.channel_b.rollout_decode_batch_size must be > 0")
+
+        reordered_gt_sft = bool(data.pop("reordered_gt_sft", cls.reordered_gt_sft))
+
+        desc_ce_weight_matched_raw = data.pop("desc_ce_weight_matched", None)
+        desc_ce_weight_matched: Optional[float] = None
+        if desc_ce_weight_matched_raw is not None:
+            try:
+                desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
+            except Exception as exc:
+                raise TypeError(
+                    "stage2_ab.channel_b.desc_ce_weight_matched must be a float when provided"
+                ) from exc
+            if desc_ce_weight_matched < 0:
+                raise ValueError(
+                    "stage2_ab.channel_b.desc_ce_weight_matched must be >= 0 when provided"
+                )
+
+        drop_invalid_raw = data.pop(
+            "drop_invalid_struct_ce_multiplier", cls.drop_invalid_struct_ce_multiplier
+        )
+        try:
+            drop_invalid_struct_ce_multiplier = float(drop_invalid_raw)
+        except Exception as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be a float"
+            ) from exc
+        if not (1.0 <= drop_invalid_struct_ce_multiplier <= 4.0):
+            raise ValueError(
+                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be in [1.0, 4.0]"
+            )
+
+        semantic_desc_gate = Stage2ABSemanticDescGateConfig.from_mapping(
+            data.pop("semantic_desc_gate", None)
+        )
+
+        if data:
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
+            )
+
+        return cls(
+            mode=cast(Literal["micro", "step"], mode),
+            rollouts_per_step=rollouts_per_step,
+            enable_pipeline=enable_pipeline,
+            rollout_decode_batch_size=rollout_decode_batch_size,
+            reordered_gt_sft=reordered_gt_sft,
+            desc_ce_weight_matched=desc_ce_weight_matched,
+            drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier,
+            semantic_desc_gate=semantic_desc_gate,
+        )
+
+
+@dataclass(frozen=True)
+class Stage2ABConfig:
+    schedule: Stage2ABScheduleConfig
+    n_softctx_iter: int = 2
+    softctx_grad_mode: Literal["unroll", "em_detach"] = "unroll"
+    softctx_temperature: float = 1.0
+    desc_ce_weight: float = 1.0
+    bbox_smoothl1_weight: float = 1.0
+    bbox_ciou_weight: float = 1.0
+
+    coord_ce_weight: float = 0.0
+    coord_el1_weight: float = 0.0
+    coord_ehuber_weight: float = 0.0
+    coord_huber_delta: float = 0.001
+    coord_entropy_weight: float = 0.0
+
+    channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab section must be a mapping")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        schedule_raw = data.pop("schedule", None)
+        if schedule_raw is None:
+            raise ValueError("stage2_ab.schedule must be provided")
+        schedule = Stage2ABScheduleConfig.from_mapping(schedule_raw)
+
+        if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
+            raise ValueError(
+                "stage2_ab.bbox_l1_weight/bbox_giou_weight are deprecated. "
+                "Use stage2_ab.bbox_smoothl1_weight and stage2_ab.bbox_ciou_weight instead."
+            )
+
+        n_softctx_iter_raw = data.pop("n_softctx_iter", cls.n_softctx_iter)
+        try:
+            n_softctx_iter = int(n_softctx_iter_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.n_softctx_iter must be an int") from exc
+        if n_softctx_iter < 1:
+            raise ValueError("stage2_ab.n_softctx_iter must be >= 1")
+
+        grad_mode_raw = data.pop("softctx_grad_mode", cls.softctx_grad_mode)
+        softctx_grad_mode = str(grad_mode_raw).strip().lower()
+        if softctx_grad_mode not in {"unroll", "em_detach"}:
+            raise ValueError(
+                "stage2_ab.softctx_grad_mode must be one of {'unroll','em_detach'}"
+            )
+
+        temp_raw = data.pop("softctx_temperature", cls.softctx_temperature)
+        try:
+            softctx_temperature = float(temp_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.softctx_temperature must be a float") from exc
+        if softctx_temperature <= 0:
+            raise ValueError("stage2_ab.softctx_temperature must be > 0")
+
+        desc_ce_raw = data.pop("desc_ce_weight", cls.desc_ce_weight)
+        try:
+            desc_ce_weight = float(desc_ce_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.desc_ce_weight must be a float") from exc
+        if desc_ce_weight < 0:
+            raise ValueError("stage2_ab.desc_ce_weight must be >= 0")
+
+        bbox_smoothl1_raw = data.pop("bbox_smoothl1_weight", cls.bbox_smoothl1_weight)
+        try:
+            bbox_smoothl1_weight = float(bbox_smoothl1_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.bbox_smoothl1_weight must be a float") from exc
+        if bbox_smoothl1_weight < 0:
+            raise ValueError("stage2_ab.bbox_smoothl1_weight must be >= 0")
+
+        bbox_ciou_raw = data.pop("bbox_ciou_weight", cls.bbox_ciou_weight)
+        try:
+            bbox_ciou_weight = float(bbox_ciou_raw)
+        except Exception as exc:
+            raise TypeError("stage2_ab.bbox_ciou_weight must be a float") from exc
+        if bbox_ciou_weight < 0:
+            raise ValueError("stage2_ab.bbox_ciou_weight must be >= 0")
+
+        coord_ce_weight = float(data.pop("coord_ce_weight", cls.coord_ce_weight) or 0.0)
+        coord_ce_weight = max(0.0, coord_ce_weight)
+        coord_el1_weight = float(data.pop("coord_el1_weight", cls.coord_el1_weight) or 0.0)
+        coord_el1_weight = max(0.0, coord_el1_weight)
+        coord_ehuber_weight = float(
+            data.pop("coord_ehuber_weight", cls.coord_ehuber_weight) or 0.0
+        )
+        coord_ehuber_weight = max(0.0, coord_ehuber_weight)
+        coord_huber_delta = float(data.pop("coord_huber_delta", cls.coord_huber_delta) or 0.001)
+        coord_huber_delta = max(1e-6, coord_huber_delta)
+        coord_entropy_weight = float(
+            data.pop("coord_entropy_weight", cls.coord_entropy_weight) or 0.0
+        )
+
+        channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
+
+        if data:
+            raise ValueError(
+                f"Unknown stage2_ab keys: {sorted(str(k) for k in data.keys())}"
+            )
+
+        return cls(
+            schedule=schedule,
+            n_softctx_iter=n_softctx_iter,
+            softctx_grad_mode=cast(Literal["unroll", "em_detach"], softctx_grad_mode),
+            softctx_temperature=softctx_temperature,
+            desc_ce_weight=desc_ce_weight,
+            bbox_smoothl1_weight=bbox_smoothl1_weight,
+            bbox_ciou_weight=bbox_ciou_weight,
+            coord_ce_weight=coord_ce_weight,
+            coord_el1_weight=coord_el1_weight,
+            coord_ehuber_weight=coord_ehuber_weight,
+            coord_huber_delta=coord_huber_delta,
+            coord_entropy_weight=coord_entropy_weight,
+            channel_b=channel_b,
+        )
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     template: Mapping[str, Any]
     custom: CustomConfig
@@ -793,6 +1146,7 @@ class TrainingConfig:
     data: Mapping[str, Any] = field(default_factory=dict)
     tuner: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
+    stage2_ab: Optional[Stage2ABConfig] = None
     rlhf: Mapping[str, Any] = field(default_factory=dict)
     prompts: PromptOverrides = field(default_factory=PromptOverrides)
     deepspeed: Optional[DeepSpeedConfig] = None
@@ -815,6 +1169,7 @@ class TrainingConfig:
         data_section = dict(_as_dict(data.pop("data", None)))
         tuner = dict(_as_dict(data.pop("tuner", None)))
         training = dict(_as_dict(data.pop("training", None)))
+        stage2_ab_raw = data.pop("stage2_ab", None)
         rlhf = dict(_as_dict(data.pop("rlhf", None)))
         custom_raw = data.pop("custom", None)
         debug = DebugConfig.from_mapping(data.pop("debug", None))
@@ -837,6 +1192,14 @@ class TrainingConfig:
 
         custom = CustomConfig.from_mapping(custom_raw, prompts=prompts)
 
+        stage2_ab = None
+        if stage2_ab_raw is not None:
+            stage2_ab = Stage2ABConfig.from_mapping(stage2_ab_raw)
+        elif (custom.trainer_variant or "") == "stage2_ab_training":
+            raise ValueError(
+                "stage2_ab section must be provided when custom.trainer_variant=stage2_ab_training"
+            )
+
         return cls(
             template=template,
             custom=custom,
@@ -846,6 +1209,7 @@ class TrainingConfig:
             data=data_section,
             tuner=tuner,
             training=training,
+            stage2_ab=stage2_ab,
             rlhf=rlhf,
             prompts=prompts,
             deepspeed=deepspeed,
