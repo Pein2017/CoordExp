@@ -11,23 +11,9 @@ die() {
   exit 1
 }
 
-_resolve_conda_exe() {
-  if command -v conda >/dev/null 2>&1; then
-    echo "conda"
-    return 0
-  fi
-  if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
-    echo "${CONDA_EXE}"
-    return 0
-  fi
-  die "Missing 'conda' on PATH (and CONDA_EXE is unset); required for python steps."
-}
-
 run_py() {
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python $*" >&2
-  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python "$@"
+  echo "+ PYTHONPATH=. python $*" >&2
+  PYTHONPATH=. python "$@"
 }
 
 usage() {
@@ -39,8 +25,8 @@ Target:
 
 Usage:
   coco.sh default-preset
-  coco.sh download --repo-root <abs> --dataset-dir <abs> --raw-dir <abs> --conda-env <name> [-- <passthrough>]
-  coco.sh convert  --repo-root <abs> --raw-image-dir <abs> --raw-train-jsonl <abs> --raw-val-jsonl <abs> --conda-env <name> [-- <passthrough>]
+  coco.sh download --repo-root <abs> --dataset-dir <abs> --raw-dir <abs> [-- <passthrough>]
+  coco.sh convert  --repo-root <abs> --raw-image-dir <abs> --raw-train-jsonl <abs> --raw-val-jsonl <abs> [-- <passthrough>]
 
 Notes:
   - Passthrough args after `--` are forwarded to:
@@ -77,7 +63,6 @@ RAW_DIR=""
 RAW_IMAGE_DIR=""
 RAW_TRAIN_JSONL=""
 RAW_VAL_JSONL=""
-CONDA_ENV="ms"
 PASSTHROUGH=()
 
 while [[ $# -gt 0 ]]; do
@@ -117,11 +102,6 @@ while [[ $# -gt 0 ]]; do
       RAW_VAL_JSONL="${1:-}"
       shift
       ;;
-    --conda-env)
-      shift
-      CONDA_ENV="${1:-}"
-      shift
-      ;;
     # Accept and ignore additional runner-provided flags to keep the interface forward-compatible.
     --dataset)
       shift
@@ -134,7 +114,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${REPO_ROOT}" ]] || die "Missing required flag: --repo-root"
-[[ -n "${CONDA_ENV}" ]] || die "Missing required flag: --conda-env"
 
 cd "${REPO_ROOT}"
 
@@ -169,4 +148,3 @@ case "${SUBCMD}" in
     die "Unhandled subcommand: ${SUBCMD}"
     ;;
 esac
-

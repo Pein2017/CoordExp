@@ -51,7 +51,6 @@ Commands:
 
 Runner flags:
   --preset <name>          Preset dir name under public_data/<dataset>/ (used by rescale|coord|validate|all)
-  --conda-env <name>       Conda env for python steps (default: ms)
   --skip-image-check       Skip image existence checks during validation
   --raw-only               For validate: validate only raw artifacts (no preset required)
   --preset-only            For validate: validate only preset artifacts
@@ -71,37 +70,17 @@ EOF
 }
 
 run_py() {
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
-
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${COORDEXP_CONDA_ENV} python $*" >&2
-  if ! PYTHONPATH=. "${conda_exe}" run -n "${COORDEXP_CONDA_ENV}" python "$@"; then
-    die "Failed to run python via conda env '${COORDEXP_CONDA_ENV}'. Is conda installed and the env available?"
-  fi
+  echo "+ PYTHONPATH=. python $*" >&2
+  PYTHONPATH=. python "$@"
 }
 
 run_py_best_effort() {
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
-
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${COORDEXP_CONDA_ENV} python $*" >&2
   set +e
-  PYTHONPATH=. "${conda_exe}" run -n "${COORDEXP_CONDA_ENV}" python "$@"
+  echo "+ PYTHONPATH=. python $*" >&2
+  PYTHONPATH=. python "$@"
   local rc=$?
   set -e
   return $rc
-}
-
-_resolve_conda_exe() {
-  if command -v conda >/dev/null 2>&1; then
-    echo "conda"
-    return 0
-  fi
-  if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
-    echo "${CONDA_EXE}"
-    return 0
-  fi
-  die "Missing 'conda' on PATH (and CONDA_EXE is unset); required for python steps."
 }
 
 choose_inspect_model() {
@@ -187,7 +166,6 @@ fi
 
 # Runner flags (parsed before --). Only this small surface area is supported.
 PRESET=""
-COORDEXP_CONDA_ENV="ms"
 SKIP_IMAGE_CHECK="false"
 RAW_ONLY="false"
 PRESET_ONLY="false"
@@ -204,12 +182,6 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "--preset requires a value"
       PRESET="$1"
-      shift
-      ;;
-    --conda-env)
-      shift
-      [[ $# -gt 0 ]] || die "--conda-env requires a value"
-      COORDEXP_CONDA_ENV="$1"
       shift
       ;;
     --skip-image-check)
@@ -259,7 +231,6 @@ case "${COMMAND}" in
       --raw-image-dir "${RAW_IMAGE_DIR}" \
       --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
       --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      --conda-env "${COORDEXP_CONDA_ENV}" \
       -- "${PASSTHROUGH_ARGS[@]}"
     ;;
   convert)
@@ -274,7 +245,6 @@ case "${COMMAND}" in
       --raw-image-dir "${RAW_IMAGE_DIR}" \
       --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
       --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      --conda-env "${COORDEXP_CONDA_ENV}" \
       -- "${PASSTHROUGH_ARGS[@]}"
     ;;
   rescale)
@@ -409,7 +379,6 @@ case "${COMMAND}" in
       --raw-image-dir "${RAW_IMAGE_DIR}" \
       --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
       --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      --conda-env "${COORDEXP_CONDA_ENV}" \
       -- "${PASSTHROUGH_ARGS[@]}"
     banner "[${DATASET}] stage: convert"
     run_plugin convert \
@@ -420,7 +389,6 @@ case "${COMMAND}" in
       --raw-image-dir "${RAW_IMAGE_DIR}" \
       --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
       --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      --conda-env "${COORDEXP_CONDA_ENV}" \
       -- "${PASSTHROUGH_ARGS[@]}"
     banner "[${DATASET}] stage: rescale"
     # Shared steps run with runner defaults (no passthrough args here).
@@ -449,7 +417,7 @@ case "${COMMAND}" in
     fi
     banner "[${DATASET}] stage: validate"
     # validate defaults to raw+preset; it will also run inspect_chat_template.py.
-    run_cmd bash "${0}" "${DATASET}" validate --preset "${PRESET}" --conda-env "${COORDEXP_CONDA_ENV}" \
+    run_cmd bash "${0}" "${DATASET}" validate --preset "${PRESET}" \
       $([[ "${SKIP_IMAGE_CHECK}" == "true" ]] && echo "--skip-image-check" || true)
     ;;
   *)
