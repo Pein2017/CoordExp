@@ -29,6 +29,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## Working Style (Research-Grade)
 - Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability; keep rationales short.
 - State assumptions when underspecified; choose the simplest viable approach; do not invent metrics/results.
+- Code & architecture style guidance: `docs/standards/CODE_STYLE.md` (Transformers-inspired “Option A”)
 
 ## Guardrails
 - Config-first; avoid new CLI flags; keep Qwen3-VL chat-template compatibility.

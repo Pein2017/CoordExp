@@ -49,6 +49,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.
 
 ## [Standards & Meta](standards/)
 *   **[Repo Hygiene](standards/REPO_HYGIENE.md)**: Constitution for repository hygiene and best practices.
+*   **[Code & Architecture Style](standards/CODE_STYLE.md)**: Transformers-inspired style guidelines (Option A).
 *   **[Upstream Dependencies](standards/UPSTREAM.md)**: Information about upstream dependencies (HF Qwen3-VL, ms-swift).
 *   **[Porting](standards/PORTING.md)**: Guide for porting features or models.
 
