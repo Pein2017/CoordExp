@@ -43,8 +43,8 @@ The canonical assistant training target is:
 Key policies:
 - Rollout parsing is STRICT (no JSON repair). Invalid predicted objects are dropped.
 - Missing GT objects (FN) are always appended in the tail (recall recovery stays mandatory).
-- Coord supervision remains token-distributional (softCE + W1 + gate) at coord slots.
-- `desc` value tokens are NOT supervised by CE in Stage-2 (JSON structure remains supervised).
+- Bbox geometry loss uses **SmoothL1 + CIoU** on expectation-decoded coords (no GIoU; boxes are canonicalized for CIoU stability).
+- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1, Channel-B stop-neutral + semantic-tolerant matched desc).
 
 ---
 
@@ -56,12 +56,13 @@ Stage-2 AB composes two channels:
 - **Channel-B** (Rollout Matching): generates rollouts (no grad), parses + matches, builds `Y_train`, then runs packed SFT forward/backward.
 
 Scheduler:
-- Config: `custom.extra.stage2_ab.schedule.pattern: ["A", "A", "B"]` (example).
-- Runtime: channel is chosen by `TrainerState.global_step % len(pattern)` (A/B only).
+- Config: `stage2_ab.schedule.b_ratio: float` in `[0,1]` (0.0=A-only, 1.0=B-only, 0.05≈5% Channel-B).
+- Runtime: deterministic Bresenham-style schedule from `TrainerState.global_step`:
+  - Channel-B iff `floor((s+1)*b_ratio) > floor(s*b_ratio)`, else Channel-A.
 
 ### Channel-B Modes (Step vs Micro)
 
-Channel-B supports two execution modes under `custom.extra.stage2_ab.channel_b.mode`:
+Channel-B supports two execution modes under `stage2_ab.channel_b.mode`:
 
 - `micro` (legacy): each micro-step independently runs rollout -> pack -> learn.
 - `step` (recommended / current default): "step-budgeted" rollouts + packing.
@@ -77,14 +78,33 @@ Constraints for `mode: step`:
 
 ### Channel-B Pipelining (Server Mode Only)
 
-`custom.extra.stage2_ab.channel_b.enable_pipeline: true` overlaps rollout generation (server GPUs) with learner packing/learning.
+`stage2_ab.channel_b.enable_pipeline: true` overlaps rollout generation (server GPUs) with learner packing/learning.
 
 Requirements:
 - `custom.extra.rollout_matching.rollout_backend: vllm`
 - `custom.extra.rollout_matching.vllm.mode: server`
 
 Tuning:
-- `custom.extra.stage2_ab.channel_b.rollout_decode_batch_size` controls the decode chunk size used by the pipeline.
+- `stage2_ab.channel_b.rollout_decode_batch_size` controls the decode chunk size used by the pipeline.
+
+### Channel-A Contract (Expectation Loop)
+
+- Default grad semantics: `stage2_ab.softctx_grad_mode: unroll` (no detach anywhere in the soft self-context loop). Use `em_detach` only for explicit ablations.
+- CE anchor split: Channel-A computes CE on the **A1** teacher-forced logits and computes geometry (bbox loss + coord regularizers) from the **final** softctx iteration logits.
+
+### Channel-B Contract (FP-neutral + Stop-neutral)
+
+- FP-neutral geometry: only matched predicted objects receive bbox geometry loss in Channel-B; FN-appended GT objects do not contribute geometry loss in Channel-B.
+- Stop-neutral CE: mask the top-level JSON closing brace `}` and `<|im_end|>` from Channel-B CE so Channel-B does not supervise stop/continue decisions.
+- Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
+  - `stage2_ab/channel_b/strict_drop/N_valid_pred`
+  - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
+  - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
+  - Optional structure-token CE upweight: `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (clamped to `[1.0, 4.0]`).
+- Semantic-tolerant matched desc CE (reordered-GT SFT only): matched objects whose predicted desc is semantically close to GT are treated as correct by masking GT desc tokens.
+  - Config: `stage2_ab.channel_b.semantic_desc_gate`.
+  - If enabled, `stage2_ab.channel_b.semantic_desc_gate.revision` is REQUIRED (pinned embedding model revision).
+  - If the encoder/weights cannot be loaded at runtime, training continues with semantic gating disabled and logs `stage2_ab/channel_b/semantic_desc_gate/is_active = false`.
 
 ---
 
@@ -141,6 +161,9 @@ Start from a template config and fill in dataset + rollout knobs:
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
 - Set `custom.extra.rollout_matching.*` (decode + matching knobs).
+- If using Stage-2 AB (`custom.trainer_variant: stage2_ab_training`), provide a top-level `stage2_ab` section (typed) including:
+  - `stage2_ab.schedule.b_ratio`
+  - `stage2_ab.channel_b.semantic_desc_gate.revision` when semantic gating is enabled.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Logging tip:
@@ -315,6 +338,11 @@ Rollout health:
 Throughput:
 - `time/rollout_generate_s` (forced to 0 on buffer reuse steps)
 - `rollout/gen_tokens_per_s`
+
+Stage-2 AB extras:
+- `stage2_ab/channel_b/is_reuse_step` (true when a buffered window is being reused)
+- `stage2_ab/channel_b/semantic_desc_gate/is_active` (true only when the semantic encoder is available)
+- `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
 
 ### Buffering Note (E-step Only for Quality)
 
