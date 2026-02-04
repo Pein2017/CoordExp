@@ -267,6 +267,17 @@ Suggested ablations (high signal, low complexity):
 
 ---
 
+### 6.1.1 Implementation Form: Strict Step-Level Routing (方案 A) + Async Actor-Learner
+Implementation is **step-level routing** with strict separation per optimizer update:
+- **Routing granularity:** A/B are chosen per optimizer step (one accumulation window). A step is **all A** or **all B**; never mix A/B microbatches within the same optimizer update.
+- **Data sources:** Channel-A uses the main dataloader (hot path, always available). Channel-B consumes from a `rollout_queue` (cold path), optionally via a `b_ready_queue` after preprocess.
+- **Async actor-learner (optional):** actor rolls out with parameters `θ_{t-Δ}`, learner updates `θ_t`. Each rollout item carries `ver`; learner only consumes items with `ver >= current_ver - version_window`. Use `queue_limit` to bound off-policy gap and memory.
+- **DDP safety:** step kind must be identical across all ranks; rank0 decides and broadcasts step_kind to avoid mismatched collectives or hang.
+- **Gradient accumulation:** step_kind is locked for the entire accumulation window (`grad_accum_steps`); it cannot change mid-window.
+- **Routing rule:** if `B_queue` has enough **fresh** items to cover the full optimizer update (`batch_size_B` across all microbatches), run a **B-step**; otherwise run an **A-step**. A is the fallback when B is insufficient.
+
+This is the enforced implementation form for Stage-2 (方案 A).
+
 ### 6.2 Channel-A (hot): Iterative soft self-context via N× forward (no rollout)
 
 Key idea: approximate “self-context” only where it matters most (coord slots), without sampling.
@@ -571,6 +582,7 @@ Combine both channels:
 - Stage-2 is a mixture objective:
   - `L_stage2 = (1-ρ) * L_A + ρ * L_B`
   - where `ρ` is the Channel-B frequency/probability (small, e.g. 0.05).
+  - **Implementation note:** in code, the mixture is approximated by the step-level router, so the realized `ρ_hat` is determined by queue availability and routing decisions.
 
 Expanded:
 - `L_A = L_CE_A1(y_GT) + λ_geo^A * L_geo_soft + λ_dist^A * L_dist(optional)`
@@ -647,6 +659,28 @@ Given image + prompt:
 - For `poly` (optional extension): reward (maskIoU, stop-grad) + differentiable Sinkhorn-OT boundary loss (point-to-segment) as a geometry term.
 - `L_CE`: standard token CE (with optional position-wise weights)
 - `L_dist` / `L_dist_roll` (optional): coord distribution-shape regularizers (DFL-style soft-label CE, entropy penalty, W1/cost-sensitive CE, etc.), small weight.
+
+### 10.5 Step Router / Scheduler (方案 A)
+- step_kind broadcast across ranks (rank0 decides, all ranks follow)
+- grad_accum window must lock a single step_kind
+- B_queue freshness filter and drop policy for stale items
+
+### 10.6 Rollout Queue + Versioning
+- actor weight sync policy (every K steps or drift-trigger)
+- `ver` written into each rollout item
+- `queue_limit` enforced; drop oldest when full
+
+### 10.7 Channel-B Preprocess Worker
+- parse rollout -> valid objects
+- Hungarian + gating -> matches / ValidMatched
+- FN append -> `y_GT_reordered`
+- stop-neutral mask (top-level `}` and `<|im_end|>` masked from CE)
+
+### 10.8 Diagnostics
+- queue length (raw + ready), `ver` lag stats
+- parse success rate, `N_valid_pred`, `N_drop_invalid` (by reason)
+- `|ValidMatched|`, B2 skip ratio
+- realized A/B ratio over a window
 
 ---
 
