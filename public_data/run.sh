@@ -104,6 +104,44 @@ require_file() {
   [[ -f "${path}" ]] || die "Missing required file: ${path}"
 }
 
+require_cmd() {
+  local cmd="$1"
+  command -v "${cmd}" >/dev/null 2>&1 || die "Missing required command on PATH: ${cmd}"
+}
+
+download_coco_raw_aria2c() {
+  # Fast path for COCO 2017 raw download using aria2c multi-connection downloads.
+  # Layout matches public_data/coco/raw/ conventions used elsewhere in this repo.
+  require_cmd aria2c
+  require_cmd unzip
+  require_cmd sha256sum
+
+  local downloads_dir="${RAW_DIR}/downloads"
+  run_cmd mkdir -p "${downloads_dir}"
+  run_cmd mkdir -p "${RAW_IMAGE_DIR}"
+
+  # Canonical URLs. Prefer plain HTTP here because some cluster environments
+  # MITM/terminate TLS and can cause aria2c hostname mismatch failures.
+  local url_train="http://images.cocodataset.org/zips/train2017.zip"
+  local url_val="http://images.cocodataset.org/zips/val2017.zip"
+  local url_ann="http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
+
+  banner "[coco] aria2c download (multi-conn) -> ${downloads_dir}"
+  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_train}"
+  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_val}"
+  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_ann}"
+
+  banner "[coco] sha256 checksums -> ${downloads_dir}/SHA256SUMS.txt"
+  run_cmd bash -c "cd \"${downloads_dir}\" && sha256sum train2017.zip val2017.zip annotations_trainval2017.zip > SHA256SUMS.txt"
+
+  banner "[coco] extract images -> ${RAW_IMAGE_DIR}"
+  run_cmd unzip -q -n "${downloads_dir}/train2017.zip" -d "${RAW_IMAGE_DIR}"
+  run_cmd unzip -q -n "${downloads_dir}/val2017.zip" -d "${RAW_IMAGE_DIR}"
+
+  banner "[coco] extract annotations -> ${RAW_DIR}"
+  run_cmd unzip -q -n "${downloads_dir}/annotations_trainval2017.zip" -d "${RAW_DIR}"
+}
+
 plugin_path() {
   echo "${REPO_ROOT}/public_data/datasets/${DATASET}.sh"
 }
@@ -223,15 +261,19 @@ case "${COMMAND}" in
     require_plugin_file
     banner "[${DATASET}] download -> ${RAW_DIR}"
     run_cmd mkdir -p "${RAW_DIR}"
-    run_plugin download \
-      --repo-root "${REPO_ROOT}" \
-      --dataset "${DATASET}" \
-      --dataset-dir "${DATASET_DIR}" \
-      --raw-dir "${RAW_DIR}" \
-      --raw-image-dir "${RAW_IMAGE_DIR}" \
-      --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
-      --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      -- "${PASSTHROUGH_ARGS[@]}"
+    if [[ "${DATASET}" == "coco" && ${#PASSTHROUGH_ARGS[@]} -eq 0 ]]; then
+      download_coco_raw_aria2c
+    else
+      run_plugin download \
+        --repo-root "${REPO_ROOT}" \
+        --dataset "${DATASET}" \
+        --dataset-dir "${DATASET_DIR}" \
+        --raw-dir "${RAW_DIR}" \
+        --raw-image-dir "${RAW_IMAGE_DIR}" \
+        --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
+        --raw-val-jsonl "${RAW_VAL_JSONL}" \
+        -- "${PASSTHROUGH_ARGS[@]}"
+    fi
     ;;
   convert)
     require_plugin_file
