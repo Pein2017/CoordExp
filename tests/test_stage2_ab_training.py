@@ -7,9 +7,10 @@ import torch.nn as nn
 from src.trainers.rollout_matching_sft import parse_rollout_for_matching
 from src.trainers.stage2_ab_training import (
     Stage2ABTrainingTrainer,
-    _bbox_l1_giou_loss,
+    _bbox_smoothl1_ciou_loss,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
+    _stage2_ab_stop_neutral_tail_ignore_pos,
 )
 
 
@@ -106,6 +107,66 @@ class _DummyAlwaysTokenModel(nn.Module):
             device=input_ids.device,
         )
         logits[..., self.pred_id] = 0.0
+        return _DummyOut(logits)
+
+
+class _DummyCallIndexedTokenModel(nn.Module):
+    """Dummy model that returns different constant logits per forward call."""
+
+    def __init__(
+        self,
+        *,
+        pred_ids: list[int],
+        vocab: int = 1200,
+        hidden: int = 8,
+        model_type: str = "qwen3_vl",
+    ):
+        super().__init__()
+        self.config = types.SimpleNamespace(model_type=model_type)
+        self.embed = nn.Embedding(int(vocab), int(hidden))
+        self.vocab = int(vocab)
+        self.pred_ids = [int(x) for x in list(pred_ids)]
+        if not self.pred_ids:
+            raise ValueError("pred_ids must be non-empty")
+        self.calls = 0
+
+    def get_input_embeddings(self):
+        return self.embed
+
+    def forward(
+        self,
+        *,
+        input_ids=None,
+        inputs_embeds=None,
+        position_ids=None,
+        use_cache=None,
+        past_key_values=None,
+        **kwargs,
+    ):
+        assert (input_ids is None) ^ (inputs_embeds is None)
+        assert use_cache is False
+        assert past_key_values is None
+        if position_ids is not None:
+            assert position_ids.shape[0] == 4
+
+        idx = min(int(self.calls), int(len(self.pred_ids) - 1))
+        pred_id = int(self.pred_ids[idx])
+        self.calls += 1
+
+        if input_ids is not None:
+            bsz, seqlen = input_ids.shape
+            device = input_ids.device
+        else:
+            bsz, seqlen = inputs_embeds.shape[:2]
+            device = inputs_embeds.device
+
+        logits = torch.full(
+            (int(bsz), int(seqlen), int(self.vocab)),
+            -100.0,
+            dtype=torch.float32,
+            device=device,
+        )
+        logits[..., int(pred_id)] = 0.0
         return _DummyOut(logits)
 
 
@@ -243,12 +304,17 @@ class _DummyTokenizer:
         return ids[0] if scalar else ids
 
 
-def test_pattern_schedule_repeats_deterministically():
+def test_b_ratio_schedule_is_deterministic():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {"schedule": {"pattern": ["A", "A", "B"]}}
+    t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.5}}
     t._stage2_channel_override = None
-    got = [t._stage2_channel_for_step(i) for i in range(5)]
-    assert got == ["A", "A", "B", "A", "A"]
+    got = [t._stage2_channel_for_step(i) for i in range(6)]
+    assert got == ["A", "B", "A", "B", "A", "B"]
+
+    t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.05}}
+    got2 = [t._stage2_channel_for_step(i) for i in range(20)]
+    assert got2.count("B") == 1
+    assert got2[-1] == "B"
 
 
 def test_expectation_decode_is_mean_not_argmax():
@@ -262,19 +328,19 @@ def test_expectation_decode_is_mean_not_argmax():
 def test_bbox_losses_stable_on_noncanonical_pred():
     pred = torch.tensor([[1.2, -0.1, -0.2, 0.5]], dtype=torch.float32)
     gt = torch.tensor([[0.0, 0.0, 1.0, 1.0]], dtype=torch.float32)
-    l1, giou = _bbox_l1_giou_loss(pred_xyxy=pred, gt_xyxy=gt)
-    assert torch.isfinite(l1).item()
-    assert torch.isfinite(giou).item()
+    smoothl1, ciou = _bbox_smoothl1_ciou_loss(pred_xyxy=pred, gt_xyxy=gt)
+    assert torch.isfinite(smoothl1).item()
+    assert torch.isfinite(ciou).item()
 
 
 def _make_min_trainer(*, n_softctx_iter: int):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
-        "schedule": {"pattern": ["A"]},
+        "schedule": {"b_ratio": 0.0},
         "n_softctx_iter": int(n_softctx_iter),
         "softctx_temperature": 1.0,
-        "bbox_l1_weight": 1.0,
-        "bbox_giou_weight": 1.0,
+        "bbox_smoothl1_weight": 1.0,
+        "bbox_ciou_weight": 1.0,
         "desc_ce_weight": 1.0,
     }
     t._stage2_pending_train_logs = {}
@@ -403,6 +469,57 @@ def test_channel_a_placeholder_embedding_invariance_bitwise():
     assert not torch.equal(e0[0, 2], e1[0, 2])
 
 
+def test_channel_a_ce_uses_a1_logits_not_final_logits():
+    trainer = _make_min_trainer(n_softctx_iter=2)
+    # Isolate CE by disabling geometry losses and groups.
+    trainer.stage2_ab_cfg["bbox_smoothl1_weight"] = 0.0
+    trainer.stage2_ab_cfg["bbox_ciou_weight"] = 0.0
+
+    # Prompt (2 tokens) + assistant (5 tokens, includes 4 coord slots + 1 non-coord token).
+    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
+    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
+    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
+    meta = [
+        {
+            "prompt_len": 2,
+            "prefix_len": 0,
+            "train_len": 5,
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+        }
+    ]
+
+    # First forward predicts token 1102 (correct), second predicts 1103 (wrong).
+    model_good_a1 = _DummyCallIndexedTokenModel(pred_ids=[1102, 1103])
+    loss_good = trainer.compute_loss(
+        model_good_a1,
+        {
+            "_stage2_ab_channel": "A",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+            "position_ids": position_ids,
+            "text_position_ids": text_position_ids,
+        },
+    )
+
+    # If CE incorrectly used the final logits, this would be low; with CE@A1 it should be high.
+    model_bad_a1 = _DummyCallIndexedTokenModel(pred_ids=[1103, 1102])
+    loss_bad = trainer.compute_loss(
+        model_bad_a1,
+        {
+            "_stage2_ab_channel": "A",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+            "position_ids": position_ids,
+            "text_position_ids": text_position_ids,
+        },
+    )
+
+    assert float(loss_good.detach().cpu().item()) < float(loss_bad.detach().cpu().item())
+
+
 def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     tok = _DummyTokenizer()
     resp_ids = tok.encode("hello", add_special_tokens=False)
@@ -511,7 +628,21 @@ def test_extract_gt_bboxonly_rejects_poly_geometry():
             }
         }
     }
-    with pytest.raises(ValueError, match="polygons"):
+    with pytest.raises(ValueError, match="bbox-only v1"):
+        _extract_gt_bboxonly(sample)
+
+
+def test_extract_gt_bboxonly_rejects_other_geometry_key_even_with_bbox():
+    sample = {
+        "assistant_payload": {
+            "object_1": {
+                "desc": "x",
+                "bbox_2d": [0, 0, 10, 10],
+                "mask_rle": {"counts": "abc", "size": [1, 1]},
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="bbox-only v1"):
         _extract_gt_bboxonly(sample)
 
 
@@ -566,13 +697,13 @@ def test_compute_loss_raises_on_sliced_logits():
 def test_channel_b_desc_ce_split_allows_downweight_matched_desc_only():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
-        "schedule": {"pattern": ["B"]},
+        "schedule": {"b_ratio": 1.0},
         "n_softctx_iter": 1,
         "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         # Turn off bbox losses so CE effect is isolated.
-        "bbox_l1_weight": 0.0,
-        "bbox_giou_weight": 0.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
         "channel_b": {"desc_ce_weight_matched": 0.0},
     }
     t._stage2_pending_train_logs = {}
@@ -624,11 +755,165 @@ def test_channel_b_desc_ce_split_allows_downweight_matched_desc_only():
     )
 
 
+def test_channel_b_tail_ignore_pos_masks_ce_tokens():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
+
+    meta_base = {
+        "prompt_len": 0,
+        "prefix_len": 0,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "tail_ignore_pos": [],
+        "tail_desc_pos": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [],
+    }
+
+    loss_full = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta_base)],
+            "input_ids": input_ids,
+        },
+    )
+
+    # Mask the two wrong tokens from CE.
+    meta_mask = dict(meta_base)
+    meta_mask["tail_ignore_pos"] = [2, 3]
+    loss_masked = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_mask],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_masked.detach().cpu().item()) < float(
+        loss_full.detach().cpu().item()
+    )
+
+
+def test_stop_neutral_brace_scan_ignores_braces_inside_quoted_desc():
+    tok = _DummyTokenizer()
+
+    # Include a literal '}' inside a quoted desc string; the stop-neutral parser must
+    # ignore it and select the brace that closes the *outermost* JSON object.
+    json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a } b"}}'
+    ids = list(tok.encode(json_text))
+    im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
+
+    assistant_span_ids = ids + [im_end_id]
+    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+        tokenizer=tok,
+        assistant_span_ids=assistant_span_ids,
+        prefix_len=0,
+    )
+
+    assert ignore_rel == [len(json_text) - 1, len(json_text)]
+
+
+def test_stop_neutral_im_end_search_prefers_turn_end_after_json_close():
+    tok = _DummyTokenizer()
+
+    # Include a literal '<|im_end|>' substring inside a quoted desc string; the stop-neutral
+    # parser must select the *turn-end* token that occurs after the outermost JSON close brace.
+    json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a <|im_end|> b"}}'
+    ids = list(tok.encode(json_text))
+    im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
+
+    assistant_span_ids = ids + [im_end_id]
+    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+        tokenizer=tok,
+        assistant_span_ids=assistant_span_ids,
+        prefix_len=0,
+    )
+
+    assert ignore_rel == [len(json_text) - 1, len(json_text)]
+
+
+def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():
+    # This exercises the compute_loss masking hook used by the semantic-desc gate:
+    # meta["tail_desc_pos_matched_masked"] contributes to the ignore set.
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "channel_b": {"desc_ce_weight_matched": 1.0},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
+
+    meta_no_mask = {
+        "prompt_len": 0,
+        "prefix_len": 0,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "tail_ignore_pos": [],
+        "tail_desc_pos": [2, 3],
+        "tail_desc_pos_matched": [2, 3],
+        "tail_desc_pos_missing": [],
+        "tail_desc_pos_matched_masked": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [],
+    }
+
+    loss_no_mask = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta_no_mask)],
+            "input_ids": input_ids,
+        },
+    )
+
+    meta_masked = dict(meta_no_mask)
+    meta_masked["tail_desc_pos_matched_masked"] = [2, 3]
+    loss_masked = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_masked],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_masked.detach().cpu().item()) < float(
+        loss_no_mask.detach().cpu().item()
+    )
+
+
 def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
     # Minimal trainer stub: verify step-mode buffers raw samples and executes only
     # on the final micro-step of the accumulation window.
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {"schedule": {"pattern": ["B"]}, "channel_b": {"mode": "step"}}
+    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
 
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -682,7 +967,7 @@ def test_channel_b_step_mode_stable_order_and_seed_base_deterministic(monkeypatc
     # Regression: in step-budgeted mode, raw sample ordering across micro-steps is stable
     # and the step-level seed base is deterministic.
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {"schedule": {"pattern": ["B"]}, "channel_b": {"mode": "step"}}
+    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
 
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
