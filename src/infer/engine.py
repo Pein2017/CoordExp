@@ -421,6 +421,15 @@ class InferenceEngine:
             self.cfg.model_checkpoint, trust_remote_code=True
         )
 
+        # Decoder-only models require left padding for correct generation.
+        try:
+            if getattr(self.processor, "tokenizer", None) is not None:
+                self.processor.tokenizer.padding_side = "left"
+                if self.processor.tokenizer.pad_token_id is None:
+                    self.processor.tokenizer.pad_token_id = self.processor.tokenizer.eos_token_id
+        except Exception:
+            pass
+
     @staticmethod
     def _resolve_image_path(jsonl_path: Path, image_rel: str) -> Path:
         if os.path.isabs(image_rel):
@@ -993,8 +1002,7 @@ class InferenceEngine:
                 unit="samples",
                 dynamic_ncols=True,
                 smoothing=0.1,
-                mininterval=1.0,
-                bar_format="{l_bar}{bar}| {n_fmt} {unit} [{elapsed}, {rate_fmt}]",
+                mininterval=1.0, {rate_fmt}]", 
             ) as pbar,
         ):
             for line in fin:

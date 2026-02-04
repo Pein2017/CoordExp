@@ -393,7 +393,7 @@ class EvalCounters:
 
 @dataclass
 class EvalOptions:
-    metrics: str = "coco"  # coco | f1ish | both
+    metrics: str = "f1ish"  # coco | f1ish | both
     strict_parse: bool = False
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")

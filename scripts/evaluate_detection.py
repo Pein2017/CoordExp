@@ -221,7 +221,7 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
     _warn_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
 
     options = EvalOptions(
-        metrics=str(args.metrics or "coco"),
+        metrics=str(args.metrics or "f1ish"),
         strict_parse=bool(args.strict_parse),
         use_segm=bool(args.use_segm) if args.use_segm is not None else True,
         iou_thrs=args.iou_thrs,
