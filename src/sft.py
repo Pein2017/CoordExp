@@ -1254,23 +1254,26 @@ def main():
 
     if trainer_variant == "stage2_ab_training":
         try:
-            extra_cfg = getattr(custom_config, "extra", {})
-            stage2_ab_raw = (
-                extra_cfg.get("stage2_ab", {}) if isinstance(extra_cfg, Mapping) else {}
-            )
-            stage2_ab_cfg: dict[str, Any] = (
-                dict(stage2_ab_raw) if isinstance(stage2_ab_raw, Mapping) else {}
-            )
+            stage2_ab_typed = getattr(training_config, "stage2_ab", None)
+            if stage2_ab_typed is None:
+                raise ValueError(
+                    "training_config.stage2_ab is required for stage2_ab_training; "
+                    "check config parsing (top-level stage2_ab section)."
+                )
+            stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
             setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
+
             try:
                 sched = stage2_ab_cfg.get("schedule")
-                pattern = sched.get("pattern") if isinstance(sched, Mapping) else None
+                b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
             except Exception:
-                pattern = None
+                b_ratio = None
+
             logger.info(
-                "Stage2-AB config injected: pattern=%s n_softctx_iter=%s",
-                pattern,
+                "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
+                b_ratio,
                 stage2_ab_cfg.get("n_softctx_iter"),
+                stage2_ab_cfg.get("softctx_grad_mode"),
             )
         except Exception as exc:
             logger.warning("Failed to inject stage2_ab_cfg into trainer: %s", exc)

@@ -1,5 +1,6 @@
 import contextlib
 import json
+import math
 import os
 import re
 import time
@@ -58,11 +59,12 @@ class _PendingStage2Log:
             return {}
         out: Dict[str, float] = {}
         for k, v in self.sums.items():
-            # Average losses/ratios; keep counters as totals.
+            # Average losses/ratios/booleans; keep counters as totals.
             if (
                 k.startswith("loss/")
                 or k.startswith("stage2/channel_")
                 or k.startswith("rollout/")
+                or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
                 out[k] = float(v) / float(self.n_micro)
             else:
@@ -87,36 +89,40 @@ def _expectation_decode_coords(
     return exp / 999.0
 
 
-def _bbox_l1_giou_loss(
+def _bbox_smoothl1_ciou_loss(
     *,
     pred_xyxy: torch.Tensor,  # [N,4] normalized
     gt_xyxy: torch.Tensor,  # [N,4] normalized
     eps: float = 1e-7,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Return (l1_mean, giou_mean) for normalized bboxes.
+    """Return (smoothl1_mean, ciou_loss_mean) for normalized bboxes.
 
-    Pred boxes are canonicalized and clipped to [0,1] before GIoU.
+    Pred boxes are canonicalized and clipped to [0,1] before CIoU.
     """
+
     if pred_xyxy.numel() == 0:
         z = pred_xyxy.new_tensor(0.0)
         return z, z
 
+    pred_xyxy = pred_xyxy.float()
+    gt_xyxy = gt_xyxy.float()
+
+    # SmoothL1 (Huber) on raw coords (normalized). This is stable even when pred is non-canonical.
+    smoothl1 = F.smooth_l1_loss(pred_xyxy, gt_xyxy, reduction="mean")
+
     px1, py1, px2, py2 = pred_xyxy.unbind(dim=-1)
-    gx1, gy1, gx2, gy2 = gt_xyxy.unbind(dim=-1)
+    gx1_, gy1_, gx2_, gy2_ = gt_xyxy.unbind(dim=-1)
 
-    # L1 on raw coords (but still normalized).
-    l1 = (pred_xyxy - gt_xyxy).abs().mean()
-
-    # Canonicalize + clip pred for stable IoU.
+    # Canonicalize + clip for stable IoU/CIoU.
     x1 = torch.minimum(px1, px2).clamp(0.0, 1.0)
     y1 = torch.minimum(py1, py2).clamp(0.0, 1.0)
     x2 = torch.maximum(px1, px2).clamp(0.0, 1.0)
     y2 = torch.maximum(py1, py2).clamp(0.0, 1.0)
 
-    gx1 = gx1.clamp(0.0, 1.0)
-    gy1 = gy1.clamp(0.0, 1.0)
-    gx2 = gx2.clamp(0.0, 1.0)
-    gy2 = gy2.clamp(0.0, 1.0)
+    gx1 = torch.minimum(gx1_, gx2_).clamp(0.0, 1.0)
+    gy1 = torch.minimum(gy1_, gy2_).clamp(0.0, 1.0)
+    gx2 = torch.maximum(gx1_, gx2_).clamp(0.0, 1.0)
+    gy2 = torch.maximum(gy1_, gy2_).clamp(0.0, 1.0)
 
     inter_x1 = torch.maximum(x1, gx1)
     inter_y1 = torch.maximum(y1, gy1)
@@ -132,19 +138,35 @@ def _bbox_l1_giou_loss(
     union = (area_p + area_g - inter).clamp(min=eps)
     iou = inter / union
 
+    # Center distance penalty.
+    pcx = (x1 + x2) * 0.5
+    pcy = (y1 + y2) * 0.5
+    gcx = (gx1 + gx2) * 0.5
+    gcy = (gy1 + gy2) * 0.5
+    rho2 = (pcx - gcx) ** 2 + (pcy - gcy) ** 2
+
+    # Smallest enclosing box diagonal.
     enc_x1 = torch.minimum(x1, gx1)
     enc_y1 = torch.minimum(y1, gy1)
     enc_x2 = torch.maximum(x2, gx2)
     enc_y2 = torch.maximum(y2, gy2)
-    enc_area = (enc_x2 - enc_x1).clamp(min=0.0) * (enc_y2 - enc_y1).clamp(min=0.0)
-    enc_area = enc_area.clamp(min=eps)
+    c2 = (enc_x2 - enc_x1) ** 2 + (enc_y2 - enc_y1) ** 2
+    c2 = c2.clamp(min=eps)
 
-    giou = iou - (enc_area - union) / enc_area
-    giou_loss = (1.0 - giou).mean()
+    # Aspect ratio penalty.
+    pw = (x2 - x1).clamp(min=eps)
+    ph = (y2 - y1).clamp(min=eps)
+    gw = (gx2 - gx1).clamp(min=eps)
+    gh = (gy2 - gy1).clamp(min=eps)
+    v = (4.0 / (math.pi**2)) * (torch.atan(gw / gh) - torch.atan(pw / ph)) ** 2
+    alpha = v / (1.0 - iou + v + eps)
 
-    giou_loss = torch.nan_to_num(giou_loss, nan=0.0, posinf=0.0, neginf=0.0)
-    l1 = torch.nan_to_num(l1, nan=0.0, posinf=0.0, neginf=0.0)
-    return l1, giou_loss
+    ciou = iou - (rho2 / c2 + alpha * v)
+    ciou_loss = (1.0 - ciou).mean()
+
+    ciou_loss = torch.nan_to_num(ciou_loss, nan=0.0, posinf=0.0, neginf=0.0)
+    smoothl1 = torch.nan_to_num(smoothl1, nan=0.0, posinf=0.0, neginf=0.0)
+    return smoothl1.to(dtype=pred_xyxy.dtype), ciou_loss.to(dtype=pred_xyxy.dtype)
 
 
 def _find_subsequence(haystack: Sequence[int], needle: Sequence[int]) -> int:
@@ -198,17 +220,19 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
         if not isinstance(entry, Mapping):
             raise ValueError(f"assistant_payload[{key}] must be a mapping")
 
-        # Enforce exactly one geometry key, bbox-only.
-        geom_keys = [
-            k for k in ("bbox_2d", "poly") if k in entry and entry.get(k) is not None
-        ]
-        if len(geom_keys) != 1:
+        # Enforce bbox-only v1 on GT: exactly one geometry field, and it must be bbox_2d.
+        # Any other geometry key (including poly) must fail fast.
+        geom_keys = sorted(
+            {
+                str(k)
+                for k, v in entry.items()
+                if str(k) != "desc" and v is not None
+            }
+        )
+        if geom_keys != ["bbox_2d"]:
             raise ValueError(
-                f"bbox-only v1 requires exactly one geometry field per object; got keys={geom_keys} for {key}"
-            )
-        if geom_keys[0] != "bbox_2d":
-            raise ValueError(
-                f"bbox-only v1 requires filtering out polygons upstream; found {geom_keys[0]} in {key}"
+                "bbox-only v1 requires each GT object to contain exactly one geometry field 'bbox_2d' "
+                f"(no poly/other geometry keys); got geometry keys={geom_keys} for {key}"
             )
 
         pts = _coerce_bbox_bins(entry.get("bbox_2d"))
@@ -231,6 +255,141 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
     if not objs:
         raise ValueError("no valid GT objects found in assistant_payload")
     return objs
+
+
+def _stage2_ab_stop_neutral_tail_ignore_pos(
+    *,
+    tokenizer: Any,
+    assistant_span_ids: Sequence[int],
+    prefix_len: int,
+) -> List[int]:
+    """Stop-neutral CE masking (Channel-B).
+
+    Returns token positions relative to the *tail* (i.e., after `prefix_len` tokens
+    inside the assistant span) that MUST be masked from CE so Channel-B does not
+    supervise stop/continue decisions.
+
+    Contract (normative): mask the token that closes the outermost assistant JSON
+    object (`}`) and the turn-end marker `<|im_end|>`.
+
+    Raises ValueError if the required markers cannot be located deterministically
+    when tail supervision exists.
+    """
+
+    try:
+        prefix_len_i = int(prefix_len)
+    except Exception:
+        prefix_len_i = 0
+    prefix_len_i = max(0, prefix_len_i)
+
+    try:
+        span_ids = [int(t) for t in assistant_span_ids]
+    except Exception:
+        span_ids = [int(t) for t in list(assistant_span_ids)]
+
+    tail_cap = max(0, int(len(span_ids)) - int(prefix_len_i))
+    if tail_cap <= 0:
+        # No tail supervision; stop-neutral masking is irrelevant.
+        return []
+
+    pieces = _decode_pieces(tokenizer, span_ids)
+    token_start_chars: List[int] = []
+    cursor = 0
+    for p in pieces:
+        token_start_chars.append(int(cursor))
+        cursor += int(len(p))
+    text = "".join(pieces)
+
+    def _tok_indices_overlapping(char_start: int, char_end: int) -> List[int]:
+        out: List[int] = []
+        for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
+            end = int(start) + int(len(piece))
+            if end <= int(char_start) or int(start) >= int(char_end):
+                continue
+            out.append(int(ti))
+        return out
+
+    # Brace-stack parsing (ignore braces inside quoted strings).
+    depth = 0
+    in_string = False
+    escape = False
+    close_char: Optional[int] = None
+    saw_open = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+            saw_open = True
+            continue
+        if ch == "}":
+            if depth == 1:
+                close_char = int(i)
+                break
+            if depth > 0:
+                depth -= 1
+            continue
+
+    if close_char is None:
+        head = text[:200]
+        tail = text[-200:] if len(text) > 200 else text
+        raise ValueError(
+            "stage2-ab stop-neutral masking could not locate the outermost JSON closing brace `}` "
+            f"in assistant span (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} saw_open={bool(saw_open)} "
+            f"text_head={head!r} text_tail={tail!r})"
+        )
+
+    close_toks = _tok_indices_overlapping(int(close_char), int(close_char) + 1)
+    if not close_toks:
+        raise ValueError(
+            "stage2-ab stop-neutral masking could not map outermost `}` char position back to a token index "
+            f"(close_char={int(close_char)} prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
+        )
+
+    marker = "<|im_end|>"
+    im_pos = int(text.find(marker, int(close_char) + 1))
+    if im_pos < 0:
+        head = text[:200]
+        tail = text[-200:] if len(text) > 200 else text
+        raise ValueError(
+            "stage2-ab stop-neutral masking could not find `<|im_end|>` in assistant span; this violates the "
+            f"Stage-2 AB contract (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} "
+            f"text_head={head!r} text_tail={tail!r})"
+        )
+
+    im_toks = _tok_indices_overlapping(int(im_pos), int(im_pos) + int(len(marker)))
+    if not im_toks:
+        raise ValueError(
+            "stage2-ab stop-neutral masking could not map `<|im_end|>` span back to token indices "
+            f"(im_pos={int(im_pos)} prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
+        )
+
+    ignore: List[int] = []
+    for ti in close_toks:
+        rel = int(ti) - int(prefix_len_i)
+        if 0 <= rel < int(tail_cap):
+            ignore.append(int(rel))
+    for ti in im_toks:
+        rel = int(ti) - int(prefix_len_i)
+        if 0 <= rel < int(tail_cap):
+            ignore.append(int(rel))
+
+    ignore_eff = sorted({int(p) for p in ignore})
+    if not ignore_eff:
+        raise ValueError(
+            "stage2-ab stop-neutral masking could not produce any in-tail mask positions for `}`/<|im_end|>; "
+            f"this suggests truncation or prefix/tail misalignment (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
+        )
+    return ignore_eff
 
 
 def _bbox_groups_from_token_ids(
@@ -438,20 +597,33 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             pass
         return default
 
-    def _ab_schedule_pattern(self) -> List[str]:
+    def _ab_schedule_b_ratio(self) -> float:
         cfg = self._ab_cfg()
-        sched = cfg.get("schedule", {})
-        pattern = None
-        if isinstance(sched, Mapping):
-            pattern = sched.get("pattern")
-        if not isinstance(pattern, list) or not pattern:
-            return ["A"]
-        out: List[str] = []
-        for x in pattern:
-            s = str(x).strip().upper()
-            if s in {"A", "B"}:
-                out.append(s)
-        return out if out else ["A"]
+        sched = cfg.get("schedule")
+        if not isinstance(sched, Mapping):
+            raise ValueError(
+                "stage2_ab.schedule must be a mapping (missing typed stage2_ab config?)"
+            )
+        if "pattern" in sched:
+            raise ValueError(
+                "stage2_ab.schedule.pattern is not supported; use stage2_ab.schedule.b_ratio"
+            )
+        if "b_ratio" not in sched:
+            raise ValueError(
+                "stage2_ab.schedule.b_ratio must be provided (float in [0,1])"
+            )
+        raw = sched.get("b_ratio")
+        try:
+            b_ratio = float(raw)
+        except Exception as exc:
+            raise TypeError(
+                "stage2_ab.schedule.b_ratio must be a float in [0,1]"
+            ) from exc
+        if not (0.0 <= b_ratio <= 1.0):
+            raise ValueError(
+                f"stage2_ab.schedule.b_ratio must be in [0,1], got {b_ratio!r}"
+            )
+        return b_ratio
 
     def _ab_channel_b_cfg(self) -> Mapping[str, Any]:
         cfg = self._ab_cfg()
@@ -472,7 +644,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         mode = str(raw).strip().lower()
         if mode not in {"micro", "step"}:
             raise ValueError(
-                "custom.extra.stage2_ab.channel_b.mode must be one of: 'micro', 'step'"
+                "stage2_ab.channel_b.mode must be one of: 'micro', 'step'"
             )
         return "step" if mode == "step" else "micro"
 
@@ -506,7 +678,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             v = int(raw)
         except Exception as exc:
             raise ValueError(
-                "custom.extra.stage2_ab.channel_b.rollouts_per_step must be an int"
+                "stage2_ab.channel_b.rollouts_per_step must be an int"
             ) from exc
         return max(1, v)
 
@@ -547,9 +719,20 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             "B",
         }:
             return "A" if self._stage2_channel_override == "A" else "B"
-        pattern = self._ab_schedule_pattern()
+
+        b_ratio = float(self._ab_schedule_b_ratio())
         s = int(global_step)
-        return "A" if pattern[s % len(pattern)] == "A" else "B"
+
+        if b_ratio <= 0.0:
+            return "A"
+        if b_ratio >= 1.0:
+            return "B"
+
+        # Bresenham-style deterministic ratio schedule: select B iff the running
+        # floor count increases at this step.
+        a = math.floor(float(s + 1) * float(b_ratio))
+        b = math.floor(float(s) * float(b_ratio))
+        return "B" if a > b else "A"
 
     def _stage2_post_rollout_channel(self, channel: str) -> Literal["A", "B"]:
         s = str(channel).strip().upper()
@@ -1370,6 +1553,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 batch["_rollout_matching_batch_metrics"] = bm
 
             bm["rollout/buffer_reuse"] = float(1.0 if reused else 0.0)
+            bm["stage2_ab/channel_b/is_reuse_step"] = float(
+                1.0 if reused else 0.0
+            )
             bm["rollout/buffer_window_step0"] = float(
                 -1 if buf.window_step0 is None else int(buf.window_step0)
             )
@@ -1754,9 +1940,45 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         reordered_gt_sft = bool(
             self._ab_channel_b_get("reordered_gt_sft", False) or False
         )
-        reordered_append_missing = bool(
-            self._ab_channel_b_get("reordered_gt_append_missing", True) or True
+        # Stage-2 AB contract: FN append is always enabled in Channel-B.
+
+        # Optional weak correction when strict-drop removes invalid predicted instances.
+        drop_invalid_struct_ce_multiplier = float(
+            self._ab_channel_b_get("drop_invalid_struct_ce_multiplier", 1.0) or 1.0
         )
+        drop_invalid_struct_ce_multiplier = float(
+            max(1.0, min(4.0, drop_invalid_struct_ce_multiplier))
+        )
+
+        # Semantic-tolerant matched desc supervision (Channel-B; reordered-GT SFT only).
+        semantic_gate_cfg_raw = self._ab_channel_b_get("semantic_desc_gate", None)
+        semantic_gate_enabled = True
+        semantic_gate_threshold = 0.5
+        semantic_gate_model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        semantic_gate_revision: Optional[str] = None
+        if isinstance(semantic_gate_cfg_raw, Mapping):
+            try:
+                semantic_gate_enabled = bool(
+                    semantic_gate_cfg_raw.get("enabled", semantic_gate_enabled)
+                )
+                semantic_gate_threshold = float(
+                    semantic_gate_cfg_raw.get("threshold", semantic_gate_threshold)
+                )
+                semantic_gate_model_name = str(
+                    semantic_gate_cfg_raw.get(
+                        "model_name_or_path", semantic_gate_model_name
+                    )
+                )
+                rev_raw = semantic_gate_cfg_raw.get("revision")
+                semantic_gate_revision = (
+                    str(rev_raw).strip() if rev_raw not in (None, "", False) else None
+                )
+            except Exception:
+                # Fall back to safe defaults (schema should normally enforce this).
+                semantic_gate_enabled = bool(semantic_gate_enabled)
+                semantic_gate_threshold = float(semantic_gate_threshold)
+                semantic_gate_model_name = str(semantic_gate_model_name)
+                semantic_gate_revision = semantic_gate_revision
 
         packing_enabled = self._packing_enabled()
         if packing_enabled and not self._packing_drop_last():
@@ -1829,6 +2051,68 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         drop_unknown_total = 0
         drop_bbox_invalid_total = 0
         invalid_rollout_total = 0
+        stop_neutral_skip_total = 0
+
+        strict_valid_pred_total = 0
+        strict_drop_invalid_total = 0
+        strict_drop_by_reason_total: Dict[str, int] = {}
+
+        if semantic_gate_enabled and not semantic_gate_revision:
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
+            )
+
+        semantic_gate_is_active = 0.0
+        semantic_encoder = None
+        semantic_ok_and_sim = None
+        if semantic_gate_enabled:
+            try:
+                from src.metrics.semantic_desc import SemanticDescEncoder
+                from src.metrics.semantic_desc import semantic_ok_and_sim as _semantic_ok_and_sim
+
+                semantic_ok_and_sim = _semantic_ok_and_sim
+
+                sig = (
+                    str(semantic_gate_model_name),
+                    str(semantic_gate_revision),
+                    "cpu",
+                    64,
+                    64,
+                )
+                enc = getattr(self, "_stage2_ab_semantic_gate_encoder", None)
+                enc_sig = getattr(self, "_stage2_ab_semantic_gate_encoder_sig", None)
+                if enc is not None and enc_sig == sig:
+                    semantic_encoder = enc
+                else:
+                    semantic_encoder = SemanticDescEncoder(
+                        model_name=str(semantic_gate_model_name),
+                        revision=str(semantic_gate_revision),
+                        device="cpu",
+                        batch_size=64,
+                        max_length=64,
+                    )
+                    setattr(self, "_stage2_ab_semantic_gate_encoder", semantic_encoder)
+                    setattr(self, "_stage2_ab_semantic_gate_encoder_sig", sig)
+
+                semantic_gate_is_active = 1.0
+                if not bool(getattr(self, "_stage2_ab_semantic_gate_logged", False)):
+                    logger.info(
+                        "Stage2-AB semantic desc gate enabled: model=%s revision=%s threshold=%s",
+                        semantic_gate_model_name,
+                        semantic_gate_revision,
+                        semantic_gate_threshold,
+                    )
+                    setattr(self, "_stage2_ab_semantic_gate_logged", True)
+            except Exception as exc:
+                semantic_encoder = None
+                semantic_ok_and_sim = None
+                semantic_gate_is_active = 0.0
+                if not bool(getattr(self, "_stage2_ab_semantic_gate_warned", False)):
+                    logger.warning(
+                        "Stage2-AB semantic desc gate disabled (missing dependency/weights): %s",
+                        exc,
+                    )
+                    setattr(self, "_stage2_ab_semantic_gate_warned", True)
 
         for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
             inputs, rollout_results
@@ -1867,33 +2151,98 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             gts = _extract_gt_bboxonly(sample)
 
-            # Filter preds to bbox-only.
+            # Filter preds to bbox-only and accumulate strict-drop diagnostics.
+            drop_reasons: Dict[str, int] = {}
+            try:
+                raw = getattr(parse, "dropped_invalid_by_reason", None)
+                if isinstance(raw, Mapping):
+                    for k, v in raw.items():
+                        try:
+                            drop_reasons[str(k)] = int(v)
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            drop_poly = 0
+            drop_unknown = 0
+            drop_bbox_invalid = 0
+
             pred_meta = []
             preds: List[GTObject] = []
             for pobj in list(parse.valid_objects):
                 if pobj.geom_type != "bbox_2d":
                     if pobj.geom_type == "poly":
-                        drop_poly_total += 1
+                        drop_poly += 1
                     else:
-                        drop_unknown_total += 1
+                        drop_unknown += 1
                     continue
+
                 pts = _points_from_coord_tokens(
                     response_token_ids=parse.response_token_ids,
                     coord_token_indices=pobj.coord_token_indices,
                     coord_id_to_bin=coord_id_to_bin,
                 )
                 if pts is None or len(pts) != 4:
-                    drop_bbox_invalid_total += 1
+                    drop_bbox_invalid += 1
                     continue
+                try:
+                    x1, y1, x2, y2 = [int(x) for x in pts]
+                except Exception:
+                    drop_bbox_invalid += 1
+                    continue
+                if x2 < x1 or y2 < y1:
+                    drop_bbox_invalid += 1
+                    continue
+
                 pred_meta.append(pobj)
                 preds.append(
                     GTObject(
                         index=int(pobj.index),
                         geom_type="bbox_2d",
-                        points_norm1000=list(pts),
+                        points_norm1000=[x1, y1, x2, y2],
                         desc="",
                     )
                 )
+
+            drop_poly_total += int(drop_poly)
+            drop_unknown_total += int(drop_unknown)
+            drop_bbox_invalid_total += int(drop_bbox_invalid)
+
+            if drop_poly:
+                drop_reasons["poly_unsupported"] = int(
+                    drop_reasons.get("poly_unsupported", 0)
+                ) + int(drop_poly)
+            if drop_unknown:
+                drop_reasons["unknown_geom"] = int(
+                    drop_reasons.get("unknown_geom", 0)
+                ) + int(drop_unknown)
+            if drop_bbox_invalid:
+                drop_reasons["bbox_invalid"] = int(
+                    drop_reasons.get("bbox_invalid", 0)
+                ) + int(drop_bbox_invalid)
+
+            n_valid_pred = int(len(preds))
+            n_drop_invalid = (
+                int(getattr(parse, "dropped_invalid", 0) or 0)
+                + int(getattr(parse, "dropped_ambiguous", 0) or 0)
+                + int(drop_poly)
+                + int(drop_unknown)
+                + int(drop_bbox_invalid)
+            )
+
+            strict_valid_pred_total += int(n_valid_pred)
+            strict_drop_invalid_total += int(n_drop_invalid)
+            for rk, rv in drop_reasons.items():
+                try:
+                    rvi = int(rv)
+                except Exception:
+                    continue
+                if rvi <= 0:
+                    continue
+                strict_drop_by_reason_total[str(rk)] = int(
+                    strict_drop_by_reason_total.get(str(rk), 0)
+                ) + int(rvi)
 
             match = hungarian_match_maskiou(
                 preds=preds,
@@ -1919,6 +2268,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             tail_desc_pos_matched: List[int] = []
             tail_desc_pos_missing: List[int] = []
+            tail_desc_pos_matched_masked: List[int] = []
 
             fn_count_for_meta = 0
 
@@ -1927,6 +2277,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     int(pi): int(gi) for pi, gi in match.matched_pairs
                 }
 
+                matched_pairs_pred_order: List[Tuple[int, int]] = []
                 matched_objs: List[GTObject] = []
                 for pred_i in range(len(pred_meta)):
                     gt_i = pred_to_gt.get(int(pred_i))
@@ -1934,13 +2285,14 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         continue
                     if gt_i < 0 or gt_i >= len(gts):
                         continue
+                    matched_pairs_pred_order.append((int(pred_i), int(gt_i)))
                     matched_objs.append(gts[int(gt_i)])
                     matched_gt_for_supervision.add(int(gt_i))
 
                 fn_gt_indices_final = list(match.fn_gt_indices)
                 fn_objs_all = [gts[i] for i in fn_gt_indices_final]
                 fn_count_for_meta = int(len(fn_gt_indices_final))
-                fn_objs = fn_objs_all if bool(reordered_append_missing) else []
+                fn_objs = fn_objs_all
 
                 all_objs = matched_objs + list(fn_objs)
                 if not all_objs:
@@ -1987,6 +2339,45 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                                     by_span[si].append(int(ti))
                                     break
 
+                        # Semantic-tolerant matched desc supervision: when the predicted desc is
+                        # semantically correct, mask GT desc tokens from CE for that matched object.
+                        if (
+                            semantic_gate_is_active > 0.0
+                            and semantic_encoder is not None
+                            and semantic_ok_and_sim is not None
+                            and matched_pairs_pred_order
+                        ):
+                            n_gate = max(
+                                0,
+                                min(
+                                    int(n_prefix_objs),
+                                    int(len(by_span)),
+                                    int(len(matched_pairs_pred_order)),
+                                ),
+                            )
+                            for i_obj in range(int(n_gate)):
+                                pred_i, gt_i = matched_pairs_pred_order[int(i_obj)]
+                                try:
+                                    pred_desc = str(
+                                        getattr(pred_meta[int(pred_i)], "desc", "")
+                                        or ""
+                                    )
+                                    gt_desc = str(getattr(gts[int(gt_i)], "desc", "") or "")
+                                except Exception:
+                                    pred_desc = ""
+                                    gt_desc = ""
+                                try:
+                                    ok, _sim = semantic_ok_and_sim(
+                                        pred_desc=pred_desc,
+                                        gt_desc=gt_desc,
+                                        encoder=semantic_encoder,
+                                        threshold=float(semantic_gate_threshold),
+                                    )
+                                except Exception:
+                                    ok = False
+                                if bool(ok):
+                                    tail_desc_pos_matched_masked.extend(by_span[int(i_obj)])
+
                         n_split = max(0, min(int(n_prefix_objs), int(len(by_span))))
                         for pos_list in by_span[:n_split]:
                             tail_desc_pos_matched.extend(pos_list)
@@ -1996,11 +2387,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         tail_desc_pos_matched = sorted(
                             {int(p) for p in tail_desc_pos_matched}
                         )
+                        tail_desc_pos_matched_masked = sorted(
+                            {int(p) for p in tail_desc_pos_matched_masked}
+                        )
                         tail_desc_pos_missing = sorted(
                             {int(p) for p in tail_desc_pos_missing}
                         )
                 except Exception:
                     tail_desc_pos_matched = []
+                    tail_desc_pos_matched_masked = []
                     tail_desc_pos_missing = []
 
                 rel_groups_all = _bbox_groups_from_token_ids(
@@ -2256,8 +2651,25 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             # Tail desc spans for CE weighting (relative to tail ids).
             tail_desc_pos_eff: List[int] = []
             tail_desc_pos_matched_eff: List[int] = []
+            tail_desc_pos_matched_masked_eff: List[int] = []
             tail_desc_pos_missing_eff: List[int] = []
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
+
+            # Stop-neutral CE (Channel-B): mask the top-level JSON closing brace `}` and
+            # `<|im_end|>` so Channel-B does not supervise stop/continue decisions.
+            assistant_span_ids = enc_ids_list[
+                int(prompt_len) : int(prompt_len) + int(train_len_eff)
+            ]
+            try:
+                tail_ignore_pos_eff = _stage2_ab_stop_neutral_tail_ignore_pos(
+                    tokenizer=tok,
+                    assistant_span_ids=assistant_span_ids,
+                    prefix_len=int(prefix_len_eff),
+                )
+            except ValueError:
+                stop_neutral_skip_total += 1
+                invalid_rollout_total += 1
+                continue
 
             for rel in tail_desc_pos:
                 try:
@@ -2274,6 +2686,14 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     continue
                 if 0 <= rel_i < tail_cap:
                     tail_desc_pos_matched_eff.append(rel_i)
+
+            for rel in tail_desc_pos_matched_masked:
+                try:
+                    rel_i = int(rel)
+                except Exception:
+                    continue
+                if 0 <= rel_i < tail_cap:
+                    tail_desc_pos_matched_masked_eff.append(rel_i)
 
             for rel in tail_desc_pos_missing:
                 try:
@@ -2299,6 +2719,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "parse_dropped_invalid": int(parse.dropped_invalid),
                 "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
                 "parse_truncated": bool(parse.truncated),
+                "drop_invalid_total": int(n_drop_invalid),
+                "drop_invalid_struct_ce_multiplier": float(
+                    drop_invalid_struct_ce_multiplier
+                ),
                 "valid_pred_objects": int(len(preds)),
                 "matched_for_supervision": int(len(matched_gt_for_supervision)),
                 "matched_maskiou_sum": float(match.matched_maskiou_sum),
@@ -2309,9 +2733,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "excluded_from_supervision": int(0),
                 "prefix_coord_pos": prefix_pos,
                 "prefix_coord_target_bins": prefix_bins,
-                "tail_ignore_pos": [],
+                "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
                 "tail_desc_pos_matched": tail_desc_pos_matched_eff,
+                "tail_desc_pos_matched_masked": tail_desc_pos_matched_masked_eff,
                 "tail_desc_pos_missing": tail_desc_pos_missing_eff,
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
@@ -2328,6 +2753,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             "stage2/channel_a": float(0.0),
             "stage2/channel_b": float(1.0),
             "stage2/invalid_rollout": float(invalid_rollout_total),
+            "stage2_ab/channel_b/stop_neutral/N_skip": float(stop_neutral_skip_total),
             "stage2/drop_poly": float(drop_poly_total),
             "stage2/drop_unknown": float(drop_unknown_total),
             "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),
@@ -2349,6 +2775,26 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             "time/rollout_teacher_encode_s": float(t_encode_s),
         }
 
+        batch_metrics["stage2_ab/channel_b/strict_drop/N_valid_pred"] = float(
+            strict_valid_pred_total
+        )
+        batch_metrics["stage2_ab/channel_b/strict_drop/N_drop_invalid"] = float(
+            strict_drop_invalid_total
+        )
+        for rk, rv in strict_drop_by_reason_total.items():
+            try:
+                rvi = int(rv)
+            except Exception:
+                continue
+            if rvi <= 0:
+                continue
+            batch_metrics[f"stage2_ab/channel_b/strict_drop/reason/{str(rk)}"] = float(
+                rvi
+            )
+        batch_metrics["stage2_ab/channel_b/semantic_desc_gate/is_active"] = float(
+            semantic_gate_is_active
+        )
+
         if bool(_segments_only):
             return segments, batch_metrics
 
@@ -2369,6 +2815,12 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             batch["_rollout_matching_batch_metrics"] = batch_metrics
             batch["_stage2_ab_channel"] = "B"
             return batch
+
+        if not encoded_batch:
+            raise ValueError(
+                "stage2-ab Channel-B produced no usable segments (all samples were skipped/dropped); "
+                "this can happen if stop-neutral marker parsing fails due to truncation."
+            )
 
         with self._template_packing_disabled():
             batch = to_device(template.data_collator(encoded_batch), self.model.device)
@@ -2401,8 +2853,17 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         )
 
         # Config.
-        n_softctx_iter = int(self._ab_get("n_softctx_iter", 1) or 1)
+        n_softctx_iter = int(self._ab_get("n_softctx_iter", 2) or 2)
         n_softctx_iter = max(1, n_softctx_iter)
+
+        softctx_grad_mode = str(
+            self._ab_get("softctx_grad_mode", "unroll") or "unroll"
+        ).strip().lower()
+        if softctx_grad_mode not in {"unroll", "em_detach"}:
+            raise ValueError(
+                "stage2_ab.softctx_grad_mode must be one of {'unroll','em_detach'}"
+            )
+
         desc_ce_weight = float(self._ab_get("desc_ce_weight", 1.0) or 0.0)
         desc_ce_weight = max(0.0, desc_ce_weight)
         desc_ce_weight_matched = desc_ce_weight
@@ -2415,10 +2876,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
             desc_ce_weight_matched = max(0.0, desc_ce_weight_matched)
 
-        bbox_l1_w = float(self._ab_get("bbox_l1_weight", 1.0) or 0.0)
-        bbox_l1_w = max(0.0, bbox_l1_w)
-        bbox_giou_w = float(self._ab_get("bbox_giou_weight", 1.0) or 0.0)
-        bbox_giou_w = max(0.0, bbox_giou_w)
+        bbox_smoothl1_w = float(self._ab_get("bbox_smoothl1_weight", 1.0) or 0.0)
+        bbox_smoothl1_w = max(0.0, bbox_smoothl1_w)
+        bbox_ciou_w = float(self._ab_get("bbox_ciou_weight", 1.0) or 0.0)
+        bbox_ciou_w = max(0.0, bbox_ciou_w)
 
         # Optional coord-distribution losses/regularizers (multi-peak stability).
         coord_ce_w = float(self._ab_get("coord_ce_weight", 0.0) or 0.0)
@@ -2531,6 +2992,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         t_fwd0 = time.perf_counter()
         outputs = None
+        logits_a1: Optional[torch.Tensor] = None
 
         if channel == "A":
             embed = core_model.get_input_embeddings()
@@ -2587,23 +3049,25 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             logits_prev: Optional[torch.Tensor] = None
             for it in range(int(n_softctx_iter)):
-                grad_on = bool(it == int(n_softctx_iter) - 1)
-                ctx = torch.enable_grad() if grad_on else torch.no_grad()
+                detach_exp_emb = bool(softctx_grad_mode == "em_detach")
+                if softctx_grad_mode == "unroll":
+                    ctx = torch.enable_grad()
+                else:
+                    grad_on = bool(it == int(n_softctx_iter) - 1)
+                    ctx = torch.enable_grad() if grad_on else torch.no_grad()
+
                 with ctx:
                     base_embeds = embed(input_ids)
                     embeds = base_embeds
                     if it > 0 and logits_prev is not None and p_slots.numel() > 0:
                         logit_pos = (p_slots - 1).clamp(min=0)
                         logits_next = logits_prev[b_slots, logit_pos]
-                        coord_logits = logits_next.index_select(
-                            dim=-1, index=coord_ids_t
-                        )
-                        probs = torch.softmax(
-                            coord_logits.float() / temperature, dim=-1
-                        )
+                        coord_logits = logits_next.index_select(dim=-1, index=coord_ids_t)
+                        probs = torch.softmax(coord_logits.float() / temperature, dim=-1)
                         exp_emb = probs @ coord_table_f
                         exp_emb = exp_emb.to(base_embeds.dtype)
-                        exp_emb = exp_emb.detach()
+                        if detach_exp_emb:
+                            exp_emb = exp_emb.detach()
                         embeds = base_embeds.clone()
                         embeds[b_slots, p_slots] = exp_emb
 
@@ -2617,14 +3081,21 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         raise ValueError("model did not return logits")
                     if getattr(out, "past_key_values", None) is not None:
                         raise ValueError("past_key_values must be None for Channel-A")
+
                     logits_prev = out.logits
                     outputs = out
+                    if it == 0:
+                        logits_a1 = out.logits
 
         else:
             fwd_inputs = dict(inputs_for_model)
             fwd_inputs["use_cache"] = False
             fwd_inputs.pop("past_key_values", None)
             outputs = model(**fwd_inputs)
+            try:
+                logits_a1 = outputs.logits if outputs is not None else None
+            except Exception:
+                logits_a1 = None
 
         t_fwd_s = time.perf_counter() - t_fwd0
 
@@ -2635,6 +3106,15 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             raise ValueError(
                 "model returned sliced logits (logits_to_keep-style). Disable logits slicing for stage2-ab training."
             )
+
+        if channel == "A":
+            if logits_a1 is None:
+                raise ValueError("Channel-A did not capture A1 logits for CE anchoring")
+            if logits_a1.shape != logits.shape:
+                raise ValueError("Channel-A A1 logits shape mismatch vs final logits")
+            logits_ce = logits_a1
+        else:
+            logits_ce = logits
 
         bsz, seq_len, vocab = logits.shape
 
@@ -2652,9 +3132,21 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             prompt_len = int(m.get("prompt_len", 0))
             prefix_len = int(m.get("prefix_len", 0))
             train_len = int(m.get("train_len", 0))
+            tail_ignore_pos = list(m.get("tail_ignore_pos") or [])
             tail_desc_pos = list(m.get("tail_desc_pos") or [])
             tail_desc_pos_matched = list(m.get("tail_desc_pos_matched") or [])
             tail_desc_pos_missing = list(m.get("tail_desc_pos_missing") or [])
+            tail_desc_pos_matched_masked = list(
+                m.get("tail_desc_pos_matched_masked") or []
+            )
+
+            drop_invalid_total = int(m.get("drop_invalid_total", 0) or 0)
+            try:
+                drop_invalid_struct_ce_multiplier = float(
+                    m.get("drop_invalid_struct_ce_multiplier", 1.0) or 1.0
+                )
+            except Exception:
+                drop_invalid_struct_ce_multiplier = 1.0
 
             tail_start = int(prompt_len + prefix_len)
             tail_end = int(prompt_len + train_len)
@@ -2671,6 +3163,27 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     continue
                 labels_masked[b, p] = input_ids[b, p]
                 weights_masked[b, p] = 1.0
+
+            # Stop-neutral / semantic masking: explicit token positions (relative to tail).
+            ignore_rel: set[int] = set()
+            for rel in tail_ignore_pos:
+                try:
+                    ignore_rel.add(int(rel))
+                except Exception:
+                    continue
+            for rel in tail_desc_pos_matched_masked:
+                try:
+                    ignore_rel.add(int(rel))
+                except Exception:
+                    continue
+            for rel_i in sorted(ignore_rel):
+                p = int(seg_start + prompt_len + prefix_len + rel_i)
+                if p < tail_start or p >= tail_end:
+                    continue
+                if labels_masked[b, p].item() == -100:
+                    continue
+                labels_masked[b, p] = -100
+                weights_masked[b, p] = 0.0
 
             # Apply desc weighting on tail desc value tokens.
             # Prefer split matched/missing weights when available; otherwise fall back to
@@ -2713,6 +3226,42 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         continue
                     weights_masked[b, p] = float(desc_ce_weight)
 
+
+            # Optional weak correction: if invalid rollout instances were dropped, upweight
+            # structure-token CE to discourage "escaping supervision via invalid instances".
+            if (
+                channel == "B"
+                and drop_invalid_total > 0
+                and float(drop_invalid_struct_ce_multiplier) != 1.0
+            ):
+                try:
+                    mult = float(drop_invalid_struct_ce_multiplier)
+                except Exception:
+                    mult = 1.0
+                if mult > 0.0 and mult != 1.0:
+                    base = int(seg_start + prompt_len + prefix_len)
+                    desc_rel_set: set[int] = set()
+                    if tail_desc_pos_matched or tail_desc_pos_missing:
+                        for rel in list(tail_desc_pos_matched) + list(tail_desc_pos_missing):
+                            try:
+                                desc_rel_set.add(int(rel))
+                            except Exception:
+                                continue
+                    else:
+                        for rel in tail_desc_pos:
+                            try:
+                                desc_rel_set.add(int(rel))
+                            except Exception:
+                                continue
+
+                    for p in range(tail_start, tail_end):
+                        if labels_masked[b, p].item() == -100:
+                            continue
+                        rel_i = int(p - base)
+                        if rel_i in ignore_rel or rel_i in desc_rel_set:
+                            continue
+                        weights_masked[b, p] = weights_masked[b, p] * mult
+
         if len(meta) == bsz:
             for b in range(bsz):
                 _apply_seg(b=b, offset=0, encoded_len=seq_len, m=meta[b])
@@ -2728,7 +3277,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 offset += enc_len
 
         # Weighted CE over supervised (non-coord) tokens.
-        logits_next = logits[:, :-1, :]
+        logits_next = logits_ce[:, :-1, :]
         labels_next = labels_masked[:, 1:]
         weights_next = weights_masked[:, 1:]
         per_tok = F.cross_entropy(
@@ -2849,18 +3398,20 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             gt = bin_t.float() / 999.0
             pred_xyxy = pred.reshape(-1, 4)
             gt_xyxy = gt.reshape(-1, 4)
-            l1, giou = _bbox_l1_giou_loss(pred_xyxy=pred_xyxy, gt_xyxy=gt_xyxy)
+            smoothl1, ciou = _bbox_smoothl1_ciou_loss(
+                pred_xyxy=pred_xyxy, gt_xyxy=gt_xyxy
+            )
 
             # Optional coord-distribution losses/regularizers.
-            coord_ce = l1.new_tensor(0.0)
-            el1 = l1.new_tensor(0.0)
-            ehuber = l1.new_tensor(0.0)
-            entropy = l1.new_tensor(0.0)
+            coord_ce = smoothl1.new_tensor(0.0)
+            el1 = smoothl1.new_tensor(0.0)
+            ehuber = smoothl1.new_tensor(0.0)
+            entropy = smoothl1.new_tensor(0.0)
 
             if coord_ce_w != 0.0:
                 coord_ce = F.cross_entropy(
                     coord_logits.float(), bin_t, reduction="mean"
-                ).to(dtype=l1.dtype)
+                ).to(dtype=smoothl1.dtype)
 
             if (
                 (coord_el1_w != 0.0)
@@ -2871,7 +3422,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
                 if coord_entropy_w != 0.0:
                     p = probs.clamp(min=1e-12)
-                    entropy = (-(p * p.log()).sum(dim=-1)).mean().to(dtype=l1.dtype)
+                    entropy = (-(p * p.log()).sum(dim=-1)).mean().to(dtype=smoothl1.dtype)
 
                 if (coord_el1_w != 0.0) or (coord_ehuber_w != 0.0):
                     bins_f = (
@@ -2881,7 +3432,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     diff = bins_f.unsqueeze(0) - gt.unsqueeze(1)
 
                     if coord_el1_w != 0.0:
-                        el1 = (probs * diff.abs()).sum(dim=-1).mean().to(dtype=l1.dtype)
+                        el1 = (probs * diff.abs()).sum(dim=-1).mean().to(dtype=smoothl1.dtype)
 
                     if coord_ehuber_w != 0.0:
                         delta = float(coord_huber_delta)
@@ -2891,14 +3442,14 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                             0.5 * (absd**2) / delta,
                             absd - 0.5 * delta,
                         )
-                        ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=l1.dtype)
+                        ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=smoothl1.dtype)
 
             n_slots = int(pos_t.numel())
-            return l1, giou, el1, ehuber, coord_ce, entropy, n_groups, n_slots
+            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, n_groups, n_slots
 
         (
-            l1_p,
-            giou_p,
+            smoothl1_p,
+            ciou_p,
             el1_p,
             ehuber_p,
             coord_ce_p,
@@ -2906,24 +3457,34 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             n_p,
             s_p,
         ) = _decode_groups("bbox_groups_prefix")
-        (
-            l1_t,
-            giou_t,
-            el1_t,
-            ehuber_t,
-            coord_ce_t,
-            ent_t,
-            n_t,
-            s_t,
-        ) = _decode_groups("bbox_groups_fn")
+
+        # Channel-B is FP-neutral: apply geometry gradients only on matched pairs.
+        if channel == "A":
+            (
+                smoothl1_t,
+                ciou_t,
+                el1_t,
+                ehuber_t,
+                coord_ce_t,
+                ent_t,
+                n_t,
+                s_t,
+            ) = _decode_groups("bbox_groups_fn")
+        else:
+            z = logits.new_tensor(0.0)
+            smoothl1_t, ciou_t = z, z
+            el1_t, ehuber_t, coord_ce_t, ent_t = z, z, z, z
+            n_t, s_t = 0, 0
 
         n_all = int(n_p + n_t)
         if n_all > 0:
-            l1 = (l1_p * float(n_p) + l1_t * float(n_t)) / float(n_all)
-            giou = (giou_p * float(n_p) + giou_t * float(n_t)) / float(n_all)
+            smoothl1 = (smoothl1_p * float(n_p) + smoothl1_t * float(n_t)) / float(
+                n_all
+            )
+            ciou = (ciou_p * float(n_p) + ciou_t * float(n_t)) / float(n_all)
         else:
-            l1 = logits.new_tensor(0.0)
-            giou = logits.new_tensor(0.0)
+            smoothl1 = logits.new_tensor(0.0)
+            ciou = logits.new_tensor(0.0)
 
         s_all = int(s_p + s_t)
         if s_all > 0:
@@ -2941,7 +3502,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             coord_ce = logits.new_tensor(0.0)
             coord_entropy = logits.new_tensor(0.0)
 
-        bbox_loss = bbox_l1_w * l1 + bbox_giou_w * giou
+        bbox_loss = bbox_smoothl1_w * smoothl1 + bbox_ciou_w * ciou
         coord_reg_loss = (
             coord_ce_w * coord_ce
             + coord_el1_w * coord_el1
@@ -2963,8 +3524,8 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             stage2_logs = {
                 "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
-                "loss/bbox_l1": float(l1.detach().cpu().item()),
-                "loss/bbox_giou": float(giou.detach().cpu().item()),
+                "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
+                "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
                 "loss/coord_el1": float(coord_el1.detach().cpu().item()),
                 "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
@@ -2995,6 +3556,14 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
                         except Exception:
                             pass
+            if isinstance(batch_metrics, Mapping):
+                for k, v in batch_metrics.items():
+                    if str(k).startswith("stage2_ab/"):
+                        try:
+                            stage2_logs[str(k)] = float(v or 0.0)
+                        except Exception:
+                            pass
+
             pending2.add(stage2_logs)
         except Exception:
             pass
@@ -3015,10 +3584,16 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 ce_loss=float(ce_loss.detach().cpu().item()),
                 coord_loss=float((bbox_loss + coord_reg_loss).detach().cpu().item()),
                 coord_prefix=float(
-                    (bbox_l1_w * l1_p + bbox_giou_w * giou_p).detach().cpu().item()
+                    (bbox_smoothl1_w * smoothl1_p + bbox_ciou_w * ciou_p)
+                    .detach()
+                    .cpu()
+                    .item()
                 ),
                 coord_tail=float(
-                    (bbox_l1_w * l1_t + bbox_giou_w * giou_t).detach().cpu().item()
+                    (bbox_smoothl1_w * smoothl1_t + bbox_ciou_w * ciou_t)
+                    .detach()
+                    .cpu()
+                    .item()
                 ),
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),

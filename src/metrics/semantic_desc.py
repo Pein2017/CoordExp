@@ -39,11 +39,14 @@ def _resolve_device(device: str) -> str:
 class SemanticDescEncoder:
     """Lightweight sentence-embedding encoder with caching.
 
-    This is intended for *monitoring only* (no gradients) and should not be used
-    inside the training loss.
+    Runs under inference mode (no gradients). This is used for both monitoring and
+    Stage-2 AB semantic gating: it can affect training by masking/weighting CE on
+    matched description tokens, but it does not introduce gradients through the
+    encoder itself.
     """
 
     model_name: str
+    revision: str | None = None
     device: str = "auto"
     batch_size: int = 64
     max_length: int = 64
@@ -60,8 +63,10 @@ class SemanticDescEncoder:
         from transformers import AutoModel, AutoTokenizer
 
         resolved_device = _resolve_device(self.device)
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        model = AutoModel.from_pretrained(self.model_name)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name, revision=self.revision
+        )
+        model = AutoModel.from_pretrained(self.model_name, revision=self.revision)
         model.to(resolved_device)
         model.eval()
 
