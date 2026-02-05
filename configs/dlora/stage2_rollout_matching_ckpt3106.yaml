@@ -102,12 +102,6 @@ custom:
       rollout_generate_batch_size: 2
       post_rollout_pack_scope: window
 
-      # Buffered rollouts for efficiency (reuse one rollout window across multiple optimizer steps)
-      rollout_buffer:
-        enabled: true
-        # Reuse one rollout window across 4 optimizer steps (1x E-step + 3x M-steps)
-        m_steps: 4
-
       # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.
       vllm:
           # Keep max_num_seqs close to rollout_generate_batch_size for lower memory overhead.
@@ -160,7 +154,10 @@ custom:
       # NOTE: Dense LVIS outputs can be very long; keep this large for real runs.
       # Ensure (prompt_len + max_new_tokens) <= vllm.max_model_len (and model max length).
       max_new_tokens: 8192
-      temperature: 0.0
+      decoding:
+        temperature: 0.0
+        top_p: 1.0
+        top_k: -1
       # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
       repetition_penalty: 1.05
 

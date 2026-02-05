@@ -9,6 +9,13 @@ training:
   logging_dir: .tb/stage2_ab/smoke_bbox_max60_ckpt1516/a_only
   run_name: smoke_bbox_max60_ckpt1516_a_only
 
+# Disable async Channel-B (server-rollout-only) so A-only smoke can run without a vLLM server.
+# NOTE: Because configs deep-merge, also null out the async subsection inherited from prod/base.yaml.
+stage2_ab:
+  channel_b:
+    mode: micro
+    async: null
+
 # Ensure smoke does not depend on a running vLLM server (Channel-A does not use rollouts,
 # but disabling eval + setting HF backend makes this smoke more robust).
 custom:
@@ -16,3 +23,5 @@ custom:
     rollout_matching:
       rollout_backend: hf
       max_new_tokens: 512
+      # Avoid window-scope post-rollout packing (intended for async mode) for a robust CPU-only smoke.
+      post_rollout_pack_scope: micro

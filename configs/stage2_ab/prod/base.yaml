@@ -73,24 +73,27 @@ stage2_ab:
   bbox_smoothl1_weight: 2.0
   bbox_ciou_weight: 1.0
   softctx_temperature: 1.0
-  # Channel-B rollout refactor: step-budgeted rollouts + pipelined pack+learn.
+  # Channel-B rollout refactor: async actor-learner (server rollouts, queue-gated).
   channel_b:
-    # 'micro' preserves legacy behavior (one packed micro-batch per micro-step).
-    # 'step' collects ~effective_batch_size raw rollouts per optimizer step and
-    # trains on a variable number of packed sequences (<= global_max_length).
-    mode: step
-    # Global rollouts per optimizer step (split deterministically across train ranks).
-    #
-    # Notes:
-    # - vLLM server mode currently requires a single-process learner (world_size==1),
-    #   so this is effectively a per-optimizer-step budget on that one rank.
-    # - If null, defaults to the effective global batch size:
-    #   per_device_train_batch_size * world_size * gradient_accumulation_steps.
+    # 'async' is the recommended mode for vLLM server rollouts and multi-GPU learners:
+    # - per-rank ready-pack queues
+    # - rank0 sync + step-kind broadcast (DDP safety)
+    # - feasibility gate (fallback to A if queues are empty)
+    mode: async
+    async:
+      # Rule of thumb: set prefetch_target_packs >= gradient_accumulation_steps (GAS),
+      # and give extra slack so Channel-B feasibility rarely fails.
+      #
+      # With effective_batch_size=32 and per_device_train_batch_size=1:
+      # - world_size=2  => GAS=16
+      # - world_size=4  => GAS=8
+      queue_limit: 64
+      version_window: 8
+      sync_every_steps: 4
+      prefetch_target_packs: 32
+    # (Legacy) step-budgeted + pipelined mode knobs are ignored in async mode.
     rollouts_per_step: null
-    # Overlap rollout generation (server GPUs) with learner forward/backward (learner GPU)
-    # within the same optimizer step using a bounded queue.
-    enable_pipeline: true
-    # Batch decode size per rollout request (independent of learner microbatch=1).
+    enable_pipeline: false
     rollout_decode_batch_size: 2
     # Reordered-GT SFT (B3/7.3): apply CE over a GT sequence arranged in predicted order.
     reordered_gt_sft: true
@@ -119,14 +122,19 @@ custom:
       rollout_backend: vllm
       decode_mode: greedy
       max_new_tokens: 3084
-      temperature: 0.0
+      decoding:
+        temperature: 0.0
+        top_p: 1.0
+        top_k: -1
       repetition_penalty: 1.08
       # Rollout request batching (client-side). With step-budgeted Channel-B, this should
       # typically match `stage2_ab.channel_b.rollout_decode_batch_size`.
       rollout_generate_batch_size: 1
       rollout_infer_batch_size: 2
       # For stage2-ab step-budgeted mode, packing happens inside the step; keep micro here.
-      post_rollout_pack_scope: micro
+      # Async actor-learner requires window-scope packing so each micro-step runs exactly
+      # one packed forward/backward per rank (DDP safety).
+      post_rollout_pack_scope: window
 
       vllm:
         mode: server

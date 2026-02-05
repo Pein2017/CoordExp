@@ -42,21 +42,6 @@ custom:
   # Rollout/matching knobs live under custom.extra.rollout_matching.
   extra:
     rollout_matching:
-      # ---------------- Buffered rollouts (E-step / M-step) ----------------
-      # Optional optimization: cache one completed accumulation window worth of prepared
-      # micro-step batches and reuse it across multiple optimizer steps (TrainerState.global_step units).
-      #
-      # Notes:
-      # - `m_steps=1` disables reuse (baseline behavior).
-      # - When enabled with m_steps>1, the stage_2 trainer repeats each gradient accumulation window
-      #   `m_steps` times per rank to avoid silently skipping dataset samples.
-      # - Final partial accumulation windows (< gradient_accumulation_steps) cannot be safely repeated and
-      #   will be processed once; for strict full-window-only reuse set:
-      #     training.dataloader_drop_last: true
-      rollout_buffer:
-        enabled: false
-        m_steps: 1
-
       # Colocate vLLM offload (peak memory relief during rollouts only).
       # This wraps vLLM engine init + LoRA load/sync + infer in an offload context.
       #
@@ -101,7 +86,10 @@ custom:
       # Decoding (greedy only)
       decode_mode: greedy
       max_new_tokens: 512
-      temperature: 0.0
+      decoding:
+        temperature: 0.0
+        top_p: 1.0
+        top_k: -1
       # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
       repetition_penalty: 1.05
 

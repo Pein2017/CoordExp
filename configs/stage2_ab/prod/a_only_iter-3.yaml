@@ -7,16 +7,20 @@ training:
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only_iter3
   run_name: prod_a_only_bbox_max60_ckpt1516_ep2_iter3
   # A-only ablation doesn't use Channel-B rollouts; avoid triggering rollout-based eval
-  # (which would require a vLLM server or a single-process learner).
+  # (which would require a vLLM rollout backend).
   eval_strategy: "no"
   do_eval: false
 
 stage2_ab:
+  # Disable async Channel-B (server-rollout-only) so A-only runs don't require a vLLM server.
+  # NOTE: Because configs deep-merge, also null out the async subsection inherited from prod/base.yaml.
+  channel_b:
+    mode: micro
+    async: null
   n_softctx_iter: 3
 
 custom:
   extra:
-    # Safety: if any code path tries to rollout (e.g., accidental eval), use HF generate
-    # instead of vLLM server-mode (which requires world_size==1).
+    # Safety: if any code path tries to rollout (e.g., accidental eval), use HF generate.
     rollout_matching:
       rollout_backend: hf

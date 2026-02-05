@@ -18,6 +18,11 @@ stage2_ab:
     # Dense schedule to exercise both channels quickly (A,B,A,B,...).
     b_ratio: 0.5
   channel_b:
+    # HF backend smoke uses legacy step-budgeted mode to keep rollouts bounded.
+    # NOTE: Because configs deep-merge, also null out the async subsection inherited
+    # from prod/base.yaml.
+    mode: step
+    async: null
     enable_pipeline: false
     rollouts_per_step: 2
 
@@ -26,3 +31,5 @@ custom:
     rollout_matching:
       rollout_backend: hf
       max_new_tokens: 512
+      # Step-budgeted mode does packing inside the optimizer step; keep micro scope.
+      post_rollout_pack_scope: micro

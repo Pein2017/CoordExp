@@ -14,13 +14,11 @@ training:
 
 stage2_ab:
   channel_b:
-    # Pipeline requires vLLM server mode; disable for HF backend smoke.
-    enable_pipeline: false
-    # Keep smoke bounded: HF generate() is much slower than vLLM server decode.
-    rollouts_per_step: 4
-
-stage2_ab:
-  channel_b:
+    # HF backend smoke uses legacy step-budgeted mode to keep rollouts bounded.
+    # NOTE: Because configs deep-merge, also null out the async subsection inherited
+    # from prod/base.yaml.
+    mode: step
+    async: null
     # Pipeline requires vLLM server mode; disable for HF backend smoke.
     enable_pipeline: false
     # Keep smoke bounded: HF generate() is much slower than vLLM server decode.
@@ -30,7 +28,12 @@ custom:
   extra:
     rollout_matching:
       rollout_backend: hf
-      # Exercise stochastic decode + deterministic seeding context.
-      temperature: 0.7
+      # Step-budgeted mode does packing inside the optimizer step; keep micro scope.
+      post_rollout_pack_scope: micro
+      decoding:
+        # Exercise stochastic decode + deterministic seeding context.
+        temperature: 0.7
+        top_p: 1.0
+        top_k: -1
       # Keep rollout short for smoke so we can complete a few optimizer steps quickly.
       max_new_tokens: 512
