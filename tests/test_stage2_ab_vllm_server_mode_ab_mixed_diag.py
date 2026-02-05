@@ -260,7 +260,7 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_ab/smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server_3v1.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_ab/smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
@@ -269,6 +269,11 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
                 f"  run_name: {run_name}",
                 f"  logging_dir: {tb_root}",
                 f"  max_steps: {max_steps}",
+                "  effective_batch_size: null",
+                "  gradient_accumulation_steps: 1",
+                "stage2_ab:",
+                "  schedule:",
+                "    b_ratio: 0.5",
                 "custom:",
                 f"  train_sample_limit: {train_sample_limit}",
                 "  val_sample_limit: 0",

@@ -15,12 +15,13 @@ import json
 import math
 import os
 import re
+import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import copy as shallow_copy
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -686,7 +687,7 @@ def _validate_objects_strict(
                 ok = False
                 break
             try:
-                token_bins.append(int(token_to_int(v)))
+                token_bins.append(int(token_to_int(str(v).strip())))
             except Exception:
                 ok = False
                 break
@@ -1551,116 +1552,6 @@ def _build_labels_and_coord_targets_for_batch(
     )
 
 
-def _fingerprint_raw_micro_batch(raw_micro_batch: Any) -> Optional[str]:
-    """Best-effort fingerprint for raw micro-batches.
-
-    This is used only as a runtime sanity check for buffered rollout reuse.
-    """
-
-    if not isinstance(raw_micro_batch, list):
-        return None
-
-    try:
-        keys: List[Tuple[Any, Any]] = []
-        for s in raw_micro_batch:
-            if not isinstance(s, Mapping):
-                keys.append((None, None))
-                continue
-            base = s.get("base_idx")
-            sid = s.get("sample_id")
-            # Keep this JSON-serializable and stable across ranks/processes.
-            if base is not None:
-                try:
-                    base = int(base)  # type: ignore[arg-type]
-                except Exception:
-                    base = str(base)
-            if sid is not None:
-                try:
-                    sid = str(sid)
-                except Exception:
-                    sid = None
-            keys.append((base, sid))
-
-        payload = json.dumps(keys, ensure_ascii=True, separators=(",", ":"))
-        return hashlib.sha1(payload.encode("utf-8")).hexdigest()
-    except Exception:
-        return None
-
-
-def _copy_prepared_batch_for_training_step(batch: Mapping[str, Any]) -> Dict[str, Any]:
-    """Return a safe copy of a prepared model batch.
-
-    HF/Swift trainer internals (and our compute_loss) may mutate input dicts via `pop`.
-    We must not mutate cached prepared batches when buffering is enabled.
-
-    Note: This is a shallow copy for tensors; only metadata is copied structurally.
-    """
-
-    out: Dict[str, Any] = shallow_copy(dict(batch))
-    meta = out.get("_rollout_matching_meta")
-    if isinstance(meta, list):
-        out["_rollout_matching_meta"] = [
-            dict(m) if isinstance(m, Mapping) else m for m in meta
-        ]
-
-    # Batch-level metric dict is mutated on reuse steps; copy it as well.
-    bm = out.get("_rollout_matching_batch_metrics")
-    if isinstance(bm, Mapping):
-        out["_rollout_matching_batch_metrics"] = dict(bm)
-
-    return out
-
-
-class _AccumulationWindowRepeater:
-    """Repeat each full gradient accumulation window `m_steps` times.
-
-    This is stage_2-only (rollout matching) and prevents silently skipping dataset
-    samples when the trainer reuses cached prepared batches across optimizer steps.
-
-    Semantics:
-    - A "window" is `gas` consecutive micro-batches.
-    - Each full window is yielded `m_steps` times.
-    - A final partial window (< gas micro-batches) is yielded once (no repeat).
-    """
-
-    def __init__(self, dataloader: Any, *, gas: int, m_steps: int):
-        self._dataloader = dataloader
-        self._gas = max(1, int(gas))
-        self._m_steps = max(1, int(m_steps))
-
-    def __iter__(self):
-        if self._m_steps <= 1:
-            yield from self._dataloader
-            return
-
-        window: List[Any] = []
-        for batch in self._dataloader:
-            window.append(batch)
-            # First pass: yield as micro-steps arrive.
-            yield batch
-
-            if len(window) == self._gas:
-                # Repeat the completed accumulation window `m_steps-1` more times.
-                for _ in range(self._m_steps - 1):
-                    for b in window:
-                        yield b
-                window.clear()
-
-        # Partial window: already yielded once; MUST NOT repeat.
-
-    def __len__(self) -> int:
-        inner_len = getattr(self._dataloader, "__len__", None)
-        if inner_len is None:
-            raise TypeError("wrapped dataloader has no __len__")
-        n = int(len(self._dataloader))
-        full = n // self._gas
-        rem = n % self._gas
-        return full * self._gas * self._m_steps + rem
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._dataloader, name)
-
-
 class _FixedRawMicroBatchStacker:
     """Stack identity-collated raw micro-batches into fixed-size lists.
 
@@ -1923,135 +1814,6 @@ class _DropRemainderAccumulationWindow:
         return getattr(self.dataloader, name)
 
 
-class _RolloutWindowBuffer:
-    """Cache one completed accumulation window of prepared micro-step batches.
-
-    - Builds the cache during the first optimizer step of a window (E-step).
-    - Reuses the cached batches for the next `m_steps - 1` optimizer steps (M-steps).
-    - Uses TrainerState.global_step to detect optimizer-step boundaries.
-    """
-
-    def __init__(self, *, gas: int, m_steps: int):
-        self.gas = max(1, int(gas))
-        self.m_steps = max(1, int(m_steps))
-
-        self.window_step0: Optional[int] = None
-        self.completed_optimizer_steps: int = 0
-        self.micro_idx: int = 0
-        self.cached_batches: List[Dict[str, Any]] = []
-        self.cached_raw_fps: List[Optional[str]] = []
-        self.last_seen_global_step: Optional[int] = None
-
-    def clear_window(self) -> None:
-        self.window_step0 = None
-        self.completed_optimizer_steps = 0
-        self.micro_idx = 0
-        self.cached_batches = []
-        self.cached_raw_fps = []
-
-    def on_micro_step_start(self, *, global_step: int) -> None:
-        gs = int(global_step)
-        if self.last_seen_global_step is None:
-            self.last_seen_global_step = gs
-            return
-
-        prev = int(self.last_seen_global_step)
-        if gs < prev:
-            # Resume/reset: treat as a fresh run.
-            self.clear_window()
-            self.last_seen_global_step = gs
-            return
-
-        if gs == prev:
-            return
-
-        # Global step should advance by exactly 1 per optimizer step; larger jumps typically
-        # indicate resume/skip behavior, so drop any runtime-only buffer state.
-        if int(gs - prev) != 1:
-            self.clear_window()
-            self.last_seen_global_step = gs
-            return
-
-        # Optimizer step boundary crossed since the previous micro-step.
-        if self.window_step0 is not None:
-            self.completed_optimizer_steps += int(gs - prev)
-        self.micro_idx = 0
-        self.last_seen_global_step = gs
-
-        # If the just-finished E-step window was partial, disable reuse (MUST).
-        if (
-            self.window_step0 is not None
-            and self.completed_optimizer_steps == 1
-            and self.m_steps > 1
-            and len(self.cached_batches) != self.gas
-        ):
-            logger.warning(
-                "rollout buffer: final partial accumulation window detected (cached_micro_steps=%s gas=%s); "
-                "disabling reuse for this window. Mitigations: set dataloader_drop_last=true or rollout_buffer.m_steps=1.",
-                len(self.cached_batches),
-                self.gas,
-            )
-            self.clear_window()
-            self.last_seen_global_step = gs
-            return
-
-        # Window fully consumed.
-        if (
-            self.window_step0 is not None
-            and self.completed_optimizer_steps >= self.m_steps
-        ):
-            self.clear_window()
-            self.last_seen_global_step = gs
-
-    def select_batch(
-        self,
-        *,
-        global_step: int,
-        raw_fp: Optional[str],
-        build_prepared: Any,
-    ) -> Tuple[Dict[str, Any], bool]:
-        """Return a batch for this micro-step, and whether it was reused."""
-
-        if self.m_steps <= 1:
-            prepared = build_prepared()
-            return _copy_prepared_batch_for_training_step(prepared), False
-
-        if self.window_step0 is None:
-            self.window_step0 = int(global_step)
-            self.completed_optimizer_steps = 0
-            self.micro_idx = 0
-            self.cached_batches = []
-            self.cached_raw_fps = []
-
-        # E-step: build and cache.
-        if self.completed_optimizer_steps == 0:
-            prepared = build_prepared()
-            if not isinstance(prepared, dict):
-                raise ValueError("prepared batch must be a dict")
-            self.cached_batches.append(prepared)
-            self.cached_raw_fps.append(raw_fp)
-            self.micro_idx += 1
-            return _copy_prepared_batch_for_training_step(prepared), False
-
-        # M-step: reuse cached batches.
-        if self.micro_idx >= len(self.cached_batches):
-            raise RuntimeError(
-                "rollout buffer: cached micro-step index out of range. "
-                "This usually indicates a dataloader repeater/gradient accumulation mismatch."
-            )
-
-        exp_fp = self.cached_raw_fps[self.micro_idx]
-        if raw_fp is not None and exp_fp is not None and raw_fp != exp_fp:
-            raise RuntimeError(
-                "rollout buffer: raw micro-batch fingerprint diverged during reuse. "
-                "This indicates the accumulation-window repeater is incorrect (A,A,B,B,... drift) or disabled. "
-                "Mitigations: enable rollout_buffer window repeater, set rollout_buffer.m_steps=1, or set rollout_backend=hf."
-            )
-
-        prepared = self.cached_batches[self.micro_idx]
-        self.micro_idx += 1
-        return _copy_prepared_batch_for_training_step(prepared), True
-
 
 def _slim_rollout_meta_for_logging(meta: Mapping[str, Any]) -> Dict[str, Any]:
     """Drop large fields (e.g. token id lists) from rollout meta before buffering for logs.
@@ -2121,12 +1883,12 @@ class _PendingTrainRolloutLog:
     time_forward_s: float = 0.0
     time_mask_build_s: float = 0.0
 
-    # Rollout pipeline timings (0 on reuse steps).
+    # Rollout pipeline timings.
     time_rollout_generate_s: float = 0.0
     time_rollout_parse_match_s: float = 0.0
     time_rollout_teacher_encode_s: float = 0.0
 
-    # Packing/collation timing (0 on reuse steps).
+    # Packing/collation timing.
     time_post_rollout_pack_s: float = 0.0
 
     # Packing stats (optional; only populated when packing is enabled).
@@ -2136,11 +1898,6 @@ class _PendingTrainRolloutLog:
     packing_count: int = 0
     packing_buffer_last: float = 0.0
 
-    # Rollout buffer stats (optional).
-    buffer_reuse_sum: float = 0.0
-    buffer_reuse_count: int = 0
-    buffer_window_step0_last: Optional[float] = None
-    buffer_completed_steps_last: Optional[float] = None
 
     def add_micro(
         self,
@@ -2202,20 +1959,6 @@ class _PendingTrainRolloutLog:
             )
             self.packing_count += 1
 
-        # Rollout buffer stats.
-        if "rollout/buffer_reuse" in batch_metrics:
-            self.buffer_reuse_sum += float(
-                batch_metrics.get("rollout/buffer_reuse", 0.0) or 0.0
-            )
-            self.buffer_reuse_count += 1
-        if "rollout/buffer_window_step0" in batch_metrics:
-            self.buffer_window_step0_last = float(
-                batch_metrics.get("rollout/buffer_window_step0") or 0.0
-            )
-        if "rollout/buffer_completed_steps" in batch_metrics:
-            self.buffer_completed_steps_last = float(
-                batch_metrics.get("rollout/buffer_completed_steps") or 0.0
-            )
 
 
 def schedule_post_rollout_segment_indices_window(
@@ -2345,15 +2088,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # vLLM server-mode rollout backend state (lazy init).
         self._vllm_server_client: Any = None
+        self._vllm_server_client_lock = threading.Lock()
+        self._vllm_server_comm_inited: bool = False
         self._vllm_server_last_synced_step: int = -1
         self._vllm_server_debug_dump_count: int = 0
         self._vllm_server_debug_last_step: Optional[int] = None
         self._vllm_server_last_logged_step: int = -1
         self._vllm_server_force_full_sync: bool = False
-
-        # Buffered-rollout window state (lazy init; config injected after construction).
-        self._rm_rollout_buffer: Optional[_RolloutWindowBuffer] = None
-        self._rm_rollout_buffer_sig: Optional[Tuple[bool, int, int]] = None
 
         # Buffered training logs: accumulate across micro-batches and merge into the step log.
         # Keyed by the *post-optimizer* global_step (HF logs after increment).
@@ -2370,6 +2111,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Mutable config injected by src/sft.py after construction.
         self.rollout_matching_cfg: Mapping[str, Any] = {}
 
+    def _merge_rollout_matching_batch_metrics(
+        self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
+    ) -> None:
+        """Merge rollout-matching batch metrics onto an existing batch.
+
+        Treat `_rollout_matching_batch_metrics` as merge-only so that later pipeline
+        stages (packing, async prefetch, post-processing) can add telemetry without
+        losing base rollout/decode metrics.
+        """
+        if not isinstance(batch, MutableMapping):
+            raise TypeError("batch must be a MutableMapping")
+        if not isinstance(metrics, Mapping):
+            raise TypeError("metrics must be a Mapping")
+
+        existing = batch.get("_rollout_matching_batch_metrics")
+        out: Dict[str, Any] = dict(existing) if isinstance(existing, Mapping) else {}
+        for k, v in metrics.items():
+            out[str(k)] = v
+        batch["_rollout_matching_batch_metrics"] = out
+
     # ------------------------ config helpers ------------------------ #
     def _cfg(self, key: str, default: Any) -> Any:
         try:
@@ -2379,6 +2140,159 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             pass
         return default
+
+    def _validate_rollout_matching_cfg(self) -> None:
+        cfg = getattr(self, "rollout_matching_cfg", None)
+        if cfg is None:
+            return
+        if not isinstance(cfg, Mapping):
+            raise TypeError(
+                "rollout_matching_cfg must be a mapping (injected from custom.extra.rollout_matching)"
+            )
+
+        legacy = [
+            k
+            for k in ("temperature", "top_p", "top_k", "rollout_buffer")
+            if k in cfg
+        ]
+        if legacy:
+            legacy_s = ", ".join(f"custom.extra.rollout_matching.{k}" for k in legacy)
+            raise ValueError(
+                "Legacy rollout-matching keys have been removed: "
+                f"{legacy_s}. (No backward compatibility.)"
+            )
+
+        dec = cfg.get("decoding", None)
+        if dec is None:
+            dec = {}
+        if not isinstance(dec, Mapping):
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding must be a mapping when provided"
+            )
+
+        # Validate decoding ranges (robust defaults).
+        try:
+            temperature = float(dec.get("temperature", 0.0) or 0.0)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.temperature must be a float"
+            ) from exc
+        if temperature < 0.0:
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.temperature must be >= 0"
+            )
+
+        try:
+            top_p = float(dec.get("top_p", 1.0) if dec.get("top_p", None) is not None else 1.0)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.top_p must be a float"
+            ) from exc
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.top_p must be in (0, 1]"
+            )
+
+        top_k_raw = dec.get("top_k", -1)
+        try:
+            top_k = int(top_k_raw)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.top_k must be an int"
+            ) from exc
+        if top_k != -1 and top_k < 1:
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
+            )
+
+    def _decoding_cfg(self) -> Mapping[str, Any]:
+        # `rollout_matching_cfg` is injected in src/sft.py. Use a nested dict for decoding.
+        raw = self._cfg("decoding", {})
+        if raw is None:
+            return {}
+        if not isinstance(raw, Mapping):
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding must be a mapping when provided"
+            )
+        return raw
+
+    def _decoding_params(self) -> Tuple[float, float, int]:
+        dec = self._decoding_cfg()
+
+        temperature_raw = dec.get("temperature", 0.0)
+        try:
+            temperature = float(temperature_raw or 0.0)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.temperature must be a float"
+            ) from exc
+        if temperature < 0.0:
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.temperature must be >= 0"
+            )
+
+        top_p_raw = dec.get("top_p", 1.0)
+        try:
+            top_p = float(top_p_raw if top_p_raw is not None else 1.0)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.top_p must be a float"
+            ) from exc
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.top_p must be in (0, 1]"
+            )
+
+        top_k_raw = dec.get("top_k", -1)
+        try:
+            top_k = int(top_k_raw)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decoding.top_k must be an int"
+            ) from exc
+        if top_k != -1 and top_k < 1:
+            raise ValueError(
+                "custom.extra.rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
+            )
+
+        return float(temperature), float(top_p), int(top_k)
+
+
+    @staticmethod
+    def _apply_rollout_decoding_to_generation_config(
+        *,
+        gen_cfg: Any,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repetition_penalty: float,
+    ) -> None:
+        do_sample = bool(float(temperature) > 0.0)
+        gen_cfg.do_sample = do_sample
+        gen_cfg.temperature = max(1e-4, float(temperature)) if do_sample else 1.0
+        gen_cfg.top_p = float(top_p) if do_sample else 1.0
+        gen_cfg.top_k = int(top_k) if (do_sample and int(top_k) != -1) else 0
+        gen_cfg.repetition_penalty = float(repetition_penalty)
+
+    @staticmethod
+    def _rollout_vllm_request_config_kwargs(
+        *,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repetition_penalty: float,
+    ) -> Dict[str, Any]:
+        return {
+            "n": 1,
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "top_k": int(top_k),
+            "repetition_penalty": float(repetition_penalty),
+            "stop": [_IM_END],
+            "return_details": True,
+        }
 
     def _monitor_dump_cfg(self) -> Mapping[str, Any]:
         cfg = self._cfg("monitor_dump", {}) or {}
@@ -2587,28 +2501,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return "".join(lines)
 
-    def _rollout_buffer_settings(self) -> Tuple[bool, int]:
-        cfg_raw = self._cfg("rollout_buffer", {}) or {}
-        if cfg_raw is None:
-            cfg_raw = {}
-        if not isinstance(cfg_raw, Mapping):
-            raise ValueError(
-                "custom.extra.rollout_matching.rollout_buffer must be a mapping"
-            )
-
-        enabled = bool(cfg_raw.get("enabled", False))
-        m_steps_raw = cfg_raw.get("m_steps", 1)
-        try:
-            m_steps = int(m_steps_raw)
-        except Exception as exc:
-            raise ValueError(
-                "custom.extra.rollout_matching.rollout_buffer.m_steps must be an int"
-            ) from exc
-        if m_steps <= 0:
-            raise ValueError(
-                "custom.extra.rollout_matching.rollout_buffer.m_steps must be > 0"
-            )
-        return enabled, m_steps
 
     def _offload_settings(self) -> Tuple[bool, bool, bool]:
         cfg_raw = self._cfg("offload", {}) or {}
@@ -2621,21 +2513,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         offload_model = bool(cfg_raw.get("offload_model", False))
         offload_optimizer = bool(cfg_raw.get("offload_optimizer", False))
         return enabled, offload_model, offload_optimizer
-
-    def _maybe_init_rollout_buffer(self) -> Optional[_RolloutWindowBuffer]:
-        enabled, m_steps = self._rollout_buffer_settings()
-        gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        sig = (bool(enabled), int(m_steps), int(gas))
-
-        if not enabled or m_steps <= 1:
-            self._rm_rollout_buffer = None
-            self._rm_rollout_buffer_sig = sig
-            return None
-
-        if self._rm_rollout_buffer is None or self._rm_rollout_buffer_sig != sig:
-            self._rm_rollout_buffer = _RolloutWindowBuffer(gas=gas, m_steps=m_steps)
-            self._rm_rollout_buffer_sig = sig
-        return self._rm_rollout_buffer
 
     @contextmanager
     def _maybe_rollout_offload_context(self):
@@ -2965,6 +2842,29 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception as exc:
             raise ValueError("packing_length must be an int") from exc
 
+    def _assert_single_packed_forward(self, batch: Mapping[str, Any], *, where: str) -> None:
+        input_ids = batch.get("input_ids") if isinstance(batch, Mapping) else None
+        if not isinstance(input_ids, torch.Tensor):
+            return
+        if input_ids.ndim != 2:
+            raise ValueError(
+                f"{where}: expected input_ids with shape [B, T], got {tuple(input_ids.shape)}"
+            )
+        bsz, seq_len = input_ids.shape
+        if int(bsz) != 1:
+            raise ValueError(
+                f"{where}: packing must produce exactly one packed sequence per forward pass (batch_size=1), got batch_size={int(bsz)}"
+            )
+        max_len = 0
+        try:
+            max_len = int(self._packing_length() or 0)
+        except Exception:
+            max_len = 0
+        if int(max_len) > 0 and int(seq_len) > int(max_len):
+            raise ValueError(
+                f"{where}: packed seq_len={int(seq_len)} exceeds packing_length/global_max_length={int(max_len)}"
+            )
+
     def _packing_buffer_cap(self) -> int:
         try:
             return int(self._cfg("packing_buffer", 0) or 0)
@@ -3019,22 +2919,73 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         raise ValueError("encoded sample is missing a valid length/input_ids")
 
     @contextmanager
-    def _template_packing_disabled(self):
-        """Temporarily disable ms-swift template packing/padding-free flags."""
+    def _template_state_context(
+        self,
+        *,
+        packing: Optional[bool] = None,
+        padding_free: Optional[bool] = None,
+        mode: Optional[str] = None,
+    ):
         template = self.template
+
+        lock = getattr(self, "_template_toggle_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._template_toggle_lock = lock
+
+        tls = getattr(self, "_template_toggle_tls", None)
+        if tls is None:
+            tls = threading.local()
+            self._template_toggle_tls = tls
+
+        depth = int(getattr(tls, "depth", 0) or 0)
+        acquired = False
+        if depth == 0:
+            lock.acquire()
+            acquired = True
+            tls.stack = []
+
+        tls.depth = depth + 1
+        stack = getattr(tls, "stack", None)
+        if stack is None:
+            stack = []
+            tls.stack = stack
+
         old_padding_free = getattr(template, "padding_free", False)
         old_packing = getattr(template, "packing", False)
+        old_mode = getattr(template, "mode", None)
+        stack.append((old_padding_free, old_packing, old_mode))
+
         try:
-            try:
-                template.padding_free = False
-            except Exception:
-                pass
-            try:
-                template.packing = False
-            except Exception:
-                pass
+            if packing is not None:
+                try:
+                    template.packing = bool(packing)
+                except Exception:
+                    pass
+            if padding_free is not None:
+                try:
+                    template.padding_free = bool(padding_free)
+                except Exception:
+                    pass
+            if mode is not None and old_mode is not None and hasattr(template, "set_mode"):
+                try:
+                    if str(old_mode) != str(mode):
+                        template.set_mode(str(mode))
+                except Exception:
+                    pass
+
             yield
         finally:
+            try:
+                old_padding_free, old_packing, old_mode = stack.pop()
+            except Exception:
+                old_padding_free, old_packing, old_mode = False, False, None
+
+            if old_mode is not None and hasattr(template, "set_mode"):
+                try:
+                    template.set_mode(old_mode)
+                except Exception:
+                    pass
             try:
                 template.padding_free = old_padding_free
             except Exception:
@@ -3043,6 +2994,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 template.packing = old_packing
             except Exception:
                 pass
+
+            try:
+                tls.depth = int(getattr(tls, "depth", 1) or 1) - 1
+            except Exception:
+                tls.depth = 0
+
+            if int(getattr(tls, "depth", 0) or 0) <= 0:
+                tls.depth = 0
+                try:
+                    tls.stack = []
+                except Exception:
+                    pass
+                if acquired:
+                    lock.release()
+
+    @contextmanager
+    def _template_packing_disabled(self):
+        """Temporarily disable ms-swift template packing/padding-free flags."""
+        with self._template_state_context(packing=False, padding_free=False):
+            yield
 
     @contextmanager
     def _template_train_mode(self):
@@ -3052,48 +3023,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         would strip assistant responses from messages. Stage_2 needs the assistant span
         present in `input_ids` for masking/loss construction.
         """
-        template = self.template
-        old_mode = getattr(template, "mode", None)
-        try:
-            if (
-                old_mode is not None
-                and hasattr(template, "set_mode")
-                and str(old_mode) != "train"
-            ):
-                template.set_mode("train")
+        with self._template_state_context(mode="train"):
             yield
-        finally:
-            if old_mode is not None and hasattr(template, "set_mode"):
-                try:
-                    template.set_mode(old_mode)
-                except Exception:
-                    pass
 
     @contextmanager
     def _template_packing_enabled(self):
         """Temporarily enable ms-swift template packing/padding-free flags."""
-        template = self.template
-        old_padding_free = getattr(template, "padding_free", False)
-        old_packing = getattr(template, "packing", False)
-        try:
-            try:
-                template.packing = True
-            except Exception:
-                pass
-            try:
-                template.padding_free = True
-            except Exception:
-                pass
+        with self._template_state_context(packing=True, padding_free=True):
             yield
-        finally:
-            try:
-                template.padding_free = old_padding_free
-            except Exception:
-                pass
-            try:
-                template.packing = old_packing
-            except Exception:
-                pass
 
     def _maybe_debug_dump_parse_failure(
         self,
@@ -3170,7 +3107,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
         num_beams = int(self._cfg("num_beams", 1))
-        temperature = float(self._cfg("temperature", 0.0))
+        temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
             raise ValueError(
@@ -3197,9 +3134,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # GenerationConfig doesn't provide a stable `.clone()` across transformers versions.
         gen_cfg = deepcopy(gen_cfg)
         gen_cfg.max_new_tokens = max_new_tokens
-        gen_cfg.do_sample = bool(temperature > 0.0)
-        gen_cfg.temperature = max(1e-4, temperature) if gen_cfg.do_sample else 1.0
-        gen_cfg.repetition_penalty = repetition_penalty
+        self._apply_rollout_decoding_to_generation_config(
+            gen_cfg=gen_cfg,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+        )
         if decode_mode == "beam":
             gen_cfg.num_beams = max(1, num_beams)
             gen_cfg.num_return_sequences = max(
@@ -3827,52 +3768,110 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return mode
 
     def _ensure_vllm_server_client(self) -> Any:
-        """Create and initialize an ms-swift vLLM server client (lazy)."""
+        """Create an ms-swift vLLM server client (lazy).
+
+        Important:
+        - HTTP `/infer/` does NOT require the NCCL communicator.
+        - The NCCL communicator is only required for in-memory weight sync.
+        - Under a multi-process learner (`torchrun`, `world_size>1`), communicator init
+          MUST be rank0-only.
+
+        Thread safety:
+        - Stage2-AB async actor-learner may call this from a background prefetch thread.
+          Guard creation so we never build multiple clients / init communicator twice.
+        """
         if self._vllm_server_client is not None:
             return self._vllm_server_client
 
-        # v1: server-mode learner is single-process only.
+        lock = getattr(self, "_vllm_server_client_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            setattr(self, "_vllm_server_client_lock", lock)
+
+        with lock:
+            if self._vllm_server_client is not None:
+                return self._vllm_server_client
+
+            # Dist metadata is used only for communicator-init behavior.
+            rank = 0
+            world_size = 1
+            try:
+                import torch.distributed as dist
+            except Exception:
+                dist = None  # type: ignore[assignment]
+
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                try:
+                    rank = int(dist.get_rank())
+                    world_size = int(dist.get_world_size())
+                except Exception:
+                    rank = 0
+                    world_size = 1
+
+            servers = self._vllm_server_specs()
+            timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
+
+            try:
+                from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
+            except Exception as exc:
+                raise RuntimeError(
+                    "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
+                    "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
+                ) from exc
+
+            base_urls = [str(s["base_url"]) for s in servers]
+            group_ports = [int(s["group_port"]) for s in servers]
+
+            try:
+                client = VLLMClient(
+                    base_urls=base_urls,
+                    group_ports=group_ports,
+                    connection_timeout=float(timeout_s),
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "Failed to connect to vLLM rollout server(s). "
+                    "Check custom.extra.rollout_matching.vllm.server (base_url/group_port) and ensure /health/ is reachable."
+                ) from exc
+
+            # Communicator init is deferred until first weight sync.
+            if int(world_size) > 1 and int(rank) == 0:
+                logger.info(
+                    "vLLM server client created for multi-process learner; communicator init deferred (rank0-only). world_size=%s",
+                    int(world_size),
+                )
+
+            # Best-effort: log server runtime type (enable_lora, async engine, etc.).
+            try:
+                info = client.get_engine_type()
+                logger.info("vLLM rollout server engine_type: %s", info)
+            except Exception:
+                pass
+
+            self._vllm_server_client = client
+            return client
+
+    def _ensure_vllm_server_communicator_rank0(self, client: Any) -> None:
+        """Initialize vLLM server NCCL communicator (rank0-only under DDP)."""
+        if bool(getattr(self, "_vllm_server_comm_inited", False)):
+            return
+
+        rank = 0
         try:
             import torch.distributed as dist
         except Exception:
             dist = None  # type: ignore[assignment]
 
         if dist is not None and dist.is_available() and dist.is_initialized():
-            world_size = int(dist.get_world_size())
-            if world_size > 1:
-                raise RuntimeError(
-                    "custom.extra.rollout_matching.vllm.mode=server requires a single-process learner (world_size==1). "
-                    "Mitigations: run the learner on one GPU (no torchrun), or set vllm.mode=colocate."
-                )
+            rank = int(dist.get_rank())
 
-        servers = self._vllm_server_specs()
-        timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
-
-        try:
-            from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
-        except Exception as exc:
+        if int(rank) != 0:
             raise RuntimeError(
-                "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
-                "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
-            ) from exc
-
-        base_urls = [str(s["base_url"]) for s in servers]
-        group_ports = [int(s["group_port"]) for s in servers]
-
-        try:
-            client = VLLMClient(
-                base_urls=base_urls,
-                group_ports=group_ports,
-                connection_timeout=float(timeout_s),
+                "vLLM server communicator init must be rank0-only under DDP. "
+                f"Got rank={int(rank)}."
             )
-        except Exception as exc:
-            raise RuntimeError(
-                "Failed to connect to vLLM rollout server(s). "
-                "Check custom.extra.rollout_matching.vllm.server (base_url/group_port) and ensure /health/ is reachable."
-            ) from exc
 
         try:
-            # In single-process learner, CUDA device 0 is the only visible device.
             client.init_communicator(device=0)
         except Exception as exc:
             raise RuntimeError(
@@ -3880,15 +3879,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
             ) from exc
 
-        # Best-effort: log server runtime type (enable_lora, async engine, etc.).
-        try:
-            info = client.get_engine_type()
-            logger.info("vLLM rollout server engine_type: %s", info)
-        except Exception:
-            pass
+        setattr(self, "_vllm_server_comm_inited", True)
 
-        self._vllm_server_client = client
-        return client
+    def _vllm_server_infer_guard(self):
+        """Optional hook for staging safe vLLM server inference.
+
+        Stage2-AB async actor-learner may override this to prevent HTTP `/infer/` calls
+        from racing with rank0 weight sync.
+        """
+        return nullcontext()
 
     def _maybe_debug_dump_vllm_server_rollouts(
         self,
@@ -3903,10 +3902,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         Controlled via:
           custom.extra.rollout_matching.vllm.server.debug_dump:
             enabled: true
+            every_steps: 10           # defaults to args.logging_steps
+            dump_first_step: false    # defaults to args.logging_first_step
+            only_world_process_zero: true
             max_events: 3
             max_samples: 1
             max_chars: 4000
             out_dir: null  # defaults to <output_dir>/vllm_server_debug
+
+        Notes:
+        - In DDP, the default is rank0-only dumping to avoid I/O storms.
+        - If only_world_process_zero=false, dumps go to per-rank subdirectories.
         """
 
         try:
@@ -3922,6 +3928,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ):
             return
 
+        only_main = bool(debug_raw.get("only_world_process_zero", True))
+        if only_main and not self._is_main_process():
+            return
+
         max_events = int(debug_raw.get("max_events", 3) or 0)
         if max_events > 0 and int(self._vllm_server_debug_dump_count) >= int(
             max_events
@@ -3935,15 +3945,48 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ):
             return
 
+        every = debug_raw.get("every_steps", None)
+        if every is None:
+            every = int(getattr(self.args, "logging_steps", 1) or 1)
+        every = max(1, int(every))
+
+        dump_first = bool(
+            debug_raw.get(
+                "dump_first_step", bool(getattr(self.args, "logging_first_step", False))
+            )
+        )
+        if gs == 0 and not dump_first:
+            return
+        if gs % every != 0:
+            return
+
         out_dir = debug_raw.get("out_dir")
         if not isinstance(out_dir, str) or not out_dir.strip():
             out_dir = os.path.join(
                 str(getattr(self.args, "output_dir", ".")), "vllm_server_debug"
             )
+
+        rank = 0
+        world_size = 1
+        try:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                rank = int(dist.get_rank())
+                world_size = int(dist.get_world_size())
+        except Exception:
+            rank = 0
+            world_size = 1
+
+        # DDP-safe output naming: if dumping from multiple ranks, isolate paths.
+        if (not only_main) and int(world_size) > 1:
+            out_dir = os.path.join(str(out_dir), f"rank_{int(rank)}")
+
         os.makedirs(out_dir, exist_ok=True)
 
         self._vllm_server_debug_last_step = int(gs)
         self._vllm_server_debug_dump_count += 1
+        event = int(self._vllm_server_debug_dump_count)
 
         max_samples = int(debug_raw.get("max_samples", 1) or 1)
         max_chars = int(debug_raw.get("max_chars", 4000) or 4000)
@@ -4005,14 +4048,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         payload = {
             "global_step": int(gs),
             "seed_base": int(seed_base),
-            "event": int(self._vllm_server_debug_dump_count),
+            "event": int(event),
+            "rank": int(rank),
+            "world_size": int(world_size),
             "max_samples": int(max_samples),
             "samples": samples_dump,
         }
 
         path = os.path.join(
             out_dir,
-            f"step_{int(gs):06d}_event_{int(self._vllm_server_debug_dump_count):03d}.json",
+            f"step_{int(gs):06d}_event_{int(event):03d}.json",
         )
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -4024,60 +4069,139 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return
 
     def _sync_vllm_server_rollout_model_if_needed(self) -> None:
-        """Sync weights/adapters to rollout server for vLLM server mode."""
+        """Sync weights/adapters to rollout server for vLLM server mode.
+
+        DDP safety (when torch.distributed is initialized):
+        - Rank0-only communicator init + weight push.
+        - Strict ordering: barrier -> rank0 sync -> barrier.
+        - All ranks must take the same control-flow to avoid deadlocks.
+
+        NOTE: This sync is intended for the synchronous rollout path.
+        Async actor-learner should coordinate server sync at safe boundaries and
+        avoid invoking DDP collectives from background prefetch threads.
+        """
         step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        if step == int(getattr(self, "_vllm_server_last_synced_step", -1)):
+
+        rank = 0
+        world_size = 1
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            rank = int(dist.get_rank())
+            world_size = int(dist.get_world_size())
+
+        last = int(getattr(self, "_vllm_server_last_synced_step", -1))
+        need_sync = int(step != last)
+
+        # Under DDP, ensure all ranks take the same early-return decision.
+        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+            try:
+                try:
+                    backend = str(dist.get_backend()).lower()
+                except Exception:
+                    backend = ""
+
+                reduce_device = torch.device("cpu")
+                if backend == "nccl" and torch.cuda.is_available():
+                    reduce_device = self.model.device
+
+                flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
+                dist.broadcast(flag, src=0)
+                need_sync = int(flag.item())
+            except Exception:
+                need_sync = int(step != last)
+
+        if need_sync == 0:
             return
 
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        enable_lora = (
-            bool(vcfg_raw.get("enable_lora", False))
-            if isinstance(vcfg_raw, Mapping)
-            else False
-        )
-
-        mode, fallback_to_full = self._vllm_server_sync_cfg()
         eff_mode = self._effective_vllm_server_sync_mode()
-
-        if eff_mode == "adapter" and not enable_lora:
+        if int(world_size) > 1 and eff_mode != "full":
             raise ValueError(
-                "custom.extra.rollout_matching.vllm.sync.mode=adapter requires custom.extra.rollout_matching.vllm.enable_lora: true"
+                "custom.extra.rollout_matching.vllm.sync.mode must resolve to 'full' under multi-process learners "
+                f"(world_size={int(world_size)}). Got effective sync mode={eff_mode!r}."
             )
 
-        client = self._ensure_vllm_server_client()
+        # Single-process learner: allow adapter/full sync modes.
+        if dist is None or (not dist.is_available()) or (not dist.is_initialized()) or int(world_size) == 1:
+            vcfg_raw = self._cfg("vllm", {}) or {}
+            enable_lora = (
+                bool(vcfg_raw.get("enable_lora", False))
+                if isinstance(vcfg_raw, Mapping)
+                else False
+            )
 
-        if eff_mode == "adapter":
-            # Optional runtime sanity check (server must have vLLM LoRA enabled).
-            try:
-                info = client.get_engine_type()
-                if isinstance(info, dict) and not bool(info.get("enable_lora", False)):
-                    raise RuntimeError(
-                        "vLLM server reports enable_lora=false, but adapter-only sync was requested. "
-                        "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
-                        "or set vllm.sync.mode=full."
-                    )
-            except Exception as exc:
-                # If the check itself fails, continue; sync will fail with a clearer error.
-                logger.warning(
-                    "Unable to verify rollout server LoRA capability: %s", exc
+            mode, fallback_to_full = self._vllm_server_sync_cfg()
+            _ = mode
+
+            if eff_mode == "adapter" and not enable_lora:
+                raise ValueError(
+                    "custom.extra.rollout_matching.vllm.sync.mode=adapter requires custom.extra.rollout_matching.vllm.enable_lora: true"
                 )
 
-            try:
-                self._sync_vllm_server_adapter(client)
-            except Exception as exc:
-                if bool(fallback_to_full):
-                    logger.warning(
-                        "Adapter-only vLLM server sync failed; falling back to full sync for the remainder of the run. "
-                        "Error: %s",
-                        exc,
-                    )
-                    self._vllm_server_force_full_sync = True
-                    self._sync_vllm_server_full_weights(client)
-                else:
-                    raise
-        else:
-            self._sync_vllm_server_full_weights(client)
+            client = self._ensure_vllm_server_client()
+            if not bool(getattr(self, "_vllm_server_comm_inited", False)):
+                try:
+                    client.init_communicator(device=0)
+                    setattr(self, "_vllm_server_comm_inited", True)
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Failed to initialize NCCL communicator with vLLM rollout server(s). "
+                        "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
+                    ) from exc
 
+            if eff_mode == "adapter":
+                # Optional runtime sanity check (server must have vLLM LoRA enabled).
+                try:
+                    info = client.get_engine_type()
+                    if isinstance(info, dict) and not bool(info.get("enable_lora", False)):
+                        raise RuntimeError(
+                            "vLLM server reports enable_lora=false, but adapter-only sync was requested. "
+                            "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
+                            "or set vllm.sync.mode=full."
+                        )
+                except Exception as exc:
+                    # If the check itself fails, continue; sync will fail with a clearer error.
+                    logger.warning(
+                        "Unable to verify rollout server LoRA capability: %s", exc
+                    )
+
+                try:
+                    self._sync_vllm_server_adapter(client)
+                except Exception as exc:
+                    if bool(fallback_to_full):
+                        logger.warning(
+                            "Adapter-only vLLM server sync failed; falling back to full sync for the remainder of the run. "
+                            "Error: %s",
+                            exc,
+                        )
+                        self._vllm_server_force_full_sync = True
+                        self._sync_vllm_server_full_weights(client)
+                    else:
+                        raise
+            else:
+                self._sync_vllm_server_full_weights(client)
+
+            # Keep local state consistent across ranks so the next call is stable.
+            self._vllm_server_last_synced_step = step
+            return
+
+        # Multi-process learner (DDP): rank0-only full sync with strict barrier ordering.
+        assert dist is not None and dist.is_initialized()
+
+        # IMPORTANT: no early returns after this point without symmetric barriers.
+        dist.barrier()
+        try:
+            if int(rank) == 0:
+                client = self._ensure_vllm_server_client()
+                self._ensure_vllm_server_communicator_rank0(client)
+                self._sync_vllm_server_full_weights(client)
+        finally:
+            dist.barrier()
+
+        # Keep local state consistent on all ranks.
         self._vllm_server_last_synced_step = step
 
     def _sync_vllm_server_full_weights(self, client: Any) -> None:
@@ -4339,7 +4463,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
         num_beams = int(self._cfg("num_beams", 1))
-        temperature = float(self._cfg("temperature", 0.0))
+        temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
             raise ValueError(
@@ -4354,9 +4478,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             gen_cfg = GenerationConfig()
         gen_cfg = deepcopy(gen_cfg)
         gen_cfg.max_new_tokens = max_new_tokens
-        gen_cfg.do_sample = bool(temperature > 0.0)
-        gen_cfg.temperature = max(1e-4, temperature) if gen_cfg.do_sample else 1.0
-        gen_cfg.repetition_penalty = repetition_penalty
+        self._apply_rollout_decoding_to_generation_config(
+            gen_cfg=gen_cfg,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+        )
         if decode_mode == "beam":
             gen_cfg.num_beams = max(1, num_beams)
             gen_cfg.num_return_sequences = max(
@@ -4559,14 +4687,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        temperature = float(self._cfg("temperature", 0.0))
+        temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
             raise ValueError(
                 "custom.extra.rollout_matching.repetition_penalty must be > 0"
             )
-        if temperature < 0:
-            raise ValueError("temperature must be >= 0")
 
         try:
             from swift.llm import RequestConfig
@@ -4576,14 +4702,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ) from exc
 
         request_config = RequestConfig(
-            n=1,
-            max_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=1.0,
-            top_k=-1,
-            repetition_penalty=repetition_penalty,
-            stop=None,
-            return_details=True,
+            **self._rollout_vllm_request_config_kwargs(
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+            )
         )
 
         # Build infer requests using swift.llm.InferRequest (ms-swift stable contract).
@@ -4649,17 +4774,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return []
 
         # Sync weights to server only when fresh rollouts are requested.
-        self._sync_vllm_server_rollout_model_if_needed()
+        # Stage2-AB async actor-learner issues server infer calls from background
+        # prefetch workers; those paths MUST NOT invoke DDP collectives here.
+        if not bool(getattr(self, "_stage2_async_skip_vllm_server_sync", False)):
+            self._sync_vllm_server_rollout_model_if_needed()
 
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        temperature = float(self._cfg("temperature", 0.0))
+        temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
             raise ValueError(
                 "custom.extra.rollout_matching.repetition_penalty must be > 0"
             )
-        if temperature < 0:
-            raise ValueError("temperature must be >= 0")
 
         try:
             from swift.llm import RequestConfig
@@ -4670,14 +4796,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Base request config (per-server seed is set deterministically below).
         base_request_config = RequestConfig(
-            n=1,
-            max_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=1.0,
-            top_k=-1,
-            repetition_penalty=repetition_penalty,
-            stop=None,
-            return_details=True,
+            **self._rollout_vllm_request_config_kwargs(
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+            )
         )
         base_request_config_dict = asdict(base_request_config)
 
@@ -4827,7 +4952,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
             req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
             try:
-                resp = session.post(url, json=payload, timeout=req_timeout)
+                with self._vllm_server_infer_guard():
+                    resp = session.post(url, json=payload, timeout=req_timeout)
             except Exception as exc:
                 # Retry once with a fresh session. This helps when the server was idle for A steps
                 # (AAB schedules) and the underlying keep-alive connection was dropped.
@@ -4836,7 +4962,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                     client.sessions[server_idx] = requests.Session()
                     session = client.sessions[server_idx]
-                    resp = session.post(url, json=payload, timeout=req_timeout)
+                    with self._vllm_server_infer_guard():
+                        resp = session.post(url, json=payload, timeout=req_timeout)
                 except Exception as exc2:
                     # If this was a batched request, fall back to smaller batches. This is a
                     # common failure mode when a few samples hit max_new_tokens and the read
@@ -5284,6 +5411,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="rollout_matching/window_pack")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             bm = dict(per_micro_metrics[i]) if i < len(per_micro_metrics) else {}
@@ -5308,7 +5436,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             else:
                 bm["packing/post_rollout_scope_window"] = 0.0
 
-            batch["_rollout_matching_batch_metrics"] = bm
+            self._merge_rollout_matching_batch_metrics(batch, bm)
             prepared.append(batch)
 
         return prepared
@@ -5812,11 +5940,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if do_dump:
             try:
-                enabled, m_steps = False, 1
-                try:
-                    enabled, m_steps = self._rollout_buffer_settings()
-                except Exception:
-                    enabled, m_steps = False, 1
                 payload = {
                     "global_step": int(gs),
                     "epoch": float(
@@ -5836,8 +5959,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         "ot_epsilon": float(ot_eps),
                         "ot_iters": int(ot_iters),
                         "packing_enabled": bool(packing_enabled),
-                        "rollout_buffer_enabled": bool(enabled),
-                        "rollout_buffer_m_steps": int(m_steps),
                         "rollout_generate_s": float(t_gen_s),
                         "rollout_tokens_per_s": float(toks_per_s)
                         if "toks_per_s" in locals()
@@ -5858,19 +5979,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="rollout_matching/_prepare_batch_inputs")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             batch_metrics.update(pack_metrics)
             batch_metrics["time/post_rollout_pack_s"] = float(
                 time.perf_counter() - t_pack0
             )
-            batch["_rollout_matching_batch_metrics"] = batch_metrics
+            self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
             return batch
 
         with self._template_packing_disabled():
             batch = to_device(template.data_collator(encoded_batch), self.model.device)
         batch["_rollout_matching_meta"] = meta_unpacked
-        batch["_rollout_matching_batch_metrics"] = batch_metrics
+        self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
         return batch
 
     # ------------------------ loss ------------------------ #
@@ -6110,6 +6232,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/excluded_from_supervision": float(excluded_total),
         }
 
+        try:
+            temperature, top_p, top_k = self._decoding_params()
+            do_sample = bool(float(temperature) > 0.0)
+            payload["rollout/do_sample"] = float(1.0 if do_sample else 0.0)
+            payload["rollout/temperature"] = float(temperature)
+            payload["rollout/top_p"] = float(top_p)
+            payload["rollout/top_k"] = float(top_k)
+        except Exception:
+            pass
+
         # Desc monitor outputs (matched pairs only).
         try:
             if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
@@ -6203,18 +6335,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             payload["packing/post_rollout_buffer"] = float(pending.packing_buffer_last)
 
-        if pending.buffer_reuse_count > 0:
-            payload["rollout/buffer_reuse"] = float(
-                pending.buffer_reuse_sum / float(pending.buffer_reuse_count)
-            )
-            if pending.buffer_window_step0_last is not None:
-                payload["rollout/buffer_window_step0"] = float(
-                    pending.buffer_window_step0_last
-                )
-            if pending.buffer_completed_steps_last is not None:
-                payload["rollout/buffer_completed_steps"] = float(
-                    pending.buffer_completed_steps_last
-                )
 
         # Generation-length stats are only meaningful when we actually ran a rollout this step.
         if pending.time_rollout_generate_s > 0:
@@ -6475,16 +6595,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 base_raw_batch_size=int(per_dev),
             )
 
-        try:
-            enabled, m_steps = self._rollout_buffer_settings()
-        except Exception:
-            enabled, m_steps = False, 1
 
         gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-
-        # Keep existing rollout buffer semantics: repeat full accumulation windows for M-steps.
-        if enabled and int(m_steps) > 1:
-            dl = _AccumulationWindowRepeater(dl, gas=gas, m_steps=int(m_steps))
 
         # Optional window-aware post-rollout packing requires lookahead over one accumulation window.
         if self._packing_enabled() and self._post_rollout_pack_scope() == "window":
@@ -6917,75 +7029,31 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not isinstance(inputs, list):
             return super().training_step(model, inputs, *args, **kwargs)
 
-        # Buffering is a training-only optimization.
-        if not bool(getattr(model, "training", False)):
-            self._rm_rollout_buffer = None
-            return super().training_step(
-                model, self._prepare_batch_inputs(inputs), *args, **kwargs
-            )
-
-        buf = self._maybe_init_rollout_buffer()
-        if buf is None:
-            return super().training_step(
-                model, self._prepare_batch_inputs(inputs), *args, **kwargs
-            )
+        self._validate_rollout_matching_cfg()
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        buf.on_micro_step_start(global_step=gs)
 
-        raw_fp = _fingerprint_raw_micro_batch(inputs)
+        packing_enabled = bool(self._packing_enabled())
+        if (
+            packing_enabled
+            and self._post_rollout_pack_scope() == "window"
+            and isinstance(inputs, _WindowedMicroBatch)
+        ):
+            win = inputs.rm_window
+            idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
 
-        def _build_prepared() -> Dict[str, Any]:
-            packing_enabled = bool(self._packing_enabled())
-            if (
-                packing_enabled
-                and self._post_rollout_pack_scope() == "window"
-                and isinstance(inputs, _WindowedMicroBatch)
-            ):
-                win = inputs.rm_window
-                idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
+            def _build_all() -> List[Dict[str, Any]]:
+                return self._prepare_window_packed_batches(
+                    window_raw_micro_batches=win.raw_micro_batches,
+                    global_step=gs,
+                )
 
-                def _build_all() -> List[Dict[str, Any]]:
-                    return self._prepare_window_packed_batches(
-                        window_raw_micro_batches=win.raw_micro_batches,
-                        global_step=gs,
-                    )
-
-                prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
-                return prepared
-
+            prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
+        else:
             prepared = self._prepare_batch_inputs(inputs)
-            if not isinstance(prepared, dict):
-                raise ValueError("prepared batch must be a dict")
-            return prepared
 
-        batch, reused = buf.select_batch(
-            global_step=gs, raw_fp=raw_fp, build_prepared=_build_prepared
-        )
+        return super().training_step(model, prepared, *args, **kwargs)
 
-        try:
-            bm = batch.get("_rollout_matching_batch_metrics")
-            if not isinstance(bm, dict):
-                bm = {}
-                batch["_rollout_matching_batch_metrics"] = bm
-
-            bm["rollout/buffer_reuse"] = float(1.0 if reused else 0.0)
-            # window_step0 can be 0 (valid), so do not use `or -1`.
-            bm["rollout/buffer_window_step0"] = float(
-                -1 if buf.window_step0 is None else int(buf.window_step0)
-            )
-            bm["rollout/buffer_completed_steps"] = float(buf.completed_optimizer_steps)
-
-            # Avoid double-counting rollout pipeline time on M-steps.
-            if reused:
-                bm["time/rollout_generate_s"] = 0.0
-                bm["time/rollout_parse_match_s"] = 0.0
-                bm["time/rollout_teacher_encode_s"] = 0.0
-                bm["time/post_rollout_pack_s"] = 0.0
-        except Exception:
-            pass
-
-        return super().training_step(model, batch, *args, **kwargs)
 
     # ------------------------ target construction ------------------------ #
     @staticmethod

@@ -1,4 +1,5 @@
 import types
+import threading
 
 import pytest
 import torch
@@ -909,9 +910,18 @@ def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():
     )
 
 
-def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
-    # Minimal trainer stub: verify step-mode buffers raw samples and executes only
-    # on the final micro-step of the accumulation window.
+def test_channel_b_step_mode_rejected_for_ddp_safety(monkeypatch):
+    # Step-budgeted Channel-B mode is intentionally disallowed under multi-GPU DDP.
+    monkeypatch.setattr(
+        torch.distributed, "is_available", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        torch.distributed, "is_initialized", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        torch.distributed, "get_world_size", lambda: 2, raising=False
+    )
+
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
 
@@ -919,53 +929,28 @@ def test_channel_b_step_mode_runs_only_on_final_microstep(monkeypatch):
     t._rm_pending_train_logs = {}
     t._stage2_channel_override = None
 
-    # Required by helper methods.
-    t._stage2_post_rollout_segments = {"A": [], "B": []}
-    t._stage2_b_step_gs = None
-    t._stage2_b_step_micro = 0
-    t._stage2_b_step_raw = []
-
-    t.args = types.SimpleNamespace(
-        gradient_accumulation_steps=4,
-        train_batch_size=1,
-        per_device_train_batch_size=1,
-        seed=123,
-    )
+    t.args = types.SimpleNamespace(seed=123)
     t.state = types.SimpleNamespace(global_step=0)
 
-    # training_step uses self.model.device for the dummy 0-loss tensor.
-    t.model = types.SimpleNamespace(device=torch.device("cpu"))
-
-    # Disable rollout-buffer path.
-    t._maybe_init_rollout_buffer = lambda: None
-
-    called = []
-
-    def _fake_budgeted_train(model, *, raw_samples, global_step):
-        called.append({"n": len(raw_samples), "gs": int(global_step)})
-        return torch.tensor(3.0)
-
-    t._stage2_b_step_budgeted_train = _fake_budgeted_train
-
     class _M:
         training = True
 
-    m = _M()
-    sample = {"messages": []}
-
-    for _ in range(3):
-        loss = t.training_step(m, [sample])
-        assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
-        assert called == []
-
-    loss = t.training_step(m, [sample])
-    assert float(loss.detach().cpu().item()) == pytest.approx(3.0)
-    assert called == [{"n": 4, "gs": 0}]
+    with pytest.raises(ValueError, match=r"multi-GPU learner \(DDP\)"):
+        t.training_step(_M(), [{"messages": []}])
 
 
-def test_channel_b_step_mode_stable_order_and_seed_base_deterministic(monkeypatch):
-    # Regression: in step-budgeted mode, raw sample ordering across micro-steps is stable
-    # and the step-level seed base is deterministic.
+def test_channel_b_step_mode_error_message_mentions_micro_mode(monkeypatch):
+    # Error message includes actionable mitigation.
+    monkeypatch.setattr(
+        torch.distributed, "is_available", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        torch.distributed, "is_initialized", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        torch.distributed, "get_world_size", lambda: 2, raising=False
+    )
+
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
 
@@ -973,55 +958,86 @@ def test_channel_b_step_mode_stable_order_and_seed_base_deterministic(monkeypatc
     t._rm_pending_train_logs = {}
     t._stage2_channel_override = None
 
-    # Required by helper methods.
-    t._stage2_post_rollout_segments = {"A": [], "B": []}
-    t._stage2_b_step_gs = None
-    t._stage2_b_step_micro = 0
-    t._stage2_b_step_raw = []
-
-    t.args = types.SimpleNamespace(
-        gradient_accumulation_steps=4,
-        train_batch_size=1,
-        per_device_train_batch_size=1,
-        seed=123,
-    )
+    t.args = types.SimpleNamespace(seed=123)
     t.state = types.SimpleNamespace(global_step=7)
-
-    # training_step uses self.model.device for the dummy 0-loss tensor.
-    t.model = types.SimpleNamespace(device=torch.device("cpu"))
-
-    # Disable rollout-buffer path.
-    t._maybe_init_rollout_buffer = lambda: None
-
-    called = []
-
-    def _fake_budgeted_train(model, *, raw_samples, global_step):
-        ids = [int(s.get("id", -1)) for s in raw_samples]
-        gs = int(global_step)
-        seed_base = int(t._derive_rollout_seed_base(global_step=gs))
-        called.append({"ids": ids, "gs": gs, "seed_base": seed_base})
-        return torch.tensor(3.0)
-
-    t._stage2_b_step_budgeted_train = _fake_budgeted_train
 
     class _M:
         training = True
 
-    m = _M()
+    with pytest.raises(ValueError, match="channel_b\\.mode='micro'"):
+        t.training_step(_M(), [{"messages": []}])
 
-    def _run_cycle() -> None:
-        for i in range(3):
-            loss = t.training_step(m, [{"id": i, "messages": []}])
-            assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
 
-        loss = t.training_step(m, [{"id": 3, "messages": []}])
-        assert float(loss.detach().cpu().item()) == pytest.approx(3.0)
+def test_async_step_kind_falls_back_to_a_when_queue_empty(monkeypatch):
+    # Queue-gated async mode should fall back to A if scheduled B is infeasible.
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "channel_b": {"mode": "async", "async": {"queue_limit": 8}},
+    }
 
-    _run_cycle()
-    _run_cycle()
+    t.args = types.SimpleNamespace(gradient_accumulation_steps=4, seed=123)
+    t.model = types.SimpleNamespace(device=torch.device("cpu"))
 
-    expected_seed_base = int((123 + 7 * 1000003) & 0x7FFFFFFF)
-    assert called == [
-        {"ids": [0, 1, 2, 3], "gs": 7, "seed_base": expected_seed_base},
-        {"ids": [0, 1, 2, 3], "gs": 7, "seed_base": expected_seed_base},
-    ]
+    # Minimal async state.
+    from collections import deque
+
+    t._stage2_async_ready = deque()
+    t._stage2_async_ready_lock = threading.Lock()
+    t._stage2_async_ver = 0
+    t._stage2_async_drop_stale_total = 0
+    t._stage2_async_drop_oldest_total = 0
+
+    # No dist.
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: False, raising=False)
+
+    assert (
+        t._stage2_async_decide_step_kind(global_step=0, policy_wants_b=True) == "A"
+    )
+
+
+def test_async_step_kind_selects_b_when_queue_has_gas(monkeypatch):
+    # If each rank has >= GAS ready packs, scheduled B is feasible.
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "channel_b": {"mode": "async", "async": {"queue_limit": 8}},
+    }
+
+    t.args = types.SimpleNamespace(gradient_accumulation_steps=4, seed=123)
+    t.model = types.SimpleNamespace(device=torch.device("cpu"))
+
+    from collections import deque
+
+    t._stage2_async_ready = deque()
+    t._stage2_async_ready_lock = threading.Lock()
+    t._stage2_async_ver = 0
+    t._stage2_async_drop_stale_total = 0
+    t._stage2_async_drop_oldest_total = 0
+
+    from src.trainers.stage2_ab_training import _Stage2AsyncReadyPack
+
+    for _ in range(4):
+        t._stage2_async_ready.append(_Stage2AsyncReadyPack(ver=0, batch={}))
+
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: False, raising=False)
+
+    assert (
+        t._stage2_async_decide_step_kind(global_step=0, policy_wants_b=True) == "B"
+    )
+
+
+def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
+    t = _make_min_trainer(n_softctx_iter=1)
+    batch = {"_rollout_matching_batch_metrics": {"rollout/backend_vllm": 1.0}}
+    t._merge_rollout_matching_batch_metrics(
+        batch,
+        {
+            "stage2_ab/async/ver": 3.0,
+            "rollout/backend_vllm": 2.0,
+        },
+    )
+    bm = batch.get("_rollout_matching_batch_metrics")
+    assert isinstance(bm, dict)
+    assert bm["stage2_ab/async/ver"] == 3.0
+    assert bm["rollout/backend_vllm"] == 2.0

@@ -235,7 +235,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_ab/smoke_bbox_max60_ckpt1516_b_only_vllm_server_1v1.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_ab/smoke/bbox_max60_ckpt1516_b_only_vllm_server.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
@@ -243,9 +243,18 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 f"  output_dir: {out_root}",
                 f"  run_name: {run_name}",
                 f"  logging_dir: {tb_root}",
+                "  max_steps: 3",
+                "  effective_batch_size: null",
+                "  gradient_accumulation_steps: 1",
+                "stage2_ab:",
+                "  channel_b:",
+                "    reordered_gt_sft: false",
+                "    semantic_desc_gate:",
+                "      enabled: false",
                 "custom:",
                 "  extra:",
                 "    rollout_matching:",
+                "      max_new_tokens: 256",
                 "      vllm:",
                 "        server:",
                 "          servers:",
@@ -381,18 +390,29 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         for rec in records:
             merged.update(rec)
 
-        assert float(merged.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
-        assert float(merged.get("rollout/backend_vllm", 0.0)) == pytest.approx(1.0)
-        assert float(merged.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(
+        b_records = [
+            r
+            for r in records
+            if float(r.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+        ]
+        assert b_records, (
+            "No Channel-B logs found; async queue may have been starved. "
+            "Increase max_steps or stage2_ab.channel_b.async.prefetch_target_packs for this smoke run.\n\n"
+            + _tail(learner_log)
+        )
+        merged_b = dict(b_records[-1])
+
+        assert float(merged_b.get("rollout/backend_vllm", 0.0)) == pytest.approx(1.0)
+        assert float(merged_b.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(
             1.0
         )
 
-        assert "rollout/seed_base" in merged
-        assert float(merged.get("rollout/rollout_len_mean", 0.0)) > 0.0
+        assert "rollout/seed_base" in merged_b
+        assert float(merged_b.get("rollout/rollout_len_mean", 0.0)) > 0.0
 
         # Bbox-only v1 invariant: do not drop polygons (there should be none).
-        assert float(merged.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0)
-        assert float(merged.get("stage2/invalid_rollout", 0.0)) >= 0.0
+        assert float(merged_b.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0)
+        assert float(merged_b.get("stage2/invalid_rollout", 0.0)) >= 0.0
 
     finally:
         if proc is not None:

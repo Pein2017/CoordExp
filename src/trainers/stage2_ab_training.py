@@ -7,8 +7,9 @@ import time
 import threading
 import queue
 import logging
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Literal
+from typing import Any, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -24,7 +25,6 @@ from .rollout_matching_sft import (
     _decode_pieces,
     _find_desc_value_char_spans,
     _find_desc_value_token_positions,
-    _fingerprint_raw_micro_batch,
     _points_from_coord_tokens,
     _serialize_append_fragment,
     hungarian_match_maskiou,
@@ -64,12 +64,19 @@ class _PendingStage2Log:
                 k.startswith("loss/")
                 or k.startswith("stage2/channel_")
                 or k.startswith("rollout/")
+                or k.startswith("stage2_ab/async/")
                 or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
                 out[k] = float(v) / float(self.n_micro)
             else:
                 out[k] = float(v)
         return out
+
+
+@dataclass
+class _Stage2AsyncReadyPack:
+    ver: int
+    batch: Dict[str, Any]
 
 
 def _expectation_decode_coords(
@@ -439,6 +446,96 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         self._stage2_a_step_micro: int = 0
         self._stage2_a_step_raw: List[Mapping[str, Any]] = []
 
+        # Async actor-learner state (Channel-B only): prefetch ready packed micro-batches
+        # on CPU and consume them under a queue feasibility gate.
+        self._stage2_async_step_gs: Optional[int] = None
+        self._stage2_async_step_micro: int = 0
+        self._stage2_async_step_kind: Optional[str] = None
+        self._stage2_async_policy_wants_b: bool = False
+        self._stage2_async_step_ver: Optional[int] = None
+
+        # Monotonic sync-counter version (ver) for async rollouts.
+        self._stage2_async_ver: int = 0
+        self._stage2_async_last_synced_gs: Optional[int] = None
+
+        self._stage2_async_ready: Deque[_Stage2AsyncReadyPack] = deque()
+        self._stage2_async_ready_lock = threading.Lock()
+
+        self._stage2_async_stop = threading.Event()
+        self._stage2_async_prefetch_thread: Optional[threading.Thread] = None
+
+        self._stage2_async_infer_lock = threading.Lock()
+        self._stage2_async_infer_cv = threading.Condition(self._stage2_async_infer_lock)
+        self._stage2_async_sync_in_progress: bool = False
+        self._stage2_async_infer_inflight: int = 0
+
+        self._stage2_async_raw_dataloader = None
+        self._stage2_async_raw_iter = None
+        self._stage2_async_raw_epoch: int = 0
+
+        self._stage2_async_drop_stale_total: int = 0
+        self._stage2_async_drop_oldest_total: int = 0
+        self._stage2_async_prefetch_success_total: int = 0
+        self._stage2_async_prefetch_fail_total: int = 0
+        self._stage2_async_prefetch_iter_total: int = 0
+        self._stage2_async_prefetch_last_progress_ts: float = float(time.time())
+        self._stage2_async_prefetch_state: int = 0
+
+    def _merge_rollout_matching_batch_metrics(
+        self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
+    ) -> None:
+        """Merge rollout-matching batch metrics onto an existing batch.
+
+        Some pipeline modes (e.g. async actor-learner) may attach base rollout/decode
+        metadata during batch preparation and then add additional telemetry later.
+        Treat `_rollout_matching_batch_metrics` as merge-only to avoid accidental
+        overwrites.
+        """
+        if not isinstance(batch, MutableMapping):
+            raise TypeError("batch must be a MutableMapping")
+        if not isinstance(metrics, Mapping):
+            raise TypeError("metrics must be a Mapping")
+
+        existing = batch.get("_rollout_matching_batch_metrics")
+        out: Dict[str, Any] = dict(existing) if isinstance(existing, Mapping) else {}
+        for k, v in metrics.items():
+            out[str(k)] = v
+        batch["_rollout_matching_batch_metrics"] = out
+
+    def train(self, *args, **kwargs):
+        """Run training and ensure async background workers shut down cleanly.
+
+        Without an explicit shutdown, the async Channel-B prefetch thread may
+        continue issuing vLLM `/infer/` calls after the main training loop
+        completes. That can race with process teardown (and vLLM communicator
+        cleanup) and lead to hard aborts (SIGABRT).
+        """
+
+        try:
+            return super().train(*args, **kwargs)
+        finally:
+            # Best-effort: stop the async prefetch thread if it was started.
+            try:
+                self._stage2_async_stop.set()
+            except Exception:
+                pass
+
+            # Wake any thread waiting on the infer condition variable.
+            try:
+                cv = getattr(self, "_stage2_async_infer_cv", None)
+                if cv is not None:
+                    with cv:
+                        cv.notify_all()
+            except Exception:
+                pass
+
+            try:
+                th = getattr(self, "_stage2_async_prefetch_thread", None)
+                if th is not None and getattr(th, "is_alive", None) and th.is_alive():
+                    th.join(timeout=5.0)
+            except Exception:
+                pass
+
     def _maybe_seed_hf_sampling_rollout(
         self, *, seed_base: int, backend: str, do_sample: bool
     ) -> bool:
@@ -639,14 +736,685 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             pass
         return default
 
-    def _stage2_b_step_mode(self) -> Literal["micro", "step"]:
+    def _stage2_b_step_mode(self) -> Literal["micro", "step", "async"]:
         raw = self._ab_channel_b_get("mode", "micro")
         mode = str(raw).strip().lower()
-        if mode not in {"micro", "step"}:
+        if mode not in {"micro", "step", "async"}:
             raise ValueError(
-                "stage2_ab.channel_b.mode must be one of: 'micro', 'step'"
+                "stage2_ab.channel_b.mode must be one of: 'micro', 'step', 'async'"
             )
-        return "step" if mode == "step" else "micro"
+        if mode == "step":
+            return "step"
+        if mode == "async":
+            return "async"
+        return "micro"
+
+    def _dist_info(self) -> Tuple[int, int, Any]:
+        rank = 0
+        world_size = 1
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            try:
+                world_size = int(dist.get_world_size())
+            except Exception:
+                world_size = 1
+            try:
+                rank = int(dist.get_rank())
+            except Exception:
+                rank = 0
+
+        return int(rank), int(world_size), dist
+
+    def _stage2_async_cfg(self) -> Mapping[str, Any]:
+        raw = self._ab_channel_b_cfg().get("async")
+        return raw if isinstance(raw, Mapping) else {}
+
+    def _stage2_async_get_int(self, key: str, default: int) -> int:
+        cfg = self._stage2_async_cfg()
+        raw = cfg.get(key, default)
+        try:
+            v = int(raw)
+        except Exception:
+            v = int(default)
+        return int(v)
+
+    def _stage2_async_queue_limit(self) -> int:
+        return max(1, int(self._stage2_async_get_int("queue_limit", 8)))
+
+    def _stage2_async_version_window(self) -> int:
+        return max(0, int(self._stage2_async_get_int("version_window", 2)))
+
+    def _stage2_async_sync_every_steps(self) -> int:
+        return max(1, int(self._stage2_async_get_int("sync_every_steps", 1)))
+
+    def _stage2_async_prefetch_target_packs(self) -> int:
+        limit = int(self._stage2_async_queue_limit())
+        target = max(1, int(self._stage2_async_get_int("prefetch_target_packs", 2)))
+        return int(min(limit, target))
+
+    def _vllm_server_infer_guard(self):
+        # Only used for async actor-learner; other modes keep the default behavior.
+        try:
+            if self._stage2_b_step_mode() != "async":
+                return contextlib.nullcontext()
+        except Exception:
+            return contextlib.nullcontext()
+
+        cv = getattr(self, "_stage2_async_infer_cv", None)
+        if cv is None:
+            return contextlib.nullcontext()
+
+        @contextlib.contextmanager
+        def _cm():
+            with cv:
+                while bool(getattr(self, "_stage2_async_sync_in_progress", False)):
+                    cv.wait(timeout=0.1)
+
+                # Snapshot the version observed for the rollout inference that follows.
+                # The async prefetch thread reads this to tag ready packs with the
+                # correct policy version and enforce version-pure packs.
+                try:
+                    self._stage2_async_last_infer_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+                except Exception:
+                    self._stage2_async_last_infer_ver = 0
+
+                try:
+                    self._stage2_async_infer_inflight += 1
+                except Exception:
+                    self._stage2_async_infer_inflight = 1
+            try:
+                yield
+            finally:
+                with cv:
+                    try:
+                        self._stage2_async_infer_inflight -= 1
+                    except Exception:
+                        self._stage2_async_infer_inflight = 0
+                    if int(getattr(self, "_stage2_async_infer_inflight", 0) or 0) < 0:
+                        self._stage2_async_infer_inflight = 0
+                    cv.notify_all()
+
+        return _cm()
+
+    def _stage2_async_pause_infer_for_sync(self) -> None:
+        cv = getattr(self, "_stage2_async_infer_cv", None)
+        if cv is None:
+            return
+        with cv:
+            self._stage2_async_sync_in_progress = True
+            while int(getattr(self, "_stage2_async_infer_inflight", 0) or 0) > 0:
+                cv.wait(timeout=0.1)
+
+    def _stage2_async_resume_infer_after_sync(self) -> None:
+        cv = getattr(self, "_stage2_async_infer_cv", None)
+        if cv is None:
+            return
+        with cv:
+            self._stage2_async_sync_in_progress = False
+            cv.notify_all()
+
+    def _stage2_async_validate_requirements(self) -> None:
+        backend = (
+            str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
+        )
+        mode = str(getattr(self, "_vllm_mode", lambda: "")()).strip().lower()
+
+        if backend != "vllm" or mode != "server":
+            raise ValueError(
+                "stage2_ab.channel_b.mode='async' requires server rollouts with dedicated GPUs. "
+                "Set custom.extra.rollout_matching.rollout_backend=vllm and custom.extra.rollout_matching.vllm.mode=server. "
+                f"Got rollout_backend={backend!r}, vllm.mode={mode!r}."
+            )
+
+        vcfg = None
+        try:
+            vcfg = getattr(self, "rollout_matching_cfg", None)
+        except Exception:
+            vcfg = None
+
+        # Enforce full sync for async mode (robust default and required under multi-GPU learners).
+        try:
+            vllm_cfg = (vcfg or {}).get("vllm") if isinstance(vcfg, Mapping) else None
+        except Exception:
+            vllm_cfg = None
+
+        sync_mode = "full"
+        if isinstance(vllm_cfg, Mapping):
+            sync_raw = vllm_cfg.get("sync")
+            if isinstance(sync_raw, Mapping):
+                sync_mode = str(sync_raw.get("mode", "full") or "full").strip().lower()
+
+        if sync_mode != "full":
+            raise ValueError(
+                "stage2_ab.channel_b.mode='async' requires custom.extra.rollout_matching.vllm.sync.mode=full "
+                f"(robust, DDP-safe sync). Got sync.mode={sync_mode!r}."
+            )
+
+        # Async mode relies on one packed fwd/bwd per micro-step; require window packing.
+        if not bool(self._packing_enabled()):
+            raise ValueError(
+                "stage2_ab.channel_b.mode='async' requires training.packing=true (post-rollout packing)."
+            )
+        if str(self._post_rollout_pack_scope()).strip().lower() != "window":
+            raise ValueError(
+                "stage2_ab.channel_b.mode='async' requires custom.extra.rollout_matching.post_rollout_pack_scope='window' "
+                "so each micro-step runs exactly one packed forward/backward per rank."
+            )
+
+        _rank, world_size, _dist = self._dist_info()
+        if int(world_size) > 1 and self._stage2_b_step_mode() == "step":
+            raise ValueError(
+                "stage2_ab.channel_b.mode='step' is not supported under multi-GPU learner (DDP) (world_size>1). "
+                "Use channel_b.mode='async' (recommended) or channel_b.mode='micro'."
+            )
+
+        # Async feasibility requires each rank to have >= GAS packs of the same eligible version.
+        try:
+            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+        except Exception:
+            gas = 1
+        gas = max(1, int(gas))
+
+        qlim = int(self._stage2_async_queue_limit())
+        target = int(self._stage2_async_prefetch_target_packs())
+        if int(qlim) < int(gas):
+            raise ValueError(
+                "stage2_ab.channel_b.async.queue_limit must be >= gradient_accumulation_steps "
+                f"(queue_limit={int(qlim)}, gas={int(gas)}). Otherwise Channel-B can never pass the feasibility gate."
+            )
+        if int(target) < int(gas):
+            raise ValueError(
+                "stage2_ab.channel_b.async.prefetch_target_packs must be >= gradient_accumulation_steps "
+                f"(prefetch_target_packs={int(target)}, gas={int(gas)}). Otherwise Channel-B will starve and always fall back to A."
+            )
+
+    def _stage2_async_ready_depth_locked(self) -> int:
+        return int(len(self._stage2_async_ready))
+
+    def _stage2_async_prune_stale_locked(self) -> None:
+        """Drop stale packs from the ready queue.
+
+        NOTE: Do not assume the deque is monotonic by `ver`. The async prefetch loop
+        can (rarely) append older-version packs after newer ones if current-version
+        rollout preparation fails and only older buffered segments remain.
+        """
+
+        cur_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+        window = int(self._stage2_async_version_window())
+        min_ver = int(cur_ver - window)
+
+        if not self._stage2_async_ready:
+            return
+
+        kept: Deque[_Stage2AsyncReadyPack] = deque()
+        dropped = 0
+        for p in self._stage2_async_ready:
+            if int(p.ver) >= int(min_ver):
+                kept.append(p)
+            else:
+                dropped += 1
+
+        if dropped <= 0:
+            return
+
+        self._stage2_async_ready.clear()
+        self._stage2_async_ready.extend(kept)
+        self._stage2_async_drop_stale_total += int(dropped)
+
+    def _stage2_async_ready_depth_fresh(self) -> int:
+        with self._stage2_async_ready_lock:
+            self._stage2_async_prune_stale_locked()
+            return self._stage2_async_ready_depth_locked()
+
+    def _stage2_async_push_ready(self, pack: _Stage2AsyncReadyPack) -> None:
+        with self._stage2_async_ready_lock:
+            self._stage2_async_prune_stale_locked()
+            limit = int(self._stage2_async_queue_limit())
+            while int(len(self._stage2_async_ready)) >= int(limit) and self._stage2_async_ready:
+                self._stage2_async_ready.popleft()
+                self._stage2_async_drop_oldest_total += 1
+            self._stage2_async_ready.append(pack)
+
+    def _stage2_async_pop_ready(self) -> _Stage2AsyncReadyPack:
+        with self._stage2_async_ready_lock:
+            self._stage2_async_prune_stale_locked()
+            if not self._stage2_async_ready:
+                raise RuntimeError("stage2-ab async ready-pack queue is empty")
+            return self._stage2_async_ready.popleft()
+
+    def _stage2_async_pop_ready_for_ver(self, *, ver: int) -> _Stage2AsyncReadyPack:
+        """Pop the oldest ready pack matching `ver`.
+
+        This enforces per-optimizer-step version purity under async Channel-B.
+        """
+        target_ver = int(ver)
+        with self._stage2_async_ready_lock:
+            self._stage2_async_prune_stale_locked()
+            if not self._stage2_async_ready:
+                raise RuntimeError("stage2-ab async ready-pack queue is empty")
+
+            out: Optional[_Stage2AsyncReadyPack] = None
+            new_q: Deque[_Stage2AsyncReadyPack] = deque()
+            while self._stage2_async_ready:
+                item = self._stage2_async_ready.popleft()
+                if out is None and int(getattr(item, "ver", 0) or 0) == target_ver:
+                    out = item
+                    break
+                new_q.append(item)
+
+            # Preserve relative order of the remaining items.
+            while self._stage2_async_ready:
+                new_q.append(self._stage2_async_ready.popleft())
+            self._stage2_async_ready = new_q
+
+            if out is None:
+                raise RuntimeError(
+                    f"stage2-ab async ready-pack queue has no eligible pack for ver={target_ver}"
+                )
+            return out
+
+    def _stage2_async_build_raw_dataloader(self):
+        """Build a num_workers=0 dataloader for async prefetch (thread-safe)."""
+        ds = getattr(self, "train_dataset", None)
+        if ds is None:
+            raise RuntimeError("trainer.train_dataset is required for async prefetch")
+
+        rank, world_size, dist = self._dist_info()
+
+        seed = 0
+        try:
+            seed = int(getattr(self.args, "seed", 0) or 0)
+        except Exception:
+            seed = 0
+
+        try:
+            from torch.utils.data import DataLoader
+        except Exception as exc:
+            raise RuntimeError("torch.utils.data.DataLoader is required") from exc
+
+        sampler = None
+        shuffle = True
+        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+            try:
+                from torch.utils.data.distributed import DistributedSampler
+
+                sampler = DistributedSampler(
+                    ds,
+                    num_replicas=int(world_size),
+                    rank=int(rank),
+                    shuffle=True,
+                    seed=int(seed),
+                    drop_last=False,
+                )
+                shuffle = False
+            except Exception as exc:
+                raise RuntimeError("Failed to create DistributedSampler for async prefetch") from exc
+
+        def _identity_collate(batch):
+            return batch
+
+        dl = DataLoader(
+            ds,
+            batch_size=1,
+            shuffle=bool(shuffle),
+            sampler=sampler,
+            collate_fn=_identity_collate,
+            num_workers=0,
+            pin_memory=False,
+            drop_last=False,
+        )
+        return dl
+
+    def _stage2_async_next_raw_sample(self) -> Mapping[str, Any]:
+        if self._stage2_async_raw_dataloader is None:
+            self._stage2_async_raw_dataloader = self._stage2_async_build_raw_dataloader()
+            self._stage2_async_raw_iter = iter(self._stage2_async_raw_dataloader)
+            self._stage2_async_raw_epoch = 0
+
+        try:
+            batch = next(self._stage2_async_raw_iter)
+        except StopIteration:
+            self._stage2_async_raw_epoch += 1
+            dl = self._stage2_async_raw_dataloader
+            sampler = getattr(dl, "sampler", None)
+            if sampler is not None and hasattr(sampler, "set_epoch"):
+                try:
+                    sampler.set_epoch(int(self._stage2_async_raw_epoch))
+                except Exception:
+                    pass
+            self._stage2_async_raw_iter = iter(dl)
+            batch = next(self._stage2_async_raw_iter)
+
+        if not isinstance(batch, list) or len(batch) != 1:
+            raise RuntimeError("async prefetch expected batch_size=1 identity-collated list")
+        sample = batch[0]
+        if not isinstance(sample, Mapping):
+            raise RuntimeError("async prefetch expected dataset samples to be mappings")
+        return sample
+
+    def _stage2_async_prefetch_loop(self) -> None:
+        local_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int, int]] = []
+        bm_by_ver: Dict[int, Mapping[str, Any]] = {}
+        logged_error = False
+
+        def _count_segments_for_ver(ver: int) -> int:
+            return sum(1 for _enc, _meta, _sl, _ver in local_segments if int(_ver) == int(ver))
+
+        while not self._stage2_async_stop.is_set():
+            try:
+                try:
+                    self._stage2_async_prefetch_iter_total += 1
+                    self._stage2_async_prefetch_state = 1
+                    self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                except Exception:
+                    pass
+                target = int(self._stage2_async_prefetch_target_packs())
+                depth = int(self._stage2_async_ready_depth_fresh())
+                if depth >= target:
+                    try:
+                        self._stage2_async_prefetch_state = 10
+                        self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                    except Exception:
+                        pass
+                    time.sleep(0.02)
+                    continue
+
+                try:
+                    self._stage2_async_prefetch_state = 2
+                    self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                except Exception:
+                    pass
+
+                # Fill segments buffer if needed.
+                rollout_gen_bs = 1
+                try:
+                    rollout_gen_bs = int(self._cfg("rollout_generate_batch_size", 1) or 1)
+                except Exception:
+                    rollout_gen_bs = 1
+                rollout_gen_bs = max(1, int(rollout_gen_bs))
+
+                cur_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+
+                while _count_segments_for_ver(cur_ver) < max(1, rollout_gen_bs):
+                    try:
+                        self._stage2_async_prefetch_state = 3
+                        self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                    except Exception:
+                        pass
+
+                    raw_samples: List[Mapping[str, Any]] = []
+                    for _ in range(int(rollout_gen_bs)):
+                        raw_samples.append(self._stage2_async_next_raw_sample())
+
+                    # Prevent server sync (DDP collectives) from being triggered in the background thread.
+                    setattr(self, "_stage2_async_skip_vllm_server_sync", True)
+                    try:
+                        with self._vllm_server_infer_guard():
+                            ver_used = int(getattr(self, "_stage2_async_ver", 0) or 0)
+
+                            try:
+                                self._stage2_async_prefetch_state = 4
+                                self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                            except Exception:
+                                pass
+                            segs, bm = self._prepare_batch_inputs_b(raw_samples, _segments_only=True)
+                            try:
+                                self._stage2_async_prefetch_state = 5
+                                self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                            except Exception:
+                                pass
+
+                        if isinstance(bm, Mapping):
+                            bm_by_ver[int(ver_used)] = bm
+                    finally:
+                        setattr(self, "_stage2_async_skip_vllm_server_sync", False)
+
+
+                    if not isinstance(segs, list) or not segs:
+                        break
+
+                    for enc, meta, sl in list(segs):
+                        local_segments.append((enc, meta, int(sl), ver_used))
+
+                    # If the version changed while we were generating, refresh our target.
+                    cur_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+
+                if not local_segments:
+                    try:
+                        self._stage2_async_prefetch_state = 11
+                        self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                    except Exception:
+                        pass
+                    time.sleep(0.02)
+                    continue
+
+                # Choose a single version to build the next pack from (version-pure packs).
+                cur_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+
+                # Prune local stale segments beyond the freshness window so we never build
+                # an out-of-window pack and don't retain unbounded version tails.
+                window = int(self._stage2_async_version_window())
+                min_ver = int(cur_ver - window)
+                if window >= 0 and local_segments:
+                    local_segments = [
+                        s for s in local_segments if int(s[3]) >= int(min_ver)
+                    ]
+                    for vv in list(bm_by_ver.keys()):
+                        if int(vv) < int(min_ver):
+                            bm_by_ver.pop(int(vv), None)
+
+                if not local_segments:
+                    try:
+                        self._stage2_async_prefetch_state = 11
+                        self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                    except Exception:
+                        pass
+                    time.sleep(0.02)
+                    continue
+
+                if any(int(v) == int(cur_ver) for _enc, _meta, _sl, v in local_segments):
+                    pack_ver = int(cur_ver)
+                else:
+                    pack_ver = int(max(int(v) for _enc, _meta, _sl, v in local_segments))
+
+                packing_length = int(self._packing_length())
+                candidate_idx = [
+                    i for i, (_enc, _meta, _sl, v) in enumerate(local_segments) if int(v) == int(pack_ver)
+                ]
+                encoded_lens = [int(local_segments[i][2]) for i in candidate_idx]
+                selected_rel = self._select_post_rollout_segment_indices(encoded_lens, packing_length)
+                if not selected_rel:
+                    raise RuntimeError("async prefetch selected an empty pack")
+
+                selected_idx = [int(candidate_idx[i]) for i in selected_rel]
+                selected = [local_segments[i] for i in selected_idx]
+                for i in sorted(selected_idx, reverse=True):
+                    local_segments.pop(int(i))
+
+                try:
+                    self._stage2_async_prefetch_state = 6
+                    self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                except Exception:
+                    pass
+
+                # Collate on CPU; the learner moves to GPU in training_step.
+                with self._template_packing_enabled():
+                    packed = self.template.data_collator([enc for enc, _, _, _ in selected])
+
+                batch: Dict[str, Any] = dict(packed)
+                self._assert_single_packed_forward(batch, where="stage2_ab/async_prefetch")
+                batch["_rollout_matching_meta"] = [m for _, m, _, _ in selected]
+                batch["_stage2_ab_channel"] = "B"
+
+                # Attach async telemetry for this pack (merge base rollout/match metrics).
+                bm_base = bm_by_ver.get(int(pack_ver), {})
+                bm2: Dict[str, Any] = dict(bm_base) if isinstance(bm_base, Mapping) else {}
+                bm2["stage2_ab/async/ver"] = float(pack_ver)
+                try:
+                    bm2["stage2_ab/async/queue_target"] = float(target)
+                    bm2["stage2_ab/async/queue_depth"] = float(self._stage2_async_ready_depth_fresh())
+                    bm2["stage2_ab/async/drop_stale_total"] = float(self._stage2_async_drop_stale_total)
+                    bm2["stage2_ab/async/drop_oldest_total"] = float(self._stage2_async_drop_oldest_total)
+                except Exception:
+                    pass
+                self._merge_rollout_matching_batch_metrics(batch, bm2)
+
+                self._stage2_async_push_ready(_Stage2AsyncReadyPack(ver=int(pack_ver), batch=batch))
+                try:
+                    self._stage2_async_prefetch_state = 7
+                    self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                except Exception:
+                    pass
+                try:
+                    self._stage2_async_prefetch_success_total += 1
+                except Exception:
+                    pass
+            except Exception as exc:
+                try:
+                    self._stage2_async_prefetch_state = 99
+                    self._stage2_async_prefetch_last_progress_ts = float(time.time())
+                except Exception:
+                    pass
+
+                # During interpreter teardown (e.g. torchrun shutdown), background threads may
+                # see "cannot schedule new futures after interpreter shutdown" and similar.
+                # Avoid logging/retrying in that state; just exit the daemon thread.
+                try:
+                    import sys
+
+                    if bool(getattr(sys, "is_finalizing", lambda: False)()):
+                        return
+                except Exception:
+                    pass
+                if bool(self._stage2_async_stop.is_set()):
+                    return
+
+                try:
+                    self._stage2_async_prefetch_fail_total += 1
+                except Exception:
+                    pass
+
+                if not logged_error:
+                    logger.exception("Stage2-AB async prefetch failed (will retry)")
+                    logged_error = True
+                time.sleep(0.1)
+
+    def _stage2_async_ensure_prefetch_thread(self) -> None:
+        if self._stage2_async_prefetch_thread is not None:
+            return
+        th = threading.Thread(
+            target=self._stage2_async_prefetch_loop,
+            name="stage2_ab_async_prefetch",
+            daemon=True,
+        )
+        self._stage2_async_prefetch_thread = th
+        th.start()
+
+    def _stage2_async_should_sync(self, global_step: int) -> bool:
+        every = int(self._stage2_async_sync_every_steps())
+        if every <= 1:
+            return True
+        last = getattr(self, "_stage2_async_last_synced_gs", None)
+        if last is None:
+            return True
+        return int(global_step) - int(last) >= int(every)
+
+    def _stage2_async_maybe_sync_server(self, global_step: int) -> None:
+        rank, world_size, dist = self._dist_info()
+
+        do_sync = bool(self._stage2_async_should_sync(int(global_step)))
+        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+            flag = [bool(do_sync)] if int(rank) == 0 else [False]
+            dist.broadcast_object_list(flag, src=0)
+            do_sync = bool(flag[0])
+
+        if not bool(do_sync):
+            return
+
+        # Fence background HTTP infer against rank0 sync.
+        self._stage2_async_pause_infer_for_sync()
+        try:
+            # All ranks participate in sync barriers (DDP safety). Rank0 does the weight push.
+            self._sync_vllm_server_rollout_model_if_needed()
+        finally:
+            self._stage2_async_resume_infer_after_sync()
+
+        # Advance ver (rank0 authority under DDP).
+        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+            ver = [int(getattr(self, "_stage2_async_ver", 0) or 0)]
+            if int(rank) == 0:
+                ver = [int(ver[0]) + 1]
+                self._stage2_async_last_synced_gs = int(global_step)
+            dist.broadcast_object_list(ver, src=0)
+            self._stage2_async_ver = int(ver[0])
+        else:
+            self._stage2_async_ver = int(getattr(self, "_stage2_async_ver", 0) or 0) + 1
+            self._stage2_async_last_synced_gs = int(global_step)
+
+    def _stage2_async_decide_step_kind(self, *, global_step: int, policy_wants_b: bool) -> str:
+        rank, world_size, dist = self._dist_info()
+        gas = 1
+        try:
+            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+        except Exception:
+            gas = 1
+        gas = max(1, int(gas))
+
+        cur_ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+        window = int(self._stage2_async_version_window())
+
+        step_kind = "A"
+        step_ver: Optional[int] = None
+
+        if bool(policy_wants_b):
+            # Version-pure feasibility gate: require >= GAS packs of a single eligible `ver`.
+            for cand_ver in range(int(cur_ver), int(cur_ver) - int(window) - 1, -1):
+                local_count = 0
+                with self._stage2_async_ready_lock:
+                    self._stage2_async_prune_stale_locked()
+                    for p in self._stage2_async_ready:
+                        try:
+                            if int(getattr(p, "ver", 0) or 0) == int(cand_ver):
+                                local_count += 1
+                        except Exception:
+                            continue
+
+                min_count = int(local_count)
+                if (
+                    dist is not None
+                    and dist.is_available()
+                    and dist.is_initialized()
+                    and int(world_size) > 1
+                ):
+                    t = torch.tensor([int(local_count)], device=self.model.device, dtype=torch.int64)
+                    dist.all_reduce(t, op=dist.ReduceOp.MIN)
+                    min_count = int(t.detach().cpu().item())
+
+                if int(min_count) >= int(gas):
+                    step_kind = "B"
+                    step_ver = int(cand_ver)
+                    break
+
+        # Rank0 authority: broadcast final step decision.
+        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+            obj = (
+                [{"kind": str(step_kind), "ver": step_ver}] if int(rank) == 0 else [{}]
+            )
+            dist.broadcast_object_list(obj, src=0)
+            payload = obj[0] if isinstance(obj[0], Mapping) else {}
+            step_kind = str(payload.get("kind", "A"))
+            v = payload.get("ver", None)
+            try:
+                step_ver = int(v) if v is not None else None
+            except Exception:
+                step_ver = None
+
+        self._stage2_async_step_ver = step_ver
+        return "B" if step_kind == "B" else "A"
 
     def _stage2_b_rollouts_per_step(self) -> int:
         raw = self._ab_channel_b_get("rollouts_per_step", None)
@@ -730,6 +1498,24 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         # Bresenham-style deterministic ratio schedule: select B iff the running
         # floor count increases at this step.
+        a = math.floor(float(s + 1) * float(b_ratio))
+        b = math.floor(float(s) * float(b_ratio))
+        return "B" if a > b else "A"
+
+    def _stage2_policy_channel_for_step(self, global_step: int) -> Literal["A", "B"]:
+        """Deterministic schedule policy (ignores any channel override).
+
+        Async actor-learner uses this to decide whether we *want* Channel-B for a given
+        optimizer step, before applying feasibility gates.
+        """
+        b_ratio = float(self._ab_schedule_b_ratio())
+        s = int(global_step)
+
+        if b_ratio <= 0.0:
+            return "A"
+        if b_ratio >= 1.0:
+            return "B"
+
         a = math.floor(float(s + 1) * float(b_ratio))
         b = math.floor(float(s) * float(b_ratio))
         return "B" if a > b else "A"
@@ -897,6 +1683,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             with self._template_packing_enabled():
                 packed = self.template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             bm: Dict[str, float] = {}
@@ -904,7 +1691,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             bm.update({str(k): float(v) for k, v in step_totals.items()})
             bm.update({str(k): float(v) for k, v in pack_metrics.items()})
 
-            batch["_rollout_matching_batch_metrics"] = bm
+            self._merge_rollout_matching_batch_metrics(batch, bm)
             batch["_stage2_ab_channel"] = "A"
 
             pack_segments = int(len(selected))
@@ -1079,6 +1866,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             with self._template_packing_enabled():
                 packed = self.template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             bm: Dict[str, float] = {}
@@ -1088,7 +1876,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             bm.update({str(k): float(v) for k, v in step_totals.items()})
             bm.update({str(k): float(v) for k, v in pack_metrics.items()})
 
-            batch["_rollout_matching_batch_metrics"] = bm
+            self._merge_rollout_matching_batch_metrics(batch, bm)
             batch["_stage2_ab_channel"] = "B"
 
             pack_segments = int(len(selected))
@@ -1415,46 +2203,197 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 model, inputs, *args, **kwargs
             )
 
-        # Buffering is a training-only optimization.
-        if not bool(getattr(model, "training", False)):
-            self._rm_rollout_buffer = None
-            ch = self._stage2_channel_for_step(
-                int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-            )
-            prev = self._stage2_channel_override
-            self._stage2_channel_override = ch
-            try:
-                prepared = self._prepare_batch_inputs(inputs)
-            finally:
-                self._stage2_channel_override = prev
-            return super(RolloutMatchingSFTTrainer, self).training_step(
-                model, prepared, *args, **kwargs
-            )
+        self._validate_rollout_matching_cfg()
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
         ch_sched = self._stage2_channel_for_step(gs)
 
-        buf = self._maybe_init_rollout_buffer()
-        if buf is not None:
-            buf.on_micro_step_start(global_step=gs)
+        rank, world_size, dist = self._dist_info()
+        b_mode = self._stage2_b_step_mode()
 
-        reuse_active = bool(
-            buf is not None
-            and getattr(buf, "window_step0", None) is not None
-            and int(getattr(buf, "completed_optimizer_steps", 0) or 0) > 0
-            and int(getattr(buf, "m_steps", 1) or 1) > 1
-        )
+        if b_mode == "step" and int(world_size) > 1:
+            raise ValueError(
+                "stage2_ab.channel_b.mode='step' is not supported under multi-GPU learner (DDP) (world_size>1). "
+                "Use channel_b.mode='async' (recommended) or channel_b.mode='micro'."
+            )
 
-        if reuse_active:
-            ch_sched = "B"
+        # Async actor-learner: rank0 chooses A/B per optimizer step, gated by ready-pack queues.
+        if b_mode == "async":
+            self._stage2_async_validate_requirements()
+            self._stage2_async_ensure_prefetch_thread()
+
+            # Step boundary: decide step kind and run rank0 server sync (DDP-safe).
+            if self._stage2_async_step_gs is None or int(self._stage2_async_step_gs) != int(gs):
+                self._stage2_async_step_gs = int(gs)
+                self._stage2_async_step_micro = 0
+                ch_policy = self._stage2_policy_channel_for_step(gs)
+                policy_wants_b = bool(ch_policy == "B")
+                self._stage2_async_policy_wants_b = bool(policy_wants_b)
+
+                # Sync server weights (rank0 authority) at a safe fence.
+                self._stage2_async_maybe_sync_server(global_step=gs)
+
+                # Decide A/B for the whole accumulation window (queue feasibility gate).
+                step_kind = self._stage2_async_decide_step_kind(
+                    global_step=gs, policy_wants_b=bool(policy_wants_b)
+                )
+                self._stage2_async_step_kind = "B" if step_kind == "B" else "A"
+
+                # Override channel selection for any helper methods that consult the schedule.
+                self._stage2_channel_override = self._stage2_async_step_kind
+
+            self._stage2_async_step_micro += 1
+
+            gas = 1
+            try:
+                gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+            except Exception:
+                gas = 1
+            gas = max(1, int(gas))
+
+            # Per-micro-step async telemetry.
+            depth = int(self._stage2_async_ready_depth_fresh())
+            ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
+            policy_wants_b = bool(getattr(self, "_stage2_async_policy_wants_b", False))
+            executed_b = bool(self._stage2_async_step_kind == "B")
+            skipped_due_to_queue = bool(policy_wants_b and not executed_b)
+
+            prefetch_state = 0
+            prefetch_iter = 0
+            prefetch_age_s = -1.0
+            try:
+                prefetch_state = int(getattr(self, "_stage2_async_prefetch_state", 0) or 0)
+                prefetch_iter = int(getattr(self, "_stage2_async_prefetch_iter_total", 0) or 0)
+                last_ts = float(
+                    getattr(self, "_stage2_async_prefetch_last_progress_ts", 0.0) or 0.0
+                )
+                if last_ts > 0:
+                    prefetch_age_s = float(max(0.0, float(time.time()) - float(last_ts)))
+            except Exception:
+                prefetch_state = 0
+                prefetch_iter = 0
+                prefetch_age_s = -1.0
+
+            async_metrics: Dict[str, float] = {
+                "stage2_ab/async/policy_wants_b": float(1.0 if policy_wants_b else 0.0),
+                "stage2_ab/async/step_kind_b": float(1.0 if executed_b else 0.0),
+                "stage2_ab/async/b_step_skipped_due_to_queue": float(
+                    1.0 if skipped_due_to_queue else 0.0
+                ),
+                "stage2_ab/async/queue_depth": float(depth),
+                "stage2_ab/async/queue_limit": float(self._stage2_async_queue_limit()),
+                "stage2_ab/async/prefetch_target_packs": float(
+                    self._stage2_async_prefetch_target_packs()
+                ),
+                "stage2_ab/async/version_window": float(self._stage2_async_version_window()),
+                "stage2_ab/async/ver_current": float(ver),
+                "stage2_ab/async/drop_stale_total": float(self._stage2_async_drop_stale_total),
+                "stage2_ab/async/drop_oldest_total": float(self._stage2_async_drop_oldest_total),
+                "stage2_ab/async/prefetch_success_total": float(
+                    self._stage2_async_prefetch_success_total
+                ),
+                "stage2_ab/async/prefetch_fail_total": float(self._stage2_async_prefetch_fail_total),
+                "stage2_ab/async/prefetch_iter_total": float(prefetch_iter),
+                "stage2_ab/async/prefetch_state": float(prefetch_state),
+                "stage2_ab/async/prefetch_last_progress_s_ago": float(prefetch_age_s),
+                "stage2_ab/async/sync_in_progress": float(
+                    1.0 if bool(getattr(self, "_stage2_async_sync_in_progress", False)) else 0.0
+                ),
+                "stage2_ab/async/infer_inflight": float(
+                    int(getattr(self, "_stage2_async_infer_inflight", 0) or 0)
+                ),
+                "stage2_ab/async/is_prefetch_in_prepare_b": float(
+                    1.0 if int(prefetch_state) == 4 else 0.0
+                ),
+                "stage2_ab/async/is_prefetch_queue_full": float(
+                    1.0 if int(prefetch_state) == 10 else 0.0
+                ),
+                "stage2_ab/async/is_prefetch_no_segments": float(
+                    1.0 if int(prefetch_state) == 11 else 0.0
+                ),
+                "stage2_ab/async/is_prefetch_error": float(
+                    1.0 if int(prefetch_state) == 99 else 0.0
+                ),
+                "stage2_ab/async/gas": float(gas),
+            }
+
+            if executed_b:
+                step_ver = getattr(self, "_stage2_async_step_ver", None)
+                if step_ver is None:
+                    raise RuntimeError("stage2-ab async step_ver is unset for a B step")
+                async_metrics["stage2_ab/async/ver_step"] = float(int(step_ver))
+
+                pack = self._stage2_async_pop_ready_for_ver(ver=int(step_ver))
+                try:
+                    ver_lag = max(0, ver - int(getattr(pack, "ver", 0) or 0))
+                except Exception:
+                    ver_lag = 0
+                async_metrics["stage2_ab/async/ver_lag"] = float(ver_lag)
+
+                prepared = dict(pack.batch)
+
+                try:
+                    from swift.llm import to_device
+
+                    prepared = to_device(prepared, self.model.device)
+                except Exception:
+                    pass
+
+                bm = prepared.get("_rollout_matching_batch_metrics")
+                bm_out = dict(bm) if isinstance(bm, Mapping) else {}
+                bm_out.update(async_metrics)
+                prepared["_rollout_matching_batch_metrics"] = bm_out
+                prepared["_stage2_ab_channel"] = "B"
+
+                return super(RolloutMatchingSFTTrainer, self).training_step(
+                    model, prepared, *args, **kwargs
+                )
+
+            # Step kind A: use the normal Stage2-AB Channel-A preparation.
+            prev = self._stage2_channel_override
+            self._stage2_channel_override = "A"
+            try:
+                packing_enabled = bool(self._packing_enabled())
+                if (
+                    packing_enabled
+                    and self._post_rollout_pack_scope() == "window"
+                    and isinstance(inputs, _WindowedMicroBatch)
+                ):
+                    win = inputs.rm_window
+                    idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
+
+                    def _build_all() -> List[Dict[str, Any]]:
+                        return self._prepare_window_packed_batches(
+                            window_raw_micro_batches=win.raw_micro_batches,
+                            global_step=gs,
+                        )
+
+                    prepared = win.get_prepared(
+                        idx=idx, build_all_prepared=_build_all
+                    )
+                else:
+                    prepared = self._prepare_batch_inputs(inputs)
+            finally:
+                self._stage2_channel_override = prev
+
+            bm = None
+            try:
+                bm = prepared.get("_rollout_matching_batch_metrics")
+            except Exception:
+                bm = None
+            if isinstance(prepared, Mapping):
+                bm_out = dict(bm) if isinstance(bm, Mapping) else {}
+                bm_out.update(async_metrics)
+                prepared = dict(prepared)
+                prepared["_rollout_matching_batch_metrics"] = bm_out
+                prepared["_stage2_ab_channel"] = "A"
+
+            return super(RolloutMatchingSFTTrainer, self).training_step(
+                model, prepared, *args, **kwargs
+            )
 
         # Optional: Channel-B step-budgeted mode (rollout ~N raw samples, then pack+learn-to-completion).
-        if ch_sched == "B" and self._stage2_b_step_mode() == "step":
-            if buf is not None:
-                raise ValueError(
-                    "stage2-ab Channel-B step mode is incompatible with rollout_buffer reuse; "
-                    "disable custom.extra.rollout_matching.rollout_buffer or use channel_b.mode='micro'"
-                )
+        if ch_sched == "B" and b_mode == "step":
             return self._stage2_training_step_b_step_mode(model, inputs, global_step=gs)
 
         if ch_sched == "A":
@@ -1473,42 +2412,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 model, prepared, *args, **kwargs
             )
 
-        if buf is None:
-            prev = self._stage2_channel_override
-            self._stage2_channel_override = "B"
-            try:
-                packing_enabled = bool(self._packing_enabled())
-                if (
-                    packing_enabled
-                    and self._post_rollout_pack_scope() == "window"
-                    and isinstance(inputs, _WindowedMicroBatch)
-                ):
-                    win = inputs.rm_window
-                    idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
-
-                    def _build_all() -> List[Dict[str, Any]]:
-                        prev2 = self._stage2_channel_override
-                        self._stage2_channel_override = "B"
-                        try:
-                            return self._prepare_window_packed_batches(
-                                window_raw_micro_batches=win.raw_micro_batches,
-                                global_step=gs,
-                            )
-                        finally:
-                            self._stage2_channel_override = prev2
-
-                    prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
-                else:
-                    prepared = self._prepare_batch_inputs(inputs)
-            finally:
-                self._stage2_channel_override = prev
-            return super(RolloutMatchingSFTTrainer, self).training_step(
-                model, prepared, *args, **kwargs
-            )
-
-        raw_fp = _fingerprint_raw_micro_batch(inputs)
-
-        def _build_prepared() -> Dict[str, Any]:
+        prev = self._stage2_channel_override
+        self._stage2_channel_override = "B"
+        try:
             packing_enabled = bool(self._packing_enabled())
             if (
                 packing_enabled
@@ -1519,59 +2425,22 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
 
                 def _build_all() -> List[Dict[str, Any]]:
-                    prev2 = self._stage2_channel_override
-                    self._stage2_channel_override = "B"
-                    try:
-                        return self._prepare_window_packed_batches(
-                            window_raw_micro_batches=win.raw_micro_batches,
-                            global_step=gs,
-                        )
-                    finally:
-                        self._stage2_channel_override = prev2
+                    return self._prepare_window_packed_batches(
+                        window_raw_micro_batches=win.raw_micro_batches,
+                        global_step=gs,
+                    )
 
-                prepared2 = win.get_prepared(idx=idx, build_all_prepared=_build_all)
-                return prepared2
-
-            prev2 = self._stage2_channel_override
-            self._stage2_channel_override = "B"
-            try:
-                prepared2 = self._prepare_batch_inputs(inputs)
-            finally:
-                self._stage2_channel_override = prev2
-            if not isinstance(prepared2, dict):
-                raise ValueError("prepared batch must be a dict")
-            return prepared2
-
-        batch, reused = buf.select_batch(
-            global_step=gs, raw_fp=raw_fp, build_prepared=_build_prepared
-        )
-
-        try:
-            bm = batch.get("_rollout_matching_batch_metrics")
-            if not isinstance(bm, dict):
-                bm = {}
-                batch["_rollout_matching_batch_metrics"] = bm
-
-            bm["rollout/buffer_reuse"] = float(1.0 if reused else 0.0)
-            bm["stage2_ab/channel_b/is_reuse_step"] = float(
-                1.0 if reused else 0.0
-            )
-            bm["rollout/buffer_window_step0"] = float(
-                -1 if buf.window_step0 is None else int(buf.window_step0)
-            )
-            bm["rollout/buffer_completed_steps"] = float(buf.completed_optimizer_steps)
-
-            if reused:
-                bm["time/rollout_generate_s"] = 0.0
-                bm["time/rollout_parse_match_s"] = 0.0
-                bm["time/rollout_teacher_encode_s"] = 0.0
-                bm["time/post_rollout_pack_s"] = 0.0
-        except Exception:
-            pass
+                prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
+            else:
+                prepared = self._prepare_batch_inputs(inputs)
+        finally:
+            self._stage2_channel_override = prev
 
         return super(RolloutMatchingSFTTrainer, self).training_step(
-            model, batch, *args, **kwargs
+            model, prepared, *args, **kwargs
         )
+
+
 
     def _prepare_window_packed_batches(
         self,
@@ -1585,32 +2454,62 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         rollout request batch size can be > learner microbatch size.
 
         - Learner microbatch stays small (typically 1 packed sequence per backward).
-        - Rollouts are generated for the whole window, optionally chunked by
-          `custom.extra.rollout_matching.rollout_infer_batch_size`.
+        - Channel-B rollouts can be generated for the whole window in one pass.
+        - Channel-A teacher-forced targets are encoded for the whole window in one pass.
         """
 
         gas = int(len(window_raw_micro_batches))
         if gas <= 0:
             raise ValueError("window_raw_micro_batches is empty")
 
+        ch = self._stage2_channel_for_step(int(global_step))
+        channel: Literal["A", "B"] = "A" if ch == "A" else "B"
+
         # Flatten window samples (preserve micro-step order).
         flat_inputs: List[Mapping[str, Any]] = []
-        per_micro_n: List[int] = []
         for mb in window_raw_micro_batches:
-            per_micro_n.append(int(len(mb)))
             flat_inputs.extend(list(mb))
 
         # Build post-rollout segments for the whole window in one pass.
-        # This triggers rollout generation on `flat_inputs` and then parses/matches
-        # per sample to produce segments.
-        segs, bm_total = self._prepare_batch_inputs_b(flat_inputs, _segments_only=True)
+        if channel == "A":
+            segs, bm_total = self._prepare_batch_inputs_a(
+                flat_inputs, _segments_only=True
+            )
+        else:
+            segs, bm_total = self._prepare_batch_inputs_b(
+                flat_inputs, _segments_only=True
+            )
 
         # Schedule segments into exactly `gas` micro-packs.
         t_pack0 = time.perf_counter()
-        packs, window_pack_metrics = self._schedule_post_rollout_packs_window(
-            window_segments=segs,
-            gas=gas,
-        )
+        packs: List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]]
+        window_pack_metrics: Dict[str, float] = {}
+        fallback_used = False
+        pack_metrics_list: Optional[List[Dict[str, float]]] = None
+        try:
+            packs, window_pack_metrics = self._schedule_post_rollout_packs_window(
+                window_segments=segs,
+                gas=gas,
+            )
+        except Exception as exc:
+            # Fallback: greedy carry packing using the channel-local buffer. This is
+            # less strict than window scheduling (it can borrow segments across micro-steps)
+            # and avoids a hard failure when a window produces too few/infeasible segments.
+            fallback_used = True
+            logger.warning(
+                "stage2-ab window packing failed (channel=%s); falling back to greedy carry packing for this window: %s",
+                channel,
+                exc,
+            )
+            self._stage2_append_post_rollout_segments(channel=channel, segments=segs)
+
+            packs = []
+            pack_metrics_list = []
+            for _ in range(int(gas)):
+                selected, pm = self._stage2_pop_post_rollout_pack(channel=channel)
+                packs.append(selected)
+                pack_metrics_list.append(dict(pm) if isinstance(pm, Mapping) else {})
+
         t_pack_s = float(time.perf_counter() - t_pack0)
 
         template = self.template
@@ -1631,6 +2530,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             bm: Dict[str, float] = {}
@@ -1642,28 +2542,41 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                         if isinstance(v, (int, float))
                     }
                 )
-                bm.update(window_pack_metrics)
+                if not fallback_used:
+                    bm.update(window_pack_metrics)
                 bm["time/post_rollout_pack_s"] = float(t_pack_s)
                 bm["packing/post_rollout_scope_window"] = 1.0
+                bm["packing/post_rollout_scope_window_fallback"] = float(
+                    1.0 if fallback_used else 0.0
+                )
             else:
                 bm["time/post_rollout_pack_s"] = 0.0
                 bm["packing/post_rollout_scope_window"] = 0.0
+                bm["packing/post_rollout_scope_window_fallback"] = 0.0
 
             sel_total = int(sum(int(sl) for _, _, sl in selected))
             fill = (
                 float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
             )
+
+            buf_size = 0.0
+            if fallback_used and pack_metrics_list is not None and i < len(pack_metrics_list):
+                try:
+                    buf_size = float(pack_metrics_list[i].get("packing/post_rollout_buffer", 0.0))
+                except Exception:
+                    buf_size = 0.0
+
             bm.update(
                 {
                     "packing/post_rollout_fill": float(fill),
                     "packing/post_rollout_selected_total_len": float(sel_total),
                     "packing/post_rollout_segments": float(len(selected)),
-                    "packing/post_rollout_buffer": float(0.0),
+                    "packing/post_rollout_buffer": float(buf_size if fallback_used else 0.0),
                 }
             )
 
-            batch["_rollout_matching_batch_metrics"] = bm
-            batch["_stage2_ab_channel"] = "B"
+            self._merge_rollout_matching_batch_metrics(batch, bm)
+            batch["_stage2_ab_channel"] = channel
             prepared.append(batch)
 
         return prepared
@@ -1900,20 +2813,21 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             batch_metrics.update(pack_metrics)
             batch_metrics["time/post_rollout_pack_s"] = float(
                 time.perf_counter() - t_pack0
             )
-            batch["_rollout_matching_batch_metrics"] = batch_metrics
+            self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
             batch["_stage2_ab_channel"] = "A"
             return batch
 
         with self._template_packing_disabled():
             batch = to_device(template.data_collator(encoded_batch), self.model.device)
         batch["_rollout_matching_meta"] = meta_unpacked
-        batch["_rollout_matching_batch_metrics"] = batch_metrics
+        self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
         batch["_stage2_ab_channel"] = "A"
         return batch
 
@@ -2001,7 +2915,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
         num_beams = int(self._cfg("num_beams", 1))
-        temperature = float(self._cfg("temperature", 0.0))
+        temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         do_sample = bool(float(temperature) > 0.0)
 
@@ -2766,6 +3680,8 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             "rollout/decode_mode_beam": float(1.0 if decode_mode == "beam" else 0.0),
             "rollout/hf_seeded_global": float(hf_seeded_global),
             "rollout/temperature": float(temperature),
+            "rollout/top_p": float(top_p),
+            "rollout/top_k": float(top_k),
             "rollout/do_sample": float(1.0 if do_sample else 0.0),
             "rollout/max_new_tokens": float(max_new_tokens),
             "rollout/num_beams": float(num_beams),
@@ -2806,13 +3722,14 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
+            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             batch_metrics.update(pack_metrics)
             batch_metrics["time/post_rollout_pack_s"] = float(
                 time.perf_counter() - t_pack0
             )
-            batch["_rollout_matching_batch_metrics"] = batch_metrics
+            self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
             batch["_stage2_ab_channel"] = "B"
             return batch
 
@@ -2825,7 +3742,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         with self._template_packing_disabled():
             batch = to_device(template.data_collator(encoded_batch), self.model.device)
         batch["_rollout_matching_meta"] = meta_unpacked
-        batch["_rollout_matching_batch_metrics"] = batch_metrics
+        self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
         batch["_stage2_ab_channel"] = "B"
         return batch
 

@@ -1228,9 +1228,47 @@ def main():
                 if isinstance(extra_cfg, Mapping)
                 else {}
             )
-            rollout_cfg: dict[str, Any] = (
-                dict(rollout_cfg_raw) if isinstance(rollout_cfg_raw, Mapping) else {}
-            )
+            if rollout_cfg_raw is None:
+                rollout_cfg_raw = {}
+            if not isinstance(rollout_cfg_raw, Mapping):
+                raise TypeError(
+                    "custom.extra.rollout_matching must be a mapping when provided"
+                )
+
+            rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
+
+            # BREAKING: decoding knobs moved under custom.extra.rollout_matching.decoding.*.
+            legacy_decoding_keys = [
+                k for k in ("temperature", "top_p", "top_k") if k in rollout_cfg
+            ]
+            if legacy_decoding_keys:
+                keys_s = ", ".join(
+                    f"custom.extra.rollout_matching.{k}" for k in legacy_decoding_keys
+                )
+                raise ValueError(
+                    "Legacy rollout decoding keys have been removed: "
+                    f"{keys_s}. Use custom.extra.rollout_matching.decoding.* instead. "
+                    "(No backward compatibility.)"
+                )
+
+            # BREAKING: rollout_buffer was an old sync reuse optimization and is removed.
+            if "rollout_buffer" in rollout_cfg:
+                raise ValueError(
+                    "custom.extra.rollout_matching.rollout_buffer has been removed. "
+                    "Remove this section from your config. (No backward compatibility.)"
+                )
+
+            decoding_raw = rollout_cfg.get("decoding", None)
+            if decoding_raw is None:
+                decoding: dict[str, Any] = {}
+            elif isinstance(decoding_raw, Mapping):
+                decoding = dict(decoding_raw)
+            else:
+                raise TypeError(
+                    "custom.extra.rollout_matching.decoding must be a mapping when provided"
+                )
+            rollout_cfg["decoding"] = decoding
+
             # Inject packing runtime knobs (stage_2 uses dynamic post-rollout packing; dataset packing is disabled).
             rollout_cfg.update(
                 {
@@ -1242,15 +1280,21 @@ def main():
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)
+
+            validate_hook = getattr(trainer, "_validate_rollout_matching_cfg", None)
+            if callable(validate_hook):
+                validate_hook()
+
             logger.info(
                 "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s",
                 rollout_cfg.get("rollout_backend", "vllm"),
                 rollout_cfg.get("packing_enabled", False),
             )
         except Exception as exc:
-            logger.warning(
-                "Failed to inject rollout_matching_cfg into trainer: %s", exc
-            )
+            raise RuntimeError(
+                "Failed to inject rollout_matching_cfg into trainer. "
+                "This is required for rollout-matching/stage2-ab trainer variants."
+            ) from exc
 
     if trainer_variant == "stage2_ab_training":
         try:
@@ -1261,6 +1305,19 @@ def main():
                     "check config parsing (top-level stage2_ab section)."
                 )
             stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
+
+            # Normalize reserved-word keys from typed config.
+            try:
+                chb = stage2_ab_cfg.get("channel_b")
+                if (
+                    isinstance(chb, dict)
+                    and "async_" in chb
+                    and "async" not in chb
+                ):
+                    chb["async"] = chb.pop("async_")
+            except Exception:
+                pass
+
             setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
 
             try:
