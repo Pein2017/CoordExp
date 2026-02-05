@@ -30,6 +30,9 @@ Download (full):
 ```bash
 ./public_data/run.sh coco download
 ```
+Notes:
+- This uses the runner's fast path (`aria2c` multi-connection) when available; install `aria2` and `unzip`.
+- If you pass passthrough args after `--`, the runner falls back to the dataset plugin downloader.
 
 Convert (full):
 ```bash
@@ -39,7 +42,7 @@ Convert (full):
 Validate raw JSONL contract (structure + bbox sanity):
 ```bash
 ./public_data/run.sh coco validate --raw-only --skip-image-check
-conda run -n ms python public_data/scripts/validate_coco2017_instances.py public_data/coco/raw/train.jsonl --categories_json public_data/coco/raw/categories.json --require-80 --sample_out public_data/coco/raw/sample_first5_train.jsonl
+python public_data/scripts/validate_coco2017_instances.py public_data/coco/raw/train.jsonl --categories_json public_data/coco/raw/categories.json --require-80 --sample_out public_data/coco/raw/sample_first5_train.jsonl
 ```
 
 Optional: run the shared pipeline to generate training-ready preset artifacts
@@ -53,7 +56,7 @@ This downloads only annotations, converts a small sample, validates, and emits a
 ```bash
 ./public_data/run.sh coco download -- --annotations-only && \
 ./public_data/run.sh coco convert -- --max_samples 100 && \
-conda run -n ms python public_data/scripts/validate_coco2017_instances.py public_data/coco/raw/train.jsonl \
+python public_data/scripts/validate_coco2017_instances.py public_data/coco/raw/train.jsonl \
   --categories_json public_data/coco/raw/categories.json \
   --require-80 \
   --sample_out public_data/coco/raw/sample_first5_train.jsonl

@@ -127,9 +127,29 @@ download_coco_raw_aria2c() {
   local url_ann="http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
 
   banner "[coco] aria2c download (multi-conn) -> ${downloads_dir}"
-  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_train}"
-  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_val}"
-  run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_ann}"
+  local train_zip="${downloads_dir}/train2017.zip"
+  local val_zip="${downloads_dir}/val2017.zip"
+  local ann_zip="${downloads_dir}/annotations_trainval2017.zip"
+
+  # Skip already-complete downloads (prevents re-hitting the server and failing on transient 503s).
+  # If a corresponding *.aria2 file exists, treat it as incomplete and resume with -c.
+  if [[ -f "${train_zip}" && ! -f "${train_zip}.aria2" ]]; then
+    echo "[coco] skip download: already present ${train_zip}" >&2
+  else
+    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_train}"
+  fi
+
+  if [[ -f "${val_zip}" && ! -f "${val_zip}.aria2" ]]; then
+    echo "[coco] skip download: already present ${val_zip}" >&2
+  else
+    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_val}"
+  fi
+
+  if [[ -f "${ann_zip}" && ! -f "${ann_zip}.aria2" ]]; then
+    echo "[coco] skip download: already present ${ann_zip}" >&2
+  else
+    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_ann}"
+  fi
 
   banner "[coco] sha256 checksums -> ${downloads_dir}/SHA256SUMS.txt"
   run_cmd bash -c "cd \"${downloads_dir}\" && sha256sum train2017.zip val2017.zip annotations_trainval2017.zip > SHA256SUMS.txt"

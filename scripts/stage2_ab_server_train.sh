@@ -4,7 +4,7 @@
 # Example (single node, 4 GPUs):
 #   bash scripts/stage2_ab_server_train.sh \
 #     server_gpus=0,1,2 train_gpus=3 \
-#     config=configs/stage2_ab/smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server_3v1.yaml
+#     config=configs/stage2_ab/smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ SERVER_GPUS="${server_gpus:-0,1,2}"
 TRAIN_GPUS="${train_gpus:-3}"
 WAIT_TIMEOUT="${wait_timeout:-900}"
 WAIT_INTERVAL="${wait_interval:-2}"
-CONFIG_RAW="${config:-configs/stage2_ab/smoke_bbox_max60_ckpt1516_ab_mixed_vllm_server_3v1.yaml}"
+CONFIG_RAW="${config:-configs/stage2_ab/smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml}"
 DEBUG="${debug:-false}"
 TRAIN_ENV="${train_env:-}"
 DISABLE_PROXY="${disable_proxy:-true}"
@@ -49,12 +49,6 @@ fi
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "[ERROR] Config file not found: ${CONFIG_PATH}" >&2
   exit 1
-fi
-
-# vLLM server-mode constraint: learner must be a single process (world_size==1).
-if [[ "${TRAIN_GPUS}" == *","* ]]; then
-  echo "[ERROR] vLLM server mode requires a single-GPU learner (no torchrun). train_gpus=${TRAIN_GPUS}" >&2
-  exit 2
 fi
 
 _maybe_disable_proxy() {
@@ -243,8 +237,59 @@ server_gpu_array=()
 for _dev in "${_server_gpu_array[@]}"; do
   [[ -n "${_dev// }" ]] && server_gpu_array+=("${_dev}")
 done
+
+# Derive learner world size from TRAIN_GPUS.
+IFS=',' read -r -a _train_gpu_array <<< "${TRAIN_GPUS}"
+train_gpu_array=()
+for _dev in "${_train_gpu_array[@]}"; do
+  [[ -n "${_dev// }" ]] && train_gpu_array+=("${_dev}")
+done
+TRAIN_WORLD_SIZE="${#train_gpu_array[@]}"
+if [[ "${TRAIN_WORLD_SIZE}" -le 0 ]]; then
+  echo "[ERROR] train_gpus must contain at least one device id. train_gpus=${TRAIN_GPUS}" >&2
+  exit 2
+fi
+
+# Validate that server and learner GPU sets are disjoint (strict role split).
+declare -A _gpu_seen=()
+for _dev in "${server_gpu_array[@]}"; do
+  _gpu_seen[$_dev]="server"
+done
+for _dev in "${train_gpu_array[@]}"; do
+  if [[ -n "${_gpu_seen[$_dev]+x}" ]]; then
+    echo "[ERROR] server_gpus and train_gpus must be disjoint. Overlap on GPU ${_dev}." >&2
+    echo "[ERROR] server_gpus=${SERVER_GPUS} train_gpus=${TRAIN_GPUS}" >&2
+    exit 2
+  fi
+  _gpu_seen[$_dev]="train"
+done
+
 SERVER_DP="${server_dp:-${#server_gpu_array[@]}}"
 SERVER_TP="${server_tp:-1}"
+
+# Server runtime knobs (kept config-free; affects only server launch)
+SERVER_TORCH_DTYPE="${server_torch_dtype:-bfloat16}"
+SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-true}"
+
+# Default server parallelism: **data-parallel first** (tp=1, dp=#gpus).
+# Rationale: on nodes where a single GPU can fit the full model, DP maximizes
+# rollout throughput and keeps per-request latency stable.
+#
+# If caller sets `server_tp>1` (and leaves `server_dp` unset), we derive
+# `server_dp = n_gpus / server_tp` so TP+DP combinations still work without
+# extra knobs.
+if [[ -z "${server_dp:-}" ]]; then
+  if [[ "${SERVER_TP}" -le 0 ]]; then
+    echo "[ERROR] server_tp must be >= 1. Got server_tp=${SERVER_TP}" >&2
+    exit 2
+  fi
+  if (( ${#server_gpu_array[@]} % SERVER_TP != 0 )); then
+    echo "[ERROR] server_gpus count must be divisible by server_tp when server_dp is not set." >&2
+    echo "[ERROR] server_gpus=${SERVER_GPUS} (n=${#server_gpu_array[@]}) server_tp=${SERVER_TP}" >&2
+    exit 2
+  fi
+  SERVER_DP=$(( ${#server_gpu_array[@]} / SERVER_TP ))
+fi
 
 # Default lower utilization for stability (avoid borderline OOM on busy nodes).
 VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-0.75}"
@@ -254,9 +299,11 @@ echo "  Stage-2 AB vLLM Server + Learner Launcher"
 echo "========================================================================"
 echo "[INFO] Config:      ${CONFIG_PATH}"
 echo "[INFO] Server GPUs: ${SERVER_GPUS} (dp=${SERVER_DP}, tp=${SERVER_TP})"
-echo "[INFO] Train GPUs:  ${TRAIN_GPUS} (world_size=1)"
+echo "[INFO] Train GPUs:  ${TRAIN_GPUS} (world_size=${TRAIN_WORLD_SIZE})"
 echo "[INFO] Server:      ${SERVER_HOST}:${SERVER_PORT}"
 echo "[INFO] Model:       ${SERVER_MODEL}"
+echo "[INFO] torch_dtype: ${SERVER_TORCH_DTYPE}"
+echo "[INFO] eager:       ${SERVER_VLLM_ENFORCE_EAGER}"
 echo "[INFO] max_model_len:${VLLM_MAX_MODEL_LEN}"
 echo "[INFO] enable_lora: ${VLLM_ENABLE_LORA}"
 echo "[INFO] disable_proxy:${DISABLE_PROXY}"
@@ -272,8 +319,10 @@ SERVER_CMD=(conda run -n "${CONDA_ENV}" swift rollout \
   --host "${SERVER_HOST}" \
   --port "${SERVER_PORT}" \
   --infer_backend vllm \
+  --torch_dtype "${SERVER_TORCH_DTYPE}" \
   --vllm_data_parallel_size "${SERVER_DP}" \
   --vllm_tensor_parallel_size "${SERVER_TP}" \
+  --vllm_enforce_eager "${SERVER_VLLM_ENFORCE_EAGER}" \
   --vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
   --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
   --vllm_enable_lora "${VLLM_ENABLE_LORA}")

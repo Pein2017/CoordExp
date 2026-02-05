@@ -6,6 +6,7 @@ organized utilities used by docs and research workflows.
 ## Core entrypoints
 
 - Training (YAML-first): `scripts/train.sh` (wraps `python -m src.sft --config ...`).
+- Stage-2 AB server-mode launcher (vLLM server + multi-GPU learner): `scripts/stage2_ab_server_train.sh`.
 - Unified inference pipeline (YAML-first): `scripts/run_infer.py`.
 - Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.
 - Visualization wrapper: `scripts/run_vis.sh` (calls `vis_tools/vis_coordexp.py`).

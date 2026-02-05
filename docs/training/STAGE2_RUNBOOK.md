@@ -17,11 +17,24 @@ From repo root:
 PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>]
 ```
 
-Multi-GPU (NOT for vLLM server mode):
+Recommended wrapper (config-driven; handles `PYTHONPATH`, `torchrun`, proxy hygiene):
+
+```bash
+# Single GPU
+bash scripts/train.sh config=<yaml> gpus=0
+
+# Multi-GPU
+bash scripts/train.sh config=<yaml> gpus=0,1,2,3
+```
+
+Multi-GPU:
 
 ```bash
 PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]
 ```
+
+Multi-GPU + vLLM server mode (recommended topology for long rollouts): this is supported, but requires
+`stage2_ab.channel_b.mode: async` and `custom.extra.rollout_matching.vllm.sync.mode: full`.
 
 Where this lives in code:
 - Rollout-matching SFT trainer: `src/trainers/rollout_matching_sft.py`
@@ -60,32 +73,39 @@ Scheduler:
 - Runtime: deterministic Bresenham-style schedule from `TrainerState.global_step`:
   - Channel-B iff `floor((s+1)*b_ratio) > floor(s*b_ratio)`, else Channel-A.
 
-### Channel-B Modes (Step vs Micro)
+### Channel-B Modes (Micro vs Step vs Async)
 
-Channel-B supports two execution modes under `stage2_ab.channel_b.mode`:
+Channel-B supports three execution modes under `stage2_ab.channel_b.mode`:
 
 - `micro` (legacy): each micro-step independently runs rollout -> pack -> learn.
-- `step` (recommended / current default): "step-budgeted" rollouts + packing.
-  - Collect raw dataset samples across the full gradient-accumulation window.
-  - Run rollout generation + parse/match.
-  - Pack into a variable number of packed sequences (each capped by `global_max_length`) and run forward/backward once per pack.
-  - The outer Trainer still performs exactly one `optimizer.step()` for the optimizer step.
+- `step` (legacy): "step-budgeted" rollouts + packing inside the optimizer step.
+  - This mode runs a variable number of packed forward/backward passes inside one `training_step` call.
+  - It is intentionally **not supported** under multi-GPU learners (DDP safety); use `async` instead.
+- `async` (recommended): async actor-learner with per-rank ready-pack queues and a feasibility gate.
+  - Rollouts + packing are prefetched into per-rank queues (bounded).
+  - Rank0 performs rollout-server full sync and broadcasts a per-step A/B decision (DDP safety).
+  - If scheduled B is infeasible (queues empty), the optimizer step falls back to A and logs it.
 
 Constraints for `mode: step`:
 - Requires `training.packing: true`.
 - Requires `training.dataloader_drop_last: true` to avoid partial accumulation windows at epoch end.
 - Keep `custom.extra.rollout_matching.post_rollout_pack_scope: micro` (step mode does packing inside the optimizer step).
 
-### Channel-B Pipelining (Server Mode Only)
+### Channel-B Async Actor-Learner (Server Mode Only)
 
-`stage2_ab.channel_b.enable_pipeline: true` overlaps rollout generation (server GPUs) with learner packing/learning.
+`stage2_ab.channel_b.mode: async` overlaps rollout generation (server GPUs) with learner training by prefetching ready packs.
 
 Requirements:
 - `custom.extra.rollout_matching.rollout_backend: vllm`
 - `custom.extra.rollout_matching.vllm.mode: server`
+- `custom.extra.rollout_matching.vllm.sync.mode: full`
+- `custom.extra.rollout_matching.post_rollout_pack_scope: window`
 
 Tuning:
-- `stage2_ab.channel_b.rollout_decode_batch_size` controls the decode chunk size used by the pipeline.
+- `stage2_ab.channel_b.async.queue_limit` bounds the per-rank ready-pack queue.
+- `stage2_ab.channel_b.async.prefetch_target_packs` controls steady-state queue depth.
+- `stage2_ab.channel_b.async.version_window` bounds staleness (in sync-counter versions).
+- `stage2_ab.channel_b.async.sync_every_steps` controls how often the learner pushes weights to the rollout server.
 
 ### Channel-A Contract (Expectation Loop)
 
@@ -160,31 +180,23 @@ Start from a template config and fill in dataset + rollout knobs:
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
-- Set `custom.extra.rollout_matching.*` (decode + matching knobs).
+- Set `custom.extra.rollout_matching.*` (including `decoding.*` + matching knobs).
 - If using Stage-2 AB (`custom.trainer_variant: stage2_ab_training`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
   - `stage2_ab.channel_b.semantic_desc_gate.revision` when semantic gating is enabled.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
+Breaking config migrations (no backward compatibility):
+- Rollout sampling knobs moved under `custom.extra.rollout_matching.decoding.*`:
+  - `decoding.temperature`, `decoding.top_p`, `decoding.top_k`
+- Legacy keys are removed and MUST fail fast if present:
+  - `custom.extra.rollout_matching.temperature`, `custom.extra.rollout_matching.top_p`, `custom.extra.rollout_matching.top_k`
+  - `custom.extra.rollout_matching.rollout_buffer` (buffered reuse is removed; async actor-learner is the intended throughput path)
+
 Logging tip:
 - Stage-2 metrics are logged once per optimizer step (aggregated across gradient accumulation).
 - If you reuse the same `training.run_name` and `training.logging_dir`, multiple `events.out.tfevents.*` files can accumulate.
   Prefer unique run names, or leave `training.logging_dir` unset (default unique per run).
-
----
-
-## Rollout Buffering (E-step / M-step Reuse)
-
-Buffered rollouts enable caching + reuse of one completed accumulation window across multiple optimizer steps:
-
-- Enable with `custom.extra.rollout_matching.rollout_buffer.enabled: true`.
-- `custom.extra.rollout_matching.rollout_buffer.m_steps: <int>` controls how many optimizer steps reuse one window.
-  - `m_steps=1` disables reuse.
-- When buffering is enabled with `m_steps > 1`, the Stage-2 trainer repeats each gradient-accumulation window `m_steps` times per rank to avoid silently skipping dataset samples.
-- Final partial accumulation windows (< `gradient_accumulation_steps`) are processed once and must not be repeated.
-  - If you want strict reuse only on full windows, set `training.dataloader_drop_last: true`.
-- Evaluation/prediction forces `m_steps=1` (buffering disabled) to keep metrics interpretable.
-- Checkpoint/resume: the buffer is runtime-only and starts empty after resume (first step regenerates).
 
 ---
 
@@ -207,7 +219,8 @@ Notes:
 
 Set `custom.extra.rollout_matching.rollout_backend: vllm`.
 
-Note: vLLM rollouts currently support `decode_mode=greedy` only (enforced in code). Use `rollout_backend: hf` if you need beam search.
+Note: vLLM rollouts currently support **non-beam decoding only** (`decode_mode=greedy` is enforced in code).
+Sampling can still be enabled via `decoding.temperature/top_p/top_k` (see Decoding Tips below). Use `rollout_backend: hf` if you need beam search.
 
 vLLM has a mode switch under `custom.extra.rollout_matching.vllm.mode`:
 
@@ -220,7 +233,8 @@ vLLM has a mode switch under `custom.extra.rollout_matching.vllm.mode`:
       - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal stacks).
 
 - `server` (recommended for long rollouts): learner connects to a pre-launched `swift rollout` server and generates rollouts on dedicated GPUs.
-  - v1 constraint: learner must run as a single process (`world_size == 1`); do not launch learner with `torchrun`.
+  - Supports multi-process learner (`torchrun`, `world_size > 1`).
+  - Under `world_size > 1`, the trainer performs rank0-only weight sync with strict barriers and requires `custom.extra.rollout_matching.vllm.sync.mode: full`.
   - Connectivity is configured in YAML under `custom.extra.rollout_matching.vllm.server`.
   - Weight sync is configured under `custom.extra.rollout_matching.vllm.sync`:
     - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
@@ -239,8 +253,11 @@ Notes:
 
 ## Decoding Tips
 
-- Start with greedy for stability: `decode_mode: greedy`, `temperature: 0.0`.
-- vLLM rollout backends currently support `decode_mode=greedy` only; use `rollout_backend: hf` if you need beam search.
+- Start with deterministic non-beam decoding for stability: `decode_mode: greedy`, `decoding.temperature: 0.0`.
+- `decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `decoding.temperature/top_p/top_k`.
+  - `decode_mode: greedy` can still produce **sampling** rollouts when `decoding.temperature > 0.0`.
+  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_greedy`.
+- vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - If HF rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for the offending sequences.
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
@@ -273,14 +290,29 @@ custom:
 
 ## GPU Topology (Server Mode)
 
-Server mode (recommended for long rollouts) runs rollouts on dedicated GPUs and keeps the learner single-process:
+Server mode (recommended for long rollouts) runs rollouts on dedicated GPUs and supports a multi-GPU learner:
 
-- 4 GPUs: 3 server (rollouts) + 1 learner (training) -> `server_gpus=0,1,2 train_gpus=3`.
-- 8 GPUs: 7 server + 1 learner -> `server_gpus=0,1,2,3,4,5,6 train_gpus=7`.
+- Constraint: `server_gpus` and `train_gpus` must be disjoint.
+- vLLM parallelism constraint: `len(server_gpus) == server_dp * server_tp`.
+
+Recommended starting points (when each GPU can fit the full model):
+
+- 8 GPUs (balanced; **server data-parallel**, learner DDP):
+  - `server_gpus=0,1,2,3 train_gpus=4,5,6,7`
+  - Default launcher behavior: `server_tp=1` (so `server_dp=4`).
+  - Why: maximizes rollout throughput while keeping learner throughput high.
+
+- 4 GPUs (minimal server, multi-GPU learner):
+  - `server_gpus=0 train_gpus=1,2,3`
+  - Why: keeps async actor-learner feasible without sacrificing all learner GPUs.
+
+If the model / long-context KV cache does **not** fit as a single replica, use tensor-parallel server mode:
+- Example: `server_gpus=0,1,2,3 server_tp=4` -> `server_dp=1` (one sharded server engine).
 
 Notes:
-- The learner must be `world_size == 1` in server mode.
+- Server and learner GPU sets must be disjoint.
 - Server GPUs will be idle on steps that do not call the rollout backend (e.g., Stage-2 AB Channel-A steps). This is expected.
+  - In this idle state, vLLM may still reserve a large amount of VRAM for weights/KV cache, so `nvidia-smi` can show high memory usage with near-zero utilization.
 
 ---
 
@@ -293,10 +325,19 @@ unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 export NO_PROXY=127.0.0.1,localhost
 
 bash scripts/stage2_ab_server_train.sh \
-  server_gpus=0,1,2 train_gpus=3 \
+  server_gpus=0,1,2,3 train_gpus=4,5,6,7 \
   vllm_gpu_memory_utilization=0.75 \
   config=configs/stage2_ab/prod/ab_mixed.yaml
 ```
+
+Launcher knobs (runtime-only; no YAML drift):
+- `server_tp=<int>`: tensor-parallel degree for vLLM rollout server (default: 1).
+- `server_dp=<int>`: data-parallel degree for vLLM rollout server (default: derived from `len(server_gpus) / server_tp`).
+- `server_torch_dtype=bfloat16|float16|float32|None`: server model dtype passed to `swift rollout` (default: `bfloat16`).
+- `server_vllm_enforce_eager=true|false`: eager mode for vLLM server (default: `true`).
+
+Operational tip:
+- Run the launcher inside `tmux` so a single `Ctrl-C` cleanly terminates both learner and server and frees GPU memory quickly.
 
 ---
 
@@ -336,18 +377,12 @@ Rollout health:
 - `rollout/f1`
 
 Throughput:
-- `time/rollout_generate_s` (forced to 0 on buffer reuse steps)
+- `time/rollout_generate_s`
 - `rollout/gen_tokens_per_s`
 
 Stage-2 AB extras:
-- `stage2_ab/channel_b/is_reuse_step` (true when a buffered window is being reused)
 - `stage2_ab/channel_b/semantic_desc_gate/is_active` (true only when the semantic encoder is available)
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
-
-### Buffering Note (E-step Only for Quality)
-
-Under rollout buffering, interpret rollout-quality metrics on fresh-rollout steps only:
-filter to `rollout/buffer_reuse == 0`.
 
 ### Qualitative Monitoring Dumps
 
@@ -359,8 +394,7 @@ custom:
     rollout_matching:
       monitor_dump:
         enabled: true
-        # If omitted, follows training.logging_steps. In buffered mode, using
-        # every_steps == rollout_buffer.m_steps aligns dumps to fresh-rollout steps.
+        # If omitted, follows training.logging_steps.
         every_steps: 4
         max_events: 50
         max_samples: 1
@@ -386,11 +420,39 @@ Checks:
 1) Confirm HTTP health:
    - `curl --noproxy '*' -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/health/`
 2) Confirm `group_port` is open:
-   - `python - <<'PY'\nimport socket\nhost='127.0.0.1'; port=51216\ns=socket.socket(); s.settimeout(2)\ntry:\n    s.connect((host, port))\n    print('group_port connect: ok')\nexcept Exception as e:\n    print('group_port connect: failed', e)\nfinally:\n    s.close()\nPY`
+   - `conda run -n ms python - <<'PY'\nimport socket\nhost='127.0.0.1'; port=51216\ns=socket.socket(); s.settimeout(2)\ntry:\n    s.connect((host, port))\n    print('group_port connect: ok')\nexcept Exception as e:\n    print('group_port connect: failed', e)\nfinally:\n    s.close()\nPY`
 
 Mitigations:
 - Change `vllm.server.servers[].group_port` to an unused port and restart server and learner.
 - Ensure localhost connections are not routed through proxies (prefer the helper launcher, or unset proxies + set `NO_PROXY`).
+
+### Channel-B never executes in async mode (queues stay empty)
+
+Symptom:
+- `stage2_ab/async/b_step_skipped_due_to_queue == 1.0`
+- `stage2/channel_b` stays 0.0 (and Channel-A runs instead)
+- `stage2_ab/async/queue_depth == 0.0` and `stage2_ab/async/prefetch_success_total == 0.0`
+- Rollout server GPUs show high VRAM usage but near-zero utilization (idle server)
+
+Interpretation:
+- The async prefetch thread is not producing ready Channel‑B packs (often blocked in HTTP `/infer/`, dataset I/O, or waiting on a sync fence).
+
+Checks:
+1) Confirm server health and that `/infer/` is responsive:
+   - `curl --noproxy '*' -sf http://127.0.0.1:8000/health/`
+2) Confirm the server group port is reachable (NCCL communicator init):
+   - see the `group_port` connect snippet in the section above.
+3) Confirm proxy hygiene:
+   - `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY`
+   - `export NO_PROXY=127.0.0.1,localhost`
+4) Inspect async telemetry:
+   - `stage2_ab/async/prefetch_state`, `stage2_ab/async/prefetch_last_progress_s_ago`
+   - `stage2_ab/async/sync_in_progress`, `stage2_ab/async/infer_inflight`
+
+Mitigations (smoke/debug runs):
+- Reduce rollout length (`custom.extra.rollout_matching.max_new_tokens`) to unblock prefetch.
+- Reduce rollout request batching (`rollout_infer_batch_size`, `rollout_generate_batch_size`) to 1.
+- Lower `vllm_gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)
 
@@ -407,8 +469,8 @@ Rule of thumb:
 ## Preflight Validation (Suggested)
 
 - Unit tests (Stage-2):
-  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_matching_sft.py -q`
-  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_stage2_rollout_buffer.py -q`
+  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_matching_sft.py`
+  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_offload_context.py`
 
 ---
 

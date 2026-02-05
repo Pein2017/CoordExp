@@ -31,32 +31,18 @@ intentionally skips teacher-forced encoding/loss computation, so `eval_loss` is
 not reported for this trainer variant.
 
 Important semantics:
-- **Optimizer-step units:** when rollout buffering is enabled, "E-step vs M-step"
-  is defined on optimizer steps (`TrainerState.global_step`), not micro-steps.
 - **Aggregated logging:** metrics are accumulated across gradient-accumulation micro-batches and
   logged once per optimizer step (same step index as `train/loss`).
-- **Buffering:** interpret rollout-quality metrics on **E-steps only** by
-  filtering to `rollout/buffer_reuse == 0`. M-steps reuse cached targets and are
-  not an on-policy rollout signal.
 - **Rank-local (training logs):** `rollout/*` keys logged during training are
   rank-local (not all-reduced), so they can vary across GPUs.
 - **All-reduced (eval):** `eval_rollout_*` keys are aggregated over the full
   evaluation dataset and summed across ranks.
 
-### Buffer / EM window diagnostics
-
-- `rollout/buffer_reuse`
-  - **What:** 1.0 on M-steps (reuse), 0.0 on E-steps (fresh rollout).
-- `rollout/buffer_window_step0`
-  - **What:** optimizer-step index where the current reuse window started (E-step step id).
-- `rollout/buffer_completed_steps`
-  - **What:** how many optimizer steps in the current window have completed so far.
 ### Rollout timing / throughput
 
 - `time/rollout_generate_s`
 - `time/rollout_parse_match_s`
 - `time/rollout_teacher_encode_s`
-  - **Note:** these are forced to 0.0 on buffer reuse steps to avoid double counting.
   - **Stage-2 AB note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
     When diagnosing rollout throughput, filter to steps where `stage2/channel_b == 1`.
 
@@ -67,6 +53,21 @@ Important semantics:
 - `rollout/gen_tokens_per_s`
   - **What:** `gen_new_tokens_total / time/rollout_generate_s`.
   - **Why:** detects rollout slowdowns (KV cache pressure / chunked prefill regressions).
+
+### Decoding knobs (rollout generation)
+
+Stage_2 uses `decode_mode` primarily to choose **beam** vs **non-beam** decoding.
+Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
+
+- `rollout/do_sample`, `rollout/temperature`, `rollout/top_p`, `rollout/top_k`
+  - **What:** effective sampling knobs used for rollout generation.
+  - **Note:** vLLM backends currently enforce `decode_mode=greedy` as a **non-beam sentinel** (no beam support in this path),
+    so `rollout/decode_greedy == N` does **not** imply deterministic rollouts. Use `rollout/do_sample` and `rollout/temperature`
+    to disambiguate deterministic vs sampling.
+
+- `rollout/decode_greedy`, `rollout/decode_beam`
+  - **What:** counts of samples rolled out with `decode_mode == "greedy"` (non-beam) vs `decode_mode == "beam"` (beam).
+  - **Why:** helps detect accidental config drift across runs (e.g., beam search enabled unintentionally).
 
 ### Parse health
 
@@ -145,6 +146,47 @@ affect the training loss.
 - `packing/post_rollout_segments`
 - `packing/post_rollout_buffer`
   - **What:** post-rollout packing stats (carry-only mode).
+
+### Stage-2 AB async actor-learner telemetry (optional)
+
+When `custom.trainer_variant: stage2_ab_training` and `stage2_ab.channel_b.mode: async`, the trainer logs
+additional queue/sync telemetry under `stage2_ab/async/*`:
+
+Logging semantics:
+- Logged once per optimizer step (after gradient accumulation).
+- Values are treated as **step-level gauges** and may be averaged across micro-steps inside the optimizer step
+  (so boolean-style keys can appear as fractions in `[0,1]`).
+- Keys ending in `_total` are **monotonic cumulative counters**; interpret them as counters (not per-step deltas).
+
+- `stage2_ab/async/policy_wants_b`
+  - **What:** 1.0 when the Bresenham schedule wants Channel-B for this optimizer step.
+- `stage2_ab/async/step_kind_b`
+  - **What:** 1.0 when the optimizer step executes Channel-B (after feasibility gating), else Channel-A.
+- `stage2_ab/async/b_step_skipped_due_to_queue`
+  - **What:** 1.0 when schedule wanted B but queues were infeasible and we fell back to A.
+- `stage2_ab/async/queue_depth`, `stage2_ab/async/queue_limit`, `stage2_ab/async/prefetch_target_packs`
+  - **What:** per-rank ready-pack queue depth and configured bounds.
+- `stage2_ab/async/ver_current`, `stage2_ab/async/ver_lag`, `stage2_ab/async/version_window`
+  - **What:** current sync-counter version, per-pack lag (`ver_current - pack.ver` on B micro-steps), and staleness window for ready-pack consumption.
+- `stage2_ab/async/drop_stale_total`, `stage2_ab/async/drop_oldest_total`
+  - **What:** cumulative stale-drop and drop-oldest counters on this rank.
+- `stage2_ab/async/prefetch_success_total`, `stage2_ab/async/prefetch_fail_total`
+  - **What:** cumulative async prefetch loop successes/failures (rank-local).
+  - **Why:** detects whether the background thread is producing packs or repeatedly failing/retrying.
+- `stage2_ab/async/prefetch_iter_total`
+  - **What:** cumulative iterations through the prefetch loop (rank-local).
+  - **Why:** helps distinguish “thread never started” from “thread started but got stuck”.
+- `stage2_ab/async/prefetch_state`, `stage2_ab/async/prefetch_last_progress_s_ago`
+  - **What:** coarse state machine and time since last progress heartbeat from the background thread.
+  - **Interpretation:** large `prefetch_last_progress_s_ago` with a stable `prefetch_state` indicates a likely blocking call
+    (most commonly HTTP `/infer/`, dataset I/O, or a sync fence).
+- `stage2_ab/async/sync_in_progress`, `stage2_ab/async/infer_inflight`
+  - **What:** whether rank0 is currently syncing weights to the rollout server (blocking background inference),
+    and how many HTTP `/infer/` requests are currently in-flight.
+- `stage2_ab/async/is_prefetch_in_prepare_b`
+  - **What:** 1.0 when the prefetch loop is inside `_prepare_batch_inputs_b(..., _segments_only=True)` (rollout+parse+match).
+- `stage2_ab/async/is_prefetch_queue_full`, `stage2_ab/async/is_prefetch_no_segments`, `stage2_ab/async/is_prefetch_error`
+  - **What:** coarse prefetch conditions (queue full / produced zero segments / hit an exception).
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 

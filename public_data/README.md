@@ -8,7 +8,7 @@ The preferred interface is the unified runner:
 
 ## Scope & Prereqs
 - Repo root: `.` (run `./public_data/run.sh` from here).
-- Conda env: `ms` (python steps run via `conda run -n ms python ...` by default).
+- Python env: activate the environment you want (e.g., `conda activate ms`) so `python` points to it.
 - Tools: dataset-dependent (`wget`, `unzip`, etc.); disk requirements depend on dataset.
 
 ## Directory Layout (Runner Outputs)
@@ -115,8 +115,8 @@ Produced records look like:
 ### Validator CLI
 `public_data/scripts/validate_jsonl.py` validates the contract for both `bbox_2d` and `poly`:
 ```bash
-conda run -n ms python public_data/scripts/validate_jsonl.py public_data/<ds>/raw/train.jsonl
-conda run -n ms python public_data/scripts/validate_jsonl.py public_data/<ds>/<preset>/train.coord.jsonl --skip-image-check
+python public_data/scripts/validate_jsonl.py public_data/<ds>/raw/train.jsonl
+python public_data/scripts/validate_jsonl.py public_data/<ds>/<preset>/train.coord.jsonl --skip-image-check
 ```
 
 Behavior:
@@ -131,7 +131,7 @@ Behavior:
 ## Tests
 LVIS converter tests (no images required):
 ```bash
-conda run -n ms bash public_data/tests/run_tests.sh
+bash public_data/tests/run_tests.sh
 ```
 
 ## COCO 2017 (Instances / 80 classes)
