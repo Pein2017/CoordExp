@@ -1254,6 +1254,25 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 bm_base = bm_by_ver.get(int(pack_ver), {})
                 bm2: Dict[str, Any] = dict(bm_base) if isinstance(bm_base, Mapping) else {}
                 bm2["stage2_ab/async/ver"] = float(pack_ver)
+
+                # Emit packing telemetry so B steps are comparable to Channel-A window packing.
+                try:
+                    sel_total = int(sum(int(sl) for _enc, _meta, sl, _v in selected))
+                    fill = float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
+                    buf_same_ver = int(
+                        sum(1 for _enc, _meta, _sl, v in local_segments if int(v) == int(pack_ver))
+                    )
+                    bm2.update(
+                        {
+                            "packing/post_rollout_fill": float(fill),
+                            "packing/post_rollout_selected_total_len": float(sel_total),
+                            "packing/post_rollout_segments": float(len(selected)),
+                            "packing/post_rollout_buffer": float(buf_same_ver),
+                        }
+                    )
+                except Exception:
+                    pass
+
                 try:
                     bm2["stage2_ab/async/queue_target"] = float(target)
                     bm2["stage2_ab/async/queue_depth"] = float(self._stage2_async_ready_depth_fresh())
