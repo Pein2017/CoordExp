@@ -47,7 +47,7 @@ Normative constraints:
 - **AND** no upstream Transformers files are modified to enable the run.
 
 ### Requirement: Channel selection is deterministic and step-driven
-The trainer SHALL choose between Channel-A and Channel-B **deterministically** as a function of (`global_step`, `stage2_ab.schedule.b_ratio`), with a deterministic override to Channel-B when rollout-buffer reuse is active.
+The trainer SHALL choose between Channel-A and Channel-B **deterministically** as a function of (`global_step`, `stage2_ab.schedule.b_ratio`).
 
 Definition (normative):
 - `global_step` MUST refer to the **optimizer-step** counter (post gradient-accumulation), i.e. the value that increments exactly once per optimizer update.
@@ -63,19 +63,16 @@ Schedule definition (normative minimum):
   - Otherwise it MUST select Channel-A.
 
 Special cases:
-- If `b_ratio == 0.0`, the trainer MUST always select Channel-A (unless buffer reuse overrides to B).
+- If `b_ratio == 0.0`, the trainer MUST always select Channel-A.
 - If `b_ratio == 1.0`, the trainer MUST always select Channel-B.
 
 Legacy schedule handling (normative):
 - The legacy list-based schedule knob `schedule.pattern` is not supported.
 - If a config provides `stage2_ab.schedule.pattern`, configuration parsing MUST fail fast with guidance to migrate to `stage2_ab.schedule.b_ratio`.
 
-Buffer reuse override (normative):
-- Stage-2 AB MAY reuse a buffered Channel-B batch across multiple optimizer steps as an optimization when rollout buffering is enabled under `custom.extra.rollout_matching.rollout_buffer`.
-- If rollout buffering is enabled with `custom.extra.rollout_matching.rollout_buffer.m_steps > 1`, and the trainer is reusing a buffered Channel-B batch for additional optimizer steps (“M-steps” reuse), then:
-  - the trainer MUST override the channel selection to Channel-B for those reuse steps, regardless of `b_ratio`,
-  - and the override MUST be deterministic as a function of the buffer’s reuse state and `global_step`.
-  - the trainer SHOULD expose a stable boolean metric/log key indicating reuse is active for the step (e.g., `stage2_ab/channel_b/is_reuse_step`).
+Legacy rollout-buffer behavior:
+- `custom.extra.rollout_matching.rollout_buffer` is removed.
+- Any config that provides `custom.extra.rollout_matching.rollout_buffer` MUST fail fast with actionable guidance.
 
 #### Scenario: b_ratio=0.5 alternates deterministically by optimizer step
 - **GIVEN** `stage2_ab.schedule.b_ratio: 0.5`
@@ -86,7 +83,7 @@ Buffer reuse override (normative):
 #### Scenario: b_ratio edge cases are deterministic
 - **GIVEN** `stage2_ab.schedule.b_ratio: 0.0`
 - **WHEN** the trainer selects channels for any `global_step`
-- **THEN** it always selects Channel-A (unless buffer reuse overrides to B).
+- **THEN** it always selects Channel-A.
 
 - **GIVEN** `stage2_ab.schedule.b_ratio: 1.0`
 - **WHEN** the trainer selects channels for any `global_step`
@@ -109,12 +106,10 @@ Buffer reuse override (normative):
 - **WHEN** config is parsed/materialized
 - **THEN** it fails fast with guidance to set `stage2_ab.schedule.b_ratio`.
 
-#### Scenario: Rollout buffer reuse forces Channel-B
-- **GIVEN** `stage2_ab.schedule.b_ratio: 0.0` (Channel-A would be selected)
-- **AND** rollout buffering is enabled with `custom.extra.rollout_matching.rollout_buffer.m_steps > 1`
-- **AND** the trainer is in a reuse step (reusing a buffered Channel-B batch)
-- **WHEN** the trainer selects the channel for that optimizer step
-- **THEN** it selects Channel-B (buffer reuse override).
+#### Scenario: Legacy rollout_buffer config fails fast
+- **GIVEN** a Stage-2 AB config that provides `custom.extra.rollout_matching.rollout_buffer`
+- **WHEN** configuration is parsed/materialized
+- **THEN** it fails fast with guidance to remove `rollout_buffer`.
 
 ### Requirement: Bbox-only v1 guardrails are enforced
 The Stage-2 AB trainer MUST enforce bbox-only v1 guardrails on both GT objects and predicted rollout objects.
@@ -464,4 +459,3 @@ Normative minimum:
 - **GIVEN** a config that includes `custom.coord_loss` (legacy)
 - **WHEN** configuration is parsed
 - **THEN** parsing succeeds and the legacy field is ignored.
-

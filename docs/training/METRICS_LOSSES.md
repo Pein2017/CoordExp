@@ -162,6 +162,8 @@ Logging semantics:
   - **What:** 1.0 when the Bresenham schedule wants Channel-B for this optimizer step.
 - `stage2_ab/async/step_kind_b`
   - **What:** 1.0 when the optimizer step executes Channel-B (after feasibility gating), else Channel-A.
+- `stage2_ab/async/b_ratio_realized`
+  - **What:** rolling realized Channel-B step ratio over recent optimizer steps (windowed diagnostic).
 - `stage2_ab/async/b_step_skipped_due_to_queue`
   - **What:** 1.0 when schedule wanted B but queues were infeasible and we fell back to A.
 - `stage2_ab/async/queue_depth`, `stage2_ab/async/queue_limit`, `stage2_ab/async/prefetch_target_packs`

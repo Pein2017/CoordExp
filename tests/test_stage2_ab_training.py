@@ -756,6 +756,52 @@ def test_channel_b_desc_ce_split_allows_downweight_matched_desc_only():
     )
 
 
+def test_channel_b_includes_fn_geometry_loss():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        # Turn off CE so we isolate geometry contribution.
+        "desc_ce_weight": 0.0,
+        "bbox_smoothl1_weight": 1.0,
+        "bbox_ciou_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=999)
+    input_ids = torch.tensor([[1100, 1100, 0, 1, 2, 3]], dtype=torch.long)
+
+    # Only FN groups are present in Channel-B metadata; this should still contribute
+    # geometry loss under the unified one-pass contract.
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": int(input_ids.shape[1]),
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_ignore_pos": [],
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [{"pos": [2, 3, 4, 5], "gt_bins": [0, 0, 0, 0]}],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+    assert float(loss.detach().cpu().item()) > 0.0
+
+
 def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
@@ -1025,6 +1071,17 @@ def test_async_step_kind_selects_b_when_queue_has_gas(monkeypatch):
     assert (
         t._stage2_async_decide_step_kind(global_step=0, policy_wants_b=True) == "B"
     )
+
+
+def test_b_ratio_realized_tracks_optimizer_steps_once():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t._stage2_ab_realized_last_gs = None
+
+    t._stage2_record_realized_step(global_step=0, executed_b=False)
+    t._stage2_record_realized_step(global_step=0, executed_b=True)  # same step, ignored
+    t._stage2_record_realized_step(global_step=1, executed_b=True)
+
+    assert pytest.approx(t._stage2_b_ratio_realized(), rel=1e-6) == 0.5
 
 
 def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():

@@ -481,6 +481,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         self._stage2_async_prefetch_last_progress_ts: float = float(time.time())
         self._stage2_async_prefetch_state: int = 0
 
+        # Rolling realized B-step ratio diagnostics (optimizer-step granularity).
+        self._stage2_ab_realized_last_gs: Optional[int] = None
+        self._stage2_ab_realized_recent: Deque[int] = deque(maxlen=200)
+
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
     ) -> None:
@@ -1498,6 +1502,28 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         base, rem = divmod(total, world_size)
         return int(base + (1 if rank < rem else 0))
 
+    def _stage2_record_realized_step(self, *, global_step: int, executed_b: bool) -> None:
+        """Track realized B-step ratio once per optimizer step."""
+        gs = int(global_step)
+        last = getattr(self, "_stage2_ab_realized_last_gs", None)
+        if last is not None and int(last) == gs:
+            return
+        hist = getattr(self, "_stage2_ab_realized_recent", None)
+        if hist is None:
+            hist = deque(maxlen=200)
+            setattr(self, "_stage2_ab_realized_recent", hist)
+        self._stage2_ab_realized_last_gs = gs
+        hist.append(1 if bool(executed_b) else 0)
+
+    def _stage2_b_ratio_realized(self) -> float:
+        hist = getattr(self, "_stage2_ab_realized_recent", None)
+        if not hist:
+            return 0.0
+        try:
+            return float(sum(int(x) for x in hist)) / float(len(hist))
+        except Exception:
+            return 0.0
+
     def _stage2_channel_for_step(self, global_step: int) -> Literal["A", "B"]:
         if isinstance(
             self._stage2_channel_override, str
@@ -2229,6 +2255,11 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         rank, world_size, dist = self._dist_info()
         b_mode = self._stage2_b_step_mode()
+        if b_mode != "async":
+            self._stage2_record_realized_step(
+                global_step=gs,
+                executed_b=bool(ch_sched == "B"),
+            )
 
         if b_mode == "step" and int(world_size) > 1:
             raise ValueError(
@@ -2257,6 +2288,10 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     global_step=gs, policy_wants_b=bool(policy_wants_b)
                 )
                 self._stage2_async_step_kind = "B" if step_kind == "B" else "A"
+                self._stage2_record_realized_step(
+                    global_step=gs,
+                    executed_b=bool(self._stage2_async_step_kind == "B"),
+                )
 
                 # Override channel selection for any helper methods that consult the schedule.
                 self._stage2_channel_override = self._stage2_async_step_kind
@@ -2298,6 +2333,9 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "stage2_ab/async/step_kind_b": float(1.0 if executed_b else 0.0),
                 "stage2_ab/async/b_step_skipped_due_to_queue": float(
                     1.0 if skipped_due_to_queue else 0.0
+                ),
+                "stage2_ab/async/b_ratio_realized": float(
+                    self._stage2_b_ratio_realized()
                 ),
                 "stage2_ab/async/queue_depth": float(depth),
                 "stage2_ab/async/queue_limit": float(self._stage2_async_queue_limit()),
@@ -4394,23 +4432,17 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             s_p,
         ) = _decode_groups("bbox_groups_prefix")
 
-        # Channel-B is FP-neutral: apply geometry gradients only on matched pairs.
-        if channel == "A":
-            (
-                smoothl1_t,
-                ciou_t,
-                el1_t,
-                ehuber_t,
-                coord_ce_t,
-                ent_t,
-                n_t,
-                s_t,
-            ) = _decode_groups("bbox_groups_fn")
-        else:
-            z = logits.new_tensor(0.0)
-            smoothl1_t, ciou_t = z, z
-            el1_t, ehuber_t, coord_ce_t, ent_t = z, z, z, z
-            n_t, s_t = 0, 0
+        # Channel-B is FP-neutral (no FP geometry), but FN-injected objects are supervised.
+        (
+            smoothl1_t,
+            ciou_t,
+            el1_t,
+            ehuber_t,
+            coord_ce_t,
+            ent_t,
+            n_t,
+            s_t,
+        ) = _decode_groups("bbox_groups_fn")
 
         n_all = int(n_p + n_t)
         if n_all > 0:
@@ -4460,6 +4492,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             stage2_logs = {
                 "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
+                "stage2_ab/async/b_ratio_realized": float(self._stage2_b_ratio_realized()),
                 "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
                 "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
