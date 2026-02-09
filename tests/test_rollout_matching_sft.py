@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import re
+import threading
 
 import pytest
 import torch
 
 from src.trainers.rollout_matching_sft import (
     GTObject,
+    RolloutMatchingSFTTrainer,
     _build_labels_and_coord_targets_for_sample,
     _build_labels_and_coord_targets_for_batch,
     _serialize_append_fragment,
@@ -87,6 +89,41 @@ class _DummyTokenizerRM:
         return ids
 
 
+class _DummySession:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _DummyVLLMClient:
+    def __init__(self) -> None:
+        self.sessions = [_DummySession(), _DummySession()]
+        self.close_calls = 0
+
+    def close_communicator(self) -> None:
+        self.close_calls += 1
+
+
+def test_shutdown_vllm_server_client_closes_resources():
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer._vllm_server_client_lock = threading.Lock()
+    client = _DummyVLLMClient()
+    trainer._vllm_server_client = client
+    trainer._vllm_server_comm_inited = True
+
+    trainer._shutdown_vllm_server_client(
+        close_communicator=True,
+        close_sessions=True,
+    )
+
+    assert client.close_calls == 1
+    assert all(s.closed for s in client.sessions)
+    assert trainer._vllm_server_client is None
+    assert trainer._vllm_server_comm_inited is False
+
+
 def test_rollout_parse_preserves_appearance_order_and_prefix_cut():
     tok = _DummyTokenizerRM()
     text = (
@@ -131,6 +168,36 @@ def test_rollout_parse_max_index_includes_invalid_retained_keys():
     assert [o.index for o in parsed.valid_objects] == [2]
     assert parsed.dropped_invalid >= 1
     assert parsed.max_object_index_in_prefix == 9
+
+
+def test_rollout_parse_max_index_includes_non_dict_retained_keys():
+    tok = _DummyTokenizerRM()
+    # object_4 has a non-dict value; it is retained in prefix key space and must
+    # reserve FN numbering to avoid duplicate object keys.
+    text = (
+        '{"object_4": 123, '
+        '"object_3": {"desc": "a", "bbox_2d": ['
+        '"<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}'
+    )
+    ids = tok.encode(text, add_special_tokens=False)
+    parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
+
+    assert [o.index for o in parsed.valid_objects] == [3]
+    assert parsed.max_object_index_in_prefix == 4
+
+    fn_obj = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[5, 6, 7, 8],
+        desc="fn",
+    )
+    append_text = _serialize_append_fragment(
+        fn_objects=[fn_obj],
+        start_index=(parsed.max_object_index_in_prefix or 0) + 1,
+        prefix_text=parsed.prefix_text,
+    )
+    assert '"object_5"' in append_text
+    assert '"object_4"' not in append_text
 
 
 def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():

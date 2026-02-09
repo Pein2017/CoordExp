@@ -830,14 +830,14 @@ def parse_rollout_for_matching(
     dropped_ambiguous = 0
 
     # Key allocation must reserve ids based on all retained object_N keys in prefix,
-    # even when strict object validation later drops those entries.
-    max_in_prefix: Optional[int] = None
-    for obj in objects_raw:
-        end = int(obj.value_span[1]) if isinstance(obj.value_span, tuple) else -1
-        if end <= 0 or end > int(cut_char):
-            continue
-        if max_in_prefix is None or int(obj.index) > int(max_in_prefix):
-            max_in_prefix = int(obj.index)
+    # including malformed/non-dict values that strict object validation drops.
+    _, max_in_prefix, _, _, _ = _scan_rollout_tokens(
+        tokenizer=tokenizer,
+        response_token_ids=prefix_token_ids,
+        coord_id_set=coord_id_set,
+    )
+    if max_in_prefix is not None:
+        max_in_prefix = int(max_in_prefix)
 
     return RolloutParseResult(
         response_token_ids=list(response_token_ids),
@@ -3956,6 +3956,70 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ) from exc
 
         setattr(self, "_vllm_server_comm_inited", True)
+
+    def _shutdown_vllm_server_client(
+        self, *, close_communicator: bool = True, close_sessions: bool = True
+    ) -> None:
+        """Best-effort cleanup for vLLM server client resources.
+
+        This is called during trainer shutdown to reduce teardown races between
+        background rollout workers and process-exit cleanup.
+        """
+        lock = getattr(self, "_vllm_server_client_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            setattr(self, "_vllm_server_client_lock", lock)
+
+        with lock:
+            client = getattr(self, "_vllm_server_client", None)
+            if client is None:
+                setattr(self, "_vllm_server_comm_inited", False)
+                return
+
+            rank = 0
+            world_size = 1
+            try:
+                import torch.distributed as dist
+            except Exception:
+                dist = None  # type: ignore[assignment]
+
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                try:
+                    rank = int(dist.get_rank())
+                    world_size = int(dist.get_world_size())
+                except Exception:
+                    rank = 0
+                    world_size = 1
+
+            if bool(close_communicator):
+                should_close_comm = int(world_size) <= 1 or int(rank) == 0
+                if should_close_comm:
+                    try:
+                        close_fn = getattr(client, "close_communicator", None)
+                        if callable(close_fn):
+                            close_fn()
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to close vLLM server communicator during shutdown: %r",
+                            exc,
+                        )
+
+            if bool(close_sessions):
+                try:
+                    sessions = getattr(client, "sessions", None)
+                    if isinstance(sessions, list):
+                        for sess in sessions:
+                            try:
+                                close_fn = getattr(sess, "close", None)
+                                if callable(close_fn):
+                                    close_fn()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            self._vllm_server_client = None
+            setattr(self, "_vllm_server_comm_inited", False)
 
     def _vllm_server_infer_guard(self):
         """Optional hook for staging safe vLLM server inference.

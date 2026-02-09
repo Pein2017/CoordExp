@@ -626,10 +626,45 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             except Exception:
                 pass
 
+            # Close HTTP sessions first so in-flight infer calls can fail fast.
+            # Communicator closure is done after the prefetch thread exits.
+            try:
+                self._shutdown_vllm_server_client(
+                    close_communicator=False,
+                    close_sessions=True,
+                )
+            except Exception:
+                pass
+
+            join_timeout_s = 5.0
+            try:
+                _server_timeout_s, infer_timeout_s = self._vllm_server_timeouts()
+                join_timeout_s = max(5.0, min(float(infer_timeout_s) + 5.0, 300.0))
+            except Exception:
+                pass
+
             try:
                 th = getattr(self, "_stage2_async_prefetch_thread", None)
                 if th is not None and getattr(th, "is_alive", None) and th.is_alive():
-                    th.join(timeout=5.0)
+                    deadline = float(time.time()) + float(join_timeout_s)
+                    while th.is_alive():
+                        remain = float(deadline - float(time.time()))
+                        if remain <= 0.0:
+                            break
+                        th.join(timeout=min(1.0, remain))
+                    if th.is_alive():
+                        logger.warning(
+                            "Stage2-AB async prefetch thread still alive at shutdown after %.1fs; proceeding with best-effort teardown.",
+                            float(join_timeout_s),
+                        )
+            except Exception:
+                pass
+
+            try:
+                self._shutdown_vllm_server_client(
+                    close_communicator=True,
+                    close_sessions=True,
+                )
             except Exception:
                 pass
 
