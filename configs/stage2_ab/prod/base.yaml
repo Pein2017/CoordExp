@@ -2,7 +2,7 @@
 # vLLM server mode, DoRA ("dlora"), and num_train_epochs=2.
 #
 # Child variants should primarily override schedule and run/output naming.
-extends: ../rollout_matching_sft_template.yaml
+extends: ../base_rollout_matching_sft.yaml
 
 model:
   model: output/1-26/checkpoint-1516-merged

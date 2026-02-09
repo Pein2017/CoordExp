@@ -7,7 +7,7 @@ assistant JSON for the worst-case sample (or for a chosen percentile).
 Example:
   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python \
     scripts/measure_gt_max_new_tokens.py \
-    --config .worktrees/CoordExp-wt-2026-01-15-rollout-matching/configs/rollout_matching_sft_template.yaml \
+    --config .worktrees/CoordExp-wt-2026-01-15-rollout-matching/configs/base_rollout_matching_sft.yaml \
     --checkpoint model_cache/Qwen3-VL-8B-Instruct-coordexp
 
 Notes:

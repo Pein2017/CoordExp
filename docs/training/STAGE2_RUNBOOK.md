@@ -187,7 +187,7 @@ Interpretation:
 
 Start from a template config and fill in dataset + rollout knobs:
 
-- Rollout-matching SFT template: `configs/stage2_ab/rollout_matching_sft_template.yaml`
+- Rollout-matching SFT template: `configs/stage2_ab/base_rollout_matching_sft.yaml`
 - Stage-2 AB examples: `configs/stage2_ab/`
 
 Minimum required edits:
