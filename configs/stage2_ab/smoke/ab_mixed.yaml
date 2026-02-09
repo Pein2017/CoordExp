@@ -1,0 +1,10 @@
+# Smoke variant: mixed A/B schedule.
+# Diff vs prod: runtime naming and sample limits only.
+extends:
+  - ../prod/ab_mixed.yaml
+  - ../base_smoke_runtime.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke/ab_mixed
+  logging_dir: tb/stage2_ab/smoke/ab_mixed
+  run_name: smoke_ab_mixed

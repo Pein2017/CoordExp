@@ -1,0 +1,6 @@
+# Smoke runtime overrides shared by stage2_ab/smoke/*.yaml.
+#
+# Keep smoke behavior production-identical except for runtime limits.
+custom:
+  train_sample_limit: 64
+  val_sample_limit: 8

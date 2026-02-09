@@ -1,0 +1,10 @@
+# Smoke variant: Channel-B-only rollout matching.
+# Diff vs prod: runtime naming and sample limits only.
+extends:
+  - ../prod/b_only.yaml
+  - ../base_smoke_runtime.yaml
+
+training:
+  output_dir: output/stage2_ab/smoke/b_only
+  logging_dir: tb/stage2_ab/smoke/b_only
+  run_name: smoke_b_only

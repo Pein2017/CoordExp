@@ -4,7 +4,7 @@
 # Example (single node, 4 GPUs):
 #   bash scripts/stage2_ab_server_train.sh \
 #     server_gpus=0,1,2 train_gpus=3 \
-#     config=configs/stage2_ab/smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml
+#     config=configs/stage2_ab/smoke/ab_mixed.yaml
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ SERVER_GPUS="${server_gpus:-0,1,2}"
 TRAIN_GPUS="${train_gpus:-3}"
 WAIT_TIMEOUT="${wait_timeout:-900}"
 WAIT_INTERVAL="${wait_interval:-2}"
-CONFIG_RAW="${config:-configs/stage2_ab/smoke/bbox_max60_ckpt1516_ab_mixed_vllm_server.yaml}"
+CONFIG_RAW="${config:-configs/stage2_ab/smoke/ab_mixed.yaml}"
 DEBUG="${debug:-false}"
 TRAIN_ENV="${train_env:-}"
 DISABLE_PROXY="${disable_proxy:-true}"

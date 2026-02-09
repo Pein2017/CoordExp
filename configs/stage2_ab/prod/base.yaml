@@ -1,12 +1,8 @@
-# Production Stage-2 AB ablation base: LVIS bbox-only max60 from ckpt-1516 (merged),
+# Production Stage-2 AB base: LVIS bbox-only max60 from ckpt-1516 (merged),
 # vLLM server mode, DoRA ("dlora"), and num_train_epochs=2.
 #
-# This file is meant to be extended by schedule variants so that only the
-# stage2_ab schedule changes across runs (A-only / B-only / AB-mixed).
-extends: ../rollout_matching_sft_template.yaml
-
-# Learner packing length cap (prompt + response + image tokens). One packed sequence per backward.
-global_max_length: 12000
+# Child variants should primarily override schedule and run/output naming.
+extends: ../base_stage2_ab.yaml
 
 model:
   model: output/1-26/checkpoint-1516-merged
@@ -45,18 +41,11 @@ training:
   # Required for Channel-B step mode to avoid partial accumulation windows.
   dataloader_drop_last: true
 
-  # Dense logging for apples-to-apples throughput + stability comparison.
-  logging_steps: 10
-  logging_first_step: true
-
-  # Stage-2 AB already logs core rollout/matching metrics on B steps.
-  eval_strategy: "steps"
+  # Rollout evaluation is expensive; keep it sparse.
   eval_steps: 80
 
   save_strategy: "steps"
   save_steps: 200
-  save_total_limit: 2
-  save_delay_steps: 100
 
   optimizer: multimodal
   learning_rate: 2.0e-5
@@ -65,91 +54,45 @@ training:
   weight_decay: 0.1
 
 stage2_ab:
+  # Default prod variant is mixed schedule; specific variants can override.
   schedule:
-    # Channel-B should be sparse (~5%) to stay a cold path.
     b_ratio: 0.05
-  n_softctx_iter: 2
-  desc_ce_weight: 1.0
+  # Non-default: stronger bbox regression pressure in prod.
   bbox_smoothl1_weight: 2.0
-  bbox_ciou_weight: 1.0
-  softctx_temperature: 1.0
-  # Channel-B rollout refactor: async actor-learner (server rollouts, queue-gated).
   channel_b:
-    # 'async' is the recommended mode for vLLM server rollouts and multi-GPU learners:
-    # - per-rank ready-pack queues
-    # - rank0 sync + step-kind broadcast (DDP safety)
-    # - feasibility gate (fallback to A if queues are empty)
+    # Async actor-learner (server rollouts + queue-gated feasibility).
     mode: async
     async:
-      # Rule of thumb: set prefetch_target_packs >= gradient_accumulation_steps (GAS),
-      # and give extra slack so Channel-B feasibility rarely fails.
-      #
-      # With effective_batch_size=32 and per_device_train_batch_size=1:
-      # - world_size=2  => GAS=16
-      # - world_size=4  => GAS=8
+      # Rule of thumb: prefetch_target_packs >= GAS, with extra slack.
       queue_limit: 64
       version_window: 8
       sync_every_steps: 4
       prefetch_target_packs: 32
-    # (Legacy) step-budgeted + pipelined mode knobs are ignored in async mode.
-    rollouts_per_step: null
-    enable_pipeline: false
-    rollout_decode_batch_size: 2
-    # Legacy ablation path (opt-in only): reordered-GT SFT arranged in predicted order.
-    reordered_gt_sft: false
-    # Downweight desc CE for matched objects only; keep missing-object recall learning strict.
-    desc_ce_weight_matched: 0.2
-    semantic_desc_gate:
-      # Enabled by default, but revision MUST be pinned for reproducibility.
-      enabled: true
-      model_name_or_path: sentence-transformers/all-MiniLM-L6-v2
-      threshold: 0.5
-      revision: c9745ed1d9f207416be6d2e6f8de32d1f16199bf
 
 custom:
-  trainer_variant: stage2_ab_training
-
-  # Full LVIS bbox-only coord-token JSONLs.
-  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
-
   # Full dataset (no smoke sampling caps).
   train_sample_limit: null
   val_sample_limit: null
 
   extra:
     rollout_matching:
-      rollout_backend: vllm
-      decode_mode: greedy
       max_new_tokens: 3084
-      decoding:
-        temperature: 0.0
-        top_p: 1.0
-        top_k: -1
+      # Mild anti-loop bias for long dense JSON.
       repetition_penalty: 1.08
-      # Rollout request batching (client-side). With step-budgeted Channel-B, this should
-      # typically match `stage2_ab.channel_b.rollout_decode_batch_size`.
-      rollout_generate_batch_size: 1
       rollout_infer_batch_size: 2
-      # For stage2-ab step-budgeted mode, packing happens inside the step; keep micro here.
-      # Async actor-learner requires window-scope packing so each micro-step runs exactly
-      # one packed forward/backward per rank (DDP safety).
+      # Async actor-learner requires window-scope packing.
       post_rollout_pack_scope: window
 
       vllm:
         mode: server
-        # vLLM engine max_model_len for rollout (prompt + max_new_tokens). Keep this
-        # much smaller than learner `global_max_length` for speed and KV-cache capacity.
-        max_model_len: 12000
         # Full merged-weight sync is the robust default for multimodal models.
-        # NOTE: vLLM LoRA enablement is not required for full sync.
         enable_lora: false
         sync:
           mode: full
           fallback_to_full: true
         server:
           timeout_s: 240.0
-          # If null, the trainer defaults to timeout_s (never infinite).
+          # If null, the trainer defaults to timeout_s.
           infer_timeout_s: null
           servers:
             - base_url: http://127.0.0.1:8000
