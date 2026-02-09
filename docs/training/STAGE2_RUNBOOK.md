@@ -114,8 +114,20 @@ Tuning:
 
 ### Channel-B Contract (FP-neutral + Stop-neutral)
 
-- FP-neutral geometry: only matched predicted objects receive bbox geometry loss in Channel-B; FN-appended GT objects do not contribute geometry loss in Channel-B.
-- Stop-neutral CE: mask the top-level JSON closing brace `}` and `<|im_end|>` from Channel-B CE so Channel-B does not supervise stop/continue decisions.
+- Unified Channel-B is the default contract (`reordered_gt_sft` is legacy/ablation opt-in only).
+- CE masking policy (default non-reordered path):
+  - matched prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
+  - FP prefix objects: structure/desc/coord CE all OFF;
+  - FN-injected objects: structure CE ON, desc CE ON, coord CE OFF.
+- FP-neutral geometry: Channel-B geometry loss includes matched prefix objects and FN-injected objects; FP objects contribute no geometry loss.
+- Deterministic FN injection:
+  - locate the outermost top-level JSON close brace via brace-depth parsing,
+  - inject FN entries before that same brace,
+  - insert a leading comma iff the retained prefix body already has object entries.
+- Deterministic FN key allocation:
+  - `start_id = max_object_index_in_prefix + 1` (or `1` when none),
+  - `max_object_index_in_prefix` scans retained `object_N` keys in the prefix body even when entries are later dropped by strict validation; malformed keys are ignored.
+- Stop-neutral CE: mask the same outermost `}` used as FN injection anchor and mask `<|im_end|>`.
 - Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`

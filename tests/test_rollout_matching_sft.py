@@ -9,6 +9,7 @@ from src.trainers.rollout_matching_sft import (
     GTObject,
     _build_labels_and_coord_targets_for_sample,
     _build_labels_and_coord_targets_for_batch,
+    _serialize_append_fragment,
     _sinkhorn_barycentric_targets,
     hungarian_match_maskiou,
     parse_rollout_for_matching,
@@ -114,6 +115,52 @@ def test_rollout_parse_drops_invalid_objects_without_repair():
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
     assert [o.index for o in parsed.valid_objects] == [1, 3]
     assert parsed.dropped_invalid >= 1
+
+
+def test_rollout_parse_max_index_includes_invalid_retained_keys():
+    tok = _DummyTokenizerRM()
+    # object_9 has empty desc -> dropped by strict validation, but key index must still
+    # reserve FN numbering space for collision-safe append.
+    text = (
+        '{"object_2": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
+        '"object_9": {"desc": " ", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>", "<|coord_8|>"]}}'
+    )
+    ids = tok.encode(text, add_special_tokens=False)
+    parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
+
+    assert [o.index for o in parsed.valid_objects] == [2]
+    assert parsed.dropped_invalid >= 1
+    assert parsed.max_object_index_in_prefix == 9
+
+
+def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
+    fn_objs = [
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[1, 2, 3, 4],
+            desc="fn",
+        )
+    ]
+
+    frag_empty = _serialize_append_fragment(
+        fn_objects=fn_objs,
+        start_index=1,
+        prefix_text="{",
+    )
+    assert frag_empty.startswith('"object_1"')
+
+    prefix_with_entry = (
+        '{"object_7": {"desc": "p", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", '
+        '"<|coord_3|>", "<|coord_4|>"]}'
+    )
+    frag_non_empty = _serialize_append_fragment(
+        fn_objects=fn_objs,
+        start_index=8,
+        prefix_text=prefix_with_entry,
+    )
+    assert frag_non_empty.startswith(", ")
+    assert '"object_8"' in frag_non_empty
 
 
 def test_rollout_parse_poly_captures_coord_indices_through_nested_arrays():

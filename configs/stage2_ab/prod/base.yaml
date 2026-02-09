@@ -95,8 +95,8 @@ stage2_ab:
     rollouts_per_step: null
     enable_pipeline: false
     rollout_decode_batch_size: 2
-    # Reordered-GT SFT (B3/7.3): apply CE over a GT sequence arranged in predicted order.
-    reordered_gt_sft: true
+    # Legacy ablation path (opt-in only): reordered-GT SFT arranged in predicted order.
+    reordered_gt_sft: false
     # Downweight desc CE for matched objects only; keep missing-object recall learning strict.
     desc_ce_weight_matched: 0.2
     semantic_desc_gate:

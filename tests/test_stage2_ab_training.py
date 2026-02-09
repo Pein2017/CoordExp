@@ -5,12 +5,17 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.trainers.rollout_matching_sft import parse_rollout_for_matching
+from src.trainers.rollout_matching_sft import (
+    GTObject,
+    _serialize_append_fragment,
+    parse_rollout_for_matching,
+)
 from src.trainers.stage2_ab_training import (
     Stage2ABTrainingTrainer,
     _bbox_smoothl1_ciou_loss,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
+    _matched_prefix_structure_positions,
     _stage2_ab_stop_neutral_tail_ignore_pos,
 )
 
@@ -856,6 +861,145 @@ def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     assert float(loss_masked.detach().cpu().item()) < float(
         loss_full.detach().cpu().item()
     )
+
+
+def test_matched_prefix_structure_positions_excludes_desc_and_fp_tokens():
+    tok = _DummyTokenizer()
+
+    prefix_text = (
+        '{"object_1":{"desc":"matched","bbox_2d":[0,0,1,1]},'
+        '"object_2":{"desc":"fp","bbox_2d":[2,2,3,3]}'
+    )
+    prefix_token_ids = list(tok.encode(prefix_text))
+
+    key_anchor = int(prefix_text.find('"object_1"'))
+    value_start = int(prefix_text.find("{", key_anchor))
+    value_end = int(prefix_text.find('},"object_2"')) + 1
+    matched_obj = types.SimpleNamespace(
+        key="object_1",
+        value_span=(value_start, value_end),
+    )
+
+    rel = _matched_prefix_structure_positions(
+        tokenizer=tok,
+        prefix_token_ids=prefix_token_ids,
+        prefix_text=prefix_text,
+        matched_pred_objects=[matched_obj],
+    )
+
+    key_pos_matched = int(prefix_text.find('"object_1"'))
+    key_pos_fp = int(prefix_text.find('"object_2"'))
+    desc_pos_matched = int(prefix_text.find("matched"))
+
+    assert key_pos_matched >= 0 and key_pos_matched in rel
+    assert key_pos_fp >= 0 and key_pos_fp not in rel
+    assert desc_pos_matched >= 0 and desc_pos_matched not in rel
+
+
+def test_channel_b_prefix_structure_supervision_is_matched_only():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+
+    # Prefix (len=4):
+    # - rel=1 -> matched structure token (should be supervised)
+    # - rel=2 -> matched desc token (should stay masked)
+    # - rel=3 -> FP token (should stay masked)
+    # Tail (len=4): FN structure/desc tokens are supervised by default.
+    input_ids = torch.tensor(
+        [[1100, 1101, 1101, 1101, 1100, 1101, 1100, 1101]], dtype=torch.long
+    )
+
+    base_meta = {
+        "prompt_len": 0,
+        "prefix_len": 4,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "tail_ignore_pos": [],
+        "tail_desc_pos": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [],
+    }
+
+    meta_matched_only = dict(base_meta)
+    meta_matched_only["prefix_struct_pos"] = [1]
+
+    meta_oversupervised = dict(base_meta)
+    meta_oversupervised["prefix_struct_pos"] = [1, 2, 3]
+
+    loss_matched_only = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_matched_only],
+            "input_ids": input_ids,
+        },
+    )
+
+    loss_oversupervised = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_oversupervised],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_matched_only.detach().cpu().item()) < float(
+        loss_oversupervised.detach().cpu().item()
+    )
+
+
+def test_stop_neutral_masks_same_brace_used_for_fn_injection():
+    tok = _DummyTokenizer()
+
+    rollout_text = '{"object_7":{"desc":"p","bbox_2d":[0,0,1,1]}}'
+    parsed = parse_rollout_for_matching(
+        tokenizer=tok,
+        response_token_ids=list(tok.encode(rollout_text)),
+    )
+
+    fn_fragment = _serialize_append_fragment(
+        fn_objects=[
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[5, 5, 6, 6],
+                desc="fn",
+            )
+        ],
+        start_index=8,
+        prefix_text=parsed.prefix_text,
+    )
+
+    assistant_text = parsed.prefix_text + fn_fragment
+    assistant_ids = list(tok.encode(assistant_text))
+    im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
+
+    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+        tokenizer=tok,
+        assistant_span_ids=assistant_ids + [im_end_id],
+        prefix_len=int(len(parsed.prefix_token_ids)),
+    )
+
+    tail_text = assistant_text[int(len(parsed.prefix_token_ids)) :]
+    close_rel = int(tail_text.rfind("}"))
+
+    assert close_rel >= 0
+    assert ignore_rel == [close_rel, len(tail_text)]
 
 
 def test_stop_neutral_brace_scan_ignores_braces_inside_quoted_desc():

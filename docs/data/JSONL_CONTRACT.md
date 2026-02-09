@@ -33,6 +33,7 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
+- Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
 - Polygon vertices should be canonicalized offline for determinism:
   - drop duplicated closing point if present
   - order vertices clockwise around the centroid (angle sort)

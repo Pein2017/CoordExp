@@ -769,7 +769,7 @@ def parse_rollout_for_matching(
             cursor += len(p)
         response_text = "".join(pieces)
 
-    objects_raw, max_index, first_open_brace_pos, truncated, last_obj_end = (
+    objects_raw, _, first_open_brace_pos, truncated, last_obj_end = (
         _scan_rollout_tokens(
             tokenizer=tokenizer,
             response_token_ids=response_token_ids,
@@ -829,11 +829,15 @@ def parse_rollout_for_matching(
     # In this MVP implementation, coord-slot alignment ambiguity is treated as invalid.
     dropped_ambiguous = 0
 
-    # Best-effort: max index only among objects that survived the prefix cut.
-    max_in_prefix = None
-    for obj in valid_objects:
-        if max_in_prefix is None or obj.index > max_in_prefix:
-            max_in_prefix = obj.index
+    # Key allocation must reserve ids based on all retained object_N keys in prefix,
+    # even when strict object validation later drops those entries.
+    max_in_prefix: Optional[int] = None
+    for obj in objects_raw:
+        end = int(obj.value_span[1]) if isinstance(obj.value_span, tuple) else -1
+        if end <= 0 or end > int(cut_char):
+            continue
+        if max_in_prefix is None or int(obj.index) > int(max_in_prefix):
+            max_in_prefix = int(obj.index)
 
     return RolloutParseResult(
         response_token_ids=list(response_token_ids),
@@ -1184,13 +1188,85 @@ def _serialize_append_fragment(
     start_index: int,
     prefix_text: str,
 ) -> str:
-    # Determine last non-whitespace char.
     tail = prefix_text.rstrip()
     if not tail:
         raise ValueError("empty rollout prefix is not append-ready")
+
     last = tail[-1]
     if last not in {"{", "}", ","}:
         raise ValueError(f"rollout prefix is not append-ready; last_char={last!r}")
+
+    # Deterministically validate the retained prefix as an open top-level JSON object
+    # and detect whether it already contains at least one object entry.
+    def _prefix_has_object_entries(text: str) -> bool:
+        depth = 0
+        in_string = False
+        escape = False
+        expecting_key: Dict[int, bool] = {}
+        current_string: List[str] = []
+        saw_root_open = False
+        object_keys = 0
+
+        for ch in text:
+            if in_string:
+                if escape:
+                    escape = False
+                    current_string.append(ch)
+                elif ch == "\\":
+                    escape = True
+                    current_string.append(ch)
+                elif ch == '"':
+                    in_string = False
+                    s = "".join(current_string)
+                    current_string = []
+                    if expecting_key.get(depth, False) and depth == 1:
+                        if _OBJECT_KEY_RE.match(s):
+                            object_keys += 1
+                else:
+                    current_string.append(ch)
+                continue
+
+            if ch == '"':
+                in_string = True
+                escape = False
+                current_string = []
+                continue
+
+            if ch == "{":
+                depth += 1
+                expecting_key[depth] = True
+                if depth == 1:
+                    saw_root_open = True
+                continue
+
+            if ch == "}":
+                if depth > 0:
+                    expecting_key.pop(depth, None)
+                    depth -= 1
+                continue
+
+            if ch == ",":
+                if depth >= 1:
+                    expecting_key[depth] = True
+                continue
+
+            if ch == ":":
+                if depth >= 1:
+                    expecting_key[depth] = False
+                continue
+
+        if not saw_root_open:
+            raise ValueError("rollout prefix missing top-level '{'")
+        if depth != 1:
+            raise ValueError(
+                "rollout prefix must end with an open top-level object before FN append"
+            )
+        if in_string:
+            raise ValueError("rollout prefix ends inside a quoted string")
+
+        return bool(object_keys > 0)
+
+    has_entries = _prefix_has_object_entries(tail)
 
     if not fn_objects:
         if last == ",":
@@ -1200,7 +1276,7 @@ def _serialize_append_fragment(
         return "}"
 
     leading = ""
-    if last == "}":
+    if has_entries and last != ",":
         leading = ", "
 
     entries: List[str] = []

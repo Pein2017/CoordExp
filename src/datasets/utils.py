@@ -8,29 +8,53 @@ from src.common.io import load_jsonl  # re-export for backward compatibility
 
 
 def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
-    """Extract geometry type and points from an object.
+    """Extract exactly one valid geometry field from an object.
 
-    Accepts numeric points or coord tokens; falls back to raw values when
-    float conversion is not possible.
+    Accepts numeric points or coord tokens; for numeric inputs it normalizes values
+    to float while preserving coord-token strings as-is.
     """
 
     def _coerce(value: Any, key: str) -> List[Any]:
         if value is None:
-            return []
-        if not isinstance(value, Sequence):
+            raise ValueError(f"object is missing required geometry value for {key}")
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
             raise ValueError(f"{key} must be a sequence, got {type(value)!r}")
         try:
             return [float(v) for v in value]
         except (TypeError, ValueError):
             return list(value)
+
     if "line" in obj or "line_points" in obj:
         raise ValueError("line geometry is not supported")
 
-    if "bbox_2d" in obj:
-        return "bbox_2d", _coerce(obj["bbox_2d"], "bbox_2d")
-    if "poly" in obj:
-        return "poly", _coerce(obj["poly"], "poly")
-    return "", []
+    has_bbox = obj.get("bbox_2d") is not None
+    has_poly = obj.get("poly") is not None
+
+    if has_bbox and has_poly:
+        raise ValueError(
+            "object must contain exactly one geometry field (bbox_2d xor poly), got both"
+        )
+    if not has_bbox and not has_poly:
+        raise ValueError(
+            "object must contain exactly one geometry field (bbox_2d xor poly), got none"
+        )
+
+    if has_bbox:
+        points = _coerce(obj.get("bbox_2d"), "bbox_2d")
+        if len(points) != 4:
+            raise ValueError(
+                f"bbox_2d must contain exactly 4 values; got len={len(points)}"
+            )
+        return "bbox_2d", points
+
+    points = _coerce(obj.get("poly"), "poly")
+    if any(isinstance(v, Sequence) and not isinstance(v, (str, bytes)) for v in points):
+        raise ValueError("poly must be a flat coordinate sequence")
+    if len(points) < 6 or (len(points) % 2 != 0):
+        raise ValueError(
+            "poly must contain an even number of values and at least 6 coordinates"
+        )
+    return "poly", points
 
 
 _TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
@@ -91,8 +115,8 @@ def sort_objects_by_topleft(objects: List[Dict[str, Any]]) -> List[Dict[str, Any
     return sorted(list(objects), key=anchor)
 
 
-def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[float]]:
-    """Extract geometry dictionary from object.
+def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[Any]]:
+    """Extract a validated single-geometry mapping from an object.
 
     Useful for augmentation and processing pipelines.
 
@@ -100,16 +124,10 @@ def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[float]]:
         obj: Object dictionary
 
     Returns:
-        Dictionary with geometry key and points
+        Mapping with exactly one geometry key/value pair.
     """
-    geom: Dict[str, List[float]] = {}
-    if obj.get("line") is not None or obj.get("line_points") is not None:
-        raise ValueError("line geometry is not supported")
-    if obj.get("bbox_2d") is not None:
-        geom["bbox_2d"] = obj["bbox_2d"]
-    if obj.get("poly") is not None:
-        geom["poly"] = obj["poly"]
-    return geom
+    geom_type, points = extract_object_points(obj)
+    return {str(geom_type): list(points)}
 
 
 def is_same_record(record_a: Dict[str, Any], record_b: Dict[str, Any]) -> bool:

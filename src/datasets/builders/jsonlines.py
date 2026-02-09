@@ -150,16 +150,20 @@ class JSONLinesBuilder(BaseBuilder):
         grouped_objects: Dict[str, Any] = {}
         for idx, obj in enumerate(objects, start=1):
             geom_type, points = extract_object_points(obj)
+            if not geom_type or not points:
+                raise ValueError(
+                    f"Object object_{idx} must contain exactly one valid geometry field"
+                )
+
             payload: Dict[str, Any] = {
                 "desc": self._sanitize_desc(obj.get("desc"), idx)
             }
-            if geom_type and points:
-                text_points = self._select_text_points(obj, geom_type, points)
-                numeric_points = self._select_numeric_points(obj, geom_type, points)
-                obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
-                payload[geom_type] = self._format_points(
-                    text_points, width, height, geom_type
-                )
+            text_points = self._select_text_points(obj, geom_type, points)
+            numeric_points = self._select_numeric_points(obj, geom_type, points)
+            obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
+            payload[geom_type] = self._format_points(
+                text_points, width, height, geom_type
+            )
             grouped_objects[f"object_{idx}"] = payload
         return grouped_objects
 

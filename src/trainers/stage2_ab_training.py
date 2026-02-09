@@ -417,6 +417,99 @@ def _bbox_groups_from_token_ids(
     return groups
 
 
+def _matched_prefix_structure_positions(
+    *,
+    tokenizer: Any,
+    prefix_token_ids: Sequence[int],
+    prefix_text: str,
+    matched_pred_objects: Sequence[Any],
+) -> List[int]:
+    """Return prefix-local token positions for matched-object structure supervision.
+
+    The returned positions cover each matched object's key/value entry while excluding
+    desc value tokens. Coord tokens are filtered later by CE masking.
+    """
+
+    try:
+        token_ids = [int(t) for t in prefix_token_ids]
+    except Exception:
+        token_ids = [int(t) for t in list(prefix_token_ids)]
+
+    if not token_ids or not matched_pred_objects:
+        return []
+
+    pieces = _decode_pieces(tokenizer, token_ids)
+    token_start_chars: List[int] = []
+    cursor = 0
+    for p in pieces:
+        token_start_chars.append(int(cursor))
+        cursor += int(len(p))
+
+    def _tok_indices_overlapping(char_start: int, char_end: int) -> List[int]:
+        out: List[int] = []
+        for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
+            end = int(start) + int(len(piece))
+            if end <= int(char_start) or int(start) >= int(char_end):
+                continue
+            out.append(int(ti))
+        return out
+
+    supervised: set[int] = set()
+    prefix_len_chars = int(len(prefix_text))
+
+    for obj in matched_pred_objects:
+        if obj is None:
+            continue
+
+        key = str(getattr(obj, "key", "") or "")
+        if not key:
+            raise ValueError("matched object is missing key for prefix-structure supervision")
+
+        value_span = getattr(obj, "value_span", None)
+        if not isinstance(value_span, tuple) or len(value_span) != 2:
+            raise ValueError(
+                f"matched object {key} is missing value_span for prefix-structure supervision"
+            )
+
+        try:
+            value_start = int(value_span[0])
+            value_end = int(value_span[1])
+        except Exception as exc:
+            raise ValueError(
+                f"matched object {key} has non-integer value_span: {value_span!r}"
+            ) from exc
+
+        if value_start < 0 or value_end <= value_start or value_end > prefix_len_chars:
+            raise ValueError(
+                f"matched object {key} value_span is outside retained prefix: {value_span!r}"
+            )
+
+        key_anchor = int(prefix_text.rfind(f'"{key}"', 0, int(value_start) + 1))
+        if key_anchor < 0:
+            raise ValueError(
+                f"could not locate matched object key {key!r} in retained prefix"
+            )
+
+        entry_tokens = _tok_indices_overlapping(int(key_anchor), int(value_end))
+        if not entry_tokens:
+            raise ValueError(
+                f"could not map matched object entry {key!r} to prefix tokens"
+            )
+
+        desc_tokens: set[int] = set()
+        value_text = str(prefix_text[int(value_start) : int(value_end)])
+        for ds, de in _find_desc_value_char_spans(value_text):
+            desc_tokens.update(
+                _tok_indices_overlapping(int(value_start + ds), int(value_start + de))
+            )
+
+        for ti in entry_tokens:
+            if int(ti) not in desc_tokens:
+                supervised.add(int(ti))
+
+    return sorted(int(p) for p in supervised)
+
+
 class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
     """Stage-2 AB trainer: Channel-A iterative soft self-context + Channel-B rollout matching.
 
@@ -3240,6 +3333,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             tail_desc_pos_matched: List[int] = []
             tail_desc_pos_missing: List[int] = []
             tail_desc_pos_matched_masked: List[int] = []
+            prefix_struct_pos: List[int] = []
 
             fn_count_for_meta = 0
 
@@ -3393,6 +3487,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 prefix_len_raw_local = 0
 
             else:
+                matched_pred_indices: set[int] = set()
                 for pred_i, gt_i in match.matched_pairs:
                     if pred_i < 0 or pred_i >= len(pred_meta):
                         continue
@@ -3402,6 +3497,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     if len(pobj.coord_token_indices) != 4:
                         continue
                     matched_gt_for_supervision.add(int(gt_i))
+                    matched_pred_indices.add(int(pred_i))
                     gt_bins = list(gts[gt_i].points_norm1000)
                     pos_seg = [
                         int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices
@@ -3410,6 +3506,18 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
                         prefix_pos.append(int(local_idx))
                         prefix_bins.append(int(tbin))
+
+                matched_pred_objects = [
+                    pred_meta[int(i)]
+                    for i in sorted(matched_pred_indices)
+                    if 0 <= int(i) < len(pred_meta)
+                ]
+                prefix_struct_pos = _matched_prefix_structure_positions(
+                    tokenizer=tok,
+                    prefix_token_ids=parse.prefix_token_ids,
+                    prefix_text=parse.prefix_text,
+                    matched_pred_objects=matched_pred_objects,
+                )
 
                 fn_gt_indices_final = [
                     i for i in range(len(gts)) if i not in matched_gt_for_supervision
@@ -3704,6 +3812,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "excluded_from_supervision": int(0),
                 "prefix_coord_pos": prefix_pos,
                 "prefix_coord_target_bins": prefix_bins,
+                "prefix_struct_pos": [int(p) for p in prefix_struct_pos],
                 "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
                 "tail_desc_pos_matched": tail_desc_pos_matched_eff,
@@ -4106,6 +4215,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             prompt_len = int(m.get("prompt_len", 0))
             prefix_len = int(m.get("prefix_len", 0))
             train_len = int(m.get("train_len", 0))
+            prefix_struct_pos = list(m.get("prefix_struct_pos") or [])
             tail_ignore_pos = list(m.get("tail_ignore_pos") or [])
             tail_desc_pos = list(m.get("tail_desc_pos") or [])
             tail_desc_pos_matched = list(m.get("tail_desc_pos_matched") or [])
@@ -4130,6 +4240,24 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
             tail_start = max(seg_start + 1, min(seg_start + tail_start, seg_end))
             tail_end = max(tail_start, min(seg_start + tail_end, seg_end))
+
+            # Prefix matched-structure CE (Channel-B non-reordered contract):
+            # only explicit matched structure positions are supervised; FP prefix remains masked.
+            prefix_start = max(seg_start + 1, min(seg_start + prompt_len, seg_end))
+            prefix_end = max(prefix_start, min(seg_start + prompt_len + prefix_len, seg_end))
+            for rel in prefix_struct_pos:
+                try:
+                    rel_i = int(rel)
+                except Exception:
+                    continue
+                p = int(seg_start + prompt_len + rel_i)
+                if p < prefix_start or p >= prefix_end:
+                    continue
+                tok_id = int(input_ids[b, p].item())
+                if tok_id in coord_id_set:
+                    continue
+                labels_masked[b, p] = input_ids[b, p]
+                weights_masked[b, p] = 1.0
 
             for p in range(tail_start, tail_end):
                 tok_id = int(input_ids[b, p].item())

@@ -19,6 +19,16 @@ Stage-2 note (rollout-matching SFT):
   or not meaningful for stage_2 runs (because those positions are not supervised).
 - Stage_2 runbook: `STAGE2_RUNBOOK.md`.
 
+Stage-2 AB note (Channel-B path):
+- Stage_2 AB (`custom.trainer_variant: stage2_ab_training`) uses unified Channel-B by default:
+  rollout prefix + FN injection + one teacher-forced forward with explicit CE masks.
+- Channel-B CE/geometry semantics:
+  - matched prefix: structure CE ON, desc/coord CE OFF,
+  - FP prefix: structure/desc/coord CE OFF,
+  - FN-injected: structure+desc CE ON, coord CE OFF,
+  - geometry loss on matched + FN, FP geometry OFF.
+- Legacy `reordered_gt_sft` remains opt-in ablation behavior.
+
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
 
 Stage_2 (`custom.trainer_variant: rollout_matching_sft`) logs additional keys
@@ -189,6 +199,26 @@ Logging semantics:
   - **What:** 1.0 when the prefetch loop is inside `_prepare_batch_inputs_b(..., _segments_only=True)` (rollout+parse+match).
 - `stage2_ab/async/is_prefetch_queue_full`, `stage2_ab/async/is_prefetch_no_segments`, `stage2_ab/async/is_prefetch_error`
   - **What:** coarse prefetch conditions (queue full / produced zero segments / hit an exception).
+
+### Stage-2 AB Channel-B strict-drop and stop-neutral diagnostics
+
+These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Channel-B construction.
+
+- `stage2_ab/channel_b/strict_drop/N_valid_pred`
+  - **What:** number of predicted objects retained after strict validation for this step.
+  - **Why:** numerator for strict-drop health checks.
+
+- `stage2_ab/channel_b/strict_drop/N_drop_invalid`
+  - **What:** number of predicted objects dropped by strict validation for this step.
+  - **Why:** tracks parser/data-quality pressure on Channel-B supervision.
+
+- `stage2_ab/channel_b/strict_drop/reason/<bucket>`
+  - **What:** reason-bucket counts for dropped predictions (e.g., `missing_desc`, `wrong_arity`, `bbox_invalid`).
+  - **Why:** identifies dominant failure modes in rollout outputs.
+
+- `stage2_ab/channel_b/stop_neutral/N_skip`
+  - **What:** number of samples skipped because stop-neutral marker resolution failed (`}` / `<|im_end|>` alignment).
+  - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 

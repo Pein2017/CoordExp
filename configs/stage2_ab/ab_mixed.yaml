@@ -12,7 +12,7 @@ stage2_ab:
   bbox_ciou_weight: 1.0
   softctx_temperature: 1.0
   channel_b:
-    reordered_gt_sft: true
+    reordered_gt_sft: false
     desc_ce_weight_matched: 0.2
     semantic_desc_gate:
       enabled: true
