@@ -15,18 +15,18 @@
 ### 0.2 What “EM-ish” means here
 - We separate **continuous / smooth geometry calibration** from **discrete / set-level alignment**, but we intentionally do **NOT** use token-level CE to suppress extra (unmatched) predicted objects in Channel-B.
   - **Channel-A (hot path):** no autoregressive rollout; do **N× forward** (iterative soft self-context) to approximate “self-context” *only on coord slots* using soft coord embeddings (differentiable, fast). Channel-A remains responsible for normal SFT behaviors (including end-of-sequence / closure supervision).
-  - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to define a stop-grad **set alignment** between predicted objects and GT objects, then apply **matched-only geometry** and **selective text supervision** under the rollout’s true self-context.
+  - **Channel-B (cold path):** occasional autoregressive rollout + Parse + Hungarian matching to define a stop-grad **set alignment** between predicted objects and GT objects, then run a **Unified one-pass teacher-forced forward** (rollout prefix + FN injection inside the same JSON dict) for geometry/text supervision under true self-context.
 
 Under this view:
 - **E-step (latent alignment):** performed only on Channel-B steps via rollout → parse → set → Hungarian (stop-grad correspondence). This defines `(pred_i → gt_j)` matches, FN, and FP sets.
 - **M-step (parameter update):** always uses SFT-compatible objectives; geometry losses are applied under:
   - Channel-A: “soft self-context proxy” (no sampling)
-  - Channel-B: “true self-context” (teacher-forced on rollout tokens) with **matched-only geometry gradients**.
+  - Channel-B: “true self-context” (teacher-forced on rollout tokens), FP-neutral, with geometry gradients on **ValidMatched + FN-injected** entries and no geometry gradients on FP entries.
 
 **Important (Channel-A gradient semantics):** Channel-A supports two modes:
 - **A-UNROLL (default):** allow gradients through the soft self-context loop (no detach). This enables cross-step / cross-coord credit assignment. After Stage-1 pretraining this is typically stable.
 - **A-EM (stable fallback):** detach the coord distribution used to build soft embeddings (EM-ish). This approximates on-policy context while avoiding unstable feedback gradients.
-We implement a smooth switch via a mixing coefficient `γ ∈ [0,1]` (Section 6.2).
+Default is `A-UNROLL`; fallback is `A-EM` when training stability requires it (Section 6.2).
 
 ### 0.3 Why “self-context forward”
 Hungarian matching is computed from the model’s rollout output. To make the geometric gradient consistent with the same context that produced that rollout, we recompute logits using teacher forcing on the rollout tokens (`ŷ`) and apply GT-based geometric supervision there.
@@ -48,14 +48,16 @@ This iterative proxy can be run in:
   - For coord slot `t`: `p_t^(m) = softmax(s_t^(m) / τ_A)` and `ē_t^(m) = Σ_k p_{t,k}^(m) * E_coord[k]`.
 - Using `n_softctx_iter = N` total forwards corresponds to `N-1` applications of `F_θ` (Jacobi-style fixed-point intuition).
 - Larger `N` is *closer* to rollout/self-context (because the coord context is repeatedly updated from the model’s own belief), but it is still not equivalent to autoregressive rollout because it is soft (expectation), non-sampled, and keeps the GT text/structure scaffold.
-- In practice, bbox chains are short (4 coords). `N=2` is often sufficient; `N=3` is a useful ablation to test whether the teacher-forcing vs rollout gap shrinks further.
+- In practice, bbox chains are short (4 coords). `N=2` is the default in this document.
 
 ### 0.4 Channel-B “FP-neutral” principle (central)
 In real detection data, unmatched predicted objects (FP under Hungarian) may correspond to **unlabeled** true objects. Therefore, Channel-B must avoid using token-level CE to teach the model to “stop early” or to suppress extra objects.
 
 Concretely:
-- Channel-B geometry learning is **matched-only**: only matched `(pred_i → gt_j)` pairs contribute to geometric losses; FP objects do not receive geometric gradients.
-- Channel-B text supervision is **selective**: we may correct matched descriptions only when the predicted description is semantically far from GT; semantically-close variants are treated as correct (no penalty).
+- Channel-B geometry learning uses **matched + FN-injected** objects in Unified one-pass; FP objects do not receive geometric gradients.
+- Channel-B text supervision is **FP-neutral and FN-focused**:
+  - matched prefix objects keep `CE_desc=0`,
+  - FN injected objects use normal `CE_desc=1`.
 - Channel-B is **stop-neutral** by default: token-level CE on the top-level JSON closing brace (`}`) and on the only turn-end token `<|im_end|>` is masked out, so Channel-B does not provide gradients for the stop/continue decision.
 - Channel-A remains responsible for normal “format + closure + end-of-sequence” supervision and for stabilizing structured generation.
 
@@ -87,6 +89,23 @@ Example (coord-token mode, bbox only):
   "object_2": {
     "desc": "yellow dog",
     "bbox_2d": ["<|coord_520|>", "<|coord_285|>", "<|coord_890|>", "<|coord_660|>"]
+  }
+}
+```
+
+Optional: bbox-first object payload order
+
+Default remains `desc` then `bbox_2d` (desc-first).
+
+An optional order is `bbox_2d` then `desc` (bbox-first). This can reduce early long-text noise on geometry decoding and make coordinates available earlier for parsing, while desc-first usually gives stronger early semantic anchoring in dense scenes. If bbox-first is adopted as the default template, a short format-refresh SFT / Stage-1 refresh may be needed to re-stabilize output.
+
+Optional bbox-first example:
+
+```json
+{
+  "object_1": {
+    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"],
+    "desc": "black cat near sofa"
   }
 }
 ```
@@ -135,10 +154,8 @@ For an object `i`, apply to 4 positions:
 - `∂ĉ_t/∂s_{t,k} = (1/τ) * p_{t,k} * (φ(k) - ĉ_t)`
 So geometric losses on `ĉ_t` backprop to coord logits smoothly.
 
-### 2.5 Practical knobs (optional but recommended)
-- Temperature schedule (anneal τ down during training).
-- Optional entropy regularization on coord distributions to prevent multi-peak “mean collapse”.
-- Optional top-k expectation (mask to k highest probs before softmax) if multi-modal instability appears.
+### 2.5 Future extensions (off by default)
+- Temperature scheduling and distribution-shape controls (e.g., entropy/top-k) are future extensions; default pipeline keeps this path disabled.
 
 ---
 
@@ -210,7 +227,7 @@ We separate training into two conceptual stages:
 - **Stage-1:** Pure SFT / format stabilization / coord token adaptation.
 - **Stage-2:** two-channel mixture:
   - **Channel-A (default):** N× forward iterative soft self-context (no rollout), with default n_softctx_iter=2; n_softctx_iter=1 degenerates to pure teacher-forcing.
-  - **Channel-B (sparse):** rollout + matching + GT-supervised geometric calibration under true self-context + reordered-GT SFT for set-level correction.
+  - **Channel-B (sparse):** rollout + strict parse + Hungarian + FN injection into the same JSON dict + one-pass teacher-forced update for set-level correction under true self-context.
 
 ---
 
@@ -251,19 +268,17 @@ Teacher forcing on GT sequence:
 ### 6.1 Two-channel schedule (recommended)
 We run Stage-2 as a **mixture** over steps / samples:
 - **Channel-A (hot path, e.g., 95% steps):** no rollout; always available and fast.
-- **Channel-B (cold path, e.g., 5% steps or 1/P batches):** true rollout + Hungarian to fix discrete failure modes.
+- **Channel-B (cold path, e.g., 5% steps or 1/P batches):** true rollout + Hungarian + FN injection + one-pass teacher-forced update to fix discrete/set-level failure modes.
 
 Rationale:
 - In practice, “hard CE on coord tokens” is already strong in Stage-1/SFT, so Stage-2 should not assume coord-distribution losses will dominate.
 - The main remaining instability is typically **self-context generation** (long JSON, permutation, missing/extras/format).
   Channel-B targets that directly; Channel-A provides a cheap, smooth geometry signal to stabilize coord decoding and reduce drift.
 
-Practical suggestion: default Channel-A uses `n_softctx_iter=2`, and run an ablation `1 vs 2 vs 3` to quantify the teacher-forcing vs self-context gap (still no rollout). Optionally, increase iterations for samples/objects with high coord entropy or low `max_prob` (a heuristic; not required).
-
-Suggested ablations (high signal, low complexity):
-- Channel-A: `γ=1 (unroll)` vs `γ=0 (em_detach)` at fixed `n_softctx_iter=2`.
-- Channel-A: `n_softctx_iter = 1/2/3/4` at `γ=1` to measure propagation depth.
-- Channel-B (optional): `n_softctx_iter_B = 1` vs `2` with `softctx_grad_mode_B=em_detach`.
+Default Stage-2 settings:
+- Channel-A: `n_softctx_iter=2`, `softctx_grad_mode=unroll`.
+- Channel-A fallback when unstable: `softctx_grad_mode=em_detach`.
+- Channel-B: Unified one-pass update (rollout prefix + FN injection + single teacher-forced forward).
 
 ---
 
@@ -287,46 +302,35 @@ derived from the model’s own coord distribution.
 Multi-object note (intended behavior):
 - For sequences with multiple objects, we run soft self-context on the full sequence under the standard causal mask (no object-wise isolation).
 - Later objects are allowed to condition on earlier objects’ coord slots (this matches inference for a single JSON sequence).
-- With `softctx_grad_mode=unroll`, geometry losses from later objects may backprop through soft coord embeddings into earlier coord slots (cross-object credit assignment). This coupling is expected; if you want to ablate it, use `em_detach` or `mix` with smaller `γ`.
+- With `softctx_grad_mode=unroll`, geometry losses from later objects may backprop through soft coord embeddings into earlier coord slots (cross-object credit assignment). This coupling is expected; if unstable, switch to `em_detach`.
 
 Definitions / hyperparameters:
 
 - `softctx_grad_mode` : gradient semantics for the soft self-context loop.
   - `unroll` (default): keep the loop differentiable (no detach), enabling credit assignment across coord slots / iterations.
-  - `em_detach` (stable fallback): detach the coord distribution used to build soft embeddings (EM-ish).
-  - `mix` (optional; smooth transition): use a mixture
-    - `p_mix = (1-γ) * stopgrad(p) + γ * p`, with `γ ∈ [0,1]`.
-    - `γ=1` behaves like `unroll`, `γ=0` behaves like `em_detach`.
-  - Practical: since Stage-1 already stabilizes coord tokens, Stage-2 can default to `softctx_grad_mode=unroll` (equivalently `γ=1`), but keep `γ` configurable for ablation and fallback.
+  - `em_detach` (fallback): detach the coord distribution used to build soft embeddings (EM-ish) if training is unstable.
 
 - `n_softctx_iter` : total number of full-sequence forwards in Channel-A (`>= 1`).
-  - `n_softctx_iter=1`: only Step A1 (pure teacher forcing), a degenerate / control variant (no soft self-context).
-  - `n_softctx_iter=2`: the original Channel-A (A1 → A2 → A3 → A4).
-  - `n_softctx_iter>2`: iterate the A2 ↔ A3 loop multiple times (fixed-point / Jacobi-style intuition).
+  - default: `n_softctx_iter=2`.
+  - fallback: `n_softctx_iter=1` (pure teacher forcing) when needed for stability/debug.
 - Iteration indexing: we use `m = 0..n_softctx_iter-1`, where `m=0` corresponds to the teacher-forced GT forward in Step A1. The **final iteration** logits used for CoordExp decode and geometric loss are `z^(n_softctx_iter-1)`.
-- (Optional) `softctx_damping_alpha` : damping coefficient for coord-slot embedding updates:
-  - `E_new = (1-α) * E_old + α * ē`, default `α=1`.
-- (Optional) Adaptive iterations: run extra iterations only for low-confidence coord slots (e.g., high entropy or low `max_prob`). This is a suggestion; keep the default deterministic.
 
 #### Step A1 — Teacher-forced GT forward (with grad)
-1) Teacher force on GT (or reordered-GT if you already have one) to get logits:
+1) Teacher force on GT to get logits:
    - `z_t^gt = f_θ(image, prompt, y_GT_<t)`
 
 2) Identify coord positions `t ∈ coord_positions` from labels/template (packing-safe). For each coord position `t`:
    - `s_t^(0) ∈ R^K`, `s_{t,k}^(0) = z_t^gt[coord_k]`
    - `p_t^(0) = softmax(s_t^(0) / τ_A)` over `k=0..999`
 
-> Note (gradient semantics): Channel-A can be run as `unroll`, `em_detach`, or `mix`:
-> - `p_t^(m,stop) = stopgrad(p_t^(m))`  (EM-ish)
-> - `p_t^(m,mix)  = (1-γ) * p_t^(m,stop) + γ * p_t^(m)`  (smooth transition)
-> - Default (`softctx_grad_mode=unroll`): `p_t^(m,mix) = p_t^(m)` (no stopgrad).
-> - set `γ=1` for full unroll; set `γ=0` for full detach.
-> Practical: if training is unstable, start with `em_detach` (or small `γ`) before changing other knobs.
+> Note (gradient semantics):
+> - Default: `softctx_grad_mode=unroll`, use `p_t^(m,ctx) = p_t^(m)`.
+> - Fallback: `softctx_grad_mode=em_detach`, use `p_t^(m,ctx) = stopgrad(p_t^(m))`.
 
 #### Step A2 — Build soft coord embeddings (no sampling)
 3) Let `E_coord ∈ R^{K×d}` be the embedding table restricted to `<|coord_k|>`.
    Construct the expected coord embedding at each coord slot:
-   - `ē_t^(m) = Σ_k p_{t,k}^(m,mix) * E_coord[k]`  (use `p^(m,mix)` per `softctx_grad_mode`)
+   - `ē_t^(m) = Σ_k p_{t,k}^(m,ctx) * E_coord[k]`  (use `p^(m,ctx)` per `softctx_grad_mode`)
 
 4) Prepare the initial embedding tensor (full sequence) for iterative soft self-context:
    - Start from standard embeddings of `y_GT` (or from the model’s embedding lookup): `emb^0`.
@@ -347,36 +351,31 @@ This is cheap because `K=1000` and coord slots are sparse compared to total toke
 # (Forward #0) already computed in A1:
 z^(0) := z^gt
 Compute p^(0) from z^(0) at coord_positions
-Compute p^(0,mix) from p^(0) per softctx_grad_mode
-Compute ē^(0) from p^(0,mix)
+Compute p^(0,ctx) from p^(0) per softctx_grad_mode
+Compute ē^(0) from p^(0,ctx)
 
 emb^0 := Embed(y_GT)               # full GT embeddings
-emb^0 := UpdateCoordSlots(emb^0, ē^(0), damping_alpha=α)  # default init: start-from-ē^(0)
-Optional (fallback/ablation): keep GT coord slots for the first softctx forward (init=A); this shifts the effect by one iteration
+emb^0 := UpdateCoordSlots(emb^0, ē^(0))  # default init: start-from-ē^(0)
+Optional (fallback): keep GT coord slots for the first softctx forward (init=A); this shifts the effect by one iteration
 
 for m in 1 .. (n_softctx_iter - 1):
     z^(m) := f_θ(image, prompt, inputs_embeds=emb^(m-1))   # full forward
     Compute p^(m) from z^(m) at coord_positions
-    Compute p^(m,mix) from p^(m) per softctx_grad_mode
-    Compute ē^(m) from p^(m,mix)
-    emb^(m) := UpdateCoordSlots(emb^(m-1), ē^(m), damping_alpha=α)  # α=1 by default
+    Compute p^(m,ctx) from p^(m) per softctx_grad_mode
+    Compute ē^(m) from p^(m,ctx)
+    emb^(m) := UpdateCoordSlots(emb^(m-1), ē^(m))
 
 Use final logits z^(n_softctx_iter-1) for coord distributions + losses (including CoordExp expectations for box-level terms)
 ```
 
 Interpretation: this is a fixed-point iteration on coord-slot context, `e^(m+1)=F_θ(e^(m))`, that repeatedly refreshes coord embeddings from the model’s own belief while keeping the GT text/structure scaffold. Increasing `n_softctx_iter` pushes the effect of self-conditioning further along the coord chain without sampling.
 
-#### Step A4 — Geometry + (optional) distribution-shape regularizers
+#### Step A4 — Geometry loss
 6) Default: decode continuous coords as CoordExp expectations (`ĉ_t = Σ_k p_{t,k} φ(k)`) from the **final** logits `z^(n_softctx_iter-1)` (i.e., `z_t^self`, Section 7.1), and assemble boxes per object. (Discrete coord tokens / argmax are for parsing/matching, not for the main geometry gradient.)
 7) Apply geometry loss against GT boxes **by identity alignment** (no Hungarian in Channel-A):
    - Recommended: `L_geo_soft = Σ_obj [ λ_huber * SmoothL1(b̂_obj^cont - b_obj^gt; δ) + λ_ciou * L_CIoU(b̂_obj^cont, b_obj^gt) ]`
 - Use CIoU (mandatory for Stage-2 bbox training).
-8) (Optional) add *distribution-shape* regularizers computed from the final logits (shape control, not the main driver):
-   - `L_dist`: e.g., DFL-style soft-label CE on coord bins, entropy penalty / temperature anneal, W1/cost-sensitive CE.
-   - Goal: keep coord distributions sharp/unimodal enough for stable discrete decoding, while `L_geo` drives the main geometry accuracy.
-
-Optional enhancement (not required): supervise intermediate iterates as well:
-- `L_geo_soft_total = Σ_m w_m * L_geo_soft^(m)` with `w_m` increasing over `m` (late iterates matter more).
+8) Future extension (not used in default pipeline): add small `L_dist` regularizers on coord distributions if needed.
 
 Channel-A per-sample loss:
 - `L_A = L_CE_A1(y_GT) + λ_geo^A L_geo_soft + λ_dist^A L_dist(optional)`
@@ -395,7 +394,7 @@ Why `N×` helps (intuition, bbox case):
   - `N=2`: `y1` sees a soft `x1` context (model-derived).
   - `N=3`: `x2` sees a context where `x1/y1` are more on-policy (soft-refreshed).
   - `N=4`: `y2` sees a context where `x1/y1/x2` have been soft-refreshed.
-- This targets “GT leakage / lag” without autoregressive sampling; stability/credit assignment depends on `softctx_grad_mode` (`unroll` vs `em_detach` vs `mix`).
+- This targets “GT leakage / lag” without autoregressive sampling; stability/credit assignment depends on `softctx_grad_mode` (`unroll` vs `em_detach`).
 - Note: this interpretation assumes the default init (start-from-`ē^(0)`). If you use init=A (start-from-GT), the soft-context effect is delayed by one iteration (so you may need `N+1` to get the same propagation depth).
 
 ---
@@ -439,9 +438,7 @@ The core geometry term is box-level `L_geo_soft` on the continuous predicted box
 - `L_geo_soft = Σ_i [ λ_huber * SmoothL1(b̂_i_cont - b_i_gt; δ) + λ_ciou * L_CIoU(b̂_i_cont, b_i_gt) ]`
 - Use CIoU (mandatory for Stage-2 bbox training).
 
-Optional: add distribution-shape regularizers computed from `p_{t,k}`:
-- `L_dist`: DFL-style soft-label CE on coord bins, entropy penalty / temperature anneal, W1/cost-sensitive CE.
-- Goal: keep coord distributions sharp/unimodal enough for stable discrete decoding.
+Future extension (off by default): add `L_dist` distribution-shape regularizers on coord bins when needed.
 
 > Key properties:
 > - Context is **partially self-conditioned** (coord embeddings come from model belief).
@@ -452,126 +449,96 @@ Optional: add distribution-shape regularizers computed from `p_{t,k}`:
 
 ### 7.2 Channel-B (cold path): Rollout-matching for set-level / discrete correction
 
-Channel-B is the original EM-ish loop, run sparsely to correct:
-- permutation/order mismatch,
-- missing GT objects / extra predicted objects,
-- (rare) malformed JSON / broken segments,
-- true “self-context degeneration” that Channel-A cannot expose.
+Channel-B is a single Unified one-pass pipeline, run sparsely to correct set-level errors under true rollout context.
 
 #### Step B0 — Rollout (E-step hypothesis, no grad)
 1) Run autoregressive generation using current model θ:
-   - `ŷ = Rollout(f_θ, image, prompt)` (greedy / low-T sampling / beam)
-2) Parse rollout into predicted objects:
-   - `Ô_raw = Parse(ŷ)` returns a prefix + a list of candidate object instances.
-   - Apply **instance-level strict validation** and drop non-compliant objects (do not “repair”):
-     - wrong key / missing `desc` / missing geometry
-     - wrong geometry type (e.g. `poly` in bbox-only stage) or wrong arity
-     - geometry values not in coord-token form (when coord-token mode is required)
-   - Let `Ô = { (d̂_i, b̂_i_disc, idx_i) }_{i=1..N}` be the remaining **valid** predicted objects.
+   - `ŷ_full = Rollout(f_θ, image, prompt)` (greedy / low-T sampling / beam)
 
-> Notes:
-> - Because Stage-1 has already pretrained the JSON format, catastrophic parse failures should be rare; Stage-2 Channel-B does not rely on a complex parse-based gating policy.
-> - Strict-drop is intentionally “silent” at the object-instance level (no repair), but it must be made **visible** as diagnostics:
->   - log `N_valid_pred`, `N_drop_invalid`, and reason buckets (missing_desc / wrong_arity / non_coord_token / poly_unsupported / key_invalid / etc.).
-> - Dropped-invalid instances do **not** participate in matching, but may upweight the B3 structure CE term (weak correction signal) to avoid “escaping” supervision via invalid instances.
-> - If `N_valid_pred = 0` (for any reason), treat it as an empty prediction set:
->   - skip B2 (no matched-only geometry),
->   - run B3 using the fallback `y_GT_reordered := y_GT_canonical` (equivalent to “FN append all GT”).
-> - Channel-A remains the primary source of closure / `<|im_end|>` supervision.
+#### Step B1 — Strict parse + validate (no grad)
+2) Parse `ŷ_full` into candidate objects and apply strict instance-level validation (drop invalid objects; do not repair).
+3) Keep valid predicted objects:
+   - `Ô = { (d̂_i, b̂_i_disc, span_i, desc_span_i, coord_pos_i) }`
+   - `span_i`: token span of object `i` in prefix (for FP full-mask).
+   - `desc_span_i`: token span of `desc` for object `i` (so matched objects can use `CE_desc=0` while keeping `CE_struct=1`).
+   - `coord_pos_i`: coord input/logit index mapping for object `i`.
+   - Tokens belonging to dropped-invalid instances are treated as FP spans for loss masking (`loss=0`).
 
-#### Step B1 — Hungarian matching (E-step correspondence, no grad)
-3) Build cost matrix `C ∈ R^{N×M}` between predicted objects `i` and GT objects `j`:
-   - Geometry cost: `L_geo_disc(b̂_i_disc, b_j_gt)` (L1 on norm1000 + IoU term)
-   - Optional semantic cost: `D_sem(d̂_i, d_j_gt)` (frozen encoder; keep small early)
-   - `C_{i,j} = λ_geo * L_geo_disc + λ_sem * D_sem`
-4) Hungarian:
-   - `σ = Hungarian(C)` → matched pairs `(i -> j)`
-5) Gating:
-   - accept only if IoU/L1 passes thresholds
-   - `ValidMatched = { i | match accepted }`
+#### Step B2 — Hungarian + gating (no grad)
+4) Build cost matrix on valid predicted objects vs GT objects, run Hungarian, apply gating, and build:
+   - `ValidMatched` (accepted matched predicted objects),
+   - `FP` (valid predicted objects not in `ValidMatched`),
+   - `FN` (GT objects not matched).
 
-#### Step B2 — True self-context forward (with grad)
-Efficiency rule (required):
-- If `ValidMatched` is empty, do **not** run the B2 forward (B2 is geo-only; no matched pairs means `L_geo_roll = 0`). Run B3 only.
+#### Step B3 — Build `y_in` by FN injection inside outermost JSON dict (BUG-1 + BUG-2 fix)
+5) Construct the one-pass teacher-forced target sequence `y_in` from `ŷ_full`:
+   - Do **not** construct `y_in` as `ŷ_full + RenderGT(FN)`: rollout usually already contains outermost `}` and `<|im_end|>`, so direct concatenation would place FN entries outside the JSON dict.
+   - Locate the **outermost** JSON closing brace `}` with brace-stack scan (or equivalent streaming parse).
+   - Insert FN entries **before** that outermost `}` so FN stays inside the same top-level dict.
+   - If prefix body already has at least one object entry, insert `,` before the first FN entry; otherwise insert FN entries directly.
+   - Preserve suffix tokens after the outermost `}` (including `<|im_end|>`), then apply stop-neutral CE masking later.
 
-6) Teacher force on rollout tokens to recompute logits:
-   - `z_t^roll = f_θ(image, prompt, ŷ_<t)`
+6) FN key numbering (conflict-safe):
+   - Parse existing keys matching `"object_N"` in prefix body and compute `maxN`.
+   - `start_id = maxN + 1` (or `1` if no existing object key).
+   - Render FN entries in **GT canonical order** using keys:
+     - `"object_{start_id}"`, `"object_{start_id+1}"`, ...
 
-Optional (recommended as a switch): soft self-context refinement under rollout scaffold (coord slots only):
-- Motivation: keep the **on-policy rollout scaffold** (text/structure/order) but optionally refresh only coord-slot inputs using soft expectations (cheap `N_B`-step Jacobi, no sampling).
-- Hyperparameters:
-  - `n_softctx_iter_B` (default 1): total forwards in B2. `=1` means the plain `z^roll` path. `=2` adds one soft-refinement forward.
-  - `softctx_grad_mode_B` (default `em_detach` when `n_softctx_iter_B=2`): keep cold path stable; enable full `unroll` only for hard-case ablations.
-- Procedure (coord slots only; all other tokens remain the rollout tokens `ŷ`):
-  - Treat `z^(0) := z^roll`, compute `p^(0)` on coord positions, and build expected coord embeddings `ē^(0)` under `softctx_grad_mode_B` (analogous to Channel-A’s semantics).
-  - Replace coord-slot **input embeddings** by soft expectations and forward again to get `z^(1)`.
-  - Repeat up to `n_softctx_iter_B-1` times. Use final logits `z^(n_softctx_iter_B-1)` for decode/loss.
+#### Step B4 — One-pass teacher-forced forward + loss
+7) Single forward on the constructed sequence:
+   - `z^B = f_θ(image, prompt, y_in_<t)`
 
-We denote the logits used for decode/loss as `z^roll_final`:
-- if `n_softctx_iter_B=1`: `z^roll_final := z^roll`
-- if `n_softctx_iter_B>1`: `z^roll_final := z^(n_softctx_iter_B-1)`
+8) Token-level CE policy (hard rules):
+- Prefix matched objects:
+  - `CE_struct = 1.0`
+  - `CE_desc = 0`
+  - `CE_coord = 0`
+- Prefix FP objects (Strategy A):
+  - all token losses in FP spans are `0` (`CE_struct = CE_desc = CE_coord = 0`)
+- FN injected objects:
+  - `CE_struct = 1.0`
+  - `CE_desc = 1.0`
+  - `CE_coord = 0`
+- Stop-neutral (default on):
+  - mask CE on the outermost `}` and `<|im_end|>`
+  - outermost `}` is found by brace-stack scan (never by “last `}` token” heuristic)
 
-7) For each predicted object `i`, compute coord distributions at its coord positions `t ∈ idx_i`:
-   - `s_{t,k} = z_t^roll_final[coord_k]`, `p_{t} = softmax(s_t / τ_B)`
+9) Geometry losses from the same `z^B`:
+- `L_geo_matched`: for each object in `ValidMatched`, gather its 4 coord **logit** positions in prefix (shift-aware input-token vs output/logit indexing), run CoordExp expectation decode, canonicalize boxes, then apply SmoothL1 + CIoU.
+- `L_geo_FN`: for each FN injected object, gather its 4 coord logit positions in injected spans, run CoordExp expectation decode, canonicalize boxes, then apply SmoothL1 + CIoU.
+- `FP` contributes no geometry loss.
 
-8) Compute differentiable geometric gradients under rollout scaffold (matched-only):
-- Decode continuous coords as CoordExp expectations from `z^roll_final` and assemble `b̂_i_cont`.
-- For a matched pair `(i -> j)`:
-  - `L_geo_bbox(i->j) = λ_huber * SmoothL1(b̂_i_cont - b_j_gt; δ) + λ_ciou * L_CIoU(b̂_i_cont, b_j_gt)`
-- Channel-B default is **FP-neutral in geometry**:
-  - FP objects (unmatched preds) receive no geometric loss term.
-- Aggregate (matched-only):
-  - `L_geo_roll = Σ_{(i->j), i∈ValidMatched} L_geo_bbox(i->j)`
+10) Channel-B objective:
+- `L_geo_total = mean(L_geo_matched) + mean(L_geo_FN)` (empty set mean = 0)
+- `L_B = L_CE_struct + L_CE_desc_FN + λ_geo^B * (mean(L_geo_matched) + mean(L_geo_FN))`
 
-Optional: distribution-shape regularizer under rollout scaffold:
-- `L_dist_roll` (DFL / entropy / W1, small weight).
+Concise pseudocode (Unified Channel-B):
 
-#### Step B3 — Reordered-GT SFT (with grad)
-10) Build `y_GT_reordered` following predicted order + **always append** missing GT objects (FN) (see Section 7.3).
-11) Standard SFT on `y_GT_reordered`:
-   - `L_CE_struct + L_CE_desc(selective) + L_CE_coord(optional)`
+```python
+def channel_b_unified(sample, model):
+    y_hat_full = rollout(sample, model)  # no grad
+    parsed = strict_parse_and_validate(y_hat_full)
+    valid_matched, fp_ids, fn_ids = hungarian_with_gating(parsed, sample.gt_objects)
 
-Channel-B text supervision is **selective** and **stop-neutral** by default:
-- Structure tokens (JSON punctuation/keys) remain supervised to keep outputs parseable.
-- Matched-object `desc` supervision is gated (performed in **predicted order**):
-  - If predicted vs GT descriptions are semantically close (frozen encoder similarity ≥ threshold), treat as correct: do not penalize.
-  - If they are semantically far, apply a small CE weight to pull toward GT.
-- FN-appended objects are supervised normally (no semantic gating), since there is no competing predicted description for that object.
-- Channel-B does **not** supervise the stop/continue decision:
-  - Mask CE on the top-level JSON closing brace (`}`) and on `<|im_end|>`.
-  - “Top-level `}`” means the brace that closes the **outermost** JSON object in `y_GT_reordered`; locate it via brace-stack parsing on the rendered JSON text (not via “the last `}` token”, which is brittle).
+    close_idx = locate_outermost_close_brace(y_hat_full)  # brace-stack scan
+    body = extract_json_body(y_hat_full, close_idx)
+    max_n = max_object_key_id(body)  # parse "object_N", return 0 if none
+    fn_entries = render_fn_entries(sample.gt_objects, fn_ids, start_id=max_n + 1, order="gt_canonical")
+    comma = "," if has_any_object_entry(body) and fn_entries else ""
+    y_in = inject_before_close_brace(y_hat_full, close_idx, comma + fn_entries)  # FN stays inside dict
 
-Channel-B per-sample loss:
-- `L_B = L_CE(y_GT_reordered, stop-neutral) + λ_geo^B L_geo_roll + λ_dist^B L_dist_roll(optional)`
+    ce_mask = zeros_like(y_in)  # default all-off
+    ce_mask = apply_matched_mask(ce_mask, parsed, struct_on=True, desc_on=False, coord_on=False)
+    ce_mask = apply_fp_full_zero_mask(ce_mask, parsed, fp_ids)  # Strategy A
+    ce_mask = apply_fn_mask(ce_mask, y_in, fn_entries, struct_on=True, desc_on=True, coord_on=False)
+    ce_mask = apply_stop_neutral_mask(ce_mask, y_in)  # mask outermost "}" and <|im_end|>
 
----
-
-### 7.3 Path B (within Channel-B): Generation / format / recall control via reordered GT SFT
-
-This path handles:
-- Missing objects (not generated in rollout, thus no coord positions exist)
-- Caption correctness and formatting robustness (with semantic tolerance for near-matches)
-- (Intentionally) does NOT use CE to suppress extra predicted objects by early-stop, because FP may be unlabeled
-
-#### Step F — Reorder GT according to matching
-12) Build a “reordered GT sequence” `y_GT_reordered`:
-   - The first `N` GT slots are arranged to correspond to predicted object order:
-     - if predicted object `i` matched to GT `j`, place GT object `j` at position `i`
-   - For GT objects that were not matched (misses), **always append** them as “completion objects” at the end (FN append is mandatory).
-   - For predicted objects that were unmatched (extras), do not add an early-stop CE signal by default (FP-neutral).
-   - Fallback (no pred order): if `N_valid_pred = 0`, set `y_GT_reordered := y_GT_canonical` (Stage-1 canonical order over GT objects).
-
-#### Step G — Standard SFT (with grad)
-13) Teacher forcing on `y_GT_reordered`:
-   - `z_t^gt = f_θ(image, prompt, y_GT_reordered_<t)`
-14) Compute CE losses:
-   - `L_CE_struct`: CE on JSON structure tokens (keys/punctuation), excluding stop/closure tokens per FP-neutral rule
-   - `L_CE_desc`: CE on description tokens, with semantic gating for matched objects
-   - `L_CE_coord`: optional CE on coord tokens (discrete supervision; typically small / ablation)
-
-> Optional handling policies (FP-neutral Channel-B):
-> - **Missing GT objects:** always append as extra GT object records so CE teaches the model to include them.
-> - **Extra predicted objects (FP under Hungarian):** do not apply early-stop CE by default. If you later need a stricter variant, treat “early stop CE” as an explicit ablation knob (off by default).
+    logits = teacher_forced_forward(model, sample, y_in)
+    L_CE_struct, L_CE_desc_FN = compute_ce_terms(logits, y_in, ce_mask)
+    L_geo_matched = geo_from_coord_logits(logits, parsed, valid_matched, source="prefix")
+    L_geo_FN = geo_from_coord_logits(logits, y_in, fn_entries, source="injected_fn")
+    return L_CE_struct + L_CE_desc_FN + lambda_geo_B * (mean_or_zero(L_geo_matched) + mean_or_zero(L_geo_FN))
+```
 
 ---
 
@@ -586,15 +553,14 @@ Combine both channels:
 
 Expanded:
 - `L_A = L_CE_A1(y_GT) + λ_geo^A * L_geo_soft + λ_dist^A * L_dist(optional)`
-- `L_B = L_CE(y_GT_reordered) + λ_geo^B * L_geo_roll + λ_dist^B * L_dist_roll(optional)`
+- `L_B = L_CE_struct + L_CE_desc_FN + λ_geo^B * (mean(L_geo_matched) + mean(L_geo_FN))`
 
 Where:
 - Channel-A geo term improves coord calibration cheaply under soft self-conditioning.
-- Channel-B terms fix true self-context + set-level discrete problems (order/missing/extras/format).
+- Channel-B uses Unified one-pass supervision on rollout prefix + FN-injected entries in the same JSON dict.
 
 Practical defaults (based on current evidence that hard-CE is not weak):
-- Keep `L_CE` as the anchor in both channels (Channel-A uses `L_CE_A1` by default; Channel-B uses `L_CE(y_GT_reordered)`).
-- Treat coord-distribution losses (softCE/W1/gate/entropy/top-k) as optional regularizers, not mandatory.
+- Keep CE as the anchor in both channels (`L_CE_A1` for Channel-A; `L_CE_struct + L_CE_desc_FN` for Channel-B).
 
 ---
 
@@ -621,32 +587,35 @@ Given image + prompt:
 - Template builder: GT objects → token sequence (`y_GT`)
 - Parser: predicted sequence → list of objects + coord token indices
 - Coord vocab index list: indices of `<|coord_0|>.. <|coord_999|>` in tokenizer
+- Ability to record object spans and coord logit indices during strict parse on rollout prefix (`y_prefix`) with explicit input-position vs logit-position mapping (causal-shift aware).
+- Ability to locate the outermost `}` injection point and rebuild `y_in` by inserting FN entries inside the same top-level JSON dict.
+- FN key numbering rule: parse existing `"object_N"` keys, set `start_id = maxN + 1` (or `1` if none), and append FN entries in GT canonical order.
+- Ability to map each object to coord logit positions (shift-aware) for both prefix parsed objects and FN injected objects.
+- Loss-mask builder that applies `CE_struct` to matched+FN only, sets all FP-span losses to zero (Strategy A), and masks CE on outermost `}` and `<|im_end|>` (stop-neutral).
 
 ### 10.1.1 (New) Soft self-context utilities (Channel-A)
 - A packing-safe way to get `coord_positions` (from labels/template).
 - `E_coord` gather: embedding rows for coord token IDs (K=1000).
 - `n_softctx_iter` config + loop logic (support `>= 1` full forwards).
-- Build `inputs_embeds` and an update function where coord positions are replaced by `ē_t^(m) = Σ_k p_{t,k}^(m,mix) * E_coord[k]` and iterated.
-- Control gradient semantics via `softctx_grad_mode` / `γ` (unroll vs EM-detach vs mix), and keep a stable fallback.
+- Build `inputs_embeds` and an update function where coord positions are replaced by `ē_t^(m) = Σ_k p_{t,k}^(m,ctx) * E_coord[k]` and iterated.
+- Control gradient semantics via `softctx_grad_mode` (unroll default, `em_detach` fallback).
 - Terminology note: "coord-slot input embeddings" means the per-position rows of `inputs_embeds` for positions whose *input token* is a coord token (`<|coord_k|>`). This is distinct from `E_coord` (the coord-token embedding table). In code you may want to track both:
   - coord *input* positions (for embedding replacement), and
   - coord *output/logit* positions (for reading coord distributions and computing losses),
   because many LM implementations use a 1-token shift between inputs and the logits that predict the next token.
-- (Optional) damping `softctx_damping_alpha` for `E_new = (1-α)E_old + α ē` to improve stability.
-- (Optional) entropy / `max_prob`-based extra-iteration trigger (per-sample or per-object), still no-rollout (documented as a heuristic, not required).
 - Each iteration is a **full forward** using `inputs_embeds` (NOT token-by-token generation); KV-cache reuse is an optional optimization and not required for correctness.
 - Model forward must support `inputs_embeds` (Qwen3-VL does; ensure your trainer path passes it correctly).
 
-### 10.1.2 (Optional) Soft self-context refinement under rollout scaffold (Channel-B)
-- `n_softctx_iter_B` and `softctx_grad_mode_B` (default `n_softctx_iter_B=1` for cost; enable `2` for hard-case ablation).
-- A way to identify coord-slot **input** positions inside `ŷ` that condition future coord outputs (prefix-side coord embeddings).
-- Replace only coord-slot input embeddings by soft expectations; keep the rollout token IDs for text/structure unchanged.
-- Same terminology note: here "coord-slot input embeddings" refers to rows in `inputs_embeds` at coord-token positions in the rollout scaffold (i.e., the embeddings that future tokens can attend to), not the `E_coord` table itself.
+### 10.1.2 Unified Channel-B construction utilities
+- Outermost-brace scanner (brace-stack) that returns the insertion position for FN entries inside top-level JSON dict.
+- Comma insertion logic for FN injection (`insert ',' iff prefix body already has object entries and FN is non-empty`).
+- Object-key allocator for FN injection (`object_{start_id+i}` with `start_id = max_object_key + 1`).
+- Span/index exporter for matched prefix objects, FP objects, and injected FN objects.
 
 ### 10.2 Matching utilities
 - Cost matrix builder:
   - geometry cost from discrete coords (fast IoU/L1)
-  - optional semantic cost from frozen text embedding model
+  - semantic cost from frozen text embedding model is a future extension (off by default)
 - Hungarian solver + match gating
 
 ### 10.3 CoordExp module
@@ -655,10 +624,16 @@ Given image + prompt:
 
 ### 10.4 Loss module
 - `L_geo_soft`: Channel-A box-level loss (SmoothL1 + CIoU) on continuous boxes decoded via CoordExp under soft self-context (identity-aligned).
-- `L_geo_roll`: Channel-B box-level loss (SmoothL1 + CIoU) on matched continuous boxes under rollout scaffold (matched-only; FP-neutral).
-- For `poly` (optional extension): reward (maskIoU, stop-grad) + differentiable Sinkhorn-OT boundary loss (point-to-segment) as a geometry term.
+- `L_geo_matched`: Channel-B matched-object geometry loss from prefix coord logits in the unified one-pass forward.
+- `L_geo_FN`: Channel-B FN-object geometry loss from injected FN coord logits in the same forward.
+- `L_geo_total = mean(L_geo_matched) + mean(L_geo_FN)` (empty-set mean = 0), with a single `λ_geo^B`.
+- `L_CE_struct` + `L_CE_desc_FN` with hard masks:
+  - matched prefix: `CE_struct=1`, `CE_desc=0`, `CE_coord=0`
+  - FP prefix spans: all CE terms = 0
+  - FN injected spans: `CE_struct=1`, `CE_desc=1`, `CE_coord=0`
+  - stop-neutral: mask outermost `}` and `<|im_end|>`
+- Future extension (off by default): `poly` geometry support and coord distribution-shape regularizers.
 - `L_CE`: standard token CE (with optional position-wise weights)
-- `L_dist` / `L_dist_roll` (optional): coord distribution-shape regularizers (DFL-style soft-label CE, entropy penalty, W1/cost-sensitive CE, etc.), small weight.
 
 ### 10.5 Step Router / Scheduler (方案 A)
 - step_kind broadcast across ranks (rank0 decides, all ranks follow)
@@ -673,13 +648,15 @@ Given image + prompt:
 ### 10.7 Channel-B Preprocess Worker
 - parse rollout -> valid objects
 - Hungarian + gating -> matches / ValidMatched
-- FN append -> `y_GT_reordered`
-- stop-neutral mask (top-level `}` and `<|im_end|>` masked from CE)
+- build sets -> `ValidMatched / FP / FN`
+- locate outermost `}` + inject FN entries into top-level JSON dict (with comma/key rules)
+- export span/index metadata for matched-prefix coords, FP spans, and FN-injected coords
+- build stop-neutral mask (outermost `}` and `<|im_end|>` masked from CE)
 
 ### 10.8 Diagnostics
 - queue length (raw + ready), `ver` lag stats
 - parse success rate, `N_valid_pred`, `N_drop_invalid` (by reason)
-- `|ValidMatched|`, B2 skip ratio
+- `|ValidMatched|`, `|FP|`, `|FN|`
 - realized A/B ratio over a window
 
 ---
@@ -703,10 +680,6 @@ Given image + prompt:
 **Update:** run Stage-2 as Channel-A/Channel-B mixture:
 - Channel-A provides high-throughput, stable geometry calibration without rollout.
 - Channel-B provides sparse but essential “true self-context + set correction”.
-
-### Optional Stage-3 (light rollout consistency)
-- Low-frequency additional rollouts with the same machinery.
-- Focus on structure validity and geometric calibration; avoid heavy RL.
 
 ---
 
@@ -745,17 +718,13 @@ Given image + prompt:
 * predicted #1 → GT(cat)
 * predicted #2 → GT(dog)
 
-### Self-context geometric update
+### Unified one-pass Channel-B update
 
-* teacher force on rollout tokens to compute logits at coord positions
-* decode continuous boxes via CoordExp expectations and apply box-level SmoothL1 + CIoU against matched GT targets
-* (optional) add a small `L_dist_roll` regularizer to keep coord distributions sharp/unimodal
-* backprop to LM head coord logits and upstream θ
-
-### Reordered-GT SFT update
-
-* reorder GT to follow predicted order (if needed)
-* standard CE to improve captions/format and teach recall via FN append (FP-neutral; no stop/continue supervision in Channel-B)
+* rollout -> strict parse -> Hungarian/gating to get `ValidMatched / FP / FN`
+* inject FN entries into the same top-level JSON dict before the outermost `}` (with key numbering `start_id = max_object_N + 1`)
+* run one teacher-forced forward on injected sequence `y_in`
+* apply CE masks: matched `CE_struct=1, CE_desc=0`; FP spans all zero; FN `CE_struct=1, CE_desc=1`; stop-neutral masks outermost `}` and `<|im_end|>`
+* decode coords with CoordExp and apply SmoothL1 + CIoU on matched + FN geometry from the same logits
 
 ---
 
@@ -784,27 +753,26 @@ This pipeline:
 ### 14.2 Missing objects
 
 * Self-context geo loss cannot fix missing outputs.
-* Use reordered-GT SFT with “completion append” to teach recall.
+* Use Unified Channel-B FN injection (inside the same JSON dict) to teach recall.
 
 ### 14.3 Extra objects
 
 * In many detection datasets, “FP under Hungarian” may be **unlabeled true objects**. Therefore Channel-B should be **FP-neutral**:
   - no geometric loss on unmatched predicted objects,
+  - no token CE on FP spans (Strategy A full-mask),
   - no stop/continue supervision (mask top-level `}` and `<|im_end|>` in Channel-B CE).
-* If a closed-world dataset truly requires suppressing extras, treat “early-stop CE” as an explicit **ablation knob** (off by default) and document the dataset assumption.
 
 ### 14.4 Multi-peak coord distributions (“mean collapse”)
 
-* Use `L_dist` regularizers to keep coord distributions sharp/unimodal (DFL-style soft-label CE, entropy penalty, W1/cost-sensitive CE).
-* Temperature anneal (`τ_A`/`τ_B`) so expectation decode becomes meaningful.
-* If box-level `L_geo` on CoordExp expectations becomes unstable early, increase `L_dist` or fall back to `softctx_grad_mode=em_detach` / smaller `γ`.
+* Default pipeline keeps distribution-shape regularizers off.
+* If box-level `L_geo` becomes unstable early, first use `softctx_grad_mode=em_detach`; distribution-shape controls are future extensions.
 
 ### 14.5 Cross-object gradient coupling (UNROLL mode)
 
 * In `softctx_grad_mode=unroll`, later objects' geometry losses may backprop through soft coord embeddings into earlier objects' coord slots (cross-object credit assignment).
 * Pros: encourages set-level consistency (e.g., fewer duplicate/overlapping boxes) and can improve global coherence.
 * Cons: may introduce order bias or instability for long sequences / many objects.
-* Mitigations / ablations: try `softctx_grad_mode=mix(γ)` or `em_detach`, reduce `n_softctx_iter`, add damping (`softctx_damping_alpha < 1`), use gradient clipping, and tune loss weights.
+* Mitigations: use `softctx_grad_mode=em_detach`, reduce `n_softctx_iter`, and use gradient clipping.
 
 ---
 
