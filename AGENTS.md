@@ -1,26 +1,5 @@
 # Codex Agent
 
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Only open `@/openspec/AGENTS.md` when the request/task is spec-relevant, for example it:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Do **not** open `@/openspec/AGENTS.md` for routine, non-spec work (e.g., small bugfixes, straightforward refactors, code review, running tests, updating configs) to avoid wasting context window.
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 ## Mission
 - Evolve CoordExp into a general grounding/detection research stack; keep runs reproducible and paper-ready.
 - Direction: `progress/full_idea.md`. Prefer YAML-first experiments in `configs/` over ad-hoc scripts.
@@ -61,7 +40,6 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Prompt template: goal + explicit inputs (paths/snippets + assumptions) + requested output format (e.g., "findings by severity + concrete edits").
 - Always verify sub-agent suggestions against repo sources before acting.
 - Keep the main agent productive while awaiting sub-agent results by proceeding with implementation, testing, documentation, or related tasks that don't depend on the async audit outcomes.
-
 
 ## Scope
 - In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.
