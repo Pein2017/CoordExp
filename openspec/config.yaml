@@ -1,20 +1,25 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  CoordExp is a grounding/detection research stack using Qwen3-VL + CoordExp (norm1000 coordinates) with reproducible, paper-ready runs.
+  Direction and semantic baseline live in progress/full_idea.md.
+  Prefer YAML-first experiments in configs/ over ad-hoc scripts; avoid adding new CLI flags.
+  Defaults: single-dataset training; packing is the primary efficiency lever; fusion-config training is legacy/experimental.
+  Preserve geometry invariants via src/datasets/geometry.py (never drop/reorder coords); training uses do_resize=false.
+  Keep Qwen3-VL chat-template compatibility and do not edit upstream HF model internals (e.g., modeling_qwen3_vl.py).
+  Follow docs/standards/CODE_STYLE.md for architecture/style decisions.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - State correctness, reproducibility, and eval-validity impact for any behavior change.
+    - Keep changes config-first (YAML/schema updates first) and avoid new CLI flags unless explicitly approved.
+    - For architecture/contract changes, include required OpenSpec spec updates.
+  specs:
+    - Encode coordinate and geometry invariants explicitly (no coord drop/reorder/semantic drift).
+    - Keep contract semantics aligned with progress/full_idea.md.
+  design:
+    - Describe data flow as data -> transforms/packing -> training/inference -> artifacts.
+    - Document compatibility constraints (Qwen3 template, do_resize=false, upstream HF internals off-limits).
+  tasks:
+    - Break work into small verifiable steps with concrete validation commands.
+    - Include reproducibility checkpoints (config path, run name, seed, and output artifacts).
