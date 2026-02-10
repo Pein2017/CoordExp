@@ -1,5 +1,6 @@
-# Smoke variant: mixed A/B schedule.
-# Diff vs prod: runtime naming and sample limits only.
+# Smoke variant: b-dominant A/B schedule.
+# Diff vs prod: runtime naming/sample limits, with explicit schedule+effective-batch pin
+# for the default 6 actors / 2 learners launcher topology.
 extends:
   - ../prod/ab_mixed.yaml
   - ../base_smoke_runtime.yaml
@@ -8,3 +9,8 @@ training:
   output_dir: output/stage2_ab/smoke/ab_mixed
   logging_dir: tb/stage2_ab/smoke/ab_mixed
   run_name: smoke_ab_mixed
+  effective_batch_size: 64
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.85

@@ -35,11 +35,12 @@
 - Use Serena MCP’s `activate_project` when exploring Python code in external libraries or repositories outside the current working directory.
 
 ## Codex Sub-Agents (Async Reviews)
-- Use sub-agents for narrow parallel audits (spec deltas, task lists, doc coverage) while the main agent runs Serena/shell verification.
-- Best-effort + text-only: results may be delayed/missing.
-- Prompt template: goal + explicit inputs (paths/snippets + assumptions) + requested output format (e.g., "findings by severity + concrete edits").
-- Always verify sub-agent suggestions against repo sources before acting.
-- Keep the main agent productive while awaiting sub-agent results by proceeding with implementation, testing, documentation, or related tasks that don't depend on the async audit outcomes.
+- Prioritize quality first, then speed.
+- Spawn sub-agents whenever parallel work can improve correctness or throughput.
+- No fixed cap: use as many sub-agents as needed.
+- Give each sub-agent a narrow, independent scope.
+- Main agent must verify sub-agent findings against repo sources before applying.
+- Main agent owns final decisions, edits, and output quality.
 
 ## Scope
 - In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.

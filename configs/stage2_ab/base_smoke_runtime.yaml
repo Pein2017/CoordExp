@@ -3,7 +3,7 @@
 # Keep production hyperparameters unchanged; only reduce runtime and I/O.
 training:
   # Keep smoke bounded while still exercising rollout + match + backward paths.
-  max_steps: 20
+  max_steps: 100
 
   # Avoid checkpoint/eval overhead for quick validation.
   save_strategy: "no"

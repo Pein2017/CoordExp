@@ -1,4 +1,4 @@
-# Stage-2 AB ablation: mixed schedule (A,A,B), epoch=2.
+# Stage-2 AB b-dominant schedule with Channel-A as auxiliary stabilization.
 # Only the stage2_ab schedule differs from other ablation variants.
 extends: base.yaml
 
@@ -9,5 +9,5 @@ training:
 
 stage2_ab:
   schedule:
-    # Channel-B should be sparse (~5%) to stay a cold path.
-    b_ratio: 0.5
+    # B-dominant: Channel-B does most learning from rollout self-context.
+    b_ratio: 0.85

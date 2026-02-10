@@ -37,7 +37,8 @@ training:
 
   # Auto-computes gradient_accumulation_steps based on world_size:
   # effective_batch_size = per_device_train_batch_size * world_size * grad_accum
-  effective_batch_size: 32
+  # Keep high effective batch for optimizer stability (default launcher uses 2 learners).
+  effective_batch_size: 64
   # Required for Channel-B step mode to avoid partial accumulation windows.
   dataloader_drop_last: true
 
@@ -51,7 +52,7 @@ training:
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
-  weight_decay: 0.1
+  weight_decay: 0.0
 
 stage2_ab:
   # Default prod variant is mixed schedule; specific variants can override.
@@ -65,14 +66,8 @@ stage2_ab:
     semantic_desc_gate:
       # Required for reproducibility when semantic gate is enabled.
       revision: c9745ed1d9f207416be6d2e6f8de32d1f16199bf
-    # Async actor-learner (server rollouts + queue-gated feasibility).
-    mode: async
-    async:
-      # Rule of thumb: prefetch_target_packs >= GAS, with extra slack.
-      queue_limit: 64
-      version_window: 8
-      sync_every_steps: 4
-      prefetch_target_packs: 32
+    # Simpler/reliable default: synchronous Channel-B execution (no async queue/gate).
+    mode: micro
 
 custom:
   trainer_variant: stage2_ab_training
@@ -86,8 +81,10 @@ custom:
       max_new_tokens: 3084
       # Mild anti-loop bias for long dense JSON.
       repetition_penalty: 1.08
-      rollout_infer_batch_size: 2
-      # Async actor-learner requires window-scope packing.
+      # Default launcher uses 2 learners + 6 rollout actors; use 3 per learner rank
+      # to drive ~6 concurrent rollout requests in total.
+      rollout_infer_batch_size: 4
+      # Window scope improves post-rollout packing fill under long generations.
       post_rollout_pack_scope: window
 
       vllm:

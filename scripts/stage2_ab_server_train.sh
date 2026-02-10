@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Launch vLLM rollout server (swift rollout) + Stage-2 AB learner training in one entrypoint.
 #
-# Example (single node, 4 GPUs):
+# Example (single node, 8 GPUs; default 6 actors / 2 learners split):
 #   bash scripts/stage2_ab_server_train.sh \
-#     server_gpus=0,1,2 train_gpus=3 \
+#     server_gpus=0,1,2,3,4,5 train_gpus=6,7 \
 #     config=configs/stage2_ab/smoke/ab_mixed.yaml
 
 set -euo pipefail
@@ -24,8 +24,8 @@ done
 
 # Defaults (override via env vars)
 CONDA_ENV="${CONDA_ENV:-ms}"
-SERVER_GPUS="${server_gpus:-0,1,2}"
-TRAIN_GPUS="${train_gpus:-3}"
+SERVER_GPUS="${server_gpus:-0,1,2,3,4,5}"
+TRAIN_GPUS="${train_gpus:-6,7}"
 WAIT_TIMEOUT="${wait_timeout:-900}"
 WAIT_INTERVAL="${wait_interval:-2}"
 CONFIG_RAW="${config:-configs/stage2_ab/smoke/ab_mixed.yaml}"
