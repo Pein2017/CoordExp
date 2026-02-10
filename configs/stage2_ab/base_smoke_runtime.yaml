@@ -16,5 +16,5 @@ data:
   dataloader_persistent_workers: false
 
 custom:
-  train_sample_limit: 64
-  val_sample_limit: 8
+  train_sample_limit: 512
+  val_sample_limit: 128

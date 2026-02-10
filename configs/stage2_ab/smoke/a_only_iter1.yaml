@@ -6,7 +6,3 @@ training:
   output_dir: output/stage2_ab/smoke/a_only_iter1
   logging_dir: tb/stage2_ab/smoke/a_only_iter1
   run_name: smoke_a_only_iter1
-
-custom:
-  train_sample_limit: 64
-  val_sample_limit: 8

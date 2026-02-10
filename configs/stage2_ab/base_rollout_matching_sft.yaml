@@ -35,9 +35,6 @@ custom:
   coord_soft_ce_w1:
     enabled: true
 
-  # Tiny smoke run sample limits
-  train_sample_limit: 32
-  val_sample_limit: 16
 
   # Rollout/matching knobs live under custom.extra.rollout_matching.
   extra:
@@ -97,7 +94,7 @@ custom:
       # (vLLM currently ignores this hook.)
       repeat_terminate:
         enabled: true
-        min_new_tokens: 1024
+        min_new_tokens: 32
         max_consecutive_token_repeats: 64
         ngram_size: 64
         ngram_repeats: 2

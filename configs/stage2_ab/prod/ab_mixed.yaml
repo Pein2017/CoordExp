@@ -10,4 +10,4 @@ training:
 stage2_ab:
   schedule:
     # Channel-B should be sparse (~5%) to stay a cold path.
-    b_ratio: 0.05
+    b_ratio: 0.5
