@@ -1,6 +1,8 @@
 # Smoke variant: Channel-A-only iter1.
 # Diff vs prod: runtime naming and sample limits only.
-extends: ../prod/a_only_iter-1.yaml
+extends:
+  - ../prod/a_only_iter-1.yaml
+  - ../base_smoke_runtime.yaml
 
 training:
   output_dir: output/stage2_ab/smoke/a_only_iter1

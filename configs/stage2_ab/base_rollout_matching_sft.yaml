@@ -1,7 +1,7 @@
-# Rollout-matching SFT (stage_2) template.
+# Shared Stage-2 rollout-matching defaults for Stage-2 A/B configs.
 #
-# This is a PLACEHOLDER config intended for YAML-first iteration.
-# Fill in paths/checkpoints and tune rollout/matching knobs as needed.
+# This base stays runnable in self-contained colocate mode.
+# Production server-mode behavior is enabled in `configs/stage2_ab/prod/base.yaml`.
 
 extends: ../base.yaml
 
@@ -48,37 +48,40 @@ custom:
         offload_model: false
         offload_optimizer: false
 
-      # Rollout backend (default: vLLM colocate). Set to "hf" to bypass vLLM.
+      # Rollout backend. Set to "hf" to bypass vLLM entirely.
       rollout_backend: vllm
 
-      # Per-rank microbatch size for rollout generation (HF uses padded generate(); vLLM chunks requests).
+      # Per-rank rollout request chunk size.
+      # - rollout_generate_batch_size is the legacy knob.
+      # - stage2_ab trainer prefers rollout_infer_batch_size when set.
       rollout_generate_batch_size: 1
+      rollout_infer_batch_size: 1
 
       # vLLM knobs.
-      # - mode: colocate (default): learner instantiates a local vLLM engine (uses VRAM on training GPUs).
-      # - mode: server (optional): learner connects to a pre-launched `swift rollout` server and generates rollouts on
-      #   dedicated GPUs with in-memory weight sync.
-      # NOTE: tensor_parallel_size/gpu_memory_utilization/max_model_len are used only in colocate mode.
+      # - mode=colocate: learner instantiates local vLLM engines on training GPUs.
+      # - mode=server: learner connects to external `swift rollout` server(s) on actor GPUs.
       vllm:
-        mode: server  # colocate|server
-        tensor_parallel_size: 4
-        gpu_memory_utilization: 0.7
-        # REQUIRED: must cover prompt_len + max_new_tokens for stage_2 rollouts.
+        # Keep base self-contained by default; prod/server variants override this to `server`.
+        mode: colocate  # colocate|server
+        # Colocate-only knobs:
+        tensor_parallel_size: 1
+        gpu_memory_utilization: 0.75
+        # Must cover prompt_len + max_new_tokens for stage_2 rollouts.
         max_model_len: 12000
-        # REQUIRED for on-policy LoRA sync.
-        enable_lora: true
+        # Keep disabled by default. Enable only when using adapter-only server sync.
+        enable_lora: false
         enable_prefix_caching: true
         sleep_level: 0
-        # Server mode connectivity + sync (ignored in colocate mode):
-        # server:
-        #   timeout_s: 240.0
-        #   infer_timeout_s: null
-        #   servers:
-        #     - base_url: http://127.0.0.1:8000
-        #       group_port: 51216
-        # sync:
-        #   mode: full        # full|adapter|auto
-        #   fallback_to_full: true
+        # Server-mode connectivity + sync (ignored in colocate mode):
+        server:
+          timeout_s: 240.0
+          infer_timeout_s: null
+          servers:
+            - base_url: http://127.0.0.1:8000
+              group_port: 51216
+        sync:
+          mode: full        # full|adapter|auto
+          fallback_to_full: true
 
       # Decoding (greedy only)
       decode_mode: greedy
