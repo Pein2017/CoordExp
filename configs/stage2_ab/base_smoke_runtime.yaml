@@ -3,17 +3,13 @@
 # Keep production hyperparameters unchanged; only reduce runtime and I/O.
 training:
   # Keep smoke bounded while still exercising rollout + match + backward paths.
-  max_steps: 5
+  max_steps: 20
 
   # Avoid checkpoint/eval overhead for quick validation.
   save_strategy: "no"
   eval_strategy: "no"
   logging_steps: 1
 
-data:
-  dataloader_num_workers: 0
-  dataloader_prefetch_factor: null
-  dataloader_persistent_workers: false
 
 custom:
   train_sample_limit: 512
