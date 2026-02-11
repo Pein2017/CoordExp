@@ -66,12 +66,13 @@
       `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py tests/test_rollout_matching_sft.py tests/test_unified_infer_pipeline.py tests/test_coord_standardizer.py tests/test_coord_utils.py tests/test_token_type_metrics.py tests/test_stage1_metric_key_parity.py tests/test_batch_extras_contract.py`
 - [x] 8.3 Run Stage-2 server-mode operational smoke with a pinned smoke config (manual/GPU path) via `scripts/stage2_ab_server_train.sh`; explicitly verify backend/mode/server URL/model gate diagnostics and key telemetry checks.
 - [x] 8.4 After 8.1 preflight passes, from repository root run ops smoke checks for non-Stage2 operational entrypoints with pinned smoke configs/artifacts:
-      `cd .worktrees/refactor-src-modernization && PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/bench/a_only_ckpt_6064_infer_eval.yaml`
-      `cd .worktrees/refactor-src-modernization && PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --pred_jsonl output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl --out_dir output/bench/a_only_ckpt_6064/eval_manual --metrics both --unknown-policy semantic --num-workers 0`
-      `cd .worktrees/refactor-src-modernization && CKPT=output/stage2_ab/a_only_ckpt_6064 GT_JSONL=public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl OUTPUT_BASE_DIR=output/bench/smoke_infer_eval MODE=auto PRED_COORD_MODE=auto DEVICE=cuda:0 LIMIT=10 OVERLAY=0 NUM_WORKERS=0 scripts/run_infer_eval.sh`
-      `cd .worktrees/refactor-src-modernization && PRED_JSONL=output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl SAVE_DIR=output/bench/a_only_ckpt_6064/vis_smoke ROOT_IMAGE_DIR=\"${ROOT_IMAGE_DIR:?set ROOT_IMAGE_DIR to dataset image root}\" LIMIT=10 scripts/run_vis.sh`
+      `PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/bench/a_only_ckpt_6064_infer_eval.yaml`
+      `PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --pred_jsonl output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl --out_dir output/bench/a_only_ckpt_6064/eval_manual --metrics both --unknown-policy semantic --num-workers 0`
+      `CKPT=output/stage2_ab/a_only_ckpt_6064 GT_JSONL=public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl OUTPUT_BASE_DIR=output/bench/smoke_infer_eval MODE=auto PRED_COORD_MODE=auto DEVICE=cuda:0 LIMIT=10 OVERLAY=0 NUM_WORKERS=0 scripts/run_infer_eval.sh`
+      `PRED_JSONL=output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl SAVE_DIR=output/bench/a_only_ckpt_6064/vis_smoke ROOT_IMAGE_DIR=\"${ROOT_IMAGE_DIR:?set ROOT_IMAGE_DIR to dataset image root}\" LIMIT=10 scripts/run_vis.sh`
 - [x] 8.5 Run any additional contract/parity tests introduced by this change on touched modules.
 - [x] 8.6 Run OpenSpec strict validation for this change:
       (from repository root)
-      `cd .worktrees/refactor-src-modernization && openspec validate refactor-src-modernization --strict`
+      `openspec validate refactor-src-modernization --strict`
 - [x] 8.7 Record final reproducibility checklist (config path, run name, seed, artifacts) in the change notes before handoff.
+- [x] 8.8 Post-merge reconciliation on `main`: run merged contract/boundary suite and strict OpenSpec validation against the final integrated branch state.

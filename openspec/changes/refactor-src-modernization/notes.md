@@ -96,95 +96,62 @@ This section records **what was actually run** (configs + commands + artifact di
 so the change can be reproduced and audited during review/handoff. No new results
 are claimed here beyond “command completed and artifacts were written”.
 
-### 5.1 Stage-2 AB server-mode operational smoke (1 step, forced Channel-B)
+### 5.1 Pre-merge smoke provenance (historical)
 
-- Config: `temp/stage2_ab_server_smoke_1step.yaml` (extends `configs/stage2_ab/smoke/ab_mixed.yaml`)
-- Key overrides:
-  - `training.max_steps: 1` (I/O disabled: `save_strategy=no`, `eval_strategy=no`)
-  - `custom.extra.rollout_matching.max_new_tokens: 128`
-  - Server URL pinned to avoid collisions: `http://127.0.0.1:8003` (default configs use `:8000`)
-  - `stage2_ab.schedule.b_ratio: 1.0` (force Channel-B on the single step)
-- Launcher topology (8 GPUs total):
-  - vLLM server GPUs: `0,1,2,3,4,5`
-  - learner/train GPUs: `6,7`
-- Command:
+The entries below were captured during the candidate-worktree phase and are kept
+for reproducibility provenance only. They are not the final post-merge validation
+gate for this change.
 
-  ```bash
-  bash scripts/stage2_ab_server_train.sh \
-    server_gpus=0,1,2,3,4,5 \
-    train_gpus=6,7 \
-    config=/data/CoordExp/.worktrees/refactor-src-modernizatio-5.2/temp/stage2_ab_server_smoke_1step.yaml \
-    vllm_gpu_memory_utilization=0.70 \
-    wait_timeout=1200
-  ```
+- Stage-2 AB server-mode smoke used a pinned config under a worktree path and
+  produced artifacts under `output/stage2_ab/smoke/...`.
+- Unified infer/eval smoke used `temp/a_only_ckpt_6064_infer_eval_smoke_fast.yaml`
+  and wrote artifacts under `output/bench_smoke/...`.
+- Manual evaluator and wrapper smokes were executed against the same artifact
+  families documented above.
 
-- Output run dir:
-  - `output/stage2_ab/smoke/ab_mixed/v4-20260211-010233/smoke_ab_mixed`
-  - Key artifacts: `run_metadata.json`, `logging.jsonl`
-  - `run_metadata.json` captures git SHA/dirty status + resolved config path.
+### 5.2 Post-merge reconciliation on `main`
 
-### 5.2 Unified infer+eval pipeline smoke (HF backend, small limit)
+After integrating 5.2 + selected 5.3 improvements into `main`, final contract
+alignment is:
 
-- Config: `temp/a_only_ckpt_6064_infer_eval_smoke_fast.yaml`
-  - `run.name: a_only_ckpt_6064_smoke_fast_2026-02-11`
-  - `run.output_dir: output/bench_smoke`
-  - `infer.generation.seed: 42`
-  - `infer.limit: 5`
-- Command:
+- Preserved from 5.2 (authoritative strict surfaces):
+  - `src/infer/pipeline.py` strict `resolved_config.json` validation
+  - `src/eval/detection.py` strict ingestion diagnostics (path+line + non-object rejection)
+  - `src/infer/engine.py` parser ownership via `src/common/prediction_parsing.py`
+  - Stage-2/rollout boundary split in `src/trainers/rollout_matching/` and
+    `src/trainers/stage2_ab/`
 
-  ```bash
-  PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
-    --config temp/a_only_ckpt_6064_infer_eval_smoke_fast.yaml
-  ```
+- Imported from 5.3 (targeted improvements):
+  - `src/common/geometry/coord_utils.py` import-light ownership (no dataset-layer import)
+  - `src/metrics/*` neutral metrics contract package + compatibility shim in
+    `src/trainers/metrics/reporter.py`
+  - Boundary tests: `tests/test_coord_helper_boundaries.py`,
+    `tests/test_coord_geometry_invariants.py`
 
-- Output run dir:
-  - `output/bench_smoke/a_only_ckpt_6064_smoke_fast_2026-02-11`
-  - Key artifacts: `gt_vs_pred.jsonl`, `summary.json`, `resolved_config.json`, `eval/`
+### 5.3 Final validation run on merged `main`
 
-### 5.3 Detection evaluator smoke (manual entrypoint; deprecated knob tolerated)
+Commands executed:
 
-- Command:
+```bash
+PYTHONPATH=. conda run -n ms python -m pytest -q \
+  tests/test_stage2_rollout_import_boundaries.py \
+  tests/test_trainer_metrics_payload_contract.py \
+  tests/test_detection_eval_ingestion_diagnostics.py \
+  tests/test_detection_eval_output_parity.py \
+  tests/test_infer_batch_decoding.py \
+  tests/test_stage2_ab_training.py \
+  tests/test_coord_utils.py \
+  tests/test_dataset_runtime_contracts.py \
+  tests/test_stage1_metric_key_parity.py \
+  tests/test_coord_helper_boundaries.py \
+  tests/test_coord_geometry_invariants.py \
+  tests/test_unified_infer_pipeline.py
+```
 
-  ```bash
-  PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
-    --pred_jsonl output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl \
-    --out_dir output/bench/a_only_ckpt_6064/eval_manual \
-    --metrics both \
-    --unknown-policy semantic \
-    --num-workers 0
-  ```
+- Result: `83 passed`
 
-- Output dir: `output/bench/a_only_ckpt_6064/eval_manual`
+```bash
+openspec validate refactor-src-modernization --strict
+```
 
-### 5.4 Legacy wrapper infer+eval smoke (shell wrapper)
-
-- Command:
-
-  ```bash
-  CKPT=output/stage2_ab/a_only_ckpt_6064 \
-  GT_JSONL=public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
-  OUTPUT_BASE_DIR=output/bench/smoke_infer_eval \
-  MODE=auto \
-  PRED_COORD_MODE=auto \
-  DEVICE=cuda:0 \
-  LIMIT=10 \
-  OVERLAY=0 \
-  NUM_WORKERS=0 \
-  scripts/run_infer_eval.sh
-  ```
-
-- Output dir: `output/bench/smoke_infer_eval` (writes `gt_vs_pred.jsonl`, `summary.json`, `eval/`)
-
-### 5.5 Visualization wrapper smoke (shell wrapper)
-
-- Command:
-
-  ```bash
-  PRED_JSONL=output/bench/a_only_ckpt_6064/gt_vs_pred.jsonl \
-  SAVE_DIR=output/bench/a_only_ckpt_6064/vis_smoke \
-  ROOT_IMAGE_DIR=/data/CoordExp/public_data/lvis/rescale_32_768_bbox_max60 \
-  LIMIT=10 \
-  scripts/run_vis.sh
-  ```
-
-- Output dir: `output/bench/a_only_ckpt_6064/vis_smoke`
+- Result: `Change 'refactor-src-modernization' is valid`
