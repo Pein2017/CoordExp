@@ -137,8 +137,13 @@ Colocate mode requirements (`custom.extra.rollout_matching.vllm.mode: colocate`)
 Server mode requirements (`custom.extra.rollout_matching.vllm.mode: server`):
 - The trainer MUST connect to an external vLLM rollout server (pre-launched) instead of instantiating a local vLLM engine.
 - The trainer MUST support in-memory weight synchronization to the server (no disk checkpoint reload) so that rollouts can be generated with the latest policy parameters.
-- For this v1 workflow, server mode MUST only be supported when the learner runs as a single training process (`world_size == 1`).
-  - If `torch.distributed` is initialized with `world_size > 1`, the trainer MUST fail fast with actionable guidance (e.g., run the learner on a single GPU, or use `custom.extra.rollout_matching.vllm.mode: colocate`).
+- Server mode MUST support multi-process learners (i.e., `torch.distributed` initialized with `world_size >= 1`).
+  - Under multi-process learners (`world_size > 1`), the trainer MUST synchronize weights in a DDP-safe way:
+    - rank0-only communicator init + weight push,
+    - strict ordering: barrier -> rank0 sync -> barrier,
+    - all ranks MUST take the same control-flow (including early-return decisions) to avoid deadlocks.
+  - Under multi-process learners (`world_size > 1`), `custom.extra.rollout_matching.vllm.sync.mode` MUST resolve to `full`.
+  - If these requirements cannot be satisfied (e.g., communicator init fails, misconfigured sync mode), the trainer MUST fail fast with actionable guidance.
 
 Server connectivity MUST be YAML-driven under `custom.extra.rollout_matching.vllm.server` (mapping).
 The config MUST be expressed in exactly one of these forms:
