@@ -12,25 +12,23 @@ evaluation can share the same logic and avoid double-scaling bugs.
 
 from __future__ import annotations
 
-import re
 from typing import Any, Iterable, List, Sequence, Tuple
 
 from src.coord_tokens.codec import (
+    COORD_TOKEN_PATTERN,
     int_to_token,
+    is_coord_token,
     sequence_has_coord_tokens,
     token_to_int,
     value_in_coord_range,
 )
 
-COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,4})\|>")
+# Backward compatible alias (historical name used across the codebase).
+COORD_TOKEN_RE = COORD_TOKEN_PATTERN
 MAX_BIN = 999  # coord tokens are 0..999 inclusive
 
 
 # ---------------- Token helpers ---------------- #
-
-
-def is_coord_token(value: Any) -> bool:
-    return isinstance(value, str) and COORD_TOKEN_RE.fullmatch(value) is not None
 
 
 def encode_coord(value: int) -> str:
@@ -185,7 +183,8 @@ __all__ = [
     "clamp_and_round",
     "denorm_and_clamp",
     "bbox_from_points",
-    "is_degenerate_bbox",    "bbox_to_quadrilateral",
+    "is_degenerate_bbox",
+    "bbox_to_quadrilateral",
     "pair_points",
     "coerce_point_list",
 ]

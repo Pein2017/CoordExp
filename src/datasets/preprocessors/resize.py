@@ -29,6 +29,8 @@ from typing import (
 
 from PIL import Image
 
+from src.common.paths import resolve_image_path_best_effort
+
 from ..contracts import ConversationRecord
 from ..geometry import clamp_points, scale_points
 from .base import BasePreprocessor
@@ -269,17 +271,14 @@ class Resizer:
 
     def _resolve_image_paths(self, images: Sequence[Any]) -> List[str]:
         resolved: List[str] = []
-        base = self.jsonl_dir
         for img in images:
             if isinstance(img, str):
-                p = Path(img)
-                if not p.is_absolute():
-                    if self.images_root_override:
-                        p = (self.images_root_override / p).resolve()
-                    elif base:
-                        p = (base / p).resolve()
-                    else:
-                        p = p.resolve()
+                p = resolve_image_path_best_effort(
+                    img,
+                    jsonl_dir=self.jsonl_dir,
+                    root_image_dir=self.images_root_override,
+                    env_root_var=None,
+                )
                 resolved.append(str(p))
             else:
                 resolved.append(img)

@@ -9,8 +9,7 @@ from .codec import (
     tokens_to_ints,
     value_in_coord_range,
 )
-
-GEOMETRY_KEYS = ("bbox_2d", "poly")
+from src.common.geometry.object_geometry import GEOMETRY_KEYS
 
 
 def _looks_like_coord_value(value: Any) -> bool:
@@ -47,6 +46,8 @@ def annotate_coord_tokens(
     width = record.get("width")
     height = record.get("height")
 
+    from src.common.geometry.object_geometry import extract_single_geometry
+
     found = False
     for obj_idx, obj in enumerate(objects):
         if not isinstance(obj, MutableMapping):
@@ -54,37 +55,36 @@ def annotate_coord_tokens(
         if obj.get("line") is not None or obj.get("line_points") is not None:
             raise ValueError("line geometry is not supported")
 
-        for key in GEOMETRY_KEYS:
-            if key not in obj or obj[key] is None:
-                continue
-            values = obj[key]
-            if not isinstance(values, Sequence):
-                raise ValueError(f"objects[{obj_idx}].{key} must be a sequence")
-            if len(values) % 2 != 0:
-                raise ValueError(
-                    f"objects[{obj_idx}].{key} must contain an even number of entries (x,y pairs)"
-                )
+        try:
+            geom_key, values = extract_single_geometry(
+                obj,
+                allow_type_and_points=False,
+                allow_nested_points=False,
+                path=f"objects[{obj_idx}]",
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
-            has_tokens = sequence_has_coord_tokens(values)
-            looks_quantized = all(_looks_like_coord_value(v) for v in values)
-            if not has_tokens and not looks_quantized:
-                continue
+        has_tokens = sequence_has_coord_tokens(values)
+        looks_quantized = all(_looks_like_coord_value(v) for v in values)
+        if not has_tokens and not looks_quantized:
+            continue
 
-            if width is None or height is None:
-                raise ValueError(
-                    "Record with coord tokens must provide width and height for pixel recovery"
-                )
-            if float(width) <= 0 or float(height) <= 0:
-                raise ValueError(
-                    "width and height must be positive when coord tokens are used"
-                )
+        if width is None or height is None:
+            raise ValueError(
+                "Record with coord tokens must provide width and height for pixel recovery"
+            )
+        if float(width) <= 0 or float(height) <= 0:
+            raise ValueError(
+                "width and height must be positive when coord tokens are used"
+            )
 
-            ints = tokens_to_ints(values, require_even=True)
-            tokens = ints_to_tokens(ints)
-            obj.setdefault("_coord_tokens", {})[key] = tokens
-            obj.setdefault("_coord_token_ints", {})[key] = ints
-            obj.setdefault("_coord_token_norm", {})[key] = normalized_from_ints(ints)
-            found = True
+        ints = tokens_to_ints(values, require_even=True)
+        tokens = ints_to_tokens(ints)
+        obj.setdefault("_coord_tokens", {})[geom_key] = tokens
+        obj.setdefault("_coord_token_ints", {})[geom_key] = ints
+        obj.setdefault("_coord_token_norm", {})[geom_key] = normalized_from_ints(ints)
+        found = True
 
     if found:
         record["_coord_tokens_enabled"] = True

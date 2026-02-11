@@ -29,7 +29,7 @@ from .coord_tokens.offset_adapter import (
 from .config import ConfigLoader, SaveDelayConfig
 from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
-from .metrics.dataset_metrics import (
+from .trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,

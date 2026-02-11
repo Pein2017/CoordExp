@@ -9,12 +9,12 @@ Input contract: unified artifact `gt_vs_pred.jsonl`.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image, ImageDraw
 
+from src.common.paths import resolve_image_path_strict
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -26,23 +26,11 @@ def _resolve_image_path(
     *,
     root_image_dir: Optional[Path],
 ) -> Optional[Path]:
-    if not image_field:
-        return None
-    p = Path(image_field)
-    if p.is_absolute() and p.exists():
-        return p
-
-    if root_image_dir is not None:
-        cand = root_image_dir / image_field
-        if cand.exists():
-            return cand
-
-    # Fallback: relative to JSONL directory.
-    cand = jsonl_path.parent / image_field
-    if cand.exists():
-        return cand
-
-    return None
+    return resolve_image_path_strict(
+        image_field,
+        jsonl_dir=jsonl_path.parent,
+        root_image_dir=root_image_dir,
+    )
 
 
 def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:

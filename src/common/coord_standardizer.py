@@ -10,7 +10,7 @@ normalizing model outputs and ground-truth JSONL records.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Literal, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Sequence, Tuple, cast
 
 from src.common.geometry import (
     MAX_BIN,
@@ -70,29 +70,22 @@ class CoordinateStandardizer:
     def _parse_geom(obj: Dict[str, Any]) -> Tuple[GeomType, List[float], bool, str]:
         """Extract geometry type and raw points from heterogeneous objects."""
 
-        # 1) Geometry-keyed objects (GT style)
-        gkeys = [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
-        if len(gkeys) > 1:
-            raise ValueError("geometry_keys")
-        gtype: GeomType | None = None
-        pts_raw: List[Any] | None = None
+        from src.common.geometry.object_geometry import extract_single_geometry
 
-        if len(gkeys) == 1:
-            gtype = gkeys[0]  # type: ignore[assignment]
-            pts_raw = flatten_points(obj[gtype])
-
-        # 2) type + points objects (pred style)
-        if gtype is None:
-            if obj.get("type") and obj["type"] not in GEOM_KEYS:
-                raise ValueError("geometry_kind")
-            if obj.get("type") in GEOM_KEYS and obj.get("points") is not None:
-                gtype = obj["type"]  # type: ignore[assignment]
-                pts_raw = flatten_points(obj.get("points"))
-
-        if gtype is None or pts_raw is None:
-            raise ValueError("geometry_keys")
-        if pts_raw is None or len(pts_raw) % 2 != 0:
-            raise ValueError("geometry_points")
+        try:
+            gtype, pts_raw = extract_single_geometry(
+                obj,
+                allow_type_and_points=True,
+                allow_nested_points=True,
+                path="object",
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            if "type must be bbox_2d|poly" in msg:
+                raise ValueError("geometry_kind") from exc
+            if "got both" in msg or "got none" in msg:
+                raise ValueError("geometry_keys") from exc
+            raise ValueError("geometry_points") from exc
 
         points, had_tokens = coerce_point_list(pts_raw)
         if points is None:
@@ -101,7 +94,7 @@ class CoordinateStandardizer:
             had_tokens = True
 
         desc = str(obj.get("desc", ""))
-        return gtype, points, had_tokens, desc
+        return cast(GeomType, gtype), points, had_tokens, desc
 
     def _choose_coord_mode_pred(
         self,

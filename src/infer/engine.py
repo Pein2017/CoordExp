@@ -65,6 +65,7 @@ from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
+from src.common.paths import resolve_image_path_best_effort
 from src.utils import get_logger
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -496,11 +497,7 @@ class InferenceEngine:
 
     @staticmethod
     def _resolve_image_path(jsonl_path: Path, image_rel: str) -> Path:
-        if os.path.isabs(image_rel):
-            return Path(image_rel)
-        root = os.environ.get("ROOT_IMAGE_DIR")
-        base = Path(root) if root else jsonl_path.parent
-        return (base / image_rel).resolve()
+        return resolve_image_path_best_effort(image_rel, jsonl_dir=jsonl_path.parent)
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
         user_prompt = USER_PROMPT

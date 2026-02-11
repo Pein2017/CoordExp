@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
-import re
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -34,6 +32,9 @@ from src.common.geometry import (
     is_degenerate_bbox,
 )
 from src.common.prediction_parsing import GEOM_KEYS
+from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
+from src.common.io import load_jsonl_with_diagnostics
+from src.common.paths import resolve_image_path_best_effort
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -42,70 +43,7 @@ _DEFAULT_SEMANTIC_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def _normalize_desc(desc: str) -> str:
-    """Normalize LVIS-like category strings for semantic matching."""
-    s = str(desc or "").strip().lower()
-    if not s:
-        return ""
-    s = s.replace("_", " ").replace("/", " ")
-    s = s.replace("(", " ").replace(")", " ")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-
-def _resolve_semantic_device(device: str) -> str:
-    d = (device or "auto").strip().lower()
-    if d == "auto":
-        try:
-            import torch
-
-            return "cuda:0" if torch.cuda.is_available() else "cpu"
-        except Exception:
-            return "cpu"
-    return d
-
-
-def _encode_texts_mean_pool(
-    texts: List[str],
-    *,
-    model_name: str,
-    device: str,
-    batch_size: int,
-) -> "np.ndarray":
-    """Encode texts into L2-normalized embeddings using mean pooling."""
-    import torch
-    import torch.nn.functional as F
-    from transformers import AutoModel, AutoTokenizer
-
-    resolved_device = _resolve_semantic_device(device)
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
-    model.to(resolved_device)
-    model.eval()
-
-    all_vecs: List["np.ndarray"] = []
-    with torch.inference_mode():
-        for i in range(0, len(texts), max(1, int(batch_size))):
-            batch = texts[i : i + max(1, int(batch_size))]
-            inputs = tokenizer(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=64,
-                return_tensors="pt",
-            )
-            inputs = {k: v.to(resolved_device) for k, v in inputs.items()}
-            out = model(**inputs)
-            last = out.last_hidden_state  # [B, T, D]
-            mask = inputs.get("attention_mask")
-            if mask is None:
-                pooled = last.mean(dim=1)
-            else:
-                mask_f = mask.unsqueeze(-1).to(last.dtype)
-                pooled = (last * mask_f).sum(dim=1) / mask_f.sum(dim=1).clamp(min=1.0)
-            pooled = F.normalize(pooled, p=2, dim=1)
-            all_vecs.append(pooled.detach().cpu().numpy())
-    return np.concatenate(all_vecs, axis=0) if all_vecs else np.zeros((0, 0))
+    return normalize_desc(desc)
 
 
 def _fmt_iou_thr(iou_thr: float) -> str:
@@ -248,13 +186,11 @@ def _build_semantic_desc_mapping(
     device = options.semantic_device or "auto"
     bs = max(1, int(options.semantic_batch_size))
 
+    encoder = SemanticDescEncoder(model_name=str(model_name), device=str(device), batch_size=int(bs))
+
     try:
-        pred_emb = _encode_texts_mean_pool(
-            pred_norm, model_name=model_name, device=device, batch_size=bs
-        )
-        cand_emb = _encode_texts_mean_pool(
-            cand_norm, model_name=model_name, device=device, batch_size=bs
-        )
+        pred_map = encoder.encode_norm_texts(pred_norm)
+        cand_map = encoder.encode_norm_texts(cand_norm)
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             "Description matching requires the semantic encoder "
@@ -263,8 +199,25 @@ def _build_semantic_desc_mapping(
             "The evaluator no longer supports bucket/drop fallbacks."
         ) from exc
 
-    if pred_emb.size == 0 or cand_emb.size == 0:
+    pred_vecs: List[np.ndarray] = []
+    for t in pred_norm:
+        v = pred_map.get(t)
+        if v is None:
+            return {}
+        pred_vecs.append(v)
+
+    cand_vecs: List[np.ndarray] = []
+    for t in cand_norm:
+        v = cand_map.get(t)
+        if v is None:
+            return {}
+        cand_vecs.append(v)
+
+    if not pred_vecs or not cand_vecs:
         return {}
+
+    pred_emb = np.stack(pred_vecs, axis=0)
+    cand_emb = np.stack(cand_vecs, axis=0)
 
     # Cosine similarity via dot product (embeddings already normalized).
     sim = pred_emb @ cand_emb.T  # [P, C]
@@ -319,60 +272,22 @@ def load_jsonl(
     strict: bool = False,
     max_snippet_len: int = 200,
 ) -> List[Dict[str, Any]]:
-    records: List[Dict[str, Any]] = []
-    invalid_seen = 0
+    try:
+        records, invalid_seen = load_jsonl_with_diagnostics(
+            path,
+            strict=bool(strict),
+            max_snippet_len=int(max_snippet_len),
+            warn_limit=5,
+        )
+    except ValueError:
+        # In strict mode, fail fast on the first invalid record but keep counters
+        # consistent with the legacy loader.
+        if counters is not None:
+            counters.invalid_json += 1
+        raise
 
-    with path.open("r", encoding="utf-8") as f:
-        for line_no, raw_line in enumerate(f, start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            try:
-                parsed = json.loads(line)
-            except Exception as exc:  # noqa: BLE001
-                invalid_seen += 1
-                if counters is not None:
-                    counters.invalid_json += 1
-
-                snippet = (
-                    line
-                    if len(line) <= max_snippet_len
-                    else (line[:max_snippet_len] + "...")
-                )
-                msg = f"Malformed JSONL at {path}:{line_no}: {snippet}"
-                if strict:
-                    raise ValueError(msg) from exc
-                if invalid_seen <= 5:
-                    logger.warning("%s", msg)
-                elif invalid_seen == 6:
-                    logger.warning(
-                        "Malformed JSONL: suppressing further warnings (showing first 5 only)"
-                    )
-                continue
-
-            if not isinstance(parsed, dict):
-                invalid_seen += 1
-                if counters is not None:
-                    counters.invalid_json += 1
-
-                snippet = (
-                    line
-                    if len(line) <= max_snippet_len
-                    else (line[:max_snippet_len] + "...")
-                )
-                msg = f"Non-object JSONL record at {path}:{line_no}: {snippet}"
-                if strict:
-                    raise ValueError(msg)
-                if invalid_seen <= 5:
-                    logger.warning("%s", msg)
-                elif invalid_seen == 6:
-                    logger.warning(
-                        "Malformed JSONL: suppressing further warnings (showing first 5 only)"
-                    )
-                continue
-
-            records.append(parsed)
+    if counters is not None:
+        counters.invalid_json += int(invalid_seen)
 
     return records
 
@@ -829,13 +744,16 @@ def _run_coco_eval(
     return metrics, per_class
 
 
-def _resolve_image_path(base_dir: Path, image_rel: str) -> Path:
+def _resolve_image_path(base_dir: Path, image_rel: str | None) -> Path:
     if image_rel is None:
         return base_dir / "missing.jpg"
-    p = Path(image_rel)
-    if p.is_absolute():
-        return p
-    return (base_dir / image_rel).resolve()
+
+    return resolve_image_path_best_effort(
+        image_rel,
+        jsonl_dir=None,
+        root_image_dir=base_dir,
+        env_root_var=None,
+    )
 
 
 def _draw_overlays(
@@ -1325,22 +1243,22 @@ def _try_build_semantic_embeddings(
     device = options.semantic_device or "auto"
     bs = max(1, int(options.semantic_batch_size))
 
+    encoder = SemanticDescEncoder(model_name=model_name, device=str(device), batch_size=int(bs))
+
     try:
-        vecs = _encode_texts_mean_pool(
-            unique_norm_texts, model_name=model_name, device=device, batch_size=bs
-        )
+        embs = encoder.encode_norm_texts(unique_norm_texts)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "F1-ish semantic embeddings unavailable (model='%s'): %s", model_name, exc
         )
         return {}
 
-    if vecs.size == 0 or vecs.shape[0] != len(unique_norm_texts):
-        return {}
-
     out: Dict[str, np.ndarray] = {}
-    for i, text in enumerate(unique_norm_texts):
-        out[text] = vecs[i]
+    for text in unique_norm_texts:
+        v = embs.get(text)
+        if v is None:
+            continue
+        out[text] = v
     return out
 
 

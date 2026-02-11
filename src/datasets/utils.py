@@ -26,34 +26,16 @@ def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
     if "line" in obj or "line_points" in obj:
         raise ValueError("line geometry is not supported")
 
-    has_bbox = obj.get("bbox_2d") is not None
-    has_poly = obj.get("poly") is not None
+    from src.common.geometry.object_geometry import extract_single_geometry
 
-    if has_bbox and has_poly:
-        raise ValueError(
-            "object must contain exactly one geometry field (bbox_2d xor poly), got both"
-        )
-    if not has_bbox and not has_poly:
-        raise ValueError(
-            "object must contain exactly one geometry field (bbox_2d xor poly), got none"
-        )
-
-    if has_bbox:
-        points = _coerce(obj.get("bbox_2d"), "bbox_2d")
-        if len(points) != 4:
-            raise ValueError(
-                f"bbox_2d must contain exactly 4 values; got len={len(points)}"
-            )
-        return "bbox_2d", points
-
-    points = _coerce(obj.get("poly"), "poly")
-    if any(isinstance(v, Sequence) and not isinstance(v, (str, bytes)) for v in points):
-        raise ValueError("poly must be a flat coordinate sequence")
-    if len(points) < 6 or (len(points) % 2 != 0):
-        raise ValueError(
-            "poly must contain an even number of values and at least 6 coordinates"
-        )
-    return "poly", points
+    geom_type, raw_points = extract_single_geometry(
+        obj,
+        allow_type_and_points=False,
+        allow_nested_points=False,
+        path="object",
+    )
+    points = _coerce(raw_points, geom_type)
+    return str(geom_type), points
 
 
 
