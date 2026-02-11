@@ -38,7 +38,8 @@
 - Prioritize quality first, then speed.
 - Spawn sub-agents whenever parallel work can improve correctness or throughput.
 - No fixed cap: use as many sub-agents as needed.
-- Main agent must verify sub-agent findings against repo sources before applying.
+- Each agent must report only high-confidence findings with file:line evidence.
+- Main agent must verify sub-agent findings against repo sources before final response.
 - Main agent owns final decisions, edits, and output quality.
 
 ## Scope
