@@ -8,6 +8,9 @@ Notes:
   `eval_` (e.g. `coord_diag/loss` -> `eval_coord_diag/loss`).
 - Unless otherwise stated, metrics are computed on **supervised next-token positions**
   (i.e. `labels[:, 1:] != -100`).
+- Trainer metric updates flow through a neutral payload contract with explicit versioning:
+  `schema_version` (integer major, current `1`), `mode` (`train|eval`), `global_step`,
+  and `metrics` (key/value map). Missing/non-integer/unsupported schema versions are rejected.
 
 Stage-2 note (rollout-matching SFT):
 - Stage_2 (`custom.trainer_variant: rollout_matching_sft`) uses masked losses on a single
@@ -48,41 +51,177 @@ Important semantics:
 - **All-reduced (eval):** `eval_rollout_*` keys are aggregated over the full
   evaluation dataset and summed across ranks.
 
-### Minimal train metrics (default)
+### Rollout timing / throughput
 
-Stage-2 training now emits a deliberately minimal, high-signal metric set (no
-backward-compat aliases).
-
-Rollout quality:
-- `rollout/parse_dropped_invalid`
-- `rollout/parse_obj_drop_frac`
-- `rollout/parse_truncated_rate`
-- `rollout/sample_valid_pred_rate`
-- `rollout/sample_any_match_rate`
-- `rollout/gating_rejection_rate`
-- `rollout/precision`, `rollout/recall`, `rollout/f1`
-- `rollout/fp_per_sample`, `rollout/fn_per_sample`
-- `rollout/matched_maskiou_mean`
-
-Rollout length / decode mode:
-- `rollout/rollout_len_mean`, `rollout/rollout_len_p90`
-- `rollout/decode_non_beam_count`, `rollout/decode_beam_count`
-- `rollout/do_sample`, `rollout/temperature`
-
-Throughput / packing:
 - `time/rollout_generate_s`
 - `time/rollout_parse_match_s`
+- `time/rollout_teacher_encode_s`
+  - **Stage-2 AB note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
+    When diagnosing rollout throughput, filter to steps where `stage2/channel_b == 1`.
+
+- `rollout/gen_new_tokens_total|mean|p90|p99`
+  - **What:** generated assistant token counts (after stage_2 suffix trimming).
+  - **Why:** helps detect "always hit max_new_tokens" pathologies.
+
 - `rollout/gen_tokens_per_s`
+  - **What:** `gen_new_tokens_total / time/rollout_generate_s`.
+  - **Why:** detects rollout slowdowns (KV cache pressure / chunked prefill regressions).
+
+### Decoding knobs (rollout generation)
+
+Stage_2 uses `decode_mode` primarily to choose **beam** vs **non-beam** decoding.
+Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
+
+- `rollout/do_sample`, `rollout/temperature`, `rollout/top_p`, `rollout/top_k`
+  - **What:** effective sampling knobs used for rollout generation.
+  - **Note:** vLLM backends currently enforce `decode_mode=greedy` as a **non-beam sentinel** (no beam support in this path),
+    so `rollout/decode_greedy == N` does **not** imply deterministic rollouts. Use `rollout/do_sample` and `rollout/temperature`
+    to disambiguate deterministic vs sampling.
+
+- `rollout/decode_greedy`, `rollout/decode_beam`
+  - **What:** counts of samples rolled out with `decode_mode == "greedy"` (non-beam) vs `decode_mode == "beam"` (beam).
+  - **Why:** helps detect accidental config drift across runs (e.g., beam search enabled unintentionally).
+
+### Parse health
+
+- `rollout/parse_dropped_invalid`, `rollout/parse_dropped_ambiguous`
+  - **What:** number of predicted objects dropped by strict parsing.
+- `rollout/parse_truncated`, `rollout/parse_truncated_rate`
+  - **What:** sample count and rate where rollouts are truncated mid-object (suffix-trimmed).
+- `rollout/parse_obj_total`
+  - **What:** `valid_pred_objects + dropped_invalid + dropped_ambiguous` (object-level accounting).
+- `rollout/parse_obj_valid_frac`, `rollout/parse_obj_drop_frac`
+  - **What:** object-level valid/drop fractions.
+- `rollout/sample_valid_pred_rate`
+  - **What:** fraction of samples that yield at least one valid predicted object.
+- `rollout/sample_any_match_rate`
+  - **What:** fraction of samples that produce at least one supervised match.
+
+### Matching quality (rollout-level)
+
+- `rollout/gt_objects`, `rollout/valid_pred_objects`
+  - **What:** GT and valid predicted object counts (post-parse).
+- `rollout/matched_for_supervision`, `rollout/excluded_from_supervision`
+  - **What:** matched objects that were used vs excluded due to target-construction failure.
+- `rollout/fn_appended`, `rollout/fn`
+  - **What:** GT objects not supervised via prefix matching; appended as FN in the tail.
+- `rollout/gating_rejections`, `rollout/gating_rejection_rate`
+  - **What:** how often candidate pairs were rejected by the `maskiou_gate` threshold.
+
+- `rollout/precision`, `rollout/recall`, `rollout/f1`
+  - **What:** object-level precision/recall/F1 derived from matched-for-supervision.
+  - **Note:** `rollout/recall` is the same as `rollout/match_rate` (kept for compatibility).
+
+- `rollout/matched_maskiou_mean`, `rollout/matched_maskiou_count`
+  - **What:** mean maskIoU over matched pairs (norm1000-space, virtual canvas).
+  - **Why:** disambiguates “more matches” vs “better geometry”.
+
+### Desc monitoring (optional; metrics only)
+
+Stage_2 can optionally monitor whether rollout `desc` strings stay semantically
+aligned with GT on geometry-matched pairs. This is **metrics-only** and does not
+affect the training loss.
+
+- `rollout/desc_pairs_total`
+  - **What:** number of geometry-matched pairs evaluated for desc monitoring.
+- `rollout/desc_exact_acc_on_matched`
+  - **What:** exact-match accuracy of normalized `desc` strings on matched pairs.
+- `rollout/desc_sem_enabled`
+  - **What:** 1.0 when the semantic embedding model is available for this step.
+- `rollout/desc_sem_acc_on_matched`
+  - **What:** semantic accuracy on matched pairs (exact OR cosine-sim >= threshold).
+- `rollout/desc_sem_sim_mean`, `rollout/desc_sem_sim_count`
+  - **What:** mean cosine similarity and count over matched pairs with embeddings.
+
+### Supervision construction coverage
+
+- `rollout/excluded_rate`
+  - **What:** `excluded_from_supervision / (matched_for_supervision + excluded_from_supervision)`.
+  - **Why:** detects OT/target-construction instability.
+
+- `rollout/prefix_coord_targets_total`, `rollout/prefix_coord_targets_per_matched`
+  - **What:** total coord slots supervised in the prefix and average per matched object.
+
+- `rollout/tail_ignore_frac`
+  - **What:** fraction of appended tail tokens that are ignored for CE due to `"desc"` masking.
+
+### Length / packing diagnostics (stage_2)
+
+- `rollout/prompt_len_mean|p90`
+- `rollout/rollout_len_mean|p90`
+- `rollout/train_len_mean|p90`
+- `rollout/append_len_mean|p90`
+- `rollout/encoded_len_mean|p90`
+  - **What:** token-length summaries for prompt / rollout / training target / encoded length.
+  - **Why:** explains OOM risk and packing fill changes between 1k/4k/8k max_new_tokens.
+
 - `packing/post_rollout_fill`
+- `packing/post_rollout_segments`
+- `packing/post_rollout_buffer`
+  - **What:** post-rollout packing stats (carry-only mode).
 
-Loss breakdown:
-- `loss/ce`
-- `loss/coord`
+### Stage-2 AB async actor-learner telemetry (optional)
 
-Stage-2 AB scheduling:
-- `stage2/channel_a`
-- `stage2/channel_b`
+When `custom.trainer_variant: stage2_ab_training` and `stage2_ab.channel_b.mode: async`, the trainer logs
+additional queue/sync telemetry under `stage2_ab/async/*`:
+
+Logging semantics:
+- Logged once per optimizer step (after gradient accumulation).
+- Values are treated as **step-level gauges** and may be averaged across micro-steps inside the optimizer step
+  (so boolean-style keys can appear as fractions in `[0,1]`).
+- Keys ending in `_total` are **monotonic cumulative counters**; interpret them as counters (not per-step deltas).
+
+- `stage2_ab/async/policy_wants_b`
+  - **What:** 1.0 when the Bresenham schedule wants Channel-B for this optimizer step.
+- `stage2_ab/async/step_kind_b`
+  - **What:** 1.0 when the optimizer step executes Channel-B (after feasibility gating), else Channel-A.
 - `stage2_ab/async/b_ratio_realized`
+  - **What:** rolling realized Channel-B step ratio over recent optimizer steps (windowed diagnostic).
+- `stage2_ab/async/b_step_skipped_due_to_queue`
+  - **What:** 1.0 when schedule wanted B but queues were infeasible and we fell back to A.
+- `stage2_ab/async/queue_depth`, `stage2_ab/async/queue_limit`, `stage2_ab/async/prefetch_target_packs`
+  - **What:** per-rank ready-pack queue depth and configured bounds.
+- `stage2_ab/async/ver_current`, `stage2_ab/async/ver_lag`, `stage2_ab/async/version_window`
+  - **What:** current sync-counter version, per-pack lag (`ver_current - pack.ver` on B micro-steps), and staleness window for ready-pack consumption.
+- `stage2_ab/async/drop_stale_total`, `stage2_ab/async/drop_oldest_total`
+  - **What:** cumulative stale-drop and drop-oldest counters on this rank.
+- `stage2_ab/async/prefetch_success_total`, `stage2_ab/async/prefetch_fail_total`
+  - **What:** cumulative async prefetch loop successes/failures (rank-local).
+  - **Why:** detects whether the background thread is producing packs or repeatedly failing/retrying.
+- `stage2_ab/async/prefetch_iter_total`
+  - **What:** cumulative iterations through the prefetch loop (rank-local).
+  - **Why:** helps distinguish “thread never started” from “thread started but got stuck”.
+- `stage2_ab/async/prefetch_state`, `stage2_ab/async/prefetch_last_progress_s_ago`
+  - **What:** coarse state machine and time since last progress heartbeat from the background thread.
+  - **Interpretation:** large `prefetch_last_progress_s_ago` with a stable `prefetch_state` indicates a likely blocking call
+    (most commonly HTTP `/infer/`, dataset I/O, or a sync fence).
+- `stage2_ab/async/sync_in_progress`, `stage2_ab/async/infer_inflight`
+  - **What:** whether rank0 is currently syncing weights to the rollout server (blocking background inference),
+    and how many HTTP `/infer/` requests are currently in-flight.
+- `stage2_ab/async/is_prefetch_in_prepare_b`
+  - **What:** 1.0 when the prefetch loop is inside `_prepare_batch_inputs_b(..., _segments_only=True)` (rollout+parse+match).
+- `stage2_ab/async/is_prefetch_queue_full`, `stage2_ab/async/is_prefetch_no_segments`, `stage2_ab/async/is_prefetch_error`
+  - **What:** coarse prefetch conditions (queue full / produced zero segments / hit an exception).
+
+### Stage-2 AB Channel-B strict-drop and stop-neutral diagnostics
+
+These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Channel-B construction.
+
+- `stage2_ab/channel_b/strict_drop/N_valid_pred`
+  - **What:** number of predicted objects retained after strict validation for this step.
+  - **Why:** numerator for strict-drop health checks.
+
+- `stage2_ab/channel_b/strict_drop/N_drop_invalid`
+  - **What:** number of predicted objects dropped by strict validation for this step.
+  - **Why:** tracks parser/data-quality pressure on Channel-B supervision.
+
+- `stage2_ab/channel_b/strict_drop/reason/<bucket>`
+  - **What:** reason-bucket counts for dropped predictions (e.g., `missing_desc`, `wrong_arity`, `bbox_invalid`).
+  - **Why:** identifies dominant failure modes in rollout outputs.
+
+- `stage2_ab/channel_b/stop_neutral/N_skip`
+  - **What:** number of samples skipped because stop-neutral marker resolution failed (`}` / `<|im_end|>` alignment).
+  - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 
