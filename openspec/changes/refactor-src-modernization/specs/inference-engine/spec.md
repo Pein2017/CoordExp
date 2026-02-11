@@ -7,7 +7,11 @@ This is a delta spec for change `refactor-src-modernization`.
 ### Requirement: HF attention backend selection is resilient across environments
 Inference-engine SHALL support resilient HF attention backend selection.
 If a preferred backend is unavailable in the runtime environment, engine initialization MUST fall back to a supported backend with explicit diagnostics while preserving output contract semantics.
-The selected backend (including fallback choice when applied) MUST be recorded in run artifacts (`summary.json` and/or `resolved_config.json`) for reproducibility.
+The selected backend (including fallback choice when applied) MUST be recorded in run artifacts via exact `summary.json` fields:
+- `backend.attn_implementation_requested`
+- `backend.attn_implementation_selected`
+
+`resolved_config.json` MAY mirror these values, but `summary.json` fields are the required compatibility surface for this contract.
 
 #### Scenario: Missing preferred attention backend falls back with warning
 - **GIVEN** HF backend inference configuration prefers an unavailable attention backend
@@ -18,8 +22,8 @@ The selected backend (including fallback choice when applied) MUST be recorded i
 #### Scenario: Selected attention backend is captured in run artifacts
 - **GIVEN** inference runs under either preferred or fallback attention backend
 - **WHEN** artifacts are persisted
-- **THEN** run artifacts record the selected backend value
-- **AND** operators can determine from artifacts whether fallback occurred.
+- **THEN** `summary.json.backend.attn_implementation_requested` and `summary.json.backend.attn_implementation_selected` are present
+- **AND** operators can determine from artifacts whether fallback occurred by comparing requested vs selected values.
 
 ### Requirement: Backend runtime is selected through an explicit backend contract
 Inference-engine SHALL use an explicit backend runtime contract to isolate backend-specific generation details from artifact standardization.

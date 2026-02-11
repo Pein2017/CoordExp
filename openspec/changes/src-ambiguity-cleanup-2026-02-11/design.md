@@ -58,6 +58,14 @@ All shared geometry extraction/validation helpers MUST preserve point ordering a
 ### Decision 5: Resolve naming collisions by introducing canonical module names
 Where two modules share a confusing name but represent different concerns, introduce a clearer canonical module name and convert the ambiguous file into a shim.
 
+### Decision 6: This change is authoritative for shared-helper contracts
+For active overlapping deltas, this change is the authoritative source for:
+- shared coord/geometry helper ownership boundaries,
+- evaluator strict-parse helper defaults (`eval.strict_parse`, warning budget, snippet bound),
+- shared image-root resolution precedence/provenance behavior.
+
+Other active deltas (for example `refactor-src-modernization`) MAY reference these contracts for integration requirements but MUST NOT introduce conflicting helper-contract definitions.
+
 ## Risks / Trade-offs
 
 - [Risk] Subtle behavior changes in image-path resolution (ROOT_IMAGE_DIR precedence, existence checks). → Mitigation: introduce strict vs best-effort helpers; add targeted tests; keep callsites behavior-preserving.

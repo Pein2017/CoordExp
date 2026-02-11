@@ -133,9 +133,14 @@ Rollback strategy:
 - Each stage lands as isolated commits; revert at stage granularity if parity checks fail.
 - Keep legacy compatibility paths until stage exit gates are satisfied.
 
-## Open Questions
+## Decision Addendum (2026-02-11 Reopen)
 
-- Should infer/eval loader strictness defaults be standardized globally now, or staged per capability to reduce adoption friction?
-- How much Stage-2 telemetry key compatibility must be preserved verbatim vs alias-supported during migration?
-- Should schema modularization happen before or after trainer decomposition, given current coupling between config validation and runtime wiring?
-- What minimal smoke matrix is required to declare parity for async server-mode workflows in CI vs manual validation?
+The previously listed open questions are now resolved for this change and SHALL be treated as normative:
+
+- **Infer/eval strict-parse contract:** use `eval.strict_parse` as the governing config key (default `false`).
+  - `true`: fail fast on the first malformed JSONL record.
+  - `false`: warn+skip deterministically with bounded diagnostics (`warn_limit=5`, `max_snippet_len=200`).
+- **Stage-2 telemetry compatibility horizon:** all documented stable keys remain required; aliases MAY exist for transition but MUST NOT replace stable keys. Renames/removals require a separate OpenSpec delta.
+- **Sequencing:** schema/contract decisions MUST land before trainer decomposition changes that depend on those contracts.
+- **Smoke matrix minimum:** keep contract tests in routine CI and keep bounded async server-mode smoke as an explicit manual/GPU gate.
+- **Cross-change authority split:** for overlapping helper-consolidation requirements (`coord-utils`, evaluator ingestion strictness, root-image resolution contract), `src-ambiguity-cleanup-2026-02-11` is authoritative. This change carries integration/migration constraints and MUST reference the authoritative helper contracts instead of re-defining conflicting variants.

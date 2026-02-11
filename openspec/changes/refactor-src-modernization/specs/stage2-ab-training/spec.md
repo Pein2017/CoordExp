@@ -17,9 +17,12 @@ It MUST NOT import underscore-prefixed symbols from trainer implementation files
 The Stage-2 AB capability SHALL include a regression guard that detects imports from underscore-prefixed rollout symbols and fails validation when such imports reappear.
 This guard MUST use AST import inspection (test or static check) rather than regex text matching so formatting/comment changes do not create false signals.
 The guard MUST run in routine validation for this capability.
+The guard scope MUST cover the full Stage-2 AB capability surface:
+- `src/trainers/stage2_ab_training.py`
+- `src/trainers/stage2_ab/**/*.py`
 
 #### Scenario: Validation fails when a private rollout helper import is reintroduced
-- **GIVEN** a Stage-2 AB source file imports an underscore-prefixed rollout helper
+- **GIVEN** any Stage-2 AB source file in the guarded surface imports an underscore-prefixed rollout helper
 - **WHEN** capability validation checks execute
 - **THEN** validation fails with a boundary-violation diagnostic
 - **AND** the regression is caught before merge.

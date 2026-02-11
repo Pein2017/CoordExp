@@ -40,6 +40,8 @@ The pipeline SHALL NOT introduce a second parallel manifest artifact for the sam
 ### Requirement: Relative image-root fallback behavior is explicit and shared across eval/vis
 Inference-pipeline SHALL keep compatibility fallback behavior for relative image path resolution while making fallback activation explicit in logs.
 The resolved root behavior SHALL be shared consistently for evaluation and visualization consumers so they do not diverge in relative-path handling.
+For overlapping active deltas, detailed helper semantics are authoritative in `src-ambiguity-cleanup-2026-02-11`; this change MUST remain consistent with that contract.
+Root resolution precedence SHALL be explicit and deterministic: `ROOT_IMAGE_DIR` env override > config root (`run.root_image_dir`) > `infer.gt_jsonl` parent directory > none.
 The resolved image-root decision MUST be recorded in `resolved_config.json` with at least `root_image_dir` and `root_image_dir_source` (`env`, `gt_parent`, `config`, or `none`).
 This requirement MUST preserve existing downstream contract compatibility for eval/vis flows.
 
@@ -50,3 +52,20 @@ This requirement MUST preserve existing downstream contract compatibility for ev
 - **AND** both evaluation and visualization resolve image paths under the same root-resolution contract
 - **AND** `resolved_config.json` records both the chosen `root_image_dir` and its `root_image_dir_source`
 - **AND** stage outputs preserve unchanged artifact semantics.
+
+### Requirement: `resolved_config.json` stable keys are explicit and `cfg` snapshot is opaque
+Within `schema_version` major `1`, the stable top-level contract key set SHALL be:
+- `schema_version`,
+- `config_path`,
+- `root_image_dir`,
+- `root_image_dir_source`,
+- `stages`,
+- `artifacts`.
+
+The redacted `cfg` snapshot MAY be persisted for diagnostics, but SHALL be treated as opaque/non-contract by downstream consumers.
+
+#### Scenario: Downstream readers validate only stable manifest keys
+- **GIVEN** a `resolved_config.json` containing both stable keys and a large redacted `cfg` snapshot
+- **WHEN** a downstream consumer validates compatibility
+- **THEN** compatibility decisions are based on stable keys and schema version
+- **AND** changes inside `cfg` do not break the manifest contract.

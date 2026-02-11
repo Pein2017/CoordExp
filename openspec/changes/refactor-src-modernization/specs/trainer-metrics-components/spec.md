@@ -75,3 +75,16 @@ Any legacy or trainer-side module paths MAY re-export the contract types/helpers
 - **GIVEN** a consumer imports the payload contract from either canonical or legacy module path
 - **WHEN** payloads are validated/built
 - **THEN** the same implementation is used in both cases (re-export), preserving consistent validation semantics.
+
+### Requirement: Metrics ownership remains authoritative across overlapping deltas
+Within active changes, this capability SHALL be authoritative for trainer-metrics ownership boundaries:
+- canonical implementations live under `src/metrics/*`,
+- `src/trainers/metrics/*` remains compatibility-shim surface only.
+
+Other active deltas MUST NOT redefine a conflicting canonical home for metrics helper implementations.
+
+#### Scenario: Overlapping change references keep canonical ownership consistent
+- **GIVEN** another active change touches trainer-metrics helper imports
+- **WHEN** OpenSpec artifacts are reviewed together
+- **THEN** canonical ownership remains `src/metrics/*`
+- **AND** trainer-side paths are treated as shim/re-export paths only.
