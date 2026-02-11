@@ -1,7 +1,7 @@
 import pytest
 
 from src.datasets.builders.jsonlines import JSONLinesBuilder
-from src.datasets.utils import extract_geometry, extract_object_points
+from src.datasets.utils import extract_geometry, extract_object_points, sort_objects_by_topleft
 
 
 def _builder() -> JSONLinesBuilder:
@@ -87,3 +87,29 @@ def test_jsonlines_builder_rejects_empty_desc():
     record = _record_with_objects([{"desc": "   ", "bbox_2d": [1, 2, 3, 4]}])
     with pytest.raises(ValueError, match="empty 'desc'"):
         builder.build_many([record])
+
+
+def test_sort_objects_by_topleft_supports_coord_tokens() -> None:
+    objects = [
+        {
+            "desc": "b",
+            "bbox_2d": [
+                "<|coord_10|>",
+                "<|coord_20|>",
+                "<|coord_30|>",
+                "<|coord_40|>",
+            ],
+        },
+        {
+            "desc": "a",
+            "bbox_2d": [
+                "<|coord_0|>",
+                "<|coord_0|>",
+                "<|coord_1|>",
+                "<|coord_1|>",
+            ],
+        },
+    ]
+
+    sorted_objects = sort_objects_by_topleft(objects)
+    assert [o["desc"] for o in sorted_objects] == ["a", "b"]

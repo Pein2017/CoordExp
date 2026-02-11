@@ -5,6 +5,7 @@ Exports shared parsing utilities and detection evaluator entrypoints.
 """
 
 from .detection import EvalOptions, evaluate_and_save, evaluate_detection
+from src.common.geometry.coord_utils import COORD_TOKEN_RE
 from .parsing import (
     GEOM_KEYS,
     MAX_BIN,

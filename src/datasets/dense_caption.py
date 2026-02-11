@@ -221,30 +221,10 @@ class BaseCaptionDataset(Dataset):
             coord_tokens_enabled=self.coord_tokens.enabled,
         )
 
-    def __getitem__(self, index: int) -> Dict[str, Any]:
-        if not self.base_records:
-            raise IndexError("BaseCaptionDataset is empty")
 
-        base_idx = self._index_perm[index % len(self._index_perm)]
-        record = copy.deepcopy(self.base_records[base_idx])
-
-        worker = get_worker_info()
-        seed_local = self._rng.randrange(0, 2**32 - 1)
-        if worker is not None:
-            seed_local ^= ((worker.id + 1) * 0xC2B2AE35) & 0xFFFFFFFF
-        rng_local = random.Random(seed_local & 0xFFFFFFFF)
-
-        if self.preprocessor is not None:
-            if hasattr(self.preprocessor, "rng"):
-                self.preprocessor.rng = rng_local
-            processed = self.preprocessor(record)
-            if processed is None:
-                raise ValueError(
-                    "Preprocessor removed the record; dataset does not duplicate samples"
-                )
-            record = processed
-
-        # Apply ordering or randomization of objects for ablations
+    def _apply_object_ordering(
+        self, record: Dict[str, Any], rng_local: random.Random
+    ) -> None:
         objects_list = record.get("objects") or []
         if isinstance(objects_list, list) and objects_list:
             if self.object_ordering == "sorted":
@@ -254,18 +234,18 @@ class BaseCaptionDataset(Dataset):
                 rng_local.shuffle(objs_copy)
                 record["objects"] = objs_copy
 
+    def _maybe_annotate_coord_tokens(self, record: Dict[str, Any]) -> None:
         if self.coord_tokens.enabled:
             annotate_coord_tokens(record)
 
-        mode = self.mode
-        builder = self._create_builder(mode)
+    def _encode_record(
+        self,
+        *,
+        record: Dict[str, Any],
+        builder: JSONLinesBuilder,
+        system_prompt: Optional[str],
+    ) -> Dict[str, Any]:
         merged = builder.build_many([record])
-
-        system_prompt = None
-        if mode == "summary" and self.system_prompt_summary:
-            system_prompt = self.system_prompt_summary
-        elif mode == "dense" and self.system_prompt_dense:
-            system_prompt = self.system_prompt_dense
 
         conversation_messages = copy.deepcopy(merged.get("messages", []) or [])
         if system_prompt is not None:
@@ -290,6 +270,54 @@ class BaseCaptionDataset(Dataset):
                     self.template.system = original_system
                 except Exception:
                     pass
+
+        encoded["messages"] = conversation_messages
+        for key in ("assistant_payload", "objects", "metadata"):
+            if key in merged:
+                encoded[key] = copy.deepcopy(merged[key])
+
+        return encoded
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        if not self.base_records:
+            raise IndexError("BaseCaptionDataset is empty")
+
+        base_idx = self._index_perm[index % len(self._index_perm)]
+        record = copy.deepcopy(self.base_records[base_idx])
+
+        worker = get_worker_info()
+        seed_local = self._rng.randrange(0, 2**32 - 1)
+        if worker is not None:
+            seed_local ^= ((worker.id + 1) * 0xC2B2AE35) & 0xFFFFFFFF
+        rng_local = random.Random(seed_local & 0xFFFFFFFF)
+
+        if self.preprocessor is not None:
+            if hasattr(self.preprocessor, "rng"):
+                self.preprocessor.rng = rng_local
+            processed = self.preprocessor(record)
+            if processed is None:
+                raise ValueError(
+                    "Preprocessor removed the record; dataset does not duplicate samples"
+                )
+            record = processed
+
+        self._apply_object_ordering(record, rng_local)
+        self._maybe_annotate_coord_tokens(record)
+
+        mode = self.mode
+        builder = self._create_builder(mode)
+
+        system_prompt = None
+        if mode == "summary" and self.system_prompt_summary:
+            system_prompt = self.system_prompt_summary
+        elif mode == "dense" and self.system_prompt_dense:
+            system_prompt = self.system_prompt_dense
+
+        encoded = self._encode_record(
+            record=record,
+            builder=builder,
+            system_prompt=system_prompt,
+        )
 
         # Track last-sample debug info for OOM/root-cause tracing
         try:
@@ -323,12 +351,6 @@ class BaseCaptionDataset(Dataset):
         except Exception:
             # Best-effort; do not block training
             pass
-
-        # Attach the original conversation so RLHF/GKD trainers can re-encode.
-        encoded["messages"] = conversation_messages
-        for key in ("assistant_payload", "objects", "metadata"):
-            if key in merged:
-                encoded[key] = copy.deepcopy(merged[key])
 
         return encoded
 

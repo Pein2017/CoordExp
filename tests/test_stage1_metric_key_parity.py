@@ -156,11 +156,33 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
         model=None, inputs=inputs, return_outputs=False, num_items_in_batch=1
     )
 
-    emitted = set(trainer.custom_metrics["train"].keys())
+    emitted_train = set(trainer.custom_metrics["train"].keys())
 
     # No per-dataset buckets in Stage-1 metrics.
-    assert all("lvis" not in k and "coco" not in k for k in emitted)
+    assert all("lvis" not in k and "coco" not in k for k in emitted_train)
 
     # Parity check: emitted keys should be documented (feature-conditional keys are fine).
-    missing = sorted(k for k in emitted if k not in doc_keys)
+    missing = sorted(k for k in emitted_train if k not in doc_keys)
     assert not missing, f"Found undocumented metric keys: {missing}"
+
+    # Eval bucket should use the same keys; ms-swift is responsible for the `eval_` prefix
+    # during logging.
+    trainer.model.training = False
+
+    # compute_loss mutates/pops batch-extras from `inputs`; use a fresh payload for eval.
+    if packed:
+        inputs_eval = _make_toy_batch(
+            bsz=1, with_token_types=with_token_types, pack_num_samples=torch.tensor([3])
+        )
+    else:
+        inputs_eval = _make_toy_batch(
+            bsz=2,
+            with_token_types=with_token_types,
+            pack_num_samples=torch.tensor([1, 1]),
+        )
+
+    _ = trainer.compute_loss(
+        model=None, inputs=inputs_eval, return_outputs=False, num_items_in_batch=1
+    )
+    emitted_eval = set(trainer.custom_metrics["eval"].keys())
+    assert emitted_eval == emitted_train

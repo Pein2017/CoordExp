@@ -50,6 +50,7 @@ except Exception:
 from src.common.geometry import (
     bbox_from_points,
     bbox_to_quadrilateral,
+    coerce_point_list,
     denorm_and_clamp,
     is_degenerate_bbox,
 )
@@ -69,6 +70,21 @@ def test_bbox_to_quad():
     bbox = [0.0, 0.0, 10.0, 20.0]
     quad = bbox_to_quadrilateral(bbox)
     assert quad == [0.0, 0.0, 10.0, 0.0, 10.0, 20.0, 0.0, 20.0]
+
+
+def test_coerce_point_list_preserves_order_and_token_flag() -> None:
+    pts = ["<|coord_4|>", "<|coord_3|>", "<|coord_2|>", "<|coord_1|>"]
+    numeric, had_tokens = coerce_point_list(pts)
+    assert had_tokens is True
+    assert numeric == [4.0, 3.0, 2.0, 1.0]
+
+    numeric2, had_tokens2 = coerce_point_list([4, 3, 2, 1])
+    assert had_tokens2 is False
+    assert numeric2 == [4.0, 3.0, 2.0, 1.0]
+
+    numeric3, had_tokens3 = coerce_point_list(["<|coord_1|>"])
+    assert numeric3 is None
+    assert had_tokens3 is False
 
 
 def test_degenerate_bbox_flagged():
@@ -123,7 +139,7 @@ def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):
     gt_path.write_text(json.dumps(gt_record) + "\n", encoding="utf-8")
     pred_path.write_text(json.dumps(pred_record) + "\n", encoding="utf-8")
 
-    options = EvalOptions(output_dir=tmp_path, use_segm=False)
+    options = EvalOptions(output_dir=tmp_path, use_segm=False, metrics="coco")
     summary = evaluate_detection(gt_path, pred_path, options=options)
     assert summary["counters"]["invalid_json"] == 0
     assert summary["counters"]["empty_pred"] == 0

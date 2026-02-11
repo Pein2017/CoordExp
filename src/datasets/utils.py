@@ -1,9 +1,8 @@
 """Shared utilities for dataset operations"""
 
-import json
-import re
 from typing import Any, Dict, List, Sequence, Tuple
 
+from src.common.geometry.coord_utils import coerce_point_list
 from src.common.io import load_jsonl  # re-export for backward compatibility
 
 
@@ -57,28 +56,10 @@ def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
     return "poly", points
 
 
-_TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
 
-
-def _coord_value_to_float(value: Any) -> float | None:
-    """Best-effort conversion of coord token or numeric to float."""
-    if isinstance(value, (int, float)):
-        try:
-            return float(value)
-        except Exception:
-            return None
-    if isinstance(value, str):
-        m = _TOKEN_RE.fullmatch(value.strip())
-        if m:
-            try:
-                return float(int(m.group(1)))
-            except Exception:
-                return None
-        try:
-            return float(value)
-        except Exception:
-            return None
-    return None
+def _points_to_floats(points: Sequence[Any]) -> List[float] | None:
+    numeric, _had_tokens = coerce_point_list(points)
+    return numeric
 
 
 def sort_objects_by_topleft(objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -88,26 +69,19 @@ def sort_objects_by_topleft(objects: List[Dict[str, Any]]) -> List[Dict[str, Any
         geom_type, points = extract_object_points(obj)
         if not points or not geom_type:
             return (float("inf"), float("inf"))
-        xs: List[float] = []
-        ys: List[float] = []
-        pts_iter = list(points)
-        if geom_type == "bbox_2d" and len(pts_iter) >= 4:
+
+        numeric = _points_to_floats(points)
+        if not numeric:
+            return (float("inf"), float("inf"))
+
+        if geom_type == "bbox_2d":
             # bbox ordering assumed [x1, y1, x2, y2]
-            x1 = _coord_value_to_float(pts_iter[0])
-            y1 = _coord_value_to_float(pts_iter[1])
-            if x1 is not None:
-                xs.append(x1)
-            if y1 is not None:
-                ys.append(y1)
-        else:
-            for i, v in enumerate(pts_iter):
-                val = _coord_value_to_float(v)
-                if val is None:
-                    continue
-                if i % 2 == 0:
-                    xs.append(val)
-                else:
-                    ys.append(val)
+            if len(numeric) < 2:
+                return (float("inf"), float("inf"))
+            return (numeric[1], numeric[0])
+
+        xs = numeric[0::2]
+        ys = numeric[1::2]
         if not xs or not ys:
             return (float("inf"), float("inf"))
         return (min(ys), min(xs))

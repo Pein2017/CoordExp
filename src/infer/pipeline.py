@@ -230,6 +230,76 @@ def redact_config(obj: Any) -> Any:
     return obj
 
 
+RESOLVED_CONFIG_SCHEMA_VERSION = 1
+
+
+def load_resolved_config(path: Path) -> Dict[str, Any]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("resolved_config.json must be a JSON object")
+
+    schema_version = raw.get("schema_version")
+    if not isinstance(schema_version, int):
+        raise ValueError("resolved_config.json schema_version must be an int")
+    if schema_version != RESOLVED_CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"Unsupported resolved_config.json schema_version={schema_version}; "
+            f"supported={RESOLVED_CONFIG_SCHEMA_VERSION}"
+        )
+
+    stages = raw.get("stages")
+    if not isinstance(stages, dict) or not {"infer", "eval", "vis"}.issubset(stages):
+        raise ValueError("resolved_config.json is missing required stages.infer/eval/vis")
+
+    artifacts = raw.get("artifacts")
+    if not isinstance(artifacts, dict) or "run_dir" not in artifacts:
+        raise ValueError("resolved_config.json is missing required artifacts")
+
+    root_source = raw.get("root_image_dir_source")
+    if root_source not in {"env", "config", "gt_parent", "none"}:
+        raise ValueError(
+            "resolved_config.json root_image_dir_source must be one of env|config|gt_parent|none"
+        )
+
+    return raw
+
+
+def resolve_root_image_dir_for_jsonl(jsonl_path: Path) -> Tuple[Optional[Path], str]:
+    root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
+    if root_env:
+        return Path(root_env).resolve(), "env"
+
+    resolved_path = jsonl_path.parent / "resolved_config.json"
+    if not resolved_path.exists():
+        return None, "none"
+
+    resolved = load_resolved_config(resolved_path)
+    root_cfg = resolved.get("root_image_dir")
+    root_source = resolved.get("root_image_dir_source")
+    if isinstance(root_cfg, str) and root_cfg.strip():
+        return Path(root_cfg).resolve(), str(root_source)
+
+    return None, "none"
+
+
+def _resolve_root_image_dir(cfg: Mapping[str, Any]) -> Tuple[Optional[str], str]:
+    root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
+    if root_env:
+        return str(Path(root_env).resolve()), "env"
+
+    run_cfg = _get_map(cfg, "run")
+    root_cfg = str(_get_str(run_cfg, "root_image_dir") or "").strip()
+    if root_cfg:
+        return str(Path(root_cfg).resolve()), "config"
+
+    infer_cfg = _get_map(cfg, "infer")
+    gt_jsonl = str(_get_str(infer_cfg, "gt_jsonl") or "").strip()
+    if gt_jsonl:
+        return str(Path(gt_jsonl).parent.resolve()), "gt_parent"
+
+    return None, "none"
+
+
 def run_pipeline(
     *,
     config_path: Path,
@@ -256,17 +326,18 @@ def run_pipeline(
     artifacts.eval_dir.mkdir(parents=True, exist_ok=True)
     artifacts.vis_dir.mkdir(parents=True, exist_ok=True)
 
-    # Default image root to the GT JSONL parent (consistent relative resolution).
-    infer_cfg = _get_map(cfg, "infer")
-    gt_jsonl = _get_str(infer_cfg, "gt_jsonl")
-    if not os.environ.get("ROOT_IMAGE_DIR") and gt_jsonl:
-        os.environ["ROOT_IMAGE_DIR"] = str(Path(gt_jsonl).parent.resolve())
+    root_image_dir, root_image_dir_source = _resolve_root_image_dir(cfg)
+    if root_image_dir is not None and root_image_dir_source in {"config", "gt_parent"}:
+        os.environ["ROOT_IMAGE_DIR"] = root_image_dir
 
     # Log resolved config (stdout logger + artifact).
     cfg_redacted = redact_config(cfg)
 
     resolved_dump = {
+        "schema_version": RESOLVED_CONFIG_SCHEMA_VERSION,
         "config_path": str(config_path),
+        "root_image_dir": root_image_dir,
+        "root_image_dir_source": root_image_dir_source,
         "stages": {
             "infer": stages.infer,
             "eval": stages.eval,

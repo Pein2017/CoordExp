@@ -20,7 +20,6 @@ from typing import Any, Literal, MutableMapping, Optional, cast
 from torch.utils.data import get_worker_info
 
 from src.config.schema import CoordTokensConfig
-from src.coord_tokens.validator import annotate_coord_tokens
 
 from ..config.prompts import USER_PROMPT_SUMMARY
 from .builders import JSONLinesBuilder
@@ -29,7 +28,7 @@ from .dense_caption import LAST_SAMPLE_DEBUG, BaseCaptionDataset
 from .fusion import FusionConfig
 from .fusion_types import FusionDatasetSpec
 from .preprocessors import AugmentationPreprocessor, ObjectCapPreprocessor
-from .utils import load_jsonl, sort_objects_by_topleft
+from .utils import load_jsonl
 
 
 @dataclass(frozen=True)
@@ -370,18 +369,8 @@ class FusionCaptionDataset(BaseCaptionDataset):
         else:
             objects_after = len(record.get("objects") or [])
 
-        # Apply ordering or randomization for ablations.
-        objects_list = record.get("objects") or []
-        if isinstance(objects_list, list) and objects_list:
-            if self.object_ordering == "sorted":
-                record["objects"] = sort_objects_by_topleft(objects_list)
-            elif self.object_ordering == "random":
-                objs_copy = list(objects_list)
-                rng_local.shuffle(objs_copy)
-                record["objects"] = objs_copy
-
-        if self.coord_tokens.enabled:
-            annotate_coord_tokens(record)
+        self._apply_object_ordering(record, rng_local)
+        self._maybe_annotate_coord_tokens(record)
 
         # Build conversation (dense-caption path).
         mode = self.mode
@@ -397,30 +386,11 @@ class FusionCaptionDataset(BaseCaptionDataset):
             json_format=self.json_format,
             coord_tokens_enabled=self.coord_tokens.enabled,
         )
-        merged = builder.build_many([record])
-        conversation_messages = copy.deepcopy(merged.get("messages", []) or [])
-        if system_prompt:
-            conversation_messages = [{"role": "system", "content": system_prompt}, *conversation_messages]
-
-        original_system = getattr(self.template, "system", None)
-        try:
-            if system_prompt:
-                try:
-                    self.template.system = system_prompt
-                except Exception:
-                    pass
-            encoded = self.template.encode(merged, return_length=True)
-        finally:
-            if system_prompt is not None and original_system is not None:
-                try:
-                    self.template.system = original_system
-                except Exception:
-                    pass
-
-        encoded["messages"] = conversation_messages
-        for key in ("assistant_payload", "objects", "metadata"):
-            if key in merged:
-                encoded[key] = copy.deepcopy(merged[key])
+        encoded = self._encode_record(
+            record=record,
+            builder=builder,
+            system_prompt=system_prompt or None,
+        )
 
         try:
             info = {

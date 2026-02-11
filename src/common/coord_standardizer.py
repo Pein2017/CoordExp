@@ -20,7 +20,7 @@ from src.common.geometry import (
     flatten_points,
     is_degenerate_bbox,
 )
-from src.eval.parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
+from src.common.prediction_parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
 
 GeomType = Literal["bbox_2d", "poly"]
 ModeType = Literal["coord", "text"]

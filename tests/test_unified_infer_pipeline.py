@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from src.infer.engine import detect_mode_from_gt
-from src.infer.pipeline import resolve_artifacts
+from src.infer.pipeline import load_resolved_config, resolve_artifacts, run_pipeline
 from src.infer.vis import render_vis_from_jsonl
 
 
@@ -108,6 +111,103 @@ def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:
     assert artifacts.summary_json == artifacts.run_dir / "summary.json"
     assert artifacts.eval_dir == artifacts.run_dir / "eval"
     assert artifacts.vis_dir == artifacts.run_dir / "vis"
+
+
+def test_load_resolved_config_rejects_bad_schema_version(tmp_path: Path) -> None:
+    path = tmp_path / "resolved_config.json"
+    path.write_text(json.dumps({"schema_version": "1"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="schema_version"):
+        load_resolved_config(path)
+
+    path.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported"):
+        load_resolved_config(path)
+
+
+def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    artifacts.gt_vs_pred_jsonl.write_text("", encoding="utf-8")
+
+    run_pipeline(config_path=config_path)
+
+    resolved_path = artifacts.run_dir / "resolved_config.json"
+    resolved = load_resolved_config(resolved_path)
+    assert resolved["schema_version"] == 1
+    assert resolved["root_image_dir_source"] == "gt_parent"
+    assert resolved["root_image_dir"] == str(gt_jsonl.parent.resolve())
+
+
+def test_pipeline_vis_stage_renders_using_resolved_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    img_path = data_dir / "img.png"
+    Image.new("RGB", (64, 64), color=(128, 128, 128)).save(img_path)
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": True},
+        "infer": {"gt_jsonl": str(data_dir / "gt.jsonl")},
+        "vis": {"limit": 1},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+
+    artifacts.gt_vs_pred_jsonl.write_text(
+        json.dumps(
+            {
+                "image": "img.png",
+                "width": 64,
+                "height": 64,
+                "mode": "text",
+                "coord_mode": "pixel",
+                "gt": [{"type": "bbox_2d", "points": [1, 1, 10, 10], "desc": "a", "score": 1.0}],
+                "pred": [{"type": "bbox_2d", "points": [2, 2, 11, 11], "desc": "a", "score": 1.0}],
+                "raw_output_json": {},
+                "raw_special_tokens": [],
+                "raw_ends_with_im_end": True,
+                "errors": [],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_pipeline(config_path=config_path)
+
+    assert (artifacts.vis_dir / "vis_0000.png").exists()
+
+    resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
+    assert resolved["root_image_dir"] == str(data_dir.resolve())
 
 
 def test_vis_only_renders_without_model(tmp_path: Path, monkeypatch) -> None:

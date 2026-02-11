@@ -20,16 +20,20 @@ from src.utils import get_logger
 logger = get_logger(__name__)
 
 
-def _resolve_image_path(jsonl_path: Path, image_field: Optional[str]) -> Optional[Path]:
+def _resolve_image_path(
+    jsonl_path: Path,
+    image_field: Optional[str],
+    *,
+    root_image_dir: Optional[Path],
+) -> Optional[Path]:
     if not image_field:
         return None
     p = Path(image_field)
     if p.is_absolute() and p.exists():
         return p
 
-    root = os.environ.get("ROOT_IMAGE_DIR")
-    if root:
-        cand = Path(root) / image_field
+    if root_image_dir is not None:
+        cand = root_image_dir / image_field
         if cand.exists():
             return cand
 
@@ -80,12 +84,28 @@ def _draw_objs(draw: ImageDraw.ImageDraw, objs: List[Dict[str, Any]], *, outline
 def render_vis_from_jsonl(jsonl_path: Path, *, out_dir: Path, limit: int = 20) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    from src.infer.pipeline import resolve_root_image_dir_for_jsonl
+
+    root_image_dir, root_source = resolve_root_image_dir_for_jsonl(jsonl_path)
+    if root_image_dir is not None:
+        logger.info(
+            "vis: resolved ROOT_IMAGE_DIR (source=%s): %s", root_source, root_image_dir
+        )
+    else:
+        logger.info(
+            "vis: ROOT_IMAGE_DIR not set; falling back to JSONL directory for image resolution"
+        )
+
     for idx, rec in enumerate(_iter_jsonl(jsonl_path)):
         if limit and idx >= limit:
             break
 
         image_field = rec.get("image")
-        img_path = _resolve_image_path(jsonl_path, image_field)
+        img_path = _resolve_image_path(
+            jsonl_path,
+            image_field,
+            root_image_dir=root_image_dir,
+        )
         if img_path is None:
             logger.warning("vis: missing image for record %d (%r)", idx, image_field)
             continue

@@ -33,7 +33,7 @@ from src.common.geometry import (
     flatten_points,
     is_degenerate_bbox,
 )
-from src.eval.parsing import GEOM_KEYS
+from src.common.prediction_parsing import GEOM_KEYS
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -313,20 +313,67 @@ def _build_semantic_desc_mapping(
 
 
 def load_jsonl(
-    path: Path, counters: EvalCounters | None = None
+    path: Path,
+    counters: EvalCounters | None = None,
+    *,
+    strict: bool = False,
+    max_snippet_len: int = 200,
 ) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
+    invalid_seen = 0
+
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+        for line_no, raw_line in enumerate(f, start=1):
+            line = raw_line.strip()
             if not line:
                 continue
+
             try:
-                records.append(json.loads(line))
-            except Exception:
+                parsed = json.loads(line)
+            except Exception as exc:  # noqa: BLE001
+                invalid_seen += 1
                 if counters is not None:
                     counters.invalid_json += 1
+
+                snippet = (
+                    line
+                    if len(line) <= max_snippet_len
+                    else (line[:max_snippet_len] + "...")
+                )
+                msg = f"Malformed JSONL at {path}:{line_no}: {snippet}"
+                if strict:
+                    raise ValueError(msg) from exc
+                if invalid_seen <= 5:
+                    logger.warning("%s", msg)
+                elif invalid_seen == 6:
+                    logger.warning(
+                        "Malformed JSONL: suppressing further warnings (showing first 5 only)"
+                    )
                 continue
+
+            if not isinstance(parsed, dict):
+                invalid_seen += 1
+                if counters is not None:
+                    counters.invalid_json += 1
+
+                snippet = (
+                    line
+                    if len(line) <= max_snippet_len
+                    else (line[:max_snippet_len] + "...")
+                )
+                msg = f"Non-object JSONL record at {path}:{line_no}: {snippet}"
+                if strict:
+                    raise ValueError(msg)
+                if invalid_seen <= 5:
+                    logger.warning("%s", msg)
+                elif invalid_seen == 6:
+                    logger.warning(
+                        "Malformed JSONL: suppressing further warnings (showing first 5 only)"
+                    )
+                continue
+
+            records.append(parsed)
+
     return records
 
 
@@ -1064,7 +1111,7 @@ def evaluate_detection(
     counters = EvalCounters()
     want_coco = str(options.metrics).lower() in {"coco", "both"}
     if pred_path is None:
-        pred_records = load_jsonl(gt_path, counters)
+        pred_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
         (
             gt_samples,
             pred_samples,
@@ -1075,8 +1122,8 @@ def evaluate_detection(
             _,
         ) = _prepare_all(pred_records, options, counters, prepare_coco=want_coco)
     else:
-        gt_records = load_jsonl(gt_path, counters)
-        pred_records = load_jsonl(pred_path, counters)
+        gt_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
+        pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
         (
             gt_samples,
             pred_samples,
@@ -1173,7 +1220,7 @@ def evaluate_and_save(
     metrics_mode = str(options.metrics).lower()
     want_coco = metrics_mode in {"coco", "both"}
     want_f1ish = metrics_mode in {"f1ish", "both"}
-    pred_records = load_jsonl(pred_path, counters)
+    pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
     (
         gt_samples,
         pred_samples,
@@ -1221,8 +1268,15 @@ def evaluate_and_save(
     )
 
     if options.overlay:
-        root_dir_env = os.environ.get("ROOT_IMAGE_DIR")
-        base_dir = Path(root_dir_env) if root_dir_env else pred_path.parent
+        from src.infer.pipeline import resolve_root_image_dir_for_jsonl
+
+        root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
+        base_dir = root_dir if root_dir is not None else pred_path.parent
+        if root_dir is not None:
+            logger.info(
+                "Overlay image root resolved (source=%s): %s", root_source, root_dir
+            )
+
         overlay_dir = options.output_dir / "overlays"
         _draw_overlays(
             gt_samples,

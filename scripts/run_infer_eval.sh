@@ -22,7 +22,7 @@ REPPEN="${REPPEN:-1.05}"
 SEED="${SEED:-}"
 
 # Evaluation defaults
-UNKNOWN_POLICY="${UNKNOWN_POLICY:-semantic}"  # bucket | drop | semantic
+EVAL_METRICS="${EVAL_METRICS:-both}"          # coco | f1ish | both
 STRICT_PARSE="${STRICT_PARSE:-0}"             # 1 to enable --strict-parse
 USE_SEGM="${USE_SEGM:-1}"                     # 0 to disable segmentation metrics
 IOU_THRS="${IOU_THRS:-}"
@@ -30,10 +30,10 @@ OVERLAY="${OVERLAY:-1}"                       # 1 to enable overlay rendering
 OVERLAY_K="${OVERLAY_K:-12}"
 NUM_WORKERS="${NUM_WORKERS:-0}"
 
-# Optional semantic desc matching (only used when UNKNOWN_POLICY=semantic)
+# Semantic desc matching is always on (map-or-drop). Legacy UNKNOWN_POLICY /
+# SEMANTIC_FALLBACK knobs are deprecated and ignored by the evaluator.
 SEMANTIC_MODEL="${SEMANTIC_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
 SEMANTIC_THRESHOLD="${SEMANTIC_THRESHOLD:-0.6}"
-SEMANTIC_FALLBACK="${SEMANTIC_FALLBACK:-bucket}"  # bucket | drop
 SEMANTIC_DEVICE="${SEMANTIC_DEVICE:-}"            # auto|cpu|cuda[:N]
 SEMANTIC_BATCH_SIZE="${SEMANTIC_BATCH_SIZE:-64}"
 
@@ -64,6 +64,7 @@ echo "  MODE:               $MODE"
 echo "  PRED_COORD_MODE:    $PRED_COORD_MODE"
 echo "  DEVICE:             $DEVICE"
 echo "  LIMIT:              $LIMIT"
+echo "  EVAL_METRICS:       $EVAL_METRICS"
 echo "  Eval out dir:       $EVAL_OUT_DIR"
 
 cd "$REPO_ROOT"
@@ -99,20 +100,14 @@ CMD_EVAL=(
   "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/evaluate_detection.py"
   --pred_jsonl "$PRED_JSONL"
   --out_dir "$EVAL_OUT_DIR"
-  --unknown-policy "$UNKNOWN_POLICY"
+  --metrics "$EVAL_METRICS"
   --overlay-k "$OVERLAY_K"
   --num-workers "$NUM_WORKERS"
+  --semantic-model "$SEMANTIC_MODEL"
+  --semantic-threshold "$SEMANTIC_THRESHOLD"
+  --semantic-device "$SEMANTIC_DEVICE"
+  --semantic-batch-size "$SEMANTIC_BATCH_SIZE"
 )
-
-if [[ "$UNKNOWN_POLICY" == "semantic" ]]; then
-  CMD_EVAL+=(
-    --semantic-model "$SEMANTIC_MODEL"
-    --semantic-threshold "$SEMANTIC_THRESHOLD"
-    --semantic-fallback "$SEMANTIC_FALLBACK"
-    --semantic-device "$SEMANTIC_DEVICE"
-    --semantic-batch-size "$SEMANTIC_BATCH_SIZE"
-  )
-fi
 
 if [[ "$STRICT_PARSE" =~ ^(1|true|yes)$ ]]; then
   CMD_EVAL+=(--strict-parse)

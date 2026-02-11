@@ -43,6 +43,34 @@ from src.coord_tokens.codec import (
 )
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 
+from .rollout_matching.contracts import (
+    GTObject,
+    GeomType,
+    MatchResult,
+    ParsedPredObject,
+    RolloutParseResult,
+)
+from .rollout_matching.matching import hungarian_match_maskiou
+from .rollout_matching.packing import (
+    AccumulationWindowLookahead as _AccumulationWindowLookahead,
+    DropRemainderAccumulationWindow as _DropRemainderAccumulationWindow,
+    RolloutMatchingPackWindow as _RolloutMatchingPackWindow,
+    WindowedMicroBatch as _WindowedMicroBatch,
+)
+from .rollout_matching.parsing import (
+    coerce_int as _coerce_int,
+    decode_pieces as _decode_pieces,
+    find_desc_value_char_spans as _find_desc_value_char_spans,
+    find_desc_value_token_positions as _find_desc_value_token_positions,
+    parse_rollout_for_matching,
+    points_from_coord_tokens as _points_from_coord_tokens,
+    serialize_append_fragment as _serialize_append_fragment,
+)
+from .rollout_matching.telemetry import (
+    PendingTrainRolloutLog as _PendingTrainRolloutLog,
+    slim_rollout_meta_for_logging as _slim_rollout_meta_for_logging,
+)
+
 logger = get_logger()
 
 
@@ -132,9 +160,6 @@ def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any
 
     sys_msg = {"role": "system", "content": str(system_prompt)}
     return [sys_msg, *messages_list]
-
-
-GeomType = Literal["bbox_2d", "poly"]
 
 
 _OBJECT_KEY_RE = re.compile(r"^object_(\d+)$")
@@ -302,781 +327,6 @@ class _ForceEosOnRepeatGuard:
         return scores
 
 
-@dataclass
-class ParsedPredObject:
-    key: str
-    index: int
-    desc: str
-    geom_type: GeomType
-    coord_token_indices: List[
-        int
-    ]  # indices into rollout response_token_ids (assistant-local)
-    value_span: Tuple[int, int]  # [char_start, char_end) span of the object value dict
-
-
-@dataclass
-class RolloutParseResult:
-    response_token_ids: List[int]  # stripped stop tokens, full rollout (assistant-local)
-    response_text: str
-    prefix_token_ids: List[int]  # suffix-trimmed prefix (assistant-local, append-ready)
-    prefix_text: str
-    max_object_index_in_prefix: Optional[int]
-    valid_objects: List[ParsedPredObject]
-    dropped_invalid: int
-    dropped_invalid_by_reason: Dict[str, int] = field(default_factory=dict)
-    dropped_ambiguous: int = 0
-    truncated: bool = False
-
-
-@dataclass
-class GTObject:
-    index: int
-    geom_type: GeomType
-    points_norm1000: List[int]  # bbox: [x1,y1,x2,y2]; poly: flat [x,y,...]
-    desc: str
-
-
-@dataclass
-class MatchResult:
-    matched_pairs: List[Tuple[int, int]]  # (pred_idx, gt_idx)
-    fn_gt_indices: List[int]
-    fp_pred_indices: List[int]
-    gating_rejections: int
-    # Sum/count over matched pairs (maskIoU in norm1000 space). Used for lightweight monitoring.
-    matched_maskiou_sum: float
-    matched_maskiou_count: int
-
-
-def _coerce_int(value: Any) -> Optional[int]:
-    try:
-        v = int(round(float(value)))
-    except Exception:
-        return None
-    if not value_in_coord_range(v):
-        return None
-    return v
-
-
-def _decode_pieces(tokenizer: Any, token_ids: Sequence[int]) -> List[str]:
-    # Token-level decode (no cleanup) to preserve exact token boundaries.
-    return [
-        tokenizer.decode(
-            [int(t)],
-            skip_special_tokens=False,
-            clean_up_tokenization_spaces=False,
-        )
-        for t in token_ids
-    ]
-
-
-def _build_prefix_from_char_cut(
-    *,
-    tokenizer: Any,
-    token_ids: Sequence[int],
-    pieces: Sequence[str],
-    token_start_chars: Sequence[int],
-    cut_char_pos: int,
-) -> List[int]:
-    if cut_char_pos <= 0:
-        return []
-    if cut_char_pos >= (token_start_chars[-1] + len(pieces[-1])):
-        return list(token_ids)
-
-    # Find token i such that token_start_chars[i] <= cut < token_start_chars[i+1]
-    lo = 0
-    hi = len(token_start_chars) - 1
-    while lo < hi:
-        mid = (lo + hi) // 2
-        start = token_start_chars[mid]
-        next_start = token_start_chars[mid + 1]
-        if start <= cut_char_pos < next_start:
-            lo = mid
-            break
-        if cut_char_pos < start:
-            hi = mid - 1
-        else:
-            lo = mid + 1
-    i = lo
-    start = token_start_chars[i]
-    offset = max(0, min(int(cut_char_pos - start), len(pieces[i])))
-
-    prefix = list(token_ids[:i])
-    if offset == 0:
-        return prefix
-    if offset == len(pieces[i]):
-        prefix.append(int(token_ids[i]))
-        return prefix
-
-    piece_prefix = pieces[i][:offset]
-    # Replace ONLY the final token with a shorter tokenization (allowed by spec).
-    new_tail = tokenizer.encode(piece_prefix, add_special_tokens=False)
-    decoded = tokenizer.decode(
-        new_tail, skip_special_tokens=False, clean_up_tokenization_spaces=False
-    )
-    if decoded != piece_prefix:
-        raise ValueError(
-            "Failed to retokenize a token-internal cut boundary. "
-            f"expected={piece_prefix!r} got={decoded!r}"
-        )
-    prefix.extend([int(t) for t in new_tail])
-    return prefix
-
-
-def _scan_rollout_tokens(
-    *,
-    tokenizer: Any,
-    response_token_ids: List[int],
-    coord_id_set: set[int],
-) -> Tuple[List[ParsedPredObject], Optional[int], int, bool, int]:
-    """Token-aligned rollout scanner.
-
-    Returns:
-      (objects_raw, max_object_index, first_open_brace_pos, truncated, last_object_end_pos)
-
-    Notes:
-    - Objects are returned in appearance order.
-    - Validation is performed later using the captured value_span.
-    """
-
-    pieces = _decode_pieces(tokenizer, response_token_ids)
-    token_start_chars: List[int] = []
-    cursor = 0
-    for p in pieces:
-        token_start_chars.append(cursor)
-        cursor += len(p)
-
-    brace_depth = 0
-    bracket_depth = 0
-    in_string = False
-    escape = False
-    expecting_key: Dict[int, bool] = {}
-
-    current_string: List[str] = []
-    last_key: Optional[str] = None
-
-    pending_object_key: Optional[Tuple[str, int]] = None
-    current_object: Optional[ParsedPredObject] = None
-    # Geometry capture state (per current_object)
-    capture_active = False
-    capture_target_depth: Optional[int] = None
-
-    objects: List[ParsedPredObject] = []
-    max_index: Optional[int] = None
-    first_open_brace_pos: int = -1
-    last_complete_object_end: int = -1
-
-    # Map from token index -> current capture_active state is handled by scanning
-    # per token; coord tokens do not contain structural characters, so the state at
-    # token-start is sufficient.
-
-    global_char_pos = 0
-    for tok_i, (tok_id, piece) in enumerate(zip(response_token_ids, pieces)):
-        # Coord-token capture happens at token granularity.
-        if (
-            capture_active
-            and int(tok_id) in coord_id_set
-            and current_object is not None
-        ):
-            current_object.coord_token_indices.append(int(tok_i))
-
-        for ch in piece:
-            if in_string:
-                if escape:
-                    escape = False
-                    current_string.append(ch)
-                elif ch == "\\":
-                    escape = True
-                    current_string.append(ch)
-                elif ch == '"':
-                    in_string = False
-                    s = "".join(current_string)
-                    current_string = []
-                    if expecting_key.get(brace_depth, False) and bracket_depth == 0:
-                        last_key = s
-                        if brace_depth == 1:
-                            m = _OBJECT_KEY_RE.match(s)
-                            if m:
-                                n = int(m.group(1))
-                                if max_index is None or n > max_index:
-                                    max_index = n
-                                pending_object_key = (s, n)
-                        # For brace_depth==2, last_key is used to arm geometry capture.
-                else:
-                    current_string.append(ch)
-                global_char_pos += 1
-                continue
-
-            # Not in string
-            if ch == '"':
-                in_string = True
-                escape = False
-                current_string = []
-                global_char_pos += 1
-                continue
-
-            if ch == "{":
-                brace_depth += 1
-                expecting_key[brace_depth] = True
-                if brace_depth == 1 and first_open_brace_pos < 0:
-                    first_open_brace_pos = global_char_pos + 1
-                elif brace_depth == 2:
-                    if pending_object_key is None:
-                        # Nested dict without an object key -> invalid; keep scanning.
-                        current_object = None
-                    else:
-                        key, n = pending_object_key
-                        pending_object_key = None
-                        current_object = ParsedPredObject(
-                            key=key,
-                            index=n,
-                            desc="",
-                            geom_type="bbox_2d",  # placeholder until validated
-                            coord_token_indices=[],
-                            value_span=(global_char_pos, -1),
-                        )
-                        objects.append(current_object)
-                        last_key = None
-                        capture_active = False
-                        capture_target_depth = None
-                elif brace_depth > 2:
-                    # Nested objects are unsupported in strict parsing.
-                    # Keep scanning to find stable boundaries, but we will drop later.
-                    pass
-                global_char_pos += 1
-                continue
-
-            if ch == "}":
-                if brace_depth == 2 and current_object is not None:
-                    # End of current object value dict.
-                    current_object.value_span = (
-                        current_object.value_span[0],
-                        global_char_pos + 1,
-                    )
-                    last_complete_object_end = global_char_pos + 1
-                    current_object = None
-                    last_key = None
-                    capture_active = False
-                    capture_target_depth = None
-                if brace_depth > 0:
-                    expecting_key.pop(brace_depth, None)
-                    brace_depth -= 1
-                global_char_pos += 1
-                continue
-
-            if ch == "[":
-                bracket_depth += 1
-                if (
-                    brace_depth == 2
-                    and current_object is not None
-                    and last_key in {"bbox_2d", "poly"}
-                    and bracket_depth >= 1
-                ):
-                    # Arm capture on first array after the geometry key.
-                    if capture_target_depth is None:
-                        capture_active = True
-                        capture_target_depth = bracket_depth - 1
-                global_char_pos += 1
-                continue
-
-            if ch == "]":
-                if bracket_depth > 0:
-                    bracket_depth -= 1
-                if capture_active and capture_target_depth is not None:
-                    if bracket_depth <= capture_target_depth:
-                        capture_active = False
-                        capture_target_depth = None
-                global_char_pos += 1
-                continue
-
-            if ch == ",":
-                if brace_depth >= 1 and bracket_depth == 0:
-                    expecting_key[brace_depth] = True
-                global_char_pos += 1
-                continue
-
-            if ch == ":":
-                if brace_depth >= 1 and bracket_depth == 0:
-                    expecting_key[brace_depth] = False
-                global_char_pos += 1
-                continue
-
-            global_char_pos += 1
-
-    truncated = False
-    if brace_depth != 0 or bracket_depth != 0 or in_string:
-        truncated = True
-
-    return objects, max_index, first_open_brace_pos, truncated, last_complete_object_end
-
-
-def _validate_objects_strict(
-    *,
-    tokenizer: Any,
-    response_text: str,
-    objects_raw: Sequence[ParsedPredObject],
-    prefix_char_end: int,
-) -> Tuple[List[ParsedPredObject], int, Dict[str, int]]:
-    """Strict validation: drop malformed objects (no repair).
-
-    Returns:
-      valid: objects that pass strict parsing/shape constraints
-      dropped: total count of dropped objects
-      dropped_by_reason: coarse reason buckets (diagnostics)
-    """
-
-    valid: List[ParsedPredObject] = []
-    dropped = 0
-    dropped_by_reason: Dict[str, int] = {}
-
-    def _drop(reason: str) -> None:
-        nonlocal dropped
-        dropped += 1
-        dropped_by_reason[str(reason)] = int(dropped_by_reason.get(str(reason), 0)) + 1
-
-    for obj in objects_raw:
-        start, end = obj.value_span
-        if end <= 0 or end > prefix_char_end:
-            _drop("key_invalid")
-            continue
-        snippet = response_text[start:end]
-        try:
-            parsed = json.loads(snippet)
-        except Exception:
-            _drop("key_invalid")
-            continue
-        if not isinstance(parsed, dict):
-            _drop("key_invalid")
-            continue
-
-        desc = parsed.get("desc")
-        if not isinstance(desc, str) or not desc.strip():
-            _drop("missing_desc")
-            continue
-
-        non_desc_keys = [k for k in parsed.keys() if k != "desc"]
-        if not non_desc_keys:
-            _drop("missing_geom")
-            continue
-
-        known_geom = {"bbox_2d", "poly"}
-        geom_keys = [k for k in non_desc_keys if k in known_geom]
-        extra_keys = [k for k in parsed.keys() if k not in {"desc", *known_geom}]
-
-        if len(geom_keys) == 0:
-            # Some kind of geometry was present but not recognized.
-            _drop("unknown_geom")
-            continue
-        if len(geom_keys) != 1:
-            _drop("key_invalid")
-            continue
-        if extra_keys:
-            _drop("key_invalid")
-            continue
-
-        geom_key = geom_keys[0]
-
-        # Geometry values must be coord tokens (strict; no ints in rollout-matching).
-        flat = flatten_points(parsed.get(geom_key))
-        if flat is None or len(flat) % 2 != 0:
-            _drop("wrong_arity")
-            continue
-        token_bins: List[int] = []
-        ok = True
-        for v in flat:
-            if not isinstance(v, str):
-                ok = False
-                break
-            try:
-                token_bins.append(int(token_to_int(str(v).strip())))
-            except Exception:
-                ok = False
-                break
-        if not ok:
-            _drop("non_coord_token")
-            continue
-
-        # Ensure we captured coord-token indices and they match geometry arity.
-        coord_idx = list(obj.coord_token_indices)
-        if geom_key == "bbox_2d":
-            if len(coord_idx) != 4 or len(token_bins) != 4:
-                _drop("wrong_arity")
-                continue
-            # Basic bbox sanity: must be in-range and canonical (x2>=x1, y2>=y1).
-            if any((t < 0) or (t > 999) for t in token_bins):
-                _drop("bbox_invalid")
-                continue
-            x1, y1, x2, y2 = token_bins
-            if x2 < x1 or y2 < y1:
-                _drop("bbox_invalid")
-                continue
-        else:  # poly
-            if (
-                len(coord_idx) < 6
-                or (len(coord_idx) % 2 != 0)
-                or len(token_bins) != len(coord_idx)
-            ):
-                _drop("wrong_arity")
-                continue
-
-        valid.append(
-            ParsedPredObject(
-                key=obj.key,
-                index=int(obj.index),
-                desc=str(desc).strip(),
-                geom_type=geom_key,  # type: ignore[assignment]
-                coord_token_indices=coord_idx,
-                value_span=obj.value_span,
-            )
-        )
-
-    return valid, dropped, dropped_by_reason
-
-
-def parse_rollout_for_matching(
-    *,
-    tokenizer: Any,
-    response_token_ids: List[int],
-) -> RolloutParseResult:
-    coord_token_ids = get_coord_token_ids(tokenizer)
-    coord_id_set = set(int(t) for t in coord_token_ids if int(t) >= 0)
-
-    # Decode full response text (token-aligned, no cleanup).
-    pieces = _decode_pieces(tokenizer, response_token_ids)
-    token_start_chars: List[int] = []
-    cursor = 0
-    for p in pieces:
-        token_start_chars.append(cursor)
-        cursor += len(p)
-    response_text = "".join(pieces)
-
-    # Treat <|im_end|> as a hard stop (common in current offline rollouts).
-    # This is suffix-only trimming; tokens before the cut remain unchanged, except for a
-    # possible token-internal cut on the final token.
-    stop_pos = response_text.find(_IM_END)
-    if stop_pos >= 0:
-        response_token_ids = _build_prefix_from_char_cut(
-            tokenizer=tokenizer,
-            token_ids=response_token_ids,
-            pieces=pieces,
-            token_start_chars=token_start_chars,
-            cut_char_pos=int(stop_pos),
-        )
-        pieces = _decode_pieces(tokenizer, response_token_ids)
-        token_start_chars = []
-        cursor = 0
-        for p in pieces:
-            token_start_chars.append(cursor)
-            cursor += len(p)
-        response_text = "".join(pieces)
-
-    objects_raw, _, first_open_brace_pos, truncated, last_obj_end = (
-        _scan_rollout_tokens(
-            tokenizer=tokenizer,
-            response_token_ids=response_token_ids,
-            coord_id_set=coord_id_set,
-        )
-    )
-
-    # If completely malformed (no top-level '{'), fall back to empty prefix so FN append can proceed.
-    if first_open_brace_pos < 0:
-        prefix_token_ids = [
-            int(t) for t in tokenizer.encode("{", add_special_tokens=False)
-        ]
-        prefix_text = tokenizer.decode(
-            prefix_token_ids,
-            skip_special_tokens=False,
-            clean_up_tokenization_spaces=False,
-        )
-        return RolloutParseResult(
-            response_token_ids=list(response_token_ids),
-            response_text=response_text,
-            prefix_token_ids=prefix_token_ids,
-            prefix_text=prefix_text,
-            max_object_index_in_prefix=None,
-            valid_objects=[],
-            dropped_invalid=0,
-            dropped_invalid_by_reason={},
-            dropped_ambiguous=0,
-            truncated=True,
-        )
-
-    # Determine a safe prefix cut: keep up to last complete object, or just "{".
-    if last_obj_end > 0:
-        cut_char = last_obj_end
-    elif first_open_brace_pos > 0:
-        cut_char = first_open_brace_pos
-    else:
-        cut_char = 0
-
-    prefix_token_ids = _build_prefix_from_char_cut(
-        tokenizer=tokenizer,
-        token_ids=response_token_ids,
-        pieces=pieces,
-        token_start_chars=token_start_chars,
-        cut_char_pos=cut_char,
-    )
-    prefix_text = tokenizer.decode(
-        prefix_token_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False
-    )
-
-    valid_objects, dropped_invalid, dropped_invalid_by_reason = _validate_objects_strict(
-        tokenizer=tokenizer,
-        response_text=response_text,
-        objects_raw=objects_raw,
-        prefix_char_end=cut_char,
-    )
-
-    # In this MVP implementation, coord-slot alignment ambiguity is treated as invalid.
-    dropped_ambiguous = 0
-
-    # Key allocation must reserve ids based on all retained object_N keys in prefix,
-    # including malformed/non-dict values that strict object validation drops.
-    _, max_in_prefix, _, _, _ = _scan_rollout_tokens(
-        tokenizer=tokenizer,
-        response_token_ids=prefix_token_ids,
-        coord_id_set=coord_id_set,
-    )
-    if max_in_prefix is not None:
-        max_in_prefix = int(max_in_prefix)
-
-    return RolloutParseResult(
-        response_token_ids=list(response_token_ids),
-        response_text=response_text,
-        prefix_token_ids=prefix_token_ids,
-        prefix_text=prefix_text,
-        max_object_index_in_prefix=max_in_prefix,
-        valid_objects=valid_objects,
-        dropped_invalid=int(dropped_invalid),
-        dropped_invalid_by_reason=dict(dropped_invalid_by_reason),
-        dropped_ambiguous=int(dropped_ambiguous),
-        truncated=bool(truncated),
-    )
-
-
-def _points_from_coord_tokens(
-    *,
-    response_token_ids: Sequence[int],
-    coord_token_indices: Sequence[int],
-    coord_id_to_bin: Mapping[int, int],
-) -> Optional[List[int]]:
-    out: List[int] = []
-    for idx in coord_token_indices:
-        if idx < 0 or idx >= len(response_token_ids):
-            return None
-        tok_id = int(response_token_ids[int(idx)])
-        bin_idx = coord_id_to_bin.get(tok_id)
-        if bin_idx is None:
-            return None
-        out.append(int(bin_idx))
-    return out
-
-
-def _bbox_xyxy_from_norm(
-    points: Sequence[int], kind: GeomType
-) -> Tuple[float, float, float, float]:
-    if kind == "bbox_2d":
-        if len(points) != 4:
-            return 0.0, 0.0, 0.0, 0.0
-        x1, y1, x2, y2 = [float(v) for v in points]
-        return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
-    x1, y1, x2, y2 = bbox_from_points([float(v) for v in points])
-    return float(x1), float(y1), float(x2), float(y2)
-
-
-def _bbox_iou_xyxy(
-    a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]
-) -> float:
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0.0:
-        return 0.0
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    union = area_a + area_b - inter
-    return float(inter / union) if union > 0.0 else 0.0
-
-
-def _mask_iou_norm1000(
-    *,
-    pred_kind: GeomType,
-    pred_points: Sequence[int],
-    gt_kind: GeomType,
-    gt_points: Sequence[int],
-    resolution: int,
-) -> float:
-    """maskIoU in norm1000 space on a virtual RxR canvas."""
-    r = int(resolution)
-    if r <= 0:
-        return 0.0
-
-    def _clamp01k(values: Sequence[int]) -> List[float]:
-        return [float(min(max(int(v), 0), 999)) for v in values]
-
-    def _project(values: Sequence[float]) -> List[float]:
-        # Project [0,999] -> [0,R-1] continuous coordinates.
-        # Mirror ints_to_pixels_norm1000: frac=v/999, then scale by (R-1).
-        denom = 999.0
-        scale = float(max(r - 1, 1)) / denom
-        return [float(v) * scale for v in values]
-
-    def _as_poly(kind: GeomType, pts: Sequence[int]) -> List[float]:
-        if kind == "bbox_2d":
-            if len(pts) != 4:
-                return []
-            x1, y1, x2, y2 = [float(v) for v in pts]
-            quad = bbox_to_quadrilateral(
-                [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
-            )
-            return [float(v) for v in quad]
-        return [float(v) for v in pts]
-
-    p_poly = _project(_clamp01k(_as_poly(pred_kind, pred_points)))
-    g_poly = _project(_clamp01k(_as_poly(gt_kind, gt_points)))
-    if len(p_poly) < 6 or len(g_poly) < 6:
-        return 0.0
-
-    try:
-        rle_p = maskUtils.frPyObjects([p_poly], r, r)
-        rle_g = maskUtils.frPyObjects([g_poly], r, r)
-        if isinstance(rle_p, list):
-            rle_p = maskUtils.merge(rle_p)
-        if isinstance(rle_g, list):
-            rle_g = maskUtils.merge(rle_g)
-        ious = maskUtils.iou([rle_p], [rle_g], [0])
-        return float(ious[0][0]) if getattr(ious, "size", 0) else 0.0
-    except Exception:
-        return 0.0
-
-
-def hungarian_match_maskiou(
-    *,
-    preds: Sequence[GTObject],
-    gts: Sequence[GTObject],
-    top_k: int,
-    gate_threshold: float,
-    mask_resolution: int,
-    fp_cost: float,
-    fn_cost: float,
-) -> MatchResult:
-    pred_n = len(preds)
-    gt_n = len(gts)
-    if pred_n == 0:
-        return MatchResult(
-            matched_pairs=[],
-            fn_gt_indices=list(range(gt_n)),
-            fp_pred_indices=[],
-            gating_rejections=0,
-            matched_maskiou_sum=0.0,
-            matched_maskiou_count=0,
-        )
-    if gt_n == 0:
-        return MatchResult(
-            matched_pairs=[],
-            fn_gt_indices=[],
-            fp_pred_indices=list(range(pred_n)),
-            gating_rejections=0,
-            matched_maskiou_sum=0.0,
-            matched_maskiou_count=0,
-        )
-
-    k = max(1, int(top_k))
-    gate = float(gate_threshold)
-    inf = 1e6
-
-    gt_boxes = [_bbox_xyxy_from_norm(gt.points_norm1000, gt.geom_type) for gt in gts]
-    pred_boxes = [
-        _bbox_xyxy_from_norm(pr.points_norm1000, pr.geom_type) for pr in preds
-    ]
-
-    # Candidate pruning per pred.
-    cand: List[List[int]] = []
-    for pb in pred_boxes:
-        ious = [(_bbox_iou_xyxy(pb, gb), j) for j, gb in enumerate(gt_boxes)]
-        ious.sort(key=lambda t: (-t[0], t[1]))
-        best = [j for _, j in ious[:k]]
-        if ious and ious[0][0] <= 0.0:
-            # Fallback: center distance.
-            pcx = 0.5 * (pb[0] + pb[2])
-            pcy = 0.5 * (pb[1] + pb[3])
-            dists = []
-            for j, gb in enumerate(gt_boxes):
-                gcx = 0.5 * (gb[0] + gb[2])
-                gcy = 0.5 * (gb[1] + gb[3])
-                d = (pcx - gcx) ** 2 + (pcy - gcy) ** 2
-                dists.append((float(d), j))
-            dists.sort(key=lambda t: (t[0], t[1]))
-            best = [j for _, j in dists[:k]]
-        cand.append(best)
-
-    gating_rejections = 0
-    cost_pg = np.full((pred_n, gt_n), inf, dtype=np.float64)
-    for i, pr in enumerate(preds):
-        for j in cand[i]:
-            iou = _mask_iou_norm1000(
-                pred_kind=pr.geom_type,
-                pred_points=pr.points_norm1000,
-                gt_kind=gts[j].geom_type,
-                gt_points=gts[j].points_norm1000,
-                resolution=mask_resolution,
-            )
-            if iou < gate:
-                gating_rejections += 1
-                continue
-            cost_pg[i, j] = 1.0 - float(iou)
-
-    # Dummy-augmented square matrix.
-    n = pred_n + gt_n
-    cost = np.full((n, n), 0.0, dtype=np.float64)
-    cost[:pred_n, :gt_n] = cost_pg
-    cost[:pred_n, gt_n:] = float(fp_cost)
-    cost[pred_n:, :gt_n] = float(fn_cost)
-    cost[pred_n:, gt_n:] = 0.0
-
-    row_ind, col_ind = linear_sum_assignment(cost)
-    assign = {int(r): int(c) for r, c in zip(row_ind, col_ind)}
-
-    matched_pairs: List[Tuple[int, int]] = []
-    matched_maskiou_sum = 0.0
-    matched_maskiou_count = 0
-    fp_preds: List[int] = []
-    matched_gt: set[int] = set()
-
-    for i in range(pred_n):
-        c = assign.get(i)
-        if c is None:
-            fp_preds.append(i)
-            continue
-        if c < gt_n and cost_pg[i, c] < inf * 0.5:
-            matched_pairs.append((i, c))
-            matched_gt.add(c)
-            # cost_pg is (1 - iou) for allowed candidates.
-            iou = 1.0 - float(cost_pg[i, c])
-            if iou < 0.0:
-                iou = 0.0
-            if iou > 1.0:
-                iou = 1.0
-            matched_maskiou_sum += float(iou)
-            matched_maskiou_count += 1
-        else:
-            fp_preds.append(i)
-
-    fn_gts = [j for j in range(gt_n) if j not in matched_gt]
-    return MatchResult(
-        matched_pairs=matched_pairs,
-        fn_gt_indices=fn_gts,
-        fp_pred_indices=fp_preds,
-        gating_rejections=int(gating_rejections),
-        matched_maskiou_sum=float(matched_maskiou_sum),
-        matched_maskiou_count=int(matched_maskiou_count),
-    )
-
 
 def _sinkhorn_barycentric_targets(
     *,
@@ -1181,200 +431,6 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
     objs.sort(key=lambda o: o.index)
     return objs
 
-
-def _serialize_append_fragment(
-    *,
-    fn_objects: Sequence[GTObject],
-    start_index: int,
-    prefix_text: str,
-) -> str:
-    tail = prefix_text.rstrip()
-    if not tail:
-        raise ValueError("empty rollout prefix is not append-ready")
-
-    last = tail[-1]
-    if last not in {"{", "}", ","}:
-        raise ValueError(f"rollout prefix is not append-ready; last_char={last!r}")
-
-    # Deterministically validate the retained prefix as an open top-level JSON object
-    # and detect whether it already contains at least one object entry.
-    def _prefix_has_object_entries(text: str) -> bool:
-        depth = 0
-        in_string = False
-        escape = False
-        expecting_key: Dict[int, bool] = {}
-        current_string: List[str] = []
-        saw_root_open = False
-        object_keys = 0
-
-        for ch in text:
-            if in_string:
-                if escape:
-                    escape = False
-                    current_string.append(ch)
-                elif ch == "\\":
-                    escape = True
-                    current_string.append(ch)
-                elif ch == '"':
-                    in_string = False
-                    s = "".join(current_string)
-                    current_string = []
-                    if expecting_key.get(depth, False) and depth == 1:
-                        if _OBJECT_KEY_RE.match(s):
-                            object_keys += 1
-                else:
-                    current_string.append(ch)
-                continue
-
-            if ch == '"':
-                in_string = True
-                escape = False
-                current_string = []
-                continue
-
-            if ch == "{":
-                depth += 1
-                expecting_key[depth] = True
-                if depth == 1:
-                    saw_root_open = True
-                continue
-
-            if ch == "}":
-                if depth > 0:
-                    expecting_key.pop(depth, None)
-                    depth -= 1
-                continue
-
-            if ch == ",":
-                if depth >= 1:
-                    expecting_key[depth] = True
-                continue
-
-            if ch == ":":
-                if depth >= 1:
-                    expecting_key[depth] = False
-                continue
-
-        if not saw_root_open:
-            raise ValueError("rollout prefix missing top-level '{'")
-        if depth != 1:
-            raise ValueError(
-                "rollout prefix must end with an open top-level object before FN append"
-            )
-        if in_string:
-            raise ValueError("rollout prefix ends inside a quoted string")
-
-        return bool(object_keys > 0)
-
-    has_entries = _prefix_has_object_entries(tail)
-
-    if not fn_objects:
-        if last == ",":
-            raise ValueError(
-                "rollout prefix ends with ',' but FN set is empty; invalid JSON"
-            )
-        return "}"
-
-    leading = ""
-    if has_entries and last != ",":
-        leading = ", "
-
-    entries: List[str] = []
-    n = int(start_index)
-    for obj in fn_objects:
-        payload: Dict[str, Any] = {"desc": obj.desc}
-        if obj.geom_type == "bbox_2d":
-            if len(obj.points_norm1000) != 4:
-                continue
-            payload["bbox_2d"] = [f"<|coord_{int(v)}|>" for v in obj.points_norm1000]
-        else:
-            pts = obj.points_norm1000
-            pairs = [
-                [f"<|coord_{int(pts[i])}|>", f"<|coord_{int(pts[i + 1])}|>"]
-                for i in range(0, len(pts), 2)
-            ]
-            payload["poly"] = pairs
-        entries.append(
-            f'"object_{n}": {json.dumps(payload, ensure_ascii=False, separators=(", ", ": "))}'
-        )
-        n += 1
-
-    return leading + ", ".join(entries) + "}"
-
-
-def _find_desc_value_char_spans(text: str) -> List[Tuple[int, int]]:
-    """Return [start,end) spans of the *value content* inside `"desc": "<VALUE>"`.
-
-    Stage_2 rollout-matching intentionally ignores desc value supervision to avoid
-    amplifying GT noise; this helper supports masking those tokens from CE.
-    """
-    spans: List[Tuple[int, int]] = []
-    i = 0
-    needle = '"desc"'
-    n = len(text)
-    while i < n:
-        k = text.find(needle, i)
-        if k < 0:
-            break
-        j = k + len(needle)
-        # Skip whitespace, then require ':'.
-        while j < n and text[j].isspace():
-            j += 1
-        if j >= n or text[j] != ":":
-            i = k + 1
-            continue
-        j += 1
-        while j < n and text[j].isspace():
-            j += 1
-        # Require opening quote of the string value.
-        if j >= n or text[j] != '"':
-            i = k + 1
-            continue
-        j += 1
-        start = j
-        esc = False
-        while j < n:
-            ch = text[j]
-            if esc:
-                esc = False
-                j += 1
-                continue
-            if ch == "\\":
-                esc = True
-                j += 1
-                continue
-            if ch == '"':
-                spans.append((start, j))
-                j += 1
-                break
-            j += 1
-        i = max(j, k + 1)
-    return spans
-
-
-def _find_desc_value_token_positions(
-    *, tokenizer: Any, token_ids: Sequence[int]
-) -> List[int]:
-    """Return token indices (0-based, relative to token_ids) overlapping desc-value spans."""
-    ids = [int(t) for t in token_ids]
-    pieces = _decode_pieces(tokenizer, ids)
-    token_start_chars: List[int] = []
-    cursor = 0
-    for p in pieces:
-        token_start_chars.append(cursor)
-        cursor += len(p)
-    text = "".join(pieces)
-    spans = _find_desc_value_char_spans(text)
-    if not spans:
-        return []
-    out: List[int] = []
-    for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
-        end = start + len(piece)
-        for s, e in spans:
-            if start < e and end > s:
-                out.append(int(ti))
-                break
-    return out
 
 
 def _coord_vocab_gate_loss(
@@ -1776,264 +832,6 @@ class _AdaptiveRawMicroBatchStacker:
 
     def __getattr__(self, name: str):
         return getattr(self.dataloader, name)
-
-
-class _RolloutMatchingPackWindow:
-    """Holds one accumulation window worth of raw micro-batches and cached prepared batches.
-
-    This enables window-aware scheduling (lookahead) without changing the Trainer's
-    micro-step interface: each yielded micro-batch is still a list, but carries a
-    pointer to the full window.
-    """
-
-    def __init__(self, *, raw_micro_batches: List[List[Any]]):
-        self.raw_micro_batches = raw_micro_batches
-        self._prepared_micro_batches: Optional[List[Dict[str, Any]]] = None
-
-    @property
-    def gas(self) -> int:
-        return int(len(self.raw_micro_batches))
-
-    def get_prepared(
-        self,
-        *,
-        idx: int,
-        build_all_prepared: Any,
-    ) -> Dict[str, Any]:
-        if self._prepared_micro_batches is None:
-            self._prepared_micro_batches = list(build_all_prepared())
-        if not isinstance(self._prepared_micro_batches, list):
-            raise ValueError("prepared window batches must be a list")
-        if idx < 0 or idx >= len(self._prepared_micro_batches):
-            raise IndexError("prepared window batch index out of range")
-        prepared = self._prepared_micro_batches[idx]
-        if not isinstance(prepared, dict):
-            raise ValueError("prepared batch must be a dict")
-        return prepared
-
-
-class _WindowedMicroBatch(list):
-    """List-like micro-batch carrying a reference to its full accumulation window."""
-
-    def __init__(self, raw: List[Any], *, window: _RolloutMatchingPackWindow, idx: int):
-        super().__init__(raw)
-        self.rm_window = window
-        self.rm_window_idx = int(idx)
-
-
-class _AccumulationWindowLookahead:
-    """Prefetch `gas` micro-batches so the trainer can schedule within the full window."""
-
-    def __init__(self, dataloader, *, gas: int):
-        self.dataloader = dataloader
-        self.gas = int(gas)
-
-    def __len__(self):
-        return len(self.dataloader)
-
-    def __iter__(self):
-        it = iter(self.dataloader)
-        while True:
-            raw_window: List[List[Any]] = []
-            try:
-                for _ in range(int(self.gas)):
-                    b = next(it)
-                    # Identity collator yields a list of raw samples.
-                    if not isinstance(b, list):
-                        raise ValueError(
-                            "window lookahead expects identity-collated train batches (list of raw samples)"
-                        )
-                    raw_window.append(b)
-            except StopIteration:
-                # Partial final window: yield whatever is left without window context.
-                for b in raw_window:
-                    yield b
-                break
-
-            window = _RolloutMatchingPackWindow(raw_micro_batches=raw_window)
-            for i, b in enumerate(raw_window):
-                yield _WindowedMicroBatch(b, window=window, idx=int(i))
-
-
-class _DropRemainderAccumulationWindow:
-    """Drop the final partial gradient-accumulation window.
-
-    HF/Swift will still perform an optimizer step on a partial accumulation window at
-    the end of an epoch. For stage_2 step-budgeted trainers we typically want fixed
-    raw-sample budgets per optimizer step, so when `training.dataloader_drop_last` is
-    enabled we truncate the train dataloader to a multiple of
-    `gradient_accumulation_steps`.
-
-    This is intentionally a lightweight wrapper that preserves epoch semantics by
-    dropping the remainder *per epoch*.
-    """
-
-    def __init__(self, dataloader, *, gas: int):
-        self.dataloader = dataloader
-        self.gas = max(1, int(gas))
-
-    def __len__(self) -> int:
-        inner_len = getattr(self.dataloader, "__len__", None)
-        if inner_len is None:
-            raise TypeError("wrapped dataloader has no __len__")
-        n = int(len(self.dataloader))
-        return int((n // int(self.gas)) * int(self.gas))
-
-    def __iter__(self):
-        n_keep = int(len(self))
-        for i, b in enumerate(self.dataloader):
-            if i >= n_keep:
-                break
-            yield b
-
-    def __getattr__(self, name: str):
-        return getattr(self.dataloader, name)
-
-
-
-def _slim_rollout_meta_for_logging(meta: Mapping[str, Any]) -> Dict[str, Any]:
-    """Drop large fields (e.g. token id lists) from rollout meta before buffering for logs.
-
-    Rollout-matching uses gradient accumulation; we want ONE log point per optimizer step.
-    We therefore buffer meta across micro-batches, but keep it lightweight.
-    """
-
-    def _as_int(x: Any, default: int = 0) -> int:
-        try:
-            return int(x)
-        except Exception:
-            return int(default)
-
-    def _as_float(x: Any, default: float = 0.0) -> float:
-        try:
-            return float(x)
-        except Exception:
-            return float(default)
-
-    out: Dict[str, Any] = {
-        "prompt_len": _as_int(meta.get("prompt_len", 0)),
-        "rollout_len": _as_int(meta.get("rollout_len", 0)),
-        "prefix_len": _as_int(meta.get("prefix_len", 0)),
-        "train_len": _as_int(meta.get("train_len", 0)),
-        "encoded_len": _as_int(meta.get("encoded_len", 0)),
-        "decode_mode": str(meta.get("decode_mode", "")),
-        "parse_dropped_invalid": _as_int(meta.get("parse_dropped_invalid", 0)),
-        "parse_dropped_ambiguous": _as_int(meta.get("parse_dropped_ambiguous", 0)),
-        "parse_truncated": bool(meta.get("parse_truncated", False)),
-        "valid_pred_objects": _as_int(meta.get("valid_pred_objects", 0)),
-        "matched_for_supervision": _as_int(meta.get("matched_for_supervision", 0)),
-        "matched_maskiou_sum": _as_float(meta.get("matched_maskiou_sum", 0.0)),
-        "matched_maskiou_count": _as_int(meta.get("matched_maskiou_count", 0)),
-        "gt_objects": _as_int(meta.get("gt_objects", 0)),
-        "fn_count": _as_int(meta.get("fn_count", 0)),
-        "gating_rejections": _as_int(meta.get("gating_rejections", 0)),
-        "excluded_from_supervision": _as_int(meta.get("excluded_from_supervision", 0)),
-        # For token masking diagnostics.
-        "prefix_coord_target_bins": list(meta.get("prefix_coord_target_bins") or []),
-        "tail_ignore_pos": list(meta.get("tail_ignore_pos") or []),
-        # Desc monitor fields (optional).
-        "desc_monitor_ran": bool(meta.get("desc_monitor_ran", False)),
-        "desc_pairs_total": _as_int(meta.get("desc_pairs_total", 0)),
-        "desc_exact_ok": _as_int(meta.get("desc_exact_ok", 0)),
-        "desc_sem_ok": _as_int(meta.get("desc_sem_ok", 0)),
-        "desc_sem_sim_sum": _as_float(meta.get("desc_sem_sim_sum", 0.0)),
-        "desc_sem_sim_count": _as_int(meta.get("desc_sem_sim_count", 0)),
-        "desc_sem_enabled": _as_int(meta.get("desc_sem_enabled", 0)),
-    }
-
-    return out
-
-
-@dataclass
-class _PendingTrainRolloutLog:
-    """Accumulate rollout-matching logs across micro-batches for ONE optimizer step."""
-
-    meta: List[Dict[str, Any]] = field(default_factory=list)
-
-    ce_loss_sum: float = 0.0
-    coord_loss_sum: float = 0.0
-    coord_prefix_sum: float = 0.0
-    coord_tail_sum: float = 0.0
-    n_micro: int = 0
-
-    time_forward_s: float = 0.0
-    time_mask_build_s: float = 0.0
-
-    # Rollout pipeline timings.
-    time_rollout_generate_s: float = 0.0
-    time_rollout_parse_match_s: float = 0.0
-    time_rollout_teacher_encode_s: float = 0.0
-
-    # Packing/collation timing.
-    time_post_rollout_pack_s: float = 0.0
-
-    # Packing stats (optional; only populated when packing is enabled).
-    packing_fill_sum: float = 0.0
-    packing_selected_total_len_sum: float = 0.0
-    packing_segments_sum: float = 0.0
-    packing_count: int = 0
-    packing_buffer_last: float = 0.0
-
-
-    def add_micro(
-        self,
-        *,
-        meta: List[Mapping[str, Any]],
-        ce_loss: float,
-        coord_loss: float,
-        coord_prefix: float,
-        coord_tail: float,
-        time_forward_s: float,
-        time_mask_build_s: float,
-        batch_metrics: Optional[Mapping[str, Any]],
-    ) -> None:
-        self.n_micro += 1
-        self.ce_loss_sum += float(ce_loss)
-        self.coord_loss_sum += float(coord_loss)
-        self.coord_prefix_sum += float(coord_prefix)
-        self.coord_tail_sum += float(coord_tail)
-        self.time_forward_s += float(time_forward_s)
-        self.time_mask_build_s += float(time_mask_build_s)
-
-        for m in meta:
-            if isinstance(m, Mapping):
-                self.meta.append(_slim_rollout_meta_for_logging(m))
-
-        if not isinstance(batch_metrics, Mapping):
-            return
-
-        # Timings.
-        self.time_rollout_generate_s += float(
-            batch_metrics.get("time/rollout_generate_s", 0.0) or 0.0
-        )
-        self.time_rollout_parse_match_s += float(
-            batch_metrics.get("time/rollout_parse_match_s", 0.0) or 0.0
-        )
-        self.time_rollout_teacher_encode_s += float(
-            batch_metrics.get("time/rollout_teacher_encode_s", 0.0) or 0.0
-        )
-        self.time_post_rollout_pack_s += float(
-            batch_metrics.get("time/post_rollout_pack_s", 0.0) or 0.0
-        )
-
-        # Packing stats.
-        if "packing/post_rollout_fill" in batch_metrics:
-            self.packing_fill_sum += float(
-                batch_metrics.get("packing/post_rollout_fill", 0.0) or 0.0
-            )
-            self.packing_selected_total_len_sum += float(
-                batch_metrics.get("packing/post_rollout_selected_total_len", 0.0) or 0.0
-            )
-            self.packing_segments_sum += float(
-                batch_metrics.get("packing/post_rollout_segments", 0.0) or 0.0
-            )
-            self.packing_buffer_last = float(
-                batch_metrics.get(
-                    "packing/post_rollout_buffer", self.packing_buffer_last
-                )
-                or self.packing_buffer_last
-            )
-            self.packing_count += 1
 
 
 
@@ -6311,14 +5109,32 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         payload: Dict[str, float] = {
             "rollout/parse_dropped_invalid": float(dropped_invalid_total),
-            "rollout/parse_obj_drop_frac": float(obj_drop_frac),
+            "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
+            "rollout/parse_truncated": float(trunc_samples),
             "rollout/parse_truncated_rate": float(trunc_rate),
+            "rollout/parse_obj_total": float(obj_total),
+            "rollout/parse_obj_valid_frac": float(obj_valid_frac),
+            "rollout/parse_obj_drop_frac": float(obj_drop_frac),
             "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
             "rollout/sample_any_match_rate": float(sample_any_match_rate),
+            "rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
+            "rollout/gating_rejections": float(gate_rejections_total),
             "rollout/gating_rejection_rate": float(gate_rejection_rate),
+            "rollout/valid_pred_objects": float(pred_total),
+            "rollout/gt_objects": float(gt_total),
+            # Backward-compat alias: this is recall (GT coverage).
+            "rollout/match_rate": float(recall),
             "rollout/precision": float(precision),
             "rollout/recall": float(recall),
             "rollout/f1": float(f1),
+            "rollout/fp": float(fp_total),
+            "rollout/fn": float(fn_total),
+            "rollout/gt_per_sample": float(gt_total / n_samples)
+            if n_samples > 0
+            else 0.0,
+            "rollout/pred_per_sample": float(pred_total / n_samples)
+            if n_samples > 0
+            else 0.0,
             "rollout/fp_per_sample": float(fp_total / n_samples)
             if n_samples > 0
             else 0.0,
@@ -6326,24 +5142,83 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if n_samples > 0
             else 0.0,
             "rollout/matched_maskiou_mean": float(matched_iou_mean),
+            "rollout/matched_maskiou_count": float(matched_iou_count),
+            "rollout/excluded_rate": float(excluded_rate),
+            "rollout/prefix_coord_targets_total": float(prefix_targets_total),
+            "rollout/prefix_coord_targets_per_matched": float(
+                prefix_targets_per_matched
+            ),
+            "rollout/tail_ignore_frac": float(tail_ignore_frac),
+            "rollout/prompt_len_mean": float(_mean(prompt_lens)),
+            "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
+            "rollout/prefix_len_mean": float(_mean(prefix_lens)),
             "rollout/rollout_len_mean": float(_mean(rollout_lens)),
             "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
-            "rollout/decode_non_beam_count": float(
+            "rollout/train_len_mean": float(_mean(train_lens)),
+            "rollout/train_len_p90": float(_p(train_lens, 90)),
+            "rollout/append_len_mean": float(_mean(append_lens)),
+            "rollout/append_len_p90": float(_p(append_lens, 90)),
+            "rollout/encoded_len_mean": float(_mean(encoded_lens)),
+            "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
+            "rollout/decode_greedy": float(
                 sum(1 for m in meta if m.get("decode_mode") == "greedy")
             ),
-            "rollout/decode_beam_count": float(
+            "rollout/decode_beam": float(
                 sum(1 for m in meta if m.get("decode_mode") == "beam")
             ),
+            "rollout/matched_for_supervision": float(matched_total),
+            "rollout/excluded_from_supervision": float(excluded_total),
         }
 
         try:
-            temperature, _top_p, _top_k = self._decoding_params()
+            temperature, top_p, top_k = self._decoding_params()
             do_sample = bool(float(temperature) > 0.0)
             payload["rollout/do_sample"] = float(1.0 if do_sample else 0.0)
             payload["rollout/temperature"] = float(temperature)
+            payload["rollout/top_p"] = float(top_p)
+            payload["rollout/top_k"] = float(top_k)
         except Exception:
             pass
 
+        # Desc monitor outputs (matched pairs only).
+        try:
+            if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
+                pairs_total = float(
+                    sum(int(m.get("desc_pairs_total", 0)) for m in meta)
+                )
+                exact_ok_total = float(
+                    sum(int(m.get("desc_exact_ok", 0)) for m in meta)
+                )
+                exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                payload["rollout/desc_pairs_total"] = float(pairs_total)
+                payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
+
+                sem_enabled_total = float(
+                    sum(int(m.get("desc_sem_enabled", 0)) for m in meta)
+                )
+                payload["rollout/desc_sem_enabled"] = float(
+                    1.0 if sem_enabled_total > 0 else 0.0
+                )
+                if sem_enabled_total > 0:
+                    sem_ok_total = float(
+                        sum(int(m.get("desc_sem_ok", 0)) for m in meta)
+                    )
+                    sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
+                    payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
+
+                    sim_sum_total = float(
+                        sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta)
+                    )
+                    sim_count_total = float(
+                        sum(int(m.get("desc_sem_sim_count", 0)) for m in meta)
+                    )
+                    if sim_count_total > 0:
+                        payload["rollout/desc_sem_sim_mean"] = float(
+                            sim_sum_total / sim_count_total
+                        )
+                        payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
+        except Exception:
+            pass
 
         return payload
 
@@ -6352,25 +5227,71 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     ) -> Dict[str, float]:
         payload = self._build_rollout_metrics_from_meta(pending.meta)
 
+        sample_total = float(len(pending.meta))
+        payload["train/samples_total"] = float(sample_total)
+        payload["train/micro_steps"] = float(pending.n_micro)
+        payload["train/samples_per_micro"] = (
+            float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
+        )
+
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
             payload["loss/coord"] = float(
                 pending.coord_loss_sum / float(pending.n_micro)
             )
+            payload["loss/coord_prefix"] = float(
+                pending.coord_prefix_sum / float(pending.n_micro)
+            )
+            payload["loss/coord_tail"] = float(
+                pending.coord_tail_sum / float(pending.n_micro)
+            )
+
+        payload["time/forward_s"] = float(pending.time_forward_s)
+        payload["time/mask_build_s"] = float(pending.time_mask_build_s)
 
         payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
         payload["time/rollout_parse_match_s"] = float(
             pending.time_rollout_parse_match_s
         )
+        payload["time/rollout_teacher_encode_s"] = float(
+            pending.time_rollout_teacher_encode_s
+        )
+        if pending.time_post_rollout_pack_s > 0:
+            payload["time/post_rollout_pack_s"] = float(
+                pending.time_post_rollout_pack_s
+            )
 
         if pending.packing_count > 0:
             payload["packing/post_rollout_fill"] = float(
                 pending.packing_fill_sum / float(pending.packing_count)
             )
+            payload["packing/post_rollout_selected_total_len"] = float(
+                pending.packing_selected_total_len_sum / float(pending.packing_count)
+            )
+            payload["packing/post_rollout_segments"] = float(
+                pending.packing_segments_sum / float(pending.packing_count)
+            )
+            payload["packing/post_rollout_buffer"] = float(pending.packing_buffer_last)
 
+
+        # Generation-length stats are only meaningful when we actually ran a rollout this step.
         if pending.time_rollout_generate_s > 0:
             rollout_lens = [int(m.get("rollout_len", 0)) for m in pending.meta]
+
+            def _p(xs: List[int], q: float) -> float:
+                if not xs:
+                    return 0.0
+                arr = np.asarray(xs, dtype=np.float64)
+                return float(np.percentile(arr, float(q)))
+
             new_tok_total = float(sum(int(x) for x in rollout_lens))
+            new_tok_mean = (
+                float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
+            )
+            payload["rollout/gen_new_tokens_total"] = float(new_tok_total)
+            payload["rollout/gen_new_tokens_mean"] = float(new_tok_mean)
+            payload["rollout/gen_new_tokens_p90"] = float(_p(rollout_lens, 90))
+            payload["rollout/gen_new_tokens_p99"] = float(_p(rollout_lens, 99))
             payload["rollout/gen_tokens_per_s"] = float(
                 (new_tok_total / float(pending.time_rollout_generate_s))
                 if pending.time_rollout_generate_s > 0

@@ -64,7 +64,7 @@ from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
-from src.eval.parsing import extract_special_tokens, load_prediction_dict
+from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.utils import get_logger
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -250,6 +250,8 @@ class InferenceEngine:
         self.processor: AutoProcessor | None = None
         self.model: Qwen3VLForConditionalGeneration | None = None
         self.vllm_llm: Any | None = None
+        self.attn_implementation_requested: Optional[str] = None
+        self.attn_implementation_selected: Optional[str] = None
 
     def _vllm_mode(self) -> str:
         mode_raw = (self.cfg.backend or {}).get("mode", "server")
@@ -411,12 +413,74 @@ class InferenceEngine:
             return
 
         self._seed()
-        self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            self.cfg.model_checkpoint,
-            torch_dtype=torch.bfloat16,
-            attn_implementation="flash_attention_2",
-        ).to(self.cfg.device)
-        self.model.eval()
+
+        attn_requested_raw = (self.cfg.backend or {}).get("attn_implementation")
+        attn_requested = str(attn_requested_raw or "").strip()
+        if not attn_requested or attn_requested.lower() == "auto":
+            device = str(self.cfg.device or "").lower()
+            if "cuda" in device and torch.cuda.is_available():
+                attn_requested = "flash_attention_2"
+            else:
+                attn_requested = "sdpa"
+
+        attn_requested = attn_requested.lower()
+        self.attn_implementation_requested = attn_requested
+
+        candidates: List[str] = []
+        for cand in [attn_requested, "flash_attention_2", "sdpa", "eager"]:
+            c = str(cand).strip().lower()
+            if c and c not in candidates:
+                candidates.append(c)
+
+        last_exc: Exception | None = None
+        errors: List[str] = []
+        for idx, cand in enumerate(candidates):
+            try:
+                model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    self.cfg.model_checkpoint,
+                    torch_dtype=torch.bfloat16,
+                    attn_implementation=cand,
+                )
+                self.model = model.to(self.cfg.device)
+                self.model.eval()
+                self.attn_implementation_selected = cand
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                errors.append(f"{cand}: {type(exc).__name__}: {exc}")
+                if idx == 0 and len(candidates) > 1:
+                    self.logger.warning(
+                        "HF attention backend '%s' unavailable; falling back. Error: %s",
+                        cand,
+                        exc,
+                    )
+
+                # Best-effort cleanup between attempts.
+                try:
+                    import gc
+
+                    gc.collect()
+                except Exception:
+                    pass
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+
+        if self.model is None:
+            raise RuntimeError(
+                "Failed to load HF model with any attention backend. "
+                f"candidates={candidates} errors={errors[:3]}"
+            ) from last_exc
+
+        if self.attn_implementation_selected != self.attn_implementation_requested:
+            self.logger.warning(
+                "HF attention backend fallback: requested=%s selected=%s",
+                self.attn_implementation_requested,
+                self.attn_implementation_selected,
+            )
+
         self.processor = AutoProcessor.from_pretrained(
             self.cfg.model_checkpoint, trust_remote_code=True
         )
@@ -1002,7 +1066,8 @@ class InferenceEngine:
                 unit="samples",
                 dynamic_ncols=True,
                 smoothing=0.1,
-                mininterval=1.0, {rate_fmt}]", 
+                mininterval=1.0,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
             ) as pbar,
         ):
             for line in fin:
@@ -1142,6 +1207,14 @@ class InferenceEngine:
         }
         if self.requested_mode == "auto":
             summary_payload["mode_resolution_reason"] = self.mode_reason
+
+        if backend == "hf":
+            summary_payload["backend"]["attn_implementation_requested"] = (
+                self.attn_implementation_requested
+            )
+            summary_payload["backend"]["attn_implementation_selected"] = (
+                self.attn_implementation_selected
+            )
 
         summary_path.write_text(
             json.dumps(summary_payload, ensure_ascii=False, indent=2),
