@@ -36,6 +36,11 @@ from swift.trainers.rlhf_trainer.utils import (
 from swift.utils import get_logger, unwrap_model_for_generation
 
 from src.common.geometry import bbox_from_points, bbox_to_quadrilateral, flatten_points
+from src.common.repeat_terminate import (
+    ForceEosOnRepeatBatchGuard,
+    encode_object_key_prefix,
+    parse_repeat_terminate_config,
+)
 from src.coord_tokens.codec import (
     get_coord_token_ids,
     token_to_int,
@@ -164,168 +169,6 @@ def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any
 
 _OBJECT_KEY_RE = re.compile(r"^object_(\d+)$")
 _IM_END = "<|im_end|>"
-
-
-class _ForceEosOnRepeatGuard:
-    """HF rollout-time guardrail: force EOS when generation becomes degenerate.
-
-    This is intentionally lightweight and batch-friendly:
-    - It does NOT stop the entire batch (which would harm other samples).
-    - Instead, it forces EOS for only the offending sequences by overriding logits.
-
-    Motivation:
-      Some rollouts can get stuck emitting repetitive garbage until `max_new_tokens`,
-      which makes stage_2 extremely slow and produces unusable supervision.
-    """
-
-    def __init__(
-        self,
-        *,
-        eos_token_id: int,
-        prompt_len: int,
-        min_new_tokens: int,
-        max_consecutive_token_repeats: int,
-        ngram_size: int,
-        ngram_repeats: int,
-        max_object_keys: Optional[int],
-        object_key_prefix_token_ids: Optional[List[int]],
-    ) -> None:
-        self.eos_token_id = int(eos_token_id)
-        self.prompt_len = int(prompt_len)
-        self.min_new_tokens = int(min_new_tokens)
-        self.max_consecutive_token_repeats = int(max_consecutive_token_repeats)
-        self.ngram_size = int(ngram_size)
-        self.ngram_repeats = int(ngram_repeats)
-        self.max_object_keys = (
-            int(max_object_keys) if max_object_keys is not None else None
-        )
-        self.object_key_prefix_token_ids = (
-            [int(x) for x in object_key_prefix_token_ids]
-            if isinstance(object_key_prefix_token_ids, list)
-            and object_key_prefix_token_ids
-            else None
-        )
-
-        # Lazily initialized per batch (batch size is only known at generation time).
-        self._processed_lens: Optional[List[int]] = None
-        self._obj_counts: Optional[List[int]] = None
-        self._obj_match_idx: Optional[List[int]] = None
-
-    def _init_state_if_needed(self, batch_size: int) -> None:
-        if self._processed_lens is not None and len(self._processed_lens) == batch_size:
-            return
-        self._processed_lens = [int(self.prompt_len) for _ in range(batch_size)]
-        self._obj_counts = [0 for _ in range(batch_size)]
-        self._obj_match_idx = [0 for _ in range(batch_size)]
-
-    def _update_object_key_counts(self, input_ids: torch.Tensor) -> None:
-        """Incrementally count '"object_' occurrences in the generated tail."""
-        if self.max_object_keys is None or not self.object_key_prefix_token_ids:
-            return
-        if (
-            self._processed_lens is None
-            or self._obj_counts is None
-            or self._obj_match_idx is None
-        ):
-            return
-
-        pat = self.object_key_prefix_token_ids
-        bs = int(input_ids.shape[0])
-        cur_len = int(input_ids.shape[1])
-
-        for i in range(bs):
-            start = int(self._processed_lens[i])
-            if start < self.prompt_len:
-                start = int(self.prompt_len)
-            if start >= cur_len:
-                continue
-
-            match = int(self._obj_match_idx[i])
-            count = int(self._obj_counts[i])
-            # Usually only 0..1 tokens per call, but keep it general.
-            for pos in range(start, cur_len):
-                tid = int(input_ids[i, pos].item())
-                if tid == pat[match]:
-                    match += 1
-                    if match >= len(pat):
-                        count += 1
-                        match = 0
-                else:
-                    match = 1 if tid == pat[0] else 0
-
-            self._obj_match_idx[i] = match
-            self._obj_counts[i] = count
-            self._processed_lens[i] = cur_len
-
-    def _should_force_eos_for_seq(self, seq: torch.Tensor, *, obj_count: int) -> bool:
-        gen_len = int(seq.numel()) - int(self.prompt_len)
-        if gen_len < int(self.min_new_tokens):
-            return False
-
-        # 1) Hard cap on the number of '"object_' keys (prevents runaway object spam).
-        if self.max_object_keys is not None and int(obj_count) >= int(
-            self.max_object_keys
-        ):
-            return True
-
-        # 2) Trivial single-token loops (e.g. repeating the same token forever).
-        if int(self.max_consecutive_token_repeats) > 0 and seq.numel() > 0:
-            last = int(seq[-1].item())
-            run = 1
-            # Bound the scan to avoid O(L) work.
-            limit = min(int(self.max_consecutive_token_repeats), int(seq.numel()))
-            for j in range(2, limit + 1):
-                if int(seq[-j].item()) != last:
-                    break
-                run += 1
-            if run >= int(self.max_consecutive_token_repeats):
-                return True
-
-        # 3) Detect consecutive repeated n-grams: (tail == prev == prev2 ...).
-        n = int(self.ngram_size)
-        reps = int(self.ngram_repeats)
-        if n > 0 and reps >= 2 and gen_len >= n * reps:
-            gen = seq[int(self.prompt_len) :]
-            if int(gen.numel()) >= n * reps:
-                tail = gen[-n:]
-                ok = True
-                for k in range(2, reps + 1):
-                    prev = gen[-k * n : -(k - 1) * n]
-                    if prev.numel() != tail.numel() or not torch.equal(prev, tail):
-                        ok = False
-                        break
-                if ok:
-                    return True
-
-        return False
-
-    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
-        # Signature matches transformers LogitsProcessor protocol.
-        if self.eos_token_id < 0:
-            return scores
-        if input_ids.ndim != 2 or scores.ndim != 2:
-            return scores
-        bs = int(input_ids.shape[0])
-        self._init_state_if_needed(bs)
-        self._update_object_key_counts(input_ids)
-
-        force = torch.zeros((bs,), dtype=torch.bool, device=scores.device)
-        obj_counts = self._obj_counts or [0 for _ in range(bs)]
-        for i in range(bs):
-            if self._should_force_eos_for_seq(
-                input_ids[i], obj_count=int(obj_counts[i])
-            ):
-                force[i] = True
-
-        if not bool(force.any().item()):
-            return scores
-
-        # Force EOS for the flagged sequences by overriding logits.
-        scores = scores.clone()
-        scores[force, :] = -float("inf")
-        scores[force, int(self.eos_token_id)] = 0.0
-        return scores
-
 
 
 def _sinkhorn_barycentric_targets(
@@ -2024,38 +1867,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         model_inputs.pop("position_ids", None)
         model_inputs.pop("text_position_ids", None)
         logits_processor = None
-        repeat_cfg_raw = self._cfg("repeat_terminate", None)
-        if isinstance(repeat_cfg_raw, Mapping) and bool(
-            repeat_cfg_raw.get("enabled", False)
-        ):
-            min_new_tokens = int(repeat_cfg_raw.get("min_new_tokens", 256) or 0)
-            max_consecutive = int(
-                repeat_cfg_raw.get("max_consecutive_token_repeats", 64) or 0
+        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
+        if repeat_cfg.enabled:
+            obj_prefix_ids = (
+                encode_object_key_prefix(tok)
+                if repeat_cfg.max_object_keys is not None
+                else None
             )
-            ngram_size = int(repeat_cfg_raw.get("ngram_size", 64) or 0)
-            ngram_repeats = int(repeat_cfg_raw.get("ngram_repeats", 2) or 2)
-            max_object_keys_raw = repeat_cfg_raw.get("max_object_keys")
-            max_object_keys = (
-                int(max_object_keys_raw) if max_object_keys_raw is not None else None
-            )
-
-            obj_prefix_ids = None
-            if max_object_keys is not None:
-                try:
-                    obj_prefix_ids = tok.encode('"object_', add_special_tokens=False)
-                except Exception:
-                    obj_prefix_ids = None
-
             eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
             if eos_id >= 0:
-                guard = _ForceEosOnRepeatGuard(
+                guard = ForceEosOnRepeatBatchGuard(
                     eos_token_id=eos_id,
                     prompt_len=prompt_len,
-                    min_new_tokens=min_new_tokens,
-                    max_consecutive_token_repeats=max_consecutive,
-                    ngram_size=ngram_size,
-                    ngram_repeats=ngram_repeats,
-                    max_object_keys=max_object_keys,
+                    cfg=repeat_cfg,
                     object_key_prefix_token_ids=obj_prefix_ids,
                 )
                 try:
@@ -3473,42 +3297,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             model_inputs.pop("text_position_ids", None)
 
             logits_processor = None
-            repeat_cfg_raw = self._cfg("repeat_terminate", None)
-            if isinstance(repeat_cfg_raw, Mapping) and bool(
-                repeat_cfg_raw.get("enabled", False)
-            ):
-                min_new_tokens = int(repeat_cfg_raw.get("min_new_tokens", 256) or 0)
-                max_consecutive = int(
-                    repeat_cfg_raw.get("max_consecutive_token_repeats", 64) or 0
-                )
-                ngram_size = int(repeat_cfg_raw.get("ngram_size", 64) or 0)
-                ngram_repeats = int(repeat_cfg_raw.get("ngram_repeats", 2) or 2)
-                max_object_keys_raw = repeat_cfg_raw.get("max_object_keys")
-                max_object_keys = (
-                    int(max_object_keys_raw)
-                    if max_object_keys_raw is not None
+            repeat_cfg = parse_repeat_terminate_config(
+                self._cfg("repeat_terminate", None)
+            )
+            if repeat_cfg.enabled:
+                obj_prefix_ids = (
+                    encode_object_key_prefix(tok)
+                    if repeat_cfg.max_object_keys is not None
                     else None
                 )
-
-                obj_prefix_ids = None
-                if max_object_keys is not None:
-                    try:
-                        obj_prefix_ids = tok.encode(
-                            '"object_', add_special_tokens=False
-                        )
-                    except Exception:
-                        obj_prefix_ids = None
-
                 eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
                 if eos_id >= 0:
-                    guard = _ForceEosOnRepeatGuard(
+                    guard = ForceEosOnRepeatBatchGuard(
                         eos_token_id=eos_id,
                         prompt_len=prompt_pad_len,
-                        min_new_tokens=min_new_tokens,
-                        max_consecutive_token_repeats=max_consecutive,
-                        ngram_size=ngram_size,
-                        ngram_repeats=ngram_repeats,
-                        max_object_keys=max_object_keys,
+                        cfg=repeat_cfg,
                         object_key_prefix_token_ids=obj_prefix_ids,
                     )
                     try:
@@ -3703,8 +3506,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "vLLM server rollout backend currently supports decode_mode=greedy only"
             )
 
+        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
+        repeat_signal_required = bool(repeat_cfg.enabled)
+
         n = int(len(samples))
         if n == 0:
+            setattr(self, "_last_rollout_repeat_terminate_triggers", [])
+            setattr(
+                self,
+                "_last_rollout_repeat_terminate_active",
+                int(1 if repeat_cfg.enabled else 0),
+            )
             return []
 
         # Sync weights to server only when fresh rollouts are requested.
@@ -3825,11 +3637,30 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         results: List[Optional[Tuple[List[int], str, str, List[int]]]] = [None] * len(
             infer_requests
         )
+        repeat_triggered_flags: List[int] = [0 for _ in range(len(infer_requests))]
 
-        def _parse_output(raw: Any) -> Tuple[List[int], str, List[int]]:
-            # Support both direct ChatCompletionResponse dicts and wrapped RolloutOutput dicts.
-            if isinstance(raw, dict) and isinstance(raw.get("response"), dict):
-                raw = raw.get("response")
+        def _parse_output(raw: Any) -> Tuple[List[int], str, List[int], int]:
+            triggered = 0
+            has_coordexp_signal = False
+
+            if isinstance(raw, dict):
+                coordexp = raw.get("coordexp")
+                if isinstance(coordexp, Mapping):
+                    has_coordexp_signal = True
+                    try:
+                        triggered = int(coordexp.get("repeat_terminate_triggered", 0) or 0)
+                    except Exception:
+                        triggered = 0
+
+                if isinstance(raw.get("response"), dict):
+                    raw = raw.get("response")
+
+            if repeat_signal_required and not has_coordexp_signal:
+                raise RuntimeError(
+                    "repeat_terminate.enabled=true but vLLM server output is missing "
+                    "coordexp.repeat_terminate_triggered. Ensure rollout server plugin injection is active."
+                )
+
             if not isinstance(raw, dict):
                 raise RuntimeError("vLLM server returned a non-dict output")
             if raw.get("object") == "error":
@@ -3860,7 +3691,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "vLLM server response missing token_ids; ensure request_config.return_details=true"
                 )
             token_ids = [int(t) for t in token_ids_raw]
-            return token_ids, text, prompt_ids
+            return token_ids, text, prompt_ids, int(1 if triggered else 0)
 
         def _infer_on_server(server_idx: int, start: int, end: int) -> None:
             if start >= end:
@@ -3935,8 +3766,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
 
             for j, raw_out in enumerate(data):
-                token_ids, text, prompt_ids = _parse_output(raw_out)
-                results[int(start + j)] = (token_ids, text, decode_mode, prompt_ids)
+                token_ids, text, prompt_ids, triggered = _parse_output(raw_out)
+                idx = int(start + j)
+                results[idx] = (token_ids, text, decode_mode, prompt_ids)
+                repeat_triggered_flags[idx] = int(triggered)
 
         # Parallelize across servers.
         from concurrent.futures import ThreadPoolExecutor
@@ -3965,6 +3798,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             outputs=out,
         )
 
+        setattr(
+            self,
+            "_last_rollout_repeat_terminate_triggers",
+            [int(1 if x else 0) for x in repeat_triggered_flags],
+        )
+        setattr(
+            self,
+            "_last_rollout_repeat_terminate_active",
+            int(1 if repeat_cfg.enabled else 0),
+        )
+
         return out
 
     @torch.no_grad()
@@ -3972,6 +3816,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         backend = self._rollout_backend()
+        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
 
         # vLLM backends receive raw OpenAI-style messages; ensure the resolved
         # system prompt is present so output formatting is stable.
@@ -4023,9 +3868,45 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 samples_for_rollout.append(s)
 
         if backend == "hf":
-            return self._rollout_many_hf(samples_for_rollout)
+            out = self._rollout_many_hf(samples_for_rollout)
+            setattr(
+                self,
+                "_last_rollout_repeat_terminate_triggers",
+                [0 for _ in range(len(out))],
+            )
+            setattr(
+                self,
+                "_last_rollout_repeat_terminate_active",
+                int(1 if repeat_cfg.enabled else 0),
+            )
+            return out
+
         if backend == "vllm":
-            return self._rollout_many_vllm(samples_for_rollout)
+            mode = self._vllm_mode()
+            out = self._rollout_many_vllm(samples_for_rollout)
+            if mode == "server":
+                flags_raw = getattr(self, "_last_rollout_repeat_terminate_triggers", None)
+                if (
+                    isinstance(flags_raw, list)
+                    and len(flags_raw) == len(out)
+                    and all(isinstance(x, (int, bool)) for x in flags_raw)
+                ):
+                    flags = [int(1 if x else 0) for x in flags_raw]
+                else:
+                    flags = [0 for _ in range(len(out))]
+                active = int(
+                    1
+                    if bool(getattr(self, "_last_rollout_repeat_terminate_active", 0))
+                    else 0
+                )
+            else:
+                flags = [0 for _ in range(len(out))]
+                active = int(1 if repeat_cfg.enabled else 0)
+
+            setattr(self, "_last_rollout_repeat_terminate_triggers", flags)
+            setattr(self, "_last_rollout_repeat_terminate_active", active)
+            return out
+
         raise AssertionError("unreachable")
 
     def _append_post_rollout_segments(

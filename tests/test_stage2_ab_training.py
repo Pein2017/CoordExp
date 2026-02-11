@@ -12,11 +12,12 @@ from src.trainers.rollout_matching_sft import (
 )
 from src.trainers.stage2_ab_training import (
     Stage2ABTrainingTrainer,
+    _PendingStage2Log,
     _bbox_smoothl1_ciou_loss,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
     _matched_prefix_structure_positions,
-    _stage2_ab_stop_neutral_tail_ignore_pos,
+    _stage2_ab_tail_closure_positions,
 )
 
 
@@ -321,6 +322,18 @@ def test_b_ratio_schedule_is_deterministic():
     got2 = [t._stage2_channel_for_step(i) for i in range(20)]
     assert got2.count("B") == 1
     assert got2[-1] == "B"
+
+
+def test_legacy_stop_neutral_key_is_rejected() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "channel_b": {
+            "stop_neutral": {"enabled": True},
+        },
+    }
+    with pytest.raises(ValueError, match="stop_neutral"):
+        _ = t._ab_channel_b_cfg()
 
 
 def test_expectation_decode_is_mean_not_argmax():
@@ -963,7 +976,7 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
     )
 
 
-def test_stop_neutral_masks_same_brace_used_for_fn_injection():
+def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
     tok = _DummyTokenizer()
 
     rollout_text = '{"object_7":{"desc":"p","bbox_2d":[0,0,1,1]}}'
@@ -989,7 +1002,7 @@ def test_stop_neutral_masks_same_brace_used_for_fn_injection():
     assistant_ids = list(tok.encode(assistant_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
-    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+    ignore_rel = _stage2_ab_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_ids + [im_end_id],
         prefix_len=int(len(parsed.prefix_token_ids)),
@@ -1002,17 +1015,17 @@ def test_stop_neutral_masks_same_brace_used_for_fn_injection():
     assert ignore_rel == [close_rel, len(tail_text)]
 
 
-def test_stop_neutral_brace_scan_ignores_braces_inside_quoted_desc():
+def test_tail_closure_positions_ignore_braces_inside_quoted_desc():
     tok = _DummyTokenizer()
 
-    # Include a literal '}' inside a quoted desc string; the stop-neutral parser must
+    # Include a literal '}' inside a quoted desc string; closure-marker parsing must
     # ignore it and select the brace that closes the *outermost* JSON object.
     json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a } b"}}'
     ids = list(tok.encode(json_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
     assistant_span_ids = ids + [im_end_id]
-    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+    ignore_rel = _stage2_ab_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_span_ids,
         prefix_len=0,
@@ -1021,23 +1034,57 @@ def test_stop_neutral_brace_scan_ignores_braces_inside_quoted_desc():
     assert ignore_rel == [len(json_text) - 1, len(json_text)]
 
 
-def test_stop_neutral_im_end_search_prefers_turn_end_after_json_close():
+def test_tail_closure_positions_prefer_turn_end_after_json_close():
     tok = _DummyTokenizer()
 
-    # Include a literal '<|im_end|>' substring inside a quoted desc string; the stop-neutral
-    # parser must select the *turn-end* token that occurs after the outermost JSON close brace.
+    # Include a literal '<|im_end|>' substring inside a quoted desc string; closure-marker
+    # parsing must select the *turn-end* token that occurs after the outermost JSON close brace.
     json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a <|im_end|> b"}}'
     ids = list(tok.encode(json_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
     assistant_span_ids = ids + [im_end_id]
-    ignore_rel = _stage2_ab_stop_neutral_tail_ignore_pos(
+    ignore_rel = _stage2_ab_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_span_ids,
         prefix_len=0,
     )
 
     assert ignore_rel == [len(json_text) - 1, len(json_text)]
+
+
+def test_pending_stage2_log_aggregates_closure_and_repeat_metrics() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "stage2/raw_rollouts": 3.0,
+            "stage2_ab/channel_b/closure_supervision/N_drop": 1.0,
+            "rollout/repeat_terminate_active": 0.0,
+            "rollout/repeat_terminate_triggered_sequences": 2.0,
+            "rollout/_parse_truncated_num": 1.0,
+            "rollout/_parse_truncated_den": 3.0,
+        }
+    )
+    pending.add(
+        {
+            "stage2/raw_rollouts": 7.0,
+            "stage2_ab/channel_b/closure_supervision/N_drop": 4.0,
+            "rollout/repeat_terminate_active": 1.0,
+            "rollout/repeat_terminate_triggered_sequences": 5.0,
+            "rollout/_parse_truncated_num": 4.0,
+            "rollout/_parse_truncated_den": 7.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["stage2/raw_rollouts"] == pytest.approx(10.0)
+    assert out["stage2_ab/channel_b/closure_supervision/N_drop"] == pytest.approx(5.0)
+    assert out["rollout/repeat_terminate_active"] == pytest.approx(1.0)
+    assert out["rollout/repeat_terminate_triggered_sequences"] == pytest.approx(7.0)
+    assert out["rollout/parse_truncated_rate"] == pytest.approx(0.5)
+    assert "rollout/_parse_truncated_num" not in out
+    assert "rollout/_parse_truncated_den" not in out
 
 
 def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():

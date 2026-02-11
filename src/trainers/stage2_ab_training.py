@@ -61,9 +61,23 @@ class _PendingStage2Log:
     def finalize(self) -> Dict[str, float]:
         if self.n_micro <= 0:
             return {}
+
         out: Dict[str, float] = {}
+        n_micro = float(self.n_micro)
         for k, v in self.sums.items():
-            # Average losses/ratios/booleans; keep counters as totals.
+            if k == "rollout/repeat_terminate_active":
+                out[k] = 1.0 if float(v) > 0.0 else 0.0
+                continue
+
+            if k in {
+                "rollout/repeat_terminate_triggered_sequences",
+                "rollout/parse_truncated",
+                "rollout/_parse_truncated_num",
+                "rollout/_parse_truncated_den",
+            }:
+                out[k] = float(v)
+                continue
+
             if (
                 k.startswith("loss/")
                 or k.startswith("stage2/channel_")
@@ -71,9 +85,29 @@ class _PendingStage2Log:
                 or k.startswith("stage2_ab/async/")
                 or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
-                out[k] = float(v) / float(self.n_micro)
+                out[k] = float(v) / n_micro
             else:
                 out[k] = float(v)
+
+        trunc_num = float(
+            self.sums.get(
+                "rollout/_parse_truncated_num",
+                self.sums.get("rollout/parse_truncated", 0.0),
+            )
+        )
+        trunc_den = float(
+            self.sums.get(
+                "rollout/_parse_truncated_den",
+                self.sums.get("stage2/raw_rollouts", 0.0),
+            )
+        )
+        out["rollout/parse_truncated_rate"] = (
+            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
+        )
+
+        out.pop("rollout/_parse_truncated_num", None)
+        out.pop("rollout/_parse_truncated_den", None)
+
         return out
 
 
@@ -264,23 +298,19 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
     return objs
 
 
-def _stage2_ab_stop_neutral_tail_ignore_pos(
+def _stage2_ab_tail_closure_positions(
     *,
     tokenizer: Any,
     assistant_span_ids: Sequence[int],
     prefix_len: int,
 ) -> List[int]:
-    """Stop-neutral CE masking (Channel-B).
+    """Return tail-relative positions of top-level `}` and `<|im_end|>`.
 
-    Returns token positions relative to the *tail* (i.e., after `prefix_len` tokens
-    inside the assistant span) that MUST be masked from CE so Channel-B does not
-    supervise stop/continue decisions.
+    Contract (normative): Stage-2 AB Channel-B keeps CE supervision on stop/closure
+    tokens, but closure-marker resolution must remain robust/deterministic for
+    validation and drop accounting.
 
-    Contract (normative): mask the token that closes the outermost assistant JSON
-    object (`}`) and the turn-end marker `<|im_end|>`.
-
-    Raises ValueError if the required markers cannot be located deterministically
-    when tail supervision exists.
+    Raises ValueError if markers cannot be located deterministically.
     """
 
     try:
@@ -296,7 +326,6 @@ def _stage2_ab_stop_neutral_tail_ignore_pos(
 
     tail_cap = max(0, int(len(span_ids)) - int(prefix_len_i))
     if tail_cap <= 0:
-        # No tail supervision; stop-neutral masking is irrelevant.
         return []
 
     pieces = decode_pieces(tokenizer, span_ids)
@@ -316,7 +345,6 @@ def _stage2_ab_stop_neutral_tail_ignore_pos(
             out.append(int(ti))
         return out
 
-    # Brace-stack parsing (ignore braces inside quoted strings).
     depth = 0
     in_string = False
     escape = False
@@ -350,15 +378,15 @@ def _stage2_ab_stop_neutral_tail_ignore_pos(
         head = text[:200]
         tail = text[-200:] if len(text) > 200 else text
         raise ValueError(
-            "stage2-ab stop-neutral masking could not locate the outermost JSON closing brace `}` "
-            f"in assistant span (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} saw_open={bool(saw_open)} "
+            "stage2-ab closure supervision could not locate the outermost JSON closing brace `}` "
+            f"(prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} saw_open={bool(saw_open)} "
             f"text_head={head!r} text_tail={tail!r})"
         )
 
     close_toks = _tok_indices_overlapping(int(close_char), int(close_char) + 1)
     if not close_toks:
         raise ValueError(
-            "stage2-ab stop-neutral masking could not map outermost `}` char position back to a token index "
+            "stage2-ab closure supervision could not map outermost `}` back to token indices "
             f"(close_char={int(close_char)} prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
         )
 
@@ -368,35 +396,36 @@ def _stage2_ab_stop_neutral_tail_ignore_pos(
         head = text[:200]
         tail = text[-200:] if len(text) > 200 else text
         raise ValueError(
-            "stage2-ab stop-neutral masking could not find `<|im_end|>` in assistant span; this violates the "
-            f"Stage-2 AB contract (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} "
+            "stage2-ab closure supervision could not locate `<|im_end|>` after outermost `}` "
+            f"(prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)} "
             f"text_head={head!r} text_tail={tail!r})"
         )
 
     im_toks = _tok_indices_overlapping(int(im_pos), int(im_pos) + int(len(marker)))
     if not im_toks:
         raise ValueError(
-            "stage2-ab stop-neutral masking could not map `<|im_end|>` span back to token indices "
+            "stage2-ab closure supervision could not map `<|im_end|>` span to token indices "
             f"(im_pos={int(im_pos)} prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
         )
 
-    ignore: List[int] = []
+    closure_positions: List[int] = []
     for ti in close_toks:
         rel = int(ti) - int(prefix_len_i)
         if 0 <= rel < int(tail_cap):
-            ignore.append(int(rel))
+            closure_positions.append(int(rel))
     for ti in im_toks:
         rel = int(ti) - int(prefix_len_i)
         if 0 <= rel < int(tail_cap):
-            ignore.append(int(rel))
+            closure_positions.append(int(rel))
 
-    ignore_eff = sorted({int(p) for p in ignore})
-    if not ignore_eff:
+    closure_positions = sorted({int(p) for p in closure_positions})
+    if not closure_positions:
         raise ValueError(
-            "stage2-ab stop-neutral masking could not produce any in-tail mask positions for `}`/<|im_end|>; "
-            f"this suggests truncation or prefix/tail misalignment (prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)})"
+            "stage2-ab closure supervision produced no in-tail closure positions "
+            f"(prefix_len={int(prefix_len_i)} tail_cap={int(tail_cap)}); possible truncation/misalignment"
         )
-    return ignore_eff
+
+    return closure_positions
 
 
 def _bbox_groups_from_token_ids(
@@ -1616,16 +1645,48 @@ class Stage2ABTrainingTrainer(
                 rollout_infer_bs = int(len(inputs))
 
             rollout_results = []
+            rollout_repeat_trigger_flags: List[int] = []
+            rollout_repeat_active_flags: List[int] = []
             for off in range(0, int(len(inputs)), int(rollout_infer_bs)):
                 chunk = inputs[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
                     continue
-                rollout_results.extend(self._rollout_many(chunk))
+
+                chunk_results = self._rollout_many(chunk)
+                rollout_results.extend(chunk_results)
+
+                chunk_trigger_raw = getattr(
+                    self,
+                    "_last_rollout_repeat_terminate_triggers",
+                    None,
+                )
+                if (
+                    isinstance(chunk_trigger_raw, list)
+                    and len(chunk_trigger_raw) == len(chunk_results)
+                ):
+                    chunk_trigger = [int(1 if bool(x) else 0) for x in chunk_trigger_raw]
+                else:
+                    chunk_trigger = [0 for _ in range(len(chunk_results))]
+                rollout_repeat_trigger_flags.extend(chunk_trigger)
+
+                chunk_active = int(
+                    1
+                    if bool(
+                        getattr(self, "_last_rollout_repeat_terminate_active", 0)
+                    )
+                    else 0
+                )
+                rollout_repeat_active_flags.append(chunk_active)
 
             if len(rollout_results) != len(inputs):
                 raise RuntimeError(
                     "rollout backend returned unexpected number of results"
                 )
+            if len(rollout_repeat_trigger_flags) != len(rollout_results):
+                rollout_repeat_trigger_flags = [0 for _ in range(len(rollout_results))]
+            repeat_terminate_active = int(
+                1 if any(int(x) != 0 for x in rollout_repeat_active_flags) else 0
+            )
             t_gen_s = time.perf_counter() - t_gen0
 
         encoded_batch: List[Dict[str, Any]] = []
@@ -1639,7 +1700,9 @@ class Stage2ABTrainingTrainer(
         drop_unknown_total = 0
         drop_bbox_invalid_total = 0
         invalid_rollout_total = 0
-        stop_neutral_skip_total = 0
+        parse_truncated_total = 0
+        repeat_triggered_total = 0
+        closure_supervision_drop_total = 0
 
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
@@ -1702,8 +1765,10 @@ class Stage2ABTrainingTrainer(
                     )
                     setattr(self, "_stage2_ab_semantic_gate_warned", True)
 
-        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
-            inputs, rollout_results
+        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids), repeat_triggered in zip(
+            inputs,
+            rollout_results,
+            rollout_repeat_trigger_flags,
         ):
             if "messages" not in sample:
                 raise ValueError("stage2-ab requires 'messages' in dataset samples")
@@ -1736,6 +1801,9 @@ class Stage2ABTrainingTrainer(
                     invalid_rollout = 1
             except Exception:
                 invalid_rollout = 0
+
+            parse_truncated_total += int(1 if bool(parse.truncated) else 0)
+            repeat_triggered_total += int(1 if bool(repeat_triggered) else 0)
 
             gts = _extract_gt_bboxonly(sample)
 
@@ -2258,19 +2326,20 @@ class Stage2ABTrainingTrainer(
             tail_desc_pos_missing_eff: List[int] = []
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
 
-            # Stop-neutral CE (Channel-B): mask the top-level JSON closing brace `}` and
-            # `<|im_end|>` so Channel-B does not supervise stop/continue decisions.
+            # Stop/closure supervision is active (no stop-neutral masking), but we still
+            # require deterministic closure-marker resolution for contract validation.
+            tail_ignore_pos_eff: List[int] = []
             assistant_span_ids = enc_ids_list[
                 int(prompt_len) : int(prompt_len) + int(train_len_eff)
             ]
             try:
-                tail_ignore_pos_eff = _stage2_ab_stop_neutral_tail_ignore_pos(
+                tail_closure_pos_eff = _stage2_ab_tail_closure_positions(
                     tokenizer=tok,
                     assistant_span_ids=assistant_span_ids,
                     prefix_len=int(prefix_len_eff),
                 )
             except ValueError:
-                stop_neutral_skip_total += 1
+                closure_supervision_drop_total += 1
                 invalid_rollout_total += 1
                 continue
 
@@ -2322,6 +2391,7 @@ class Stage2ABTrainingTrainer(
                 "parse_dropped_invalid": int(parse.dropped_invalid),
                 "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
                 "parse_truncated": bool(parse.truncated),
+                "repeat_terminate_triggered": int(1 if bool(repeat_triggered) else 0),
                 "drop_invalid_total": int(n_drop_invalid),
                 "drop_invalid_struct_ce_multiplier": float(
                     drop_invalid_struct_ce_multiplier
@@ -2337,6 +2407,7 @@ class Stage2ABTrainingTrainer(
                 "prefix_coord_pos": prefix_pos,
                 "prefix_coord_target_bins": prefix_bins,
                 "prefix_struct_pos": [int(p) for p in prefix_struct_pos],
+                "tail_closure_pos": [int(p) for p in tail_closure_pos_eff],
                 "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
                 "tail_desc_pos_matched": tail_desc_pos_matched_eff,
@@ -2357,7 +2428,9 @@ class Stage2ABTrainingTrainer(
             "stage2/channel_a": float(0.0),
             "stage2/channel_b": float(1.0),
             "stage2/invalid_rollout": float(invalid_rollout_total),
-            "stage2_ab/channel_b/stop_neutral/N_skip": float(stop_neutral_skip_total),
+            "stage2_ab/channel_b/closure_supervision/N_drop": float(
+                closure_supervision_drop_total
+            ),
             "stage2/drop_poly": float(drop_poly_total),
             "stage2/drop_unknown": float(drop_unknown_total),
             "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),
@@ -2376,6 +2449,18 @@ class Stage2ABTrainingTrainer(
             "rollout/max_new_tokens": float(max_new_tokens),
             "rollout/num_beams": float(num_beams),
             "rollout/repetition_penalty": float(repetition_penalty),
+            "rollout/repeat_terminate_active": float(repeat_terminate_active),
+            "rollout/repeat_terminate_triggered_sequences": float(
+                repeat_triggered_total
+            ),
+            "rollout/parse_truncated": float(parse_truncated_total),
+            "rollout/parse_truncated_rate": float(
+                (float(parse_truncated_total) / float(len(rollout_results)))
+                if len(rollout_results) > 0
+                else 0.0
+            ),
+            "rollout/_parse_truncated_num": float(parse_truncated_total),
+            "rollout/_parse_truncated_den": float(len(rollout_results)),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),
@@ -2426,7 +2511,7 @@ class Stage2ABTrainingTrainer(
         if not encoded_batch:
             raise ValueError(
                 "stage2-ab Channel-B produced no usable segments (all samples were skipped/dropped); "
-                "this can happen if stop-neutral marker parsing fails due to truncation."
+                "this can happen when closure-marker resolution fails due to truncation/misalignment."
             )
 
         with self._template_packing_disabled():
@@ -2790,7 +2875,7 @@ class Stage2ABTrainingTrainer(
                 labels_masked[b, p] = input_ids[b, p]
                 weights_masked[b, p] = 1.0
 
-            # Stop-neutral / semantic masking: explicit token positions (relative to tail).
+            # Tail masking hooks (semantic gate, optional explicit ignore positions).
             ignore_rel: set[int] = set()
             for rel in tail_ignore_pos:
                 try:
@@ -3171,6 +3256,12 @@ class Stage2ABTrainingTrainer(
                     "rollout/max_new_tokens",
                     "rollout/num_beams",
                     "rollout/repetition_penalty",
+                    "rollout/repeat_terminate_active",
+                    "rollout/repeat_terminate_triggered_sequences",
+                    "rollout/parse_truncated",
+                    "rollout/parse_truncated_rate",
+                    "rollout/_parse_truncated_num",
+                    "rollout/_parse_truncated_den",
                 ):
                     if k in batch_metrics:
                         try:

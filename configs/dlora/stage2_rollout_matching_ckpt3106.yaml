@@ -161,8 +161,8 @@ custom:
       # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
       repetition_penalty: 1.05
 
-      # HF-only safety guard: if a rollout degenerates into repetitive garbage, force EOS early
-      # instead of burning minutes until max_new_tokens. (vLLM currently ignores this hook.)
+      # Repeat-aware safety guard: if a rollout degenerates into repetitive garbage,
+      # force EOS early instead of burning minutes until max_new_tokens.
       # More aggressive termination for monitoring runs: avoid spending minutes on
       # degenerate rollouts that will be truncated/invalid anyway.
       repeat_terminate:

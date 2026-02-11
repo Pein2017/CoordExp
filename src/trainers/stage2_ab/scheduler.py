@@ -59,7 +59,13 @@ class Stage2ABSchedulerMixin:
     def _ab_channel_b_cfg(self) -> Mapping[str, Any]:
         cfg = self._ab_cfg()
         raw = cfg.get("channel_b")
-        return raw if isinstance(raw, Mapping) else {}
+        out = raw if isinstance(raw, Mapping) else {}
+        if "stop_neutral" in out:
+            raise ValueError(
+                "stage2_ab.channel_b.stop_neutral is unsupported in the current contract; "
+                "remove legacy stop-neutral keys from config."
+            )
+        return out
 
     def _ab_channel_b_get(self, key: str, default: Any) -> Any:
         try:

@@ -57,7 +57,7 @@ Key policies:
 - Rollout parsing is STRICT (no JSON repair). Invalid predicted objects are dropped.
 - Missing GT objects (FN) are always appended in the tail (recall recovery stays mandatory).
 - Bbox geometry loss uses **SmoothL1 + CIoU** on expectation-decoded coords (no GIoU; boxes are canonicalized for CIoU stability).
-- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1, Channel-B stop-neutral + semantic-tolerant matched desc).
+- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B supervises top-level `}` + `<|im_end|>` and supports semantic-tolerant matched desc masking).
 
 ---
 
@@ -112,7 +112,7 @@ Tuning:
 - Default grad semantics: `stage2_ab.softctx_grad_mode: unroll` (no detach anywhere in the soft self-context loop). Use `em_detach` only for explicit ablations.
 - CE anchor split: Channel-A computes CE on the **A1** teacher-forced logits and computes geometry (bbox loss + coord regularizers) from the **final** softctx iteration logits.
 
-### Channel-B Contract (FP-neutral + Stop-neutral)
+### Channel-B Contract (FP-neutral + Closure Supervision)
 
 - Unified Channel-B is the default contract (`reordered_gt_sft` is legacy/ablation opt-in only).
 - CE masking policy (default non-reordered path):
@@ -127,7 +127,7 @@ Tuning:
 - Deterministic FN key allocation:
   - `start_id = max_object_index_in_prefix + 1` (or `1` when none),
   - `max_object_index_in_prefix` scans retained `object_N` keys in the prefix body even when entries are later dropped by strict validation; malformed keys are ignored.
-- Stop-neutral CE: mask the same outermost `}` used as FN injection anchor and mask `<|im_end|>`.
+- Closure supervision: keep CE ON for the same outermost `}` used as FN injection anchor, and keep CE ON for `<|im_end|>` (no stop-neutral masking).
 - Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
@@ -257,6 +257,11 @@ vLLM has a mode switch under `custom.extra.rollout_matching.vllm.mode`:
     - `custom.extra.rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
     - `server_gpus` and `train_gpus` must be disjoint device sets
+    - rollout server starts with repo-owned `--external_plugins scripts/vllm_repeat_terminate_plugin.py`
+      and receives the full `custom.extra.rollout_matching.repeat_terminate` subtree via
+      `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON`
+    - when `repeat_terminate.enabled: true`, launcher probes `/infer/` and fails fast unless
+      responses include `coordexp.repeat_terminate_triggered`
 
 ### HF (Fallback)
 
@@ -276,7 +281,7 @@ Notes:
   - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_greedy`.
 - vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
-- If HF rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for the offending sequences.
+- If rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for offending sequences (HF and vLLM server mode).
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
 
 ---
@@ -390,6 +395,8 @@ Channel scheduling (AB):
 
 Rollout health:
 - `rollout/parse_truncated_rate`
+- `rollout/repeat_terminate_active`
+- `rollout/repeat_terminate_triggered_sequences`
 - `rollout/sample_valid_pred_rate`
 - `rollout/f1`
 
@@ -400,6 +407,7 @@ Throughput:
 Stage-2 AB extras:
 - `stage2_ab/channel_b/semantic_desc_gate/is_active` (true only when the semantic encoder is available)
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
+- `stage2_ab/channel_b/closure_supervision/N_drop` (closure-marker resolution drops; should stay near 0)
 
 ### Qualitative Monitoring Dumps
 

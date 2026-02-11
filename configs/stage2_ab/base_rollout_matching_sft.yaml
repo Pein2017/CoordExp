@@ -93,8 +93,8 @@ custom:
       # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
       repetition_penalty: 1.05
 
-      # HF-only safety guard: force EOS early if generation becomes degenerate/repetitive.
-      # (vLLM currently ignores this hook.)
+      # Repeat-aware safety guard: force EOS early for offending sequences when
+      # generation becomes degenerate/repetitive (HF + vLLM server mode).
       repeat_terminate:
         enabled: true
         min_new_tokens: 32

@@ -203,7 +203,7 @@ Logging semantics:
 - `stage2_ab/async/is_prefetch_queue_full`, `stage2_ab/async/is_prefetch_no_segments`, `stage2_ab/async/is_prefetch_error`
   - **What:** coarse prefetch conditions (queue full / produced zero segments / hit an exception).
 
-### Stage-2 AB Channel-B strict-drop and stop-neutral diagnostics
+### Stage-2 AB Channel-B strict-drop and closure-supervision diagnostics
 
 These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Channel-B construction.
 
@@ -219,9 +219,20 @@ These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Ch
   - **What:** reason-bucket counts for dropped predictions (e.g., `missing_desc`, `wrong_arity`, `bbox_invalid`).
   - **Why:** identifies dominant failure modes in rollout outputs.
 
-- `stage2_ab/channel_b/stop_neutral/N_skip`
-  - **What:** number of samples skipped because stop-neutral marker resolution failed (`}` / `<|im_end|>` alignment).
+- `stage2_ab/channel_b/closure_supervision/N_drop`
+  - **What:** number of samples dropped because deterministic closure-marker resolution failed (`}` / `<|im_end|>` alignment).
   - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
+
+- `rollout/repeat_terminate_active`
+  - **What:** 1 when repeat-aware termination is active for the step under the current rollout backend/mode, else 0.
+
+- `rollout/repeat_terminate_triggered_sequences`
+  - **What:** number of rollout sequences in the step where repeat-aware termination triggered at least once.
+
+Aggregation semantics (training-time `metrics` payload):
+- counters are global sums across grad-accum + DDP ranks
+- boolean activation flags use global max
+- rates use ratio-of-global-sums (e.g., `rollout/parse_truncated_rate`)
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 
