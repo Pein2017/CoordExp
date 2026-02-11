@@ -10,7 +10,9 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 ## Behavior
 - Pixel-ready consumption: no coord-mode inference/denorm is performed; polygons are exported directly as COCO `segmentation` (mask IoU), bboxes as `bbox`. Line geometries are rejected and counted as invalid.
 - One geometry per object; degenerate/invalid entries are dropped with counters and recorded per-image for diagnostics.
-- Categories use exact desc strings; unknowns bucket to `unknown` by default (configurable to drop).
+- Categories use exact GT desc strings. Predicted `desc` values that are not in the GT category set are **semantically mapped** to the closest GT desc (excluding synthetic `unknown`) using a sentence-transformer encoder; if the best match is below threshold, the prediction is **dropped** (map-or-drop; no bucket/drop fallbacks).
+  - `--unknown-policy` and `--semantic-fallback` are **deprecated/ignored** (retained only for back-compat; the evaluator will warn once).
+  - When semantic mapping runs, the evaluator writes `semantic_desc_report.json` to the output directory for inspection.
 - Scores are fixed at 1.0 (greedy decoding outputs have no reliable confidence); any provided `score` fields are ignored.
 - COCOeval runs for bbox and segm (when polygons exist). TODO: polygon GIoU hook.
 - Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
@@ -19,12 +21,18 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - GPU is optional. Only semantic matching needs extra compute; set `--semantic-device cpu` (default: `auto`) if you want to force CPU.
 
 ## CLI
+YAML-first (recommended for reproducibility):
+```
+PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
+  --config configs/eval/detection.yaml
+```
+
+Legacy flags (still supported during transition):
 ```
 PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --pred_jsonl <path> \
   --out_dir eval_out \
   [--metrics coco|f1ish|both] \
-  [--unknown-policy bucket|drop|semantic] \
   [--semantic-model <hf-id>] [--semantic-threshold 0.6] [--semantic-device auto] \
   [--f1ish-iou-thrs 0.3 0.5] [--f1ish-pred-scope annotated|all] \
   [--strict-parse] [--no-segm] [--iou-thrs 0.5 0.75] \
