@@ -27,16 +27,17 @@ The contract MUST define the canonical set of batch extras keys. At minimum, it 
 - AND the trainer strips it before model forward
 
 ### Requirement: Stable metric and batch key names
-The system SHALL preserve the existing metric key names and semantics documented in `docs/training/METRICS_LOSSES.md`.
+The system SHALL preserve the semantics documented in `docs/training/METRICS_LOSSES.md`.
+The system MAY remove low-signal or duplicated metric keys when the docs are updated to the new canonical set.
+Compatibility aliases are optional and MAY be omitted.
+
 The system SHALL preserve the existing batch-extra key names listed in "Stable batch extras contract".
 
-#### Scenario: Key parity
-- GIVEN a run with some features enabled/disabled (e.g. token-type metrics, coord loss, packing)
-- WHEN running training/evaluation with the refactor enabled
-- THEN every emitted metric key matches a documented train key in `docs/training/METRICS_LOSSES.md`
-- OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
-- AND existing metric keys are not renamed
-- AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
+#### Scenario: Canonical-only metric contract
+- GIVEN a training run after metric minimalization
+- WHEN only canonical keys are emitted
+- THEN removed legacy keys are absent from logs
+- AND docs define the canonical key set.
 
 ### Requirement: Aggregate-only telemetry
 The system SHALL keep metric emission aggregate-only by default. Per-dataset buckets MUST NOT be emitted.
@@ -74,3 +75,15 @@ If an enabled loss component cannot be computed, the system MUST raise an error 
 - WHEN coord loss computation fails for a batch
 - THEN the training step raises with a clear error message
 - AND training does not proceed with a silently altered objective
+
+### Requirement: Sparse gauge aggregation avoids gradient-accumulation dilution
+When optimizer-step metrics are aggregated from micro-step buffers, gauge-like keys that may be absent on some micro-steps MUST be averaged over key-observation count (presence count), not total micro-step count.
+
+Counter-like keys MUST remain additive totals.
+
+#### Scenario: Key present on one micro-step only
+- GIVEN gradient accumulation with 32 micro-steps
+- AND a gauge-like rollout config key present on exactly one micro-step with value `1.0`
+- WHEN step-level aggregation finalizes
+- THEN the logged value is `1.0` (not `1/32`).
+

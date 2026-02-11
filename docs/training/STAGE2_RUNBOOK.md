@@ -128,15 +128,13 @@ Tuning:
   - `start_id = max_object_index_in_prefix + 1` (or `1` when none),
   - `max_object_index_in_prefix` scans retained `object_N` keys in the prefix body even when entries are later dropped by strict validation; malformed keys are ignored.
 - Stop-neutral CE: mask the same outermost `}` used as FN injection anchor and mask `<|im_end|>`.
-- Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
-  - `stage2_ab/channel_b/strict_drop/N_valid_pred`
-  - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
-  - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
+- Strict-drop behavior: invalid predicted objects are dropped deterministically (no repair).
+  - For detailed per-step reason breakdowns, use `monitor_dump` artifacts instead of scalar training metrics.
   - Optional structure-token CE upweight: `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (clamped to `[1.0, 4.0]`).
 - Semantic-tolerant matched desc CE (reordered-GT SFT only): matched objects whose predicted desc is semantically close to GT are treated as correct by masking GT desc tokens.
   - Config: `stage2_ab.channel_b.semantic_desc_gate`.
   - If enabled, `stage2_ab.channel_b.semantic_desc_gate.revision` is REQUIRED (pinned embedding model revision).
-  - If the encoder/weights cannot be loaded at runtime, training continues with semantic gating disabled and logs `stage2_ab/channel_b/semantic_desc_gate/is_active = false`.
+  - If the encoder/weights cannot be loaded at runtime, training continues with semantic gating disabled.
 
 ---
 
@@ -268,7 +266,8 @@ Notes:
 - Start with deterministic non-beam decoding for stability: `decode_mode: greedy`, `decoding.temperature: 0.0`.
 - `decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `decoding.temperature/top_p/top_k`.
   - `decode_mode: greedy` can still produce **sampling** rollouts when `decoding.temperature > 0.0`.
-  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_greedy`.
+  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not decode-mode counts.
+  - Canonical decode-count metrics are `rollout/decode_non_beam_count` and `rollout/decode_beam_count`.
 - vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - If HF rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for the offending sequences.
@@ -393,8 +392,7 @@ Throughput:
 - `rollout/gen_tokens_per_s`
 
 Stage-2 AB extras:
-- `stage2_ab/channel_b/semantic_desc_gate/is_active` (true only when the semantic encoder is available)
-- `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
+- `stage2_ab/async/b_ratio_realized`
 
 ### Qualitative Monitoring Dumps
 

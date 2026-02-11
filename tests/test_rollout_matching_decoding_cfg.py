@@ -114,3 +114,31 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     assert isinstance(bm, dict)
     assert bm["rollout/max_new_tokens"] == 128.0
     assert bm["packing/post_rollout_segments"] == 3.0
+
+
+def test_build_rollout_metrics_emits_only_canonical_decode_count_keys():
+    t = _mk_uninit_trainer({})
+    t._cfg = lambda _k, default=None: default
+    t._decoding_params = lambda: (0.0, 1.0, -1)
+
+    meta = [
+        {
+            "decode_mode": "greedy",
+            "gt_objects": 1,
+            "matched_for_supervision": 1,
+            "valid_pred_objects": 1,
+        },
+        {
+            "decode_mode": "beam",
+            "gt_objects": 1,
+            "matched_for_supervision": 1,
+            "valid_pred_objects": 1,
+        },
+    ]
+
+    payload = t._build_rollout_metrics_from_meta(meta)
+    assert payload["rollout/decode_non_beam_count"] == pytest.approx(1.0)
+    assert payload["rollout/decode_beam_count"] == pytest.approx(1.0)
+    assert "rollout/decode_greedy" not in payload
+    assert "rollout/decode_beam" not in payload
+    assert "rollout/match_rate" not in payload

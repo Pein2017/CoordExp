@@ -45,12 +45,29 @@ class _PendingStage2Log:
 
     n_micro: int = 0
     sums: Dict[str, float] = field(default_factory=dict)
+    counts: Dict[str, int] = field(default_factory=dict)
+
+    @staticmethod
+    def _should_average(key: str) -> bool:
+        if key.startswith("loss/"):
+            return True
+        if key.startswith("stage2/channel_"):
+            return True
+        if key.startswith("stage2_ab/async/"):
+            return True
+        if key.startswith("stage2_ab/") and "/is_" in key:
+            return True
+        if key.startswith("rollout/"):
+            return True
+        return False
 
     def add(self, metrics: Mapping[str, float]) -> None:
         self.n_micro += 1
         for k, v in metrics.items():
             try:
-                self.sums[str(k)] = float(self.sums.get(str(k), 0.0)) + float(v)
+                key = str(k)
+                self.sums[key] = float(self.sums.get(key, 0.0)) + float(v)
+                self.counts[key] = int(self.counts.get(key, 0)) + 1
             except Exception:
                 continue
 
@@ -59,15 +76,11 @@ class _PendingStage2Log:
             return {}
         out: Dict[str, float] = {}
         for k, v in self.sums.items():
-            # Average losses/ratios/booleans; keep counters as totals.
-            if (
-                k.startswith("loss/")
-                or k.startswith("stage2/channel_")
-                or k.startswith("rollout/")
-                or k.startswith("stage2_ab/async/")
-                or (k.startswith("stage2_ab/") and "/is_" in k)
-            ):
-                out[k] = float(v) / float(self.n_micro)
+            if self._should_average(k):
+                # Some rollout gauges are only present on specific micro-steps.
+                # Average over key-presence count to avoid GAS-dilution artifacts.
+                denom = max(1, int(self.counts.get(k, 0)))
+                out[k] = float(v) / float(denom)
             else:
                 out[k] = float(v)
         return out
@@ -3096,6 +3109,19 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
         seed_base = int(self._derive_rollout_seed_base(global_step=gs))
 
+        # Optional qualitative monitoring dumps (Channel-B): rollout/prefix/target triplets.
+        do_dump = False
+        dump_cfg = self._monitor_dump_cfg()
+        dump_max_samples = 0
+        dump_max_chars = 0
+        dump_samples: List[Dict[str, Any]] = []
+        if self._should_monitor_dump(global_step=gs):
+            do_dump = True
+            dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
+            dump_max_chars = max(0, int(dump_cfg.get("max_text_chars", 4000) or 4000))
+            # Mark early so repeated calls in the same optimizer step do not duplicate dumps.
+            self._monitor_dump_last_step = int(gs)
+
         backend = self._rollout_backend()
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
@@ -3145,6 +3171,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
 
         t_parse_match_s = 0.0
         t_encode_s = 0.0
+        rollout_lens: List[int] = []
 
         drop_poly_total = 0
         drop_unknown_total = 0
@@ -3235,6 +3262,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             parse = parse_rollout_for_matching(
                 tokenizer=tok, response_token_ids=resp_ids_local
             )
+            rollout_lens.append(int(len(parse.response_token_ids)))
 
             # Invalid rollout fallback detection: prefix is exactly "{" and no valid objects.
             invalid_rollout = 0
@@ -3371,6 +3399,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             prefix_struct_pos: List[int] = []
 
             fn_count_for_meta = 0
+            append_text_for_dump = ""
 
             if bool(reordered_gt_sft):
                 pred_to_gt: Dict[int, int] = {
@@ -3567,6 +3596,7 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                     start_index=start_idx,
                     prefix_text=parse.prefix_text,
                 )
+                append_text_for_dump = str(append_text)
                 append_ids = tok.encode(append_text, add_special_tokens=False)
 
                 tail_desc_pos = _find_desc_value_token_positions(
@@ -3857,6 +3887,98 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
                 "bbox_groups_fn": bbox_groups_fn,
             }
 
+            if do_dump and len(dump_samples) < dump_max_samples:
+                try:
+                    gt_objs_dump = [
+                        {
+                            "index": int(o.index),
+                            "geom_type": str(o.geom_type),
+                            "points_norm1000": list(o.points_norm1000),
+                            "desc": str(o.desc),
+                        }
+                        for o in gts
+                    ]
+                    pred_objs_dump = [
+                        {
+                            "key": str(pred_meta[i].key) if i < len(pred_meta) else "",
+                            "index": int(o.index),
+                            "geom_type": str(o.geom_type),
+                            "points_norm1000": list(o.points_norm1000),
+                            "desc": str(getattr(pred_meta[i], "desc", "") or "")
+                            if i < len(pred_meta)
+                            else "",
+                        }
+                        for i, o in enumerate(preds)
+                    ]
+
+                    gt_n = float(len(gts))
+                    pred_n = float(len(preds))
+                    matched_n = float(len(matched_gt_for_supervision))
+                    prec = (matched_n / pred_n) if pred_n > 0 else 0.0
+                    rec = (matched_n / gt_n) if gt_n > 0 else 0.0
+                    f1 = (2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+
+                    dump_samples.append(
+                        {
+                            "sample_id": sample.get("sample_id"),
+                            "base_idx": sample.get("base_idx"),
+                            "image": sample.get("image"),
+                            "images": sample.get("images"),
+                            "width": sample.get("width"),
+                            "height": sample.get("height"),
+                            "messages": sample.get("messages"),
+                            "rollout_text": self._clip_text(
+                                parse.response_text, max_chars=dump_max_chars
+                            ),
+                            "prefix_text": self._clip_text(
+                                parse.prefix_text, max_chars=dump_max_chars
+                            ),
+                            "append_text": self._clip_text(
+                                append_text_for_dump, max_chars=dump_max_chars
+                            ),
+                            "train_text": self._clip_text(
+                                tok.decode(
+                                    y_train_ids,
+                                    skip_special_tokens=False,
+                                    clean_up_tokenization_spaces=False,
+                                ),
+                                max_chars=dump_max_chars,
+                            ),
+                            "gt_objects": gt_objs_dump,
+                            "pred_objects": pred_objs_dump,
+                            "match": {
+                                "matched_pairs": list(match.matched_pairs),
+                                "fn_gt_indices": list(match.fn_gt_indices),
+                                "fp_pred_indices": list(match.fp_pred_indices),
+                                "gating_rejections": int(match.gating_rejections),
+                            },
+                            "stats": {
+                                "decode_mode": str(decode_mode),
+                                "parse_dropped_invalid": int(parse.dropped_invalid),
+                                "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
+                                "parse_truncated": bool(parse.truncated),
+                                "drop_invalid_total": int(n_drop_invalid),
+                                "drop_reasons": {str(k): int(v) for k, v in drop_reasons.items()},
+                                "valid_pred_objects": int(len(preds)),
+                                "gt_objects": int(len(gts)),
+                                "matched_for_supervision": int(
+                                    len(matched_gt_for_supervision)
+                                ),
+                                "fn_count": int(fn_count_for_meta),
+                                "precision": float(prec),
+                                "recall": float(rec),
+                                "f1": float(f1),
+                                "matched_maskiou_mean": float(
+                                    (match.matched_maskiou_sum / match.matched_maskiou_count)
+                                    if match.matched_maskiou_count > 0
+                                    else 0.0
+                                ),
+                            },
+                        }
+                    )
+                except Exception:
+                    pass
+
             segments.append((encoded, meta_entry, int(encoded_len)))
             if not packing_enabled:
                 encoded_batch.append(encoded)
@@ -3865,52 +3987,44 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
         from swift.llm import to_device
 
         batch_metrics: Dict[str, float] = {
-            "stage2/channel_a": float(0.0),
-            "stage2/channel_b": float(1.0),
-            "stage2/invalid_rollout": float(invalid_rollout_total),
-            "stage2_ab/channel_b/stop_neutral/N_skip": float(stop_neutral_skip_total),
-            "stage2/drop_poly": float(drop_poly_total),
-            "stage2/drop_unknown": float(drop_unknown_total),
-            "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),
-            "rollout/seed_base": float(seed_base),
-            "rollout/backend_hf": float(1.0 if backend == "hf" else 0.0),
-            "rollout/backend_vllm": float(1.0 if backend == "vllm" else 0.0),
-            "rollout/decode_mode_greedy": float(
-                1.0 if decode_mode == "greedy" else 0.0
-            ),
-            "rollout/decode_mode_beam": float(1.0 if decode_mode == "beam" else 0.0),
-            "rollout/hf_seeded_global": float(hf_seeded_global),
-            "rollout/temperature": float(temperature),
-            "rollout/top_p": float(top_p),
-            "rollout/top_k": float(top_k),
-            "rollout/do_sample": float(1.0 if do_sample else 0.0),
-            "rollout/max_new_tokens": float(max_new_tokens),
-            "rollout/num_beams": float(num_beams),
-            "rollout/repetition_penalty": float(repetition_penalty),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),
         }
 
-        batch_metrics["stage2_ab/channel_b/strict_drop/N_valid_pred"] = float(
-            strict_valid_pred_total
-        )
-        batch_metrics["stage2_ab/channel_b/strict_drop/N_drop_invalid"] = float(
-            strict_drop_invalid_total
-        )
-        for rk, rv in strict_drop_by_reason_total.items():
+        if do_dump:
             try:
-                rvi = int(rv)
+                toks_per_s = (
+                    float(sum(int(x) for x in rollout_lens)) / float(t_gen_s)
+                    if t_gen_s > 0
+                    else 0.0
+                )
+                payload = {
+                    "global_step": int(gs),
+                    "epoch": float(
+                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                    ),
+                    "time": float(time.time()),
+                    "meta": {
+                        "stage2_channel": "B",
+                        "rollout_backend": str(self._rollout_backend()),
+                        "decode_mode": str(self._cfg("decode_mode", "greedy")),
+                        "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
+                        "candidate_top_k": int(top_k),
+                        "maskiou_gate": float(gate_thr),
+                        "maskiou_resolution": int(mask_res),
+                        "fp_cost": float(fp_cost),
+                        "fn_cost": float(fn_cost),
+                        "packing_enabled": bool(packing_enabled),
+                        "rollout_generate_s": float(t_gen_s),
+                        "rollout_tokens_per_s": float(toks_per_s),
+                    },
+                    "samples": dump_samples,
+                }
+                self._write_monitor_dump(global_step=int(gs), payload=payload)
+                self._monitor_dump_count += 1
             except Exception:
-                continue
-            if rvi <= 0:
-                continue
-            batch_metrics[f"stage2_ab/channel_b/strict_drop/reason/{str(rk)}"] = float(
-                rvi
-            )
-        batch_metrics["stage2_ab/channel_b/semantic_desc_gate/is_active"] = float(
-            semantic_gate_is_active
-        )
+                pass
 
         if bool(_segments_only):
             return segments, batch_metrics
@@ -4651,50 +4765,12 @@ class Stage2ABTrainingTrainer(RolloutMatchingSFTTrainer):
             if pending2 is None:
                 pending2 = _PendingStage2Log()
                 self._stage2_pending_train_logs[target_step] = pending2
-            # Counters should be summed across micro-batches; losses averaged.
+            # Keep Stage-2 telemetry minimal and high-signal.
             stage2_logs = {
                 "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
                 "stage2_ab/async/b_ratio_realized": float(self._stage2_b_ratio_realized()),
-                "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
-                "loss/bbox_ciou": float(ciou.detach().cpu().item()),
-                "loss/coord_ce": float(coord_ce.detach().cpu().item()),
-                "loss/coord_el1": float(coord_el1.detach().cpu().item()),
-                "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
-                "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
-                "loss/coord_reg": float(coord_reg_loss.detach().cpu().item()),
             }
-            if isinstance(batch_metrics, Mapping):
-                for k in (
-                    "stage2/raw_rollouts",
-                    "stage2/invalid_rollout",
-                    "stage2/drop_poly",
-                    "stage2/drop_unknown",
-                    "stage2/drop_bbox_invalid",
-                    "rollout/seed_base",
-                    "rollout/backend_hf",
-                    "rollout/backend_vllm",
-                    "rollout/decode_mode_greedy",
-                    "rollout/decode_mode_beam",
-                    "rollout/hf_seeded_global",
-                    "rollout/temperature",
-                    "rollout/do_sample",
-                    "rollout/max_new_tokens",
-                    "rollout/num_beams",
-                    "rollout/repetition_penalty",
-                ):
-                    if k in batch_metrics:
-                        try:
-                            stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
-                        except Exception:
-                            pass
-            if isinstance(batch_metrics, Mapping):
-                for k, v in batch_metrics.items():
-                    if str(k).startswith("stage2_ab/"):
-                        try:
-                            stage2_logs[str(k)] = float(v or 0.0)
-                        except Exception:
-                            pass
 
             pending2.add(stage2_logs)
         except Exception:

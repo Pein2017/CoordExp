@@ -12,6 +12,7 @@ from src.trainers.rollout_matching_sft import (
 )
 from src.trainers.stage2_ab_training import (
     Stage2ABTrainingTrainer,
+    _PendingStage2Log,
     _bbox_smoothl1_ciou_loss,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
@@ -1242,3 +1243,26 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     assert isinstance(bm, dict)
     assert bm["stage2_ab/async/ver"] == 3.0
     assert bm["rollout/backend_vllm"] == 2.0
+
+
+def test_pending_stage2_log_uses_key_presence_for_rollout_gauges():
+    pending = _PendingStage2Log()
+
+    pending.add(
+        {
+            "loss/coord": 2.0,
+            "rollout/decode_non_beam_mode": 1.0,
+            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 2.0,
+        }
+    )
+    pending.add(
+        {
+            "loss/coord": 4.0,
+            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 3.0,
+        }
+    )
+
+    out = pending.finalize()
+    assert out["loss/coord"] == pytest.approx(3.0)
+    assert out["rollout/decode_non_beam_mode"] == pytest.approx(1.0)
+    assert out["stage2_ab/channel_b/strict_drop/N_drop_invalid"] == pytest.approx(5.0)

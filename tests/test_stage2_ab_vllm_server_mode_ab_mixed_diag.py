@@ -401,11 +401,12 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
         assert b_records, "No Channel-B logs found; schedule may be misconfigured."
 
         assert any(float(r.get("rollout/rollout_len_mean", 0.0)) > 0.0 for r in b_records)
-        assert any("rollout/seed_base" in r for r in b_records)
-        assert any(float(r.get("rollout/max_new_tokens", 0.0)) == float(max_new_tokens) for r in b_records)
+        assert any(float(r.get("rollout/decode_non_beam_count", 0.0)) > 0.0 for r in b_records)
+        assert any(float(r.get("rollout/f1", 0.0)) >= 0.0 for r in b_records)
 
-        # Bbox-only v1 invariant: do not drop polygons.
-        assert all(float(r.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0) for r in b_records)
+        # Minimal logging contract: avoid legacy/verbose rollout config gauges.
+        assert all("rollout/max_new_tokens" not in r for r in b_records)
+        assert all("stage2/drop_poly" not in r for r in b_records)
 
     finally:
         if proc is not None:

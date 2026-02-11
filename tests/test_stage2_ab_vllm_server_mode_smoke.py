@@ -402,17 +402,14 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         )
         merged_b = dict(b_records[-1])
 
-        assert float(merged_b.get("rollout/backend_vllm", 0.0)) == pytest.approx(1.0)
-        assert float(merged_b.get("rollout/decode_mode_greedy", 0.0)) == pytest.approx(
-            1.0
-        )
-
-        assert "rollout/seed_base" in merged_b
+        assert float(merged_b.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+        assert float(merged_b.get("rollout/decode_non_beam_count", 0.0)) > 0.0
         assert float(merged_b.get("rollout/rollout_len_mean", 0.0)) > 0.0
+        assert float(merged_b.get("rollout/f1", 0.0)) >= 0.0
 
-        # Bbox-only v1 invariant: do not drop polygons (there should be none).
-        assert float(merged_b.get("stage2/drop_poly", 0.0)) == pytest.approx(0.0)
-        assert float(merged_b.get("stage2/invalid_rollout", 0.0)) >= 0.0
+        # Minimal logging contract: avoid legacy/verbose rollout config gauges.
+        assert "rollout/backend_vllm" not in merged_b
+        assert "rollout/decode_mode_greedy" not in merged_b
 
     finally:
         if proc is not None:

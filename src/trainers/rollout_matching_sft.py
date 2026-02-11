@@ -6311,32 +6311,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         payload: Dict[str, float] = {
             "rollout/parse_dropped_invalid": float(dropped_invalid_total),
-            "rollout/parse_dropped_ambiguous": float(dropped_ambiguous_total),
-            "rollout/parse_truncated": float(trunc_samples),
-            "rollout/parse_truncated_rate": float(trunc_rate),
-            "rollout/parse_obj_total": float(obj_total),
-            "rollout/parse_obj_valid_frac": float(obj_valid_frac),
             "rollout/parse_obj_drop_frac": float(obj_drop_frac),
+            "rollout/parse_truncated_rate": float(trunc_rate),
             "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
             "rollout/sample_any_match_rate": float(sample_any_match_rate),
-            "rollout/fn_appended": float(sum(int(m.get("fn_count", 0)) for m in meta)),
-            "rollout/gating_rejections": float(gate_rejections_total),
             "rollout/gating_rejection_rate": float(gate_rejection_rate),
-            "rollout/valid_pred_objects": float(pred_total),
-            "rollout/gt_objects": float(gt_total),
-            # Backward-compat alias: this is recall (GT coverage).
-            "rollout/match_rate": float(recall),
             "rollout/precision": float(precision),
             "rollout/recall": float(recall),
             "rollout/f1": float(f1),
-            "rollout/fp": float(fp_total),
-            "rollout/fn": float(fn_total),
-            "rollout/gt_per_sample": float(gt_total / n_samples)
-            if n_samples > 0
-            else 0.0,
-            "rollout/pred_per_sample": float(pred_total / n_samples)
-            if n_samples > 0
-            else 0.0,
             "rollout/fp_per_sample": float(fp_total / n_samples)
             if n_samples > 0
             else 0.0,
@@ -6344,83 +6326,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if n_samples > 0
             else 0.0,
             "rollout/matched_maskiou_mean": float(matched_iou_mean),
-            "rollout/matched_maskiou_count": float(matched_iou_count),
-            "rollout/excluded_rate": float(excluded_rate),
-            "rollout/prefix_coord_targets_total": float(prefix_targets_total),
-            "rollout/prefix_coord_targets_per_matched": float(
-                prefix_targets_per_matched
-            ),
-            "rollout/tail_ignore_frac": float(tail_ignore_frac),
-            "rollout/prompt_len_mean": float(_mean(prompt_lens)),
-            "rollout/prompt_len_p90": float(_p(prompt_lens, 90)),
-            "rollout/prefix_len_mean": float(_mean(prefix_lens)),
             "rollout/rollout_len_mean": float(_mean(rollout_lens)),
             "rollout/rollout_len_p90": float(_p(rollout_lens, 90)),
-            "rollout/train_len_mean": float(_mean(train_lens)),
-            "rollout/train_len_p90": float(_p(train_lens, 90)),
-            "rollout/append_len_mean": float(_mean(append_lens)),
-            "rollout/append_len_p90": float(_p(append_lens, 90)),
-            "rollout/encoded_len_mean": float(_mean(encoded_lens)),
-            "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
-            "rollout/decode_greedy": float(
+            "rollout/decode_non_beam_count": float(
                 sum(1 for m in meta if m.get("decode_mode") == "greedy")
             ),
-            "rollout/decode_beam": float(
+            "rollout/decode_beam_count": float(
                 sum(1 for m in meta if m.get("decode_mode") == "beam")
             ),
-            "rollout/matched_for_supervision": float(matched_total),
-            "rollout/excluded_from_supervision": float(excluded_total),
         }
 
         try:
-            temperature, top_p, top_k = self._decoding_params()
+            temperature, _top_p, _top_k = self._decoding_params()
             do_sample = bool(float(temperature) > 0.0)
             payload["rollout/do_sample"] = float(1.0 if do_sample else 0.0)
             payload["rollout/temperature"] = float(temperature)
-            payload["rollout/top_p"] = float(top_p)
-            payload["rollout/top_k"] = float(top_k)
         except Exception:
             pass
 
-        # Desc monitor outputs (matched pairs only).
-        try:
-            if any(bool(m.get("desc_monitor_ran", False)) for m in meta):
-                pairs_total = float(
-                    sum(int(m.get("desc_pairs_total", 0)) for m in meta)
-                )
-                exact_ok_total = float(
-                    sum(int(m.get("desc_exact_ok", 0)) for m in meta)
-                )
-                exact_acc = (exact_ok_total / pairs_total) if pairs_total > 0 else 1.0
-                payload["rollout/desc_pairs_total"] = float(pairs_total)
-                payload["rollout/desc_exact_acc_on_matched"] = float(exact_acc)
-
-                sem_enabled_total = float(
-                    sum(int(m.get("desc_sem_enabled", 0)) for m in meta)
-                )
-                payload["rollout/desc_sem_enabled"] = float(
-                    1.0 if sem_enabled_total > 0 else 0.0
-                )
-                if sem_enabled_total > 0:
-                    sem_ok_total = float(
-                        sum(int(m.get("desc_sem_ok", 0)) for m in meta)
-                    )
-                    sem_acc = (sem_ok_total / pairs_total) if pairs_total > 0 else 1.0
-                    payload["rollout/desc_sem_acc_on_matched"] = float(sem_acc)
-
-                    sim_sum_total = float(
-                        sum(float(m.get("desc_sem_sim_sum", 0.0)) for m in meta)
-                    )
-                    sim_count_total = float(
-                        sum(int(m.get("desc_sem_sim_count", 0)) for m in meta)
-                    )
-                    if sim_count_total > 0:
-                        payload["rollout/desc_sem_sim_mean"] = float(
-                            sim_sum_total / sim_count_total
-                        )
-                        payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
-        except Exception:
-            pass
 
         return payload
 
@@ -6429,71 +6352,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     ) -> Dict[str, float]:
         payload = self._build_rollout_metrics_from_meta(pending.meta)
 
-        sample_total = float(len(pending.meta))
-        payload["train/samples_total"] = float(sample_total)
-        payload["train/micro_steps"] = float(pending.n_micro)
-        payload["train/samples_per_micro"] = (
-            float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
-        )
-
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
             payload["loss/coord"] = float(
                 pending.coord_loss_sum / float(pending.n_micro)
             )
-            payload["loss/coord_prefix"] = float(
-                pending.coord_prefix_sum / float(pending.n_micro)
-            )
-            payload["loss/coord_tail"] = float(
-                pending.coord_tail_sum / float(pending.n_micro)
-            )
-
-        payload["time/forward_s"] = float(pending.time_forward_s)
-        payload["time/mask_build_s"] = float(pending.time_mask_build_s)
 
         payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
         payload["time/rollout_parse_match_s"] = float(
             pending.time_rollout_parse_match_s
         )
-        payload["time/rollout_teacher_encode_s"] = float(
-            pending.time_rollout_teacher_encode_s
-        )
-        if pending.time_post_rollout_pack_s > 0:
-            payload["time/post_rollout_pack_s"] = float(
-                pending.time_post_rollout_pack_s
-            )
 
         if pending.packing_count > 0:
             payload["packing/post_rollout_fill"] = float(
                 pending.packing_fill_sum / float(pending.packing_count)
             )
-            payload["packing/post_rollout_selected_total_len"] = float(
-                pending.packing_selected_total_len_sum / float(pending.packing_count)
-            )
-            payload["packing/post_rollout_segments"] = float(
-                pending.packing_segments_sum / float(pending.packing_count)
-            )
-            payload["packing/post_rollout_buffer"] = float(pending.packing_buffer_last)
 
-
-        # Generation-length stats are only meaningful when we actually ran a rollout this step.
         if pending.time_rollout_generate_s > 0:
             rollout_lens = [int(m.get("rollout_len", 0)) for m in pending.meta]
-
-            def _p(xs: List[int], q: float) -> float:
-                if not xs:
-                    return 0.0
-                arr = np.asarray(xs, dtype=np.float64)
-                return float(np.percentile(arr, float(q)))
-
             new_tok_total = float(sum(int(x) for x in rollout_lens))
-            new_tok_mean = (
-                float(new_tok_total / len(rollout_lens)) if rollout_lens else 0.0
-            )
-            payload["rollout/gen_new_tokens_total"] = float(new_tok_total)
-            payload["rollout/gen_new_tokens_mean"] = float(new_tok_mean)
-            payload["rollout/gen_new_tokens_p90"] = float(_p(rollout_lens, 90))
-            payload["rollout/gen_new_tokens_p99"] = float(_p(rollout_lens, 99))
             payload["rollout/gen_tokens_per_s"] = float(
                 (new_tok_total / float(pending.time_rollout_generate_s))
                 if pending.time_rollout_generate_s > 0
