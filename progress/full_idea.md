@@ -51,14 +51,15 @@ This iterative proxy can be run in:
 - In practice, bbox chains are short (4 coords). `N=2` is the default in this document.
 
 ### 0.4 Channel-B “FP-neutral” principle (central)
-In real detection data, unmatched predicted objects (FP under Hungarian) may correspond to **unlabeled** true objects. Therefore, Channel-B must avoid using token-level CE to teach the model to “stop early” or to suppress extra objects.
+In real detection data, unmatched predicted objects (FP under Hungarian) may correspond to **unlabeled** true objects. Therefore, Channel-B should avoid directly penalizing FP object content, while still keeping normal closure/end-token supervision.
+The previous stop-neutral variant is removed from this design due to observed rollout-length inflation without reliable TP-hit gains.
 
 Concretely:
 - Channel-B geometry learning uses **matched + FN-injected** objects in Unified one-pass; FP objects do not receive geometric gradients.
 - Channel-B text supervision is **FP-neutral and FN-focused**:
   - matched prefix objects keep `CE_desc=0`,
   - FN injected objects use normal `CE_desc=1`.
-- Channel-B is **stop-neutral** by default: token-level CE on the top-level JSON closing brace (`}`) and on the only turn-end token `<|im_end|>` is masked out, so Channel-B does not provide gradients for the stop/continue decision.
+- Channel-B keeps **closure supervision on**: token-level CE on the top-level JSON closing brace (`}`) and on `<|im_end|>` remains enabled.
 - Channel-A remains responsible for normal “format + closure + end-of-sequence” supervision and for stabilizing structured generation.
 
 ---
@@ -476,7 +477,7 @@ Channel-B is a single Unified one-pass pipeline, run sparsely to correct set-lev
    - Locate the **outermost** JSON closing brace `}` with brace-stack scan (or equivalent streaming parse).
    - Insert FN entries **before** that outermost `}` so FN stays inside the same top-level dict.
    - If prefix body already has at least one object entry, insert `,` before the first FN entry; otherwise insert FN entries directly.
-   - Preserve suffix tokens after the outermost `}` (including `<|im_end|>`), then apply stop-neutral CE masking later.
+   - Preserve suffix tokens after the outermost `}` (including `<|im_end|>`); these closure/end tokens remain supervised by CE.
 
 6) FN key numbering (conflict-safe):
    - Parse existing keys matching `"object_N"` in prefix body and compute `maxN`.
@@ -499,8 +500,8 @@ Channel-B is a single Unified one-pass pipeline, run sparsely to correct set-lev
   - `CE_struct = 1.0`
   - `CE_desc = 1.0`
   - `CE_coord = 0`
-- Stop-neutral (default on):
-  - mask CE on the outermost `}` and `<|im_end|>`
+- Closure/end supervision (default on):
+  - keep CE on the outermost `}` and `<|im_end|>`
   - outermost `}` is found by brace-stack scan (never by “last `}` token” heuristic)
 
 9) Geometry losses from the same `z^B`:
@@ -531,7 +532,7 @@ def channel_b_unified(sample, model):
     ce_mask = apply_matched_mask(ce_mask, parsed, struct_on=True, desc_on=False, coord_on=False)
     ce_mask = apply_fp_full_zero_mask(ce_mask, parsed, fp_ids)  # Strategy A
     ce_mask = apply_fn_mask(ce_mask, y_in, fn_entries, struct_on=True, desc_on=True, coord_on=False)
-    ce_mask = apply_stop_neutral_mask(ce_mask, y_in)  # mask outermost "}" and <|im_end|>
+    ce_mask = apply_closure_supervision_mask(ce_mask, y_in)  # keep outermost "}" and <|im_end|> supervised
 
     logits = teacher_forced_forward(model, sample, y_in)
     L_CE_struct, L_CE_desc_FN = compute_ce_terms(logits, y_in, ce_mask)
@@ -591,7 +592,7 @@ Given image + prompt:
 - Ability to locate the outermost `}` injection point and rebuild `y_in` by inserting FN entries inside the same top-level JSON dict.
 - FN key numbering rule: parse existing `"object_N"` keys, set `start_id = maxN + 1` (or `1` if none), and append FN entries in GT canonical order.
 - Ability to map each object to coord logit positions (shift-aware) for both prefix parsed objects and FN injected objects.
-- Loss-mask builder that applies `CE_struct` to matched+FN only, sets all FP-span losses to zero (Strategy A), and masks CE on outermost `}` and `<|im_end|>` (stop-neutral).
+- Loss-mask builder that applies `CE_struct` to matched+FN only, sets all FP-span losses to zero (Strategy A), and keeps CE on outermost `}` and `<|im_end|>` (closure supervision on).
 
 ### 10.1.1 (New) Soft self-context utilities (Channel-A)
 - A packing-safe way to get `coord_positions` (from labels/template).
@@ -631,7 +632,7 @@ Given image + prompt:
   - matched prefix: `CE_struct=1`, `CE_desc=0`, `CE_coord=0`
   - FP prefix spans: all CE terms = 0
   - FN injected spans: `CE_struct=1`, `CE_desc=1`, `CE_coord=0`
-  - stop-neutral: mask outermost `}` and `<|im_end|>`
+  - closure/end tokens: keep CE on outermost `}` and `<|im_end|>`
 - Future extension (off by default): `poly` geometry support and coord distribution-shape regularizers.
 - `L_CE`: standard token CE (with optional position-wise weights)
 
@@ -651,7 +652,7 @@ Given image + prompt:
 - build sets -> `ValidMatched / FP / FN`
 - locate outermost `}` + inject FN entries into top-level JSON dict (with comma/key rules)
 - export span/index metadata for matched-prefix coords, FP spans, and FN-injected coords
-- build stop-neutral mask (outermost `}` and `<|im_end|>` masked from CE)
+- build CE masks with FP full-mask only; keep outermost `}` and `<|im_end|>` supervised
 
 ### 10.8 Diagnostics
 - queue length (raw + ready), `ver` lag stats
@@ -723,7 +724,7 @@ Given image + prompt:
 * rollout -> strict parse -> Hungarian/gating to get `ValidMatched / FP / FN`
 * inject FN entries into the same top-level JSON dict before the outermost `}` (with key numbering `start_id = max_object_N + 1`)
 * run one teacher-forced forward on injected sequence `y_in`
-* apply CE masks: matched `CE_struct=1, CE_desc=0`; FP spans all zero; FN `CE_struct=1, CE_desc=1`; stop-neutral masks outermost `}` and `<|im_end|>`
+* apply CE masks: matched `CE_struct=1, CE_desc=0`; FP spans all zero; FN `CE_struct=1, CE_desc=1`; keep CE on outermost `}` and `<|im_end|>`
 * decode coords with CoordExp and apply SmoothL1 + CIoU on matched + FN geometry from the same logits
 
 ---
@@ -760,7 +761,7 @@ This pipeline:
 * In many detection datasets, “FP under Hungarian” may be **unlabeled true objects**. Therefore Channel-B should be **FP-neutral**:
   - no geometric loss on unmatched predicted objects,
   - no token CE on FP spans (Strategy A full-mask),
-  - no stop/continue supervision (mask top-level `}` and `<|im_end|>` in Channel-B CE).
+  - keep normal stop/continue supervision (top-level `}` and `<|im_end|>` remain in Channel-B CE).
 
 ### 14.4 Multi-peak coord distributions (“mean collapse”)
 
