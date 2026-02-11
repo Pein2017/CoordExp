@@ -56,3 +56,22 @@ They MUST NOT silently suppress repeated failures with no signal.
 - **WHEN** a training step executes
 - **THEN** a warning is emitted at first failure
 - **AND** only the failing diagnostic is disabled while training continues.
+
+### Requirement: Canonical module ownership for metrics helpers is unambiguous
+Metrics helper implementations SHALL live under `src/metrics/*` and MUST remain importable without importing trainer implementation internals.
+Legacy modules under `src/trainers/metrics/*` MAY exist as compatibility shims, but MUST only re-export the canonical implementation and MUST NOT carry divergent behavior.
+
+#### Scenario: Legacy import paths resolve to canonical behavior
+- **GIVEN** a consumer imports a metrics helper from a legacy module path
+- **WHEN** the helper functions are invoked
+- **THEN** behavior matches the canonical `src.metrics.*` implementation
+- **AND** no duplicated metric logic exists in the legacy module.
+
+### Requirement: Neutral payload contract has a single canonical implementation
+The neutral trainer-metrics payload contract SHALL have a single canonical implementation at `src/metrics/payload_contract.py`.
+Any legacy or trainer-side module paths MAY re-export the contract types/helpers for compatibility, but MUST NOT duplicate validation/building logic.
+
+#### Scenario: Payload parsing logic is not duplicated across module paths
+- **GIVEN** a consumer imports the payload contract from either canonical or legacy module path
+- **WHEN** payloads are validated/built
+- **THEN** the same implementation is used in both cases (re-export), preserving consistent validation semantics.

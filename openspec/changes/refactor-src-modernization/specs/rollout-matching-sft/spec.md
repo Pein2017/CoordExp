@@ -31,3 +31,11 @@ Given identical segment inputs and ordering, helper outputs MUST be deterministi
 - **GIVEN** identical segment metadata and insertion order
 - **WHEN** the shared packing scheduler runs twice
 - **THEN** it yields the same selected segment set and order in both runs.
+
+### Requirement: Coord-vocab gate math reuses the shared canonical helper
+When computing coord-vocab gate loss/mass terms (used as part of coord supervision and diagnostics), rollout-matching paths SHALL delegate to the shared helper used by training and metrics so numeric fences (NaN/Inf handling, clamping, temperature scaling) remain consistent across consumers.
+
+#### Scenario: Gate-loss numeric fences are consistent across training and rollout paths
+- **GIVEN** identical full-vocab logits, coord-vocab logits, and temperature
+- **WHEN** the gate term is computed in training/metrics and in rollout-matching
+- **THEN** the per-token gate-loss values match (up to floating-point tolerance) due to shared helper reuse.

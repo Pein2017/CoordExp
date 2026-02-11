@@ -44,7 +44,7 @@ class GradAccumLossScaleMixin:
         # Log a few optimizer/runtime scalars as *metrics* so eval logs include them
         # (ms-swift only injects learning_rate/grad_norm into train logs by default).
         try:
-            from src.trainers.metrics.reporter import SwiftMetricReporter, best_effort
+            from src.metrics.reporter import SwiftMetricReporter, best_effort
 
             reporter = SwiftMetricReporter(self)
 
@@ -106,7 +106,7 @@ class AggregateTokenTypeMetricsMixin:
         )
 
         try:
-            from src.trainers.metrics.reporter import best_effort
+            from src.metrics.reporter import best_effort
 
             best_effort(
                 self,
@@ -130,7 +130,7 @@ class AggregateTokenTypeMetricsMixin:
         if logits is None:
             return
 
-        from src.trainers.metrics.reporter import SwiftMetricReporter, best_effort
+        from src.metrics.reporter import SwiftMetricReporter, best_effort
 
         reporter = SwiftMetricReporter(self)
 
@@ -151,7 +151,7 @@ class AggregateTokenTypeMetricsMixin:
             coord_monitor_mass = True
             coord_monitor_mass_max_tokens = 0
 
-        from src.trainers.metrics.aggregate_token_metrics import (
+        from src.metrics.aggregate_token_metrics import (
             build_next_token_batch,
             compute_text_token_acc,
             compute_token_type_acc,
@@ -216,7 +216,7 @@ class AggregateTokenTypeMetricsMixin:
             except Exception:
                 temperature = 1.0
 
-            from src.trainers.metrics.coord_monitors import (
+            from src.metrics.coord_monitors import (
                 compute_coord_flip_and_mass_metrics,
             )
 
@@ -239,7 +239,7 @@ class AggregateTokenTypeMetricsMixin:
         # Coord distribution diagnostics (metrics-only; for pure-CE ablations)
         # ------------------------------------------------------------------
         def _coord_diag_pure_ce() -> None:
-            from src.trainers.metrics.coord_monitors import (
+            from src.metrics.coord_monitors import (
                 compute_coord_diag_metrics_for_pure_ce,
             )
 
@@ -388,7 +388,7 @@ class CoordSoftCEW1LossMixin:
         )
 
         try:
-            from src.trainers.metrics.reporter import SwiftMetricReporter, best_effort
+            from src.metrics.reporter import SwiftMetricReporter, best_effort
 
             reporter = SwiftMetricReporter(self)
             best_effort(
@@ -707,31 +707,18 @@ class CoordSoftCEW1LossMixin:
     ) -> torch.Tensor:
         """Negative log probability mass of the coord sub-vocabulary.
 
-        For each position:
-          mass_coord = sum_{i in coord_vocab} softmax(logits_full / T)[i]
-          gate_loss = -log(mass_coord) = logsumexp(all/T) - logsumexp(coord/T)
-
-        Args:
-            logits_full: [N, V] full-vocab logits at coord positions
-            logits_coord: [N, K] coord-only logits (same positions, sliced)
-            temperature: softmax temperature (>0)
-
-        Returns:
-            gate_loss_per_token: [N] non-negative tensor (fp32), NaN-safe
+        This delegates to the shared helper used by loss and rollout paths so all
+        consumers share identical numeric fences.
         """
 
-        if temperature <= 0:
-            raise ValueError("temperature must be > 0")
-        full = torch.nan_to_num(
-            logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
-        ).clamp(min=-1e4, max=1e4) / float(temperature)
-        coord = torch.nan_to_num(
-            logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
-        ).clamp(min=-1e4, max=1e4) / float(temperature)
-        lse_all = torch.logsumexp(full, dim=-1)
-        lse_coord = torch.logsumexp(coord, dim=-1)
-        loss = (lse_all - lse_coord).clamp(min=0.0)
-        return torch.nan_to_num(loss, nan=0.0, posinf=1e4, neginf=0.0)
+        from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
+
+        gate, _mass_mean = coord_vocab_gate_loss(
+            logits_full=logits_full,
+            logits_coord=logits_coord,
+            temperature=float(temperature),
+        )
+        return gate
 
     def _count_supervised_tokens(self, labels: torch.Tensor) -> int:
         from src.trainers.losses.coord_soft_ce_w1 import count_supervised_tokens

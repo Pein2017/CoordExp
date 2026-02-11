@@ -436,18 +436,14 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
 def _coord_vocab_gate_loss(
     *, logits_full: torch.Tensor, logits_coord: torch.Tensor, temperature: float
 ) -> torch.Tensor:
-    if temperature <= 0:
-        raise ValueError("temperature must be > 0")
-    full = torch.nan_to_num(
-        logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
-    ).clamp(min=-1e4, max=1e4) / float(temperature)
-    coord = torch.nan_to_num(
-        logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
-    ).clamp(min=-1e4, max=1e4) / float(temperature)
-    lse_all = torch.logsumexp(full, dim=-1)
-    lse_coord = torch.logsumexp(coord, dim=-1)
-    loss = (lse_all - lse_coord).clamp(min=0.0)
-    return torch.nan_to_num(loss, nan=0.0, posinf=1e4, neginf=0.0)
+    from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
+
+    gate, _mass_mean = coord_vocab_gate_loss(
+        logits_full=logits_full,
+        logits_coord=logits_coord,
+        temperature=float(temperature),
+    )
+    return gate
 
 
 def _build_labels_and_coord_targets_for_sample(

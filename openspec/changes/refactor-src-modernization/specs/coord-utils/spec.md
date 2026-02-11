@@ -36,3 +36,21 @@ Shared coordinate and geometry helper flows MUST preserve coordinate ordering se
 - **GIVEN** a valid polygon coordinate list in canonical order
 - **WHEN** it is passed through shared validation/conversion helpers
 - **THEN** the output retains the same point order and geometry semantics.
+
+### Requirement: Canonical geometry keys and arity invariants are enforced
+Geometry dicts SHALL use canonical keys `bbox_2d` or `poly` (exactly one per object geometry mapping).
+Validation helpers MUST reject legacy keys (`bbox`, `polygon`) to prevent ambiguous dual schema behavior.
+
+Arity invariants:
+- For `bbox_2d`, the sequence MUST contain exactly 4 values (expected ordering `[x1, y1, x2, y2]`).
+- For `poly`, the sequence MUST be flat (not nested), MUST contain an even number of values, and MUST contain at least 6 coordinates (>= 3 points).
+
+#### Scenario: Legacy geometry keys are rejected explicitly
+- **GIVEN** a geometry mapping containing `bbox` or `polygon`
+- **WHEN** it is validated via the dataset contract validation helper
+- **THEN** validation fails with explicit diagnostics indicating canonical keys are required.
+
+#### Scenario: Invalid geometry arity fails deterministically
+- **GIVEN** a `bbox_2d` geometry with len != 4 OR a `poly` geometry with odd length / length < 6
+- **WHEN** any consumer validates via canonical geometry validation helpers
+- **THEN** validation fails deterministically with a consistent invariant violation classification.

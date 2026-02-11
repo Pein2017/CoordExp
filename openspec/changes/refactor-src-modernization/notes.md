@@ -6,6 +6,19 @@ This file is a *working note* for baseline parity references, reproducibility
 checkpoints, and invariant guardrails. It is intentionally descriptive (no new
 metrics/results are invented here).
 
+## 0) Post-merge follow-up: ambiguity cleanup (2026-02-11)
+
+After the main refactor landed and strict validation passed, a quick architecture
+audit identified a few remaining ambiguity surfaces:
+- metrics helpers whose *canonical* module path is documented as `src/metrics/*`
+  but still implemented under `src/trainers/metrics/*`,
+- duplicated payload-contract implementations (neutral trainer-metrics),
+- duplicated coord-vocab gate-loss math in multiple callsites,
+- conflicting schema TypedDict definitions for geometry and conversation records.
+
+These are addressed as follow-up tasks under section 9 in `tasks.md` so the
+change record remains paper-ready and bisectable.
+
 ## 1) Baseline parity references (current main behavior)
 
 ### 1.1 Stage-2 / rollout-matching / Stage-2 AB

@@ -55,7 +55,7 @@ class InstabilityMonitorMixin:
         )
 
         try:
-            from src.trainers.metrics.reporter import best_effort_value
+            from src.metrics.reporter import best_effort_value
 
             loss = best_effort_value(
                 self,

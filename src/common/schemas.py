@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, MutableMapping, Optional, Sequence, TypedDict, Literal
+from typing import Any, Mapping, MutableMapping, Sequence, TypedDict, Literal
 
 # Coordinate normalization spaces used across datasets/eval/prompting.
 CoordSpace = Literal["pixel", "norm100", "norm1000"]
@@ -35,10 +35,21 @@ class ImageRecord(TypedDict, total=False):
     _fusion_source: str
 
 
+class MessageContent(TypedDict, total=False):
+    type: str
+    text: str
+    image: Any
+
+
+class MessageDict(TypedDict, total=False):
+    role: str
+    content: Sequence[MessageContent]
+
+
 class ConversationRecord(TypedDict, total=False):
     """Conversation-style record used by chat-style datasets."""
 
-    messages: Sequence[Mapping[str, Any]]
+    messages: Sequence[MessageDict]
     metadata: Mapping[str, Any]
 
 
@@ -50,6 +61,8 @@ __all__ = [
     "GeometryKind",
     "GeometryDict",
     "ImageRecord",
+    "MessageContent",
+    "MessageDict",
     "ConversationRecord",
     "MutableRecord",
 ]

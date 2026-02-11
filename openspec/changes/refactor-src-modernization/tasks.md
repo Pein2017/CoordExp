@@ -76,3 +76,11 @@
       `openspec validate refactor-src-modernization --strict`
 - [x] 8.7 Record final reproducibility checklist (config path, run name, seed, artifacts) in the change notes before handoff.
 - [x] 8.8 Post-merge reconciliation on `main`: run merged contract/boundary suite and strict OpenSpec validation against the final integrated branch state.
+
+## 9. Post-merge Ambiguity Cleanup (Follow-up)
+
+- [x] 9.1 Canonicalize metrics module ownership: move implementations to `src/metrics/*` and keep `src/trainers/metrics/*` as compatibility shims where needed.
+- [x] 9.2 Unify trainer-metrics payload contract: remove duplicate implementations and route all payload validation/building through `src/metrics/payload_contract.py`.
+- [x] 9.3 Deduplicate coord-vocab gate math: route gate-loss/mass computations through one shared helper to keep numeric fences consistent across training, metrics, and rollout paths.
+- [x] 9.4 Unify shared schema TypedDicts: remove conflicting `GeometryDict`/`ConversationRecord` definitions by consolidating under `src/common/schemas.py` and re-exporting from dataset contracts.
+- [x] 9.5 Tighten dataset geometry validation: make `validate_geometry_sequence` enforce `bbox_2d|poly` keys and arity invariants (non-destructive, order-preserving).
