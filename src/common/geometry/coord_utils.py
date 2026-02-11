@@ -21,7 +21,6 @@ from src.coord_tokens.codec import (
     token_to_int,
     value_in_coord_range,
 )
-from src.datasets.geometry import clamp_points as _clamp_points
 
 COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,4})\|>")
 MAX_BIN = 999  # coord tokens are 0..999 inclusive
@@ -94,6 +93,17 @@ def ints_to_pixels_norm1000(ints: Sequence[int], width: float, height: float) ->
             out.append(frac * denom_x)
         else:
             out.append(frac * denom_y)
+    return out
+
+
+def _clamp_points(points: Sequence[float], width: float, height: float) -> List[int]:
+    """Clamp coordinates to image bounds and round to nearest integer."""
+    out: List[int] = []
+    for i, v in enumerate(points):
+        if i % 2 == 0:
+            out.append(max(0, min(int(width) - 1, int(round(float(v))))))
+        else:
+            out.append(max(0, min(int(height) - 1, int(round(float(v))))))
     return out
 
 
