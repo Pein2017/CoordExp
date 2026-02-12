@@ -264,16 +264,85 @@ def load_resolved_config(path: Path) -> Dict[str, Any]:
     return raw
 
 
+def _candidate_resolved_config_paths_for_jsonl(jsonl_path: Path) -> List[Path]:
+    candidates: List[Path] = []
+    seen: set[str] = set()
+
+    def _push(path: Path) -> None:
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(path)
+
+    pointer_path = jsonl_path.parent / "resolved_config.path"
+    if pointer_path.exists():
+        try:
+            pointer_raw = str(pointer_path.read_text(encoding="utf-8") or "").strip()
+            if pointer_raw:
+                pointed = Path(pointer_raw).expanduser()
+                if not pointed.is_absolute():
+                    pointed = (pointer_path.parent / pointed).resolve()
+                _push(pointed)
+        except Exception:
+            pass
+
+    _push(jsonl_path.parent / "resolved_config.json")
+
+    for parent in list(jsonl_path.parents)[:4]:
+        _push(parent / "resolved_config.json")
+
+    return candidates
+
+
+def _find_resolved_config_for_jsonl(jsonl_path: Path) -> Optional[Dict[str, Any]]:
+    jsonl_resolved = jsonl_path.resolve()
+    fallback: Optional[Dict[str, Any]] = None
+
+    for candidate in _candidate_resolved_config_paths_for_jsonl(jsonl_path):
+        if not candidate.exists():
+            continue
+        try:
+            resolved = load_resolved_config(candidate)
+        except Exception:
+            continue
+
+        if fallback is None:
+            fallback = resolved
+
+        artifacts = resolved.get("artifacts")
+        if not isinstance(artifacts, Mapping):
+            continue
+
+        gt_vs_pred_jsonl = artifacts.get("gt_vs_pred_jsonl")
+        if isinstance(gt_vs_pred_jsonl, str) and gt_vs_pred_jsonl.strip():
+            try:
+                if Path(gt_vs_pred_jsonl).resolve() == jsonl_resolved:
+                    return resolved
+            except Exception:
+                pass
+
+        run_dir = artifacts.get("run_dir")
+        if isinstance(run_dir, str) and run_dir.strip():
+            try:
+                run_dir_resolved = Path(run_dir).resolve()
+                if run_dir_resolved in jsonl_resolved.parents:
+                    return resolved
+            except Exception:
+                pass
+
+    return fallback
+
+
 def resolve_root_image_dir_for_jsonl(jsonl_path: Path) -> Tuple[Optional[Path], str]:
     root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
     if root_env:
         return Path(root_env).resolve(), "env"
 
-    resolved_path = jsonl_path.parent / "resolved_config.json"
-    if not resolved_path.exists():
+    resolved = _find_resolved_config_for_jsonl(jsonl_path)
+    if resolved is None:
         return None, "none"
 
-    resolved = load_resolved_config(resolved_path)
     root_cfg = resolved.get("root_image_dir")
     root_source = resolved.get("root_image_dir_source")
     if isinstance(root_cfg, str) and root_cfg.strip():
@@ -352,9 +421,21 @@ def run_pipeline(
         "cfg": cfg_redacted,
     }
     logger.info("Resolved pipeline config: %s", json.dumps(resolved_dump, indent=2))
-    (artifacts.run_dir / "resolved_config.json").write_text(
+    resolved_config_path = artifacts.run_dir / "resolved_config.json"
+    resolved_config_path.write_text(
         json.dumps(resolved_dump, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    # Persist a manifest pointer next to the unified JSONL artifact so eval/vis can
+    # recover the canonical run_dir manifest even when artifacts are laid out outside run_dir.
+    try:
+        artifacts.gt_vs_pred_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        (artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path").write_text(
+            str(resolved_config_path.resolve()),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
     if stages.infer:
         _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)

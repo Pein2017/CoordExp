@@ -87,10 +87,10 @@
 
 ## 10. Reopened Contract Alignment (2026-02-11)
 
-- [ ] 10.1 Align authority across active deltas: this change SHALL delegate helper-consolidation normative details to `src-ambiguity-cleanup-2026-02-11` and keep only integration/migration requirements here.
+- [x] 10.1 Align authority across active deltas: this change SHALL delegate helper-consolidation normative details to `src-ambiguity-cleanup-2026-02-11` and keep only integration/migration requirements here.
 - [ ] 10.2 Pin strict-parse behavior contract (`eval.strict_parse`) and bounded diagnostics defaults (`warn_limit=5`, `max_snippet_len=200`) in spec + docs without ambiguity.
 - [ ] 10.3 Pin root image-dir precedence and provenance contract explicitly (`env > config > gt_parent > none`) and ensure stage consumers use the single resolved decision.
 - [ ] 10.4 Narrow `resolved_config.json` compatibility guarantees to explicit stable keys and treat redacted `cfg` snapshot as opaque/non-contract.
 - [ ] 10.5 Expand no-private-rollout-import AST guard scope from the single Stage-2 file to the full Stage-2 capability surface (`src/trainers/stage2_ab/**/*.py` + entrypoint).
 - [ ] 10.6 Require exact inference attention-backend artifact fields (not "and/or" wording) and align docs/tests to those fields.
-- [ ] 10.7 Re-run strict validation for both active deltas after reconciliation: `openspec validate refactor-src-modernization --strict` and `openspec validate src-ambiguity-cleanup-2026-02-11 --strict`.
+- [x] 10.7 Re-run strict validation for both active deltas after reconciliation: `openspec validate refactor-src-modernization --strict` and `openspec validate src-ambiguity-cleanup-2026-02-11 --strict`.

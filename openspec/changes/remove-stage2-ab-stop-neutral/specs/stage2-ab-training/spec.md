@@ -15,8 +15,10 @@ Channel-A:
   - Geometry losses and any distribution-level losses MUST be computed from the final-iteration logits `z^(n_softctx_iter-1)`.
 
 Channel-B:
-- **Matched-only geometry**:
-  - Geometry losses MUST be computed only for matched `(pred_i -> gt_j)` pairs.
+- **Matched + FN geometry (FP excluded)**:
+  - Geometry losses MUST be computed for:
+    - matched `(pred_i -> gt_j)` pairs, and
+    - FN-appended objects injected into the B3 target.
   - Unmatched predicted objects (FP under Hungarian) MUST NOT receive geometric gradients.
 - **Stop/closure CE is supervised**:
   - Channel-B CE MUST supervise stop/continue only via token-level supervision on:

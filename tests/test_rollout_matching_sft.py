@@ -242,6 +242,115 @@ def test_vllm_server_repeat_cfg_subtree_is_forwarded_and_missing_signal_fails_fa
     assert len(captured_payloads) == 1
 
 
+def test_vllm_server_timeouts_allow_null_or_non_positive_infer_timeout() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": None}
+    timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
+    assert timeout_s == pytest.approx(60.0)
+    assert infer_timeout_s is None
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
+    timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
+    assert timeout_s == pytest.approx(60.0)
+    assert infer_timeout_s is None
+
+
+def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
+    monkeypatch,
+):
+    repeat_cfg = {"enabled": False}
+    trainer = _make_rollout_server_trainer(repeat_cfg=repeat_cfg)
+
+    captured_payloads: list[dict] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [1, 2],
+                "choices": [
+                    {
+                        "message": {"content": "{}"},
+                        "token_ids": [3, 4],
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        }
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+    trainer._vllm_server_timeouts = lambda: (30.0, None)
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    trainer._rollout_many_vllm_server([sample])
+
+    assert captured_payloads
+    assert captured_payloads[0]["timeout"] is None
+
+
+def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatch):
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+
+    def _fake_all_reduce(tensor: torch.Tensor, op: str) -> None:
+        if op == _FakeReduceOp.SUM:
+            tensor.add_(
+                torch.tensor(
+                    [3.0, 6.0, 6.0, 40.0],
+                    dtype=tensor.dtype,
+                    device=tensor.device,
+                )
+            )
+        elif op == _FakeReduceOp.MAX:
+            tensor.copy_(
+                torch.maximum(
+                    tensor,
+                    torch.tensor([20.0, 5.0], dtype=tensor.dtype, device=tensor.device),
+                )
+            )
+
+    monkeypatch.setattr(dist, "all_reduce", _fake_all_reduce)
+
+    out = trainer._reduce_train_rollout_log_payload_global(
+        {
+            "rollout/_parse_truncated_num": 1.0,
+            "rollout/_parse_truncated_den": 4.0,
+            "train/samples_total": 4.0,
+            "rollout/gen_new_tokens_total": 32.0,
+            "rollout/gen_new_tokens_mean": 8.0,
+            "rollout/gen_new_tokens_p99": 12.0,
+            "time/rollout_generate_s": 2.0,
+            "rollout/gen_tokens_per_s": 16.0,
+        }
+    )
+
+    assert out["rollout/parse_truncated_rate"] == pytest.approx(0.4)
+    assert out["rollout/gen_new_tokens_p99"] == pytest.approx(20.0)
+    assert out["rollout/gen_new_tokens_mean"] == pytest.approx(7.2)
+    assert out["rollout/gen_tokens_per_s"] == pytest.approx(14.4)
+    assert "rollout/_parse_truncated_num" not in out
+    assert "rollout/_parse_truncated_den" not in out
+
+
 def test_vllm_server_repeat_activation_does_not_use_request_time_logits_processors(
     monkeypatch,
 ):

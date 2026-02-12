@@ -1472,7 +1472,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             for u, gp in zip(base_urls, group_ports)
         ]
 
-    def _vllm_server_timeouts(self) -> Tuple[float, float]:
+    def _vllm_server_timeouts(self) -> Tuple[float, Optional[float]]:
         scfg = self._vllm_server_cfg()
 
         timeout_raw = scfg.get("timeout_s", None)
@@ -1492,7 +1492,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         infer_timeout_raw = scfg.get("infer_timeout_s", None)
         if infer_timeout_raw is None:
-            infer_timeout_s = float(timeout_s)
+            infer_timeout_s: Optional[float] = None
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
@@ -1501,9 +1501,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "custom.extra.rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
             if infer_timeout_s <= 0:
-                infer_timeout_s = float(timeout_s)
+                infer_timeout_s = None
 
-        return float(timeout_s), float(infer_timeout_s)
+        return float(timeout_s), (
+            float(infer_timeout_s) if infer_timeout_s is not None else None
+        )
 
     def _vllm_server_sync_cfg(self) -> Tuple[str, bool]:
         vcfg_raw = self._cfg("vllm", {}) or {}
@@ -3713,9 +3715,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             url = f"{base_url}/infer/"
             session = client.sessions[server_idx]
-            req_timeout_s = float(infer_timeout_s)
-            # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
-            req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
+            req_timeout: Optional[Tuple[float, float]]
+            if infer_timeout_s is None:
+                req_timeout = None
+            else:
+                req_timeout_s = float(infer_timeout_s)
+                # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
+                req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
             try:
                 with self._vllm_server_infer_guard():
                     resp = session.post(url, json=payload, timeout=req_timeout)
@@ -4812,6 +4818,102 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     # ------------------------ loss ------------------------ #
 
+    def _reduce_train_rollout_log_payload_global(
+        self, payload: Mapping[str, Any]
+    ) -> Dict[str, float]:
+        reduced: Dict[str, float] = {}
+        for k, v in payload.items():
+            try:
+                reduced[str(k)] = float(v)
+            except Exception:
+                continue
+
+        trunc_num_key = "rollout/_parse_truncated_num"
+        trunc_den_key = "rollout/_parse_truncated_den"
+        reduced.setdefault(
+            trunc_num_key,
+            float(reduced.get("rollout/parse_truncated", 0.0)),
+        )
+        reduced.setdefault(
+            trunc_den_key,
+            float(reduced.get("train/samples_total", 0.0)),
+        )
+        reduced.pop("rollout/parse_truncated_rate", None)
+
+        try:
+            import torch.distributed as dist
+        except Exception:
+            dist = None  # type: ignore[assignment]
+
+        world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            try:
+                world_size = int(dist.get_world_size())
+            except Exception:
+                world_size = 1
+
+        if dist is not None and dist.is_available() and dist.is_initialized() and world_size > 1:
+            device = torch.device("cpu")
+            try:
+                model = getattr(self, "model", None)
+                if model is not None and hasattr(model, "device"):
+                    device = model.device
+                elif model is not None:
+                    device = next(model.parameters()).device
+            except Exception:
+                device = torch.device("cpu")
+
+            def _all_reduce(keys: List[str], op: Any) -> None:
+                if not keys:
+                    return
+                values = torch.tensor(
+                    [float(reduced[k]) for k in keys], dtype=torch.float64, device=device
+                )
+                dist.all_reduce(values, op=op)
+                for idx, key in enumerate(keys):
+                    reduced[key] = float(values[idx].item())
+
+            sum_keys = [
+                key
+                for key in (
+                    trunc_num_key,
+                    trunc_den_key,
+                    "train/samples_total",
+                    "rollout/gen_new_tokens_total",
+                )
+                if key in reduced
+            ]
+            max_keys = [
+                key
+                for key in ("rollout/gen_new_tokens_p99", "time/rollout_generate_s")
+                if key in reduced
+            ]
+
+            _all_reduce(sum_keys, dist.ReduceOp.SUM)
+            _all_reduce(max_keys, dist.ReduceOp.MAX)
+
+        sample_total = float(reduced.get("train/samples_total", 0.0))
+        trunc_num = float(reduced.get(trunc_num_key, 0.0))
+        reduced["rollout/parse_truncated_rate"] = (
+            float(trunc_num / sample_total) if sample_total > 0.0 else 0.0
+        )
+
+        new_tok_total = float(reduced.get("rollout/gen_new_tokens_total", 0.0))
+        if "rollout/gen_new_tokens_mean" in reduced:
+            reduced["rollout/gen_new_tokens_mean"] = (
+                float(new_tok_total / sample_total) if sample_total > 0.0 else 0.0
+            )
+
+        rollout_gen_s = float(reduced.get("time/rollout_generate_s", 0.0))
+        if "rollout/gen_tokens_per_s" in reduced:
+            reduced["rollout/gen_tokens_per_s"] = (
+                float(new_tok_total / rollout_gen_s) if rollout_gen_s > 0.0 else 0.0
+            )
+
+        reduced.pop(trunc_num_key, None)
+        reduced.pop(trunc_den_key, None)
+        return reduced
+
     def log(self, logs: Dict[str, float]) -> None:
         """Merge buffered rollout-matching metrics into the main train log record.
 
@@ -4832,7 +4934,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._rm_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    sample_step = int(len(getattr(pending, "meta", []) or []))
+                    payload_local = self._build_train_rollout_log_payload(pending)
+                    payload = self._reduce_train_rollout_log_payload_global(payload_local)
+                    sample_step = int(round(float(payload.get("train/samples_total", 0.0))))
                     try:
                         self._rm_train_samples_seen = (
                             int(getattr(self, "_rm_train_samples_seen", 0) or 0)
@@ -4841,7 +4945,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     except Exception:
                         self._rm_train_samples_seen = sample_step
 
-                    logs.update(self._build_train_rollout_log_payload(pending))
+                    logs.update(payload)
                     logs["train/samples_seen"] = float(
                         getattr(self, "_rm_train_samples_seen", 0) or 0
                     )
@@ -5110,6 +5214,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         payload["train/samples_per_micro"] = (
             float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
         )
+
+        payload["rollout/_parse_truncated_num"] = float(
+            payload.get("rollout/parse_truncated", 0.0)
+        )
+        payload["rollout/_parse_truncated_den"] = float(sample_total)
 
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))

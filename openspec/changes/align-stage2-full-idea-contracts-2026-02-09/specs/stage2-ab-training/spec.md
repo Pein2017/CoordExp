@@ -31,11 +31,13 @@ Channel-B:
 - **Deterministic key allocation**:
   - FN key assignment MUST start from `start_id = max_object_index_in_prefix + 1` (or `1` when none).
   - `max_object_index_in_prefix` MUST be computed from all retained prefix keys matching `object_{n}`, including keys from entries later dropped by strict validation/matching; malformed keys are ignored.
-- **Stop-neutral CE**:
-  - Channel-B CE MUST NOT supervise stop/continue decisions.
-  - The trainer MUST mask CE on:
+- **Stop/closure CE is supervised**:
+  - Channel-B CE MUST supervise stop/continue via token-level supervision on:
     - the same outermost top-level `}` token used as the FN injection anchor, and
     - `<|im_end|>`.
+  - Stop-neutral masking MUST NOT be applied in Stage-2 AB Channel-B.
+  - This requirement is intentionally aligned with
+    `openspec/changes/remove-stage2-ab-stop-neutral/specs/stage2-ab-training/spec.md`.
 
 Configurable desc supervision (both channels):
 - `stage2_ab.desc_ce_weight` MUST be a float `>= 0` and applies to desc value tokens by default.
@@ -78,11 +80,11 @@ Efficiency rule (normative):
 - **THEN** `max_object_index_in_prefix` is `7`
 - **AND** FN key assignment starts at `object_8`.
 
-#### Scenario: Stop-neutral brace target is the same brace used for injection
+#### Scenario: Closure-supervision brace target is the same brace used for injection
 - **GIVEN** Channel-B injects FN entries before the outermost close brace resolved by brace-depth scan
 - **WHEN** CE masks are produced
-- **THEN** that same outermost close brace token position is CE-masked
-- **AND** `<|im_end|>` is CE-masked.
+- **THEN** that same outermost close brace token position remains CE-supervised
+- **AND** `<|im_end|>` remains CE-supervised.
 
 #### Scenario: CE masking follows matched/FP/FN policy
 - **GIVEN** Channel-B contains one matched object, one FP object, and one FN-injected object

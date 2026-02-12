@@ -58,7 +58,7 @@ class _PendingStage2Log:
             except Exception:
                 continue
 
-    def finalize(self) -> Dict[str, float]:
+    def finalize(self, *, drop_internal: bool = True) -> Dict[str, float]:
         if self.n_micro <= 0:
             return {}
 
@@ -67,6 +67,10 @@ class _PendingStage2Log:
         for k, v in self.sums.items():
             if k == "rollout/repeat_terminate_active":
                 out[k] = 1.0 if float(v) > 0.0 else 0.0
+                continue
+
+            if k == "rollout/parse_truncated_rate":
+                # Always derived from numerator/denominator.
                 continue
 
             if k in {
@@ -90,23 +94,24 @@ class _PendingStage2Log:
                 out[k] = float(v)
 
         trunc_num = float(
-            self.sums.get(
+            out.get(
                 "rollout/_parse_truncated_num",
-                self.sums.get("rollout/parse_truncated", 0.0),
+                out.get("rollout/parse_truncated", 0.0),
             )
         )
         trunc_den = float(
-            self.sums.get(
+            out.get(
                 "rollout/_parse_truncated_den",
-                self.sums.get("stage2/raw_rollouts", 0.0),
+                out.get("stage2/raw_rollouts", 0.0),
             )
         )
         out["rollout/parse_truncated_rate"] = (
             float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
         )
 
-        out.pop("rollout/_parse_truncated_num", None)
-        out.pop("rollout/_parse_truncated_den", None)
+        if drop_internal:
+            out.pop("rollout/_parse_truncated_num", None)
+            out.pop("rollout/_parse_truncated_den", None)
 
         return out
 
@@ -869,6 +874,120 @@ class Stage2ABTrainingTrainer(
 
         return int(rank), int(world_size), dist
 
+    def _reduce_stage2_pending_metrics_global(
+        self, metrics: Mapping[str, Any]
+    ) -> Dict[str, float]:
+        reduced: Dict[str, float] = {}
+        for k, v in metrics.items():
+            try:
+                reduced[str(k)] = float(v)
+            except Exception:
+                continue
+
+        reduced.pop("rollout/parse_truncated_rate", None)
+
+        trunc_num_key = "rollout/_parse_truncated_num"
+        trunc_den_key = "rollout/_parse_truncated_den"
+
+        sum_keys: List[str] = []
+        max_keys: List[str] = []
+        mean_keys: List[str] = []
+
+        for key in reduced.keys():
+            if key == "rollout/repeat_terminate_active":
+                max_keys.append(key)
+                continue
+
+            if key.startswith("time/") or key in {
+                "rollout/backend_hf",
+                "rollout/backend_vllm",
+                "rollout/decode_mode_greedy",
+                "rollout/decode_mode_beam",
+                "rollout/hf_seeded_global",
+                "rollout/do_sample",
+            }:
+                max_keys.append(key)
+                continue
+
+            if key in {
+                "stage2/raw_rollouts",
+                "stage2/invalid_rollout",
+                "stage2/drop_poly",
+                "stage2/drop_unknown",
+                "stage2/drop_bbox_invalid",
+                "rollout/repeat_terminate_triggered_sequences",
+                "rollout/parse_truncated",
+                trunc_num_key,
+                trunc_den_key,
+            }:
+                sum_keys.append(key)
+                continue
+
+            if key.startswith("stage2_ab/") and "/N_" in key:
+                sum_keys.append(key)
+                continue
+
+            mean_keys.append(key)
+
+        rank, world_size, dist = self._dist_info()
+        if dist is not None and int(world_size) > 1:
+            try:
+                device = torch.device("cpu")
+                try:
+                    model = getattr(self, "model", None)
+                    if model is not None and hasattr(model, "device"):
+                        device = model.device
+                    elif model is not None:
+                        device = next(model.parameters()).device
+                except Exception:
+                    device = torch.device("cpu")
+
+                def _all_reduce(keys: List[str], op: Any) -> None:
+                    if not keys:
+                        return
+                    values = torch.tensor(
+                        [float(reduced[k]) for k in keys],
+                        dtype=torch.float64,
+                        device=device,
+                    )
+                    dist.all_reduce(values, op=op)
+                    for idx, key in enumerate(keys):
+                        reduced[key] = float(values[idx].item())
+
+                _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
+                _all_reduce(max_keys, dist.ReduceOp.MAX)
+
+                if int(world_size) > 0:
+                    scale = float(world_size)
+                    for key in mean_keys:
+                        reduced[key] = float(reduced[key] / scale)
+            except Exception as exc:
+                if int(rank) == 0:
+                    logger.warning(
+                        "stage2-ab metric all-reduce failed; falling back to local metrics: %r",
+                        exc,
+                    )
+
+        trunc_num = float(
+            reduced.get(
+                trunc_num_key,
+                reduced.get("rollout/parse_truncated", 0.0),
+            )
+        )
+        trunc_den = float(
+            reduced.get(
+                trunc_den_key,
+                reduced.get("stage2/raw_rollouts", 0.0),
+            )
+        )
+        reduced["rollout/parse_truncated_rate"] = (
+            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
+        )
+        reduced.pop(trunc_num_key, None)
+        reduced.pop(trunc_den_key, None)
+
+        return reduced
+
     # Stage-2 AB async queue helpers live in `src/trainers/stage2_ab/async_queue.py`.
     # Stage-2 AB channel executors live in `src/trainers/stage2_ab/executors.py`.
 
@@ -882,7 +1001,8 @@ class Stage2ABTrainingTrainer(
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._stage2_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    logs.update(pending.finalize())
+                    local_metrics = pending.finalize(drop_internal=False)
+                    logs.update(self._reduce_stage2_pending_metrics_global(local_metrics))
         except Exception:
             pass
         return super().log(logs)

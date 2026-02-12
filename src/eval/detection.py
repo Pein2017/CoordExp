@@ -31,6 +31,7 @@ from src.common.geometry import (
     flatten_points,
     is_degenerate_bbox,
 )
+from src.common.geometry.object_geometry import extract_single_geometry
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
@@ -411,26 +412,25 @@ def _prepare_gt_record(
     objs_in = record.get("gt") or record.get("objects") or []
     coord_mode_hint = record.get("coord_mode")
     for obj in objs_in:
-        gkeys = (
-            [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
-            if not obj.get("type")
-            else [obj.get("type")]
-        )
-        if len(gkeys) != 1:
+        try:
+            gtype, pts_raw = extract_single_geometry(
+                obj,
+                allow_type_and_points=True,
+                allow_nested_points=False,
+                path="gt",
+            )
+        except ValueError as exc:
+            msg = str(exc)
             counters.invalid_geometry += 1
-            invalid.append({"reason": "geometry_keys", "raw": obj})
+            if "type must be bbox_2d|poly" in msg:
+                reason = "geometry_kind"
+            elif "must contain exactly one geometry field" in msg:
+                reason = "geometry_keys"
+            else:
+                reason = "geometry_points"
+            invalid.append({"reason": reason, "raw": obj})
             continue
-        gtype = gkeys[0]
-        if gtype not in GEOM_KEYS:
-            counters.invalid_geometry += 1
-            invalid.append({"reason": "geometry_kind", "raw": obj})
-            continue
-        pts_value = obj.get(gtype) if gtype in obj else obj.get("points")
-        pts_raw = flatten_points(pts_value)
-        if pts_raw is None:
-            counters.invalid_geometry += 1
-            invalid.append({"reason": "geometry_points", "raw": obj})
-            continue
+
         points, had_tokens = coerce_point_list(pts_raw)
         if points is None:
             counters.invalid_coord += 1
@@ -496,25 +496,25 @@ def _prepare_pred_objects(
     preds: List[Dict[str, Any]] = []
     coord_mode_hint = record.get("coord_mode")
     for obj in objs_raw:
-        if obj.get("type"):
-            if obj["type"] not in GEOM_KEYS:
-                counters.invalid_geometry += 1
-                invalid.append({"reason": "geometry_kind", "raw": obj})
-                continue
-            gkeys = [obj["type"]]
-        else:
-            gkeys = [g for g in GEOM_KEYS if g in obj and obj[g] is not None]
-        if len(gkeys) != 1:
+        try:
+            gtype, pts_raw = extract_single_geometry(
+                obj,
+                allow_type_and_points=True,
+                allow_nested_points=False,
+                path="pred",
+            )
+        except ValueError as exc:
+            msg = str(exc)
             counters.invalid_geometry += 1
-            invalid.append({"reason": "geometry_keys", "raw": obj})
+            if "type must be bbox_2d|poly" in msg:
+                reason = "geometry_kind"
+            elif "must contain exactly one geometry field" in msg:
+                reason = "geometry_keys"
+            else:
+                reason = "geometry_points"
+            invalid.append({"reason": reason, "raw": obj})
             continue
-        gtype = gkeys[0]
-        pts_value = obj.get(gtype) if gtype in obj else obj.get("points")
-        pts_raw = flatten_points(pts_value)
-        if pts_raw is None:
-            counters.invalid_geometry += 1
-            invalid.append({"reason": "geometry_points", "raw": obj})
-            continue
+
         points, had_tokens = coerce_point_list(pts_raw)
         if points is None:
             counters.invalid_coord += 1

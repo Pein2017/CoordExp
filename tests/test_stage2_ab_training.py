@@ -1141,6 +1141,55 @@ def test_pending_stage2_log_aggregates_closure_and_repeat_metrics() -> None:
     assert "rollout/_parse_truncated_den" not in out
 
 
+def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_max_flag() -> None:
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    class _FakeDist:
+        ReduceOp = _FakeReduceOp
+
+        def all_reduce(self, tensor: torch.Tensor, op: str) -> None:
+            if op == self.ReduceOp.SUM:
+                tensor.add_(
+                    torch.tensor(
+                        [3.0, 6.0, 6.0, 1.0],
+                        dtype=tensor.dtype,
+                        device=tensor.device,
+                    )
+                )
+            elif op == self.ReduceOp.MAX:
+                tensor.copy_(
+                    torch.maximum(
+                        tensor,
+                        torch.tensor(
+                            [1.0],
+                            dtype=tensor.dtype,
+                            device=tensor.device,
+                        ),
+                    )
+                )
+
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer._dist_info = lambda: (0, 2, _FakeDist())
+
+    out = trainer._reduce_stage2_pending_metrics_global(
+        {
+            "rollout/_parse_truncated_num": 1.0,
+            "rollout/_parse_truncated_den": 4.0,
+            "stage2/raw_rollouts": 4.0,
+            "rollout/repeat_terminate_triggered_sequences": 2.0,
+            "rollout/repeat_terminate_active": 0.0,
+        }
+    )
+
+    assert out["rollout/parse_truncated_rate"] == pytest.approx(0.4)
+    assert out["rollout/repeat_terminate_triggered_sequences"] == pytest.approx(3.0)
+    assert out["rollout/repeat_terminate_active"] == pytest.approx(1.0)
+    assert "rollout/_parse_truncated_num" not in out
+    assert "rollout/_parse_truncated_den" not in out
+
+
 def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():
     # This exercises the compute_loss masking hook used by the semantic-desc gate:
     # meta["tail_desc_pos_matched_masked"] contributes to the ignore set.

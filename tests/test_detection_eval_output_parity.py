@@ -7,7 +7,12 @@ import pytest
 
 pytest.importorskip("pycocotools")
 
-from src.eval.detection import EvalOptions, evaluate_and_save
+from src.eval.detection import (
+    EvalCounters,
+    EvalOptions,
+    _prepare_pred_objects,
+    evaluate_and_save,
+)
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:
@@ -94,3 +99,29 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(tmp_path: Path) -> None:
     summary = evaluate_and_save(pred_path, options=options)
     assert summary["metrics"]["bbox_AP50"] > 0.9
     assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
+
+
+def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
+    counters = EvalCounters()
+    options = EvalOptions(strict_parse=False, use_segm=False, output_dir=Path("eval_out"))
+
+    preds, invalid = _prepare_pred_objects(
+        {
+            "coord_mode": "pixel",
+            "pred": [
+                {
+                    "type": "bbox_2d",
+                    "points": [[1, 2], [10, 12]],
+                    "desc": "nested",
+                }
+            ],
+        },
+        width=32,
+        height=32,
+        options=options,
+        counters=counters,
+    )
+
+    assert preds == []
+    assert counters.invalid_geometry == 1
+    assert invalid and invalid[0]["reason"] == "geometry_points"

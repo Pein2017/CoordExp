@@ -35,8 +35,8 @@
 
 ## 8. Reopened Contract Clarifications (2026-02-11)
 
-- [ ] 8.1 Pin this change as the authoritative helper-contract delta and sync cross-references from overlapping active changes.
+- [x] 8.1 Pin this change as the authoritative helper-contract delta and sync cross-references from overlapping active changes.
 - [ ] 8.2 Make evaluator strict-parse behavior fully explicit in specs (`eval.strict_parse`, default false, `warn_limit=5`, `max_snippet_len=200`) and keep implementation/tests aligned.
 - [ ] 8.3 Make root-image resolution precedence/provenance explicit (`env > config > gt_parent > none`) and ensure the same resolved decision is consumed consistently across infer/eval/vis.
 - [ ] 8.4 Add explicit canonical module map + coord range/shape rules in `coord-utils` spec (including nested-point opt-in boundaries).
-- [ ] 8.5 Re-run strict validation for both overlapping active changes after synchronization.
+- [x] 8.5 Re-run strict validation for both overlapping active changes after synchronization.

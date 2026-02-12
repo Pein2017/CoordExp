@@ -10,7 +10,12 @@ import pytest
 from PIL import Image
 
 from src.infer.engine import detect_mode_from_gt
-from src.infer.pipeline import load_resolved_config, resolve_artifacts, run_pipeline
+from src.infer.pipeline import (
+    load_resolved_config,
+    resolve_artifacts,
+    resolve_root_image_dir_for_jsonl,
+    run_pipeline,
+)
 from src.infer.vis import render_vis_from_jsonl
 
 
@@ -176,6 +181,81 @@ def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
     assert resolved["schema_version"] == 1
     assert resolved["root_image_dir_source"] == "gt_parent"
     assert resolved["root_image_dir"] == str(gt_jsonl.parent.resolve())
+
+
+def test_run_pipeline_writes_manifest_pointer_for_non_default_artifact_layout(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    external_jsonl = tmp_path / "external" / "preds" / "gt_vs_pred.jsonl"
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "artifacts": {"gt_vs_pred_jsonl": str(external_jsonl)},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    external_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    external_jsonl.write_text("", encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+
+    run_pipeline(config_path=config_path)
+
+    pointer_path = external_jsonl.parent / "resolved_config.path"
+    assert pointer_path.exists()
+    pointed = Path(pointer_path.read_text(encoding="utf-8").strip())
+    assert pointed == (artifacts.run_dir / "resolved_config.json").resolve()
+
+
+def test_resolve_root_image_dir_for_jsonl_uses_manifest_pointer(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    jsonl_path = tmp_path / "external" / "gt_vs_pred.jsonl"
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    jsonl_path.write_text("", encoding="utf-8")
+
+    run_dir = tmp_path / "out" / "demo"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    root_dir = tmp_path / "images"
+    root_dir.mkdir(parents=True, exist_ok=True)
+
+    resolved_payload = {
+        "schema_version": 1,
+        "config_path": "pipeline.yaml",
+        "root_image_dir": str(root_dir),
+        "root_image_dir_source": "config",
+        "stages": {"infer": True, "eval": True, "vis": False},
+        "artifacts": {
+            "run_dir": str(run_dir),
+            "gt_vs_pred_jsonl": str(jsonl_path),
+            "summary_json": str(run_dir / "summary.json"),
+            "eval_dir": str(run_dir / "eval"),
+            "vis_dir": str(run_dir / "vis"),
+        },
+        "cfg": {},
+    }
+    resolved_path = run_dir / "resolved_config.json"
+    resolved_path.write_text(json.dumps(resolved_payload, ensure_ascii=False), encoding="utf-8")
+
+    (jsonl_path.parent / "resolved_config.path").write_text(
+        str(resolved_path.resolve()),
+        encoding="utf-8",
+    )
+
+    root, source = resolve_root_image_dir_for_jsonl(jsonl_path)
+    assert root == root_dir.resolve()
+    assert source == "config"
 
 
 def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(

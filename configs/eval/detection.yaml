@@ -9,7 +9,7 @@ out_dir: eval_out
 # Metrics
 metrics: f1ish                 # coco | f1ish | both
 use_segm: true                 # include segmentation metrics when polygons exist
-strict_parse: false            # abort on first parse error
+strict_parse: false            # warn+skip malformed rows (bounded diagnostics)
 
 # Optional COCO IoU thresholds override (null -> COCO defaults)
 iou_thrs: null
