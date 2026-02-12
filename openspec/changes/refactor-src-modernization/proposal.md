@@ -9,6 +9,7 @@ CoordExp's `src/` surface has grown rapidly around Stage-2 AB, rollout matching,
 - Standardize failure semantics and diagnostics on critical runtime paths (fail-fast for invariants, scoped best-effort handling where explicitly intended).
 - Unify duplicated dataset sample-to-encode flows and coordinate/geometry conversion helpers without changing geometry or chat-template behavior.
 - Improve infer/eval robustness by consolidating JSONL diagnostics, reducing implicit env-coupling, and clarifying pipeline stage responsibilities.
+- Delegate helper-consolidation normative details (shared helper ownership, strict-parse defaults, root-image precedence/provenance) to `src-ambiguity-cleanup-2026-02-11`; this change keeps integration/migration requirements aligned to that authoritative helper contract.
 - Decouple metrics components from trainer internals via neutral contracts to improve maintainability and testability.
 - Keep changes config-first (YAML/schema aligned) and avoid introducing new CLI flags.
 - Keep external behavior compatibility targets explicit: geometry invariants, Qwen3-VL template compatibility, `do_resize=false`, and existing artifact contracts.

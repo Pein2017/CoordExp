@@ -820,6 +820,60 @@ def test_channel_b_includes_fn_geometry_loss():
     assert float(loss.detach().cpu().item()) > 0.0
 
 
+def test_channel_b_repeat_trigger_flag_does_not_change_supervision_semantics() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        "bbox_smoothl1_weight": 1.0,
+        "bbox_ciou_weight": 1.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
+
+    base_meta = {
+        "prompt_len": 0,
+        "prefix_len": 0,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "tail_ignore_pos": [],
+        "tail_desc_pos": [2, 3],
+        "tail_desc_pos_matched": [2, 3],
+        "tail_desc_pos_missing": [],
+        "bbox_groups_prefix": [{"pos": [1, 2, 3, 4], "gt_bins": [1, 1, 2, 2]}],
+        "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [1, 1, 2, 2]}],
+    }
+
+    loss_no_repeat = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(base_meta, repeat_terminate_triggered=0)],
+            "input_ids": input_ids,
+        },
+    )
+    loss_with_repeat = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(base_meta, repeat_terminate_triggered=1)],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_no_repeat.detach().cpu().item()) == pytest.approx(
+        float(loss_with_repeat.detach().cpu().item())
+    )
+
+
 def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {

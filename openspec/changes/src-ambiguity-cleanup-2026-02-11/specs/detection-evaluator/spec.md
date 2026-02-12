@@ -4,6 +4,8 @@ This is a delta spec for change `src-ambiguity-cleanup-2026-02-11`.
 
 ## ADDED Requirements
 
+This change is the authoritative helper-contract delta for evaluator ingest strictness defaults and shared diagnostic helper behavior across active overlaps.
+
 ### Requirement: Semantic encoder implementation is shared across training and evaluator
 Semantic description normalization and sentence-embedding computation used for evaluator description mapping and Stage-2 semantic gating/monitoring SHALL use the same canonical implementation (normalization rules, mean pooling, and L2 normalization).
 The evaluator MUST NOT carry a separate parallel encoder implementation that could drift.

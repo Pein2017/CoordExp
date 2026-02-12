@@ -327,8 +327,6 @@ def run_pipeline(
     artifacts.vis_dir.mkdir(parents=True, exist_ok=True)
 
     root_image_dir, root_image_dir_source = _resolve_root_image_dir(cfg)
-    if root_image_dir is not None and root_image_dir_source in {"config", "gt_parent"}:
-        os.environ["ROOT_IMAGE_DIR"] = root_image_dir
 
     # Log resolved config (stdout logger + artifact).
     cfg_redacted = redact_config(cfg)
@@ -359,7 +357,7 @@ def run_pipeline(
     )
 
     if stages.infer:
-        _run_infer_stage(cfg, artifacts)
+        _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)
     else:
         _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
@@ -396,7 +394,12 @@ def apply_overrides(
     return out
 
 
-def _run_infer_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> None:
+def _run_infer_stage(
+    cfg: Mapping[str, Any],
+    artifacts: ResolvedArtifacts,
+    *,
+    root_image_dir: Optional[str],
+) -> None:
     from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 
     infer_cfg = _get_map(cfg, "infer")
@@ -454,6 +457,7 @@ def _run_infer_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> No
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         summary_path=str(artifacts.summary_json),
+        root_image_dir=str(root_image_dir) if root_image_dir else None,
         device=str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0"),
         limit=_get_int(infer_cfg, "limit", 0),
         backend_type=backend_type,

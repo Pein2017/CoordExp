@@ -6,6 +6,9 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - `pred_jsonl`: Pixel-space predictions produced by `scripts/run_infer.py` (unified engine); **must include inline `gt`** per line.
 - Geometry objects live under `gt` / `pred` arrays with fields `{type, points, desc, score}`; legacy `predictions`/raw-text parsing is no longer used.
 - Width/height are taken from the inline GT; size mismatches are counted but do not abort.
+- JSONL parse strictness is config-driven:
+  - `eval.strict_parse=true`: fail fast on the first malformed/non-object record.
+  - `eval.strict_parse=false` (default): warn+skip deterministically with bounded diagnostics (`warn_limit=5`, `max_snippet_len=200`).
 
 ## Behavior
 - Pixel-ready consumption: no coord-mode inference/denorm is performed; polygons are exported directly as COCO `segmentation` (mask IoU), bboxes as `bbox`. Line geometries are rejected and counted as invalid.
@@ -105,6 +108,9 @@ silent contract drift between infer/eval/vis stages.
 - Confirm `<run_dir>/gt_vs_pred.jsonl` and `<run_dir>/summary.json` exist.
 - If you ran the YAML pipeline, confirm `<run_dir>/resolved_config.json` exists
   (this records the effective config/stages/artifacts for reproducibility).
+- Treat `resolved_config.json` compatibility as:
+  - stable top-level keys: `schema_version`, `config_path`, `root_image_dir`, `root_image_dir_source`, `stages`, `artifacts`,
+  - redacted `cfg` snapshot as diagnostics-only (opaque; not a stable contract surface).
 - If `eval` ran, confirm `<run_dir>/eval/metrics.json` exists.
 - If `vis` ran, confirm `<run_dir>/vis/vis_0000.png` exists (or more, depending on limit).
 
@@ -126,6 +132,9 @@ silent contract drift between infer/eval/vis stages.
 - Record the backend choice and generation config in run artifacts:
   - YAML pipeline: `<run_dir>/resolved_config.json`
   - Legacy: `<run_dir>/summary.json` + your shell logs.
+- For HF attention fallback auditing, use exact `summary.json` fields:
+  - `backend.attn_implementation_requested`
+  - `backend.attn_implementation_selected`
 - Note: `infer.backend.type=vllm` does not guarantee byte-identical outputs; treat it as
   schema-stable, not token-stable.
 

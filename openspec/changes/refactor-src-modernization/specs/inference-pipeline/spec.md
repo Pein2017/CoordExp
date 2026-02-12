@@ -42,7 +42,7 @@ Inference-pipeline SHALL keep compatibility fallback behavior for relative image
 The resolved root behavior SHALL be shared consistently for evaluation and visualization consumers so they do not diverge in relative-path handling.
 For overlapping active deltas, detailed helper semantics are authoritative in `src-ambiguity-cleanup-2026-02-11`; this change MUST remain consistent with that contract.
 Root resolution precedence SHALL be explicit and deterministic: `ROOT_IMAGE_DIR` env override > config root (`run.root_image_dir`) > `infer.gt_jsonl` parent directory > none.
-The resolved image-root decision MUST be recorded in `resolved_config.json` with at least `root_image_dir` and `root_image_dir_source` (`env`, `gt_parent`, `config`, or `none`).
+The resolved image-root decision MUST be recorded in `resolved_config.json` with at least `root_image_dir` and `root_image_dir_source` (`env`, `config`, `gt_parent`, or `none`).
 This requirement MUST preserve existing downstream contract compatibility for eval/vis flows.
 
 #### Scenario: Eval/vis run with relative paths uses one explicit root-resolution contract

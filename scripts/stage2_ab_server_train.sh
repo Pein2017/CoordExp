@@ -186,6 +186,14 @@ model_path = model.get("model")
 if not model_path:
     die("model.model must be set (rollout model path).")
 
+train_jsonl = custom.get("train_jsonl") if isinstance(custom, dict) else None
+if not isinstance(train_jsonl, str) or not train_jsonl.strip():
+    die("custom.train_jsonl must be set to resolve ROOT_IMAGE_DIR for server-mode rollouts.")
+train_jsonl_path = Path(train_jsonl)
+if not train_jsonl_path.is_absolute():
+    train_jsonl_path = Path.cwd() / train_jsonl_path
+root_image_dir = train_jsonl_path.resolve().parent
+
 max_model_len = None
 try:
     if isinstance(vllm, dict):
@@ -213,6 +221,7 @@ def emit(name: str, value: object) -> None:
 emit("SERVER_HOST", host)
 emit("SERVER_PORT", port)
 emit("SERVER_MODEL", model_path)
+emit("ROOT_IMAGE_DIR_RESOLVED", str(root_image_dir))
 emit("VLLM_MAX_MODEL_LEN", max_model_len)
 emit("VLLM_ENABLE_LORA", "true" if enable_lora else "false")
 emit(
@@ -320,6 +329,7 @@ echo "[INFO] Server GPUs: ${SERVER_GPUS} (dp=${SERVER_DP}, tp=${SERVER_TP})"
 echo "[INFO] Train GPUs:  ${TRAIN_GPUS} (world_size=${TRAIN_WORLD_SIZE})"
 echo "[INFO] Server:      ${SERVER_HOST}:${SERVER_PORT}"
 echo "[INFO] Model:       ${SERVER_MODEL}"
+echo "[INFO] ROOT_IMAGE_DIR:${ROOT_IMAGE_DIR_RESOLVED}"
 echo "[INFO] torch_dtype: ${SERVER_TORCH_DTYPE}"
 echo "[INFO] eager:       ${SERVER_VLLM_ENFORCE_EAGER}"
 echo "[INFO] max_model_len:${VLLM_MAX_MODEL_LEN}"
@@ -331,6 +341,7 @@ SERVER_ENV=(CUDA_VISIBLE_DEVICES="${SERVER_GPUS}")
 if [[ -n "${NO_PROXY:-}" ]]; then
   SERVER_ENV+=(NO_PROXY="${NO_PROXY}" no_proxy="${NO_PROXY}")
 fi
+SERVER_ENV+=(ROOT_IMAGE_DIR="${ROOT_IMAGE_DIR_RESOLVED}")
 SERVER_ENV+=(COORDEXP_ENABLE_VLLM_REPEAT_TERMINATE_INJECTION=1)
 SERVER_ENV+=(COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON="${REPEAT_TERMINATE_CONFIG_JSON}")
 

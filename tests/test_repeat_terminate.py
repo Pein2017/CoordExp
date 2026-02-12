@@ -105,3 +105,20 @@ def test_force_eos_sequence_guard_sets_trigger_flag() -> None:
     assert bool(guard.triggered) is True
     assert float(out[0].item()) == 0.0
     assert torch.isneginf(out[1:]).all().item() is True
+
+
+def test_force_eos_sequence_guard_handles_2d_scores() -> None:
+    guard = ForceEosOnRepeatSequenceGuard(
+        eos_token_id=0,
+        cfg=_cfg(max_consecutive_token_repeats=3, ngram_size=0, ngram_repeats=0),
+        object_key_prefix_token_ids=None,
+    )
+
+    prompt_ids = [101, 102]
+    generated_ids = [9, 9, 9]
+    scores = torch.zeros((2, 16), dtype=torch.float32)
+
+    out = guard(prompt_ids, generated_ids, scores)
+    assert bool(guard.triggered) is True
+    assert torch.equal(out[:, 0], torch.zeros((2,), dtype=torch.float32))
+    assert torch.isneginf(out[:, 1:]).all().item() is True

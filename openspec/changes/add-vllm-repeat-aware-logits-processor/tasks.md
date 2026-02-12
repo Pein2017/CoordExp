@@ -41,26 +41,36 @@
 
 - [x] 4.1 Add unit tests for repeat-aware trigger conditions (consecutive token repeats, repeated n-grams, optional object-key cap).
 - [x] 4.2 Add server-side test proving only offending sequences are force-EOS terminated within a batch.
-- [ ] 4.3 Add integration test for YAML full-subtree propagation in vLLM mode and fail-fast on missing processor.
-- [ ] 4.4 Add regression test that vLLM rollout activation does not rely on request-time logits-processor kwargs.
-- [ ] 4.5 Add regression test asserting FP/matching and geometry supervision semantics are unchanged by repeat-aware activation.
+- [x] 4.3 Add integration test for YAML full-subtree propagation in vLLM mode and fail-fast on missing processor.
+- [x] 4.4 Add regression test that vLLM rollout activation does not rely on request-time logits-processor kwargs.
+- [x] 4.5 Add regression test asserting FP/matching and geometry supervision semantics are unchanged by repeat-aware activation.
 - [x] 4.6 Add regression test asserting telemetry key presence/semantics:
   - `rollout/repeat_terminate_active` is emitted and is in `{0,1}` after global aggregation,
   - `rollout/repeat_terminate_triggered_sequences` is emitted and is a non-negative global counter (sum-aggregated).
-- [ ] 4.7 Add regression test asserting `rollout/repeat_terminate_triggered_sequences` is sourced from an explicit server/processor signal (not inferred from stop-reason strings).
+- [x] 4.7 Add regression test asserting `rollout/repeat_terminate_triggered_sequences` is sourced from an explicit server/processor signal (not inferred from stop-reason strings).
 - [x] 4.8 Run targeted tests: `conda run -n ms python -m pytest tests/test_stage2_ab_training.py`.
 - [x] 4.9 Run boundary + payload contract tests: `conda run -n ms python -m pytest tests/test_stage2_rollout_import_boundaries.py tests/test_trainer_metrics_payload_contract.py`.
 
 ## 5. Lightweight Validation (No Baseline Gate)
 
-- [ ] 5.1 Run a bounded Stage-2 AB smoke with vLLM server mode and `repeat_terminate.enabled: true`.
-- [ ] 5.2 Verify audit metrics keys are present and have sane ranges:
+- [x] 5.1 Run a bounded Stage-2 AB smoke with vLLM server mode and `repeat_terminate.enabled: true`.
+- [x] 5.2 Verify audit metrics keys are present and have sane ranges:
   - `rollout/repeat_terminate_active` is in `{0,1}`,
   - `rollout/repeat_terminate_triggered_sequences` is `>= 0`,
   - `rollout/parse_truncated_rate` is in `[0, 1]`,
   - `rollout/gen_new_tokens_p99` is `>= 0`,
   - `rollout/parse_dropped_invalid` is `>= 0`.
-- [ ] 5.3 Record run metadata (config path, run name, output dir, git SHA) in change notes for reviewer audit.
+- [x] 5.3 Record run metadata (config path, run name, output dir, git SHA) in change notes for reviewer audit.
+  - 2026-02-12 bounded smoke: `config=/data/CoordExp/temp/smoke_stage2_ab_repeat_stop.yaml`
+  - run name: `smoke_contract_repeat_stop`
+  - output dir: `/data/CoordExp/output/stage2_ab/smoke_contract/repeat_stop/v9-20260212-003102/smoke_contract_repeat_stop`
+  - git SHA: `9495f7d969acaafd5d14333ffde4357c63f3ec25`
+  - metrics spot-check:
+    - `rollout/repeat_terminate_active=1.0`
+    - `rollout/repeat_terminate_triggered_sequences=0.0`
+    - `rollout/parse_truncated_rate=1.0`
+    - `rollout/gen_new_tokens_p99=128.0`
+    - `rollout/parse_dropped_invalid=1.0`
 
 ## 6. Docs and Contract Alignment
 

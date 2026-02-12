@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -124,6 +125,27 @@ def test_load_resolved_config_rejects_bad_schema_version(tmp_path: Path) -> None
         load_resolved_config(path)
 
 
+def test_load_resolved_config_treats_cfg_snapshot_as_opaque(tmp_path: Path) -> None:
+    path = tmp_path / "resolved_config.json"
+    payload = {
+        "schema_version": 1,
+        "config_path": "cfg.yaml",
+        "root_image_dir": None,
+        "root_image_dir_source": "none",
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "artifacts": {"run_dir": "out/run"},
+        "cfg": {
+            "arbitrary": ["this", "shape", {"can": "change"}],
+            "nested": {"non_contract": True},
+        },
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    loaded = load_resolved_config(path)
+    assert loaded["schema_version"] == 1
+    assert loaded["root_image_dir_source"] == "none"
+
+
 def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -154,6 +176,65 @@ def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
     assert resolved["schema_version"] == 1
     assert resolved["root_image_dir_source"] == "gt_parent"
     assert resolved["root_image_dir"] == str(gt_jsonl.parent.resolve())
+
+
+def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    config_root = tmp_path / "images_root"
+    config_root.mkdir(parents=True, exist_ok=True)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {
+            "name": "demo",
+            "output_dir": str(tmp_path / "out"),
+            "root_image_dir": str(config_root),
+        },
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "dummy",
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "hf"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    import src.infer.engine as infer_engine
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(self):
+        captured["root_image_dir"] = self.cfg.root_image_dir
+        Path(self.cfg.out_path).write_text("", encoding="utf-8")
+        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
+        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+
+    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+
+    run_pipeline(config_path=config_path)
+
+    assert "ROOT_IMAGE_DIR" not in os.environ
+    assert captured["root_image_dir"] == str(config_root.resolve())
 
 
 def test_pipeline_vis_stage_renders_using_resolved_root(tmp_path: Path, monkeypatch) -> None:

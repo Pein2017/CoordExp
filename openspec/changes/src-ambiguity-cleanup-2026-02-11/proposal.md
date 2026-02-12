@@ -13,6 +13,7 @@ This change consolidates redundant modules and clarifies ownership boundaries so
 - Centralize image-path resolution helpers so inference engine, vis, evaluator overlays, and dataset preprocessing resolve relative paths consistently (while preserving each surface’s strict/best-effort behavior).
 - Centralize JSONL loading with evaluation-grade diagnostics (path + 1-based line, clipped snippet) so evaluator-specific loaders don’t duplicate parsing/warning behavior.
 - Update callsites and add targeted tests where feasible (dependency-light; no network/model downloads).
+- For overlapping active deltas, this change is the authoritative helper-contract source; other deltas (for example `refactor-src-modernization`) reference these helper contracts for integration/migration only.
 
 ## Capabilities
 

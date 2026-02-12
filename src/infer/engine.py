@@ -116,6 +116,10 @@ class InferenceConfig:
     out_path: str = "gt_vs_pred.jsonl"
     summary_path: Optional[str] = None
 
+    # Optional pipeline-resolved root image dir used by infer/eval/vis for a
+    # single deterministic image-resolution decision.
+    root_image_dir: Optional[str] = None
+
     device: str = "cuda:0"
     limit: int = 0
 
@@ -283,7 +287,11 @@ class InferenceEngine:
 
         # Reuse server_options-style knobs when present for reproducibility.
         server_opts = self.cfg.backend.get("server_options") or {}
-        allowed_local_media_path = os.environ.get("ROOT_IMAGE_DIR") or ""
+        allowed_local_media_path = str(
+            self.cfg.root_image_dir
+            or os.environ.get("ROOT_IMAGE_DIR")
+            or Path(self.cfg.gt_jsonl).parent.resolve()
+        )
 
         kwargs: Dict[str, Any] = {}
         try:
@@ -495,9 +503,16 @@ class InferenceEngine:
         except Exception:
             pass
 
-    @staticmethod
-    def _resolve_image_path(jsonl_path: Path, image_rel: str) -> Path:
-        return resolve_image_path_best_effort(image_rel, jsonl_dir=jsonl_path.parent)
+    def _resolve_image_path(self, jsonl_path: Path, image_rel: str) -> Path:
+        root_image_dir: Path | None = None
+        root_raw = str(self.cfg.root_image_dir or "").strip()
+        if root_raw:
+            root_image_dir = Path(root_raw).resolve()
+        return resolve_image_path_best_effort(
+            image_rel,
+            jsonl_dir=jsonl_path.parent,
+            root_image_dir=root_image_dir,
+        )
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
         user_prompt = USER_PROMPT
@@ -939,9 +954,6 @@ class InferenceEngine:
         summary_path = Path(self.cfg.summary_path or (out_path.parent / "summary.json"))
         out_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if not os.environ.get("ROOT_IMAGE_DIR"):
-            os.environ["ROOT_IMAGE_DIR"] = str(jsonl_path.parent.resolve())
 
         backend = str(self.cfg.backend_type).strip().lower()
         determinism = "strict" if backend == "hf" else "best_effort"

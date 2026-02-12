@@ -4,6 +4,8 @@ This is a delta spec for change `src-ambiguity-cleanup-2026-02-11`.
 
 ## ADDED Requirements
 
+This change is the authoritative helper-contract delta for image-root resolution precedence/provenance across active overlaps.
+
 ### Requirement: Image-path resolution logic is shared across infer stages
 Pipeline stages that resolve image paths for reading (inference engine, visualization) SHALL reuse shared image-path resolution helpers.
 

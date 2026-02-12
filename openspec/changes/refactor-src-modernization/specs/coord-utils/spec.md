@@ -4,6 +4,9 @@ This is a delta spec for change `refactor-src-modernization`.
 
 ## ADDED Requirements
 
+For overlapping active deltas, helper-consolidation normative details are delegated to `src-ambiguity-cleanup-2026-02-11`.
+This delta keeps integration/migration constraints and MUST remain contract-compatible with that authoritative helper change.
+
 ### Requirement: Canonical coordinate conversion helpers are shared across data, inference, and evaluation
 Coord-utils SHALL provide canonical conversion helpers for coord-token and numeric coordinate representations used by dataset, inference, and evaluator paths.
 Consumers MUST reuse canonical helpers instead of defining parallel conversion implementations.

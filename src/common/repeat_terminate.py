@@ -367,6 +367,22 @@ class ForceEosOnRepeatSequenceGuard:
 
         self.triggered = True
         scores_out = scores.clone()
-        scores_out[:] = -float("inf")
-        scores_out[int(self.eos_token_id)] = 0.0
+        eos = int(self.eos_token_id)
+
+        if scores_out.ndim <= 0:
+            return scores
+
+        if scores_out.ndim == 1:
+            if eos >= int(scores_out.shape[0]):
+                return scores
+            scores_out[:] = -float("inf")
+            scores_out[eos] = 0.0
+            return scores_out
+
+        vocab_size = int(scores_out.shape[-1])
+        if eos >= vocab_size:
+            return scores
+
+        scores_out[...] = -float("inf")
+        scores_out[..., eos] = 0.0
         return scores_out

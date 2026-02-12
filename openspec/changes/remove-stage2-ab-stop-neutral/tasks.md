@@ -34,8 +34,16 @@
 
 ## 5. Lightweight Validation (No Baseline Gate)
 
-- [ ] 5.1 Run a bounded Stage-2 AB smoke under the updated contract (stop/closure supervised; FP-neutral unchanged).
-- [ ] 5.2 Verify audit metrics keys are present and have sane ranges:
+- [x] 5.1 Run a bounded Stage-2 AB smoke under the updated contract (stop/closure supervised; FP-neutral unchanged).
+- [x] 5.2 Verify audit metrics keys are present and have sane ranges:
   - `stage2_ab/channel_b/closure_supervision/N_drop` is `>= 0`,
   - `rollout/parse_truncated_rate` is in `[0, 1]`.
-- [ ] 5.3 Record reproducibility metadata (config path, run name, seed, output artifacts, git SHA) in change notes.
+- [x] 5.3 Record reproducibility metadata (config path, run name, seed, output artifacts, git SHA) in change notes.
+  - 2026-02-12 bounded smoke: `config=/data/CoordExp/temp/smoke_stage2_ab_repeat_stop.yaml`
+  - run name: `smoke_contract_repeat_stop`
+  - output dir: `/data/CoordExp/output/stage2_ab/smoke_contract/repeat_stop/v9-20260212-003102/smoke_contract_repeat_stop`
+  - seed: `17`
+  - git SHA: `9495f7d969acaafd5d14333ffde4357c63f3ec25`
+  - metrics spot-check:
+    - `stage2_ab/channel_b/closure_supervision/N_drop=0.0`
+    - `rollout/parse_truncated_rate=1.0`

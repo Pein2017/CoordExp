@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import re
+import sys
 import threading
+import types
+from contextlib import nullcontext
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -106,6 +110,63 @@ class _DummyVLLMClient:
         self.close_calls += 1
 
 
+class _FakeHTTPResponse:
+    def __init__(self, payload, status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = int(status_code)
+        self.text = ""
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHTTPSession:
+    def __init__(self, payload, payload_log):
+        self._payload = payload
+        self._payload_log = payload_log
+
+    def post(self, url, json, timeout):
+        self._payload_log.append({"url": url, "json": json, "timeout": timeout})
+        return _FakeHTTPResponse(self._payload, status_code=200)
+
+
+@dataclass
+class _FakeRequestConfig:
+    n: int
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    stop: list[str]
+    return_details: bool
+    seed: int | None = None
+
+
+def _make_rollout_server_trainer(*, repeat_cfg):
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 8,
+        "repetition_penalty": 1.0,
+        "repeat_terminate": dict(repeat_cfg),
+    }
+    trainer.state = types.SimpleNamespace(global_step=3)
+    trainer._vllm_server_last_logged_step = -1
+
+    trainer._decoding_params = lambda: (0.0, 1.0, -1)
+    trainer._derive_rollout_seed_base = lambda global_step: 17 + int(global_step)
+    trainer._sync_vllm_server_rollout_model_if_needed = lambda: None
+    trainer._vllm_server_specs = lambda: [
+        {"base_url": "http://127.0.0.1:9000", "group_port": 19000}
+    ]
+    trainer._vllm_server_timeouts = lambda: (30.0, 30.0)
+    trainer._vllm_server_infer_guard = lambda: nullcontext()
+    trainer._effective_vllm_server_sync_mode = lambda: "full"
+    trainer._maybe_debug_dump_vllm_server_rollouts = lambda **_kwargs: None
+    return trainer
+
+
 def test_shutdown_vllm_server_client_closes_resources():
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer._vllm_server_client_lock = threading.Lock()
@@ -122,6 +183,163 @@ def test_shutdown_vllm_server_client_closes_resources():
     assert all(s.closed for s in client.sessions)
     assert trainer._vllm_server_client is None
     assert trainer._vllm_server_comm_inited is False
+
+
+def test_vllm_server_repeat_cfg_subtree_is_forwarded_and_missing_signal_fails_fast(
+    monkeypatch,
+):
+    repeat_cfg = {
+        "enabled": True,
+        "min_new_tokens": 9,
+        "max_consecutive_repeat": 7,
+        "max_repeated_ngram": 5,
+        "max_object_keys": 3,
+    }
+    trainer = _make_rollout_server_trainer(repeat_cfg=repeat_cfg)
+
+    captured_payloads: list[dict] = []
+    raw_cfg_seen: dict[str, object] = {}
+
+    from src.common.repeat_terminate import parse_repeat_terminate_config as _parse_cfg
+    import src.trainers.rollout_matching_sft as rm_mod
+
+    def _capture_parse(raw_cfg):
+        raw_cfg_seen["raw"] = raw_cfg
+        return _parse_cfg(raw_cfg)
+
+    monkeypatch.setattr(rm_mod, "parse_repeat_terminate_config", _capture_parse)
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [1, 2],
+                "choices": [
+                    {
+                        "message": {"content": "{}"},
+                        "token_ids": [3, 4],
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+            # Intentionally no coordexp signal: should fail fast when enabled=true.
+        }
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    with pytest.raises(RuntimeError, match=r"coordexp\.repeat_terminate_triggered"):
+        trainer._rollout_many_vllm_server([sample])
+
+    assert raw_cfg_seen["raw"] == repeat_cfg
+    assert len(captured_payloads) == 1
+
+
+def test_vllm_server_repeat_activation_does_not_use_request_time_logits_processors(
+    monkeypatch,
+):
+    trainer = _make_rollout_server_trainer(repeat_cfg={"enabled": True})
+    captured_payloads: list[dict] = []
+
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [10],
+                "choices": [
+                    {
+                        "message": {"content": "ok"},
+                        "token_ids": [11, 12],
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+            "coordexp": {"repeat_terminate_triggered": 1},
+        }
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+
+    sample = {"messages": [{"role": "user", "content": "hello"}]}
+    outputs = trainer._rollout_many_vllm_server([sample])
+
+    assert len(outputs) == 1
+    assert getattr(trainer, "_last_rollout_repeat_terminate_active", 0) == 1
+    assert getattr(trainer, "_last_rollout_repeat_terminate_triggers", []) == [1]
+
+    req_cfg = captured_payloads[0]["json"]["request_config"]
+    assert "logits_processors" not in req_cfg
+    infer_req = captured_payloads[0]["json"]["infer_requests"][0]
+    assert "logits_processors" not in infer_req
+
+
+def test_vllm_server_repeat_trigger_metric_uses_explicit_coordexp_signal(
+    monkeypatch,
+):
+    trainer = _make_rollout_server_trainer(repeat_cfg={"enabled": True})
+
+    captured_payloads: list[dict] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [1],
+                "choices": [
+                    {
+                        "message": {"content": "a"},
+                        "token_ids": [2],
+                        "finish_reason": "repeat_terminate",
+                    }
+                ],
+            },
+            "coordexp": {"repeat_terminate_triggered": 0},
+        },
+        {
+            "response": {
+                "prompt_token_ids": [3],
+                "choices": [
+                    {
+                        "message": {"content": "b"},
+                        "token_ids": [4],
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+            "coordexp": {"repeat_terminate_triggered": 1},
+        },
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+
+    samples = [
+        {"messages": [{"role": "user", "content": "q1"}]},
+        {"messages": [{"role": "user", "content": "q2"}]},
+    ]
+    _ = trainer._rollout_many_vllm_server(samples)
+
+    # finish_reason strings are ignored; explicit coordexp signal is authoritative.
+    assert getattr(trainer, "_last_rollout_repeat_terminate_triggers", []) == [0, 1]
 
 
 def test_rollout_parse_preserves_appearance_order_and_prefix_cut():

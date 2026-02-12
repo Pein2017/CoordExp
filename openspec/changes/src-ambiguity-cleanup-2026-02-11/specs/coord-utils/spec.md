@@ -4,6 +4,8 @@ This is a delta spec for change `src-ambiguity-cleanup-2026-02-11`.
 
 ## ADDED Requirements
 
+This change is the authoritative helper-contract delta for coord/geometry helper ownership, range validation, and nested-point boundaries across active overlaps.
+
 ### Requirement: Canonical coord-token helpers are single-source-of-truth
 Coord token detection, encode, and decode helpers (including the underlying coord-token regex) SHALL have a single canonical implementation.
 All consumers (datasets, token-type telemetry, inference/eval parsing, visualization) MUST reuse the canonical helpers instead of defining parallel regex/constants.
