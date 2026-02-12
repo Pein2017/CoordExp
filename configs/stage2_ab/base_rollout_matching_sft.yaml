@@ -55,8 +55,8 @@ custom:
       # Per-rank rollout request chunk size.
       # - rollout_generate_batch_size is the legacy knob.
       # - stage2_ab trainer prefers rollout_infer_batch_size when set.
-      rollout_generate_batch_size: 1
-      rollout_infer_batch_size: 1
+      rollout_generate_batch_size: 2
+      rollout_infer_batch_size: 2
 
       # vLLM knobs.
       # - mode=colocate: learner instantiates local vLLM engines on training GPUs.
@@ -66,7 +66,7 @@ custom:
         mode: colocate  # colocate|server
         # Colocate-only knobs:
         tensor_parallel_size: 1
-        gpu_memory_utilization: 0.75
+        gpu_memory_utilization: 0.8
         # Must cover prompt_len + max_new_tokens for stage_2 rollouts.
         max_model_len: 12000
         # Keep disabled by default. Enable only when using adapter-only server sync.
@@ -86,7 +86,7 @@ custom:
 
       # Decoding (greedy only)
       decode_mode: greedy
-      max_new_tokens: 512
+      max_new_tokens: 3084
       decoding:
         temperature: 0.0
         top_p: 1.0
