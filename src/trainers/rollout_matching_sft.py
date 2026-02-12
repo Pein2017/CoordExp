@@ -2657,6 +2657,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         seed_base: int,
         infer_requests: Sequence[Mapping[str, Any]],
         outputs: Sequence[Tuple[List[int], str, str, List[int]]],
+        samples: Optional[Sequence[Mapping[str, Any]]] = None,
     ) -> None:
         """Optional raw rollout dump for diagnosing vLLM server-mode formatting.
 
@@ -2668,12 +2669,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             only_world_process_zero: true
             max_events: 3
             max_samples: 1
-            max_chars: 4000
-            out_dir: null  # defaults to <output_dir>/vllm_server_debug
+            max_chars: 4000           # <=0 disables clipping (full raw text)
+            out_dir: null             # defaults to <output_dir>/vllm_server_debug
 
         Notes:
         - In DDP, the default is rank0-only dumping to avoid I/O storms.
         - If only_world_process_zero=false, dumps go to per-rank subdirectories.
+        - Payload is intentionally minimal for human review: GT text + rollout text.
         """
 
         try:
@@ -2750,69 +2752,81 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         event = int(self._vllm_server_debug_dump_count)
 
         max_samples = int(debug_raw.get("max_samples", 1) or 1)
-        max_chars = int(debug_raw.get("max_chars", 4000) or 4000)
+        max_chars_raw = debug_raw.get("max_chars", 4000)
+        try:
+            max_chars = int(max_chars_raw) if max_chars_raw is not None else 0
+        except Exception:
+            max_chars = 4000
 
-        tok = self.template.tokenizer
+        def _content_to_text(content: Any) -> str:
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts: List[str] = []
+                for item in content:
+                    if isinstance(item, Mapping):
+                        # OpenAI-style multimodal content item.
+                        if item.get("type") == "text" and item.get("text") is not None:
+                            parts.append(str(item.get("text")))
+                        elif item.get("text") is not None:
+                            parts.append(str(item.get("text")))
+                    elif item is not None:
+                        parts.append(str(item))
+                return "\n".join(parts)
+            if content is None:
+                return ""
+            try:
+                return str(content)
+            except Exception:
+                return ""
+
+        def _extract_gt_text(sample_obj: Any) -> str:
+            if not isinstance(sample_obj, Mapping):
+                return ""
+            messages = sample_obj.get("messages")
+            if not isinstance(messages, list):
+                return ""
+            for m in reversed(messages):
+                if not isinstance(m, Mapping):
+                    continue
+                if str(m.get("role", "")).lower() != "assistant":
+                    continue
+                return _content_to_text(m.get("content"))
+            return ""
+
+        sample_list: List[Mapping[str, Any]] = []
+        if isinstance(samples, Sequence):
+            for s in samples:
+                if isinstance(s, Mapping):
+                    sample_list.append(s)
+                else:
+                    sample_list.append({})
 
         samples_dump: List[Dict[str, Any]] = []
-        for i, (req, out) in enumerate(zip(infer_requests, outputs)):
+        for i, (_, out) in enumerate(zip(infer_requests, outputs)):
             if i >= max_samples:
                 break
 
-            resp_ids, resp_text, decode_mode, prompt_ids = out
+            _, resp_text, _, _ = out
+            sample_obj = sample_list[i] if i < len(sample_list) else {}
 
-            parse_dump: Dict[str, Any] = {}
-            try:
-                parse = parse_rollout_for_matching(
-                    tokenizer=tok, response_token_ids=list(resp_ids)
-                )
-                parse_dump = {
-                    "truncated": bool(parse.truncated),
-                    "dropped_invalid": int(parse.dropped_invalid),
-                    "dropped_ambiguous": int(parse.dropped_ambiguous),
-                    "response_len": int(len(parse.response_token_ids)),
-                    "prefix_len": int(len(parse.prefix_token_ids)),
-                    "response_text_head": str(parse.response_text)[:max_chars],
-                    "prefix_text_head": str(parse.prefix_text)[:max_chars],
-                    "valid_objects": [
-                        {
-                            "key": str(o.key),
-                            "index": int(o.index),
-                            "geom_type": str(o.geom_type),
-                            "coord_token_count": int(len(o.coord_token_indices)),
-                            "coord_token_indices_head": [
-                                int(x) for x in list(o.coord_token_indices)[:32]
-                            ],
-                        }
-                        for o in list(parse.valid_objects)[:16]
-                    ],
-                }
-            except Exception as exc:
-                parse_dump = {"error": repr(exc)}
+            gt_text_raw = _extract_gt_text(sample_obj)
+            gt_text = self._ascii_safe_text(
+                self._clip_text(gt_text_raw, max_chars=max_chars)
+            )
+            rollout_text = self._ascii_safe_text(
+                self._clip_text(resp_text, max_chars=max_chars)
+            )
 
             samples_dump.append(
                 {
-                    "i": int(i),
-                    "messages": req.get("messages"),
-                    "images": req.get("images"),
-                    "decode_mode": str(decode_mode),
-                    "seed_base": int(seed_base),
-                    "prompt_len": int(len(prompt_ids)),
-                    "prompt_ids_head": [int(x) for x in list(prompt_ids)[:64]],
-                    "resp_text_head": str(resp_text)[:max_chars],
-                    "resp_len": int(len(resp_ids)),
-                    "resp_ids_head": [int(x) for x in list(resp_ids)[:256]],
-                    "parse": parse_dump,
+                    "gt_text": gt_text,
+                    "rollout_text": rollout_text,
                 }
             )
 
         payload = {
             "global_step": int(gs),
-            "seed_base": int(seed_base),
-            "event": int(event),
-            "rank": int(rank),
-            "world_size": int(world_size),
-            "max_samples": int(max_samples),
             "samples": samples_dump,
         }
 
@@ -3803,6 +3817,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             seed_base=seed_base,
             infer_requests=infer_requests,
             outputs=out,
+            samples=samples,
         )
 
         setattr(

@@ -81,9 +81,8 @@ custom:
       max_new_tokens: 3084
       # Mild anti-loop bias for long dense JSON.
       repetition_penalty: 1.08
-      # Default launcher uses 2 learners + 6 rollout actors; use 3 per learner rank
-      # to drive ~6 concurrent rollout requests in total.
-      rollout_infer_batch_size: 3
+      # Per-rank rollout request chunk size (decode batch size per generation call).
+      rollout_infer_batch_size: 4
       # Window scope improves post-rollout packing fill under long generations.
       post_rollout_pack_scope: window
 

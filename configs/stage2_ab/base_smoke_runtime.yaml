@@ -5,19 +5,27 @@ training:
   # Keep smoke bounded while still exercising rollout + match + backward paths.
   max_steps: 100
 
-  # Avoid checkpoint/eval overhead for quick validation.
+  # Keep frequent checkpointing in smoke so interrupted runs still leave artifacts.
+  # This also sidesteps base.yaml's save_delay_steps=100 suppressing all smoke saves.
   save_strategy: "steps"
-  save_steps: 80
-  eval_strategy: "steps"
-  eval_steps: 80
+  save_steps: 40
+  save_delay_steps: 0
+  # Rollout eval is expensive; disable by default in smoke.
+  eval_strategy: "no"
+  eval_steps: 40
   logging_steps: 2
 
 
 custom:
-  train_sample_limit: 2048
+  # Keep smoke short/iterable for config and trainer validation.
+  train_sample_limit: 512
   val_sample_limit: 128
   extra:
     rollout_matching:
+      # Smoke/debug defaults: bounded rollout budget.
+      max_new_tokens: 2048
+      rollout_generate_batch_size: 4
+      rollout_infer_batch_size: 4
       monitor_dump:
         enabled: true
         # Follow training.logging_steps when null.
@@ -26,3 +34,15 @@ custom:
         max_events: 200
         max_samples: 1
         max_text_chars: 4000
+      # Stage2-AB currently bypasses monitor_dump in rollout_matching_sft path.
+      # Enable server-side debug dump so smoke runs still emit raw rollout artifacts.
+      vllm:
+        server:
+          debug_dump:
+            enabled: true
+            every_steps: 4
+            dump_first_step: true
+            max_events: 20
+            max_samples: 10
+            # <= 0 means no clipping (keep full raw gt/rollout text).
+            max_chars: 0
