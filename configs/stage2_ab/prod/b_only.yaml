@@ -1,12 +1,24 @@
 # Stage-2 AB ablation: Channel-B only (rollout matching), epoch=2.
-# Only the stage2_ab schedule differs from other ablation variants.
+# Keep key toggles explicit even when inherited.
 extends: base.yaml
 
 training:
   output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/b_only
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/b_only
   run_name: prod_b_only_bbox_max60_ckpt1516_ep2
+  eval_strategy: steps
+  do_eval: true
 
 stage2_ab:
   schedule:
     b_ratio: 1.0
+  n_softctx_iter: 2
+  channel_b:
+    mode: micro
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      vllm:
+        mode: server

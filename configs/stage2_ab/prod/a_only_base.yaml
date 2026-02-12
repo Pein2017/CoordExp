@@ -1,12 +1,26 @@
-# Stage-2 AB ablation: Channel-A only (expectation loop), epoch=2.
-# Only the stage2_ab schedule differs from other ablation variants.
+# Stage-2 AB ablation base: Channel-A only (expectation loop), epoch=2.
+# Keep key toggles explicit here for reproducibility and launcher safety.
 extends: base.yaml
 
 training:
   output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only
   run_name: prod_a_only_bbox_max60_ckpt1516_ep2
+  # Keep eval policy explicit for this ablation family.
+  eval_strategy: steps
+  do_eval: true
 
 stage2_ab:
   schedule:
     b_ratio: 0.0
+  # Explicitly pin default Stage-2 AB iteration count.
+  n_softctx_iter: 2
+  channel_b:
+    mode: micro
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      vllm:
+        mode: server

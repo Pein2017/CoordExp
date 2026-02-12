@@ -1,13 +1,25 @@
 # Stage-2 AB b-dominant schedule with Channel-A as auxiliary stabilization.
-# Only the stage2_ab schedule differs from other ablation variants.
+# Keep key toggles explicit even when inherited.
 extends: base.yaml
 
 training:
   output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   run_name: prod_ab_mixed_bbox_max60_ckpt1516_ep2
+  eval_strategy: steps
+  do_eval: true
 
 stage2_ab:
   schedule:
     # B-dominant: Channel-B does most learning from rollout self-context.
     b_ratio: 0.85
+  n_softctx_iter: 2
+  channel_b:
+    mode: micro
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      vllm:
+        mode: server

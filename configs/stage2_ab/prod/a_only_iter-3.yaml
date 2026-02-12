@@ -1,5 +1,5 @@
-# Stage-2 AB ablation: Channel-A only (expectation loop), epoch=2.
-# Only the stage2_ab schedule differs from other ablation variants.
+# Stage-2 AB ablation: Channel-A only (expectation loop), iter=3, epoch=2.
+# Keep key toggles explicit even when inherited.
 extends: a_only_base.yaml
 
 training:
@@ -11,4 +11,15 @@ training:
   do_eval: false
 
 stage2_ab:
+  schedule:
+    b_ratio: 0.0
   n_softctx_iter: 3
+  channel_b:
+    mode: micro
+
+custom:
+  extra:
+    rollout_matching:
+      rollout_backend: vllm
+      vllm:
+        mode: server

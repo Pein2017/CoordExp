@@ -2,6 +2,7 @@
 #
 # This base stays runnable in self-contained colocate mode.
 # Production server-mode behavior is enabled in `configs/stage2_ab/prod/base.yaml`.
+# Per-variant experiment toggles stay in `configs/stage2_ab/prod/*.yaml`.
 
 extends: ../base.yaml
 
