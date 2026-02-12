@@ -401,7 +401,7 @@ case "${COMMAND}" in
 
       # Prompt/template sanity check on coord-token JSONL.
       if INSPECT_MODEL="$(choose_inspect_model)"; then
-        if ! run_py_best_effort scripts/inspect_chat_template.py \
+        if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
           --jsonl "${PRESET_TRAIN_COORD_JSONL}" \
           --index 0 \
           --model "${INSPECT_MODEL}"; then

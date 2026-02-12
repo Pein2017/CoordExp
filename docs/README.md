@@ -25,7 +25,7 @@ PYTHONPATH=. conda run -n ms python ...
 PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug]
 
 # Inspect how one JSONL record renders under the current Qwen3-VL chat template
-PYTHONPATH=. conda run -n ms python scripts/inspect_chat_template.py --jsonl <path.jsonl> --index 0
+PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path.jsonl> --index 0
 
 # Validate JSONL structure (public_data validator)
 PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.jsonl>

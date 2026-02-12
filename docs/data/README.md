@@ -102,7 +102,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.
 Inspect the exact rendered chat text + tokenization for one sample:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/inspect_chat_template.py --jsonl <path.jsonl> --index 0
+PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path.jsonl> --index 0
 ```
 
 Smoke a training config (dumps template/prompt/debug artifacts):
@@ -130,4 +130,3 @@ Packing is the primary efficiency lever for long dense JSON outputs.
 ---
 
 **Last Updated**: 2026-02-01
-

@@ -143,7 +143,7 @@ bash public_data/scripts/lvis_full_pipeline.sh
 
 - **Validation**: `python public_data/scripts/validate_jsonl.py <path.jsonl>`
 - **Visualization**: `python public_data/vis_tools/visualize_lvis.py --num_samples 3 --mode both --save`
-- **Chat template inspection**: `python scripts/inspect_chat_template.py --jsonl <path> --index 0`
+- **Chat template inspection**: `python scripts/tools/inspect_chat_template.py --jsonl <path> --index 0`
 
 ---
 

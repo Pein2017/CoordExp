@@ -223,7 +223,7 @@ The validate step:
 - SHALL enforce that `images[0]` is a relative path resolved against the JSONL directory (error on absolute paths). If `--skip-image-check` is set, file-existence checks are skipped but the relative-path requirement still applies.
 - SHALL accept geometry coordinates as pixel-space numbers or coord tokens (`<|coord_k|>`) and SHALL report malformed/out-of-range coord tokens as validation errors (must not crash).
 - SHALL reject legacy/unsupported geometry keys in emitted JSONLs (e.g., `bbox`, `polygon`, `line`, `line_points`).
-- SHOULD run `scripts/inspect_chat_template.py --index 0` on at least one coord-token JSONL sample to confirm prompt/template compatibility.
+- SHOULD run `scripts/tools/inspect_chat_template.py --index 0` on at least one coord-token JSONL sample to confirm prompt/template compatibility.
 - SHALL validate both raw and preset artifacts by default, unless `--raw-only` or `--preset-only` is specified.
 - SHALL validate `train.jsonl` and SHOULD also validate `val.jsonl` when present, for both raw and preset artifacts.
 
@@ -246,7 +246,7 @@ The validate step:
 - **THEN** the runner validates JSON structure and geometry requirements without failing due to missing image files.
 
 #### Scenario: Template sanity check is best-effort
-- **GIVEN** the system cannot run `scripts/inspect_chat_template.py` (no cached model or missing deps)
+- **GIVEN** the system cannot run `scripts/tools/inspect_chat_template.py` (no cached model or missing deps)
 - **WHEN** the user runs `public_data/run.sh <dataset> validate --preset <preset>`
 - **THEN** the runner warns and skips the template check while still enforcing the JSONL contract validation.
 

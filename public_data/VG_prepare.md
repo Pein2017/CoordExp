@@ -144,7 +144,7 @@ Runs `public_data/scripts/validate_jsonl.py:1` on:
 * Raw train / val
 * Preset train / val
 * Coord-token train / val
-  …and best-effort `scripts/inspect_chat_template.py` if a cached model exists.
+  …and best-effort `scripts/tools/inspect_chat_template.py` if a cached model exists.
 
 **Troubleshooting: `*.coord.jsonl` invalid bbox**
 
