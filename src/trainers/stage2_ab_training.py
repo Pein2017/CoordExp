@@ -888,12 +888,46 @@ class Stage2ABTrainingTrainer(
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
+        reduced.setdefault(
+            trunc_num_key,
+            float(reduced.get("rollout/parse_truncated", 0.0)),
+        )
+        reduced.setdefault(
+            trunc_den_key,
+            float(reduced.get("stage2/raw_rollouts", 0.0)),
+        )
+
+        rank, world_size, dist = self._dist_info()
+        metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
+
+        if dist is not None and int(world_size) > 1:
+            try:
+                gathered_keys: List[Any] = [None] * int(world_size)
+                dist.all_gather_object(gathered_keys, metric_keys)
+
+                merged_keys: Dict[str, None] = {}
+                for item in gathered_keys:
+                    if not isinstance(item, (list, tuple)):
+                        continue
+                    for key_raw in item:
+                        key = str(key_raw)
+                        merged_keys[key] = None
+                        reduced.setdefault(key, 0.0)
+
+                metric_keys = sorted(merged_keys.keys())
+            except Exception as exc:
+                if int(rank) == 0:
+                    logger.warning(
+                        "stage2-ab metric key sync failed; falling back to local metrics: %r",
+                        exc,
+                    )
+                dist = None
 
         sum_keys: List[str] = []
         max_keys: List[str] = []
         mean_keys: List[str] = []
 
-        for key in reduced.keys():
+        for key in metric_keys:
             if key == "rollout/repeat_terminate_active":
                 max_keys.append(key)
                 continue
@@ -923,13 +957,16 @@ class Stage2ABTrainingTrainer(
                 sum_keys.append(key)
                 continue
 
+            if key.startswith("stage2_ab/channel_b/strict_drop/reason/"):
+                sum_keys.append(key)
+                continue
+
             if key.startswith("stage2_ab/") and "/N_" in key:
                 sum_keys.append(key)
                 continue
 
             mean_keys.append(key)
 
-        rank, world_size, dist = self._dist_info()
         if dist is not None and int(world_size) > 1:
             try:
                 device = torch.device("cpu")
@@ -957,8 +994,8 @@ class Stage2ABTrainingTrainer(
                 _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
                 _all_reduce(max_keys, dist.ReduceOp.MAX)
 
-                if int(world_size) > 0:
-                    scale = float(world_size)
+                scale = float(world_size)
+                if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced[key] / scale)
             except Exception as exc:
@@ -1001,8 +1038,9 @@ class Stage2ABTrainingTrainer(
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._stage2_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    local_metrics = pending.finalize(drop_internal=False)
-                    logs.update(self._reduce_stage2_pending_metrics_global(local_metrics))
+                    # Do not run DDP collectives in the log hook. Depending on trainer/runtime,
+                    # this hook may execute only on rank0 and can deadlock if collectives are used here.
+                    logs.update(pending.finalize(drop_internal=True))
         except Exception:
             pass
         return super().log(logs)

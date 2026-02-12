@@ -1492,7 +1492,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         infer_timeout_raw = scfg.get("infer_timeout_s", None)
         if infer_timeout_raw is None:
-            infer_timeout_s: Optional[float] = None
+            # Keep config contract stable: null means follow timeout_s.
+            infer_timeout_s: Optional[float] = float(timeout_s)
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
@@ -1501,7 +1502,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "custom.extra.rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
             if infer_timeout_s <= 0:
-                infer_timeout_s = None
+                infer_timeout_s = float(timeout_s)
 
         return float(timeout_s), (
             float(infer_timeout_s) if infer_timeout_s is not None else None
@@ -4845,52 +4846,59 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             dist = None  # type: ignore[assignment]
 
+        rank = 0
         world_size = 1
         if dist is not None and dist.is_available() and dist.is_initialized():
             try:
                 world_size = int(dist.get_world_size())
             except Exception:
                 world_size = 1
+            try:
+                rank = int(dist.get_rank())
+            except Exception:
+                rank = 0
 
         if dist is not None and dist.is_available() and dist.is_initialized() and world_size > 1:
-            device = torch.device("cpu")
             try:
-                model = getattr(self, "model", None)
-                if model is not None and hasattr(model, "device"):
-                    device = model.device
-                elif model is not None:
-                    device = next(model.parameters()).device
-            except Exception:
                 device = torch.device("cpu")
+                try:
+                    model = getattr(self, "model", None)
+                    if model is not None and hasattr(model, "device"):
+                        device = model.device
+                    elif model is not None:
+                        device = next(model.parameters()).device
+                except Exception:
+                    device = torch.device("cpu")
 
-            def _all_reduce(keys: List[str], op: Any) -> None:
-                if not keys:
-                    return
-                values = torch.tensor(
-                    [float(reduced[k]) for k in keys], dtype=torch.float64, device=device
-                )
-                dist.all_reduce(values, op=op)
-                for idx, key in enumerate(keys):
-                    reduced[key] = float(values[idx].item())
+                def _all_reduce(keys: List[str], op: Any) -> None:
+                    if not keys:
+                        return
+                    values = torch.tensor(
+                        [float(reduced[k]) for k in keys], dtype=torch.float64, device=device
+                    )
+                    dist.all_reduce(values, op=op)
+                    for idx, key in enumerate(keys):
+                        reduced[key] = float(values[idx].item())
 
-            sum_keys = [
-                key
-                for key in (
+                sum_keys = [
                     trunc_num_key,
                     trunc_den_key,
                     "train/samples_total",
                     "rollout/gen_new_tokens_total",
-                )
-                if key in reduced
-            ]
-            max_keys = [
-                key
-                for key in ("rollout/gen_new_tokens_p99", "time/rollout_generate_s")
-                if key in reduced
-            ]
+                ]
+                max_keys = ["rollout/gen_new_tokens_p99", "time/rollout_generate_s"]
 
-            _all_reduce(sum_keys, dist.ReduceOp.SUM)
-            _all_reduce(max_keys, dist.ReduceOp.MAX)
+                for key in sum_keys + max_keys:
+                    reduced.setdefault(key, 0.0)
+
+                _all_reduce(sum_keys, dist.ReduceOp.SUM)
+                _all_reduce(max_keys, dist.ReduceOp.MAX)
+            except Exception as exc:
+                if int(rank) == 0:
+                    logger.warning(
+                        "rollout metric all-reduce failed; falling back to local metrics: %r",
+                        exc,
+                    )
 
         sample_total = float(reduced.get("train/samples_total", 0.0))
         trunc_num = float(reduced.get(trunc_num_key, 0.0))
@@ -4934,8 +4942,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._rm_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    payload_local = self._build_train_rollout_log_payload(pending)
-                    payload = self._reduce_train_rollout_log_payload_global(payload_local)
+                    # Do not run DDP collectives in the log hook. Depending on trainer/runtime,
+                    # this hook may execute only on rank0 and can deadlock if collectives are used here.
+                    payload = self._build_train_rollout_log_payload(pending)
                     sample_step = int(round(float(payload.get("train/samples_total", 0.0))))
                     try:
                         self._rm_train_samples_seen = (

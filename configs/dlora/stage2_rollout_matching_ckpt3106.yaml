@@ -99,7 +99,7 @@ custom:
       # Default: vLLM colocate rollouts (teacher-forced forward/backprop stays on the training model).
       # For monitoring/debugging, you can switch to HF backend: rollout_backend: hf
       rollout_backend: vllm
-      rollout_generate_batch_size: 2
+      rollout_generate_batch_size: 4
       post_rollout_pack_scope: window
 
       # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.

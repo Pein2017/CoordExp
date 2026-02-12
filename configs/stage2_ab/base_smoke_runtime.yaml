@@ -8,13 +8,13 @@ training:
   # Avoid checkpoint/eval overhead for quick validation.
   save_strategy: "steps"
   save_steps: 80
-  eval_strategy: "no"
-  eval_steps: 40
+  eval_strategy: "steps"
+  eval_steps: 80
   logging_steps: 2
 
 
 custom:
-  train_sample_limit: 512
+  train_sample_limit: 2048
   val_sample_limit: 128
   extra:
     rollout_matching:

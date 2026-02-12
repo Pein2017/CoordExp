@@ -55,8 +55,8 @@ custom:
       # Per-rank rollout request chunk size.
       # - rollout_generate_batch_size is the legacy knob.
       # - stage2_ab trainer prefers rollout_infer_batch_size when set.
-      rollout_generate_batch_size: 2
-      rollout_infer_batch_size: 2
+      rollout_generate_batch_size: 4
+      rollout_infer_batch_size: 4
 
       # vLLM knobs.
       # - mode=colocate: learner instantiates local vLLM engines on training GPUs.
