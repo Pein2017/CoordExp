@@ -262,14 +262,24 @@ class ConfigLoader:
         packing_overrides = {k: training_section.pop(k) for k in list(training_section.keys()) if k in _packing_keys}
 
         # Auto-calculate gradient_accumulation_steps from effective_batch_size
+        #
+        # Stage2-AB standardizes step semantics around a true (exact) global effective batch.
+        is_stage2_ab = bool(
+            str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
+            == "stage2_ab_training"
+        )
+
         effective_batch_size = training_section.pop("effective_batch_size", None)
+        if is_stage2_ab and effective_batch_size is None:
+            raise ValueError(
+                "stage2_ab_training requires training.effective_batch_size to be set (global raw rollouts per optimizer step)."
+            )
+
         if effective_batch_size is not None:
             try:
                 effective_batch_size = int(effective_batch_size)
             except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "training.effective_batch_size must be an integer"
-                ) from exc
+                raise ValueError("training.effective_batch_size must be an integer") from exc
             if effective_batch_size <= 0:
                 raise ValueError(
                     f"training.effective_batch_size must be > 0, got {effective_batch_size}"
@@ -297,12 +307,48 @@ class ConfigLoader:
             # Calculate gradient_accumulation_steps
             # Formula: effective_batch_size = per_device_train_batch_size × world_size × gradient_accumulation_steps
             denominator = per_device_train_batch_size * world_size
-            gradient_accumulation_steps = max(
-                1, math.ceil(effective_batch_size / denominator)
-            )
-            training_section["gradient_accumulation_steps"] = (
-                gradient_accumulation_steps
-            )
+            if denominator <= 0:
+                denominator = 1
+
+            if is_stage2_ab and (effective_batch_size % denominator != 0):
+                raise ValueError(
+                    "For stage2_ab_training, training.effective_batch_size must be divisible by "
+                    f"training.per_device_train_batch_size*world_size ({per_device_train_batch_size}*{world_size}={denominator}). "
+                    f"Got effective_batch_size={effective_batch_size}."
+                )
+
+            user_gas_raw = training_section.get("gradient_accumulation_steps", None)
+
+            if is_stage2_ab:
+                gradient_accumulation_steps = max(
+                    1, int(effective_batch_size // denominator)
+                )
+            else:
+                gradient_accumulation_steps = max(
+                    1, math.ceil(effective_batch_size / denominator)
+                )
+
+            # Stage2-AB standardizes on effective_batch_size as the source of truth.
+            if is_stage2_ab and user_gas_raw is not None:
+                try:
+                    user_gas = int(user_gas_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "training.gradient_accumulation_steps must be an integer when provided"
+                    ) from exc
+                if user_gas <= 0:
+                    raise ValueError(
+                        f"training.gradient_accumulation_steps must be > 0, got {user_gas_raw!r}"
+                    )
+                if int(user_gas) != int(gradient_accumulation_steps):
+                    raise ValueError(
+                        "For stage2_ab_training, training.gradient_accumulation_steps is derived from "
+                        "training.effective_batch_size and must not conflict. "
+                        f"Got gradient_accumulation_steps={user_gas} but expected {gradient_accumulation_steps} "
+                        f"(effective_batch_size={effective_batch_size}, per_device_train_batch_size={per_device_train_batch_size}, world_size={world_size})."
+                    )
+
+            training_section["gradient_accumulation_steps"] = gradient_accumulation_steps
 
             logger.info(
                 f"Auto-calculated gradient_accumulation_steps={gradient_accumulation_steps} "

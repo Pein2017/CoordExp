@@ -57,10 +57,7 @@ from .rollout_matching.contracts import (
 )
 from .rollout_matching.matching import hungarian_match_maskiou
 from .rollout_matching.packing import (
-    AccumulationWindowLookahead as _AccumulationWindowLookahead,
     DropRemainderAccumulationWindow as _DropRemainderAccumulationWindow,
-    RolloutMatchingPackWindow as _RolloutMatchingPackWindow,
-    WindowedMicroBatch as _WindowedMicroBatch,
 )
 from .rollout_matching.parsing import (
     coerce_int as _coerce_int,
@@ -102,6 +99,76 @@ def _contiguous_chunk_slices(n: int, num_chunks: int) -> List[Tuple[int, int]]:
         if end < start:
             end = start
         out.append((start, end))
+    return out
+
+
+def _contiguous_weighted_chunk_slices(
+    n: int, weights: Sequence[int]
+) -> List[Tuple[int, int]]:
+    """Deterministically slice `range(n)` into weighted contiguous chunks.
+
+    `weights[i]` expresses the relative capacity of chunk i.
+
+    Contract:
+    - preserves order (contiguous slices)
+    - stable across runs given the same `n` and `weights`
+    - sums to exactly `n`
+
+    Returns a list of (start, end) index pairs of length `len(weights)`.
+    """
+    if n < 0:
+        raise ValueError("n must be >= 0")
+    if not isinstance(weights, (list, tuple)) or not weights:
+        raise ValueError("weights must be a non-empty list")
+
+    ws: List[int] = []
+    for i, w_raw in enumerate(weights):
+        try:
+            w = int(w_raw)
+        except Exception as exc:
+            raise ValueError(f"weights[{int(i)}] must be an int") from exc
+        if w < 0:
+            raise ValueError(f"weights[{int(i)}] must be >= 0")
+        ws.append(int(w))
+
+    # Degenerate case: all weights are 0. Fall back to uniform chunking.
+    total = int(sum(ws))
+    if total <= 0:
+        return _contiguous_chunk_slices(int(n), int(len(ws)))
+
+    if n == 0:
+        return [(0, 0) for _ in range(int(len(ws)))]
+
+    # Base allocation via floor, then distribute the remainder by largest fractional part.
+    base_counts: List[int] = [int((int(n) * int(w)) // total) for w in ws]
+    remainder = int(n) - int(sum(base_counts))
+    if remainder < 0:
+        remainder = 0
+
+    # Fractional parts are (n*w % total). Larger means closer to receiving an extra item.
+    frac_rank: List[Tuple[int, int]] = [
+        (int((int(n) * int(w)) % total), int(i)) for i, w in enumerate(ws)
+    ]
+    frac_rank.sort(key=lambda x: (-int(x[0]), int(x[1])))
+    for k in range(int(remainder)):
+        _frac, idx = frac_rank[int(k % len(frac_rank))]
+        base_counts[int(idx)] += 1
+
+    # Convert counts to contiguous slices.
+    out: List[Tuple[int, int]] = []
+    start = 0
+    for c in base_counts:
+        end = int(start + int(c))
+        out.append((int(start), int(end)))
+        start = end
+
+    # Strict sanity check (should always hold).
+    if out and int(out[-1][1]) != int(n):
+        raise RuntimeError(
+            "weighted chunking produced invalid slices: "
+            f"n={int(n)} weights={ws} slices={out}"
+        )
+
     return out
 
 
@@ -586,7 +653,7 @@ class _AdaptiveRawMicroBatchStacker:
     packs can automatically increase the raw sample budget.
 
     The class is currently used for unit tests and diagnostics; production runs
-    typically use an explicit `rollout_generate_batch_size`.
+    typically rely on a configured `decode_batch_size`.
     """
 
     def __init__(self, dataloader, *, trainer: Any):
@@ -674,111 +741,6 @@ class _AdaptiveRawMicroBatchStacker:
 
 
 
-def schedule_post_rollout_segment_indices_window(
-    *,
-    encoded_lens: Sequence[int],
-    packing_length: int,
-    gas: int,
-    select_indices_fn: Any,
-) -> List[List[int]]:
-    """Schedule post-rollout segments into exactly `gas` micro-packs.
-
-    This is used when `post_rollout_pack_scope == "window"`: we already have one
-    gradient-accumulation window worth of segments and must emit exactly one packed
-    batch per micro-step.
-
-    Important: this differs from the "micro" packer, which tries to greedily fill a
-    single pack to maximize utilization. For "window" packing we *must* distribute
-    segments across a fixed number of micro-steps.
-
-    `select_indices_fn` is accepted for backward compatibility but is not used in the
-    window scheduler.
-    """
-
-    _ = select_indices_fn
-
-    packing_length = int(packing_length)
-    gas = int(gas)
-    if packing_length <= 0:
-        raise ValueError("packing_length must be positive")
-    if gas <= 0:
-        raise ValueError("gas must be positive")
-
-    lens = [int(x) for x in encoded_lens]
-    if not lens:
-        raise ValueError("window scheduling requires at least one segment")
-
-    for sl in lens:
-        if sl <= 0:
-            raise ValueError("encoded_len must be positive")
-        if sl > packing_length:
-            raise ValueError(
-                f"post-rollout window packing cannot fit a single segment: encoded_len={sl} > packing_length={packing_length}. "
-                "Mitigations: increase global_max_length/template.max_length, reduce max_new_tokens, or disable packing."
-            )
-
-    total = int(sum(lens))
-    if total > gas * packing_length:
-        raise ValueError(
-            f"infeasible window: sum_encoded_len={total} > gas*packing_length={gas * packing_length}"
-        )
-
-    n = int(len(lens))
-    if n < gas:
-        raise ValueError(
-            f"window post-rollout packing requires at least gas segments: segments={n} < gas={gas}. "
-            "Mitigations: increase rollout_generate_batch_size (more raw samples per micro-step) or disable window packing."
-        )
-
-    # Greedy LPT-style load balancing with a hard capacity constraint.
-    # Items are (index, encoded_len).
-    items: List[Tuple[int, int]] = [(int(i), int(sl)) for i, sl in enumerate(lens)]
-    items.sort(key=lambda t: (-int(t[1]), int(t[0])))
-
-    seeds = items[:gas]
-    remaining = items[gas:]
-
-    bins: List[List[int]] = [[int(idx)] for idx, _ in seeds]
-    bin_sums: List[int] = [int(sl) for _, sl in seeds]
-
-    for idx, sl in remaining:
-        best_bin: Optional[int] = None
-        best_sum: Optional[int] = None
-        for b in range(gas):
-            if int(bin_sums[b]) + int(sl) <= packing_length:
-                s = int(bin_sums[b])
-                if best_bin is None or best_sum is None or s < best_sum:
-                    best_bin = int(b)
-                    best_sum = int(s)
-        if best_bin is None:
-            raise ValueError(
-                "window post-rollout packing could not fit all segments into the fixed number of micro-packs. "
-                "Even if sum_encoded_len <= gas*packing_length, indivisible segments can still make packing infeasible. "
-                "Mitigations: reduce max_new_tokens, increase packing_length (global_max_length), or switch post_rollout_pack_scope to 'micro'."
-            )
-        bins[int(best_bin)].append(int(idx))
-        bin_sums[int(best_bin)] += int(sl)
-
-    packs: List[List[int]] = [sorted(b) for b in bins]
-
-    # Sanity checks: non-empty packs and exact cover.
-    if any(len(p) == 0 for p in packs):
-        raise ValueError("window post-rollout packing produced an empty micro-pack")
-
-    used: List[int] = sorted(int(i) for p in packs for i in p)
-    if used != list(range(n)):
-        raise ValueError(
-            "window post-rollout packing produced an invalid segment index cover"
-        )
-
-    for p in packs:
-        p_total = int(sum(int(lens[i]) for i in p))
-        if p_total > packing_length:
-            raise ValueError("window post-rollout packing overflowed packing_length")
-
-    return packs
-
-
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -863,16 +825,54 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching_cfg must be a mapping (injected from custom.extra.rollout_matching)"
             )
 
-        legacy = [
+        removed = [
             k
-            for k in ("temperature", "top_p", "top_k", "rollout_buffer")
+            for k in (
+                # Older top-level decoding knobs.
+                "temperature",
+                "top_p",
+                "top_k",
+                # Removed buffer reuse.
+                "rollout_buffer",
+                # Legacy batching knobs (replaced by decode_batch_size).
+                "rollout_generate_batch_size",
+                "rollout_infer_batch_size",
+                # Removed packing-scope knob.
+                "post_rollout_pack_scope",
+            )
             if k in cfg
         ]
-        if legacy:
-            legacy_s = ", ".join(f"custom.extra.rollout_matching.{k}" for k in legacy)
+        if removed:
+            rendered: List[str] = []
+            for k in removed:
+                if k in {"rollout_generate_batch_size", "rollout_infer_batch_size"}:
+                    rendered.append(
+                        f"custom.extra.rollout_matching.{k} (use custom.extra.rollout_matching.decode_batch_size)"
+                    )
+                elif k == "post_rollout_pack_scope":
+                    rendered.append(
+                        f"custom.extra.rollout_matching.{k} (remove; micro-scope packing is standard)"
+                    )
+                else:
+                    rendered.append(f"custom.extra.rollout_matching.{k}")
+
+            legacy_s = ", ".join(rendered)
             raise ValueError(
                 "Legacy rollout-matching keys have been removed: "
                 f"{legacy_s}. (No backward compatibility.)"
+            )
+
+        # Validate unified decode batch size knob.
+        decode_bs_raw = cfg.get("decode_batch_size", 1)
+        try:
+            decode_bs = int(decode_bs_raw)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decode_batch_size must be an int"
+            ) from exc
+        if decode_bs <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.decode_batch_size must be > 0"
             )
 
         dec = cfg.get("decoding", None)
@@ -896,7 +896,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         try:
-            top_p = float(dec.get("top_p", 1.0) if dec.get("top_p", None) is not None else 1.0)
+            top_p = float(
+                dec.get("top_p", 1.0)
+                if dec.get("top_p", None) is not None
+                else 1.0
+            )
         except Exception as exc:
             raise TypeError(
                 "custom.extra.rollout_matching.decoding.top_p must be a float"
@@ -1490,10 +1494,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "custom.extra.rollout_matching.vllm.server.timeout_s must be > 0"
             )
 
+        # Infer (read) timeout for /infer/ requests:
+        # - null/unset: no timeout (allows long rollouts without client-side aborts)
+        # - <= 0: also treated as disabled
+        # - > 0: enforced as (connect, read) timeout tuple downstream
         infer_timeout_raw = scfg.get("infer_timeout_s", None)
         if infer_timeout_raw is None:
-            # Keep config contract stable: null means follow timeout_s.
-            infer_timeout_s: Optional[float] = float(timeout_s)
+            infer_timeout_s: Optional[float] = None
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
@@ -1502,11 +1509,139 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "custom.extra.rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
             if infer_timeout_s <= 0:
-                infer_timeout_s = float(timeout_s)
+                infer_timeout_s = None
 
         return float(timeout_s), (
             float(infer_timeout_s) if infer_timeout_s is not None else None
         )
+
+    def _vllm_server_world_sizes(self) -> List[int]:
+        """Return cached vLLM server data-parallel world sizes (one per server).
+
+        The rollout server exposes `/get_world_size/` which returns JSON with a
+        `world_size` field.
+        """
+        cached = getattr(self, "_vllm_server_cached_world_sizes", None)
+        if (
+            isinstance(cached, list)
+            and cached
+            and all(isinstance(x, int) and x > 0 for x in cached)
+        ):
+            return list(int(x) for x in cached)
+
+        servers = self._vllm_server_specs()
+        timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
+
+        import json as _json
+        import urllib.request as _urllib
+
+        opener = _urllib.build_opener(_urllib.ProxyHandler({}))
+        out: List[int] = []
+        for s in servers:
+            base_url = str(s["base_url"]).rstrip("/")
+            url = f"{base_url}/get_world_size/"
+            req = _urllib.Request(url, method="GET")
+            with opener.open(req, timeout=float(timeout_s)) as resp:
+                code = int(resp.getcode())
+                body = resp.read()
+            if code != 200:
+                raise RuntimeError(
+                    f"vLLM rollout server /get_world_size/ returned HTTP {code}: {url}"
+                )
+            try:
+                data = _json.loads(body.decode("utf-8"))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"vLLM rollout server /get_world_size/ returned non-JSON payload: {url}"
+                ) from exc
+            try:
+                ws = int(data.get("world_size", 1)) if isinstance(data, dict) else 1
+            except Exception:
+                ws = 1
+            out.append(max(1, int(ws)))
+
+        setattr(self, "_vllm_server_cached_world_sizes", list(out))
+        logger.info("vLLM rollout server world_size(s): %s", out)
+        return list(out)
+
+    def _vllm_server_total_world_size(self) -> int:
+        sizes = self._vllm_server_world_sizes()
+        try:
+            total = int(sum(int(x) for x in sizes))
+        except Exception:
+            total = 0
+        return max(1, int(total))
+
+    def _rollout_decode_batch_size_per_rank(self) -> int:
+        """Derived rollout request chunk size per learner rank.
+
+        `decode_batch_size` is defined as a per-rollout-GPU cap per generation call.
+
+        - HF backend and vLLM colocate mode: each learner rank decodes locally on its own
+          device(s), so the per-call batch size is exactly `decode_batch_size`.
+        - vLLM server mode: learner ranks concurrently issue rollout RPCs to a pool of
+          rollout GPUs (data-parallel replicas). To preserve a per-rollout-GPU cap, we
+          derive a per-rank request chunk size based on the rollout server world size
+          and learner world size.
+        """
+        cap = int(self._decode_batch_size())
+        backend = str(self._rollout_backend()).strip().lower()
+        if backend != "vllm":
+            return max(1, int(cap))
+
+        mode = str(self._vllm_mode()).strip().lower()
+        if mode != "server":
+            return max(1, int(cap))
+
+        # vLLM server mode: derive the maximum number of requests each learner rank may
+        # issue per call so that (under DDP) total concurrent requests across ranks is
+        # bounded by `cap * rollout_world_size`.
+        server_world_sizes = self._vllm_server_world_sizes()
+        rollout_world = int(sum(int(x) for x in server_world_sizes))
+        if rollout_world <= 0:
+            rollout_world = 1
+
+        learner_world = 1
+        try:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                learner_world = int(dist.get_world_size())
+        except Exception:
+            learner_world = 1
+
+        if learner_world <= 0:
+            learner_world = 1
+
+        if int(cap) * int(rollout_world) < int(learner_world):
+            raise ValueError(
+                "decode_batch_size cap is infeasible for the current topology: "
+                f"decode_batch_size={cap} rollout_world_size={rollout_world} learner_world_size={learner_world}. "
+                "Increase rollout server DP world size, reduce learner world size, or increase decode_batch_size."
+            )
+
+        per_rank = max(1, int(int(cap) * int(rollout_world) // int(learner_world)))
+
+        meta = (
+            int(cap),
+            int(learner_world),
+            tuple(int(x) for x in server_world_sizes),
+            int(per_rank),
+        )
+        if meta != getattr(self, "_last_logged_rollout_decode_chunk_meta", None):
+            logger.info(
+                "Rollout decode batching (vLLM server): decode_batch_size_cap=%s learner_world_size=%s "
+                "rollout_server_world_sizes=%s rollout_world_size=%s per_rank_chunk=%s total_chunk_across_ranks=%s",
+                int(cap),
+                int(learner_world),
+                list(int(x) for x in server_world_sizes),
+                int(rollout_world),
+                int(per_rank),
+                int(per_rank) * int(learner_world),
+            )
+            setattr(self, "_last_logged_rollout_decode_chunk_meta", meta)
+
+        return int(per_rank)
 
     def _vllm_server_sync_cfg(self) -> Tuple[str, bool]:
         vcfg_raw = self._cfg("vllm", {}) or {}
@@ -1539,15 +1674,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Keep in signed int32 range for compatibility with various backends.
         return int((base + gs * 1000003) & 0x7FFFFFFF)
 
-    def _rollout_generate_batch_size(self) -> int:
-        raw = self._cfg("rollout_generate_batch_size", 1)
+    def _decode_batch_size(self) -> int:
+        raw = self._cfg("decode_batch_size", 1)
         try:
             v = int(raw)
         except Exception as exc:
             raise ValueError(
-                "custom.extra.rollout_matching.rollout_generate_batch_size must be an int"
+                "custom.extra.rollout_matching.decode_batch_size must be an int"
             ) from exc
-        return max(1, v)
+        if v <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.decode_batch_size must be > 0"
+            )
+        return int(v)
+
 
     def _packing_enabled(self) -> bool:
         return bool(self._cfg("packing_enabled", False))
@@ -1600,23 +1740,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return bool(self._cfg("packing_drop_last", True))
 
     def _post_rollout_pack_scope(self) -> str:
-        """Scope for post-rollout packing.
-
-        - "micro" (default): pack within the current micro-batch (no dataloader lookahead).
-        - "window": pack across one gradient-accumulation window (requires lookahead wrapper).
-
-        Config key: custom.extra.rollout_matching.post_rollout_pack_scope
-        """
-
-        scope_raw = self._cfg("post_rollout_pack_scope", "micro")
-        scope = str(scope_raw).strip().lower()
-        if scope in {"window"}:
-            return "window"
-        if scope in {"micro", "step", "batch"}:
-            return "micro"
-        logger.warning(
-            "Unknown post_rollout_pack_scope=%r; defaulting to 'micro'", scope_raw
-        )
+        # `custom.extra.rollout_matching.post_rollout_pack_scope` has been removed.
+        # Standard behavior is micro-scope dynamic packing.
         return "micro"
 
     @staticmethod
@@ -3270,7 +3395,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             gen_cfg.num_return_sequences = 1
 
         out: List[Tuple[List[int], str, str, List[int]]] = []
-        mb = self._rollout_generate_batch_size()
+        mb = int(self._decode_batch_size())
 
         from swift.llm import to_device
 
@@ -3537,9 +3662,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return []
 
         # Sync weights to server only when fresh rollouts are requested.
-        # Stage2-AB async actor-learner issues server infer calls from background
-        # prefetch workers; those paths MUST NOT invoke DDP collectives here.
-        if not bool(getattr(self, "_stage2_async_skip_vllm_server_sync", False)):
+        #
+        # IMPORTANT: vLLM server sync uses DDP collectives/barriers when learner world_size>1.
+        # If rollouts are issued from a background thread (Stage2-AB pipelined mode),
+        # set `_stage2_skip_vllm_server_sync=True` and perform sync on the main thread
+        # at a safe boundary.
+        if not bool(getattr(self, "_stage2_skip_vllm_server_sync", False)):
             self._sync_vllm_server_rollout_model_if_needed()
 
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
@@ -3621,8 +3749,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         client = self._ensure_vllm_server_client()
 
-        # Deterministic contiguous chunking across servers.
-        chunks = _contiguous_chunk_slices(int(len(infer_requests)), int(len(servers)))
+        server_world_sizes = self._vllm_server_world_sizes()
+        if len(server_world_sizes) != int(len(servers)):
+            raise RuntimeError(
+                "vLLM server world_size discovery returned unexpected length: "
+                f"servers={int(len(servers))} world_sizes={server_world_sizes}"
+            )
+
+        # Deterministic contiguous chunking across servers (weighted by server DP world size).
+        chunks = _contiguous_weighted_chunk_slices(
+            int(len(infer_requests)), [int(x) for x in server_world_sizes]
+        )
 
         # Log reproducibility metadata once per optimizer step (E-steps only).
         if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
@@ -4152,131 +4289,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return selected, pack_metrics
 
-    def _schedule_post_rollout_packs_window(
-        self,
-        *,
-        window_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
-        gas: int,
-    ) -> Tuple[
-        List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]], Dict[str, float]
-    ]:
-        packing_length = int(self._packing_length())
-        gas = int(gas)
-        encoded_lens = [int(sl) for _, _, sl in window_segments]
-
-        pack_indices = schedule_post_rollout_segment_indices_window(
-            encoded_lens=encoded_lens,
-            packing_length=packing_length,
-            gas=gas,
-            select_indices_fn=self._select_post_rollout_segment_indices,
-        )
-
-        packs: List[List[Tuple[Dict[str, Any], Dict[str, Any], int]]] = []
-        fill_sum = 0.0
-        selected_total_len_sum = 0.0
-        segments_sum = 0
-
-        for sel in pack_indices:
-            selected = [window_segments[i] for i in sel]
-            sel_total = int(sum(int(encoded_lens[i]) for i in sel))
-            fill = (
-                float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
-            )
-            packs.append(selected)
-            fill_sum += float(fill)
-            selected_total_len_sum += float(sel_total)
-            segments_sum += int(len(selected))
-
-        total_len = int(sum(encoded_lens))
-        metrics: Dict[str, float] = {
-            "packing/window_segments_total": float(len(window_segments)),
-            "packing/window_sum_encoded_len": float(total_len),
-            "packing/window_packs": float(gas),
-            "packing/window_nonempty_packs": float(sum(1 for p in packs if p)),
-            "packing/window_avg_fill": float(fill_sum / float(max(1, gas))),
-            "packing/window_selected_total_len_sum": float(selected_total_len_sum),
-            "packing/window_segments_sum": float(segments_sum),
-        }
-        return packs, metrics
-
-    def _prepare_window_packed_batches(
-        self,
-        *,
-        window_raw_micro_batches: List[List[Mapping[str, Any]]],
-        global_step: int,
-    ) -> List[Dict[str, Any]]:
-        """Build packed prepared batches for a full accumulation window.
-
-        Implementation note: to keep changes localized, we reuse `_prepare_batch_inputs`
-        to build per-micro post-rollout segments (without packing), then schedule and
-        repack within the window.
-        """
-        gas = int(len(window_raw_micro_batches))
-        if gas <= 0:
-            raise ValueError("window_raw_micro_batches is empty")
-
-        # Collect segments for the whole window.
-        window_segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
-        per_micro_metrics: List[Dict[str, float]] = []
-
-        for mb in window_raw_micro_batches:
-            segs, bm = self._prepare_batch_inputs(mb, _segments_only=True)
-            window_segments.extend(segs)
-            per_micro_metrics.append(bm)
-
-        # Schedule segments into exactly `gas` micro-packs.
-        t_pack0 = time.perf_counter()
-        packs, window_pack_metrics = self._schedule_post_rollout_packs_window(
-            window_segments=window_segments,
-            gas=gas,
-        )
-        t_pack_s = float(time.perf_counter() - t_pack0)
-
-        template = self.template
-        from swift.llm import to_device
-
-        prepared: List[Dict[str, Any]] = []
-        packing_length = int(self._packing_length())
-
-        for i, selected in enumerate(packs):
-            if not selected:
-                raise ValueError(
-                    "window post-rollout packing produced an empty micro-pack. "
-                    "This indicates the window did not produce enough post-rollout segments."
-                )
-
-            with self._template_packing_enabled():
-                packed = template.data_collator([enc for enc, _, _ in selected])
-            batch = to_device(packed, self.model.device)
-            self._assert_single_packed_forward(batch, where="rollout_matching/window_pack")
-            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
-
-            bm = dict(per_micro_metrics[i]) if i < len(per_micro_metrics) else {}
-            bm["time/post_rollout_pack_s"] = float(t_pack_s if i == 0 else 0.0)
-
-            sel_total = int(sum(int(sl) for _, _, sl in selected))
-            fill = (
-                float(sel_total) / float(packing_length) if packing_length > 0 else 0.0
-            )
-            bm.update(
-                {
-                    "packing/post_rollout_fill": float(fill),
-                    "packing/post_rollout_selected_total_len": float(sel_total),
-                    "packing/post_rollout_segments": float(len(selected)),
-                    "packing/post_rollout_buffer": float(0.0),
-                }
-            )
-
-            if i == 0:
-                bm.update(window_pack_metrics)
-                bm["packing/post_rollout_scope_window"] = 1.0
-            else:
-                bm["packing/post_rollout_scope_window"] = 0.0
-
-            self._merge_rollout_matching_batch_metrics(batch, bm)
-            prepared.append(batch)
-
-        return prepared
 
     def _prepare_batch_inputs(
         self,
@@ -5523,36 +5535,35 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             per_dev = 1
 
-        # Fixed raw batching for post-rollout packing.
+        # Optional fixed raw batching for post-rollout packing.
         #
-        # Stage_2 trainers use identity collator, so the dataloader yields lists of raw
-        # samples. With per_device_train_batch_size==1 this would otherwise produce only
-        # one segment per micro-step, making it impossible to reach reasonable packing
-        # fill ratios.
+        # Stage-2 trainers use identity collator, so the dataloader yields lists of raw
+        # samples. When per_device_train_batch_size==1, a single raw sample per micro-step
+        # can lead to poor packing fill (until the carry buffer grows).
         #
-        # We use `custom.extra.rollout_matching.rollout_generate_batch_size` to control
-        # how many raw samples feed into ONE packed sequence (learner microbatch stays 1).
-        try:
-            rollout_gen_bs = int(self._cfg("rollout_generate_batch_size", 1) or 1)
-        except Exception:
-            rollout_gen_bs = 1
-        if self._packing_enabled() and per_dev == 1 and int(rollout_gen_bs) > 1:
-            dl = _FixedRawMicroBatchStacker(
-                dl,
-                target_raw_batch_size=int(rollout_gen_bs),
-                base_raw_batch_size=int(per_dev),
-            )
+        # We only apply this wrapper for the standalone rollout-matching SFT variant.
+        # Stage2-AB budgets raw samples per optimizer step via training.effective_batch_size
+        # and must not have its micro-batches implicitly resized here.
+        trainer_variant = str(getattr(self.args, "trainer_variant", "") or "")
+        if trainer_variant == "rollout_matching_sft":
+            try:
+                decode_bs = int(self._decode_batch_size())
+            except Exception:
+                decode_bs = 1
+            decode_bs = max(1, int(decode_bs))
 
+            if self._packing_enabled() and per_dev == 1 and int(decode_bs) > 1:
+                dl = _FixedRawMicroBatchStacker(
+                    dl,
+                    target_raw_batch_size=int(decode_bs),
+                    base_raw_batch_size=int(per_dev),
+                )
 
         gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
 
-        # Optional window-aware post-rollout packing requires lookahead over one accumulation window.
-        if self._packing_enabled() and self._post_rollout_pack_scope() == "window":
-            dl = _AccumulationWindowLookahead(dl, gas=gas)
-
         # Drop the final partial accumulation window when requested.
         #
-        # This keeps optimizer-step semantics consistent for step-budgeted stage_2 runs
+        # This keeps optimizer-step semantics consistent for step-budgeted Stage-2 runs
         # (fixed samples per step) and avoids a trailing underfull/no-op step.
         try:
             drop_last = bool(getattr(self.args, "dataloader_drop_last", False))
@@ -5981,24 +5992,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
 
-        packing_enabled = bool(self._packing_enabled())
-        if (
-            packing_enabled
-            and self._post_rollout_pack_scope() == "window"
-            and isinstance(inputs, _WindowedMicroBatch)
-        ):
-            win = inputs.rm_window
-            idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
-
-            def _build_all() -> List[Dict[str, Any]]:
-                return self._prepare_window_packed_batches(
-                    window_raw_micro_batches=win.raw_micro_batches,
-                    global_step=gs,
-                )
-
-            prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
-        else:
-            prepared = self._prepare_batch_inputs(inputs)
+        prepared = self._prepare_batch_inputs(inputs)
 
         return super().training_step(model, prepared, *args, **kwargs)
 

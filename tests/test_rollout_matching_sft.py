@@ -153,6 +153,8 @@ def _make_rollout_server_trainer(*, repeat_cfg):
     }
     trainer.state = types.SimpleNamespace(global_step=3)
     trainer._vllm_server_last_logged_step = -1
+    # Avoid real network calls in unit tests; treat the fake server as 1 DP replica.
+    trainer._vllm_server_cached_world_sizes = [1]
 
     trainer._decoding_params = lambda: (0.0, 1.0, -1)
     trainer._derive_rollout_seed_base = lambda global_step: 17 + int(global_step)

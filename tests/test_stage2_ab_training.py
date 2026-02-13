@@ -1,6 +1,4 @@
 import types
-import threading
-
 import pytest
 import torch
 import torch.nn as nn
@@ -1250,20 +1248,16 @@ def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():
     )
 
 
-def test_channel_b_step_mode_rejected_for_ddp_safety(monkeypatch):
-    # Step-budgeted Channel-B mode is intentionally disallowed under multi-GPU DDP.
-    monkeypatch.setattr(
-        torch.distributed, "is_available", lambda: True, raising=False
-    )
-    monkeypatch.setattr(
-        torch.distributed, "is_initialized", lambda: True, raising=False
-    )
-    monkeypatch.setattr(
-        torch.distributed, "get_world_size", lambda: 2, raising=False
-    )
+def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
+    # Stage2-AB standardizes Channel-B to a single step-budgeted pathway.
+    # This should not be rejected just because torch.distributed is initialized.
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True, raising=False)
+    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: True, raising=False)
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
 
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
+    # Even if a legacy key is present in a hand-built dict, the trainer should not consult it.
+    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "async"}}
 
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -1272,99 +1266,21 @@ def test_channel_b_step_mode_rejected_for_ddp_safety(monkeypatch):
     t.args = types.SimpleNamespace(seed=123)
     t.state = types.SimpleNamespace(global_step=0)
 
-    class _M:
-        training = True
+    # Minimal executor shim state.
+    t._stage2_b_step_gs = None
+    t._stage2_b_step_micro = 0
+    t._stage2_b_step_raw = []
 
-    with pytest.raises(ValueError, match=r"multi-GPU learner \(DDP\)"):
-        t.training_step(_M(), [{"messages": []}])
-
-
-def test_channel_b_step_mode_error_message_mentions_micro_mode(monkeypatch):
-    # Error message includes actionable mitigation.
-    monkeypatch.setattr(
-        torch.distributed, "is_available", lambda: True, raising=False
+    # Avoid heavy rollout/packing work: just confirm the call path is allowed.
+    t._stage2_training_step_b_step_mode = (
+        lambda model, inputs, global_step: torch.tensor(1.0)
     )
-    monkeypatch.setattr(
-        torch.distributed, "is_initialized", lambda: True, raising=False
-    )
-    monkeypatch.setattr(
-        torch.distributed, "get_world_size", lambda: 2, raising=False
-    )
-
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "step"}}
-
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._stage2_channel_override = None
-
-    t.args = types.SimpleNamespace(seed=123)
-    t.state = types.SimpleNamespace(global_step=7)
 
     class _M:
         training = True
 
-    with pytest.raises(ValueError, match="channel_b\\.mode='micro'"):
-        t.training_step(_M(), [{"messages": []}])
-
-
-def test_async_step_kind_falls_back_to_a_when_queue_empty(monkeypatch):
-    # Queue-gated async mode should fall back to A if scheduled B is infeasible.
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "channel_b": {"mode": "async", "async": {"queue_limit": 8}},
-    }
-
-    t.args = types.SimpleNamespace(gradient_accumulation_steps=4, seed=123)
-    t.model = types.SimpleNamespace(device=torch.device("cpu"))
-
-    # Minimal async state.
-    from collections import deque
-
-    t._stage2_async_ready = deque()
-    t._stage2_async_ready_lock = threading.Lock()
-    t._stage2_async_ver = 0
-    t._stage2_async_drop_stale_total = 0
-    t._stage2_async_drop_oldest_total = 0
-
-    # No dist.
-    monkeypatch.setattr(torch.distributed, "is_available", lambda: False, raising=False)
-
-    assert (
-        t._stage2_async_decide_step_kind(global_step=0, policy_wants_b=True) == "A"
-    )
-
-
-def test_async_step_kind_selects_b_when_queue_has_gas(monkeypatch):
-    # If each rank has >= GAS ready packs, scheduled B is feasible.
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "channel_b": {"mode": "async", "async": {"queue_limit": 8}},
-    }
-
-    t.args = types.SimpleNamespace(gradient_accumulation_steps=4, seed=123)
-    t.model = types.SimpleNamespace(device=torch.device("cpu"))
-
-    from collections import deque
-
-    t._stage2_async_ready = deque()
-    t._stage2_async_ready_lock = threading.Lock()
-    t._stage2_async_ver = 0
-    t._stage2_async_drop_stale_total = 0
-    t._stage2_async_drop_oldest_total = 0
-
-    from src.trainers.stage2_ab import Stage2AsyncReadyPack
-
-    for _ in range(4):
-        t._stage2_async_ready.append(Stage2AsyncReadyPack(ver=0, batch={}))
-
-    monkeypatch.setattr(torch.distributed, "is_available", lambda: False, raising=False)
-
-    assert (
-        t._stage2_async_decide_step_kind(global_step=0, policy_wants_b=True) == "B"
-    )
+    out = t.training_step(_M(), [{"messages": []}])
+    assert isinstance(out, torch.Tensor)
 
 
 def test_b_ratio_realized_tracks_optimizer_steps_once():
@@ -1384,11 +1300,11 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     t._merge_rollout_matching_batch_metrics(
         batch,
         {
-            "stage2_ab/async/ver": 3.0,
+            "stage2_ab/b_ratio_realized": 3.0,
             "rollout/backend_vllm": 2.0,
         },
     )
     bm = batch.get("_rollout_matching_batch_metrics")
     assert isinstance(bm, dict)
-    assert bm["stage2_ab/async/ver"] == 3.0
+    assert bm["stage2_ab/b_ratio_realized"] == 3.0
     assert bm["rollout/backend_vllm"] == 2.0

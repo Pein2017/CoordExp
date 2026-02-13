@@ -74,7 +74,7 @@ class Stage2ABChannelExecutorsMixin:
                 raise ValueError(
                     "post-rollout packing buffer overflow: "
                     f"buffer_size={new_size} > packing_buffer={cap}. "
-                    "Mitigations: reduce rollout_generate_batch_size, increase training.packing_buffer, "
+                    "Mitigations: reduce custom.extra.rollout_matching.decode_batch_size, increase training.packing_buffer, "
                     "or disable packing."
                 )
 
@@ -303,24 +303,11 @@ class Stage2ABChannelExecutorsMixin:
                 "(learner microbatch=1 under global_max_length)."
             )
 
-        enable_pipeline = bool(self._ab_channel_b_get("enable_pipeline", False) or False)
-        if enable_pipeline:
-            backend = (
-                str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
-            )
-            mode = str(getattr(self, "_vllm_mode", lambda: "")()).strip().lower()
-            if backend != "vllm" or mode != "server":
-                raise ValueError(
-                    "stage2-ab Channel-B pipelined step mode requires custom.extra.rollout_matching.rollout_backend=vllm "
-                    "and custom.extra.rollout_matching.vllm.mode=server (dedicated rollout GPUs). "
-                    f"Got rollout_backend={backend!r}, vllm.mode={mode!r}."
-                )
+        backend = str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
+        mode = str(getattr(self, "_vllm_mode", lambda: "")()).strip().lower()
+        enable_pipeline = bool(backend == "vllm" and mode == "server")
 
-        rollout_decode_bs_raw = self._ab_channel_b_get("rollout_decode_batch_size", 2)
-        try:
-            rollout_decode_bs = int(rollout_decode_bs_raw)
-        except Exception:
-            rollout_decode_bs = 2
+        rollout_decode_bs = int(self._rollout_decode_batch_size_per_rank())
         rollout_decode_bs = max(1, int(rollout_decode_bs))
 
         packing_length = int(self._packing_length())
@@ -459,10 +446,19 @@ class Stage2ABChannelExecutorsMixin:
 
         # Pipelined mode: produce segments in small decode micro-batches while the learner
         # consumes packed sequences. A bounded queue prevents unbounded rollout pooling.
+        #
+        # IMPORTANT: vLLM server sync uses DDP collectives/barriers and is not thread-safe.
+        # Perform sync once on the main thread, then force the producer thread to skip sync.
+        sync_fn = getattr(self, "_sync_vllm_server_rollout_model_if_needed", None)
+        if callable(sync_fn):
+            sync_fn()
+
         q: queue.Queue = queue.Queue(maxsize=1)
         producer_exc: List[BaseException] = []
 
         def _producer() -> None:
+            prev_skip = bool(getattr(self, "_stage2_skip_vllm_server_sync", False))
+            setattr(self, "_stage2_skip_vllm_server_sync", True)
             try:
                 for off in range(0, int(len(raw_samples)), int(rollout_decode_bs)):
                     chunk = list(raw_samples[int(off) : int(off + rollout_decode_bs)])
@@ -473,6 +469,7 @@ class Stage2ABChannelExecutorsMixin:
             except BaseException as exc:
                 producer_exc.append(exc)
             finally:
+                setattr(self, "_stage2_skip_vllm_server_sync", prev_skip)
                 q.put(None)
 
         th = threading.Thread(target=_producer, daemon=True)
@@ -664,13 +661,13 @@ class Stage2ABChannelExecutorsMixin:
             if len(raw_all) < target_local:
                 raise ValueError(
                     "stage2-ab Channel-B step mode collected fewer raw samples than expected on this rank: "
-                    f"{len(raw_all)} < {target_local} (global rollouts_per_step={target_global}). "
-                    "Mitigations: set training.dataloader_drop_last=true, or set channel_b.rollouts_per_step to match your DDP effective batch size."
+                    f"{len(raw_all)} < {target_local} (expected global_raw={target_global}). "
+                    "Mitigations: set training.dataloader_drop_last=true, and ensure training.effective_batch_size is divisible by per_device_train_batch_size*world_size (so gradient_accumulation_steps is an integer)."
                 )
             if len(raw_all) > target_local:
                 logger.warning(
                     "stage2-ab Channel-B step mode collected more raw samples than expected on this rank; "
-                    "dropping extras to honor rollouts_per_step: %s > %s (global=%s)",
+                    "dropping extras to honor effective_batch_size-derived raw budget: %s > %s (global=%s)",
                     len(raw_all),
                     target_local,
                     target_global,

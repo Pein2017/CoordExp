@@ -4,8 +4,6 @@ import math
 import os
 import re
 import time
-import threading
-import queue
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -20,7 +18,6 @@ from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_id
 from .rollout_matching_sft import RolloutMatchingSFTTrainer
 from .rollout_matching.contracts import GTObject
 from .rollout_matching.matching import hungarian_match_maskiou
-from .rollout_matching.packing import WindowedMicroBatch
 from .rollout_matching.parsing import (
     decode_pieces,
     find_desc_value_char_spans,
@@ -32,7 +29,6 @@ from .rollout_matching.parsing import (
 from .rollout_matching.telemetry import PendingTrainRolloutLog
 from ..common.geometry.coord_utils import decode_coord
 
-from .stage2_ab.async_queue import Stage2ABAsyncQueueManagerMixin, Stage2AsyncReadyPack
 from .stage2_ab.executors import Stage2ABChannelExecutorsMixin
 from .stage2_ab.scheduler import Stage2ABSchedulerMixin
 
@@ -86,7 +82,7 @@ class _PendingStage2Log:
                 k.startswith("loss/")
                 or k.startswith("stage2/channel_")
                 or k.startswith("rollout/")
-                or k.startswith("stage2_ab/async/")
+                or k == "stage2_ab/b_ratio_realized"
                 or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
                 out[k] = float(v) / n_micro
@@ -546,7 +542,6 @@ def _matched_prefix_structure_positions(
 
 class Stage2ABTrainingTrainer(
     Stage2ABSchedulerMixin,
-    Stage2ABAsyncQueueManagerMixin,
     Stage2ABChannelExecutorsMixin,
     RolloutMatchingSFTTrainer,
 ):
@@ -578,41 +573,6 @@ class Stage2ABTrainingTrainer(
         self._stage2_a_step_micro: int = 0
         self._stage2_a_step_raw: List[Mapping[str, Any]] = []
 
-        # Async actor-learner state (Channel-B only): prefetch ready packed micro-batches
-        # on CPU and consume them under a queue feasibility gate.
-        self._stage2_async_step_gs: Optional[int] = None
-        self._stage2_async_step_micro: int = 0
-        self._stage2_async_step_kind: Optional[str] = None
-        self._stage2_async_policy_wants_b: bool = False
-        self._stage2_async_step_ver: Optional[int] = None
-
-        # Monotonic sync-counter version (ver) for async rollouts.
-        self._stage2_async_ver: int = 0
-        self._stage2_async_last_synced_gs: Optional[int] = None
-
-        self._stage2_async_ready: Deque[Stage2AsyncReadyPack] = deque()
-        self._stage2_async_ready_lock = threading.Lock()
-
-        self._stage2_async_stop = threading.Event()
-        self._stage2_async_prefetch_thread: Optional[threading.Thread] = None
-
-        self._stage2_async_infer_lock = threading.Lock()
-        self._stage2_async_infer_cv = threading.Condition(self._stage2_async_infer_lock)
-        self._stage2_async_sync_in_progress: bool = False
-        self._stage2_async_infer_inflight: int = 0
-
-        self._stage2_async_raw_dataloader = None
-        self._stage2_async_raw_iter = None
-        self._stage2_async_raw_epoch: int = 0
-
-        self._stage2_async_drop_stale_total: int = 0
-        self._stage2_async_drop_oldest_total: int = 0
-        self._stage2_async_prefetch_success_total: int = 0
-        self._stage2_async_prefetch_fail_total: int = 0
-        self._stage2_async_prefetch_iter_total: int = 0
-        self._stage2_async_prefetch_last_progress_ts: float = float(time.time())
-        self._stage2_async_prefetch_state: int = 0
-
         # Rolling realized B-step ratio diagnostics (optimizer-step granularity).
         self._stage2_ab_realized_last_gs: Optional[int] = None
         self._stage2_ab_realized_recent: Deque[int] = deque(maxlen=200)
@@ -622,8 +582,8 @@ class Stage2ABTrainingTrainer(
     ) -> None:
         """Merge rollout-matching batch metrics onto an existing batch.
 
-        Some pipeline modes (e.g. async actor-learner) may attach base rollout/decode
-        metadata during batch preparation and then add additional telemetry later.
+        Some Stage2-AB code paths attach base rollout/decode metadata during batch
+        preparation and then add additional telemetry later.
         Treat `_rollout_matching_batch_metrics` as merge-only to avoid accidental
         overwrites.
         """
@@ -639,66 +599,11 @@ class Stage2ABTrainingTrainer(
         batch["_rollout_matching_batch_metrics"] = out
 
     def train(self, *args, **kwargs):
-        """Run training and ensure async background workers shut down cleanly.
-
-        Without an explicit shutdown, the async Channel-B prefetch thread may
-        continue issuing vLLM `/infer/` calls after the main training loop
-        completes. That can race with process teardown (and vLLM communicator
-        cleanup) and lead to hard aborts (SIGABRT).
-        """
-
+        """Run training and ensure rollout server clients shut down cleanly."""
         try:
             return super().train(*args, **kwargs)
         finally:
-            # Best-effort: stop the async prefetch thread if it was started.
-            try:
-                self._stage2_async_stop.set()
-            except Exception:
-                pass
-
-            # Wake any thread waiting on the infer condition variable.
-            try:
-                cv = getattr(self, "_stage2_async_infer_cv", None)
-                if cv is not None:
-                    with cv:
-                        cv.notify_all()
-            except Exception:
-                pass
-
-            # Close HTTP sessions first so in-flight infer calls can fail fast.
-            # Communicator closure is done after the prefetch thread exits.
-            try:
-                self._shutdown_vllm_server_client(
-                    close_communicator=False,
-                    close_sessions=True,
-                )
-            except Exception:
-                pass
-
-            join_timeout_s = 5.0
-            try:
-                _server_timeout_s, infer_timeout_s = self._vllm_server_timeouts()
-                join_timeout_s = max(5.0, min(float(infer_timeout_s) + 5.0, 300.0))
-            except Exception:
-                pass
-
-            try:
-                th = getattr(self, "_stage2_async_prefetch_thread", None)
-                if th is not None and getattr(th, "is_alive", None) and th.is_alive():
-                    deadline = float(time.time()) + float(join_timeout_s)
-                    while th.is_alive():
-                        remain = float(deadline - float(time.time()))
-                        if remain <= 0.0:
-                            break
-                        th.join(timeout=min(1.0, remain))
-                    if th.is_alive():
-                        logger.warning(
-                            "Stage2-AB async prefetch thread still alive at shutdown after %.1fs; proceeding with best-effort teardown.",
-                            float(join_timeout_s),
-                        )
-            except Exception:
-                pass
-
+            # Best-effort: close HTTP sessions and communicator if server mode was used.
             try:
                 self._shutdown_vllm_server_client(
                     close_communicator=True,
@@ -918,18 +823,17 @@ class Stage2ABTrainingTrainer(
             except Exception as exc:
                 if int(rank) == 0:
                     logger.warning(
-                        "stage2-ab metric key sync failed; falling back to local metrics: %r",
+                        "stage2-ab metric key sync failed; proceeding without key union: %r",
                         exc,
                     )
-                dist = None
 
-        sum_keys: List[str] = []
-        max_keys: List[str] = []
-        mean_keys: List[str] = []
+        sum_key_set: set[str] = set()
+        max_key_set: set[str] = set()
+        mean_key_set: set[str] = set()
 
         for key in metric_keys:
             if key == "rollout/repeat_terminate_active":
-                max_keys.append(key)
+                max_key_set.add(key)
                 continue
 
             if key.startswith("time/") or key in {
@@ -940,7 +844,7 @@ class Stage2ABTrainingTrainer(
                 "rollout/hf_seeded_global",
                 "rollout/do_sample",
             }:
-                max_keys.append(key)
+                max_key_set.add(key)
                 continue
 
             if key in {
@@ -954,19 +858,43 @@ class Stage2ABTrainingTrainer(
                 trunc_num_key,
                 trunc_den_key,
             }:
-                sum_keys.append(key)
+                sum_key_set.add(key)
                 continue
 
             if key.startswith("stage2_ab/channel_b/strict_drop/reason/"):
-                sum_keys.append(key)
+                sum_key_set.add(key)
                 continue
 
             if key.startswith("stage2_ab/") and "/N_" in key:
-                sum_keys.append(key)
+                sum_key_set.add(key)
                 continue
 
-            mean_keys.append(key)
+            mean_key_set.add(key)
 
+        # Stable key ordering for all-reduce tensors (important for reproducibility).
+        sum_priority = [
+            trunc_num_key,
+            trunc_den_key,
+            "stage2/raw_rollouts",
+            "rollout/repeat_terminate_triggered_sequences",
+            "rollout/parse_truncated",
+        ]
+        sum_keys: List[str] = []
+        for k in sum_priority:
+            if k in sum_key_set:
+                sum_keys.append(k)
+                sum_key_set.remove(k)
+        sum_keys.extend(sorted(sum_key_set))
+
+        max_priority = ["rollout/repeat_terminate_active"]
+        max_keys: List[str] = []
+        for k in max_priority:
+            if k in max_key_set:
+                max_keys.append(k)
+                max_key_set.remove(k)
+        max_keys.extend(sorted(max_key_set))
+
+        mean_keys: List[str] = sorted(mean_key_set)
         if dist is not None and int(world_size) > 1:
             try:
                 device = torch.device("cpu")
@@ -1025,7 +953,6 @@ class Stage2ABTrainingTrainer(
 
         return reduced
 
-    # Stage-2 AB async queue helpers live in `src/trainers/stage2_ab/async_queue.py`.
     # Stage-2 AB channel executors live in `src/trainers/stage2_ab/executors.py`.
 
     def log(self, logs: Dict[str, float]) -> None:
@@ -1057,243 +984,26 @@ class Stage2ABTrainingTrainer(
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
         ch_sched = self._stage2_channel_for_step(gs)
 
-        rank, world_size, dist = self._dist_info()
-        b_mode = self._stage2_b_step_mode()
-        if b_mode != "async":
-            self._stage2_record_realized_step(
-                global_step=gs,
-                executed_b=bool(ch_sched == "B"),
-            )
+        # No async actor-learner gating: realized step kind matches schedule deterministically.
+        self._stage2_record_realized_step(
+            global_step=gs,
+            executed_b=bool(ch_sched == "B"),
+        )
 
-        if b_mode == "step" and int(world_size) > 1:
-            raise ValueError(
-                "stage2_ab.channel_b.mode='step' is not supported under multi-GPU learner (DDP) (world_size>1). "
-                "Use channel_b.mode='async' (recommended) or channel_b.mode='micro'."
-            )
-
-        # Async actor-learner: rank0 chooses A/B per optimizer step, gated by ready-pack queues.
-        if b_mode == "async":
-            self._stage2_async_validate_requirements()
-            self._stage2_async_ensure_prefetch_thread()
-
-            # Step boundary: decide step kind and run rank0 server sync (DDP-safe).
-            if self._stage2_async_step_gs is None or int(self._stage2_async_step_gs) != int(gs):
-                self._stage2_async_step_gs = int(gs)
-                self._stage2_async_step_micro = 0
-                ch_policy = self._stage2_policy_channel_for_step(gs)
-                policy_wants_b = bool(ch_policy == "B")
-                self._stage2_async_policy_wants_b = bool(policy_wants_b)
-
-                # Sync server weights (rank0 authority) at a safe fence.
-                self._stage2_async_maybe_sync_server(global_step=gs)
-
-                # Decide A/B for the whole accumulation window (queue feasibility gate).
-                step_kind = self._stage2_async_decide_step_kind(
-                    global_step=gs, policy_wants_b=bool(policy_wants_b)
-                )
-                self._stage2_async_step_kind = "B" if step_kind == "B" else "A"
-                self._stage2_record_realized_step(
-                    global_step=gs,
-                    executed_b=bool(self._stage2_async_step_kind == "B"),
-                )
-
-                # Override channel selection for any helper methods that consult the schedule.
-                self._stage2_channel_override = self._stage2_async_step_kind
-
-            self._stage2_async_step_micro += 1
-
-            gas = 1
-            try:
-                gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-            except Exception:
-                gas = 1
-            gas = max(1, int(gas))
-
-            # Per-micro-step async telemetry.
-            depth = int(self._stage2_async_ready_depth_fresh())
-            ver = int(getattr(self, "_stage2_async_ver", 0) or 0)
-            policy_wants_b = bool(getattr(self, "_stage2_async_policy_wants_b", False))
-            executed_b = bool(self._stage2_async_step_kind == "B")
-            skipped_due_to_queue = bool(policy_wants_b and not executed_b)
-
-            prefetch_state = 0
-            prefetch_iter = 0
-            prefetch_age_s = -1.0
-            try:
-                prefetch_state = int(getattr(self, "_stage2_async_prefetch_state", 0) or 0)
-                prefetch_iter = int(getattr(self, "_stage2_async_prefetch_iter_total", 0) or 0)
-                last_ts = float(
-                    getattr(self, "_stage2_async_prefetch_last_progress_ts", 0.0) or 0.0
-                )
-                if last_ts > 0:
-                    prefetch_age_s = float(max(0.0, float(time.time()) - float(last_ts)))
-            except Exception:
-                prefetch_state = 0
-                prefetch_iter = 0
-                prefetch_age_s = -1.0
-
-            async_metrics: Dict[str, float] = {
-                "stage2_ab/async/policy_wants_b": float(1.0 if policy_wants_b else 0.0),
-                "stage2_ab/async/step_kind_b": float(1.0 if executed_b else 0.0),
-                "stage2_ab/async/b_step_skipped_due_to_queue": float(
-                    1.0 if skipped_due_to_queue else 0.0
-                ),
-                "stage2_ab/async/b_ratio_realized": float(
-                    self._stage2_b_ratio_realized()
-                ),
-                "stage2_ab/async/queue_depth": float(depth),
-                "stage2_ab/async/queue_limit": float(self._stage2_async_queue_limit()),
-                "stage2_ab/async/prefetch_target_packs": float(
-                    self._stage2_async_prefetch_target_packs()
-                ),
-                "stage2_ab/async/version_window": float(self._stage2_async_version_window()),
-                "stage2_ab/async/ver_current": float(ver),
-                "stage2_ab/async/drop_stale_total": float(self._stage2_async_drop_stale_total),
-                "stage2_ab/async/drop_oldest_total": float(self._stage2_async_drop_oldest_total),
-                "stage2_ab/async/prefetch_success_total": float(
-                    self._stage2_async_prefetch_success_total
-                ),
-                "stage2_ab/async/prefetch_fail_total": float(self._stage2_async_prefetch_fail_total),
-                "stage2_ab/async/prefetch_iter_total": float(prefetch_iter),
-                "stage2_ab/async/prefetch_state": float(prefetch_state),
-                "stage2_ab/async/prefetch_last_progress_s_ago": float(prefetch_age_s),
-                "stage2_ab/async/sync_in_progress": float(
-                    1.0 if bool(getattr(self, "_stage2_async_sync_in_progress", False)) else 0.0
-                ),
-                "stage2_ab/async/infer_inflight": float(
-                    int(getattr(self, "_stage2_async_infer_inflight", 0) or 0)
-                ),
-                "stage2_ab/async/is_prefetch_in_prepare_b": float(
-                    1.0 if int(prefetch_state) == 4 else 0.0
-                ),
-                "stage2_ab/async/is_prefetch_queue_full": float(
-                    1.0 if int(prefetch_state) == 10 else 0.0
-                ),
-                "stage2_ab/async/is_prefetch_no_segments": float(
-                    1.0 if int(prefetch_state) == 11 else 0.0
-                ),
-                "stage2_ab/async/is_prefetch_error": float(
-                    1.0 if int(prefetch_state) == 99 else 0.0
-                ),
-                "stage2_ab/async/gas": float(gas),
-            }
-
-            if executed_b:
-                step_ver = getattr(self, "_stage2_async_step_ver", None)
-                if step_ver is None:
-                    raise RuntimeError("stage2-ab async step_ver is unset for a B step")
-                async_metrics["stage2_ab/async/ver_step"] = float(int(step_ver))
-
-                pack = self._stage2_async_pop_ready_for_ver(ver=int(step_ver))
-                try:
-                    ver_lag = max(0, ver - int(getattr(pack, "ver", 0) or 0))
-                except Exception:
-                    ver_lag = 0
-                async_metrics["stage2_ab/async/ver_lag"] = float(ver_lag)
-
-                prepared = dict(pack.batch)
-
-                try:
-                    from swift.llm import to_device
-
-                    prepared = to_device(prepared, self.model.device)
-                except Exception:
-                    pass
-
-                bm = prepared.get("_rollout_matching_batch_metrics")
-                bm_out = dict(bm) if isinstance(bm, Mapping) else {}
-                bm_out.update(async_metrics)
-                prepared["_rollout_matching_batch_metrics"] = bm_out
-                prepared["_stage2_ab_channel"] = "B"
-
-                return super(RolloutMatchingSFTTrainer, self).training_step(
-                    model, prepared, *args, **kwargs
-                )
-
-            # Step kind A: use the normal Stage2-AB Channel-A preparation.
-            prev = self._stage2_channel_override
-            self._stage2_channel_override = "A"
-            try:
-                packing_enabled = bool(self._packing_enabled())
-                if (
-                    packing_enabled
-                    and self._post_rollout_pack_scope() == "window"
-                    and isinstance(inputs, WindowedMicroBatch)
-                ):
-                    win = inputs.rm_window
-                    idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
-
-                    def _build_all() -> List[Dict[str, Any]]:
-                        return self._prepare_window_packed_batches(
-                            window_raw_micro_batches=win.raw_micro_batches,
-                            global_step=gs,
-                        )
-
-                    prepared = win.get_prepared(
-                        idx=idx, build_all_prepared=_build_all
-                    )
-                else:
-                    prepared = self._prepare_batch_inputs(inputs)
-            finally:
-                self._stage2_channel_override = prev
-
-            bm = None
-            try:
-                bm = prepared.get("_rollout_matching_batch_metrics")
-            except Exception:
-                bm = None
-            if isinstance(prepared, Mapping):
-                bm_out = dict(bm) if isinstance(bm, Mapping) else {}
-                bm_out.update(async_metrics)
-                prepared = dict(prepared)
-                prepared["_rollout_matching_batch_metrics"] = bm_out
-                prepared["_stage2_ab_channel"] = "A"
-
-            return super(RolloutMatchingSFTTrainer, self).training_step(
-                model, prepared, *args, **kwargs
-            )
-
-        # Optional: Channel-B step-budgeted mode (rollout ~N raw samples, then pack+learn-to-completion).
-        if ch_sched == "B" and b_mode == "step":
+        # Channel-B: single step-budgeted pathway.
+        if ch_sched == "B":
             return self._stage2_training_step_b_step_mode(model, inputs, global_step=gs)
 
-        if ch_sched == "A":
-            prev = self._stage2_channel_override
-            self._stage2_channel_override = "A"
-            try:
-                packing_enabled = bool(self._packing_enabled())
-                if packing_enabled:
-                    return self._stage2_training_step_a_step_mode(
-                        model, inputs, global_step=gs
-                    )
-                prepared = self._prepare_batch_inputs(inputs)
-            finally:
-                self._stage2_channel_override = prev
-            return super(RolloutMatchingSFTTrainer, self).training_step(
-                model, prepared, *args, **kwargs
-            )
-
+        # Channel-A: keep existing behavior (step-budgeted packing when enabled).
         prev = self._stage2_channel_override
-        self._stage2_channel_override = "B"
+        self._stage2_channel_override = "A"
         try:
             packing_enabled = bool(self._packing_enabled())
-            if (
-                packing_enabled
-                and self._post_rollout_pack_scope() == "window"
-                and isinstance(inputs, WindowedMicroBatch)
-            ):
-                win = inputs.rm_window
-                idx = int(getattr(inputs, "rm_window_idx", 0) or 0)
-
-                def _build_all() -> List[Dict[str, Any]]:
-                    return self._prepare_window_packed_batches(
-                        window_raw_micro_batches=win.raw_micro_batches,
-                        global_step=gs,
-                    )
-
-                prepared = win.get_prepared(idx=idx, build_all_prepared=_build_all)
-            else:
-                prepared = self._prepare_batch_inputs(inputs)
+            if packing_enabled:
+                return self._stage2_training_step_a_step_mode(
+                    model, inputs, global_step=gs
+                )
+            prepared = self._prepare_batch_inputs(inputs)
         finally:
             self._stage2_channel_override = prev
 
@@ -1787,20 +1497,15 @@ class Stage2ABTrainingTrainer(
 
             t_gen0 = time.perf_counter()
 
-            # Allow batching rollout requests (server/hf) independently of learner microbatch.
-            # This is most useful when using window packing (post_rollout_pack_scope='window'),
-            # where `inputs` may contain an entire accumulation window of samples.
-            rollout_infer_bs_raw = self._cfg("rollout_infer_batch_size", None)
-            if rollout_infer_bs_raw is None:
-                rollout_infer_bs_raw = self._cfg("rollout_generate_batch_size", None)
-            try:
-                rollout_infer_bs = (
-                    int(rollout_infer_bs_raw) if rollout_infer_bs_raw is not None else 0
-                )
-            except Exception:
-                rollout_infer_bs = 0
-            if rollout_infer_bs <= 0:
-                rollout_infer_bs = int(len(inputs))
+            # Derived rollout request chunk size per learner rank.
+            #
+            # `decode_batch_size` is defined as a per-rollout-GPU cap per generation call.
+            # For vLLM server mode (data-parallel replicas), we derive the per-rank chunk
+            # size so the per-GPU cap holds when all learner ranks run concurrently.
+            rollout_infer_bs = int(self._rollout_decode_batch_size_per_rank())
+            rollout_infer_bs = max(1, int(rollout_infer_bs))
+            if int(len(inputs)) > 0:
+                rollout_infer_bs = min(int(rollout_infer_bs), int(len(inputs)))
 
             rollout_results = []
             rollout_repeat_trigger_flags: List[int] = []
@@ -3387,7 +3092,7 @@ class Stage2ABTrainingTrainer(
             stage2_logs = {
                 "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
-                "stage2_ab/async/b_ratio_realized": float(self._stage2_b_ratio_realized()),
+                "stage2_ab/b_ratio_realized": float(self._stage2_b_ratio_realized()),
                 "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
                 "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
@@ -3404,16 +3109,6 @@ class Stage2ABTrainingTrainer(
                     "stage2/drop_unknown",
                     "stage2/drop_bbox_invalid",
                     "rollout/seed_base",
-                    "rollout/backend_hf",
-                    "rollout/backend_vllm",
-                    "rollout/decode_mode_greedy",
-                    "rollout/decode_mode_beam",
-                    "rollout/hf_seeded_global",
-                    "rollout/temperature",
-                    "rollout/do_sample",
-                    "rollout/max_new_tokens",
-                    "rollout/num_beams",
-                    "rollout/repetition_penalty",
                     "rollout/repeat_terminate_active",
                     "rollout/repeat_terminate_triggered_sequences",
                     "rollout/parse_truncated",

@@ -1306,17 +1306,6 @@ def main():
                 )
             stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
 
-            # Normalize reserved-word keys from typed config.
-            try:
-                chb = stage2_ab_cfg.get("channel_b")
-                if (
-                    isinstance(chb, dict)
-                    and "async_" in chb
-                    and "async" not in chb
-                ):
-                    chb["async"] = chb.pop("async_")
-            except Exception:
-                pass
 
             setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
 

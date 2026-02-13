@@ -244,8 +244,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 f"  run_name: {run_name}",
                 f"  logging_dir: {tb_root}",
                 "  max_steps: 3",
-                "  effective_batch_size: null",
-                "  gradient_accumulation_steps: 1",
+                "  effective_batch_size: 1",
                 "stage2_ab:",
                 "  channel_b:",
                 "    reordered_gt_sft: false",
@@ -396,8 +395,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
             if float(r.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
         ]
         assert b_records, (
-            "No Channel-B logs found; async queue may have been starved. "
-            "Increase max_steps or stage2_ab.channel_b.async.prefetch_target_packs for this smoke run.\n\n"
+            "No Channel-B logs found. Check stage2_ab.schedule.b_ratio and max_steps for this smoke run.\n\n"
             + _tail(learner_log)
         )
         merged_b = dict(b_records[-1])

@@ -76,59 +76,39 @@ class Stage2ABSchedulerMixin:
             pass
         return default
 
-    def _stage2_b_step_mode(self) -> Literal["micro", "step", "async"]:
-        raw = self._ab_channel_b_get("mode", "micro")
-        mode = str(raw).strip().lower()
-        if mode not in {"micro", "step", "async"}:
-            raise ValueError(
-                "stage2_ab.channel_b.mode must be one of: 'micro', 'step', 'async'"
-            )
-        if mode == "step":
-            return "step"
-        if mode == "async":
-            return "async"
-        return "micro"
+    def _stage2_b_step_mode(self) -> Literal["step"]:
+        # Stage2-AB standardizes Channel-B execution to the step-budgeted pathway.
+        return "step"
 
     def _stage2_b_rollouts_per_step(self) -> int:
-        raw = self._ab_channel_b_get("rollouts_per_step", None)
-        if raw is None:
-            # Default: derived global effective batch size for one optimizer update.
-            # When ms-swift computes gradient_accumulation_steps from effective_batch_size,
-            # this value reflects the *actual* global batch size (may be >= requested).
-            try:
-                per_device = int(
-                    getattr(self.args, "per_device_train_batch_size", 1) or 1
-                )
-            except Exception:
-                per_device = 1
-            try:
-                world_size = int(getattr(self.args, "world_size", 1) or 1)
-            except Exception:
-                world_size = 1
-            try:
-                gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-            except Exception:
-                gas = 1
-
-            per_device = max(1, int(per_device))
-            world_size = max(1, int(world_size))
-            gas = max(1, int(gas))
-            return max(1, int(per_device) * int(world_size) * int(gas))
-
+        # Single source of truth for raw-rollout budgeting: training.effective_batch_size.
+        #
+        # For Stage2-AB we require loader-side exact divisibility, so the realized
+        # global effective batch equals the user-requested effective_batch_size.
         try:
-            v = int(raw)
-        except Exception as exc:
-            raise ValueError(
-                "stage2_ab.channel_b.rollouts_per_step must be an int"
-            ) from exc
-        return max(1, v)
+            per_device = int(getattr(self.args, "per_device_train_batch_size", 1) or 1)
+        except Exception:
+            per_device = 1
+        try:
+            world_size = int(getattr(self.args, "world_size", 1) or 1)
+        except Exception:
+            world_size = 1
+        try:
+            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
+        except Exception:
+            gas = 1
+
+        per_device = max(1, int(per_device))
+        world_size = max(1, int(world_size))
+        gas = max(1, int(gas))
+        return max(1, int(per_device) * int(world_size) * int(gas))
 
     def _stage2_b_rollouts_per_rank(self) -> int:
         """Per-train-rank raw rollouts for this optimizer step.
 
-        rollouts_per_step is interpreted as a *global* count across all train ranks.
-        This helper splits the global target across ranks deterministically so that the
-        per-rank targets sum to rollouts_per_step.
+        The global raw rollout budget for Channel-B is `training.effective_batch_size`
+        (enforced exactly for Stage2-AB). This helper splits the global target across
+        ranks deterministically so that per-rank targets sum to the global budget.
         """
         total = int(self._stage2_b_rollouts_per_step())
         try:
@@ -145,8 +125,8 @@ class Stage2ABSchedulerMixin:
 
         if total < world_size:
             raise ValueError(
-                "stage2-ab Channel-B rollouts_per_step must be >= world_size so every train rank has at least one raw rollout. "
-                f"Got rollouts_per_step={total}, world_size={world_size}."
+                "training.effective_batch_size must be >= learner world_size so every train rank has at least one raw rollout. "
+                f"Got effective_batch_size={total}, world_size={world_size}."
             )
 
         base, rem = divmod(total, world_size)

@@ -905,90 +905,7 @@ class Stage2ABSemanticDescGateConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBAsyncConfig:
-    queue_limit: int = 8
-    version_window: int = 2
-    sync_every_steps: int = 1
-    prefetch_target_packs: int = 2
-
-    @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBAsyncConfig":
-        if payload is None:
-            return cls()
-        if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.channel_b.async must be a mapping when provided")
-
-        data: MutableMapping[str, Any] = dict(payload)
-
-        queue_limit_raw = data.pop("queue_limit", cls.queue_limit)
-        try:
-            queue_limit = int(queue_limit_raw)
-        except Exception as exc:
-            raise TypeError("stage2_ab.channel_b.async.queue_limit must be an int") from exc
-        if queue_limit <= 0:
-            raise ValueError("stage2_ab.channel_b.async.queue_limit must be > 0")
-
-        version_window_raw = data.pop("version_window", cls.version_window)
-        try:
-            version_window = int(version_window_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.async.version_window must be an int"
-            ) from exc
-        if version_window < 0:
-            raise ValueError("stage2_ab.channel_b.async.version_window must be >= 0")
-
-        sync_every_steps_raw = data.pop("sync_every_steps", cls.sync_every_steps)
-        try:
-            sync_every_steps = int(sync_every_steps_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.async.sync_every_steps must be an int"
-            ) from exc
-        if sync_every_steps <= 0:
-            raise ValueError(
-                "stage2_ab.channel_b.async.sync_every_steps must be > 0"
-            )
-
-        prefetch_target_raw = data.pop(
-            "prefetch_target_packs", cls.prefetch_target_packs
-        )
-        try:
-            prefetch_target_packs = int(prefetch_target_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.async.prefetch_target_packs must be an int"
-            ) from exc
-        if prefetch_target_packs <= 0:
-            raise ValueError(
-                "stage2_ab.channel_b.async.prefetch_target_packs must be > 0"
-            )
-        if prefetch_target_packs > queue_limit:
-            raise ValueError(
-                "stage2_ab.channel_b.async.prefetch_target_packs must be <= queue_limit"
-            )
-
-        if data:
-            raise ValueError(
-                f"Unknown stage2_ab.channel_b.async keys: {sorted(str(k) for k in data.keys())}"
-            )
-
-        return cls(
-            queue_limit=queue_limit,
-            version_window=version_window,
-            sync_every_steps=sync_every_steps,
-            prefetch_target_packs=prefetch_target_packs,
-        )
-
-@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
-    mode: Literal["micro", "step", "async"] = "micro"
-    async_: Stage2ABChannelBAsyncConfig = field(
-        default_factory=Stage2ABChannelBAsyncConfig
-    )
-    rollouts_per_step: Optional[int] = None
-    enable_pipeline: bool = False
-    rollout_decode_batch_size: int = 2
     reordered_gt_sft: bool = False
     desc_ce_weight_matched: Optional[float] = None
     drop_invalid_struct_ce_multiplier: float = 1.0
@@ -1010,50 +927,31 @@ class Stage2ABChannelBConfig:
 
         data: MutableMapping[str, Any] = dict(payload)
 
-        mode_raw = data.pop("mode", cls.mode)
-        mode = str(mode_raw).strip().lower()
-        if mode not in {"micro", "step", "async"}:
+        # Removed keys (single step-budgeted pathway; no legacy knobs).
+        if "mode" in data:
             raise ValueError(
-                "stage2_ab.channel_b.mode must be one of {'micro','step','async'}"
+                "stage2_ab.channel_b.mode has been removed. "
+                "Remove this key (Channel-B is always step-budgeted)."
             )
-
-        async_raw = data.pop("async", None)
-        async_cfg = Stage2ABChannelBAsyncConfig.from_mapping(
-            async_raw if mode == "async" else None
-        )
-        if mode != "async" and async_raw is not None:
+        if "async" in data:
             raise ValueError(
-                "stage2_ab.channel_b.async is only valid when stage2_ab.channel_b.mode='async'"
+                "stage2_ab.channel_b.async has been removed. "
+                "Remove this key (async actor-learner is unsupported)."
             )
-
-        rollouts_per_step_raw = data.pop("rollouts_per_step", None)
-        rollouts_per_step: Optional[int] = None
-        if rollouts_per_step_raw is not None:
-            try:
-                rollouts_per_step = int(rollouts_per_step_raw)
-            except Exception as exc:
-                raise TypeError(
-                    "stage2_ab.channel_b.rollouts_per_step must be an int when provided"
-                ) from exc
-            if rollouts_per_step <= 0:
-                raise ValueError(
-                    "stage2_ab.channel_b.rollouts_per_step must be > 0 when provided"
-                )
-
-        enable_pipeline = bool(data.pop("enable_pipeline", cls.enable_pipeline))
-
-        rollout_decode_batch_size_raw = data.pop(
-            "rollout_decode_batch_size", cls.rollout_decode_batch_size
-        )
-        try:
-            rollout_decode_batch_size = int(rollout_decode_batch_size_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.rollout_decode_batch_size must be an int"
-            ) from exc
-        if rollout_decode_batch_size <= 0:
+        if "rollouts_per_step" in data:
             raise ValueError(
-                "stage2_ab.channel_b.rollout_decode_batch_size must be > 0"
+                "stage2_ab.channel_b.rollouts_per_step has been removed. "
+                "Use training.effective_batch_size to control raw rollouts per optimizer step."
+            )
+        if "enable_pipeline" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.enable_pipeline has been removed. "
+                "Pipeline overlap is automatic under vLLM server mode."
+            )
+        if "rollout_decode_batch_size" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.rollout_decode_batch_size has been removed. "
+                "Use custom.extra.rollout_matching.decode_batch_size instead."
             )
 
         reordered_gt_sft = bool(data.pop("reordered_gt_sft", cls.reordered_gt_sft))
@@ -1100,11 +998,6 @@ class Stage2ABChannelBConfig:
             )
 
         return cls(
-            mode=cast(Literal["micro", "step", "async"], mode),
-            async_=async_cfg,
-            rollouts_per_step=rollouts_per_step,
-            enable_pipeline=enable_pipeline,
-            rollout_decode_batch_size=rollout_decode_batch_size,
             reordered_gt_sft=reordered_gt_sft,
             desc_ce_weight_matched=desc_ce_weight_matched,
             drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier,

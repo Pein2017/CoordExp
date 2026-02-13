@@ -6,12 +6,7 @@ and Stage-2 AB, without relying on trainer implementation modules.
 
 from .contracts import GTObject, GeomType, MatchResult, ParsedPredObject, RolloutParseResult
 from .matching import hungarian_match_maskiou
-from .packing import (
-    AccumulationWindowLookahead,
-    DropRemainderAccumulationWindow,
-    RolloutMatchingPackWindow,
-    WindowedMicroBatch,
-)
+from .packing import DropRemainderAccumulationWindow
 from .parsing import (
     coerce_int,
     decode_pieces,
@@ -24,10 +19,7 @@ from .parsing import (
 from .telemetry import PendingTrainRolloutLog, slim_rollout_meta_for_logging
 
 __all__ = [
-    "AccumulationWindowLookahead",
     "DropRemainderAccumulationWindow",
-    "RolloutMatchingPackWindow",
-    "WindowedMicroBatch",
     "GeomType",
     "ParsedPredObject",
     "RolloutParseResult",
