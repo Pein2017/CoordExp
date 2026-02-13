@@ -298,6 +298,50 @@ def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
     assert captured_payloads[0]["timeout"] is None
 
 
+def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {"repeat_terminate": {"enabled": False}}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    captured: dict[str, object] = {}
+
+    def _capture_rollout_many_vllm(
+        samples,
+        *,
+        debug_samples=None,
+    ):
+        captured["samples"] = samples
+        captured["debug_samples"] = debug_samples
+        return [([1], "{}", "greedy", [2])]
+
+    trainer._rollout_backend = lambda: "vllm"
+    trainer._vllm_mode = lambda: "server"
+    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+
+    original_samples = [
+        {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "prompt"},
+                {"role": "assistant", "content": '{"object_1": {"desc": "cat"}}'},
+            ]
+        }
+    ]
+
+    out = trainer._rollout_many(original_samples)
+
+    assert out == [([1], "{}", "greedy", [2])]
+
+    rollout_samples = captured["samples"]
+    debug_samples = captured["debug_samples"]
+
+    assert isinstance(rollout_samples, list) and rollout_samples
+    assert rollout_samples[0]["messages"][-1]["role"] == "user"
+
+    assert isinstance(debug_samples, list) and debug_samples
+    assert debug_samples[0]["messages"][-1]["role"] == "assistant"
+
+
 def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatch):
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 

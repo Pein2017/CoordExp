@@ -3546,12 +3546,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @torch.no_grad()
     def _rollout_many_vllm(
-        self, samples: Sequence[Mapping[str, Any]]
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM rollout backend (colocate default, server optional)."""
         mode = self._vllm_mode()
         if mode == "server":
-            return self._rollout_many_vllm_server(samples)
+            return self._rollout_many_vllm_server(
+                samples,
+                debug_samples=debug_samples,
+            )
         return self._rollout_many_vllm_colocate(samples)
 
     @torch.no_grad()
@@ -3639,7 +3645,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @torch.no_grad()
     def _rollout_many_vllm_server(
-        self, samples: Sequence[Mapping[str, Any]]
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM server rollout backend (token ids via ms-swift `swift rollout`)."""
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
@@ -3954,7 +3963,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             seed_base=seed_base,
             infer_requests=infer_requests,
             outputs=out,
-            samples=samples,
+            samples=debug_samples if debug_samples is not None else samples,
         )
 
         setattr(
@@ -4042,7 +4051,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if backend == "vllm":
             mode = self._vllm_mode()
-            out = self._rollout_many_vllm(samples_for_rollout)
+            out = self._rollout_many_vllm(
+                samples_for_rollout,
+                debug_samples=samples,
+            )
             if mode == "server":
                 flags_raw = getattr(self, "_last_rollout_repeat_terminate_triggers", None)
                 if (
