@@ -14,8 +14,6 @@ stage2_ab:
     # B-dominant: Channel-B does most learning from rollout self-context.
     b_ratio: 0.85
   n_softctx_iter: 2
-  channel_b:
-    mode: micro
 
 custom:
   extra:

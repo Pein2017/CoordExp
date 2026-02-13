@@ -52,11 +52,8 @@ custom:
       # Rollout backend. Set to "hf" to bypass vLLM entirely.
       rollout_backend: vllm
 
-      # Per-rank rollout request chunk size.
-      # - rollout_generate_batch_size is the legacy knob.
-      # - stage2_ab trainer prefers rollout_infer_batch_size when set.
-      rollout_generate_batch_size: 4
-      rollout_infer_batch_size: 4
+      # Unified rollout decode batch size (per rollout GPU per generation call).
+      decode_batch_size: 4
 
       # vLLM knobs.
       # - mode=colocate: learner instantiates local vLLM engines on training GPUs.
@@ -66,7 +63,7 @@ custom:
         mode: colocate  # colocate|server
         # Colocate-only knobs:
         tensor_parallel_size: 1
-        gpu_memory_utilization: 0.75
+        gpu_memory_utilization: 0.85
         # Must cover prompt_len + max_new_tokens for stage_2 rollouts.
         max_model_len: 12000
         # Keep disabled by default. Enable only when using adapter-only server sync.

@@ -160,48 +160,14 @@ affect the training loss.
 - `packing/post_rollout_buffer`
   - **What:** post-rollout packing stats (carry-only mode).
 
-### Stage-2 AB async actor-learner telemetry (optional)
+### Stage-2 AB schedule telemetry
 
-When `custom.trainer_variant: stage2_ab_training` and `stage2_ab.channel_b.mode: async`, the trainer logs
-additional queue/sync telemetry under `stage2_ab/async/*`:
+Stage-2 AB (`custom.trainer_variant: stage2_ab_training`) logs a small set of scheduler diagnostics
+once per optimizer step (aggregated across gradient accumulation):
 
-Logging semantics:
-- Logged once per optimizer step (after gradient accumulation).
-- Values are treated as **step-level gauges** and may be averaged across micro-steps inside the optimizer step
-  (so boolean-style keys can appear as fractions in `[0,1]`).
-- Keys ending in `_total` are **monotonic cumulative counters**; interpret them as counters (not per-step deltas).
-
-- `stage2_ab/async/policy_wants_b`
-  - **What:** 1.0 when the Bresenham schedule wants Channel-B for this optimizer step.
-- `stage2_ab/async/step_kind_b`
-  - **What:** 1.0 when the optimizer step executes Channel-B (after feasibility gating), else Channel-A.
-- `stage2_ab/async/b_ratio_realized`
-  - **What:** rolling realized Channel-B step ratio over recent optimizer steps (windowed diagnostic).
-- `stage2_ab/async/b_step_skipped_due_to_queue`
-  - **What:** 1.0 when schedule wanted B but queues were infeasible and we fell back to A.
-- `stage2_ab/async/queue_depth`, `stage2_ab/async/queue_limit`, `stage2_ab/async/prefetch_target_packs`
-  - **What:** per-rank ready-pack queue depth and configured bounds.
-- `stage2_ab/async/ver_current`, `stage2_ab/async/ver_lag`, `stage2_ab/async/version_window`
-  - **What:** current sync-counter version, per-pack lag (`ver_current - pack.ver` on B micro-steps), and staleness window for ready-pack consumption.
-- `stage2_ab/async/drop_stale_total`, `stage2_ab/async/drop_oldest_total`
-  - **What:** cumulative stale-drop and drop-oldest counters on this rank.
-- `stage2_ab/async/prefetch_success_total`, `stage2_ab/async/prefetch_fail_total`
-  - **What:** cumulative async prefetch loop successes/failures (rank-local).
-  - **Why:** detects whether the background thread is producing packs or repeatedly failing/retrying.
-- `stage2_ab/async/prefetch_iter_total`
-  - **What:** cumulative iterations through the prefetch loop (rank-local).
-  - **Why:** helps distinguish “thread never started” from “thread started but got stuck”.
-- `stage2_ab/async/prefetch_state`, `stage2_ab/async/prefetch_last_progress_s_ago`
-  - **What:** coarse state machine and time since last progress heartbeat from the background thread.
-  - **Interpretation:** large `prefetch_last_progress_s_ago` with a stable `prefetch_state` indicates a likely blocking call
-    (most commonly HTTP `/infer/`, dataset I/O, or a sync fence).
-- `stage2_ab/async/sync_in_progress`, `stage2_ab/async/infer_inflight`
-  - **What:** whether rank0 is currently syncing weights to the rollout server (blocking background inference),
-    and how many HTTP `/infer/` requests are currently in-flight.
-- `stage2_ab/async/is_prefetch_in_prepare_b`
-  - **What:** 1.0 when the prefetch loop is inside `_prepare_batch_inputs_b(..., _segments_only=True)` (rollout+parse+match).
-- `stage2_ab/async/is_prefetch_queue_full`, `stage2_ab/async/is_prefetch_no_segments`, `stage2_ab/async/is_prefetch_error`
-  - **What:** coarse prefetch conditions (queue full / produced zero segments / hit an exception).
+- `stage2_ab/b_ratio_realized`
+  - **What:** rolling realized fraction of optimizer steps that executed Channel-B.
+  - **Why:** sanity-check that the deterministic Bresenham schedule matches `stage2_ab.schedule.b_ratio` over time.
 
 ### Stage-2 AB Channel-B strict-drop and closure-supervision diagnostics
 

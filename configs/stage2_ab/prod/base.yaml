@@ -66,8 +66,6 @@ stage2_ab:
     semantic_desc_gate:
       # Required for reproducibility when semantic gate is enabled.
       revision: c9745ed1d9f207416be6d2e6f8de32d1f16199bf
-    # Simpler/reliable default: synchronous Channel-B execution (no async queue/gate).
-    mode: micro
 
 custom:
   trainer_variant: stage2_ab_training
@@ -81,10 +79,6 @@ custom:
       max_new_tokens: 3084
       # Mild anti-loop bias for long dense JSON.
       repetition_penalty: 1.08
-      # Per-rank rollout request chunk size (decode batch size per generation call).
-      rollout_infer_batch_size: 4
-      # Window scope improves post-rollout packing fill under long generations.
-      post_rollout_pack_scope: window
 
       vllm:
         mode: server
@@ -95,7 +89,7 @@ custom:
           fallback_to_full: true
         server:
           timeout_s: 240.0
-          # If null, the trainer defaults to timeout_s.
+          # If null, disable /infer/ HTTP timeout (long rollouts can legitimately take minutes).
           infer_timeout_s: null
           servers:
             - base_url: http://127.0.0.1:8000

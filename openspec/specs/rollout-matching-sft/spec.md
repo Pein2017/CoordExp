@@ -295,16 +295,76 @@ At minimum, the trainer MUST log:
 - **THEN** it logs the server endpoints, sync mode, and rollout seed for that step.
 
 ### Requirement: Rollout generation supports microbatched decoding within each rank
-When rollout-matching training is enabled, the trainer SHALL support generating rollouts for multiple samples in a single `generate` call (padded batch), controlled by a YAML knob under `custom.extra.rollout_matching`.
+When rollout-matching training is enabled, the trainer SHALL support generating rollouts for multiple samples in a single backend decode call (HF `generate()` or vLLM `/infer/`), controlled by a YAML knob:
 
-The default behavior MUST remain equivalent to the current implementation (microbatch size = 1).
+- `custom.extra.rollout_matching.decode_batch_size` (int)
+
+Semantics (normative):
+- `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
+- The trainer MUST enforce this bound for both HF and vLLM backends.
+
+Defaulting (normative):
+- If `custom.extra.rollout_matching.decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
+- Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_ab/**` uses `4`).
 
 #### Scenario: Microbatching increases decode parallelism without changing outputs format
 - **GIVEN** rollout-matching training is enabled
-- **AND** rollout generate batch size is set to `M > 1`
+- **AND** `custom.extra.rollout_matching.decode_batch_size: M` where `M > 1`
 - **WHEN** the trainer generates rollouts for a batch of `M` samples on one rank
 - **THEN** the trainer performs one batched generate call for those `M` samples
 - **AND** it returns per-sample `response_token_ids` suitable for strict token-aligned parsing.
+
+### Requirement: Legacy rollout batch-size knobs fail fast
+The system MUST fail fast if a config provides any legacy rollout batch-size knob under `custom.extra.rollout_matching`, with actionable guidance to migrate to the unified decode batching knob `custom.extra.rollout_matching.decode_batch_size`.
+
+Legacy knobs (normative):
+- `custom.extra.rollout_matching.rollout_generate_batch_size`
+- `custom.extra.rollout_matching.rollout_infer_batch_size`
+
+#### Scenario: rollout_generate_batch_size fails fast when present
+- **GIVEN** rollout-matching training is enabled
+- **AND** the config provides `custom.extra.rollout_matching.rollout_generate_batch_size`
+- **WHEN** training starts
+- **THEN** config validation fails fast with guidance to remove it and use `custom.extra.rollout_matching.decode_batch_size`.
+
+#### Scenario: rollout_infer_batch_size fails fast when present
+- **GIVEN** rollout-matching training is enabled
+- **AND** the config provides `custom.extra.rollout_matching.rollout_infer_batch_size`
+- **WHEN** training starts
+- **THEN** config validation fails fast with guidance to remove it and use `custom.extra.rollout_matching.decode_batch_size`.
+
+### Requirement: Window-aware post-rollout packing scope knob is removed
+The system MUST fail fast if a config provides `custom.extra.rollout_matching.post_rollout_pack_scope` (any value), with actionable guidance to remove it.
+
+Normative behavior:
+- Post-rollout packing behavior MUST be the standardized micro-scope dynamic packing semantics.
+- Window-scoped packing is not supported.
+
+#### Scenario: post_rollout_pack_scope fails fast when present
+- **GIVEN** rollout-matching training is enabled
+- **AND** the config provides `custom.extra.rollout_matching.post_rollout_pack_scope`
+- **WHEN** training starts
+- **THEN** config validation fails fast with guidance to remove `post_rollout_pack_scope`.
+
+### Requirement: vLLM server mode derives per-rank request chunking from server world size
+When rollout-matching training uses vLLM server mode (`custom.extra.rollout_matching.rollout_backend=vllm` and `custom.extra.rollout_matching.vllm.mode=server`), the trainer MUST derive per-rank request chunk sizing from the rollout server world size and learner DDP world size to preserve the per-rollout-GPU cap defined by `decode_batch_size`.
+
+Semantics (normative):
+- The trainer MUST query each configured server’s `${base_url}/get_world_size/` endpoint and cache one `world_size` per server entry.
+- Let `server_world_sizes = [s_0, s_1, ...]` be those cached values, and define:
+  - `S = sum(server_world_sizes)` (total rollout inference device count across servers; DP replicas)
+  - `W = learner_world_size` (training DDP world size)
+- **Feasibility**: If `decode_batch_size * S < W`, the trainer MUST fail fast with actionable guidance (the cap cannot be preserved if every learner rank must issue at least one request concurrently).
+- Otherwise, the trainer MUST derive a per-learner-rank chunk size:
+  - `chunk = floor(decode_batch_size * S / W)`
+- The trainer MUST distribute requests across servers in a capacity-aware deterministic way (proportional to `server_world_sizes`) so that rollout GPUs are not overloaded when servers are heterogeneous.
+
+#### Scenario: vLLM server mode fails fast when cap is infeasible
+- **GIVEN** rollout-matching training is enabled
+- **AND** `rollout_backend=vllm` and `vllm.mode=server`
+- **AND** `decode_batch_size=1`, `S=2`, and `W=4`
+- **WHEN** training starts
+- **THEN** config validation fails fast with guidance to increase rollout server world size, reduce learner world size, or increase `decode_batch_size`.
 
 ### Requirement: Legacy rollout_buffer configs fail fast
 The system MUST fail fast if a config provides `custom.extra.rollout_matching.rollout_buffer`, with actionable guidance to remove it (no backward compatibility).
@@ -622,57 +682,3 @@ These counters SHALL NOT include IoU/GIoU/maskIoU numeric metric logging (those 
 - **WHEN** the trainer processes that batch
 - **THEN** invalid objects are dropped and counted
 - **AND** the training step completes without crashing due to mandatory FN append supervision in the tail.
-
-### Requirement: Stage-2 Window-Aware Post-Rollout Packing (Training Only)
-The stage_2 rollout-matching trainer (`custom.trainer_variant: rollout_matching_sft`) MUST support an optional
-training-only mode that improves post-rollout packing utilization by accumulating segments across a full
-gradient-accumulation window and making packing decisions with window-level visibility.
-
-Config contract:
-- The knob `custom.extra.rollout_matching.post_rollout_pack_scope` MUST accept `micro` or `window`.
-- If unset, it MUST default to `micro` (current behavior).
-- If set to any other value, the trainer MUST fail fast with actionable error text.
-
-This change MUST preserve the existing gradient-accumulation semantics and training math:
-- It MUST NOT collapse an accumulation window into fewer than `gradient_accumulation_steps` forward/backward calls.
-- It MUST NOT change loss scaling/normalization relative to the existing micro-step contract.
-
-#### Scenario: Default behavior preserved
-- **GIVEN** `custom.extra.rollout_matching.post_rollout_pack_scope` is unset (or set to `micro`)
-- **WHEN** stage_2 training runs
-- **THEN** post-rollout packing and teacher-forced training MUST behave as they do today.
-
-#### Scenario: Window-aware packing enabled (no GA collapse)
-- **GIVEN** `custom.extra.rollout_matching.post_rollout_pack_scope: window`
-- **WHEN** stage_2 training processes a full gradient-accumulation window
-- **THEN** the trainer MUST accumulate per-micro post-rollout segments within the window
-- **AND** compute packing selections with visibility over all segments in that window
-- **AND** execute exactly `gradient_accumulation_steps` teacher-forced forward/backward micro-steps for that optimizer step.
-
-#### Scenario: No cross-step carry and no silent dropping
-- **GIVEN** `custom.extra.rollout_matching.post_rollout_pack_scope: window`
-- **WHEN** an optimizer step boundary is crossed
-- **THEN** no post-rollout segment from the prior optimizer step may be carried into the next optimizer step
-- **AND** the trainer MUST NOT silently drop any segments produced for supervision in a full accumulation window
-- **AND** if the window's segments cannot be scheduled into the window's micro-steps without dropping (given `packing_length`),
-  the trainer MUST fail fast with actionable guidance.
-
-#### Scenario: Deterministic window scheduling
-- **GIVEN** `custom.extra.rollout_matching.post_rollout_pack_scope: window`
-- **AND** identical post-rollout segments in identical insertion order with identical `encoded_len`
-- **WHEN** window scheduling runs twice
-- **THEN** it MUST produce the same per-micro packed selections in the same order both times.
-
-#### Scenario: Infeasible window fails fast
-- **GIVEN** `custom.extra.rollout_matching.post_rollout_pack_scope: window`
-- **AND** the total `encoded_len` of all segments produced in a full accumulation window is greater than
-  `gradient_accumulation_steps * packing_length`
-- **WHEN** the trainer attempts to build the window schedule
-- **THEN** it MUST fail fast with actionable guidance (e.g., increase `global_max_length`, reduce `max_new_tokens`, or disable packing).
-
-#### Scenario: Evaluation and prediction are unaffected
-- **GIVEN** stage_2 evaluation or prediction is running
-- **WHEN** the stage_2 pipeline executes
-- **THEN** teacher-forced training (including post-rollout packing) MUST NOT run
-- **AND** the evaluation pipeline MUST remain unchanged
-- **AND** rollout buffer reuse MUST be disabled (behave as `m_steps=1`) to keep metrics interpretable.

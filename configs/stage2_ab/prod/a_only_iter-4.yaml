@@ -14,8 +14,6 @@ stage2_ab:
   schedule:
     b_ratio: 0.0
   n_softctx_iter: 4
-  channel_b:
-    mode: micro
 
 custom:
   extra:

@@ -24,8 +24,7 @@ custom:
     rollout_matching:
       # Smoke/debug defaults: bounded rollout budget.
       max_new_tokens: 2048
-      rollout_generate_batch_size: 4
-      rollout_infer_batch_size: 4
+      decode_batch_size: 4
       monitor_dump:
         enabled: true
         # Follow training.logging_steps when null.

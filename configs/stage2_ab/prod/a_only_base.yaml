@@ -15,8 +15,6 @@ stage2_ab:
     b_ratio: 0.0
   # Explicitly pin default Stage-2 AB iteration count.
   n_softctx_iter: 2
-  channel_b:
-    mode: micro
 
 custom:
   extra:
