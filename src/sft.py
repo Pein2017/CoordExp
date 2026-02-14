@@ -1088,6 +1088,55 @@ def main():
                 train_args.training_args.remove_unused_columns = False
         except Exception:
             pass
+
+        # Single rollout batching knob: custom.extra.rollout_matching.decode_batch_size.
+        # Rollout trainer variants use this value for eval dataloader batch size too.
+        rollout_cfg_for_batch = (
+            getattr(custom_config, "extra", {}).get("rollout_matching", {})
+            if isinstance(getattr(custom_config, "extra", {}), Mapping)
+            else {}
+        )
+        if rollout_cfg_for_batch is None:
+            rollout_cfg_for_batch = {}
+        if not isinstance(rollout_cfg_for_batch, Mapping):
+            raise TypeError(
+                "custom.extra.rollout_matching must be a mapping when provided"
+            )
+
+        decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 4)
+        try:
+            rollout_decode_bs = int(decode_bs_raw)
+        except Exception as exc:
+            raise TypeError(
+                "custom.extra.rollout_matching.decode_batch_size must be an int"
+            ) from exc
+        if rollout_decode_bs <= 0:
+            raise ValueError(
+                "custom.extra.rollout_matching.decode_batch_size must be > 0"
+            )
+
+        if getattr(train_args, "training_args", None) is not None:
+            current_eval_bs_raw = getattr(
+                train_args.training_args,
+                "per_device_eval_batch_size",
+                rollout_decode_bs,
+            )
+            try:
+                current_eval_bs = int(current_eval_bs_raw)
+            except Exception:
+                current_eval_bs = int(rollout_decode_bs)
+            if int(current_eval_bs) != int(rollout_decode_bs):
+                logger.warning(
+                    "Overriding per_device_eval_batch_size=%s with rollout decode_batch_size=%s for rollout trainer variants.",
+                    int(current_eval_bs),
+                    int(rollout_decode_bs),
+                )
+            train_args.training_args.per_device_eval_batch_size = int(rollout_decode_bs)
+        try:
+            setattr(train_args, "per_device_eval_batch_size", int(rollout_decode_bs))
+        except Exception:
+            pass
+
         try:
             from swift.trainers.rlhf_trainer.utils import identity_data_collator
 

@@ -55,7 +55,8 @@ custom:
       # Rollout backend. Set to "hf" to bypass vLLM entirely.
       rollout_backend: vllm
 
-      # Unified rollout decode batch size (per rollout GPU per generation call).
+      # Single rollout batching knob (per rollout GPU per generation call).
+      # Rollout trainer variants also mirror this to eval dataloader micro-batch size.
       decode_batch_size: 4
 
       # vLLM knobs.

@@ -976,7 +976,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         # Validate unified decode batch size knob.
-        decode_bs_raw = cfg.get("decode_batch_size", 1)
+        decode_bs_raw = cfg.get("decode_batch_size", 4)
         try:
             decode_bs = int(decode_bs_raw)
         except Exception as exc:
@@ -1784,7 +1784,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return int((base + gs * 1000003) & 0x7FFFFFFF)
 
     def _decode_batch_size(self) -> int:
-        raw = self._cfg("decode_batch_size", 1)
+        raw = self._cfg("decode_batch_size", 4)
         try:
             v = int(raw)
         except Exception as exc:

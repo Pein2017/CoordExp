@@ -44,7 +44,9 @@ training:
   num_train_epochs: 2
   # Rollout-matching is rollout-heavy; keep per-device small for stability on long sequences.
   per_device_train_batch_size: 1
-  per_device_eval_batch_size: 1
+  # Keep aligned with the single rollout batching knob:
+  # custom.extra.rollout_matching.decode_batch_size.
+  per_device_eval_batch_size: 4
   # On 4xA100 this yields grad_acc=16 (more stable than grad_acc=1 at long lengths).
   effective_batch_size: 32
 
