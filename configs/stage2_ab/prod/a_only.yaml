@@ -4,9 +4,9 @@ model:
   model: output/1-26/checkpoint-1516-merged
 
 training:
-  run_name: prod_b_only_bbox_max60_ckpt1516_ep2
-  output_dir: output/stage2_ab/prod/b_only
-  logging_dir: tb/stage2_ab/prod/b_only
+  run_name: prod_a_only_bbox_max60_ckpt1516_ep2
+  output_dir: output/stage2_ab/prod/a_only
+  logging_dir: tb/stage2_ab/prod/a_only
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
@@ -19,7 +19,7 @@ training:
 
 stage2_ab:
   schedule:
-    b_ratio: 1.0
+    b_ratio: 0.0
   n_softctx_iter: 2
 
 rollout_matching:

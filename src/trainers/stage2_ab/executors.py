@@ -74,7 +74,7 @@ class Stage2ABChannelExecutorsMixin:
                 raise ValueError(
                     "post-rollout packing buffer overflow: "
                     f"buffer_size={new_size} > packing_buffer={cap}. "
-                    "Mitigations: reduce custom.extra.rollout_matching.decode_batch_size, increase training.packing_buffer, "
+                    "Mitigations: reduce rollout_matching.decode_batch_size, increase training.packing_buffer, "
                     "or disable packing."
                 )
 

@@ -21,7 +21,7 @@ Stakeholders:
 ## Goals / Non-Goals
 
 **Goals:**
-- Enforce Option-A hierarchy for Stage-2 AB:
+- Enforce canonical hierarchy for Stage-2 AB:
   - one canonical `configs/stage2_ab/base.yaml`,
   - canonical downstream leaves (`prod/{a_only,b_only,ab_mixed}.yaml`, `smoke/{a_only,b_only,ab_mixed}.yaml`),
   - optional additional leaves are allowed only if they follow the same one-hop + explicit-leaf contract,
@@ -86,6 +86,8 @@ Rationale:
 Decision:
 - Canonical Stage-2 rollout namespace is top-level `rollout_matching.*`.
 - Migration rule: rollout knobs already present under `custom.extra.rollout_matching.*` migrate via path-only relocation to `rollout_matching.*` with the same subkey names.
+- `rollout_matching.decode_batch_size` is the single source of truth for rollout decode/evaluation microbatching across rollout-aware trainer variants.
+- `training.per_device_eval_batch_size` (and similar per-device eval knobs) does not independently control rollout decode/evaluation batching; rollout paths consume the resolved decode batch knob.
 - Implement one shared Python normalization resolver in `src/config/*` that maps canonical grouped fields into trainer-consumed runtime config.
 - Both runtime and launcher preflight MUST consume this shared resolver:
   - `src/sft.py` uses normalized config for trainer injection.
@@ -132,8 +134,8 @@ Rationale:
 ## Risks / Trade-offs
 
 - [Legacy configs break on stricter validation] → Mitigation: provide explicit migration table and deterministic replacement errors.
-- [Migration blast radius across existing Stage-2 YAMLs] → Mitigation: batch-update canonical leaves and relocate non-conforming legacy/experimental profiles under `configs/stage2_ab/legacy/` before enabling strict gates.
-- [Big-bang cutover risk across YAML/runtime/launcher] → Mitigation: land config relocation, `src/sft.py` normalized injection, and `scripts/train_stage2.sh` normalized preflight in one coordinated change before turning on legacy-path fail-fast.
+- [Migration blast radius across existing Stage-2 YAMLs] → Mitigation: batch-update canonical leaves and remove non-conforming/obsolete leaves from canonical `prod/` + `smoke/` surfaces before enabling strict gates.
+- [Big-bang cutover risk across YAML/runtime/launcher] → Mitigation: land config relocation, `src/sft.py` normalized injection, and `scripts/train_stage2.sh` normalized preflight in one coordinated change before turning on strict fail-fast for unsupported key paths.
 - [Leaf verbosity increases file length] → Mitigation: explicitly pin only high-signal knobs; keep truly stable low-signal defaults in base.
 - [Potential drift between launcher preflight and runtime parser] → Mitigation: reuse shared config normalization/validation path for script preflight where possible.
 
@@ -143,7 +145,7 @@ Rationale:
 2. Rebuild canonical prod/smoke leaves to inherit one-hop from `../base.yaml`, and inline smoke runtime overrides in smoke leaves.
 3. Migrate optional additional leaves (e.g., iterative variants) to one-hop from `../base.yaml` or relocate them outside canonical profile set.
 4. Introduce shared rollout normalization resolver in `src/config/*` and consume it from both `src/sft.py` and `scripts/train_stage2.sh` preflight.
-5. Add validation for one-hop canonical leaf structure, explicit leaf high-signal keys, and canonical/legacy conflict fail-fast for canonical validated paths.
+5. Add validation for one-hop canonical leaf structure, explicit leaf high-signal keys, and fail-fast on unsupported key paths in canonical validated paths.
 6. Verify canonical leaf configs load via `ConfigLoader.load_training_config` and fail fast on any legacy Stage-2 rollout key paths.
 7. Run Stage-2 smoke profile to ensure end-to-end wiring remains intact.
 
@@ -154,6 +156,6 @@ Rollback:
 ## Resolved Scope Decisions
 
 - Canonical rollout namespace is top-level `rollout_matching.*` for Stage-2 profiles.
-- Strict one-hop validation applies to canonical Stage-2 profile leaves in `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`; files that do not satisfy the contract must be relocated to `configs/stage2_ab/legacy/` before strict gates activate.
-- Any profile discovery tooling must treat only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml` as canonical inputs, and exclude `configs/stage2_ab/legacy/*.yaml`.
+- Strict one-hop validation applies to canonical Stage-2 profile leaves in `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`; every file under those paths must satisfy the contract.
+- Any profile discovery tooling must treat only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml` as canonical inputs.
 - Stage-2 profiles do not keep legacy rollout alias compatibility; unsupported legacy keys fail fast immediately.

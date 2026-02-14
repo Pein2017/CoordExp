@@ -951,7 +951,7 @@ class Stage2ABChannelBConfig:
         if "rollout_decode_batch_size" in data:
             raise ValueError(
                 "stage2_ab.channel_b.rollout_decode_batch_size has been removed. "
-                "Use custom.extra.rollout_matching.decode_batch_size instead."
+                "Use rollout_matching.decode_batch_size instead."
             )
 
         reordered_gt_sft = bool(data.pop("reordered_gt_sft", cls.reordered_gt_sft))
@@ -1137,6 +1137,7 @@ class TrainingConfig:
     tuner: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
     stage2_ab: Optional[Stage2ABConfig] = None
+    rollout_matching: Mapping[str, Any] = field(default_factory=dict)
     rlhf: Mapping[str, Any] = field(default_factory=dict)
     prompts: PromptOverrides = field(default_factory=PromptOverrides)
     deepspeed: Optional[DeepSpeedConfig] = None
@@ -1160,6 +1161,7 @@ class TrainingConfig:
         tuner = dict(_as_dict(data.pop("tuner", None)))
         training = dict(_as_dict(data.pop("training", None)))
         stage2_ab_raw = data.pop("stage2_ab", None)
+        rollout_matching_raw = data.pop("rollout_matching", None)
         rlhf = dict(_as_dict(data.pop("rlhf", None)))
         custom_raw = data.pop("custom", None)
         debug = DebugConfig.from_mapping(data.pop("debug", None))
@@ -1182,13 +1184,30 @@ class TrainingConfig:
 
         custom = CustomConfig.from_mapping(custom_raw, prompts=prompts)
 
+        if rollout_matching_raw is not None and not isinstance(rollout_matching_raw, Mapping):
+            raise TypeError("rollout_matching must be a mapping when provided")
+        rollout_matching = dict(_as_dict(rollout_matching_raw))
+
+        trainer_variant = str(custom.trainer_variant or "")
         stage2_ab = None
         if stage2_ab_raw is not None:
             stage2_ab = Stage2ABConfig.from_mapping(stage2_ab_raw)
-        elif (custom.trainer_variant or "") == "stage2_ab_training":
+        elif trainer_variant == "stage2_ab_training":
             raise ValueError(
                 "stage2_ab section must be provided when custom.trainer_variant=stage2_ab_training"
             )
+
+        if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+            if not rollout_matching:
+                raise ValueError(
+                    "rollout_matching section must be provided for rollout_matching_sft/stage2_ab_training"
+                )
+            custom_extra = custom.extra if isinstance(custom.extra, Mapping) else {}
+            if "rollout_matching" in custom_extra:
+                raise ValueError(
+                    "custom.extra.rollout_matching is unsupported. "
+                    "Move rollout settings to top-level rollout_matching.*."
+                )
 
         return cls(
             template=template,
@@ -1200,6 +1219,7 @@ class TrainingConfig:
             tuner=tuner,
             training=training,
             stage2_ab=stage2_ab,
+            rollout_matching=rollout_matching,
             rlhf=rlhf,
             prompts=prompts,
             deepspeed=deepspeed,

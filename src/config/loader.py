@@ -68,6 +68,74 @@ class ConfigLoader:
         raise TypeError(f"{field_name} must be a boolean value, got {type(value)!r}.")
 
     @staticmethod
+    def _canonical_stage2_profile_kind(config_path: str) -> Optional[str]:
+        config_abs = Path(config_path).resolve()
+        repo_root = Path(__file__).resolve().parents[2]
+        stage2_root = (repo_root / "configs" / "stage2_ab").resolve()
+        for kind in ("prod", "smoke"):
+            kind_root = (stage2_root / kind).resolve()
+            try:
+                config_abs.relative_to(kind_root)
+            except ValueError:
+                continue
+            if config_abs.suffix.lower() == ".yaml":
+                return kind
+        return None
+
+    @staticmethod
+    def _lookup_nested_key(payload: Dict[str, Any], key_path: str) -> bool:
+        node: Any = payload
+        for segment in key_path.split("."):
+            if not isinstance(node, dict) or segment not in node:
+                return False
+            node = node[segment]
+        return True
+
+    @staticmethod
+    def _validate_stage2_leaf_contract(config_path: str) -> None:
+        if ConfigLoader._canonical_stage2_profile_kind(config_path) is None:
+            return
+
+        raw_cfg = ConfigLoader.load_yaml(config_path) or {}
+        if not isinstance(raw_cfg, dict):
+            raise ValueError(f"Stage-2 profile must be a mapping: {config_path}")
+
+        extends_value = raw_cfg.get("extends", raw_cfg.get("inherit"))
+        extends_list = ConfigLoader._normalize_to_list(extends_value)
+        if len(extends_list) != 1 or extends_list[0] != "../base.yaml":
+            raise ValueError(
+                "Stage-2 canonical profile leaves must extend exactly one parent '../base.yaml'. "
+                f"Invalid extends in {config_path}: {extends_value!r}"
+            )
+
+        required_leaf_keys = [
+            "model.model",
+            "training.run_name",
+            "training.output_dir",
+            "training.logging_dir",
+            "training.learning_rate",
+            "training.vit_lr",
+            "training.aligner_lr",
+            "training.effective_batch_size",
+            "training.eval_strategy",
+            "training.eval_steps",
+            "training.save_strategy",
+            "training.save_steps",
+            "stage2_ab.schedule.b_ratio",
+            "stage2_ab.n_softctx_iter",
+        ]
+
+        missing = [
+            key for key in required_leaf_keys if not ConfigLoader._lookup_nested_key(raw_cfg, key)
+        ]
+        if missing:
+            missing_str = ", ".join(missing)
+            raise ValueError(
+                "Stage-2 canonical profile leaves must explicitly define required keys. "
+                f"Missing in {config_path}: {missing_str}"
+            )
+
+    @staticmethod
     def load_yaml_with_extends(
         config_path: str, _visited: Optional[Set[str]] = None
     ) -> Dict[str, Any]:
@@ -497,6 +565,7 @@ class ConfigLoader:
     def load_training_config(
         config_path: str, base_config_path: Optional[str] = None
     ) -> tuple[TrainArguments, TrainingConfig]:
+        ConfigLoader._validate_stage2_leaf_contract(config_path)
         config = ConfigLoader.load_yaml_with_extends(config_path)
 
         if base_config_path:

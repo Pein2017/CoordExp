@@ -4,9 +4,9 @@ model:
   model: output/1-26/checkpoint-1516-merged
 
 training:
-  run_name: smoke_ab_mixed
-  output_dir: output/stage2_ab/smoke/ab_mixed
-  logging_dir: tb/stage2_ab/smoke/ab_mixed
+  run_name: smoke_a_only
+  output_dir: output/stage2_ab/smoke/a_only
+  logging_dir: tb/stage2_ab/smoke/a_only
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
@@ -22,7 +22,7 @@ training:
 
 stage2_ab:
   schedule:
-    b_ratio: 0.85
+    b_ratio: 0.0
   n_softctx_iter: 2
 
 custom:

@@ -1,34 +1,38 @@
-# Stage-2 AB b-dominant schedule with Channel-A as auxiliary stabilization.
-# Keep key toggles explicit even when inherited.
-extends: base.yaml
+extends: ../base.yaml
+
+model:
+  model: output/1-26/checkpoint-1516-merged
 
 training:
-  output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
-  logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   run_name: prod_ab_mixed_bbox_max60_ckpt1516_ep2
+  output_dir: output/stage2_ab/prod/ab_mixed
+  logging_dir: tb/stage2_ab/prod/ab_mixed
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
   effective_batch_size: 64
   eval_strategy: steps
+  save_strategy: steps
+  save_steps: 200
   do_eval: true
   eval_steps: 100
 
 stage2_ab:
-  schedule:
-    # B-dominant: Channel-B does most learning from rollout self-context.
-    b_ratio: 0.85
+  schedule: {b_ratio: 0.85}
   n_softctx_iter: 2
 
 custom:
   val_sample_limit: 1000
-  extra:
-    rollout_matching:
-      max_new_tokens: 2048
-      decode_batch_size: 4
-      monitor_dump:
-        enabled: true
-        every_steps: 40
-        max_events: 200
-        max_samples: 10
-        max_text_chars: 0
-      rollout_backend: vllm
-      vllm:
-        mode: server
+
+rollout_matching:
+  max_new_tokens: 2048
+  decode_batch_size: 4
+  monitor_dump:
+    enabled: true
+    every_steps: 40
+    max_events: 200
+    max_samples: 10
+    max_text_chars: 0
+  rollout_backend: vllm
+  vllm:
+    mode: server

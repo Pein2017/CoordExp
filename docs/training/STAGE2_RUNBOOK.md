@@ -37,9 +37,9 @@ Multi-GPU + vLLM server mode (recommended topology for long rollouts): this is s
 the default Stage2-AB Channel-B step-budgeted pathway.
 
 Requirements:
-- `custom.extra.rollout_matching.rollout_backend: vllm`
-- `custom.extra.rollout_matching.vllm.mode: server`
-- Under multi-process learners (`torchrun`, `world_size > 1`), `custom.extra.rollout_matching.vllm.sync.mode` must resolve to `full`
+- `rollout_matching.rollout_backend: vllm`
+- `rollout_matching.vllm.mode: server`
+- Under multi-process learners (`torchrun`, `world_size > 1`), `rollout_matching.vllm.sync.mode` must resolve to `full`
   (DDP-safe rank0-only full-weight sync with strict barriers).
 
 Where this lives in code:
@@ -91,7 +91,7 @@ Key semantics:
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
 Rollout decode batching:
-- Single knob: `custom.extra.rollout_matching.decode_batch_size`.
+- Single knob: `rollout_matching.decode_batch_size`.
   - Definition: per rollout GPU cap for one `generation()` / `/infer/` call.
 - HF + vLLM colocate:
   - Each learner rank chunks its local requests to `decode_batch_size`.
@@ -183,23 +183,23 @@ Interpretation:
 
 Start from a template config and fill in dataset + rollout knobs:
 
-- Rollout-matching SFT template: `configs/stage2_ab/base_rollout_matching_sft.yaml`
+- Rollout-matching Stage-2 base: `configs/stage2_ab/base.yaml`
 - Stage-2 AB examples: `configs/stage2_ab/`
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
-- Set `custom.extra.rollout_matching.*` (including `decoding.*` + matching knobs).
+- Set top-level `rollout_matching.*` (including `decoding.*` + matching knobs).
 - If using Stage-2 AB (`custom.trainer_variant: stage2_ab_training`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
   - `stage2_ab.channel_b.semantic_desc_gate.revision` when semantic gating is enabled.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Breaking config migrations (no backward compatibility):
-- Rollout sampling knobs moved under `custom.extra.rollout_matching.decoding.*`:
+- Rollout sampling knobs are configured under `rollout_matching.decoding.*`:
   - `decoding.temperature`, `decoding.top_p`, `decoding.top_k`
 - Legacy keys are removed and MUST fail fast if present:
-  - `custom.extra.rollout_matching.temperature`, `custom.extra.rollout_matching.top_p`, `custom.extra.rollout_matching.top_k`
-  - `custom.extra.rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + `decode_batch_size` to scale throughput)
+  - `rollout_matching.temperature`, `rollout_matching.top_p`, `rollout_matching.top_k`
+  - `rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + `decode_batch_size` to scale throughput)
 
 Logging tip:
 - Stage-2 metrics are logged once per optimizer step (aggregated across gradient accumulation).
@@ -212,9 +212,9 @@ Logging tip:
 
 If you use vLLM colocate mode and hit peak memory issues during rollouts, Stage-2 can optionally offload training state to CPU during rollout generation:
 
-- `custom.extra.rollout_matching.offload.enabled: true`
-- `custom.extra.rollout_matching.offload.offload_model: true` moves training model params to CPU during rollouts.
-- `custom.extra.rollout_matching.offload.offload_optimizer: true` moves optimizer state to CPU during rollouts.
+- `rollout_matching.offload.enabled: true`
+- `rollout_matching.offload.offload_model: true` moves training model params to CPU during rollouts.
+- `rollout_matching.offload.offload_optimizer: true` moves optimizer state to CPU during rollouts.
 
 Notes:
 - Offload is currently not supported with DeepSpeed/ZeRO in this trainer; if you need ZeRO, disable offload or switch `rollout_backend: hf`.
@@ -225,47 +225,48 @@ Notes:
 
 ### vLLM (Default)
 
-Set `custom.extra.rollout_matching.rollout_backend: vllm`.
+Set `rollout_matching.rollout_backend: vllm`.
 
 Note: vLLM rollouts currently support **non-beam decoding only** (`decode_mode=greedy` is enforced in code).
 Sampling can still be enabled via `decoding.temperature/top_p/top_k` (see Decoding Tips below). Use `rollout_backend: hf` if you need beam search.
 
-vLLM has a mode switch under `custom.extra.rollout_matching.vllm.mode`:
+vLLM has a mode switch under `rollout_matching.vllm.mode`:
 
 - `colocate` (default): learner instantiates a local vLLM engine on the same GPU(s) as training.
-  - Requires `custom.extra.rollout_matching.vllm.max_model_len`.
+  - Requires `rollout_matching.vllm.max_model_len`.
   - Weight sync modes:
-    - Recommended (default): `custom.extra.rollout_matching.vllm.enable_lora: false`
+    - Recommended (default): `rollout_matching.vllm.enable_lora: false`
       - The trainer merges adapters into full weights and loads merged full weights into vLLM on rollout steps.
-    - Optional: `custom.extra.rollout_matching.vllm.enable_lora: true`
+    - Optional: `rollout_matching.vllm.enable_lora: true`
       - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal stacks).
 
 - `server` (recommended for long rollouts): learner connects to a pre-launched `swift rollout` server and generates rollouts on dedicated GPUs.
   - Supports multi-process learner (`torchrun`, `world_size > 1`).
-  - Under `world_size > 1`, the trainer performs rank0-only weight sync with strict barriers and requires `custom.extra.rollout_matching.vllm.sync.mode: full`.
-  - Connectivity is configured in YAML under `custom.extra.rollout_matching.vllm.server`.
-  - Weight sync is configured under `custom.extra.rollout_matching.vllm.sync`:
+  - Under `world_size > 1`, the trainer performs rank0-only weight sync with strict barriers and requires `rollout_matching.vllm.sync.mode: full`.
+  - Connectivity is configured in YAML under `rollout_matching.vllm.server`.
+  - Weight sync is configured under `rollout_matching.vllm.sync`:
     - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
     - `sync.mode: adapter`: adapter-only sync (requires server launched with `--vllm_enable_lora true`).
     - `sync.fallback_to_full: true` permanently falls back to full sync if adapter sync fails at runtime.
   - Deploy-readiness gates (enforced by `scripts/stage2_ab_server_train.sh`):
-    - `custom.extra.rollout_matching.rollout_backend=vllm` and `custom.extra.rollout_matching.vllm.mode=server`
-    - `custom.extra.rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
+    - `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`
+    - `rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
     - `server_gpus` and `train_gpus` must be disjoint device sets
     - rollout server starts with repo-owned `--external_plugins scripts/vllm_repeat_terminate_plugin.py`
-      and receives the full `custom.extra.rollout_matching.repeat_terminate` subtree via
+      and receives the full `rollout_matching.repeat_terminate` subtree via
       `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON`
     - when `repeat_terminate.enabled: true`, launcher probes `/infer/` and fails fast unless
       responses include `coordexp.repeat_terminate_triggered`
 
 ### HF (Fallback)
 
-Set `custom.extra.rollout_matching.rollout_backend: hf`.
+Set `rollout_matching.rollout_backend: hf`.
 
 Notes:
-- HF rollouts are batched only if you increase `training.per_device_train_batch_size` (otherwise each rank rolls out 1 sample).
-- `custom.extra.rollout_matching.decode_batch_size` caps the per-rank chunk size for HF `generate()` calls (and for vLLM colocate).
+- Rollout batching is controlled by a single knob: `rollout_matching.decode_batch_size`.
+- For rollout-aware trainer variants, `training.per_device_eval_batch_size` and similar per-device eval knobs do not independently control rollout decode/eval chunking.
+- HF `generate()` (and vLLM colocate) chunk per rank using the resolved `rollout_matching.decode_batch_size`.
 
 ---
 
@@ -286,7 +287,7 @@ Notes:
 
 Stage-2 can optionally monitor `desc` quality on matched pairs. This does not affect training loss.
 
-Enable under `custom.extra.rollout_matching.desc_monitor`:
+Enable under `rollout_matching.desc_monitor`:
 
 ```yaml
 custom:
@@ -464,14 +465,14 @@ Checks:
    - `custom.trainer_variant: stage2_ab_training`
 
 Mitigations (smoke/debug runs):
-- Reduce rollout length (`custom.extra.rollout_matching.max_new_tokens`) for faster steps.
-- Reduce rollout decode batching by setting `custom.extra.rollout_matching.decode_batch_size: 1`.
+- Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
+- Reduce rollout decode batching by setting `rollout_matching.decode_batch_size: 1`.
 - Lower `vllm_gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)
 
 Two separate limits interact:
-- `custom.extra.rollout_matching.max_new_tokens`: rollout generation budget.
+- `rollout_matching.max_new_tokens`: rollout generation budget.
 - `global_max_length`: model/server max length (also passed as vLLM `--vllm_max_model_len` in server mode).
 
 Rule of thumb:

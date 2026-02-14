@@ -13,8 +13,8 @@ Normative structure:
 Validation behavior:
 - Config loading for Stage-2 AB profile leaves MUST fail fast when one-hop structure is violated.
 - Error messages MUST include actionable migration guidance (expected parent path and offending `extends` chain).
-- Strict hierarchy/explicitness validation targets canonical profile directories only (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`); profiles that cannot satisfy this contract MUST relocate to `configs/stage2_ab/legacy/` before those gates are enabled.
-- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`, and MUST NOT treat `configs/stage2_ab/legacy/*.yaml` as canonical inputs.
+- Strict hierarchy/explicitness validation targets the canonical profile directories (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`) and is expected to pass for all files in those paths.
+- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`.
 
 #### Scenario: One-hop profile inheritance passes validation
 - **WHEN** a Stage-2 AB profile leaf in `configs/stage2_ab/prod/` extends only `../base.yaml`
@@ -28,14 +28,9 @@ Validation behavior:
 - **WHEN** a Stage-2 AB smoke profile leaf uses `extends` with two parents (e.g., prod leaf + smoke base)
 - **THEN** config loading fails fast with guidance to inline smoke runtime overrides in a one-hop leaf.
 
-#### Scenario: Non-canonical profile is excluded from canonical hierarchy gate
-- **WHEN** a Stage-2 AB profile is moved to `configs/stage2_ab/legacy/` (or another non-canonical path outside `configs/stage2_ab/{prod,smoke}/`)
-- **THEN** canonical one-hop/explicitness validators are not applied to that file path.
-
-#### Scenario: Legacy directory is excluded from canonical profile discovery
+#### Scenario: Canonical profile discovery is scoped to prod/smoke
 - **WHEN** a config discovery utility scans canonical Stage-2 profiles
 - **THEN** it includes only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`
-- **AND** excludes `configs/stage2_ab/legacy/*.yaml` from canonical run surfaces.
 
 ### Requirement: Stage-2 AB downstream profiles explicitly pin high-signal knobs
 Each canonical Stage-2 AB profile leaf MUST explicitly declare high-signal run and ablation knobs so the file is self-consistent without traversing parent configs.
@@ -90,6 +85,8 @@ Normative behavior:
   - `server_base_urls` (array of strings; empty allowed when backend/mode does not require server URLs).
 - Launcher preflight MUST fail fast (non-zero exit) and MUST NOT launch training when config normalization fails, JSON is invalid, or any required key is missing/typed incorrectly.
 - The normalization output MUST preserve existing rollout semantics (backend, server, decoding, repeat-terminate, matching, and packing-related runtime knobs).
+- For rollout-aware trainer variants, rollout decode/evaluation microbatching MUST be driven by `rollout_matching.decode_batch_size` as the single source of truth.
+- `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batching behavior.
 - Any legacy Stage-2 rollout key placement under `custom.extra.rollout_matching.*` MUST fail fast with actionable migration guidance to `rollout_matching.*`.
 - Cutover ordering is atomic for canonical profiles: leaf YAML migration, runtime normalization/injection, and launcher preflight consumption of normalized fields MUST land together before strict legacy-key fail-fast gates are enabled.
 
@@ -115,3 +112,8 @@ Normalization mapping sketch (minimum required):
 #### Scenario: Launcher preflight fails on invalid normalization JSON contract
 - **WHEN** shared normalization output is invalid JSON or omits required keys/types (`rollout_backend`, `vllm_mode`, `server_base_urls`)
 - **THEN** `scripts/train_stage2.sh` exits non-zero and blocks training launch with actionable contract error text.
+
+#### Scenario: Rollout batching ignores eval per-device mismatch
+- **WHEN** a Stage-2 AB rollout profile sets `rollout_matching.decode_batch_size=4` and `training.per_device_eval_batch_size=1`
+- **THEN** rollout decode/evaluation behavior uses microbatch size `4`
+- **AND** `training.per_device_eval_batch_size` does not alter rollout decode/evaluation batching.

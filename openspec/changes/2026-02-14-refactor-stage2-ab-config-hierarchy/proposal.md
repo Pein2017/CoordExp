@@ -4,7 +4,7 @@ Stage-2 AB configs currently mix deep inheritance, repeated overrides, and broad
 
 ## What Changes
 
-- Standardize Stage-2 AB to an Option-A hierarchy under `configs/stage2_ab/`:
+- Standardize Stage-2 AB to a canonical hierarchy under `configs/stage2_ab/`:
   - one shared `base.yaml` with stable defaults,
   - canonical downstream leaves (`prod/{a_only,b_only,ab_mixed}.yaml`, `smoke/{a_only,b_only,ab_mixed}.yaml`),
   - optional additional leaves are allowed only if they also follow the same one-hop + explicit-leaf contract,
@@ -17,8 +17,9 @@ Stage-2 AB configs currently mix deep inheritance, repeated overrides, and broad
 - Replace ambiguous catch-all nesting for core rollout knobs by moving Stage-2 rollout keys from `custom.extra.rollout_matching.*` to top-level `rollout_matching.*` using path-only relocation (same subkeys), and reserve `custom.extra` only for truly minor/trivial residual toggles that do not fit established groups.
 - Add strict config validation and migration guidance so hierarchy violations, ambiguous key placement, and unknown keys fail fast with actionable errors.
 - Update launcher/config wiring to use one shared Python normalization path so both `src/sft.py` and `scripts/train_stage2.sh` consume the same resolved rollout config contract.
+- Standardize rollout batching semantics so `rollout_matching.decode_batch_size` is the single source of truth for rollout decode/evaluation microbatching (target default `4`), and per-device eval knobs do not independently alter rollout decode behavior.
 - Require launcher preflight to call the same Python resolver used by runtime (via `ConfigLoader.load_training_config(...)` + shared normalization) and consume machine-readable resolved fields, rather than parsing raw YAML rollout keys in bash.
-- Scope strict validators to the canonical Stage-2 profile surface (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`); any legacy/experimental profile that cannot satisfy the new contract must relocate to `configs/stage2_ab/legacy/` before those gates are enabled.
+- Scope strict validators to the canonical Stage-2 profile surface (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`) and keep that surface clean (no non-conforming leaves retained there).
 - **BREAKING**: Canonical paths for Stage-2 rollout-related knobs change from `custom.extra.rollout_matching.*` to `rollout_matching.*` with the same subkey names (no alias support, no dual-read).
 - **BREAKING**: Stage-2 profiles remove legacy alias support immediately; any legacy Stage-2 rollout key path fails fast with explicit migration guidance.
 - **BREAKING**: Stage-2 AB downstream configs must follow one-hop inheritance from `configs/stage2_ab/base.yaml`; deeper inheritance chains are no longer supported for canonical experiment configs.

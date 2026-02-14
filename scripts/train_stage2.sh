@@ -80,14 +80,7 @@ import json
 import os
 import shlex
 import sys
-from pathlib import Path
-from urllib.parse import urlparse
-
-try:
-    import yaml
-except Exception as exc:  # pragma: no cover
-    print("[ERROR] PyYAML is required to parse training configs.", file=sys.stderr)
-    raise
+from src.trainers.rollout_matching.preflight import resolve_stage2_launcher_preflight
 
 
 def die(message: str) -> None:
@@ -95,142 +88,58 @@ def die(message: str) -> None:
     sys.exit(1)
 
 
-def load_yaml(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
-    if not isinstance(data, dict):
-        die(f"Top-level YAML config must be a mapping: {path}")
-    return data
-
-
-def normalize_to_list(value):
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple)):
-        return list(value)
-    return [value]
-
-
-def merge_configs(base: dict, override: dict) -> dict:
-    merged = dict(base)
-    for key, value in override.items():
-        existing = merged.get(key)
-        if isinstance(value, dict) and isinstance(existing, dict):
-            merged[key] = merge_configs(existing, value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def load_with_extends(path: Path, visited: set[Path] | None = None) -> dict:
-    abs_path = path.resolve()
-    visited = set() if visited is None else visited
-    if abs_path in visited:
-        die(f"Cyclic config inheritance detected at: {abs_path}")
-    visited.add(abs_path)
-
-    config = load_yaml(abs_path)
-    extends_value = None
-    if isinstance(config, dict):
-        extends_value = config.pop("extends", None)
-        if extends_value is None:
-            extends_value = config.pop("inherit", None)
-
-    merged_base: dict = {}
-    for base_ref in normalize_to_list(extends_value):
-        base_path = Path(str(base_ref))
-        if not base_path.is_absolute():
-            base_path = (abs_path.parent / base_path).resolve()
-        merged_base = merge_configs(merged_base, load_with_extends(base_path, visited))
-
-    return merge_configs(merged_base, config)
+def emit(name: str, value: object) -> None:
+    print(f"{name}={shlex.quote(str(value))}")
 
 
 config_path = os.environ.get("CONFIG_PATH")
 if not config_path:
     die("CONFIG_PATH is required")
 
-cfg = load_with_extends(Path(config_path))
-model = cfg.get("model") or {}
-custom = cfg.get("custom") or {}
-extra = (custom.get("extra") or {}) if isinstance(custom, dict) else {}
-rm = (extra.get("rollout_matching") or {}) if isinstance(extra, dict) else {}
-vllm = (rm.get("vllm") or {}) if isinstance(rm, dict) else {}
-repeat_terminate = (rm.get("repeat_terminate") or {}) if isinstance(rm, dict) else {}
-server = (vllm.get("server") or {}) if isinstance(vllm, dict) else {}
-servers = server.get("servers") if isinstance(server, dict) else None
-
-if repeat_terminate and not isinstance(repeat_terminate, dict):
-    die("custom.extra.rollout_matching.repeat_terminate must be a mapping when provided.")
-
-if rm.get("rollout_backend") != "vllm":
-    die("custom.extra.rollout_matching.rollout_backend must be 'vllm' for server-mode launch.")
-if vllm.get("mode") != "server":
-    die("custom.extra.rollout_matching.vllm.mode must be 'server' for server-mode launch.")
-if not isinstance(servers, list) or not servers:
-    die("custom.extra.rollout_matching.vllm.server.servers must be a non-empty list.")
-
-base_url = servers[0].get("base_url") if isinstance(servers[0], dict) else None
-if not base_url:
-    die("custom.extra.rollout_matching.vllm.server.servers[0].base_url is required.")
-
-parsed = urlparse(str(base_url))
-if parsed.scheme not in ("http", "https"):
-    die(f"base_url must be http(s), got: {base_url!r}")
-host = parsed.hostname
-port = parsed.port
-if not host or not port:
-    die(f"base_url must include host and port, got: {base_url!r}")
-
-model_path = model.get("model")
-if not model_path:
-    die("model.model must be set (rollout model path).")
-
-train_jsonl = custom.get("train_jsonl") if isinstance(custom, dict) else None
-if not isinstance(train_jsonl, str) or not train_jsonl.strip():
-    die("custom.train_jsonl must be set to resolve ROOT_IMAGE_DIR for server-mode rollouts.")
-train_jsonl_path = Path(train_jsonl)
-if not train_jsonl_path.is_absolute():
-    train_jsonl_path = Path.cwd() / train_jsonl_path
-root_image_dir = train_jsonl_path.resolve().parent
-
-max_model_len = None
 try:
-    if isinstance(vllm, dict):
-        max_model_len = vllm.get("max_model_len")
-except Exception:
-    max_model_len = None
-
-# Fallback for legacy configs that did not set vLLM max_model_len explicitly.
-if max_model_len is None:
-    max_model_len = cfg.get("global_max_length") or 8192
-
-try:
-    max_model_len = int(max_model_len)
+    preflight = resolve_stage2_launcher_preflight(config_path)
 except Exception as exc:
-    die(f"vllm.max_model_len (or global_max_length fallback) must be an int: {exc}")
+    die(f"Failed to resolve Stage-2 launcher preflight payload: {exc}")
 
-enable_lora = vllm.get("enable_lora", False)
-enable_lora = bool(enable_lora)
+required_schema = {
+    "rollout_backend": str,
+    "vllm_mode": (str, type(None)),
+    "server_base_urls": list,
+}
+for key, expected_type in required_schema.items():
+    if key not in preflight:
+        die(f"Preflight payload missing required key: {key}")
+    if not isinstance(preflight[key], expected_type):
+        die(
+            f"Preflight key {key} has invalid type {type(preflight[key]).__name__}; "
+            f"expected {expected_type}."
+        )
+if not all(isinstance(url, str) for url in preflight["server_base_urls"]):
+    die("Preflight key server_base_urls must be a list of strings.")
 
+rollout_contract = {
+    "rollout_backend": preflight["rollout_backend"],
+    "vllm_mode": preflight["vllm_mode"],
+    "server_base_urls": preflight["server_base_urls"],
+}
+emit(
+    "ROLLOUT_CONTRACT_JSON",
+    json.dumps(rollout_contract, ensure_ascii=False, separators=(",", ":")),
+)
 
-def emit(name: str, value: object) -> None:
-    print(f"{name}={shlex.quote(str(value))}")
-
-
-emit("SERVER_HOST", host)
-emit("SERVER_PORT", port)
-emit("SERVER_MODEL", model_path)
-emit("ROOT_IMAGE_DIR_RESOLVED", str(root_image_dir))
-emit("VLLM_MAX_MODEL_LEN", max_model_len)
-emit("VLLM_ENABLE_LORA", "true" if enable_lora else "false")
+emit("SERVER_MODEL", preflight["server_model"])
+emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
+emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
+emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
 emit(
     "REPEAT_TERMINATE_CONFIG_JSON",
-    json.dumps(repeat_terminate, ensure_ascii=False, separators=(",", ":")),
+    json.dumps(
+        preflight["repeat_terminate_config"], ensure_ascii=False, separators=(",", ":")
+    ),
 )
 emit(
     "REPEAT_TERMINATE_ENABLED",
-    "true" if bool(repeat_terminate.get("enabled", False)) else "false",
+    "true" if bool(preflight["repeat_terminate_enabled"]) else "false",
 )
 PY
 )
@@ -243,6 +152,61 @@ CONFIG_VARS="$(
 }
 
 eval "${CONFIG_VARS}"
+
+SERVER_HOST_PORT="$(
+  ROLLOUT_CONTRACT_JSON="${ROLLOUT_CONTRACT_JSON:-}" python - <<'PY'
+import json
+import os
+import shlex
+import sys
+from urllib.parse import urlparse
+
+def die(message: str) -> None:
+    print(f"[ERROR] {message}", file=sys.stderr)
+    sys.exit(1)
+
+contract_raw = os.environ.get("ROLLOUT_CONTRACT_JSON")
+if not contract_raw:
+    die("ROLLOUT_CONTRACT_JSON is missing; rollout resolver failed.")
+try:
+    contract = json.loads(contract_raw)
+except Exception as exc:
+    die(f"Failed to parse rollout contract JSON: {exc}")
+
+backend = contract.get("rollout_backend")
+mode = contract.get("vllm_mode")
+urls = contract.get("server_base_urls")
+if backend != "vllm":
+    die(f"rollout_backend must be 'vllm', got: {backend!r}")
+if mode != "server":
+    die(f"vllm_mode must be 'server', got: {mode!r}")
+if not isinstance(urls, list) or not urls:
+    die("server_base_urls must be a non-empty list.")
+
+first_url = urls[0]
+if not isinstance(first_url, str):
+    die("server_base_urls entries must be strings.")
+first_url = first_url.strip()
+if not first_url:
+    die("server_base_urls entries must be non-empty.")
+
+parsed = urlparse(first_url)
+if parsed.scheme not in ("http", "https"):
+    die(f"base_url must be http(s), got: {first_url!r}")
+host = parsed.hostname
+port = parsed.port
+if not host or not port:
+    die(f"base_url must include host and port, got: {first_url!r}")
+
+def emit(name: str, value: object) -> None:
+    print(f"{name}={shlex.quote(str(value))}")
+
+emit("SERVER_HOST", host)
+emit("SERVER_PORT", port)
+emit("PRIMARY_SERVER_BASE_URL", first_url)
+PY
+)"
+eval "${SERVER_HOST_PORT}"
 
 # Resolve model dir to an absolute path (ms-swift treats missing local paths as hub IDs).
 if [[ "${SERVER_MODEL}" != /* ]]; then

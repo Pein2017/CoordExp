@@ -1089,31 +1089,21 @@ def main():
         except Exception:
             pass
 
-        # Single rollout batching knob: custom.extra.rollout_matching.decode_batch_size.
+        # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
-        rollout_cfg_for_batch = (
-            getattr(custom_config, "extra", {}).get("rollout_matching", {})
-            if isinstance(getattr(custom_config, "extra", {}), Mapping)
-            else {}
-        )
+        rollout_cfg_for_batch = getattr(training_config, "rollout_matching", {})
         if rollout_cfg_for_batch is None:
             rollout_cfg_for_batch = {}
         if not isinstance(rollout_cfg_for_batch, Mapping):
-            raise TypeError(
-                "custom.extra.rollout_matching must be a mapping when provided"
-            )
+            raise TypeError("rollout_matching must be a mapping when provided")
 
         decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 4)
         try:
             rollout_decode_bs = int(decode_bs_raw)
         except Exception as exc:
-            raise TypeError(
-                "custom.extra.rollout_matching.decode_batch_size must be an int"
-            ) from exc
+            raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
         if rollout_decode_bs <= 0:
-            raise ValueError(
-                "custom.extra.rollout_matching.decode_batch_size must be > 0"
-            )
+            raise ValueError("rollout_matching.decode_batch_size must be > 0")
 
         if getattr(train_args, "training_args", None) is not None:
             current_eval_bs_raw = getattr(
@@ -1266,39 +1256,32 @@ def main():
 
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         try:
-            extra_cfg = getattr(custom_config, "extra", {})
-            rollout_cfg_raw = (
-                extra_cfg.get("rollout_matching", {})
-                if isinstance(extra_cfg, Mapping)
-                else {}
-            )
+            rollout_cfg_raw = getattr(training_config, "rollout_matching", {})
             if rollout_cfg_raw is None:
                 rollout_cfg_raw = {}
             if not isinstance(rollout_cfg_raw, Mapping):
-                raise TypeError(
-                    "custom.extra.rollout_matching must be a mapping when provided"
-                )
+                raise TypeError("rollout_matching must be a mapping when provided")
 
             rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
 
-            # BREAKING: decoding knobs moved under custom.extra.rollout_matching.decoding.*.
+            # BREAKING: decoding knobs moved under rollout_matching.decoding.*.
             legacy_decoding_keys = [
                 k for k in ("temperature", "top_p", "top_k") if k in rollout_cfg
             ]
             if legacy_decoding_keys:
                 keys_s = ", ".join(
-                    f"custom.extra.rollout_matching.{k}" for k in legacy_decoding_keys
+                    f"rollout_matching.{k}" for k in legacy_decoding_keys
                 )
                 raise ValueError(
                     "Legacy rollout decoding keys have been removed: "
-                    f"{keys_s}. Use custom.extra.rollout_matching.decoding.* instead. "
+                    f"{keys_s}. Use rollout_matching.decoding.* instead. "
                     "(No backward compatibility.)"
                 )
 
             # BREAKING: rollout_buffer was an old sync reuse optimization and is removed.
             if "rollout_buffer" in rollout_cfg:
                 raise ValueError(
-                    "custom.extra.rollout_matching.rollout_buffer has been removed. "
+                    "rollout_matching.rollout_buffer has been removed. "
                     "Remove this section from your config. (No backward compatibility.)"
                 )
 
@@ -1309,7 +1292,7 @@ def main():
                 decoding = dict(decoding_raw)
             else:
                 raise TypeError(
-                    "custom.extra.rollout_matching.decoding must be a mapping when provided"
+                    "rollout_matching.decoding must be a mapping when provided"
                 )
             rollout_cfg["decoding"] = decoding
 

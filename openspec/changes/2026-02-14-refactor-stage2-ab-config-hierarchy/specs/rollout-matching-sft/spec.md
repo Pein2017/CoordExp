@@ -15,10 +15,11 @@ Config source semantics (normative):
 Semantics (normative):
 - `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
 - The trainer MUST enforce this bound for both HF and vLLM backends.
+- `decode_batch_size` is the single source of truth for rollout decode/evaluation microbatching in rollout-aware trainer variants.
+- `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batch behavior.
 
 Defaulting (normative):
-- If `decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
-- Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_ab/**` uses `4`).
+- If `decode_batch_size` is unset, the implementation MUST default it to `4`.
 
 #### Scenario: Canonical Stage-2 key controls decode microbatching
 - **WHEN** a Stage-2 AB config sets `rollout_matching.decode_batch_size: M` where `M > 1`
@@ -28,6 +29,11 @@ Defaulting (normative):
 - **WHEN** rollout-matching training runs with resolved `decode_batch_size=M` where `M > 1`
 - **THEN** the trainer performs batched decode calls for up to `M` samples per rollout GPU
 - **AND** it returns per-sample `response_token_ids` suitable for strict token-aligned parsing.
+
+#### Scenario: Eval per-device knobs do not override rollout decode batching
+- **WHEN** rollout-matching training runs with `rollout_matching.decode_batch_size=M` and `training.per_device_eval_batch_size=N` where `M != N`
+- **THEN** rollout decode/evaluation microbatching follows `M`
+- **AND** `training.per_device_eval_batch_size` does not independently change rollout decode/evaluation behavior.
 
 #### Scenario: Legacy decode key path fails fast
 - **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.decode_batch_size`
