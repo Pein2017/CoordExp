@@ -23,6 +23,12 @@ custom:
     rollout_matching:
       max_new_tokens: 2048
       decode_batch_size: 4
+      monitor_dump:
+        enabled: true
+        every_steps: 40
+        max_events: 200
+        max_samples: 10
+        max_text_chars: 0
       rollout_backend: vllm
       vllm:
         mode: server
