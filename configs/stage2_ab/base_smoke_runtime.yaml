@@ -10,8 +10,8 @@ training:
   save_strategy: "steps"
   save_steps: 40
   save_delay_steps: 0
-  # Rollout eval is expensive; disable by default in smoke.
-  eval_strategy: "no"
+  # Rollout eval is expensive; keep it sparse in smoke.
+  eval_strategy: "steps"
   eval_steps: 40
   logging_steps: 2
 
