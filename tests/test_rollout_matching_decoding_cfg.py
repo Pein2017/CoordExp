@@ -19,6 +19,35 @@ def test_validate_rollout_matching_cfg_rejects_legacy_keys():
         t._validate_rollout_matching_cfg()
 
 
+@pytest.mark.parametrize(
+    "legacy_key",
+    [
+        "rollout_generate_batch_size",
+        "rollout_infer_batch_size",
+        "post_rollout_pack_scope",
+    ],
+)
+def test_validate_rollout_matching_cfg_rejects_removed_rollout_keys(legacy_key: str):
+    t = _mk_uninit_trainer({legacy_key: 1})
+    with pytest.raises(ValueError, match=r"Legacy rollout-matching keys have been removed"):
+        t._validate_rollout_matching_cfg()
+
+
+def test_decode_batch_size_defaults_to_one_when_unset():
+    t = _mk_uninit_trainer({})
+    assert t._decode_batch_size() == 1
+
+
+def test_decode_batch_size_rejects_non_positive_values():
+    t0 = _mk_uninit_trainer({"decode_batch_size": 0})
+    with pytest.raises(ValueError, match=r"decode_batch_size must be > 0"):
+        t0._validate_rollout_matching_cfg()
+
+    t1 = _mk_uninit_trainer({"decode_batch_size": -3})
+    with pytest.raises(ValueError, match=r"decode_batch_size must be > 0"):
+        t1._validate_rollout_matching_cfg()
+
+
 def test_validate_rollout_matching_cfg_accepts_decoding_mapping():
     t = _mk_uninit_trainer({"decoding": {"temperature": 0.01, "top_p": 0.9, "top_k": -1}})
     t._validate_rollout_matching_cfg()

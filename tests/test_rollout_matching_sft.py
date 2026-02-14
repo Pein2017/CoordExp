@@ -13,8 +13,9 @@ import torch
 from src.trainers.rollout_matching_sft import (
     GTObject,
     RolloutMatchingSFTTrainer,
-    _build_labels_and_coord_targets_for_sample,
     _build_labels_and_coord_targets_for_batch,
+    _build_labels_and_coord_targets_for_sample,
+    _per_server_rank_request_caps,
     _serialize_append_fragment,
     _sinkhorn_barycentric_targets,
     hungarian_match_maskiou,
@@ -283,6 +284,27 @@ def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
         trainer._rollout_decode_batch_size_per_rank()
 
 
+def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> None:
+    # Regression for the [1, 1] two-server topology where each rank must still
+    # receive one request when per-rank chunk is 1.
+    caps_rank0 = _per_server_rank_request_caps(
+        per_rank_chunk_size=1,
+        server_world_sizes=[1, 1],
+        learner_world_size=2,
+        learner_rank=0,
+    )
+    caps_rank1 = _per_server_rank_request_caps(
+        per_rank_chunk_size=1,
+        server_world_sizes=[1, 1],
+        learner_world_size=2,
+        learner_rank=1,
+    )
+
+    assert sum(caps_rank0) == 1
+    assert sum(caps_rank1) == 1
+    assert [a + b for a, b in zip(caps_rank0, caps_rank1)] == [1, 1]
+
+
 def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {"repeat_terminate": {"enabled": False}}
@@ -290,12 +312,19 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
 
     call_samples: list[list[dict[str, object]]] = []
     call_debug_samples: list[list[dict[str, object]]] = []
+    call_offsets: list[int] = []
 
-    def _capture_rollout_many_vllm(samples, *, debug_samples=None):
+    def _capture_rollout_many_vllm(
+        samples,
+        *,
+        debug_samples=None,
+        request_index_offset=0,
+    ):
         call_samples.append(list(samples))
         call_debug_samples.append(
             list(debug_samples) if debug_samples is not None else []
         )
+        call_offsets.append(int(request_index_offset))
         return [([1], "{}", "greedy", [2]) for _ in samples]
 
     trainer._rollout_backend = lambda: "vllm"
@@ -318,6 +347,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
 
     assert len(out) == 5
     assert [len(x) for x in call_samples] == [2, 2, 1]
+    assert call_offsets == [0, 2, 4]
 
     for chunk in call_samples:
         assert all(sample["messages"][-1]["role"] == "user" for sample in chunk)
@@ -377,9 +407,11 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
         samples,
         *,
         debug_samples=None,
+        request_index_offset=0,
     ):
         captured["samples"] = samples
         captured["debug_samples"] = debug_samples
+        captured["request_index_offset"] = int(request_index_offset)
         return [([1], "{}", "greedy", [2])]
 
     trainer._rollout_backend = lambda: "vllm"
@@ -409,6 +441,7 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
 
     assert isinstance(debug_samples, list) and debug_samples
     assert debug_samples[0]["messages"][-1]["role"] == "assistant"
+    assert captured["request_index_offset"] == 0
 
 
 def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatch):

@@ -174,31 +174,63 @@ def _contiguous_weighted_chunk_slices(
 
 def _per_server_rank_request_caps(
     *,
-    decode_batch_size: int,
+    per_rank_chunk_size: int,
     server_world_sizes: Sequence[int],
     learner_world_size: int,
     learner_rank: int,
 ) -> List[int]:
     """Compute strict per-server request caps for one learner rank.
 
-    `decode_batch_size` is defined per rollout GPU. For server `i` with DP world size
-    `S_i`, the global per-call cap is `decode_batch_size * S_i` requests across all
-    learner ranks. We split this cap deterministically across learner ranks:
-      base = floor((decode_batch_size * S_i) / learner_world_size)
-      rem  = (decode_batch_size * S_i) % learner_world_size
-      cap_i(rank) = base + 1(rank < rem)
+    We project one optimizer-step "global budget" onto learner ranks and servers via
+    contiguous slices so each rank gets exactly `per_rank_chunk_size` requests while
+    preserving deterministic server weighting.
+
+    Let:
+      - `W = learner_world_size`
+      - `r = learner_rank`
+      - `C = per_rank_chunk_size`
+      - `global_budget = W * C`
+
+    We first split `[0, global_budget)` into server-weighted contiguous slices using
+    `server_world_sizes`, then take the overlap with this rank's interval
+    `[r*C, (r+1)*C)`.
+
+    Properties:
+      - per-rank total equals exactly `C`
+      - server totals across ranks equal the weighted global split
+      - deterministic given `(C, server_world_sizes, W, r)`
     """
-    cap = int(max(1, int(decode_batch_size)))
+    chunk = int(max(0, int(per_rank_chunk_size)))
     world = int(max(1, int(learner_world_size)))
     rank = int(max(0, int(learner_rank)))
 
+    if world > 0:
+        rank = min(rank, world - 1)
+
+    ws = [int(max(1, int(x))) for x in server_world_sizes]
+    if not ws:
+        return []
+    if chunk == 0:
+        return [0 for _ in ws]
+
+    global_budget = int(world * chunk)
+    server_slices = _contiguous_weighted_chunk_slices(int(global_budget), ws)
+
+    rank_start = int(rank * chunk)
+    rank_end = int(rank_start + chunk)
+
     out: List[int] = []
-    for ws_raw in server_world_sizes:
-        ws = int(max(1, int(ws_raw)))
-        total_server_cap = int(cap * ws)
-        base = int(total_server_cap // world)
-        rem = int(total_server_cap % world)
-        out.append(int(base + (1 if rank < rem else 0)))
+    for start, end in server_slices:
+        overlap = max(0, min(int(rank_end), int(end)) - max(int(rank_start), int(start)))
+        out.append(int(overlap))
+
+    if int(sum(out)) != int(chunk):
+        raise RuntimeError(
+            "invalid per-server rank cap allocation: "
+            f"chunk={int(chunk)} world={int(world)} rank={int(rank)} "
+            f"server_world_sizes={ws} caps={out}"
+        )
+
     return out
 
 
@@ -3646,6 +3678,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         samples: Sequence[Mapping[str, Any]],
         *,
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
+        request_index_offset: int = 0,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM rollout backend (colocate default, server optional)."""
         mode = self._vllm_mode()
@@ -3653,6 +3686,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return self._rollout_many_vllm_server(
                 samples,
                 debug_samples=debug_samples,
+                request_index_offset=int(request_index_offset),
             )
         return self._rollout_many_vllm_colocate(samples)
 
@@ -3745,6 +3779,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         samples: Sequence[Mapping[str, Any]],
         *,
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
+        request_index_offset: int = 0,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM server rollout backend (token ids via ms-swift `swift rollout`)."""
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
@@ -3804,6 +3839,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
         seed_base = int(self._derive_rollout_seed_base(global_step=gs))
+        request_index_offset_i = max(0, int(request_index_offset))
+        effective_seed_base = int(seed_base + request_index_offset_i)
 
         # Build JSON-serializable ms-swift RolloutInferRequest-compatible dicts.
         infer_requests: List[Dict[str, Any]] = []
@@ -3876,18 +3913,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         learner_rank = max(0, int(learner_rank))
 
         decode_cap = int(self._decode_batch_size())
+        # Use the canonical per-rank chunk contract (with feasibility check) so
+        # server mode behaves identically across all callers.
+        per_rank_chunk = int(self._rollout_decode_batch_size_per_rank())
+
         per_server_rank_caps = _per_server_rank_request_caps(
-            decode_batch_size=int(decode_cap),
+            per_rank_chunk_size=int(per_rank_chunk),
             server_world_sizes=[int(x) for x in server_world_sizes],
             learner_world_size=int(learner_world),
             learner_rank=int(learner_rank),
         )
         round_cap_total = int(sum(int(x) for x in per_server_rank_caps))
-        if round_cap_total <= 0 and int(len(infer_requests)) > 0:
-            raise ValueError(
-                "decode_batch_size cap yields zero per-rank server budget for this rank: "
-                f"decode_batch_size={int(decode_cap)} learner_rank={int(learner_rank)} "
-                f"learner_world_size={int(learner_world)} server_world_sizes={list(int(x) for x in server_world_sizes)}"
+        if int(round_cap_total) != int(per_rank_chunk):
+            raise RuntimeError(
+                "internal per-rank rollout cap mismatch: "
+                f"per_rank_chunk={int(per_rank_chunk)} round_cap_total={int(round_cap_total)} "
+                f"learner_rank={int(learner_rank)} learner_world_size={int(learner_world)} "
+                f"server_world_sizes={list(int(x) for x in server_world_sizes)}"
             )
 
         # Log reproducibility metadata once per optimizer step (E-steps only).
@@ -3918,7 +3960,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 "cap_for_rank": int(per_server_rank_caps[i]),
                                 # Effective per-server-call seed used for RequestConfig.seed:
                                 # seed = rollout_seed_base + chunk_start
-                                "seed": int((seed_base + int(start)) & 0x7FFFFFFF),
+                                "seed": int((effective_seed_base + int(start)) & 0x7FFFFFFF),
                             }
                         )
                         offset = int(end)
@@ -3926,12 +3968,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     round_idx = int(round_idx + 1)
 
             logger.info(
-                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s decode_batch_size_cap=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
+                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
                 servers,
                 self._effective_vllm_server_sync_mode(),
                 int(len(infer_requests)),
                 int(seed_base),
+                int(request_index_offset_i),
+                int(effective_seed_base),
                 int(decode_cap),
+                int(per_rank_chunk),
                 int(learner_world),
                 int(learner_rank),
                 [int(x) for x in server_world_sizes],
@@ -4009,7 +4054,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             # Derive per-server-call seed so per-request seeds are stable.
             req_cfg = dict(base_request_config_dict)
-            req_cfg["seed"] = int((seed_base + int(start)) & 0x7FFFFFFF)
+            req_cfg["seed"] = int((effective_seed_base + int(start)) & 0x7FFFFFFF)
 
             payload = {
                 "infer_requests": infer_requests[start:end],
@@ -4132,7 +4177,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         self._maybe_debug_dump_vllm_server_rollouts(
             global_step=gs,
-            seed_base=seed_base,
+            seed_base=effective_seed_base,
             infer_requests=infer_requests,
             outputs=out,
             samples=debug_samples if debug_samples is not None else samples,
@@ -4242,6 +4287,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     chunk_out = self._rollout_many_vllm(
                         chunk_samples,
                         debug_samples=chunk_debug_samples,
+                        request_index_offset=int(off),
                     )
                     out.extend(chunk_out)
 
