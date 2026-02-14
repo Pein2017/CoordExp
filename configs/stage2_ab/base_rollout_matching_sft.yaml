@@ -98,12 +98,12 @@ custom:
       # generation becomes degenerate/repetitive (HF + vLLM server mode).
       repeat_terminate:
         enabled: true
-        min_new_tokens: 32
-        max_consecutive_token_repeats: 64
-        ngram_size: 64
+        min_new_tokens: 24
+        max_consecutive_token_repeats: 24
+        ngram_size: 24
         ngram_repeats: 2
         # Optional hard cap to prevent runaway "object_k" spam.
-        max_object_keys: 256
+        max_object_keys: 96
 
       # Matching
       candidate_top_k: 5
