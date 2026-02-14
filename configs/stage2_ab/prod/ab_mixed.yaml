@@ -10,7 +10,7 @@ training:
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
-  effective_batch_size: 64
+  effective_batch_size: 56
   eval_strategy: steps
   save_strategy: steps
   save_steps: 200
@@ -22,7 +22,7 @@ stage2_ab:
   n_softctx_iter: 2
 
 custom:
-  val_sample_limit: 1000
+  val_sample_limit: 504
 
 rollout_matching:
   max_new_tokens: 2048

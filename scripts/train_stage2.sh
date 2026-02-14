@@ -24,8 +24,8 @@ done
 
 # Defaults (override via env vars)
 CONDA_ENV="${CONDA_ENV:-ms}"
-SERVER_GPUS="${server_gpus:-0,1,2,3,4,5}"
-TRAIN_GPUS="${train_gpus:-6,7}"
+SERVER_GPUS="${server_gpus:-0,1,2,3,4,5,6}"
+TRAIN_GPUS="${train_gpus:-7}"
 WAIT_TIMEOUT="${wait_timeout:-900}"
 WAIT_INTERVAL="${wait_interval:-2}"
 CONFIG_RAW="${config:-configs/stage2_ab/smoke/ab_mixed.yaml}"
