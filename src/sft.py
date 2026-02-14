@@ -1193,32 +1193,27 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
-    # For rollout-matching we still want stable eval-time monitoring (and to support
-    # `metric_for_best_model: eval_token_acc` from the base config).
+    # Rollout-matching evaluators emit rollout/* metrics only.
+    # Guard against inherited defaults like eval_token_acc, which would crash
+    # best-checkpoint selection at evaluation time.
     if (
         trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
-        and "token_acc"
-        in str(getattr(train_args.training_args, "metric_for_best_model", ""))
     ):
-        try:
-            from .metrics.simple_token_accuracy import (
-                compute_token_accuracy_metrics,
-                preprocess_logits_for_token_accuracy,
-            )
-
-            # Attach lazily so we don't change other trainer variants' behavior.
-            if getattr(trainer, "preprocess_logits_for_metrics", None) is None:
-                trainer.preprocess_logits_for_metrics = (
-                    preprocess_logits_for_token_accuracy
-                )
-            if getattr(trainer, "compute_metrics", None) is None:
-                trainer.compute_metrics = compute_token_accuracy_metrics
-        except Exception as exc:
+        metric_for_best_model = str(
+            getattr(train_args.training_args, "metric_for_best_model", "") or ""
+        ).strip()
+        if "token_acc" in metric_for_best_model:
             logger.warning(
-                "Failed to enable eval token accuracy for rollout-matching: %s", exc
+                "metric_for_best_model=%s is incompatible with rollout metrics; overriding to rollout/f1.",
+                metric_for_best_model,
             )
+            train_args.training_args.metric_for_best_model = "rollout/f1"
+            trainer.args.metric_for_best_model = "rollout/f1"
+            if getattr(train_args.training_args, "greater_is_better", None) is None:
+                train_args.training_args.greater_is_better = True
+                trainer.args.greater_is_better = True
 
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         try:

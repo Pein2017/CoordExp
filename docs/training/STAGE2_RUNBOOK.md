@@ -274,7 +274,7 @@ Notes:
 - Start with deterministic non-beam decoding for stability: `decode_mode: greedy`, `decoding.temperature: 0.0`.
 - `decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `decoding.temperature/top_p/top_k`.
   - `decode_mode: greedy` can still produce **sampling** rollouts when `decoding.temperature > 0.0`.
-  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_greedy`.
+  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_non_beam_count`.
 - vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - If rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for offending sequences (HF and vLLM server mode).
@@ -370,14 +370,14 @@ Important:
 - As a result, Stage-2 eval does not report `eval_loss`.
 
 Eval metrics include:
-- `eval_rollout_precision`, `eval_rollout_recall`, `eval_rollout_f1`
-- Counters: `eval_rollout_pred_objects`, `eval_rollout_gt_objects`, `eval_rollout_matched`, `eval_rollout_fp`, `eval_rollout_fn`
-- Parse health: `eval_rollout_parse_truncated_rate`, `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
-- Sample health: `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
-- Geometry quality: `eval_rollout_matched_maskiou_mean`
+- `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
+- Counters: `eval_rollout/pred_objects`, `eval_rollout/gt_objects`, `eval_rollout/matched`, `eval_rollout/fp`, `eval_rollout/fn`
+- Parse health: `eval_rollout/parse_truncated_rate`, `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
+- Sample health: `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
+- Geometry quality: `eval_rollout/matched_maskiou_mean`
 
 Best-checkpoint selection:
-- Prefer `training.metric_for_best_model: eval_rollout_f1` and `training.greater_is_better: true`.
+- Prefer `training.metric_for_best_model: rollout/f1` and `training.greater_is_better: true`.
 
 ---
 

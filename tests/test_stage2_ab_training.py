@@ -551,6 +551,93 @@ def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     assert p1.truncated is True
 
 
+def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {}
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t.state = types.SimpleNamespace(global_step=0)
+
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 7,
+        "maskiou_resolution": 256,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = (
+        lambda key, default=None: {"semantic_desc_gate": {"enabled": False}}.get(
+            key, default
+        )
+    )
+
+    t.template = types.SimpleNamespace(tokenizer=_DummyTokenizer())
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 16
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=[],
+        response_token_ids=[],
+        valid_objects=[],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_ab_training.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+
+    captured = {}
+
+    class _StopAfterMatch(RuntimeError):
+        pass
+
+    def _fake_match(*, preds, gts, top_k, **kwargs):
+        captured["top_k"] = int(top_k)
+        raise _StopAfterMatch("stop once matcher receives top_k")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_ab_training.hungarian_match_maskiou",
+        _fake_match,
+    )
+
+    sample = {
+        "messages": [],
+        "assistant_payload": {
+            "object_0": {"bbox_2d": [0, 0, 0, 0], "desc": ""},
+        },
+    }
+    with pytest.raises(_StopAfterMatch):
+        t._prepare_batch_inputs_b([sample], _segments_only=True)
+
+    assert captured["top_k"] == 7
+
+
 def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.args = types.SimpleNamespace(seed=123)

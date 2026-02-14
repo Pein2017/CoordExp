@@ -10,7 +10,6 @@ High-level loop per batch:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -20,14 +19,22 @@ import time
 from contextlib import contextmanager, nullcontext
 from copy import copy as shallow_copy
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
+from dataclasses import asdict
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pycocotools import mask as maskUtils
-from scipy.optimize import linear_sum_assignment
 from swift.trainers import Seq2SeqTrainer
 from swift.trainers.rlhf_trainer.utils import (
     get_gather_if_zero3_context,
@@ -35,7 +42,7 @@ from swift.trainers.rlhf_trainer.utils import (
 )
 from swift.utils import get_logger, unwrap_model_for_generation
 
-from src.common.geometry import bbox_from_points, bbox_to_quadrilateral, flatten_points
+from src.common.geometry import bbox_from_points, flatten_points
 from src.common.repeat_terminate import (
     ForceEosOnRepeatBatchGuard,
     encode_object_key_prefix,
@@ -44,25 +51,19 @@ from src.common.repeat_terminate import (
 from src.coord_tokens.codec import (
     get_coord_token_ids,
     token_to_int,
-    value_in_coord_range,
 )
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 
 from .rollout_matching.contracts import (
     GTObject,
-    GeomType,
-    MatchResult,
     ParsedPredObject,
-    RolloutParseResult,
 )
-from .rollout_matching.matching import hungarian_match_maskiou
+from .rollout_matching.matching import _mask_iou_norm1000, hungarian_match_maskiou
 from .rollout_matching.packing import (
     DropRemainderAccumulationWindow as _DropRemainderAccumulationWindow,
 )
 from .rollout_matching.parsing import (
     coerce_int as _coerce_int,
-    decode_pieces as _decode_pieces,
-    find_desc_value_char_spans as _find_desc_value_char_spans,
     find_desc_value_token_positions as _find_desc_value_token_positions,
     parse_rollout_for_matching,
     points_from_coord_tokens as _points_from_coord_tokens,
@@ -70,7 +71,6 @@ from .rollout_matching.parsing import (
 )
 from .rollout_matching.telemetry import (
     PendingTrainRolloutLog as _PendingTrainRolloutLog,
-    slim_rollout_meta_for_logging as _slim_rollout_meta_for_logging,
 )
 
 logger = get_logger()
@@ -169,6 +169,89 @@ def _contiguous_weighted_chunk_slices(
             f"n={int(n)} weights={ws} slices={out}"
         )
 
+    return out
+
+
+def _per_server_rank_request_caps(
+    *,
+    decode_batch_size: int,
+    server_world_sizes: Sequence[int],
+    learner_world_size: int,
+    learner_rank: int,
+) -> List[int]:
+    """Compute strict per-server request caps for one learner rank.
+
+    `decode_batch_size` is defined per rollout GPU. For server `i` with DP world size
+    `S_i`, the global per-call cap is `decode_batch_size * S_i` requests across all
+    learner ranks. We split this cap deterministically across learner ranks:
+      base = floor((decode_batch_size * S_i) / learner_world_size)
+      rem  = (decode_batch_size * S_i) % learner_world_size
+      cap_i(rank) = base + 1(rank < rem)
+    """
+    cap = int(max(1, int(decode_batch_size)))
+    world = int(max(1, int(learner_world_size)))
+    rank = int(max(0, int(learner_rank)))
+
+    out: List[int] = []
+    for ws_raw in server_world_sizes:
+        ws = int(max(1, int(ws_raw)))
+        total_server_cap = int(cap * ws)
+        base = int(total_server_cap // world)
+        rem = int(total_server_cap % world)
+        out.append(int(base + (1 if rank < rem else 0)))
+    return out
+
+
+def _allocate_weighted_counts_with_caps(n: int, caps: Sequence[int]) -> List[int]:
+    """Allocate `n` contiguous requests across servers with strict per-server caps."""
+    n_i = int(n)
+    if n_i < 0:
+        raise ValueError("n must be >= 0")
+    caps_i: List[int] = []
+    for idx, raw in enumerate(caps):
+        try:
+            c = int(raw)
+        except Exception as exc:
+            raise ValueError(f"caps[{int(idx)}] must be an int") from exc
+        if c < 0:
+            raise ValueError(f"caps[{int(idx)}] must be >= 0")
+        caps_i.append(int(c))
+
+    total_cap = int(sum(caps_i))
+    if n_i > total_cap:
+        raise ValueError(
+            "requested batch exceeds strict per-server cap budget: "
+            f"n={n_i} total_cap={total_cap} caps={caps_i}"
+        )
+    if n_i == 0 or total_cap == 0:
+        return [0 for _ in caps_i]
+
+    pos: List[Tuple[int, int]] = [
+        (int(i), int(c)) for i, c in enumerate(caps_i) if int(c) > 0
+    ]
+    if not pos:
+        return [0 for _ in caps_i]
+
+    pos_idx = [int(i) for i, _c in pos]
+    pos_caps = [int(c) for _i, c in pos]
+
+    chunks = _contiguous_weighted_chunk_slices(int(n_i), pos_caps)
+    out = [0 for _ in caps_i]
+    for local_i, (start, end) in enumerate(chunks):
+        idx = int(pos_idx[local_i])
+        cnt = int(end - start)
+        if cnt < 0 or cnt > int(caps_i[idx]):
+            raise RuntimeError(
+                "invalid weighted capped allocation: "
+                f"idx={idx} cnt={cnt} cap={caps_i[idx]} n={n_i} caps={caps_i}"
+            )
+        out[idx] = int(cnt)
+
+    if int(sum(out)) != int(n_i):
+        raise RuntimeError(
+            "invalid weighted capped allocation total: "
+            f"sum={int(sum(out))} n={int(n_i)} caps={caps_i}"
+        )
     return out
 
 
@@ -340,7 +423,6 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
         )
     objs.sort(key=lambda o: o.index)
     return objs
-
 
 
 def _coord_vocab_gate_loss(
@@ -740,7 +822,6 @@ class _AdaptiveRawMicroBatchStacker:
         return getattr(self.dataloader, name)
 
 
-
 class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     """Rollout-matching (stage_2) trainer variant."""
 
@@ -897,9 +978,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             top_p = float(
-                dec.get("top_p", 1.0)
-                if dec.get("top_p", None) is not None
-                else 1.0
+                dec.get("top_p", 1.0) if dec.get("top_p", None) is not None else 1.0
             )
         except Exception as exc:
             raise TypeError(
@@ -973,7 +1052,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         return float(temperature), float(top_p), int(top_k)
-
 
     @staticmethod
     def _apply_rollout_decoding_to_generation_config(
@@ -1217,7 +1295,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             lines.append("```json\n" + _j(s.get("stats")) + "\n```\n")
 
         return "".join(lines)
-
 
     def _offload_settings(self) -> Tuple[bool, bool, bool]:
         cfg_raw = self._cfg("offload", {}) or {}
@@ -1688,7 +1765,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
         return int(v)
 
-
     def _packing_enabled(self) -> bool:
         return bool(self._cfg("packing_enabled", False))
 
@@ -1698,7 +1774,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception as exc:
             raise ValueError("packing_length must be an int") from exc
 
-    def _assert_single_packed_forward(self, batch: Mapping[str, Any], *, where: str) -> None:
+    def _assert_single_packed_forward(
+        self, batch: Mapping[str, Any], *, where: str
+    ) -> None:
         input_ids = batch.get("input_ids") if isinstance(batch, Mapping) else None
         if not isinstance(input_ids, torch.Tensor):
             return
@@ -1808,7 +1886,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     template.padding_free = bool(padding_free)
                 except Exception:
                     pass
-            if mode is not None and old_mode is not None and hasattr(template, "set_mode"):
+            if (
+                mode is not None
+                and old_mode is not None
+                and hasattr(template, "set_mode")
+            ):
                 try:
                     if str(old_mode) != str(mode):
                         template.set_mode(str(mode))
@@ -2997,7 +3079,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         need_sync = int(step != last)
 
         # Under DDP, ensure all ranks take the same early-return decision.
-        if dist is not None and dist.is_available() and dist.is_initialized() and int(world_size) > 1:
+        if (
+            dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+            and int(world_size) > 1
+        ):
             try:
                 try:
                     backend = str(dist.get_backend()).lower()
@@ -3008,7 +3095,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if backend == "nccl" and torch.cuda.is_available():
                     reduce_device = self.model.device
 
-                flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
+                flag = torch.tensor(
+                    [need_sync], device=reduce_device, dtype=torch.int32
+                )
                 dist.broadcast(flag, src=0)
                 need_sync = int(flag.item())
             except Exception:
@@ -3025,7 +3114,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         # Single-process learner: allow adapter/full sync modes.
-        if dist is None or (not dist.is_available()) or (not dist.is_initialized()) or int(world_size) == 1:
+        if (
+            dist is None
+            or (not dist.is_available())
+            or (not dist.is_initialized())
+            or int(world_size) == 1
+        ):
             vcfg_raw = self._cfg("vllm", {}) or {}
             enable_lora = (
                 bool(vcfg_raw.get("enable_lora", False))
@@ -3056,7 +3150,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 # Optional runtime sanity check (server must have vLLM LoRA enabled).
                 try:
                     info = client.get_engine_type()
-                    if isinstance(info, dict) and not bool(info.get("enable_lora", False)):
+                    if isinstance(info, dict) and not bool(
+                        info.get("enable_lora", False)
+                    ):
                         raise RuntimeError(
                             "vLLM server reports enable_lora=false, but adapter-only sync was requested. "
                             "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
@@ -3765,34 +3861,82 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 f"servers={int(len(servers))} world_sizes={server_world_sizes}"
             )
 
-        # Deterministic contiguous chunking across servers (weighted by server DP world size).
-        chunks = _contiguous_weighted_chunk_slices(
-            int(len(infer_requests)), [int(x) for x in server_world_sizes]
+        learner_world = 1
+        learner_rank = 0
+        try:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                learner_world = int(dist.get_world_size())
+                learner_rank = int(dist.get_rank())
+        except Exception:
+            learner_world = 1
+            learner_rank = 0
+        learner_world = max(1, int(learner_world))
+        learner_rank = max(0, int(learner_rank))
+
+        decode_cap = int(self._decode_batch_size())
+        per_server_rank_caps = _per_server_rank_request_caps(
+            decode_batch_size=int(decode_cap),
+            server_world_sizes=[int(x) for x in server_world_sizes],
+            learner_world_size=int(learner_world),
+            learner_rank=int(learner_rank),
         )
+        round_cap_total = int(sum(int(x) for x in per_server_rank_caps))
+        if round_cap_total <= 0 and int(len(infer_requests)) > 0:
+            raise ValueError(
+                "decode_batch_size cap yields zero per-rank server budget for this rank: "
+                f"decode_batch_size={int(decode_cap)} learner_rank={int(learner_rank)} "
+                f"learner_world_size={int(learner_world)} server_world_sizes={list(int(x) for x in server_world_sizes)}"
+            )
 
         # Log reproducibility metadata once per optimizer step (E-steps only).
         if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
             seed_plan: List[Dict[str, Any]] = []
-            for i, (start, end) in enumerate(chunks):
-                if start >= end:
-                    continue
-                seed_plan.append(
-                    {
-                        "server_idx": int(i),
-                        "base_url": str(servers[i].get("base_url", "")),
-                        "start": int(start),
-                        "end": int(end),
-                        # Effective per-server-call seed used for RequestConfig.seed:
-                        # seed = rollout_seed_base + chunk_start
-                        "seed": int((seed_base + int(start)) & 0x7FFFFFFF),
-                    }
-                )
+            if int(len(infer_requests)) > 0 and round_cap_total > 0:
+                cursor = 0
+                round_idx = 0
+                while cursor < int(len(infer_requests)):
+                    remaining = int(len(infer_requests) - cursor)
+                    round_budget = int(min(remaining, round_cap_total))
+                    counts = _allocate_weighted_counts_with_caps(
+                        int(round_budget), per_server_rank_caps
+                    )
+                    offset = int(cursor)
+                    for i, cnt in enumerate(counts):
+                        if int(cnt) <= 0:
+                            continue
+                        start = int(offset)
+                        end = int(offset + int(cnt))
+                        seed_plan.append(
+                            {
+                                "round": int(round_idx),
+                                "server_idx": int(i),
+                                "base_url": str(servers[i].get("base_url", "")),
+                                "start": int(start),
+                                "end": int(end),
+                                "cap_for_rank": int(per_server_rank_caps[i]),
+                                # Effective per-server-call seed used for RequestConfig.seed:
+                                # seed = rollout_seed_base + chunk_start
+                                "seed": int((seed_base + int(start)) & 0x7FFFFFFF),
+                            }
+                        )
+                        offset = int(end)
+                    cursor = int(cursor + round_budget)
+                    round_idx = int(round_idx + 1)
+
             logger.info(
-                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s seed_plan=%s",
+                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s decode_batch_size_cap=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
                 servers,
                 self._effective_vllm_server_sync_mode(),
                 int(len(infer_requests)),
                 int(seed_base),
+                int(decode_cap),
+                int(learner_world),
+                int(learner_rank),
+                [int(x) for x in server_world_sizes],
+                [int(x) for x in per_server_rank_caps],
+                int(round_cap_total),
                 seed_plan,
             )
             self._vllm_server_last_logged_step = int(gs)
@@ -3811,7 +3955,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if isinstance(coordexp, Mapping):
                     has_coordexp_signal = True
                     try:
-                        triggered = int(coordexp.get("repeat_terminate_triggered", 0) or 0)
+                        triggered = int(
+                            coordexp.get("repeat_terminate_triggered", 0) or 0
+                        )
                     except Exception:
                         triggered = 0
 
@@ -3938,17 +4084,43 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 results[idx] = (token_ids, text, decode_mode, prompt_ids)
                 repeat_triggered_flags[idx] = int(triggered)
 
-        # Parallelize across servers.
+        # Parallelize by server within each round.
+        # Each round enforces strict per-server caps for this learner rank.
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=int(len(servers))) as ex:
-            futs = []
-            for i, (start, end) in enumerate(chunks):
-                if start >= end:
+        cursor = 0
+        while cursor < int(len(infer_requests)):
+            remaining = int(len(infer_requests) - cursor)
+            round_budget = int(min(remaining, max(1, int(round_cap_total))))
+            counts = _allocate_weighted_counts_with_caps(
+                int(round_budget), per_server_rank_caps
+            )
+
+            round_slices: List[Tuple[int, int, int]] = []
+            offset = int(cursor)
+            for i, cnt in enumerate(counts):
+                if int(cnt) <= 0:
                     continue
-                futs.append(ex.submit(_infer_on_server, int(i), int(start), int(end)))
-            for f in futs:
-                f.result()
+                start = int(offset)
+                end = int(offset + int(cnt))
+                round_slices.append((int(i), int(start), int(end)))
+                offset = int(end)
+
+            if not round_slices:
+                raise RuntimeError(
+                    "vLLM server rollout produced an empty dispatch round under non-empty workload: "
+                    f"cursor={int(cursor)} remaining={int(remaining)} per_server_rank_caps={per_server_rank_caps}"
+                )
+
+            with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
+                futs = [
+                    ex.submit(_infer_on_server, int(i), int(start), int(end))
+                    for i, start, end in round_slices
+                ]
+                for f in futs:
+                    f.result()
+
+            cursor = int(cursor + round_budget)
 
         out: List[Tuple[List[int], str, str, List[int]]] = []
         for r in results:
@@ -4051,26 +4223,65 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if backend == "vllm":
             mode = self._vllm_mode()
-            out = self._rollout_many_vllm(
-                samples_for_rollout,
-                debug_samples=samples,
-            )
             if mode == "server":
-                flags_raw = getattr(self, "_last_rollout_repeat_terminate_triggers", None)
-                if (
-                    isinstance(flags_raw, list)
-                    and len(flags_raw) == len(out)
-                    and all(isinstance(x, (int, bool)) for x in flags_raw)
-                ):
-                    flags = [int(1 if x else 0) for x in flags_raw]
-                else:
+                # Enforce the per-rank rollout request cap centrally so all callers
+                # (Stage2-AB + evaluator) obey decode_batch_size topology constraints.
+                chunk_size = max(1, int(self._rollout_decode_batch_size_per_rank()))
+                if int(len(samples_for_rollout)) > 0:
+                    chunk_size = min(chunk_size, int(len(samples_for_rollout)))
+
+                out: List[Tuple[List[int], str, str, List[int]]] = []
+                flags: List[int] = []
+                active = int(1 if repeat_cfg.enabled else 0)
+
+                for off in range(0, int(len(samples_for_rollout)), int(chunk_size)):
+                    chunk_samples = samples_for_rollout[
+                        int(off) : int(off + chunk_size)
+                    ]
+                    chunk_debug_samples = samples[int(off) : int(off + chunk_size)]
+                    chunk_out = self._rollout_many_vllm(
+                        chunk_samples,
+                        debug_samples=chunk_debug_samples,
+                    )
+                    out.extend(chunk_out)
+
+                    flags_raw = getattr(
+                        self,
+                        "_last_rollout_repeat_terminate_triggers",
+                        None,
+                    )
+                    if (
+                        isinstance(flags_raw, list)
+                        and len(flags_raw) == len(chunk_out)
+                        and all(isinstance(x, (int, bool)) for x in flags_raw)
+                    ):
+                        chunk_flags = [int(1 if x else 0) for x in flags_raw]
+                    else:
+                        chunk_flags = [0 for _ in range(len(chunk_out))]
+                    flags.extend(chunk_flags)
+
+                    active = max(
+                        active,
+                        int(
+                            1
+                            if bool(
+                                getattr(
+                                    self,
+                                    "_last_rollout_repeat_terminate_active",
+                                    0,
+                                )
+                            )
+                            else 0
+                        ),
+                    )
+
+                if len(flags) != len(out):
                     flags = [0 for _ in range(len(out))]
-                active = int(
-                    1
-                    if bool(getattr(self, "_last_rollout_repeat_terminate_active", 0))
-                    else 0
-                )
             else:
+                out = self._rollout_many_vllm(
+                    samples_for_rollout,
+                    debug_samples=samples,
+                )
                 flags = [0 for _ in range(len(out))]
                 active = int(1 if repeat_cfg.enabled else 0)
 
@@ -4300,7 +4511,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             pass
 
         return selected, pack_metrics
-
 
     def _prepare_batch_inputs(
         self,
@@ -4840,7 +5050,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             with self._template_packing_enabled():
                 packed = template.data_collator([enc for enc, _, _ in selected])
             batch = to_device(packed, self.model.device)
-            self._assert_single_packed_forward(batch, where="rollout_matching/_prepare_batch_inputs")
+            self._assert_single_packed_forward(
+                batch, where="rollout_matching/_prepare_batch_inputs"
+            )
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             batch_metrics.update(pack_metrics)
@@ -4870,15 +5082,54 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
+        sample_total_key = "train/samples_total"
+
+        reduced.pop("rollout/parse_truncated_rate", None)
         reduced.setdefault(
             trunc_num_key,
             float(reduced.get("rollout/parse_truncated", 0.0)),
         )
         reduced.setdefault(
             trunc_den_key,
-            float(reduced.get("train/samples_total", 0.0)),
+            float(reduced.get(sample_total_key, 0.0)),
         )
-        reduced.pop("rollout/parse_truncated_rate", None)
+
+        sample_total_local = float(reduced.get(sample_total_key, 0.0))
+        if (
+            "rollout/matched_maskiou_mean" in reduced
+            and "rollout/matched_maskiou_count" in reduced
+        ):
+            reduced["rollout/_matched_maskiou_sum"] = float(
+                float(reduced.get("rollout/matched_maskiou_mean", 0.0))
+                * float(reduced.get("rollout/matched_maskiou_count", 0.0))
+            )
+        if sample_total_local > 0.0:
+            if "rollout/sample_valid_pred_rate" in reduced:
+                reduced["rollout/_sample_valid_pred_num"] = float(
+                    float(reduced.get("rollout/sample_valid_pred_rate", 0.0))
+                    * sample_total_local
+                )
+            if "rollout/sample_any_match_rate" in reduced:
+                reduced["rollout/_sample_any_match_num"] = float(
+                    float(reduced.get("rollout/sample_any_match_rate", 0.0))
+                    * sample_total_local
+                )
+        if (
+            "rollout/desc_exact_acc_on_matched" in reduced
+            and "rollout/desc_pairs_total" in reduced
+        ):
+            reduced["rollout/_desc_exact_ok"] = float(
+                float(reduced.get("rollout/desc_exact_acc_on_matched", 0.0))
+                * float(reduced.get("rollout/desc_pairs_total", 0.0))
+            )
+        if (
+            "rollout/desc_sem_acc_on_matched" in reduced
+            and "rollout/desc_pairs_total" in reduced
+        ):
+            reduced["rollout/_desc_sem_ok"] = float(
+                float(reduced.get("rollout/desc_sem_acc_on_matched", 0.0))
+                * float(reduced.get("rollout/desc_pairs_total", 0.0))
+            )
 
         try:
             import torch.distributed as dist
@@ -4897,7 +5148,99 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             except Exception:
                 rank = 0
 
-        if dist is not None and dist.is_available() and dist.is_initialized() and world_size > 1:
+        metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
+        if (
+            dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+            and int(world_size) > 1
+        ):
+            try:
+                gathered_keys: List[Any] = [None] * int(world_size)
+                dist.all_gather_object(gathered_keys, metric_keys)
+
+                merged_keys: Dict[str, None] = {}
+                for item in gathered_keys:
+                    if not isinstance(item, (list, tuple)):
+                        continue
+                    for key_raw in item:
+                        key = str(key_raw)
+                        merged_keys[key] = None
+                        reduced.setdefault(key, 0.0)
+                metric_keys = sorted(merged_keys.keys())
+            except Exception as exc:
+                if int(rank) == 0:
+                    logger.warning(
+                        "rollout metric key sync failed; proceeding without key union: %r",
+                        exc,
+                    )
+
+        sum_key_set: set[str] = set()
+        max_key_set: set[str] = set()
+        mean_key_set: set[str] = set()
+
+        sum_explicit = {
+            sample_total_key,
+            "rollout/parse_truncated",
+            "rollout/parse_dropped_invalid",
+            "rollout/parse_dropped_ambiguous",
+            "rollout/valid_pred_objects",
+            "rollout/gt_objects",
+            "rollout/matched_for_supervision",
+            "rollout/excluded_from_supervision",
+            "rollout/fp",
+            "rollout/fn",
+            "rollout/gating_rejections",
+            "rollout/fn_appended",
+            "rollout/prefix_coord_targets_total",
+            "rollout/matched_maskiou_count",
+            "rollout/desc_pairs_total",
+            "rollout/desc_sem_sim_count",
+            "rollout/_matched_maskiou_sum",
+            "rollout/_sample_valid_pred_num",
+            "rollout/_sample_any_match_num",
+            "rollout/_desc_exact_ok",
+            "rollout/_desc_sem_ok",
+            "rollout/decode_non_beam_count",
+            "rollout/decode_beam_count",
+            trunc_num_key,
+            trunc_den_key,
+        }
+        max_explicit = {
+            "rollout/backend_hf",
+            "rollout/backend_vllm",
+            "rollout/decode_mode_greedy",
+            "rollout/decode_mode_beam",
+            "rollout/hf_seeded_global",
+            "rollout/do_sample",
+            "rollout/desc_sem_enabled",
+            "rollout/gen_new_tokens_p90",
+            "rollout/gen_new_tokens_p99",
+            "rollout/repeat_terminate_active",
+        }
+
+        for key in metric_keys:
+            if key.startswith("time/"):
+                max_key_set.add(key)
+                continue
+            if key in max_explicit:
+                max_key_set.add(key)
+                continue
+            if key in sum_explicit or key.endswith("_total"):
+                sum_key_set.add(key)
+                continue
+            mean_key_set.add(key)
+
+        sum_keys = sorted(sum_key_set)
+        max_keys = sorted(max_key_set)
+        mean_keys = sorted(mean_key_set)
+
+        if (
+            dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+            and int(world_size) > 1
+        ):
             try:
                 device = torch.device("cpu")
                 try:
@@ -4913,25 +5256,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if not keys:
                         return
                     values = torch.tensor(
-                        [float(reduced[k]) for k in keys], dtype=torch.float64, device=device
+                        [float(reduced.get(k, 0.0)) for k in keys],
+                        dtype=torch.float64,
+                        device=device,
                     )
                     dist.all_reduce(values, op=op)
-                    for idx, key in enumerate(keys):
-                        reduced[key] = float(values[idx].item())
+                    for i, key_i in enumerate(keys):
+                        reduced[key_i] = float(values[i].item())
 
-                sum_keys = [
-                    trunc_num_key,
-                    trunc_den_key,
-                    "train/samples_total",
-                    "rollout/gen_new_tokens_total",
-                ]
-                max_keys = ["rollout/gen_new_tokens_p99", "time/rollout_generate_s"]
-
-                for key in sum_keys + max_keys:
-                    reduced.setdefault(key, 0.0)
-
-                _all_reduce(sum_keys, dist.ReduceOp.SUM)
+                _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
                 _all_reduce(max_keys, dist.ReduceOp.MAX)
+
+                scale = float(world_size)
+                if scale > 0.0:
+                    for key in mean_keys:
+                        reduced[key] = float(reduced.get(key, 0.0) / scale)
             except Exception as exc:
                 if int(rank) == 0:
                     logger.warning(
@@ -4939,10 +5278,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         exc,
                     )
 
-        sample_total = float(reduced.get("train/samples_total", 0.0))
+        sample_total = float(reduced.get(sample_total_key, 0.0))
         trunc_num = float(reduced.get(trunc_num_key, 0.0))
+        trunc_den = float(reduced.get(trunc_den_key, sample_total))
         reduced["rollout/parse_truncated_rate"] = (
-            float(trunc_num / sample_total) if sample_total > 0.0 else 0.0
+            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
         )
 
         new_tok_total = float(reduced.get("rollout/gen_new_tokens_total", 0.0))
@@ -4957,8 +5297,123 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 float(new_tok_total / rollout_gen_s) if rollout_gen_s > 0.0 else 0.0
             )
 
-        reduced.pop(trunc_num_key, None)
-        reduced.pop(trunc_den_key, None)
+        pred_total = float(reduced.get("rollout/valid_pred_objects", 0.0))
+        gt_total = float(reduced.get("rollout/gt_objects", 0.0))
+        matched_total = float(reduced.get("rollout/matched_for_supervision", 0.0))
+        precision = (matched_total / pred_total) if pred_total > 0.0 else 0.0
+        recall = (matched_total / gt_total) if gt_total > 0.0 else 0.0
+        f1 = (
+            (2.0 * precision * recall / (precision + recall))
+            if (precision + recall) > 0.0
+            else 0.0
+        )
+        reduced["rollout/precision"] = float(precision)
+        reduced["rollout/recall"] = float(recall)
+        reduced["rollout/f1"] = float(f1)
+
+        if "rollout/excluded_rate" in reduced:
+            excluded_total = float(
+                reduced.get("rollout/excluded_from_supervision", 0.0)
+            )
+            denom = float(matched_total + excluded_total)
+            reduced["rollout/excluded_rate"] = (
+                float(excluded_total / denom) if denom > 0.0 else 0.0
+            )
+
+        if "rollout/prefix_coord_targets_per_matched" in reduced:
+            prefix_total = float(reduced.get("rollout/prefix_coord_targets_total", 0.0))
+            reduced["rollout/prefix_coord_targets_per_matched"] = (
+                float(prefix_total / matched_total) if matched_total > 0.0 else 0.0
+            )
+
+        if "rollout/gating_rejection_rate" in reduced:
+            top_k = int(self._cfg("candidate_top_k", 10))
+            denom = float(pred_total * float(max(1, top_k)))
+            reduced["rollout/gating_rejection_rate"] = (
+                float(reduced.get("rollout/gating_rejections", 0.0) / denom)
+                if denom > 0.0
+                else 0.0
+            )
+
+        if sample_total > 0.0:
+            for key_total, key_out in (
+                ("rollout/gt_objects", "rollout/gt_per_sample"),
+                ("rollout/valid_pred_objects", "rollout/pred_per_sample"),
+                ("rollout/fp", "rollout/fp_per_sample"),
+                ("rollout/fn", "rollout/fn_per_sample"),
+            ):
+                if key_out in reduced or key_total in reduced:
+                    reduced[key_out] = float(reduced.get(key_total, 0.0) / sample_total)
+
+        if (
+            "rollout/parse_obj_valid_frac" in reduced
+            or "rollout/parse_obj_drop_frac" in reduced
+            or "rollout/parse_obj_total" in reduced
+        ):
+            dropped_invalid_total = float(
+                reduced.get("rollout/parse_dropped_invalid", 0.0)
+            )
+            dropped_amb_total = float(
+                reduced.get("rollout/parse_dropped_ambiguous", 0.0)
+            )
+            obj_total = pred_total + dropped_invalid_total + dropped_amb_total
+            reduced["rollout/parse_obj_total"] = float(obj_total)
+            reduced["rollout/parse_obj_valid_frac"] = (
+                float(pred_total / obj_total) if obj_total > 0.0 else 0.0
+            )
+            reduced["rollout/parse_obj_drop_frac"] = (
+                float((dropped_invalid_total + dropped_amb_total) / obj_total)
+                if obj_total > 0.0
+                else 0.0
+            )
+
+        if "rollout/matched_maskiou_mean" in reduced:
+            iou_sum = float(reduced.get("rollout/_matched_maskiou_sum", 0.0))
+            iou_cnt = float(reduced.get("rollout/matched_maskiou_count", 0.0))
+            reduced["rollout/matched_maskiou_mean"] = (
+                float(iou_sum / iou_cnt) if iou_cnt > 0.0 else 0.0
+            )
+
+        if "rollout/sample_valid_pred_rate" in reduced:
+            valid_pred_num = float(reduced.get("rollout/_sample_valid_pred_num", 0.0))
+            reduced["rollout/sample_valid_pred_rate"] = (
+                float(valid_pred_num / sample_total) if sample_total > 0.0 else 0.0
+            )
+        if "rollout/sample_any_match_rate" in reduced:
+            any_match_num = float(reduced.get("rollout/_sample_any_match_num", 0.0))
+            reduced["rollout/sample_any_match_rate"] = (
+                float(any_match_num / sample_total) if sample_total > 0.0 else 0.0
+            )
+
+        if "rollout/desc_exact_acc_on_matched" in reduced:
+            pairs_total = float(reduced.get("rollout/desc_pairs_total", 0.0))
+            exact_ok = float(reduced.get("rollout/_desc_exact_ok", 0.0))
+            reduced["rollout/desc_exact_acc_on_matched"] = (
+                float(exact_ok / pairs_total) if pairs_total > 0.0 else 1.0
+            )
+        if "rollout/desc_sem_acc_on_matched" in reduced:
+            pairs_total = float(reduced.get("rollout/desc_pairs_total", 0.0))
+            sem_ok = float(reduced.get("rollout/_desc_sem_ok", 0.0))
+            reduced["rollout/desc_sem_acc_on_matched"] = (
+                float(sem_ok / pairs_total) if pairs_total > 0.0 else 1.0
+            )
+        if "rollout/desc_sem_sim_mean" in reduced:
+            sim_sum = float(reduced.get("rollout/desc_sem_sim_sum", 0.0))
+            sim_cnt = float(reduced.get("rollout/desc_sem_sim_count", 0.0))
+            reduced["rollout/desc_sem_sim_mean"] = (
+                float(sim_sum / sim_cnt) if sim_cnt > 0.0 else 0.0
+            )
+
+        for key in (
+            trunc_num_key,
+            trunc_den_key,
+            "rollout/_matched_maskiou_sum",
+            "rollout/_sample_valid_pred_num",
+            "rollout/_sample_any_match_num",
+            "rollout/_desc_exact_ok",
+            "rollout/_desc_sem_ok",
+        ):
+            reduced.pop(key, None)
         return reduced
 
     def log(self, logs: Dict[str, float]) -> None:
@@ -4981,10 +5436,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._rm_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    # Do not run DDP collectives in the log hook. Depending on trainer/runtime,
-                    # this hook may execute only on rank0 and can deadlock if collectives are used here.
                     payload = self._build_train_rollout_log_payload(pending)
-                    sample_step = int(round(float(payload.get("train/samples_total", 0.0))))
+                    payload = self._reduce_train_rollout_log_payload_global(payload)
+                    sample_step = int(
+                        round(float(payload.get("train/samples_total", 0.0)))
+                    )
                     try:
                         self._rm_train_samples_seen = (
                             int(getattr(self, "_rm_train_samples_seen", 0) or 0)
@@ -5151,8 +5607,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/gating_rejection_rate": float(gate_rejection_rate),
             "rollout/valid_pred_objects": float(pred_total),
             "rollout/gt_objects": float(gt_total),
-            # Backward-compat alias: this is recall (GT coverage).
-            "rollout/match_rate": float(recall),
             "rollout/precision": float(precision),
             "rollout/recall": float(recall),
             "rollout/f1": float(f1),
@@ -5189,11 +5643,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/append_len_p90": float(_p(append_lens, 90)),
             "rollout/encoded_len_mean": float(_mean(encoded_lens)),
             "rollout/encoded_len_p90": float(_p(encoded_lens, 90)),
-            "rollout/decode_greedy": float(
-                sum(1 for m in meta if m.get("decode_mode") == "greedy")
+            "rollout/decode_non_beam_count": float(
+                sum(1 for m in meta if str(m.get("decode_mode", "")).lower() != "beam")
             ),
-            "rollout/decode_beam": float(
-                sum(1 for m in meta if m.get("decode_mode") == "beam")
+            "rollout/decode_beam_count": float(
+                sum(1 for m in meta if str(m.get("decode_mode", "")).lower() == "beam")
             ),
             "rollout/matched_for_supervision": float(matched_total),
             "rollout/excluded_from_supervision": float(excluded_total),
@@ -5306,7 +5760,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 pending.packing_segments_sum / float(pending.packing_count)
             )
             payload["packing/post_rollout_buffer"] = float(pending.packing_buffer_last)
-
 
         # Generation-length stats are only meaningful when we actually ran a rollout this step.
         if pending.time_rollout_generate_s > 0:
@@ -5887,80 +6340,67 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             else 0.0
         )
 
+        def _k(suffix: str) -> str:
+            return f"{metric_key_prefix}_{suffix}"
+
         metrics: Dict[str, float] = {}
-        metrics[f"{metric_key_prefix}_runtime"] = float(runtime)
+        metrics[_k("time/runtime_s")] = float(runtime)
         if runtime > 0:
-            metrics[f"{metric_key_prefix}_samples_per_second"] = float(
-                n_samples / runtime
-            )
-            metrics[f"{metric_key_prefix}_steps_per_second"] = float(n_steps / runtime)
+            metrics[_k("time/samples_per_s")] = float(n_samples / runtime)
+            metrics[_k("time/steps_per_s")] = float(n_steps / runtime)
 
-        metrics[f"{metric_key_prefix}_rollout_precision"] = float(precision)
-        metrics[f"{metric_key_prefix}_rollout_recall"] = float(recall)
-        metrics[f"{metric_key_prefix}_rollout_f1"] = float(f1)
+        metrics[_k("rollout/precision")] = float(precision)
+        metrics[_k("rollout/recall")] = float(recall)
+        metrics[_k("rollout/f1")] = float(f1)
 
-        metrics[f"{metric_key_prefix}_rollout_pred_objects"] = float(pred_total)
-        metrics[f"{metric_key_prefix}_rollout_gt_objects"] = float(gt_total)
-        metrics[f"{metric_key_prefix}_rollout_matched"] = float(matched_total)
-        metrics[f"{metric_key_prefix}_rollout_fp"] = float(fp_total)
-        metrics[f"{metric_key_prefix}_rollout_fn"] = float(fn_total)
-        metrics[f"{metric_key_prefix}_rollout_gating_rejections"] = float(
-            gating_rejections_total
-        )
+        metrics[_k("rollout/pred_objects")] = float(pred_total)
+        metrics[_k("rollout/gt_objects")] = float(gt_total)
+        metrics[_k("rollout/matched")] = float(matched_total)
+        metrics[_k("rollout/fp")] = float(fp_total)
+        metrics[_k("rollout/fn")] = float(fn_total)
+        metrics[_k("rollout/gating_rejections")] = float(gating_rejections_total)
 
-        metrics[f"{metric_key_prefix}_rollout_parse_dropped_invalid"] = float(
-            dropped_invalid_total
-        )
-        metrics[f"{metric_key_prefix}_rollout_parse_dropped_ambiguous"] = float(
-            dropped_ambiguous_total
-        )
-        metrics[f"{metric_key_prefix}_rollout_parse_truncated_rate"] = (
+        metrics[_k("rollout/parse_dropped_invalid")] = float(dropped_invalid_total)
+        metrics[_k("rollout/parse_dropped_ambiguous")] = float(dropped_ambiguous_total)
+        metrics[_k("rollout/parse_truncated_rate")] = (
             float(trunc_samples / n_samples) if n_samples > 0 else 0.0
         )
 
-        metrics[f"{metric_key_prefix}_rollout_sample_valid_pred_rate"] = (
+        metrics[_k("rollout/sample_valid_pred_rate")] = (
             float(n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
         )
-        metrics[f"{metric_key_prefix}_rollout_sample_any_match_rate"] = (
+        metrics[_k("rollout/sample_any_match_rate")] = (
             float(n_samples_any_match / n_samples) if n_samples > 0 else 0.0
         )
 
-        metrics[f"{metric_key_prefix}_rollout_matched_maskiou_mean"] = (
+        metrics[_k("rollout/matched_maskiou_mean")] = (
             float(matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
         )
 
         # Desc monitor outputs (matched pairs only).
         if desc_enabled:
-            metrics[f"{metric_key_prefix}_rollout_desc_pairs_total"] = float(
-                desc_pairs_total
-            )
+            metrics[_k("rollout/desc_pairs_total")] = float(desc_pairs_total)
             exact_acc = (
                 float(desc_exact_ok_total / desc_pairs_total)
                 if desc_pairs_total > 0
                 else 1.0
             )
-            metrics[f"{metric_key_prefix}_rollout_desc_exact_acc_on_matched"] = float(
-                exact_acc
-            )
+            metrics[_k("rollout/desc_exact_acc_on_matched")] = float(exact_acc)
 
             sem_enabled = bool(sem_loaded_sum >= float(world_size) - 0.5)
-            metrics[f"{metric_key_prefix}_rollout_desc_sem_enabled"] = float(
-                1.0 if sem_enabled else 0.0
-            )
+            metrics[_k("rollout/desc_sem_enabled")] = float(1.0 if sem_enabled else 0.0)
             if sem_enabled:
                 sem_acc = (
                     float(desc_sem_ok_total / desc_pairs_total)
                     if desc_pairs_total > 0
                     else 1.0
                 )
-                metrics[f"{metric_key_prefix}_rollout_desc_sem_acc_on_matched"] = float(
-                    sem_acc
-                )
+                metrics[_k("rollout/desc_sem_acc_on_matched")] = float(sem_acc)
                 if desc_sem_sim_count_total > 0:
-                    metrics[f"{metric_key_prefix}_rollout_desc_sem_sim_mean"] = float(
+                    metrics[_k("rollout/desc_sem_sim_mean")] = float(
                         desc_sem_sim_sum_total / desc_sem_sim_count_total
                     )
-                    metrics[f"{metric_key_prefix}_rollout_desc_sem_sim_count"] = float(
+                    metrics[_k("rollout/desc_sem_sim_count")] = float(
                         desc_sem_sim_count_total
                     )
 
@@ -6002,12 +6442,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         self._validate_rollout_matching_cfg()
 
-        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-
         prepared = self._prepare_batch_inputs(inputs)
 
         return super().training_step(model, prepared, *args, **kwargs)
-
 
     # ------------------------ target construction ------------------------ #
     @staticmethod

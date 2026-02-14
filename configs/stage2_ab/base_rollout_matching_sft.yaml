@@ -19,6 +19,9 @@ training:
   packing_drop_last: true
   # eval_packing is ignored for rollout-matching (trainer handles its own collation).
   eval_packing: false
+  # Rollout evaluator emits `eval_rollout/*` metrics (not eval_token_acc).
+  metric_for_best_model: rollout/f1
+  greater_is_better: true
 
 custom:
   # Opt-in trainer variant (stage_2).

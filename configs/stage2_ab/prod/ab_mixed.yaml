@@ -6,8 +6,10 @@ training:
   output_dir: output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   logging_dir: tb/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/ab_mixed
   run_name: prod_ab_mixed_bbox_max60_ckpt1516_ep2
+  effective_batch_size: 64
   eval_strategy: steps
   do_eval: true
+  eval_steps: 100
 
 stage2_ab:
   schedule:
@@ -16,8 +18,11 @@ stage2_ab:
   n_softctx_iter: 2
 
 custom:
+  val_sample_limit: 1000
   extra:
     rollout_matching:
+      max_new_tokens: 2048
+      decode_batch_size: 4
       rollout_backend: vllm
       vllm:
         mode: server

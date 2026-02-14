@@ -965,9 +965,12 @@ class Stage2ABTrainingTrainer(
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._stage2_pending_train_logs.pop(step, None)
                 if pending is not None:
-                    # Do not run DDP collectives in the log hook. Depending on trainer/runtime,
-                    # this hook may execute only on rank0 and can deadlock if collectives are used here.
-                    logs.update(pending.finalize(drop_internal=True))
+                    reduced = self._reduce_stage2_pending_metrics_global(
+                        pending.finalize(drop_internal=False)
+                    )
+                    reduced.pop("rollout/_parse_truncated_num", None)
+                    reduced.pop("rollout/_parse_truncated_den", None)
+                    logs.update(reduced)
         except Exception:
             pass
         return super().log(logs)
@@ -1413,7 +1416,7 @@ class Stage2ABTrainingTrainer(
         coord_id_to_bin = self._coord_id_map()
 
         gate_thr = float(self._cfg("maskiou_gate", 0.3))
-        top_k = int(self._cfg("candidate_top_k", 10))
+        match_top_k = int(self._cfg("candidate_top_k", 10))
         mask_res = int(self._cfg("maskiou_resolution", 256))
 
         fp_cost = float(self._cfg("fp_cost", 1.0))
@@ -1486,7 +1489,7 @@ class Stage2ABTrainingTrainer(
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         max_new_tokens = int(self._cfg("max_new_tokens", 512))
         num_beams = int(self._cfg("num_beams", 1))
-        temperature, top_p, top_k = self._decoding_params()
+        temperature, top_p, decode_top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         do_sample = bool(float(temperature) > 0.0)
 
@@ -1766,7 +1769,7 @@ class Stage2ABTrainingTrainer(
             match = hungarian_match_maskiou(
                 preds=preds,
                 gts=gts,
-                top_k=top_k,
+                top_k=match_top_k,
                 gate_threshold=gate_thr,
                 mask_resolution=mask_res,
                 fp_cost=fp_cost,
@@ -2307,7 +2310,7 @@ class Stage2ABTrainingTrainer(
             "rollout/hf_seeded_global": float(hf_seeded_global),
             "rollout/temperature": float(temperature),
             "rollout/top_p": float(top_p),
-            "rollout/top_k": float(top_k),
+            "rollout/top_k": float(decode_top_k),
             "rollout/do_sample": float(1.0 if do_sample else 0.0),
             "rollout/max_new_tokens": float(max_new_tokens),
             "rollout/num_beams": float(num_beams),

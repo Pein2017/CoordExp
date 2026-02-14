@@ -39,7 +39,7 @@ under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
 performance during training.
 
 For evaluation, Stage_2 uses a production-style evaluator (rollout -> parse ->
-Hungarian match) and reports metrics under `eval_rollout_*` keys. This evaluator
+Hungarian match) and reports metrics under `eval_rollout/*` keys. This evaluator
 intentionally skips teacher-forced encoding/loss computation, so `eval_loss` is
 not reported for this trainer variant.
 
@@ -48,7 +48,7 @@ Important semantics:
   logged once per optimizer step (same step index as `train/loss`).
 - **Rank-local (training logs):** `rollout/*` keys logged during training are
   rank-local (not all-reduced), so they can vary across GPUs.
-- **All-reduced (eval):** `eval_rollout_*` keys are aggregated over the full
+- **All-reduced (eval):** `eval_rollout/*` keys are aggregated over the full
   evaluation dataset and summed across ranks.
 
 ### Rollout timing / throughput
@@ -75,11 +75,11 @@ Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
 - `rollout/do_sample`, `rollout/temperature`, `rollout/top_p`, `rollout/top_k`
   - **What:** effective sampling knobs used for rollout generation.
   - **Note:** vLLM backends currently enforce `decode_mode=greedy` as a **non-beam sentinel** (no beam support in this path),
-    so `rollout/decode_greedy == N` does **not** imply deterministic rollouts. Use `rollout/do_sample` and `rollout/temperature`
+    so `rollout/decode_non_beam_count == N` does **not** imply deterministic rollouts. Use `rollout/do_sample` and `rollout/temperature`
     to disambiguate deterministic vs sampling.
 
-- `rollout/decode_greedy`, `rollout/decode_beam`
-  - **What:** counts of samples rolled out with `decode_mode == "greedy"` (non-beam) vs `decode_mode == "beam"` (beam).
+- `rollout/decode_non_beam_count`, `rollout/decode_beam_count`
+  - **What:** counts of samples rolled out with `decode_mode != "beam"` (non-beam) vs `decode_mode == "beam"` (beam).
   - **Why:** helps detect accidental config drift across runs (e.g., beam search enabled unintentionally).
 
 ### Parse health
@@ -110,7 +110,6 @@ Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
 
 - `rollout/precision`, `rollout/recall`, `rollout/f1`
   - **What:** object-level precision/recall/F1 derived from matched-for-supervision.
-  - **Note:** `rollout/recall` is the same as `rollout/match_rate` (kept for compatibility).
 
 - `rollout/matched_maskiou_mean`, `rollout/matched_maskiou_count`
   - **What:** mean maskIoU over matched pairs (norm1000-space, virtual canvas).
@@ -206,23 +205,23 @@ When `custom.trainer_variant: rollout_matching_sft` runs evaluation (`training.e
 it reports production-style metrics derived from rollout -> parse -> Hungarian matching.
 
 Returned keys (prefixed with `eval_`):
-- `eval_rollout_precision`, `eval_rollout_recall`, `eval_rollout_f1`
-- `eval_rollout_pred_objects`, `eval_rollout_gt_objects`, `eval_rollout_matched`
-- `eval_rollout_fp`, `eval_rollout_fn`
-- `eval_rollout_parse_truncated_rate`
-- `eval_rollout_parse_dropped_invalid`, `eval_rollout_parse_dropped_ambiguous`
-- `eval_rollout_sample_valid_pred_rate`, `eval_rollout_sample_any_match_rate`
-- `eval_rollout_matched_maskiou_mean`
+- `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
+- `eval_rollout/pred_objects`, `eval_rollout/gt_objects`, `eval_rollout/matched`
+- `eval_rollout/fp`, `eval_rollout/fn`
+- `eval_rollout/parse_truncated_rate`
+- `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
+- `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
+- `eval_rollout/matched_maskiou_mean`
 
 Optional desc monitor keys (when enabled):
-- `eval_rollout_desc_pairs_total`
-- `eval_rollout_desc_exact_acc_on_matched`
-- `eval_rollout_desc_sem_enabled`
-- `eval_rollout_desc_sem_acc_on_matched`
-- `eval_rollout_desc_sem_sim_mean`, `eval_rollout_desc_sem_sim_count`
+- `eval_rollout/desc_pairs_total`
+- `eval_rollout/desc_exact_acc_on_matched`
+- `eval_rollout/desc_sem_enabled`
+- `eval_rollout/desc_sem_acc_on_matched`
+- `eval_rollout/desc_sem_sim_mean`, `eval_rollout/desc_sem_sim_count`
 
 Config tip:
-- For Stage_2 runs, prefer `training.metric_for_best_model: eval_rollout_f1` (and
+- For Stage_2 runs, prefer `training.metric_for_best_model: rollout/f1` (and
   `training.greater_is_better: true`) to select best checkpoints by on-policy rollout quality.
 
 ## Loss Composition (Stage-1 / Scheme A)

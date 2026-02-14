@@ -34,7 +34,7 @@ Primary references:
 Stable key families (non-exhaustive; see `docs/training/METRICS_LOSSES.md` for the
 canonical list):
 - `rollout/*`, `packing/*`, `time/*`
-- `eval_rollout_*`
+- `eval_rollout/*`
 - `stage2_ab/async/*` (async actor/learner telemetry)
 - `stage2_ab/channel_b/*` (Channel-B construction diagnostics)
 
