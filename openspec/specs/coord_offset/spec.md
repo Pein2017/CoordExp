@@ -1,7 +1,8 @@
 # coord_offset Specification
 
 ## Purpose
-TBD - created by archiving change add-coord-offset-tuning. Update Purpose after archive.
+Define the coordinate-offset adapter contract used to tune coordinate tokens without changing the base tokenizer/vocab or upstream model internals.
+
 ## Requirements
 ### Requirement: Coord-offset tuning for coord tokens
 The system SHALL provide an opt-in coord-offset adapter that adds trainable offsets for the coord token IDs to both the token embedding and lm_head, while leaving base weights frozen and storing the offsets with the adapter checkpoint (PEFT).
@@ -38,4 +39,3 @@ The system SHALL preserve existing dlora behavior when coord_offset.enabled is f
 - GIVEN coord_offset.enabled is false (or omitted)
 - WHEN training initializes
 - THEN no coord-offset parameters are created, optimizer grouping matches current dlora multimodal behavior, and model outputs match the previous pipeline.
-

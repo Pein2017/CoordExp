@@ -1,7 +1,8 @@
 # vl-token-type-metrics Specification
 
 ## Purpose
-TBD - created by archiving change add-token-type-metrics-packed. Update Purpose after archive.
+Define token-type metrics for packed multimodal sequences, including token-type definitions and logging requirements.
+
 ## Requirements
 ### Requirement: Aggregate token-type telemetry
 The system SHALL log aggregate (not per-dataset) metrics: `loss`, `token_acc`, and per-token-type (`desc`, `coord`, `format`) accuracy. Per-dataset buckets MUST NOT be emitted. Metrics computation MUST be NaN-safe: when a sample or batch has zero supervised tokens, the metric is skipped or logged with zero count so no NaN appears in logs.

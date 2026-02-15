@@ -1,7 +1,8 @@
 # inference-engine Specification
 
 ## Purpose
-TBD - created by archiving change add-centralized-inference-engine. Update Purpose after archive.
+Define the unified inference entrypoint contract (`scripts/run_infer.py`) including the YAML schema, artifact outputs, and backend selection behavior.
+
 ## Requirements
 ### Requirement: Unified inference CLI
 The system SHALL provide a single inference entrypoint that is primarily configured via YAML under `configs/` (with a minimal CLI wrapper that accepts `--config`).
@@ -175,4 +176,3 @@ Contract requirements (backend-agnostic):
 - **GIVEN** the same input dataset and resolved generation configuration
 - **WHEN** the user switches backend from `hf` to `vllm` in YAML
 - **THEN** the pipeline produces the same prediction JSONL schema and artifact layout, enabling evaluation/visualization without schema translation.
-

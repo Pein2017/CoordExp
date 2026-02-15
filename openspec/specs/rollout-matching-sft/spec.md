@@ -1,7 +1,8 @@
 # rollout-matching-sft Specification
 
 ## Purpose
-TBD - created by archiving change 2026-01-19-update-stage2-post-rollout-packing-binpacking. Update Purpose after archive.
+Define the rollout-matching SFT trainer contract, including rollout generation backends, vLLM server/weight-sync behavior, decode microbatching, and matching/packing invariants.
+
 ## Requirements
 ### Requirement: Stage-2 post-rollout packing selection uses deterministic ms-swift-like binpacking
 When rollout-matching training is enabled (`custom.trainer_variant: rollout_matching_sft`) and post-rollout packing is enabled (`training.packing: true`), the trainer SHALL select which buffered segments are included in the packed teacher-forced forward pass using a deterministic, ms-swift-like constant-volume binpacking heuristic.
@@ -109,16 +110,20 @@ When packing is enabled for rollout-matching training:
 ### Requirement: Rollout generation supports vLLM backends (colocate default, server optional)
 When rollout-matching training is enabled (`custom.trainer_variant: rollout_matching_sft`), the system SHALL support generating rollouts using a vLLM backend, while keeping teacher-forced forward/backprop on the normal training model.
 
-Backend selection MUST be YAML-driven under `custom.extra.rollout_matching`:
+Rollout-matching settings are a first-class top-level namespace:
+- Rollout-matching settings MUST be authored under top-level `rollout_matching.*`.
+- Legacy placement under `custom.extra.rollout_matching.*` is unsupported and MUST fail fast with actionable guidance to migrate to `rollout_matching.*`.
+
+Backend selection MUST be YAML-driven under `rollout_matching`:
 - `rollout_backend` MUST accept `"vllm"` or `"hf"`.
 - `rollout_backend` MUST default to `"vllm"`.
 
 When `rollout_backend: "vllm"`:
-- The trainer MUST configure vLLM from `custom.extra.rollout_matching.vllm` (mapping).
-- The vLLM integration MUST support two modes under `custom.extra.rollout_matching.vllm.mode`:
+- The trainer MUST configure vLLM from `rollout_matching.vllm` (mapping).
+- The vLLM integration MUST support two modes under `rollout_matching.vllm.mode`:
   - `colocate` (default)
   - `server` (optional)
-- If `custom.extra.rollout_matching.vllm.mode` is unset, it MUST default to `colocate` to preserve current behavior.
+- If `rollout_matching.vllm.mode` is unset, it MUST default to `colocate` to preserve current behavior.
 
 Common vLLM contract (both modes):
 - The vLLM backend MUST return:
@@ -127,14 +132,14 @@ Common vLLM contract (both modes):
   so stage_2 can enforce strict prompt-prefix token-id alignment.
 - Invalid vLLM configuration MUST fail fast with actionable guidance.
 
-Colocate mode requirements (`custom.extra.rollout_matching.vllm.mode: colocate`):
+Colocate mode requirements (`rollout_matching.vllm.mode: colocate`):
 - The trainer MUST use a colocated vLLM engine for rollout generation.
   - Implementation detail: this MAY be in-process or an internal colocated worker, but it MUST consume VRAM on the same GPU(s) as training.
 - Default vLLM settings MUST be conservative to preserve training headroom on 4-GPU runs:
   - `gpu_memory_utilization: 0.45`
   - `tensor_parallel_size: 4`
 
-Server mode requirements (`custom.extra.rollout_matching.vllm.mode: server`):
+Server mode requirements (`rollout_matching.vllm.mode: server`):
 - The trainer MUST connect to an external vLLM rollout server (pre-launched) instead of instantiating a local vLLM engine.
 - The trainer MUST support in-memory weight synchronization to the server (no disk checkpoint reload) so that rollouts can be generated with the latest policy parameters.
 - Server mode MUST support multi-process learners (i.e., `torch.distributed` initialized with `world_size >= 1`).
@@ -142,25 +147,18 @@ Server mode requirements (`custom.extra.rollout_matching.vllm.mode: server`):
     - rank0-only communicator init + weight push,
     - strict ordering: barrier -> rank0 sync -> barrier,
     - all ranks MUST take the same control-flow (including early-return decisions) to avoid deadlocks.
-  - Under multi-process learners (`world_size > 1`), `custom.extra.rollout_matching.vllm.sync.mode` MUST resolve to `full`.
+  - Under multi-process learners (`world_size > 1`), `rollout_matching.vllm.sync.mode` MUST resolve to `full`.
   - If these requirements cannot be satisfied (e.g., communicator init fails, misconfigured sync mode), the trainer MUST fail fast with actionable guidance.
 
-Server connectivity MUST be YAML-driven under `custom.extra.rollout_matching.vllm.server` (mapping).
-The config MUST be expressed in exactly one of these forms:
+Server connectivity MUST be YAML-driven under `rollout_matching.vllm.server` (mapping).
 
-1) Preferred explicit list form:
+Server connectivity config MUST be expressed as an explicit `servers` list:
 - `servers` MUST be a non-empty list of mappings.
 - Each entry MUST contain:
   - `base_url` (string)
   - `group_port` (int)
 
-2) Legacy paired-list form:
-- `base_url` MUST be a string or list of strings.
-- `group_port` MUST be an int or list of ints.
-- If `base_url` is a list:
-  - when `group_port` is a list, it MUST be a list of the same length and pairing MUST be by index
-  - when `group_port` is an int, per-server group ports MUST be derived deterministically as `group_port + i` for server index `i`
-- If `base_url` is a string, `group_port` MUST be an int.
+Legacy paired-list server form (`rollout_matching.vllm.server.base_url` + `rollout_matching.vllm.server.group_port`) is unsupported and MUST fail fast with actionable guidance to migrate to `rollout_matching.vllm.server.servers[]`.
 
 Common server fields:
 - `timeout_s` MUST accept a float or int and MUST default to `240.0`.
@@ -185,14 +183,14 @@ Multi-server request distribution (normative):
   - servers with empty chunks MUST receive zero requests
 - The trainer MUST reassemble outputs in a way that preserves the original request order.
 
-Weight sync mode selection MUST be YAML-driven under `custom.extra.rollout_matching.vllm.sync`:
+Weight sync mode selection MUST be YAML-driven under `rollout_matching.vllm.sync`:
 - `sync.mode` MUST accept `full`, `adapter`, or `auto`.
 - If unset, `sync.mode` MUST default to `full` (robust for multimodal + DoRA).
 - `sync.fallback_to_full` MUST accept a boolean and MUST default to `true`.
 
 Weight sync behavior (normative):
 - `sync.mode: full` MUST sync full merged weights (GRPO-style) into vLLM.
-- `sync.mode: adapter` MUST sync adapters only, and MUST require `custom.extra.rollout_matching.vllm.enable_lora: true`.
+- `sync.mode: adapter` MUST sync adapters only, and MUST require `rollout_matching.vllm.enable_lora: true`.
 - `sync.mode: auto` MUST behave as:
   - `adapter` when `enable_lora: true`
   - otherwise `full`
@@ -205,21 +203,21 @@ Determinism (server mode):
 
 #### Scenario: Default behavior preserved (colocate)
 - **GIVEN** rollout-matching training is enabled
-- **AND** `custom.extra.rollout_matching.rollout_backend: vllm`
-- **AND** `custom.extra.rollout_matching.vllm.mode` is unset
+- **AND** `rollout_matching.rollout_backend: vllm`
+- **AND** `rollout_matching.vllm.mode` is unset
 - **WHEN** one training step executes
 - **THEN** the trainer uses vLLM in colocate mode
 - **AND** the teacher-forced forward/backprop uses the training model
 - **AND** stage_2 prompt-prefix token-id alignment checks apply unchanged.
 
 #### Scenario: Multi-server pairing is strict and deterministic
-- **GIVEN** `custom.extra.rollout_matching.vllm.mode: server`
-- **AND** server connectivity is configured using the legacy paired-list form
-- **WHEN** `base_url` is a list and `group_port` is a list with a different length
-- **THEN** the trainer MUST fail fast with actionable guidance.
+- **GIVEN** `rollout_matching.vllm.mode: server`
+- **AND** server connectivity is configured using the legacy paired-list form (`rollout_matching.vllm.server.base_url` / `rollout_matching.vllm.server.group_port`)
+- **WHEN** configuration is parsed/materialized
+- **THEN** it fails fast with guidance to migrate to `rollout_matching.vllm.server.servers[]`.
 
 #### Scenario: Multi-server request distribution is deterministic
-- **GIVEN** `custom.extra.rollout_matching.vllm.mode: server`
+- **GIVEN** `rollout_matching.vllm.mode: server`
 - **AND** multiple servers are configured in a fixed order
 - **AND** a fixed list of rollout requests in a fixed order
 - **WHEN** the trainer distributes requests to servers twice
@@ -227,16 +225,16 @@ Determinism (server mode):
 - **AND** the reassembled outputs preserve the original request order.
 
 #### Scenario: Adapter sync can fall back to full sync
-- **GIVEN** `custom.extra.rollout_matching.vllm.sync.mode: adapter`
-- **AND** `custom.extra.rollout_matching.vllm.sync.fallback_to_full: true`
+- **GIVEN** `rollout_matching.vllm.sync.mode: adapter`
+- **AND** `rollout_matching.vllm.sync.fallback_to_full: true`
 - **WHEN** adapter sync fails due to a runtime incompatibility
 - **THEN** the trainer logs a warning
 - **AND** switches to full merged-weight sync for subsequent E-steps.
 
 #### Scenario: Server mode produces token ids suitable for strict alignment
 - **GIVEN** rollout-matching training is enabled
-- **AND** `custom.extra.rollout_matching.rollout_backend: vllm`
-- **AND** `custom.extra.rollout_matching.vllm.mode: server`
+- **AND** `rollout_matching.rollout_backend: vllm`
+- **AND** `rollout_matching.vllm.mode: server`
 - **WHEN** one fresh-rollout step (E-step) executes
 - **THEN** the trainer obtains per-sample `response_token_ids` and `prompt_token_ids` from the server
 - **AND** the existing prompt-prefix sanity check is applied using those token ids
@@ -244,10 +242,10 @@ Determinism (server mode):
 
 #### Scenario: Invalid server configuration fails fast
 - **GIVEN** rollout-matching training is enabled
-- **AND** `custom.extra.rollout_matching.vllm.mode: server`
+- **AND** `rollout_matching.vllm.mode: server`
 - **WHEN** the server base URL or communicator port is missing/unreachable
 - **THEN** the trainer fails fast with an actionable error message
-- **AND** the user can explicitly switch back to `custom.extra.rollout_matching.vllm.mode: colocate` or `custom.extra.rollout_matching.rollout_backend: hf`.
+- **AND** the user can explicitly switch back to `rollout_matching.vllm.mode: colocate` or `rollout_matching.rollout_backend: hf`.
 
 ### Requirement: Stage_2 supports a 3v1 rollout-server + learner workflow (actors vs learner)
 The stage_2 rollout-matching trainer (`custom.trainer_variant: rollout_matching_sft`) MUST support a practical single-node workflow where rollout generation runs on dedicated GPUs via a vLLM server, and teacher-forced SFT training runs on a separate GPU.
@@ -275,14 +273,14 @@ Packed target delivery requirements:
 
 #### Scenario: 3 rollout GPUs + 1 learner GPU is operational
 - **GIVEN** a vLLM rollout server is launched on GPUs 0-2
-- **AND** the stage_2 learner is launched on GPU 3 with `custom.extra.rollout_matching.vllm.mode: server`
+- **AND** the stage_2 learner is launched on GPU 3 with `rollout_matching.vllm.mode: server`
 - **WHEN** training runs for one optimizer step
 - **THEN** rollouts are generated on the rollout GPUs
 - **AND** teacher-forced forward/backward runs only on the learner GPU
 - **AND** weights are synchronized in-memory without requiring checkpoint reload from disk.
 
 ### Requirement: Server-mode rollouts are paper-reproducible via logged metadata
-When `custom.extra.rollout_matching.vllm.mode: server` is enabled, the trainer MUST log sufficient metadata to reproduce and debug the run.
+When `rollout_matching.vllm.mode: server` is enabled, the trainer MUST log sufficient metadata to reproduce and debug the run.
 
 At minimum, the trainer MUST log:
 - the effective server list (base URLs and group ports)
@@ -297,44 +295,44 @@ At minimum, the trainer MUST log:
 ### Requirement: Rollout generation supports microbatched decoding within each rank
 When rollout-matching training is enabled, the trainer SHALL support generating rollouts for multiple samples in a single backend decode call (HF `generate()` or vLLM `/infer/`), controlled by a YAML knob:
 
-- `custom.extra.rollout_matching.decode_batch_size` (int)
+- `rollout_matching.decode_batch_size` (int)
 
 Semantics (normative):
 - `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
 - The trainer MUST enforce this bound for both HF and vLLM backends.
 
 Defaulting (normative):
-- If `custom.extra.rollout_matching.decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
+- If `rollout_matching.decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
 - Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_ab/**` uses `4`).
 
 #### Scenario: Microbatching increases decode parallelism without changing outputs format
 - **GIVEN** rollout-matching training is enabled
-- **AND** `custom.extra.rollout_matching.decode_batch_size: M` where `M > 1`
+- **AND** `rollout_matching.decode_batch_size: M` where `M > 1`
 - **WHEN** the trainer generates rollouts for a batch of `M` samples on one rank
 - **THEN** the trainer performs one batched generate call for those `M` samples
 - **AND** it returns per-sample `response_token_ids` suitable for strict token-aligned parsing.
 
 ### Requirement: Legacy rollout batch-size knobs fail fast
-The system MUST fail fast if a config provides any legacy rollout batch-size knob under `custom.extra.rollout_matching`, with actionable guidance to migrate to the unified decode batching knob `custom.extra.rollout_matching.decode_batch_size`.
+The system MUST fail fast if a config provides any legacy rollout batch-size knob under `rollout_matching`, with actionable guidance to migrate to the unified decode batching knob `rollout_matching.decode_batch_size`.
 
 Legacy knobs (normative):
-- `custom.extra.rollout_matching.rollout_generate_batch_size`
-- `custom.extra.rollout_matching.rollout_infer_batch_size`
+- `rollout_matching.rollout_generate_batch_size`
+- `rollout_matching.rollout_infer_batch_size`
 
 #### Scenario: rollout_generate_batch_size fails fast when present
 - **GIVEN** rollout-matching training is enabled
-- **AND** the config provides `custom.extra.rollout_matching.rollout_generate_batch_size`
+- **AND** the config provides `rollout_matching.rollout_generate_batch_size`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to remove it and use `custom.extra.rollout_matching.decode_batch_size`.
+- **THEN** config validation fails fast with guidance to remove it and use `rollout_matching.decode_batch_size`.
 
 #### Scenario: rollout_infer_batch_size fails fast when present
 - **GIVEN** rollout-matching training is enabled
-- **AND** the config provides `custom.extra.rollout_matching.rollout_infer_batch_size`
+- **AND** the config provides `rollout_matching.rollout_infer_batch_size`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to remove it and use `custom.extra.rollout_matching.decode_batch_size`.
+- **THEN** config validation fails fast with guidance to remove it and use `rollout_matching.decode_batch_size`.
 
 ### Requirement: Window-aware post-rollout packing scope knob is removed
-The system MUST fail fast if a config provides `custom.extra.rollout_matching.post_rollout_pack_scope` (any value), with actionable guidance to remove it.
+The system MUST fail fast if a config provides `rollout_matching.post_rollout_pack_scope` (any value), with actionable guidance to remove it.
 
 Normative behavior:
 - Post-rollout packing behavior MUST be the standardized micro-scope dynamic packing semantics.
@@ -342,12 +340,12 @@ Normative behavior:
 
 #### Scenario: post_rollout_pack_scope fails fast when present
 - **GIVEN** rollout-matching training is enabled
-- **AND** the config provides `custom.extra.rollout_matching.post_rollout_pack_scope`
+- **AND** the config provides `rollout_matching.post_rollout_pack_scope`
 - **WHEN** training starts
 - **THEN** config validation fails fast with guidance to remove `post_rollout_pack_scope`.
 
 ### Requirement: vLLM server mode derives per-rank request chunking from server world size
-When rollout-matching training uses vLLM server mode (`custom.extra.rollout_matching.rollout_backend=vllm` and `custom.extra.rollout_matching.vllm.mode=server`), the trainer MUST derive per-rank request chunk sizing from the rollout server world size and learner DDP world size to preserve the per-rollout-GPU cap defined by `decode_batch_size`.
+When rollout-matching training uses vLLM server mode (`rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`), the trainer MUST derive per-rank request chunk sizing from the rollout server world size and learner DDP world size to preserve the per-rollout-GPU cap defined by `decode_batch_size`.
 
 Semantics (normative):
 - The trainer MUST query each configured server’s `${base_url}/get_world_size/` endpoint and cache one `world_size` per server entry.
@@ -367,11 +365,11 @@ Semantics (normative):
 - **THEN** config validation fails fast with guidance to increase rollout server world size, reduce learner world size, or increase `decode_batch_size`.
 
 ### Requirement: Legacy rollout_buffer configs fail fast
-The system MUST fail fast if a config provides `custom.extra.rollout_matching.rollout_buffer`, with actionable guidance to remove it (no backward compatibility).
+The system MUST fail fast if a config provides `rollout_matching.rollout_buffer`, with actionable guidance to remove it (no backward compatibility).
 
 #### Scenario: rollout_buffer fails fast when present
 - **GIVEN** rollout-matching training is enabled
-- **AND** the config provides `custom.extra.rollout_matching.rollout_buffer`
+- **AND** the config provides `rollout_matching.rollout_buffer`
 - **WHEN** training starts
 - **THEN** config validation fails fast with guidance to remove `rollout_buffer`.
 
@@ -379,10 +377,10 @@ The system MUST fail fast if a config provides `custom.extra.rollout_matching.ro
 When rollout-matching training uses vLLM rollouts in colocate mode, the system SHALL support an opt-in offload context
 to reduce peak GPU memory usage during rollout inference.
 
-Offload MUST be YAML-driven under `custom.extra.rollout_matching.offload`:
-- `custom.extra.rollout_matching.offload.enabled` MUST accept a boolean and MUST default to `false`.
-- `custom.extra.rollout_matching.offload.offload_model` MUST accept a boolean and MUST default to `false`.
-- `custom.extra.rollout_matching.offload.offload_optimizer` MUST accept a boolean and MUST default to `false`.
+Offload MUST be YAML-driven under `rollout_matching.offload`:
+- `rollout_matching.offload.enabled` MUST accept a boolean and MUST default to `false`.
+- `rollout_matching.offload.offload_model` MUST accept a boolean and MUST default to `false`.
+- `rollout_matching.offload.offload_optimizer` MUST accept a boolean and MUST default to `false`.
 
 Semantics when enabled:
 - Offloading MUST occur only during rollout generation (no-grad inference).

@@ -1,7 +1,8 @@
 # coord-token-mode Specification
 
 ## Purpose
-TBD - created by archiving change add-augment-coord-token-support. Update Purpose after archive.
+Define the CoordExp coord-token mode contract: how JSONL geometry may be expressed as `<|coord_k|>` tokens (0-999), how augmentation/template/training treat those tokens, and which legacy coord-loss knobs are supported.
+
 ## Requirements
 ### Requirement: Coord-token augmentation compatibility
 The system SHALL support data augmentation on records whose geometries are expressed as coord tokens (`<|coord_k|>`, 0–999), converting to numeric values before augmentation and restoring coord tokens after augmentation when coord-token mode is enabled. Public geometry fields (`bbox_2d`, `poly`) MUST remain token strings after augmentation.
@@ -86,7 +87,9 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
   - compute per-token distribution losses `softCE(Gaussian kernel) + 1D W1(CDF)` on the ordered coord bins,
   - optionally apply a coord-vocab gate loss that penalizes probability mass outside the coord vocab at coord positions.
 - When distributional coord-token supervision is enabled, the system SHALL ensure coord-token targets do not contribute to the base full-vocab CE loss by masking coord targets to `ignore_index` (or an equivalent mechanism with zero gradient), while still using the same forward logits to compute coord losses.
-- Legacy expectation-decoding and box-level regression losses are not supported. The system SHALL fail fast with a clear error if legacy config keys are provided (e.g. `custom.coord_loss` or `custom.coord_expectation_metrics`), directing users to `custom.coord_soft_ce_w1`.
+- Legacy expectation-decoding and box-level regression losses are not supported:
+  - `custom.coord_expectation_metrics` is removed and MUST fail fast with guidance to use distribution-based coord losses (`custom.coord_soft_ce_w1`).
+  - `custom.coord_loss` is a deprecated no-op retained for config refactors: configuration parsing MUST NOT raise, and the value MUST be ignored.
 
 #### Scenario: Coord tokens supervised with softCE+W1 from one forward
 - **GIVEN** coord-token mode is enabled
@@ -95,11 +98,16 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - **THEN** coord-token targets do not contribute to the base full-vocab CE loss
 - **AND** coord `softCE+W1` is computed from the same forward logits restricted to the coord vocab.
 
-#### Scenario: Legacy coord-loss config rejected
-- **GIVEN** a YAML config that provides `custom.coord_loss` or `custom.coord_expectation_metrics`
+#### Scenario: custom.coord_expectation_metrics rejected
+- **GIVEN** a YAML config that provides `custom.coord_expectation_metrics`
 - **WHEN** the training config is loaded
 - **THEN** the load fails with a clear error message
 - **AND** the error indicates the supported replacement is `custom.coord_soft_ce_w1`.
+
+#### Scenario: custom.coord_loss ignored
+- **GIVEN** a YAML config that provides `custom.coord_loss` (legacy)
+- **WHEN** the training config is loaded
+- **THEN** parsing succeeds and the legacy field is ignored.
 
 ### Requirement: Coord-gated soft-label losses for Stage-1
 When an opt-in Stage-1 coord-loss mode is enabled, the system SHALL support computing coordinate supervision strictly at `<|coord_*|>` token positions by:

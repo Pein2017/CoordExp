@@ -1,7 +1,8 @@
 # public-data-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change 2026-01-22-add-unified-public-data-pipeline. Update Purpose after archive.
+Define the public-data preprocessing pipeline contract for emitting CoordExp JSONL datasets with validated geometry/schema and reproducible transforms.
+
 ## Requirements
 ### Requirement: Unified Shell Entrypoint and Working Directory
 The system SHALL provide a unified shell entrypoint at `public_data/run.sh` to run public dataset preparation pipelines with a consistent interface across datasets.

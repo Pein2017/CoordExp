@@ -1,7 +1,8 @@
 # inference-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change refactor-inference-viz-decouple. Update Purpose after archive.
+Define the staged inference pipeline contract (infer -> eval/viz) and the stable JSONL artifact interface between stages.
+
 ## Requirements
 ### Requirement: Inference runner emits robust JSONL
 The unified pipeline inference stage SHALL emit a single JSONL artifact (the "pipeline artifact") that is the stable interface between stages.
@@ -100,4 +101,3 @@ Default artifact layout:
 - **GIVEN** an existing `gt_vs_pred.jsonl`
 - **WHEN** the user runs the pipeline runner with `stages.infer=false` and `stages.vis=true`
 - **THEN** visualization completes without loading the model.
-

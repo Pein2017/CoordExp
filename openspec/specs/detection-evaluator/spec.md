@@ -1,7 +1,8 @@
 # detection-evaluator Specification
 
 ## Purpose
-TBD - created by archiving change add-detection-evaluator. Update Purpose after archive.
+Define the detection evaluation contract for CoordExp, including the JSONL artifact schema it consumes, description matching policy, and reported metrics.
+
 ## Requirements
 ### Requirement: Ingestion and validation
 For the unified pipeline workflow, the evaluator SHALL treat the pipeline artifact `gt_vs_pred.jsonl` (containing embedded `gt` and `pred` per sample) as the primary evaluation input.

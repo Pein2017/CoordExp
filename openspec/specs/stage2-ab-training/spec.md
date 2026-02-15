@@ -1,7 +1,8 @@
 # stage2-ab-training Specification
 
 ## Purpose
-TBD - created by archiving change 2026-01-27-add-stage2-ab-iterative-softctx-bboxonly. Update Purpose after archive.
+Define the Stage-2 AB training contract (Channel-A supervised, Channel-B rollout-matching) including the configuration surface and reproducibility-critical invariants.
+
 ## Requirements
 ### Requirement: Stage-2 AB trainer variant is selectable via YAML
 When training config sets `custom.trainer_variant: stage2_ab_training`, the system SHALL use the Stage-2 AB trainer implementation.
@@ -71,8 +72,11 @@ Legacy schedule handling (normative):
 - If a config provides `stage2_ab.schedule.pattern`, configuration parsing MUST fail fast with guidance to migrate to `stage2_ab.schedule.b_ratio`.
 
 Legacy rollout-buffer behavior:
-- `custom.extra.rollout_matching.rollout_buffer` is removed.
-- Any config that provides `custom.extra.rollout_matching.rollout_buffer` MUST fail fast with actionable guidance.
+- `rollout_matching.rollout_buffer` is removed.
+- Any config that provides `rollout_matching.rollout_buffer` MUST fail fast with actionable guidance.
+
+Legacy rollout namespace placement:
+- Legacy placement under `custom.extra.rollout_matching.*` is removed and MUST fail fast with actionable guidance to migrate to top-level `rollout_matching.*`.
 
 #### Scenario: b_ratio=0.5 alternates deterministically by optimizer step
 - **GIVEN** `stage2_ab.schedule.b_ratio: 0.5`
@@ -107,7 +111,7 @@ Legacy rollout-buffer behavior:
 - **THEN** it fails fast with guidance to set `stage2_ab.schedule.b_ratio`.
 
 #### Scenario: Legacy rollout_buffer config fails fast
-- **GIVEN** a Stage-2 AB config that provides `custom.extra.rollout_matching.rollout_buffer`
+- **GIVEN** a Stage-2 AB config that provides `rollout_matching.rollout_buffer`
 - **WHEN** configuration is parsed/materialized
 - **THEN** it fails fast with guidance to remove `rollout_buffer`.
 
@@ -192,7 +196,7 @@ When Channel-A uses `inputs_embeds` to implement iterative soft self-context:
 
 ### Requirement: Channel-B reuses rollout-matching infra (strict parse/match + mandatory FN append)
 Channel-B MUST reuse the rollout-matching pipeline:
-- Rollout generation MUST be configured under `custom.extra.rollout_matching` (backend `hf` or `vllm`).
+- Rollout generation MUST be configured under `rollout_matching` (backend `hf` or `vllm`).
 - Parsing MUST be strict and token-aligned (no re-tokenization of the rollout prefix), except for a possible token-internal cut on the final token where the trainer MAY retokenize only the final token as a shorter tokenization that decodes exactly to the original substring.
 - Matching MUST be deterministic.
 - FN append MUST be performed (mandatory) to ensure all GT objects are present in `Y_train`.
@@ -392,7 +396,7 @@ When Channel-B executes in step mode with packing enabled, the trainer SHALL sup
 
 Normative safety guardrail:
 - If the in-step pipeline queue is enabled, rollouts MUST run on dedicated GPUs via vLLM server mode.
-  - Concretely: the trainer MUST require `custom.extra.rollout_matching.rollout_backend=vllm` and `custom.extra.rollout_matching.vllm.mode=server`.
+  - Concretely: the trainer MUST require `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`.
   - If this condition is not met, the trainer MUST error fast with a clear message (to avoid unsafe concurrent rollout+train on the same process/device).
 
 #### Scenario: Rollout and learner overlap within a step
@@ -406,12 +410,12 @@ Normative safety guardrail:
 When Channel-B executes, the trainer SHALL allow configuring rollout decode batching independently of learner microbatch size (which remains 1 under packing).
 
 Configuration (normative):
-- The decode batching knob MUST be `custom.extra.rollout_matching.decode_batch_size` (int).
+- The decode batching knob MUST be `rollout_matching.decode_batch_size` (int).
 - It MUST denote the maximum number of sequences decoded per rollout GPU in one backend generation call.
 
 #### Scenario: Rollout decode batch size 2 with learner microbatch 1
 - **GIVEN** `training.per_device_train_batch_size=1`
-- **AND** `custom.extra.rollout_matching.decode_batch_size: 2`
+- **AND** `rollout_matching.decode_batch_size: 2`
 - **WHEN** rollouts are generated
 - **THEN** the rollout backend generates responses for 2 samples in one decode call
 - **AND** learner training still runs one packed sequence per forward/backward.

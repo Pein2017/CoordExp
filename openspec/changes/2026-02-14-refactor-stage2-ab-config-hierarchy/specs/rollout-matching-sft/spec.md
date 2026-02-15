@@ -19,7 +19,7 @@ Semantics (normative):
 - `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batch behavior.
 
 Defaulting (normative):
-- If `decode_batch_size` is unset, the implementation MUST default it to `4`.
+- If `decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
 
 #### Scenario: Canonical Stage-2 key controls decode microbatching
 - **WHEN** a Stage-2 AB config sets `rollout_matching.decode_batch_size: M` where `M > 1`

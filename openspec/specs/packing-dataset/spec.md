@@ -1,7 +1,8 @@
 # packing-dataset Specification
 
 ## Purpose
-TBD - created by archiving change add-vl-packing-wrapper. Update Purpose after archive.
+Define the packing dataset wrapper contract used to pack variable-length sequences for efficient training under a fixed `global_max_length`.
+
 ## Requirements
 ### Requirement: Rank-local VL packing wrapper
 The system SHALL provide a packing wrapper for vision-language training datasets that groups already-encoded samples (prompt + image → text) into packed sequences using ms-swift’s bin-packing heuristic.
@@ -86,4 +87,3 @@ The system SHALL update or override any existing documentation that claims packi
 - GIVEN prior docs state that packing is removed
 - WHEN the packing wrapper capability is added
 - THEN the relevant docs are updated to describe the new packing option, its defaults, and constraints (e.g., batch size = 1, aggregate metrics only).
-

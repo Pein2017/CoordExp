@@ -1,7 +1,8 @@
 # trainer-metrics-components Specification
 
 ## Purpose
-TBD - created by archiving change 2026-01-27-refactor-training-metrics-components. Update Purpose after archive.
+Define the canonical training metrics/logging component contract, including required keys, aggregation semantics, and removal of legacy metrics.
+
 ## Requirements
 ### Requirement: Stable batch extras contract
 The system SHALL define a centralized contract for "batch extras" fields produced by collators and consumed by trainer hooks.
@@ -86,4 +87,3 @@ Counter-like keys MUST remain additive totals.
 - AND a gauge-like rollout config key present on exactly one micro-step with value `1.0`
 - WHEN step-level aggregation finalizes
 - THEN the logged value is `1.0` (not `1/32`).
-

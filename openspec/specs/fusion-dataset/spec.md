@@ -1,7 +1,8 @@
 # fusion-dataset Specification
 
 ## Purpose
-TBD - created by archiving change 2026-01-17-add-fusion-config-training. Update Purpose after archive.
+Define the fusion-config dataset contract (`custom.fusion_config`) for building train/eval datasets from multiple JSONL sources under a single experiment.
+
 ## Requirements
 ### Requirement: Fusion Config Overrides Standard JSONL Paths
 When `custom.fusion_config` is set, the system SHALL build train/eval datasets from the fusion config and SHALL ignore `custom.train_jsonl` and `custom.val_jsonl`.
@@ -84,4 +85,3 @@ Fusion datasets SHALL remain compatible with CoordExp defaults:
 - **WHEN** `training.packing: true` and fusion is enabled
 - **THEN** the packed dataset iterator SHALL yield packed groups of encoded samples
 - **AND** no fusion-specific runtime error SHALL occur during dataset iteration.
-
