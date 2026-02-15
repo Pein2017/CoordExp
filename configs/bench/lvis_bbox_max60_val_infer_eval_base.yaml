@@ -62,3 +62,7 @@ eval:
   overlay: false
   overlay_k: 12
   num_workers: 8
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+  semantic_threshold: 0.5
