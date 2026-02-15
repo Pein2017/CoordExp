@@ -269,12 +269,12 @@ Channel-B:
     - the top-level JSON closing brace `}` (the brace that closes the outermost assistant JSON object), and
     - `<|im_end|>` (the only turn-end token).
   - Top-level brace identification MUST be robust and deterministic:
-    - the trainer MUST identify the token position of the `}` that closes the **outermost** JSON object in the rendered `y_GT_reordered` assistant span,
+    - the trainer MUST identify the token position of the `}` that closes the **outermost** JSON object in the rendered Channel-B teacher-forced assistant span,
     - and MUST NOT rely on “the last `}` token id in the whole sequence” without verifying it corresponds to the outermost close brace of the assistant JSON.
     - A compliant approach is to decode the assistant-span token pieces and locate the outermost close brace via a brace-depth scan, then map the character span back to token positions.
 - **FN append always**:
   - FN objects MUST be appended to the B3 target so they are supervised even when they were missing from rollout.
-  - If `N_valid_pred == 0` after strict validation, the trainer MUST fall back to `y_GT_reordered := y_GT_canonical` (Stage-1 canonical GT order), which is equivalent to “FN append all GT objects”.
+  - If `N_valid_pred == 0` after strict validation, the trainer MUST treat all GT objects as FN (canonical GT order) and append them, which is equivalent to “FN append all GT objects”.
   - Optional weak correction: when `N_drop_invalid > 0`, the trainer MAY upweight Channel-B’s B3 structure-token CE weights to discourage “escaping supervision via invalid instances”.
     - This upweight MUST be controlled by `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (float).
     - The multiplier MUST default to `1.0` (no effect) and MUST be constrained to a safe range `[1.0, 4.0]` (clamp or fail fast).
@@ -285,7 +285,6 @@ Channel-B:
 
 Configurable desc supervision (both channels):
 - `stage2_ab.desc_ce_weight` MUST be a float `>= 0` and applies to desc value tokens by default.
-- Channel-B MAY additionally provide `stage2_ab.channel_b.desc_ce_weight_matched` as the weight for matched-object desc tokens (distinct from FN-appended desc tokens).
 
 Bbox geometry losses (both channels) are computed from coord distributions:
 - The trainer MUST decode coordinates from coord-token distributions via CoordExp expectation decoding (not argmax):
@@ -416,52 +415,6 @@ Configuration (normative):
 - **WHEN** rollouts are generated
 - **THEN** the rollout backend generates responses for 2 samples in one decode call
 - **AND** learner training still runs one packed sequence per forward/backward.
-
-### Requirement: Channel-B supports semantic-tolerant matched desc supervision
-Channel-B desc supervision MUST support a semantic tolerance mode for matched objects:
-- For each matched pair `(pred_i -> gt_j)`, compute a similarity score between:
-  - the predicted description string `pred_desc_i` from rollout parsing, and
-  - the GT description string `gt_desc_j` from the dataset.
-- If similarity is at least a configurable threshold, the trainer MUST treat the predicted desc as acceptable and MUST NOT penalize the matched object’s GT desc token positions in CE (i.e., weight 0 / masked).
-- If similarity is below the threshold, the trainer MUST apply a (small) desc CE weight to pull toward GT.
-
-Scope constraints (normative):
-- Semantic tolerance MUST apply only to **matched** objects.
-- FN-appended objects MUST be supervised normally (no semantic gating), since they have no competing predicted description.
-
-Configuration (normative):
-- `stage2_ab.channel_b.semantic_desc_gate.enabled` MUST accept a boolean and MUST default to `true`.
-- `stage2_ab.channel_b.semantic_desc_gate.threshold` MUST accept a float in `[0.0, 1.0]` and MUST default to `0.5`.
-- `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path` MUST accept a string and MUST default to `sentence-transformers/all-MiniLM-L6-v2`.
-- If semantic gating is enabled, `stage2_ab.channel_b.semantic_desc_gate.revision` MUST be provided as a string to pin the embedding model version.
-- If semantic gating is enabled, the resolved model identity MUST be logged for reproducibility (including the provided `revision`).
-- If semantic gating is enabled but the sentence-transformer dependency or the specified model weights are not available at runtime, the trainer MUST NOT fail fast and MUST instead:
-  - disable semantic gating for the affected step/run (treating matched desc tokens as not semantically acceptable unless they match the normal non-gated rules), and
-  - emit a stable warning log at least once describing that semantic gating is disabled due to missing dependency/weights, and
-  - expose a stable boolean metric/log key indicating whether semantic gating is active for the step (e.g., `stage2_ab/channel_b/semantic_desc_gate/is_active`).
-Performance (non-normative guidance):
-- The implementation SHOULD compute sentence embeddings in a batched manner per optimizer step (or per micro-batch) and MAY cache embeddings within the step to bound overhead without changing semantics.
-
-#### Scenario: Semantically close matched desc is not penalized
-- **GIVEN** a matched object whose rollout desc is semantically close to GT (similarity ≥ threshold)
-- **WHEN** Channel-B builds CE labels/weights for the matched object’s GT desc tokens
-- **THEN** those desc token positions are masked (weight 0) so the model is not forced to match the GT string exactly.
-
-#### Scenario: Semantic gate is disabled when the model is unavailable
-- **GIVEN** `stage2_ab.channel_b.semantic_desc_gate.enabled: true`
-- **AND** `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path: "/path/does/not/exist"`
-- **AND** `stage2_ab.channel_b.semantic_desc_gate.revision: "pinned"`
-- **WHEN** training starts and Channel-B attempts to compute semantic gating
-- **THEN** the trainer continues without semantic gating for that step/run
-- **AND** it emits a warning that semantic gating is disabled due to missing dependency/weights
-- **AND** it exposes `stage2_ab/channel_b/semantic_desc_gate/is_active = false`.
-
-#### Scenario: Semantic gate requires a pinned revision/version
-- **GIVEN** `stage2_ab.channel_b.semantic_desc_gate.enabled: true`
-- **AND** `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path: "sentence-transformers/all-MiniLM-L6-v2"`
-- **AND** `stage2_ab.channel_b.semantic_desc_gate.revision` is not provided
-- **WHEN** training starts and Channel-B attempts to load the semantic gate model
-- **THEN** the trainer fails fast with guidance to provide `stage2_ab.channel_b.semantic_desc_gate.revision`.
 
 ### Requirement: Deprecated legacy coord-loss knobs are silently ignored
 To enable config refactors without blocking training runs, the configuration system MUST silently ignore deprecated legacy coord-loss knobs under `custom.*` that are no longer supported by the project’s coord-loss contract.

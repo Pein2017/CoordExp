@@ -570,11 +570,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = (
-        lambda key, default=None: {"semantic_desc_gate": {"enabled": False}}.get(
-            key, default
-        )
-    )
+    t._ab_channel_b_get = lambda key, default=None: default
 
     t.template = types.SimpleNamespace(tokenizer=_DummyTokenizer())
     t._get_coord_token_ids = lambda: list(range(1000))
@@ -798,66 +794,6 @@ def test_compute_loss_raises_on_sliced_logits():
         )
 
 
-def test_channel_b_desc_ce_split_allows_downweight_matched_desc_only():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
-        "desc_ce_weight": 1.0,
-        # Turn off bbox losses so CE effect is isolated.
-        "bbox_smoothl1_weight": 0.0,
-        "bbox_ciou_weight": 0.0,
-        "channel_b": {"desc_ce_weight_matched": 0.0},
-    }
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyAlwaysTokenModel(pred_id=1100)
-
-    # Targets at positions 2,3 are 'hard' (1101) under pred_id=1100.
-    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
-
-    meta = [
-        {
-            "prompt_len": 0,
-            "prefix_len": 0,
-            "train_len": int(input_ids.shape[1]),
-            "encoded_len": int(input_ids.shape[1]),
-            # Provide both lists so compute_loss prefers the split behavior.
-            "tail_desc_pos": [2, 3],
-            "tail_desc_pos_matched": [2, 3],
-            "tail_desc_pos_missing": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [],
-        }
-    ]
-
-    loss_down = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-
-    t.stage2_ab_cfg["channel_b"]["desc_ce_weight_matched"] = 1.0
-    loss_full = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_down.detach().cpu().item()) < float(
-        loss_full.detach().cpu().item()
-    )
-
 
 def test_channel_b_includes_fn_geometry_loss():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -931,8 +867,6 @@ def test_channel_b_repeat_trigger_flag_does_not_change_supervision_semantics() -
         "encoded_len": int(input_ids.shape[1]),
         "tail_ignore_pos": [],
         "tail_desc_pos": [2, 3],
-        "tail_desc_pos_matched": [2, 3],
-        "tail_desc_pos_missing": [],
         "bbox_groups_prefix": [{"pos": [1, 2, 3, 4], "gt_bins": [1, 1, 2, 2]}],
         "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [1, 1, 2, 2]}],
     }
@@ -1274,65 +1208,6 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_max_flag() ->
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
 
-
-def test_channel_b_semantic_mask_list_ignores_matched_desc_tokens():
-    # This exercises the compute_loss masking hook used by the semantic-desc gate:
-    # meta["tail_desc_pos_matched_masked"] contributes to the ignore set.
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
-        "desc_ce_weight": 1.0,
-        "bbox_smoothl1_weight": 0.0,
-        "bbox_ciou_weight": 0.0,
-        "channel_b": {"desc_ce_weight_matched": 1.0},
-    }
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyAlwaysTokenModel(pred_id=1100)
-    input_ids = torch.tensor([[1100, 1100, 1101, 1101, 1100, 1100]], dtype=torch.long)
-
-    meta_no_mask = {
-        "prompt_len": 0,
-        "prefix_len": 0,
-        "train_len": int(input_ids.shape[1]),
-        "encoded_len": int(input_ids.shape[1]),
-        "tail_ignore_pos": [],
-        "tail_desc_pos": [2, 3],
-        "tail_desc_pos_matched": [2, 3],
-        "tail_desc_pos_missing": [],
-        "tail_desc_pos_matched_masked": [],
-        "bbox_groups_prefix": [],
-        "bbox_groups_fn": [],
-    }
-
-    loss_no_mask = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta_no_mask)],
-            "input_ids": input_ids,
-        },
-    )
-
-    meta_masked = dict(meta_no_mask)
-    meta_masked["tail_desc_pos_matched_masked"] = [2, 3]
-    loss_masked = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [meta_masked],
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_masked.detach().cpu().item()) < float(
-        loss_no_mask.detach().cpu().item()
-    )
 
 
 def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):

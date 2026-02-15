@@ -112,8 +112,8 @@ Worked example (default launcher):
 
 ### Channel-B Contract (FP-neutral + Closure Supervision)
 
-- Unified Channel-B is the default contract (`reordered_gt_sft` is legacy/ablation opt-in only).
-- CE masking policy (default non-reordered path):
+- Unified Channel-B is the only supported contract (rollout prefix + FN injection; no reorder path).
+- CE masking policy (unified Channel-B):
   - matched prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
   - FP prefix objects: structure/desc/coord CE all OFF;
   - FN-injected objects: structure CE ON, desc CE ON, coord CE OFF.
@@ -131,10 +131,6 @@ Worked example (default launcher):
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
   - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
   - Optional structure-token CE upweight: `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (clamped to `[1.0, 4.0]`).
-- Semantic-tolerant matched desc CE (reordered-GT SFT only): matched objects whose predicted desc is semantically close to GT are treated as correct by masking GT desc tokens.
-  - Config: `stage2_ab.channel_b.semantic_desc_gate`.
-  - If enabled, `stage2_ab.channel_b.semantic_desc_gate.revision` is REQUIRED (pinned embedding model revision).
-  - If the encoder/weights cannot be loaded at runtime, training continues with semantic gating disabled and logs `stage2_ab/channel_b/semantic_desc_gate/is_active = false`.
 
 ---
 
@@ -191,7 +187,6 @@ Minimum required edits:
 - Set top-level `rollout_matching.*` (including `decoding.*` + matching knobs).
 - If using Stage-2 AB (`custom.trainer_variant: stage2_ab_training`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
-  - `stage2_ab.channel_b.semantic_desc_gate.revision` when semantic gating is enabled.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Breaking config migrations (no backward compatibility):
@@ -200,6 +195,9 @@ Breaking config migrations (no backward compatibility):
 - Legacy keys are removed and MUST fail fast if present:
   - `rollout_matching.temperature`, `rollout_matching.top_p`, `rollout_matching.top_k`
   - `rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + `decode_batch_size` to scale throughput)
+  - `stage2_ab.channel_b.reordered_gt_sft` (removed; unified Channel-B only)
+  - `stage2_ab.channel_b.desc_ce_weight_matched` (removed; no matched-desc CE knob)
+  - `stage2_ab.channel_b.semantic_desc_gate` (removed; no training-time semantic gating)
 
 Logging tip:
 - Stage-2 metrics are logged once per optimizer step (aggregated across gradient accumulation).
@@ -402,7 +400,6 @@ Throughput:
 - `rollout/gen_tokens_per_s`
 
 Stage-2 AB extras:
-- `stage2_ab/channel_b/semantic_desc_gate/is_active` (true only when the semantic encoder is available)
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
 - `stage2_ab/channel_b/closure_supervision/N_drop` (closure-marker resolution drops; should stay near 0)
 

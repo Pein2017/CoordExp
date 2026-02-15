@@ -52,10 +52,7 @@ stage2_ab:
     b_ratio: 0.05
   n_softctx_iter: 2
   bbox_smoothl1_weight: 2.0
-  channel_b:
-    desc_ce_weight_matched: 0.2
-    semantic_desc_gate:
-      revision: c9745ed1d9f207416be6d2e6f8de32d1f16199bf
+  channel_b: {}
 
 custom:
   trainer_variant: stage2_ab_training

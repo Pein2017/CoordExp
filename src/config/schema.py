@@ -825,103 +825,13 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABSemanticDescGateConfig:
-    """Semantic tolerance for matched desc supervision (Channel-B)."""
-
-    enabled: bool = True
-    threshold: float = 0.5
-    model_name_or_path: str = "sentence-transformers/all-MiniLM-L6-v2"
-    revision: Optional[str] = None
-
-    @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABSemanticDescGateConfig":
-        if payload is None:
-            cfg = cls()
-            if cfg.enabled and not cfg.revision:
-                raise ValueError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
-                    "to pin the embedding model version for reproducibility."
-                )
-            return cfg
-        if not isinstance(payload, Mapping):
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate must be a mapping when provided"
-            )
-
-        data: MutableMapping[str, Any] = dict(payload)
-
-        enabled = bool(data.pop("enabled", cls.enabled))
-
-        threshold_raw = data.pop("threshold", cls.threshold)
-        try:
-            threshold = float(threshold_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate.threshold must be a float in [0,1]"
-            ) from exc
-        if not (0.0 <= threshold <= 1.0):
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.threshold must be in [0,1]"
-            )
-
-        model_raw = data.pop("model_name_or_path", cls.model_name_or_path)
-        if not isinstance(model_raw, str):
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be a string"
-            )
-        model_name_or_path = model_raw.strip()
-        if not model_name_or_path:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be non-empty"
-            )
-
-        revision_raw = data.pop("revision", None)
-        revision = None
-        if revision_raw not in (None, "", False):
-            if not isinstance(revision_raw, str):
-                raise TypeError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be a string when provided"
-                )
-            revision = revision_raw.strip() or None
-
-        if data:
-            raise ValueError(
-                "Unknown stage2_ab.channel_b.semantic_desc_gate keys: "
-                f"{sorted(str(k) for k in data.keys())}"
-            )
-
-        if enabled and not revision:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
-                "to pin the embedding model version for reproducibility."
-            )
-
-        return cls(
-            enabled=enabled,
-            threshold=threshold,
-            model_name_or_path=model_name_or_path,
-            revision=revision,
-        )
-
-
-@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
-    reordered_gt_sft: bool = False
-    desc_ce_weight_matched: Optional[float] = None
     drop_invalid_struct_ce_multiplier: float = 1.0
-    semantic_desc_gate: Stage2ABSemanticDescGateConfig = field(
-        default_factory=Stage2ABSemanticDescGateConfig
-    )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
         if payload is None:
-            cfg = cls()
-            if cfg.semantic_desc_gate.enabled and not cfg.semantic_desc_gate.revision:
-                raise ValueError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
-                )
-            return cfg
+            return cls()
         if not isinstance(payload, Mapping):
             raise TypeError("stage2_ab.channel_b must be a mapping when provided")
 
@@ -954,21 +864,22 @@ class Stage2ABChannelBConfig:
                 "Use rollout_matching.decode_batch_size instead."
             )
 
-        reordered_gt_sft = bool(data.pop("reordered_gt_sft", cls.reordered_gt_sft))
-
-        desc_ce_weight_matched_raw = data.pop("desc_ce_weight_matched", None)
-        desc_ce_weight_matched: Optional[float] = None
-        if desc_ce_weight_matched_raw is not None:
-            try:
-                desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
-            except Exception as exc:
-                raise TypeError(
-                    "stage2_ab.channel_b.desc_ce_weight_matched must be a float when provided"
-                ) from exc
-            if desc_ce_weight_matched < 0:
-                raise ValueError(
-                    "stage2_ab.channel_b.desc_ce_weight_matched must be >= 0 when provided"
-                )
+        # Removed keys (legacy/ablation-only behavior is now deleted).
+        if "reordered_gt_sft" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.reordered_gt_sft has been removed. "
+                "Remove this key (Channel-B is unified rollout-prefix + FN-append)."
+            )
+        if "desc_ce_weight_matched" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.desc_ce_weight_matched has been removed. "
+                "Remove this key (matched-object desc CE is always disabled in Channel-B)."
+            )
+        if "semantic_desc_gate" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate has been removed. "
+                "Remove this key (training-time semantic gating is unsupported)."
+            )
 
         drop_invalid_raw = data.pop(
             "drop_invalid_struct_ce_multiplier", cls.drop_invalid_struct_ce_multiplier
@@ -984,25 +895,12 @@ class Stage2ABChannelBConfig:
                 "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be in [1.0, 4.0]"
             )
 
-        semantic_desc_gate = Stage2ABSemanticDescGateConfig.from_mapping(
-            data.pop("semantic_desc_gate", None)
-        )
-        if semantic_desc_gate.enabled and not semantic_desc_gate.revision:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
-            )
-
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
             )
 
-        return cls(
-            reordered_gt_sft=reordered_gt_sft,
-            desc_ce_weight_matched=desc_ce_weight_matched,
-            drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier,
-            semantic_desc_gate=semantic_desc_gate,
-        )
+        return cls(drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier)
 
 
 @dataclass(frozen=True)
