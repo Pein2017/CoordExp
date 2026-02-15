@@ -309,6 +309,36 @@ class _DummyTokenizer:
         return ids[0] if scalar else ids
 
 
+class _PieceFrameMismatchTokenizer(_DummyTokenizer):
+    """Tokenizer stub where per-token decode and full decode have different lengths."""
+
+    def __init__(self):
+        super().__init__()
+        self._mismatch_id = self._id_for("~")
+
+    def decode(
+        self,
+        token_ids,
+        skip_special_tokens: bool = False,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        ids = [int(t) for t in token_ids]
+        if len(ids) == 1 and int(ids[0]) == int(self._mismatch_id):
+            # Per-token decode expands this token to two chars.
+            return "~~"
+
+        out = []
+        for tid in ids:
+            if 0 <= tid <= 999:
+                out.append(f"<|coord_{tid}|>")
+            elif int(tid) == int(self._mismatch_id):
+                # Full decode contracts the same token to one char.
+                out.append("~")
+            else:
+                out.append(self._id_to_tok.get(int(tid), "?"))
+        return "".join(out)
+
+
 def test_b_ratio_schedule_is_deterministic():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.5}}
@@ -980,6 +1010,53 @@ def test_matched_prefix_structure_positions_excludes_desc_and_fp_tokens():
     assert key_pos_matched >= 0 and key_pos_matched in rel
     assert key_pos_fp >= 0 and key_pos_fp not in rel
     assert desc_pos_matched >= 0 and desc_pos_matched not in rel
+
+
+def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_checks():
+    tok = _PieceFrameMismatchTokenizer()
+
+    source_text = '{"object_1":{"desc":"~","bbox_2d":[0,0,1,1]}}'
+    prefix_token_ids = list(tok.encode(source_text))
+
+    prefix_text = tok.decode(
+        prefix_token_ids,
+        skip_special_tokens=False,
+        clean_up_tokenization_spaces=False,
+    )
+    piece_text = "".join(
+        tok.decode(
+            [int(t)],
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+        for t in prefix_token_ids
+    )
+    assert int(len(piece_text)) > int(len(prefix_text))
+
+    key_anchor = int(piece_text.find('"object_1"'))
+    value_start = int(piece_text.find("{", key_anchor))
+    value_end = int(piece_text.rfind("}")) + 1
+    matched_obj = types.SimpleNamespace(
+        key="object_1",
+        value_span=(value_start, value_end),
+    )
+
+    rel = _matched_prefix_structure_positions(
+        tokenizer=tok,
+        prefix_token_ids=prefix_token_ids,
+        prefix_text=prefix_text,
+        matched_pred_objects=[matched_obj],
+    )
+
+    key_pos = int(piece_text.find('"object_1"'))
+    desc_tok_idx = next(
+        i
+        for i, t in enumerate(prefix_token_ids)
+        if int(t) == int(tok._mismatch_id)
+    )
+
+    assert key_pos >= 0 and key_pos in rel
+    assert desc_tok_idx not in rel
 
 
 def test_channel_b_prefix_structure_supervision_is_matched_only():

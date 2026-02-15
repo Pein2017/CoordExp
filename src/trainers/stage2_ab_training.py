@@ -469,6 +469,11 @@ def _matched_prefix_structure_positions(
         return []
 
     pieces = decode_pieces(tokenizer, token_ids)
+    # value_span is emitted by rollout parser in token-piece char space.
+    # Keep all char-indexed operations in that same frame.
+    prefix_scan_text = "".join(str(p) for p in pieces)
+    _ = prefix_text  # kept for interface compatibility; char ops use parser frame.
+
     token_start_chars: List[int] = []
     cursor = 0
     for p in pieces:
@@ -485,7 +490,7 @@ def _matched_prefix_structure_positions(
         return out
 
     supervised: set[int] = set()
-    prefix_len_chars = int(len(prefix_text))
+    prefix_len_chars = int(len(prefix_scan_text))
 
     for obj in matched_pred_objects:
         if obj is None:
@@ -514,7 +519,7 @@ def _matched_prefix_structure_positions(
                 f"matched object {key} value_span is outside retained prefix: {value_span!r}"
             )
 
-        key_anchor = int(prefix_text.rfind(f'"{key}"', 0, int(value_start) + 1))
+        key_anchor = int(prefix_scan_text.rfind(f'"{key}"', 0, int(value_start) + 1))
         if key_anchor < 0:
             raise ValueError(
                 f"could not locate matched object key {key!r} in retained prefix"
@@ -527,7 +532,7 @@ def _matched_prefix_structure_positions(
             )
 
         desc_tokens: set[int] = set()
-        value_text = str(prefix_text[int(value_start) : int(value_end)])
+        value_text = str(prefix_scan_text[int(value_start) : int(value_end)])
         for ds, de in find_desc_value_char_spans(value_text):
             desc_tokens.update(
                 _tok_indices_overlapping(int(value_start + ds), int(value_start + de))

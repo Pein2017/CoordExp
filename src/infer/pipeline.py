@@ -12,7 +12,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
 from src.utils import get_logger
 
@@ -357,18 +357,24 @@ def _build_plot_row(
     raw_sample, raw_text = _coerce_raw_output(rec)
     gt = rec.get("gt") or []
     pred = rec.get("pred") or []
+
+    index_raw = rec.get("index")
+    index = int(index_raw) if isinstance(index_raw, int) else local_idx
+
+    width_raw = rec.get("width")
+    width = int(width_raw) if isinstance(width_raw, int) else width_raw
+
+    height_raw = rec.get("height")
+    height = int(height_raw) if isinstance(height_raw, int) else height_raw
+
     return {
         "run_name": run_name,
         "run_dir": str(run_dir),
-        "index": int(rec.get("index", local_idx)),
+        "index": index,
         "image": image,
         "image_path": _resolve_image_path_for_rollout(root_image_dir, run_dir, image),
-        "width": int(rec.get("width"))
-        if isinstance(rec.get("width"), int)
-        else rec.get("width"),
-        "height": int(rec.get("height"))
-        if isinstance(rec.get("height"), int)
-        else rec.get("height"),
+        "width": width,
+        "height": height,
         "mode": rec.get("mode", ""),
         "coord_mode": rec.get("coord_mode", ""),
         "gt_count": len(gt) if isinstance(gt, list) else 0,
@@ -600,13 +606,20 @@ def _run_infer_stage(
 
     gt_jsonl = _require_str(infer_cfg, "gt_jsonl")
     model_checkpoint = _require_str(infer_cfg, "model_checkpoint")
-    mode = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
-    pred_coord_mode = _require_choice(
+    mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
+    mode = cast(Literal["coord", "text", "auto"], mode_raw)
+
+    pred_coord_mode_raw = _require_choice(
         infer_cfg, "pred_coord_mode", {"auto", "norm1000", "pixel"}
+    )
+    pred_coord_mode = cast(
+        Literal["auto", "norm1000", "pixel"],
+        pred_coord_mode_raw,
     )
 
     backend_cfg = _get_map(infer_cfg, "backend")
-    backend_type = _require_choice(backend_cfg, "type", {"hf", "vllm"})
+    backend_type_raw = _require_choice(backend_cfg, "type", {"hf", "vllm"})
+    backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
 
     gen_cfg_map = _get_map(infer_cfg, "generation")
     if not gen_cfg_map:
@@ -708,5 +721,14 @@ def _run_vis_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> None
     vis_cfg = _get_map(cfg, "vis")
     pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
+    root_image_dir_str, root_source = _resolve_root_image_dir(cfg)
+    root_image_dir = Path(root_image_dir_str) if root_image_dir_str else None
+
     limit = int(vis_cfg.get("limit", 20))
-    render_vis_from_jsonl(pred_path, out_dir=artifacts.vis_dir, limit=limit)
+    render_vis_from_jsonl(
+        pred_path,
+        out_dir=artifacts.vis_dir,
+        limit=limit,
+        root_image_dir=root_image_dir,
+        root_source=root_source,
+    )
