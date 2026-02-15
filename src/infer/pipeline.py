@@ -249,7 +249,9 @@ def load_resolved_config(path: Path) -> Dict[str, Any]:
 
     stages = raw.get("stages")
     if not isinstance(stages, dict) or not {"infer", "eval", "vis"}.issubset(stages):
-        raise ValueError("resolved_config.json is missing required stages.infer/eval/vis")
+        raise ValueError(
+            "resolved_config.json is missing required stages.infer/eval/vis"
+        )
 
     artifacts = raw.get("artifacts")
     if not isinstance(artifacts, dict) or "run_dir" not in artifacts:
@@ -293,6 +295,7 @@ def _candidate_resolved_config_paths_for_jsonl(jsonl_path: Path) -> List[Path]:
         _push(parent / "resolved_config.json")
 
     return candidates
+
 
 def _iter_jsonl_records(path: Path) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
@@ -360,8 +363,12 @@ def _build_plot_row(
         "index": int(rec.get("index", local_idx)),
         "image": image,
         "image_path": _resolve_image_path_for_rollout(root_image_dir, run_dir, image),
-        "width": int(rec.get("width")) if isinstance(rec.get("width"), int) else rec.get("width"),
-        "height": int(rec.get("height")) if isinstance(rec.get("height"), int) else rec.get("height"),
+        "width": int(rec.get("width"))
+        if isinstance(rec.get("width"), int)
+        else rec.get("width"),
+        "height": int(rec.get("height"))
+        if isinstance(rec.get("height"), int)
+        else rec.get("height"),
         "mode": rec.get("mode", ""),
         "coord_mode": rec.get("coord_mode", ""),
         "gt_count": len(gt) if isinstance(gt, list) else 0,
