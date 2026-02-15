@@ -1,5 +1,5 @@
 run:
-  name: a_only_iter_3_ckpt_6064
+  name: a_only_iter_4_ckpt
   output_dir: output/bench
 
 stages:
@@ -9,14 +9,13 @@ stages:
 
 infer:
   gt_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
-  model_checkpoint: output/stage2_ab/a_only_iter_3_ckpt_6062
-
-  # output/stage2_ab/a_only_iter_1_ckpt_6064
+  model_checkpoint: output/stage2_ab/a_only_iter_4_ckpt_REPLACE_ME
 
   mode: auto
   pred_coord_mode: auto
 
   backend:
+    # Keep HF as default until vLLM path is explicitly enabled for this run.
     type: hf
     # vLLM modes:
     # - server: OpenAI-compatible HTTP server (requires base_url)
@@ -34,7 +33,7 @@ infer:
     temperature: 0.1
     top_p: 0.9
     max_new_tokens: 3084
-    repetition_penalty: 1.05
+    repetition_penalty: 1.1
     batch_size: 64
     seed: 42
 
