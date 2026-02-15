@@ -168,14 +168,14 @@ rollout_matching:
   # degenerate rollouts that will be truncated/invalid anyway.
   repeat_terminate:
     enabled: true
-    min_new_tokens: 256
+    min_new_tokens: 8
     # Stop trivial loops like "...." or repeating a special token forever.
-    max_consecutive_token_repeats: 32
+    max_consecutive_token_repeats: 8
     # Stop when the model repeats the exact same n-gram back-to-back.
-    ngram_size: 32
-    ngram_repeats: 2
-    # Optional hard cap to prevent runaway "object_k" spam (LVIS GT is capped to 100).
-    max_object_keys: 128
+    ngram_size: 8
+    ngram_repeats: 3
+    # No explicit object-count cap; rely on length + repeat-pattern guards.
+    max_object_keys: null
 
   candidate_top_k: 5
   maskiou_gate: 0.3

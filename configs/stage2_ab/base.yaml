@@ -99,11 +99,11 @@ rollout_matching:
   repetition_penalty: 1.08
   repeat_terminate:
     enabled: true
-    min_new_tokens: 24
-    max_consecutive_token_repeats: 24
-    ngram_size: 24
-    ngram_repeats: 2
-    max_object_keys: 96
+    min_new_tokens: 8
+    max_consecutive_token_repeats: 8
+    ngram_size: 8
+    ngram_repeats: 3
+    max_object_keys: null
   candidate_top_k: 5
   maskiou_gate: 0.3
   maskiou_resolution: 256
