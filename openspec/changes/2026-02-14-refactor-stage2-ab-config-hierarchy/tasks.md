@@ -1,5 +1,10 @@
 ## 1. Stage-2 AB profile hierarchy refactor
 
+Note:
+- Parser architecture migration (schema-derived strict parsing and de-duplication of manual nested allowlists) is tracked separately in:
+  - `openspec/changes/2026-02-15-refactor-config-schema-derived-validation/`
+- Tasks below remain the hierarchy/canonical-surface migration tasks for this change.
+
 - [ ] 1.1 Create `configs/stage2_ab/base.yaml` by flattening shared defaults currently split across `configs/stage2_ab/base_rollout_matching_sft.yaml` and `configs/stage2_ab/prod/base.yaml`.
 - [ ] 1.2 Rebuild canonical one-hop leaves under `configs/stage2_ab/prod/{a_only,b_only,ab_mixed}.yaml` and `configs/stage2_ab/smoke/{a_only,b_only,ab_mixed}.yaml` (smoke overrides inlined; no dual-parent extends).
 - [ ] 1.3 Retire canonical-parent usage of `configs/stage2_ab/base_rollout_matching_sft.yaml`, `configs/stage2_ab/prod/base.yaml`, and `configs/stage2_ab/base_smoke_runtime.yaml`; migrate or remove any non-conforming iterative variants so canonical `prod/` and `smoke/` surfaces remain clean.

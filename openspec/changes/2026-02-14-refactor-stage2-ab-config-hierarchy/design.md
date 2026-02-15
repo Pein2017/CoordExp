@@ -2,6 +2,11 @@
 
 Stage-2 AB currently uses a mixed config contract across `training`, `stage2_ab`, and `custom.extra.rollout_matching`, with leaf configs inheriting through multiple layers. This makes it difficult to verify ablation intent from a single downstream file, and increases drift risk when launcher preflight, config loader, and trainer runtime evolve at different speeds.
 
+Follow-up architecture boundary:
+- Deep parser/validator architecture refactor (schema-derived strict parsing that removes duplicated manual nested allowlists) is tracked in a dedicated follow-up change:
+  - `openspec/changes/2026-02-15-refactor-config-schema-derived-validation/`
+- This change remains focused on hierarchy/canonical-path migration and canonical contract surface.
+
 Current data/control flow is:
 - **data**: JSONL paths and sample caps from `custom.*`
 - **transforms/packing**: runtime packing knobs from `training.*` and rollout decode knobs from `custom.extra.rollout_matching.*`
