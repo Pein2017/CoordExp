@@ -36,3 +36,11 @@ rollout_matching:
   rollout_backend: vllm
   vllm:
     mode: server
+    server:
+      debug_dump:
+        enabled: true
+        every_steps: 4
+        dump_first_step: true
+        max_events: 20
+        max_samples: 10
+        max_chars: 0
