@@ -44,8 +44,8 @@ EOF
   exit 1
 }
 
-ADAPTERS="output/stage2_ab/prod_bbox_max60_ckpt1516_ablation_ep2/a_only_iter3/v1-20260201-072222/prod_a_only_bbox_max60_ckpt1516_ep2_iter3/checkpoint-6062"
-OUTPUT_DIR="output/stage2_ab/a_only_iter_3_ckpt_6062"
+ADAPTERS="output/stage2_ab/prod/ab_mixed/v8-20260214-194010/prod_ab_mixed_bbox_max60_ckpt1516_ep2/checkpoint-400"
+OUTPUT_DIR="output/stage2_ab/experimental/ab_mixed_ckpt_400"
 GPU_DEVICES="2"
 ALLOW_OVERWRITE="${ALLOW_OVERWRITE:-0}"
 MAX_SHARD_SIZE="${MAX_SHARD_SIZE:-5GB}"
