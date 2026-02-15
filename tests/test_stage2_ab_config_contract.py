@@ -25,6 +25,7 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
             "trainer_variant": "stage2_ab_training",
         },
         "training": dict(training_section),
+        "rollout_matching": {"rollout_backend": "hf"},
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "channel_b": {},
