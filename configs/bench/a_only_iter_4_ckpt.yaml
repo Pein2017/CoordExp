@@ -1,5 +1,5 @@
 run:
-  name: a_only_iter_4_ckpt
+  name: a_only_iter_4_ckpt-rep1.05
   output_dir: output/bench
 
 stages:
@@ -9,7 +9,7 @@ stages:
 
 infer:
   gt_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
-  model_checkpoint: output/stage2_ab/a_only_iter_4_ckpt_REPLACE_ME
+  model_checkpoint: output/stage2_ab/a_only_iter_3_ckpt_6062
 
   mode: auto
   pred_coord_mode: auto
@@ -33,7 +33,7 @@ infer:
     temperature: 0.1
     top_p: 0.9
     max_new_tokens: 3084
-    repetition_penalty: 1.1
+    repetition_penalty: 1.05
     batch_size: 64
     seed: 42
 
@@ -48,3 +48,7 @@ eval:
   overlay: false
   overlay_k: 12
   num_workers: 8
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+  semantic_threshold: 0.6
