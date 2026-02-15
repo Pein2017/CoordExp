@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from dataclasses import is_dataclass
 from typing import Any, Optional
 
 from src.config.loader import ConfigLoader
 from src.config.schema import TrainingConfig
+from src.config.strict_dataclass import dataclass_asdict_no_none
 
 RolloutContract = dict[str, Any]
 Stage2LauncherPreflight = dict[str, Any]
@@ -169,6 +171,10 @@ def _extract_rollout_mapping(training_config: TrainingConfig) -> Mapping[str, An
         raise ValueError(
             "rollout_matching configuration is required (see rollout_matching.*)."
         )
+
+    if is_dataclass(canonical):
+        return dataclass_asdict_no_none(canonical)
+
     if not isinstance(canonical, Mapping):
         raise TypeError("rollout_matching must be a mapping when provided.")
     return dict(canonical)

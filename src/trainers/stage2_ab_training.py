@@ -469,6 +469,11 @@ def _matched_prefix_structure_positions(
         return []
 
     pieces = decode_pieces(tokenizer, token_ids)
+    # value_span is emitted by rollout parser in token-piece char space.
+    # Keep all char-indexed operations in that same frame.
+    prefix_scan_text = "".join(str(p) for p in pieces)
+    _ = prefix_text  # kept for interface compatibility; char ops use parser frame.
+
     token_start_chars: List[int] = []
     cursor = 0
     for p in pieces:
@@ -485,7 +490,7 @@ def _matched_prefix_structure_positions(
         return out
 
     supervised: set[int] = set()
-    prefix_len_chars = int(len(prefix_text))
+    prefix_len_chars = int(len(prefix_scan_text))
 
     for obj in matched_pred_objects:
         if obj is None:
@@ -514,7 +519,7 @@ def _matched_prefix_structure_positions(
                 f"matched object {key} value_span is outside retained prefix: {value_span!r}"
             )
 
-        key_anchor = int(prefix_text.rfind(f'"{key}"', 0, int(value_start) + 1))
+        key_anchor = int(prefix_scan_text.rfind(f'"{key}"', 0, int(value_start) + 1))
         if key_anchor < 0:
             raise ValueError(
                 f"could not locate matched object key {key!r} in retained prefix"
@@ -527,7 +532,7 @@ def _matched_prefix_structure_positions(
             )
 
         desc_tokens: set[int] = set()
-        value_text = str(prefix_text[int(value_start) : int(value_end)])
+        value_text = str(prefix_scan_text[int(value_start) : int(value_end)])
         for ds, de in find_desc_value_char_spans(value_text):
             desc_tokens.update(
                 _tok_indices_overlapping(int(value_start + ds), int(value_start + de))
@@ -1422,12 +1427,6 @@ class Stage2ABTrainingTrainer(
         fp_cost = float(self._cfg("fp_cost", 1.0))
         fn_cost = float(self._cfg("fn_cost", 1.0))
 
-        # Optional (Channel-B): reordered-GT SFT (B3/7.3 from progress/full_idea.md).
-        # When enabled, we build a GT sequence arranged in the *predicted* object order so CE can
-        # supervise matched objects and encourage early stop when rollouts include extras.
-        reordered_gt_sft = bool(
-            self._ab_channel_b_get("reordered_gt_sft", False) or False
-        )
         # Stage-2 AB contract: FN append is always enabled in Channel-B.
 
         # Optional weak correction when strict-drop removes invalid predicted instances.
@@ -1438,35 +1437,6 @@ class Stage2ABTrainingTrainer(
             max(1.0, min(4.0, drop_invalid_struct_ce_multiplier))
         )
 
-        # Semantic-tolerant matched desc supervision (Channel-B; reordered-GT SFT only).
-        semantic_gate_cfg_raw = self._ab_channel_b_get("semantic_desc_gate", None)
-        semantic_gate_enabled = True
-        semantic_gate_threshold = 0.5
-        semantic_gate_model_name = "sentence-transformers/all-MiniLM-L6-v2"
-        semantic_gate_revision: Optional[str] = None
-        if isinstance(semantic_gate_cfg_raw, Mapping):
-            try:
-                semantic_gate_enabled = bool(
-                    semantic_gate_cfg_raw.get("enabled", semantic_gate_enabled)
-                )
-                semantic_gate_threshold = float(
-                    semantic_gate_cfg_raw.get("threshold", semantic_gate_threshold)
-                )
-                semantic_gate_model_name = str(
-                    semantic_gate_cfg_raw.get(
-                        "model_name_or_path", semantic_gate_model_name
-                    )
-                )
-                rev_raw = semantic_gate_cfg_raw.get("revision")
-                semantic_gate_revision = (
-                    str(rev_raw).strip() if rev_raw not in (None, "", False) else None
-                )
-            except Exception:
-                # Fall back to safe defaults (schema should normally enforce this).
-                semantic_gate_enabled = bool(semantic_gate_enabled)
-                semantic_gate_threshold = float(semantic_gate_threshold)
-                semantic_gate_model_name = str(semantic_gate_model_name)
-                semantic_gate_revision = semantic_gate_revision
 
         packing_enabled = self._packing_enabled()
         if packing_enabled and not self._packing_drop_last():
@@ -1573,63 +1543,6 @@ class Stage2ABTrainingTrainer(
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
         strict_drop_by_reason_total: Dict[str, int] = {}
-
-        if semantic_gate_enabled and not semantic_gate_revision:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
-            )
-
-        semantic_gate_is_active = 0.0
-        semantic_encoder = None
-        semantic_ok_and_sim = None
-        if semantic_gate_enabled:
-            try:
-                from src.metrics.semantic_desc import SemanticDescEncoder
-                from src.metrics.semantic_desc import semantic_ok_and_sim as _semantic_ok_and_sim
-
-                semantic_ok_and_sim = _semantic_ok_and_sim
-
-                sig = (
-                    str(semantic_gate_model_name),
-                    str(semantic_gate_revision),
-                    "cpu",
-                    64,
-                    64,
-                )
-                enc = getattr(self, "_stage2_ab_semantic_gate_encoder", None)
-                enc_sig = getattr(self, "_stage2_ab_semantic_gate_encoder_sig", None)
-                if enc is not None and enc_sig == sig:
-                    semantic_encoder = enc
-                else:
-                    semantic_encoder = SemanticDescEncoder(
-                        model_name=str(semantic_gate_model_name),
-                        revision=str(semantic_gate_revision),
-                        device="cpu",
-                        batch_size=64,
-                        max_length=64,
-                    )
-                    setattr(self, "_stage2_ab_semantic_gate_encoder", semantic_encoder)
-                    setattr(self, "_stage2_ab_semantic_gate_encoder_sig", sig)
-
-                semantic_gate_is_active = 1.0
-                if not bool(getattr(self, "_stage2_ab_semantic_gate_logged", False)):
-                    logger.info(
-                        "Stage2-AB semantic desc gate enabled: model=%s revision=%s threshold=%s",
-                        semantic_gate_model_name,
-                        semantic_gate_revision,
-                        semantic_gate_threshold,
-                    )
-                    setattr(self, "_stage2_ab_semantic_gate_logged", True)
-            except Exception as exc:
-                semantic_encoder = None
-                semantic_ok_and_sim = None
-                semantic_gate_is_active = 0.0
-                if not bool(getattr(self, "_stage2_ab_semantic_gate_warned", False)):
-                    logger.warning(
-                        "Stage2-AB semantic desc gate disabled (missing dependency/weights): %s",
-                        exc,
-                    )
-                    setattr(self, "_stage2_ab_semantic_gate_warned", True)
 
         for sample, (resp_ids, _resp_text, decode_mode, prompt_ids), repeat_triggered in zip(
             inputs,
@@ -1782,242 +1695,85 @@ class Stage2ABTrainingTrainer(
             prefix_bins: List[int] = []
             matched_gt_for_supervision: set[int] = set()
 
-            # Optional: Reordered-GT SFT (B3/7.3). Build a GT sequence arranged in the
-            # *predicted* object order so CE can supervise matched objects.
-            prefix_bbox_groups_rel: List[Dict[str, Any]] = []
-            fn_bbox_groups_rel: List[Dict[str, Any]] = []
             prefix_len_raw_local = int(len(parse.prefix_token_ids))
 
-            tail_desc_pos_matched: List[int] = []
-            tail_desc_pos_missing: List[int] = []
-            tail_desc_pos_matched_masked: List[int] = []
             prefix_struct_pos: List[int] = []
 
             fn_count_for_meta = 0
 
-            if bool(reordered_gt_sft):
-                pred_to_gt: Dict[int, int] = {
-                    int(pi): int(gi) for pi, gi in match.matched_pairs
-                }
+            matched_pred_indices: set[int] = set()
+            for pred_i, gt_i in match.matched_pairs:
+                if pred_i < 0 or pred_i >= len(pred_meta):
+                    continue
+                if gt_i < 0 or gt_i >= len(gts):
+                    continue
+                pobj = pred_meta[pred_i]
+                if len(pobj.coord_token_indices) != 4:
+                    continue
+                matched_gt_for_supervision.add(int(gt_i))
+                matched_pred_indices.add(int(pred_i))
+                gt_bins = list(gts[gt_i].points_norm1000)
+                pos_seg = [
+                    int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices
+                ]
+                prefix_bbox_groups.append({"pos": pos_seg, "gt_bins": gt_bins})
+                for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
+                    prefix_pos.append(int(local_idx))
+                    prefix_bins.append(int(tbin))
 
-                matched_pairs_pred_order: List[Tuple[int, int]] = []
-                matched_objs: List[GTObject] = []
-                for pred_i in range(len(pred_meta)):
-                    gt_i = pred_to_gt.get(int(pred_i))
-                    if gt_i is None:
-                        continue
-                    if gt_i < 0 or gt_i >= len(gts):
-                        continue
-                    matched_pairs_pred_order.append((int(pred_i), int(gt_i)))
-                    matched_objs.append(gts[int(gt_i)])
-                    matched_gt_for_supervision.add(int(gt_i))
+            matched_pred_objects = [
+                pred_meta[int(i)]
+                for i in sorted(matched_pred_indices)
+                if 0 <= int(i) < len(pred_meta)
+            ]
+            prefix_struct_pos = _matched_prefix_structure_positions(
+                tokenizer=tok,
+                prefix_token_ids=parse.prefix_token_ids,
+                prefix_text=parse.prefix_text,
+                matched_pred_objects=matched_pred_objects,
+            )
 
-                fn_gt_indices_final = list(match.fn_gt_indices)
-                fn_objs_all = [gts[i] for i in fn_gt_indices_final]
-                fn_count_for_meta = int(len(fn_gt_indices_final))
-                fn_objs = fn_objs_all
+            fn_gt_indices_final = [
+                i for i in range(len(gts)) if i not in matched_gt_for_supervision
+            ]
+            fn_objs = [gts[i] for i in fn_gt_indices_final]
+            fn_count_for_meta = int(len(fn_objs))
 
-                all_objs = matched_objs + list(fn_objs)
-                if not all_objs:
-                    # Safety: avoid training on an empty JSON when append_missing is disabled.
-                    all_objs = list(gts)
+            max_idx = parse.max_object_index_in_prefix
+            start_idx = (max_idx + 1) if max_idx is not None else 1
+            append_text = serialize_append_fragment(
+                fn_objects=fn_objs,
+                start_index=start_idx,
+                prefix_text=parse.prefix_text,
+            )
+            append_ids = tok.encode(append_text, add_special_tokens=False)
 
-                payload: Dict[str, Any] = {}
-                for out_i, obj in enumerate(all_objs, start=1):
-                    payload[f"object_{int(out_i)}"] = {
-                        "desc": str(obj.desc),
-                        "bbox_2d": [f"<|coord_{int(v)}|>" for v in obj.points_norm1000],
-                    }
-                assistant_text = json.dumps(
-                    payload, ensure_ascii=False, separators=(", ", ": ")
-                )
-                y_train_ids = tok.encode(assistant_text, add_special_tokens=False)
+            tail_desc_pos = find_desc_value_token_positions(
+                tokenizer=tok, token_ids=append_ids
+            )
 
-                # Desc spans for CE weighting (relative to y_train_ids since prefix_len=0).
-                tail_desc_pos = find_desc_value_token_positions(
-                    tokenizer=tok, token_ids=y_train_ids
-                )
+            y_train_ids = list(parse.prefix_token_ids) + [
+                int(t) for t in append_ids
+            ]
 
-                # Split desc tokens into matched (reordered prefix) vs missing (FN appended).
-                # This enables downweighting matched-object desc CE without weakening strict
-                # JSON format supervision.
-                n_prefix_objs = int(len(matched_objs))
-                try:
-                    pieces = decode_pieces(tok, [int(t) for t in y_train_ids])
-                    token_start_chars: List[int] = []
-                    cursor = 0
-                    for p in pieces:
-                        token_start_chars.append(cursor)
-                        cursor += len(p)
-                    text = "".join(pieces)
-                    spans = find_desc_value_char_spans(text)
-                    if spans:
-                        by_span: List[List[int]] = [[] for _ in spans]
-                        for ti, (start, piece) in enumerate(
-                            zip(token_start_chars, pieces)
-                        ):
-                            end = start + len(piece)
-                            for si, (s, e) in enumerate(spans):
-                                if start < e and end > s:
-                                    by_span[si].append(int(ti))
-                                    break
-
-                        # Semantic-tolerant matched desc supervision: when the predicted desc is
-                        # semantically correct, mask GT desc tokens from CE for that matched object.
-                        if (
-                            semantic_gate_is_active > 0.0
-                            and semantic_encoder is not None
-                            and semantic_ok_and_sim is not None
-                            and matched_pairs_pred_order
-                        ):
-                            n_gate = max(
-                                0,
-                                min(
-                                    int(n_prefix_objs),
-                                    int(len(by_span)),
-                                    int(len(matched_pairs_pred_order)),
-                                ),
+            # FN bbox groups in the appended tail.
+            rel_groups = _bbox_groups_from_token_ids(
+                token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
+            )
+            for obj, rel_pos in zip(fn_objs, rel_groups):
+                fn_bbox_groups.append(
+                    {
+                        "pos": [
+                            int(
+                                len(prompt_ids)
+                                + int(len(parse.prefix_token_ids))
+                                + int(p)
                             )
-                            for i_obj in range(int(n_gate)):
-                                pred_i, gt_i = matched_pairs_pred_order[int(i_obj)]
-                                try:
-                                    pred_desc = str(
-                                        getattr(pred_meta[int(pred_i)], "desc", "")
-                                        or ""
-                                    )
-                                    gt_desc = str(getattr(gts[int(gt_i)], "desc", "") or "")
-                                except Exception:
-                                    pred_desc = ""
-                                    gt_desc = ""
-                                try:
-                                    ok, _sim = semantic_ok_and_sim(
-                                        pred_desc=pred_desc,
-                                        gt_desc=gt_desc,
-                                        encoder=semantic_encoder,
-                                        threshold=float(semantic_gate_threshold),
-                                    )
-                                except Exception:
-                                    ok = False
-                                if bool(ok):
-                                    tail_desc_pos_matched_masked.extend(by_span[int(i_obj)])
-
-                        n_split = max(0, min(int(n_prefix_objs), int(len(by_span))))
-                        for pos_list in by_span[:n_split]:
-                            tail_desc_pos_matched.extend(pos_list)
-                        for pos_list in by_span[n_split:]:
-                            tail_desc_pos_missing.extend(pos_list)
-
-                        tail_desc_pos_matched = sorted(
-                            {int(p) for p in tail_desc_pos_matched}
-                        )
-                        tail_desc_pos_matched_masked = sorted(
-                            {int(p) for p in tail_desc_pos_matched_masked}
-                        )
-                        tail_desc_pos_missing = sorted(
-                            {int(p) for p in tail_desc_pos_missing}
-                        )
-                except Exception:
-                    tail_desc_pos_matched = []
-                    tail_desc_pos_matched_masked = []
-                    tail_desc_pos_missing = []
-
-                rel_groups_all = _bbox_groups_from_token_ids(
-                    token_ids=y_train_ids, coord_id_set=coord_id_set, gt_objs=all_objs
+                            for p in rel_pos
+                        ],
+                        "gt_bins": list(obj.points_norm1000),
+                    }
                 )
-                for i_obj, (obj, rel_pos) in enumerate(zip(all_objs, rel_groups_all)):
-                    try:
-                        rel_pos_i = [int(p) for p in rel_pos]
-                    except Exception:
-                        continue
-                    if len(rel_pos_i) != 4:
-                        continue
-
-                    grp = {"pos": rel_pos_i, "gt_bins": list(obj.points_norm1000)}
-                    if i_obj < n_prefix_objs:
-                        prefix_bbox_groups_rel.append(grp)
-                        for local_idx, tbin in zip(rel_pos_i, obj.points_norm1000):
-                            prefix_pos.append(int(local_idx))
-                            prefix_bins.append(int(tbin))
-                    else:
-                        fn_bbox_groups_rel.append(grp)
-
-                # Apply CE over the full assistant span (no rollout prefix masking).
-                prefix_len_raw_local = 0
-
-            else:
-                matched_pred_indices: set[int] = set()
-                for pred_i, gt_i in match.matched_pairs:
-                    if pred_i < 0 or pred_i >= len(pred_meta):
-                        continue
-                    if gt_i < 0 or gt_i >= len(gts):
-                        continue
-                    pobj = pred_meta[pred_i]
-                    if len(pobj.coord_token_indices) != 4:
-                        continue
-                    matched_gt_for_supervision.add(int(gt_i))
-                    matched_pred_indices.add(int(pred_i))
-                    gt_bins = list(gts[gt_i].points_norm1000)
-                    pos_seg = [
-                        int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices
-                    ]
-                    prefix_bbox_groups.append({"pos": pos_seg, "gt_bins": gt_bins})
-                    for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
-                        prefix_pos.append(int(local_idx))
-                        prefix_bins.append(int(tbin))
-
-                matched_pred_objects = [
-                    pred_meta[int(i)]
-                    for i in sorted(matched_pred_indices)
-                    if 0 <= int(i) < len(pred_meta)
-                ]
-                prefix_struct_pos = _matched_prefix_structure_positions(
-                    tokenizer=tok,
-                    prefix_token_ids=parse.prefix_token_ids,
-                    prefix_text=parse.prefix_text,
-                    matched_pred_objects=matched_pred_objects,
-                )
-
-                fn_gt_indices_final = [
-                    i for i in range(len(gts)) if i not in matched_gt_for_supervision
-                ]
-                fn_objs = [gts[i] for i in fn_gt_indices_final]
-                fn_count_for_meta = int(len(fn_objs))
-
-                max_idx = parse.max_object_index_in_prefix
-                start_idx = (max_idx + 1) if max_idx is not None else 1
-                append_text = serialize_append_fragment(
-                    fn_objects=fn_objs,
-                    start_index=start_idx,
-                    prefix_text=parse.prefix_text,
-                )
-                append_ids = tok.encode(append_text, add_special_tokens=False)
-
-                tail_desc_pos = find_desc_value_token_positions(
-                    tokenizer=tok, token_ids=append_ids
-                )
-
-                y_train_ids = list(parse.prefix_token_ids) + [
-                    int(t) for t in append_ids
-                ]
-
-                # FN bbox groups in the appended tail.
-                rel_groups = _bbox_groups_from_token_ids(
-                    token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
-                )
-                for obj, rel_pos in zip(fn_objs, rel_groups):
-                    fn_bbox_groups.append(
-                        {
-                            "pos": [
-                                int(
-                                    len(prompt_ids)
-                                    + int(len(parse.prefix_token_ids))
-                                    + int(p)
-                                )
-                                for p in rel_pos
-                            ],
-                            "gt_bins": list(obj.points_norm1000),
-                        }
-                    )
 
             t_parse_match_s += time.perf_counter() - t_pm0
 
@@ -2098,98 +1854,52 @@ class Stage2ABTrainingTrainer(
             prompt_ids_local = enc_ids_list[:prompt_len]
             delta_prompt = int(prompt_len) - int(len(prompt_ids))
 
-            if bool(reordered_gt_sft):
-                # Convert bbox groups from assistant-relative positions (y_train_ids) to absolute
-                # positions in the encoded input_ids.
-                def _abs_groups_from_rel(
-                    groups: Sequence[Mapping[str, Any]],
-                ) -> List[Dict[str, Any]]:
-                    out: List[Dict[str, Any]] = []
-                    for g in groups:
-                        if not isinstance(g, Mapping):
-                            continue
-                        pos = g.get("pos")
-                        gb = g.get("gt_bins")
-                        if not isinstance(pos, Sequence) or not isinstance(
-                            gb, Sequence
-                        ):
-                            continue
-                        if len(pos) != 4 or len(gb) != 4:
-                            continue
-                        try:
-                            pos_i = [int(p) for p in pos]
-                            gb_i = [int(x) for x in gb]
-                        except Exception:
-                            continue
-                        if any(p < 0 or p >= int(train_len_eff) for p in pos_i):
-                            raise ValueError(
-                                "stage2-ab bbox group pos out of range after teacher-forced encode. "
-                                f"pos={pos_i} train_len={int(train_len_eff)} y_train_len={int(len(y_train_ids))}"
-                            )
-                        abs_pos = [int(prompt_len + p) for p in pos_i]
-                        if any(p >= int(encoded_len) for p in abs_pos):
-                            raise ValueError(
-                                "stage2-ab bbox group absolute pos exceeds encoded_len after teacher-forced encode. "
-                                f"abs_pos={abs_pos} encoded_len={int(encoded_len)} prompt_len={int(prompt_len)}"
-                            )
-                        out.append({"pos": abs_pos, "gt_bins": gb_i})
-                    return out
+            # Shift bbox groups based on local prompt_len, and drop any out-of-range groups.
+            def _shift_groups(
+                groups: Sequence[Mapping[str, Any]], *, lower: int, upper: int
+            ) -> List[Dict[str, Any]]:
+                out: List[Dict[str, Any]] = []
+                for g in groups:
+                    if not isinstance(g, Mapping):
+                        continue
+                    pos = g.get("pos")
+                    gb = g.get("gt_bins")
+                    if not isinstance(pos, Sequence) or not isinstance(gb, Sequence):
+                        continue
+                    if len(pos) != 4 or len(gb) != 4:
+                        continue
+                    try:
+                        pos_i = [int(p) for p in pos]
+                        gb_i = [int(x) for x in gb]
+                    except Exception:
+                        continue
+                    pos_i = [int(p + delta_prompt) for p in pos_i]
+                    if any(p < int(lower) or p >= int(upper) for p in pos_i):
+                        raise ValueError(
+                            "stage2-ab bbox group pos escaped expected span after prompt shift (possible truncation/misalignment). "
+                            f"pos={pos_i} span=[{int(lower)},{int(upper)}) delta_prompt={int(delta_prompt)}"
+                        )
+                    if any(p >= int(encoded_len) for p in pos_i):
+                        raise ValueError(
+                            "stage2-ab bbox group pos exceeds encoded_len after prompt shift (possible truncation/misalignment). "
+                            f"pos={pos_i} encoded_len={int(encoded_len)}"
+                        )
+                    out.append({"pos": pos_i, "gt_bins": gb_i})
+                return out
 
-                bbox_groups_prefix = _abs_groups_from_rel(prefix_bbox_groups_rel)
-                bbox_groups_fn = _abs_groups_from_rel(fn_bbox_groups_rel)
-
-            else:
-                # Shift bbox groups based on local prompt_len, and drop any out-of-range groups.
-                def _shift_groups(
-                    groups: Sequence[Mapping[str, Any]], *, lower: int, upper: int
-                ) -> List[Dict[str, Any]]:
-                    out: List[Dict[str, Any]] = []
-                    for g in groups:
-                        if not isinstance(g, Mapping):
-                            continue
-                        pos = g.get("pos")
-                        gb = g.get("gt_bins")
-                        if not isinstance(pos, Sequence) or not isinstance(
-                            gb, Sequence
-                        ):
-                            continue
-                        if len(pos) != 4 or len(gb) != 4:
-                            continue
-                        try:
-                            pos_i = [int(p) for p in pos]
-                            gb_i = [int(x) for x in gb]
-                        except Exception:
-                            continue
-                        pos_i = [int(p + delta_prompt) for p in pos_i]
-                        if any(p < int(lower) or p >= int(upper) for p in pos_i):
-                            raise ValueError(
-                                "stage2-ab bbox group pos escaped expected span after prompt shift (possible truncation/misalignment). "
-                                f"pos={pos_i} span=[{int(lower)},{int(upper)}) delta_prompt={int(delta_prompt)}"
-                            )
-                        if any(p >= int(encoded_len) for p in pos_i):
-                            raise ValueError(
-                                "stage2-ab bbox group pos exceeds encoded_len after prompt shift (possible truncation/misalignment). "
-                                f"pos={pos_i} encoded_len={int(encoded_len)}"
-                            )
-                        out.append({"pos": pos_i, "gt_bins": gb_i})
-                    return out
-
-                bbox_groups_prefix = _shift_groups(
-                    prefix_bbox_groups,
-                    lower=int(prompt_len),
-                    upper=int(prompt_len + prefix_len_eff),
-                )
-                bbox_groups_fn = _shift_groups(
-                    fn_bbox_groups,
-                    lower=int(prompt_len + prefix_len_eff),
-                    upper=int(prompt_len + train_len_eff),
-                )
+            bbox_groups_prefix = _shift_groups(
+                prefix_bbox_groups,
+                lower=int(prompt_len),
+                upper=int(prompt_len + prefix_len_eff),
+            )
+            bbox_groups_fn = _shift_groups(
+                fn_bbox_groups,
+                lower=int(prompt_len + prefix_len_eff),
+                upper=int(prompt_len + train_len_eff),
+            )
 
             # Tail desc spans for CE weighting (relative to tail ids).
             tail_desc_pos_eff: List[int] = []
-            tail_desc_pos_matched_eff: List[int] = []
-            tail_desc_pos_matched_masked_eff: List[int] = []
-            tail_desc_pos_missing_eff: List[int] = []
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
 
             # Stop/closure supervision is active (no stop-neutral masking), but we still
@@ -2216,30 +1926,6 @@ class Stage2ABTrainingTrainer(
                     continue
                 if 0 <= rel_i < tail_cap:
                     tail_desc_pos_eff.append(rel_i)
-
-            for rel in tail_desc_pos_matched:
-                try:
-                    rel_i = int(rel)
-                except Exception:
-                    continue
-                if 0 <= rel_i < tail_cap:
-                    tail_desc_pos_matched_eff.append(rel_i)
-
-            for rel in tail_desc_pos_matched_masked:
-                try:
-                    rel_i = int(rel)
-                except Exception:
-                    continue
-                if 0 <= rel_i < tail_cap:
-                    tail_desc_pos_matched_masked_eff.append(rel_i)
-
-            for rel in tail_desc_pos_missing:
-                try:
-                    rel_i = int(rel)
-                except Exception:
-                    continue
-                if 0 <= rel_i < tail_cap:
-                    tail_desc_pos_missing_eff.append(rel_i)
 
             invalid_rollout_total += int(invalid_rollout)
 
@@ -2276,9 +1962,6 @@ class Stage2ABTrainingTrainer(
                 "tail_closure_pos": [int(p) for p in tail_closure_pos_eff],
                 "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
-                "tail_desc_pos_matched": tail_desc_pos_matched_eff,
-                "tail_desc_pos_matched_masked": tail_desc_pos_matched_masked_eff,
-                "tail_desc_pos_missing": tail_desc_pos_missing_eff,
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
             }
@@ -2348,9 +2031,6 @@ class Stage2ABTrainingTrainer(
             batch_metrics[f"stage2_ab/channel_b/strict_drop/reason/{str(rk)}"] = float(
                 rvi
             )
-        batch_metrics["stage2_ab/channel_b/semantic_desc_gate/is_active"] = float(
-            semantic_gate_is_active
-        )
 
         if bool(_segments_only):
             return segments, batch_metrics
@@ -2424,15 +2104,6 @@ class Stage2ABTrainingTrainer(
 
         desc_ce_weight = float(self._ab_get("desc_ce_weight", 1.0) or 0.0)
         desc_ce_weight = max(0.0, desc_ce_weight)
-        desc_ce_weight_matched = desc_ce_weight
-        if channel == "B":
-            desc_ce_weight_matched_raw = self._ab_channel_b_get(
-                "desc_ce_weight_matched", desc_ce_weight
-            )
-            if desc_ce_weight_matched_raw is None:
-                desc_ce_weight_matched_raw = desc_ce_weight
-            desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
-            desc_ce_weight_matched = max(0.0, desc_ce_weight_matched)
 
         bbox_smoothl1_w = float(self._ab_get("bbox_smoothl1_weight", 1.0) or 0.0)
         bbox_smoothl1_w = max(0.0, bbox_smoothl1_w)
@@ -2693,11 +2364,6 @@ class Stage2ABTrainingTrainer(
             prefix_struct_pos = list(m.get("prefix_struct_pos") or [])
             tail_ignore_pos = list(m.get("tail_ignore_pos") or [])
             tail_desc_pos = list(m.get("tail_desc_pos") or [])
-            tail_desc_pos_matched = list(m.get("tail_desc_pos_matched") or [])
-            tail_desc_pos_missing = list(m.get("tail_desc_pos_missing") or [])
-            tail_desc_pos_matched_masked = list(
-                m.get("tail_desc_pos_matched_masked") or []
-            )
 
             drop_invalid_total = int(m.get("drop_invalid_total", 0) or 0)
             try:
@@ -2741,14 +2407,9 @@ class Stage2ABTrainingTrainer(
                 labels_masked[b, p] = input_ids[b, p]
                 weights_masked[b, p] = 1.0
 
-            # Tail masking hooks (semantic gate, optional explicit ignore positions).
+            # Tail masking hooks (optional explicit ignore positions).
             ignore_rel: set[int] = set()
             for rel in tail_ignore_pos:
-                try:
-                    ignore_rel.add(int(rel))
-                except Exception:
-                    continue
-            for rel in tail_desc_pos_matched_masked:
                 try:
                     ignore_rel.add(int(rel))
                 except Exception:
@@ -2763,45 +2424,17 @@ class Stage2ABTrainingTrainer(
                 weights_masked[b, p] = 0.0
 
             # Apply desc weighting on tail desc value tokens.
-            # Prefer split matched/missing weights when available; otherwise fall back to
-            # a single global desc_ce_weight.
-            if tail_desc_pos_matched or tail_desc_pos_missing:
-                for rel in tail_desc_pos_missing:
-                    try:
-                        rel_i = int(rel)
-                    except Exception:
-                        continue
-                    p = int(seg_start + prompt_len + prefix_len + rel_i)
-                    if p < tail_start or p >= tail_end:
-                        continue
-                    if labels_masked[b, p].item() == -100:
-                        continue
-                    weights_masked[b, p] = float(desc_ce_weight)
-
-                for rel in tail_desc_pos_matched:
-                    try:
-                        rel_i = int(rel)
-                    except Exception:
-                        continue
-                    p = int(seg_start + prompt_len + prefix_len + rel_i)
-                    if p < tail_start or p >= tail_end:
-                        continue
-                    if labels_masked[b, p].item() == -100:
-                        continue
-                    weights_masked[b, p] = float(desc_ce_weight_matched)
-
-            else:
-                for rel in tail_desc_pos:
-                    try:
-                        rel_i = int(rel)
-                    except Exception:
-                        continue
-                    p = int(seg_start + prompt_len + prefix_len + rel_i)
-                    if p < tail_start or p >= tail_end:
-                        continue
-                    if labels_masked[b, p].item() == -100:
-                        continue
-                    weights_masked[b, p] = float(desc_ce_weight)
+            for rel in tail_desc_pos:
+                try:
+                    rel_i = int(rel)
+                except Exception:
+                    continue
+                p = int(seg_start + prompt_len + prefix_len + rel_i)
+                if p < tail_start or p >= tail_end:
+                    continue
+                if labels_masked[b, p].item() == -100:
+                    continue
+                weights_masked[b, p] = float(desc_ce_weight)
 
 
             # Optional weak correction: if invalid rollout instances were dropped, upweight
@@ -2818,18 +2451,11 @@ class Stage2ABTrainingTrainer(
                 if mult > 0.0 and mult != 1.0:
                     base = int(seg_start + prompt_len + prefix_len)
                     desc_rel_set: set[int] = set()
-                    if tail_desc_pos_matched or tail_desc_pos_missing:
-                        for rel in list(tail_desc_pos_matched) + list(tail_desc_pos_missing):
-                            try:
-                                desc_rel_set.add(int(rel))
-                            except Exception:
-                                continue
-                    else:
-                        for rel in tail_desc_pos:
-                            try:
-                                desc_rel_set.add(int(rel))
-                            except Exception:
-                                continue
+                    for rel in tail_desc_pos:
+                        try:
+                            desc_rel_set.add(int(rel))
+                        except Exception:
+                            continue
 
                     for p in range(tail_start, tail_end):
                         if labels_masked[b, p].item() == -100:

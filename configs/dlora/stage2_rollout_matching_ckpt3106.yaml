@@ -45,7 +45,7 @@ training:
   # Rollout-matching is rollout-heavy; keep per-device small for stability on long sequences.
   per_device_train_batch_size: 1
   # Keep aligned with the single rollout batching knob:
-  # custom.extra.rollout_matching.decode_batch_size.
+  # rollout_matching.decode_batch_size.
   per_device_eval_batch_size: 4
   # On 4xA100 this yields grad_acc=16 (more stable than grad_acc=1 at long lengths).
   effective_batch_size: 32
@@ -96,108 +96,107 @@ custom:
   train_sample_limit: 128
   val_sample_limit: 32
 
-  extra:
-    rollout_matching:
-      # Default: vLLM colocate rollouts (teacher-forced forward/backprop stays on the training model).
-      # For monitoring/debugging, you can switch to HF backend: rollout_backend: hf
-      rollout_backend: vllm
-      # Unified rollout decode batch size (per device per generation call).
-      decode_batch_size: 4
+rollout_matching:
+  # Default: vLLM colocate rollouts (teacher-forced forward/backprop stays on the training model).
+  # For monitoring/debugging, you can switch to HF backend: rollout_backend: hf
+  rollout_backend: vllm
+  # Unified rollout decode batch size (per device per generation call).
+  decode_batch_size: 4
 
-      # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.
-      vllm:
-        # Keep max_num_seqs close to decode_batch_size for lower memory overhead.
-        # For monitoring runs, you can use: max_num_seqs: 4
-        max_num_seqs: 4
-        infer_batch_size: 1
+  # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.
+  vllm:
+    # Keep max_num_seqs close to decode_batch_size for lower memory overhead.
+    # For monitoring runs, you can use: max_num_seqs: 4
+    max_num_seqs: 4
+    infer_batch_size: 1
 
-        tensor_parallel_size: 1
-        # Keep this modest to leave headroom for the training model on the same GPU.
-        gpu_memory_utilization: 0.7
-        # Chunk TP-group gathered requests to reduce peak multimodal prefill VRAM in colocate mode.
-        # Must cover prompt_len + max_new_tokens (vLLM requirement).
-        #
-        # With max_model_len=16000 and max_new_tokens=8192, your prompt_len must be <= 7808,
-        # otherwise rollout generations may truncate or error. Increase max_model_len if needed.
-        max_model_len: 16000
-        # vLLM+LoRA on multimodal models can be unstable under torch.compile graphs.
-        # enforce_eager disables compilation (slower but much more robust).
-        enforce_eager: true
-        # vLLM does a huge multimodal (video) dummy profile run by default, which can trip LoRA kernels.
-        # We only need image rollouts here; skip multimodal profiling for stability.
-        skip_mm_profiling: true
-        # NOTE: `mm_encoder_tp_mode: data` can reduce peak vision prefill memory,
-        # but we have observed runtime shape issues with our current vLLM stack.
-        # Keep the safe default (`weights`) for production readiness unless you
-        # have verified `data` works on your machine/version.
-        mm_encoder_tp_mode: weights
-        # Defensive multimodal limits: we only use single-image samples in CoordExp.
-        limit_mm_per_prompt: {image: 1, video: 0}
-        # Chunk long prefills to reduce peak memory during the prefill phase.
-        enable_chunked_prefill: true
-        # Some vLLM versions can behave poorly when chunking multimodal (image) inputs.
-        # Keep multimodal inputs unchunked while still chunking long text prefills.
-        disable_chunked_mm_input: true
-        # vLLM internal scheduling knobs. These do NOT change the model context length, but can
-        # affect whether vLLM LoRA kernels have enough token budget during profile/run.
+    tensor_parallel_size: 1
+    # Keep this modest to leave headroom for the training model on the same GPU.
+    gpu_memory_utilization: 0.7
+    # Chunk TP-group gathered requests to reduce peak multimodal prefill VRAM in colocate mode.
+    # Must cover prompt_len + max_new_tokens (vLLM requirement).
+    #
+    # With max_model_len=16000 and max_new_tokens=8192, your prompt_len must be <= 7808,
+    # otherwise rollout generations may truncate or error. Increase max_model_len if needed.
+    max_model_len: 16000
+    # vLLM+LoRA on multimodal models can be unstable under torch.compile graphs.
+    # enforce_eager disables compilation (slower but much more robust).
+    enforce_eager: true
+    # vLLM does a huge multimodal (video) dummy profile run by default, which can trip LoRA kernels.
+    # We only need image rollouts here; skip multimodal profiling for stability.
+    skip_mm_profiling: true
+    # NOTE: `mm_encoder_tp_mode: data` can reduce peak vision prefill memory,
+    # but we have observed runtime shape issues with our current vLLM stack.
+    # Keep the safe default (`weights`) for production readiness unless you
+    # have verified `data` works on your machine/version.
+    mm_encoder_tp_mode: weights
+    # Defensive multimodal limits: we only use single-image samples in CoordExp.
+    limit_mm_per_prompt: {image: 1, video: 0}
+    # Chunk long prefills to reduce peak memory during the prefill phase.
+    enable_chunked_prefill: true
+    # Some vLLM versions can behave poorly when chunking multimodal (image) inputs.
+    # Keep multimodal inputs unchunked while still chunking long text prefills.
+    disable_chunked_mm_input: true
+    # vLLM internal scheduling knobs. These do NOT change the model context length, but can
+    # affect whether vLLM LoRA kernels have enough token budget during profile/run.
 
-        # Must be >= the maximum token count seen by any LoRA-wrapped linear op
-        # (can include vision tokens). Keeping this close to max_model_len
-        # reduces vLLM internal preallocations in colocate mode.
-        max_num_batched_tokens: 16384
-        # Disable vLLM LoRA for Qwen3-VL multimodal stability; the trainer will
-        # merge adapters and sync weights into vLLM on E-steps.
-        enable_lora: false
-        enable_prefix_caching: true
-        sleep_level: 0
+    # Must be >= the maximum token count seen by any LoRA-wrapped linear op
+    # (can include vision tokens). Keeping this close to max_model_len
+    # reduces vLLM internal preallocations in colocate mode.
+    max_num_batched_tokens: 16384
+    # Disable vLLM LoRA for Qwen3-VL multimodal stability; the trainer will
+    # merge adapters and sync weights into vLLM on E-steps.
+    enable_lora: false
+    enable_prefix_caching: true
+    sleep_level: 0
 
-      # vLLM path currently supports greedy only.
-      decode_mode: greedy
-      # NOTE: Dense LVIS outputs can be very long; keep this large for real runs.
-      # Ensure (prompt_len + max_new_tokens) <= vllm.max_model_len (and model max length).
-      max_new_tokens: 8192
-      decoding:
-        temperature: 0.0
-        top_p: 1.0
-        top_k: -1
-      # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
-      repetition_penalty: 1.05
+  # vLLM path currently supports greedy only.
+  decode_mode: greedy
+  # NOTE: Dense LVIS outputs can be very long; keep this large for real runs.
+  # Ensure (prompt_len + max_new_tokens) <= vllm.max_model_len (and model max length).
+  max_new_tokens: 8192
+  decoding:
+    temperature: 0.0
+    top_p: 1.0
+    top_k: -1
+  # Mild anti-loop bias (empirically helpful on Qwen3-VL for long dense JSON).
+  repetition_penalty: 1.05
 
-      # Repeat-aware safety guard: if a rollout degenerates into repetitive garbage,
-      # force EOS early instead of burning minutes until max_new_tokens.
-      # More aggressive termination for monitoring runs: avoid spending minutes on
-      # degenerate rollouts that will be truncated/invalid anyway.
-      repeat_terminate:
-        enabled: true
-        min_new_tokens: 256
-        # Stop trivial loops like "...." or repeating a special token forever.
-        max_consecutive_token_repeats: 32
-        # Stop when the model repeats the exact same n-gram back-to-back.
-        ngram_size: 32
-        ngram_repeats: 2
-        # Optional hard cap to prevent runaway "object_k" spam (LVIS GT is capped to 100).
-        max_object_keys: 128
+  # Repeat-aware safety guard: if a rollout degenerates into repetitive garbage,
+  # force EOS early instead of burning minutes until max_new_tokens.
+  # More aggressive termination for monitoring runs: avoid spending minutes on
+  # degenerate rollouts that will be truncated/invalid anyway.
+  repeat_terminate:
+    enabled: true
+    min_new_tokens: 8
+    # Stop trivial loops like "...." or repeating a special token forever.
+    max_consecutive_token_repeats: 8
+    # Stop when the model repeats the exact same n-gram back-to-back.
+    ngram_size: 8
+    ngram_repeats: 3
+    # No explicit object-count cap; rely on length + repeat-pattern guards.
+    max_object_keys: null
 
-      candidate_top_k: 5
-      maskiou_gate: 0.3
-      maskiou_resolution: 256
-      fp_cost: 1
-      fn_cost: 2
+  candidate_top_k: 5
+  maskiou_gate: 0.3
+  maskiou_resolution: 256
+  fp_cost: 1
+  fn_cost: 2
 
-      ot_cost: l2
-      ot_epsilon: 10
-      ot_iters: 3
+  ot_cost: l2
+  ot_epsilon: 10
+  ot_iters: 3
 
 
-      # Optional desc monitoring (metrics only; does not affect loss).
-      # Set mode=semantic (or both) to enable Sentence-Transformer similarity.
-      desc_monitor:
-        enabled: true
-        mode: exact
-        every_steps: 20
-        max_pairs: 64
-        semantic_model: sentence-transformers/all-MiniLM-L6-v2
-        semantic_threshold: 0.6
-        semantic_device: auto
-        semantic_batch_size: 32
-        semantic_max_length: 64
+  # Optional desc monitoring (metrics only; does not affect loss).
+  # Set mode=semantic (or both) to enable Sentence-Transformer similarity.
+  desc_monitor:
+    enabled: true
+    mode: exact
+    every_steps: 20
+    max_pairs: 64
+    semantic_model: sentence-transformers/all-MiniLM-L6-v2
+    semantic_threshold: 0.6
+    semantic_device: auto
+    semantic_batch_size: 32
+    semantic_max_length: 64

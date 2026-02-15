@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from functools import lru_cache
 from pathlib import Path
 from typing import (
     Any,
@@ -12,6 +13,10 @@ from typing import (
     Optional,
     cast,
 )
+
+from .rollout_matching_schema import RolloutMatchingConfig
+from .strict_dataclass import parse_dataclass_strict
+
 
 AllowedNorm = Literal["none", "norm100", "norm1000"]
 AllowedVisualDistance = Literal["mse", "cosine"]
@@ -29,12 +34,77 @@ def _normalize_json_format(value: Any) -> AllowedJsonFormat:
     return cast(AllowedJsonFormat, normalized)
 
 
-def _as_dict(value: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
+def _as_dict(value: Any, *, path: str) -> Mapping[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
-        raise TypeError(f"Configuration section must be a mapping, got {type(value)!r}")
+        raise TypeError(f"{path} must be a mapping, got {type(value)!r}")
     return value
+
+
+def _validate_section_keys_strict(
+    section: str, payload: Mapping[str, Any], *, allowed: set[str]
+) -> None:
+    """Fail fast on unknown keys within a top-level config section.
+
+    This enforces schema-derived strictness for sections that are ultimately
+    flattened into ms-swift TrainArguments / RLHFArguments keyword arguments.
+
+    Unknown keys are reported as dotted paths (e.g., `training.foo`).
+    """
+
+    if not payload:
+        return
+
+    unknown: list[Any] = []
+    for k in payload.keys():
+        if not isinstance(k, str) or k not in allowed:
+            unknown.append(k)
+
+    if unknown:
+        rendered = [f"{section}.{str(k)}" for k in sorted(unknown, key=lambda x: str(x))]
+        raise ValueError(f"Unknown {section} keys: {rendered}")
+
+
+@lru_cache(maxsize=1)
+def _train_arguments_allowed_keys() -> set[str]:
+    # Schema-derived strict key acceptance for ms-swift TrainArguments-driven sections.
+    from swift.llm.argument import TrainArguments
+
+    return {f.name for f in fields(TrainArguments)}
+
+
+_TRAINING_INTERNAL_KEYS: set[str] = {
+    # CoordExp-only training knobs (not ms-swift args).
+    "effective_batch_size",
+    "save_delay_steps",
+    "save_delay_epochs",
+    "save_last_epoch",
+    # Packing-only knobs consumed by our runner (not ms-swift args).
+    "packing",
+    "packing_length",
+    "packing_buffer",
+    "packing_min_fill_ratio",
+    "packing_drop_last",
+    "packing_allow_single_long",
+    "eval_packing",
+    "packing_avg_samples",
+}
+
+
+@lru_cache(maxsize=1)
+def _training_allowed_keys() -> set[str]:
+    return set(_train_arguments_allowed_keys()) | set(_TRAINING_INTERNAL_KEYS)
+
+
+@lru_cache(maxsize=1)
+def _rlhf_arguments_allowed_keys() -> set[str]:
+    from swift.llm.argument import RLHFArguments
+
+    allowed = {f.name for f in fields(RLHFArguments)}
+    # Local knob (popped before RLHFArguments/TrainArguments init).
+    allowed.add("llm_kd_weight")
+    return allowed
 
 
 @dataclass(frozen=True)
@@ -309,24 +379,32 @@ class DeepSpeedConfig:
             return None
         if not isinstance(payload, Mapping):
             raise TypeError("deepspeed section must be a mapping")
-        if "enabled" not in payload:
+
+        data: MutableMapping[str, Any] = dict(payload)
+        if "enabled" not in data:
             raise ValueError("deepspeed.enabled must be explicitly set")
 
-        enabled = bool(payload["enabled"])
+        enabled = bool(data.pop("enabled"))
 
         if enabled:
-            if "config" not in payload:
+            if "config" not in data:
                 raise ValueError(
                     "deepspeed.config must be provided when deepspeed.enabled is true"
                 )
-            config_value = payload["config"]
+            config_value = data.pop("config")
         else:
-            config_value = payload.get("config")
+            config_value = data.pop("config", None)
 
         if enabled and (config_value is None or config_value == ""):
             raise ValueError(
                 "deepspeed.config must be a non-empty value when deepspeed.enabled is true"
             )
+
+        if data:
+            unknown = sorted(str(k) for k in data.keys())
+            rendered = [f"deepspeed.{k}" for k in unknown]
+            raise ValueError(f"Unknown deepspeed keys: {rendered}")
+
         return cls(enabled=enabled, config=config_value)
 
 
@@ -385,6 +463,10 @@ class VisualKDTargetConfig:
             raise ValueError("visual_kd.*.distance must be one of {mse, cosine}")
 
 # warnings: this is deprecated and not used
+
+_ALLOWED_VISUAL_KD_KEYS = {"enabled", "vit", "aligner", "deepstack"}
+_ALLOWED_VISUAL_KD_TARGET_KEYS = {"enabled", "weight", "distance"}
+
 @dataclass(frozen=True)
 class VisualKDConfig:
     enabled: bool
@@ -412,6 +494,33 @@ class VisualKDConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("custom.visual_kd must be a mapping when provided")
 
+        _validate_section_keys_strict(
+            "custom.visual_kd", payload, allowed=_ALLOWED_VISUAL_KD_KEYS
+        )
+
+        def _validate_target_mapping(
+            name: str, raw: Optional[Mapping[str, Any]]
+        ) -> Optional[Mapping[str, Any]]:
+            if raw is None:
+                return None
+            if not isinstance(raw, Mapping):
+                raise TypeError(
+                    f"custom.visual_kd.{name} must be a mapping when provided"
+                )
+
+            _validate_section_keys_strict(
+                f"custom.visual_kd.{name}",
+                raw,
+                allowed=_ALLOWED_VISUAL_KD_TARGET_KEYS,
+            )
+            return raw
+
+        # Validate nested target keys even when visual_kd.enabled is false, so
+        # typos in disabled subtrees are still caught early.
+        vit_raw = _validate_target_mapping("vit", payload.get("vit"))
+        aligner_raw = _validate_target_mapping("aligner", payload.get("aligner"))
+        deepstack_raw = _validate_target_mapping("deepstack", payload.get("deepstack"))
+
         enabled = bool(payload.get("enabled", False))
         if not enabled:
             return cls.disabled()
@@ -421,10 +530,6 @@ class VisualKDConfig:
         ) -> VisualKDTargetConfig:
             if raw is None:
                 return VisualKDTargetConfig()
-            if not isinstance(raw, Mapping):
-                raise TypeError(
-                    f"custom.visual_kd.{name} must be a mapping when provided"
-                )
 
             target_enabled = bool(raw.get("enabled", False))
             raw_weight = raw.get("weight", 0.0)
@@ -451,9 +556,9 @@ class VisualKDConfig:
                 distance=distance,  # type: ignore[arg-type]
             )
 
-        vit_cfg = parse_target("vit", payload.get("vit"))
-        aligner_cfg = parse_target("aligner", payload.get("aligner"))
-        deepstack_cfg = parse_target("deepstack", payload.get("deepstack"))
+        vit_cfg = parse_target("vit", vit_raw)
+        aligner_cfg = parse_target("aligner", aligner_raw)
+        deepstack_cfg = parse_target("deepstack", deepstack_raw)
 
         if not (vit_cfg.enabled or aligner_cfg.enabled or deepstack_cfg.enabled):
             raise ValueError(
@@ -634,17 +739,20 @@ class CustomConfig:
             raise ValueError("custom.json_format must be provided")
         json_format = _normalize_json_format(json_format_raw)
 
-        # Support namespaced knobs under `custom.extra` while preserving the legacy
-        # behavior where unknown keys under `custom.*` are stored in `CustomConfig.extra`.
-        nested_extra = data.get("extra")
-        if isinstance(nested_extra, Mapping):
-            data.pop("extra", None)
+        # `custom.extra` is the only intentional extension bucket.
+        nested_extra_raw = data.pop("extra", None)
+        if nested_extra_raw is None:
+            nested_extra: Mapping[str, Any] = {}
+        elif not isinstance(nested_extra_raw, Mapping):
+            raise TypeError("custom.extra must be a mapping when provided")
         else:
-            nested_extra = None
+            nested_extra = dict(nested_extra_raw)
 
-        extra = dict(data)
-        if isinstance(nested_extra, Mapping):
-            extra.update(dict(nested_extra))
+        if "rollout_matching" in nested_extra:
+            raise ValueError(
+                "custom.extra.rollout_matching is unsupported. "
+                "Move rollout settings to top-level rollout_matching.*."
+            )
 
         if emit_norm is None:
             raise ValueError("custom.emit_norm must be provided")
@@ -670,6 +778,11 @@ class CustomConfig:
             raise ValueError(
                 "custom.object_ordering must be 'sorted' or 'random' when provided"
             )
+
+        if data:
+            unknown = sorted(str(k) for k in data.keys())
+            rendered = [f"custom.{k}" for k in unknown]
+            raise ValueError(f"Unknown custom keys: {rendered}")
 
         return cls(
             train_jsonl=str(train_jsonl) if train_jsonl is not None else "",
@@ -705,7 +818,7 @@ class CustomConfig:
             visual_kd=visual_kd,
             hard_sample_mining=hsm_cfg,
             token_type_metrics=token_type_metrics,
-            extra=extra,
+            extra=dict(nested_extra),
         )
 
 
@@ -725,7 +838,6 @@ class DebugConfig:
     # When debug.enabled=true, these replace custom.{train,val}_sample_limit in the runner.
     train_sample_limit: Optional[Any] = None
     val_sample_limit: Optional[Any] = None
-    extra: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "DebugConfig":
@@ -770,14 +882,16 @@ class DebugConfig:
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
 
-        extra = dict(data)
+        if data:
+            unknown = sorted(str(k) for k in data.keys())
+            rendered = [f"debug.{k}" for k in unknown]
+            raise ValueError(f"Unknown debug keys: {rendered}")
 
         return cls(
             enabled=enabled,
             output_dir=output_dir,
             train_sample_limit=train_sample_limit,
             val_sample_limit=val_sample_limit,
-            extra=extra,
         )
 
 
@@ -825,103 +939,13 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABSemanticDescGateConfig:
-    """Semantic tolerance for matched desc supervision (Channel-B)."""
-
-    enabled: bool = True
-    threshold: float = 0.5
-    model_name_or_path: str = "sentence-transformers/all-MiniLM-L6-v2"
-    revision: Optional[str] = None
-
-    @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABSemanticDescGateConfig":
-        if payload is None:
-            cfg = cls()
-            if cfg.enabled and not cfg.revision:
-                raise ValueError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
-                    "to pin the embedding model version for reproducibility."
-                )
-            return cfg
-        if not isinstance(payload, Mapping):
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate must be a mapping when provided"
-            )
-
-        data: MutableMapping[str, Any] = dict(payload)
-
-        enabled = bool(data.pop("enabled", cls.enabled))
-
-        threshold_raw = data.pop("threshold", cls.threshold)
-        try:
-            threshold = float(threshold_raw)
-        except Exception as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate.threshold must be a float in [0,1]"
-            ) from exc
-        if not (0.0 <= threshold <= 1.0):
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.threshold must be in [0,1]"
-            )
-
-        model_raw = data.pop("model_name_or_path", cls.model_name_or_path)
-        if not isinstance(model_raw, str):
-            raise TypeError(
-                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be a string"
-            )
-        model_name_or_path = model_raw.strip()
-        if not model_name_or_path:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.model_name_or_path must be non-empty"
-            )
-
-        revision_raw = data.pop("revision", None)
-        revision = None
-        if revision_raw not in (None, "", False):
-            if not isinstance(revision_raw, str):
-                raise TypeError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be a string when provided"
-                )
-            revision = revision_raw.strip() or None
-
-        if data:
-            raise ValueError(
-                "Unknown stage2_ab.channel_b.semantic_desc_gate keys: "
-                f"{sorted(str(k) for k in data.keys())}"
-            )
-
-        if enabled and not revision:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true "
-                "to pin the embedding model version for reproducibility."
-            )
-
-        return cls(
-            enabled=enabled,
-            threshold=threshold,
-            model_name_or_path=model_name_or_path,
-            revision=revision,
-        )
-
-
-@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
-    reordered_gt_sft: bool = False
-    desc_ce_weight_matched: Optional[float] = None
     drop_invalid_struct_ce_multiplier: float = 1.0
-    semantic_desc_gate: Stage2ABSemanticDescGateConfig = field(
-        default_factory=Stage2ABSemanticDescGateConfig
-    )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
         if payload is None:
-            cfg = cls()
-            if cfg.semantic_desc_gate.enabled and not cfg.semantic_desc_gate.revision:
-                raise ValueError(
-                    "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
-                )
-            return cfg
+            return cls()
         if not isinstance(payload, Mapping):
             raise TypeError("stage2_ab.channel_b must be a mapping when provided")
 
@@ -954,21 +978,22 @@ class Stage2ABChannelBConfig:
                 "Use rollout_matching.decode_batch_size instead."
             )
 
-        reordered_gt_sft = bool(data.pop("reordered_gt_sft", cls.reordered_gt_sft))
-
-        desc_ce_weight_matched_raw = data.pop("desc_ce_weight_matched", None)
-        desc_ce_weight_matched: Optional[float] = None
-        if desc_ce_weight_matched_raw is not None:
-            try:
-                desc_ce_weight_matched = float(desc_ce_weight_matched_raw)
-            except Exception as exc:
-                raise TypeError(
-                    "stage2_ab.channel_b.desc_ce_weight_matched must be a float when provided"
-                ) from exc
-            if desc_ce_weight_matched < 0:
-                raise ValueError(
-                    "stage2_ab.channel_b.desc_ce_weight_matched must be >= 0 when provided"
-                )
+        # Removed keys (legacy/ablation-only behavior is now deleted).
+        if "reordered_gt_sft" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.reordered_gt_sft has been removed. "
+                "Remove this key (Channel-B is unified rollout-prefix + FN-append)."
+            )
+        if "desc_ce_weight_matched" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.desc_ce_weight_matched has been removed. "
+                "Remove this key (matched-object desc CE is always disabled in Channel-B)."
+            )
+        if "semantic_desc_gate" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.semantic_desc_gate has been removed. "
+                "Remove this key (training-time semantic gating is unsupported)."
+            )
 
         drop_invalid_raw = data.pop(
             "drop_invalid_struct_ce_multiplier", cls.drop_invalid_struct_ce_multiplier
@@ -984,25 +1009,12 @@ class Stage2ABChannelBConfig:
                 "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be in [1.0, 4.0]"
             )
 
-        semantic_desc_gate = Stage2ABSemanticDescGateConfig.from_mapping(
-            data.pop("semantic_desc_gate", None)
-        )
-        if semantic_desc_gate.enabled and not semantic_desc_gate.revision:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate.revision must be provided when enabled=true"
-            )
-
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
             )
 
-        return cls(
-            reordered_gt_sft=reordered_gt_sft,
-            desc_ce_weight_matched=desc_ce_weight_matched,
-            drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier,
-            semantic_desc_gate=semantic_desc_gate,
-        )
+        return cls(drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier)
 
 
 @dataclass(frozen=True)
@@ -1137,7 +1149,7 @@ class TrainingConfig:
     tuner: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
     stage2_ab: Optional[Stage2ABConfig] = None
-    rollout_matching: Mapping[str, Any] = field(default_factory=dict)
+    rollout_matching: Optional[RolloutMatchingConfig] = None
     rlhf: Mapping[str, Any] = field(default_factory=dict)
     prompts: PromptOverrides = field(default_factory=PromptOverrides)
     deepspeed: Optional[DeepSpeedConfig] = None
@@ -1151,24 +1163,66 @@ class TrainingConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("config payload must be a mapping")
 
+        # Strict parsing policy:
+        # - Unknown keys fail fast at load time with dotted-path reporting.
+        # - Each top-level section is validated against schema-derived accepted keys.
+        # - Top-level extra: is reserved/rejected; custom.extra is the only escape hatch.
+        if "extra" in payload:
+            raise ValueError(
+                "Top-level extra: is unsupported under strict config parsing. "
+                "Use custom.extra for minor residual knobs; unknown keys elsewhere are rejected."
+            )
+
         data = dict(payload)
 
-        model = dict(_as_dict(data.pop("model", None)))
-        quantization = dict(_as_dict(data.pop("quantization", None)))
-        template_raw = _as_dict(data.pop("template", None))
+        model = dict(_as_dict(data.pop("model", None), path="model"))
+        _validate_section_keys_strict(
+            "model", model, allowed=_train_arguments_allowed_keys()
+        )
+
+        quantization = dict(
+            _as_dict(data.pop("quantization", None), path="quantization")
+        )
+        _validate_section_keys_strict(
+            "quantization", quantization, allowed=_train_arguments_allowed_keys()
+        )
+
+        template_raw = _as_dict(data.pop("template", None), path="template")
         template = dict(template_raw)
-        data_section = dict(_as_dict(data.pop("data", None)))
-        tuner = dict(_as_dict(data.pop("tuner", None)))
-        training = dict(_as_dict(data.pop("training", None)))
+        _validate_section_keys_strict(
+            "template", template, allowed=_train_arguments_allowed_keys()
+        )
+
+        data_section = dict(_as_dict(data.pop("data", None), path="data"))
+        _validate_section_keys_strict(
+            "data", data_section, allowed=_train_arguments_allowed_keys()
+        )
+
+        tuner = dict(_as_dict(data.pop("tuner", None), path="tuner"))
+        _validate_section_keys_strict(
+            "tuner", tuner, allowed=_train_arguments_allowed_keys()
+        )
+
+        training = dict(_as_dict(data.pop("training", None), path="training"))
+        _validate_section_keys_strict(
+            "training", training, allowed=_training_allowed_keys()
+        )
+
         stage2_ab_raw = data.pop("stage2_ab", None)
         rollout_matching_raw = data.pop("rollout_matching", None)
-        rlhf = dict(_as_dict(data.pop("rlhf", None)))
+
+        rlhf = dict(_as_dict(data.pop("rlhf", None), path="rlhf"))
+        _validate_section_keys_strict(
+            "rlhf", rlhf, allowed=_rlhf_arguments_allowed_keys()
+        )
         custom_raw = data.pop("custom", None)
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
 
-        extra = dict(data)
+        if data:
+            unknown = sorted(str(k) for k in data.keys())
+            raise ValueError(f"Unknown top-level config keys: {unknown}")
 
         if global_max_length is not None:
             if not isinstance(global_max_length, int) or global_max_length <= 0:
@@ -1183,12 +1237,8 @@ class TrainingConfig:
             template["system"] = prompts.system
 
         custom = CustomConfig.from_mapping(custom_raw, prompts=prompts)
-
-        if rollout_matching_raw is not None and not isinstance(rollout_matching_raw, Mapping):
-            raise TypeError("rollout_matching must be a mapping when provided")
-        rollout_matching = dict(_as_dict(rollout_matching_raw))
-
         trainer_variant = str(custom.trainer_variant or "")
+
         stage2_ab = None
         if stage2_ab_raw is not None:
             stage2_ab = Stage2ABConfig.from_mapping(stage2_ab_raw)
@@ -1197,16 +1247,38 @@ class TrainingConfig:
                 "stage2_ab section must be provided when custom.trainer_variant=stage2_ab_training"
             )
 
+        rollout_matching = None
+        if rollout_matching_raw is not None:
+            if not isinstance(rollout_matching_raw, Mapping):
+                raise TypeError("rollout_matching must be a mapping when provided")
+
+            # Preserve prior strictness: an explicitly empty mapping counts as "missing".
+            if not rollout_matching_raw:
+                rollout_matching = None
+            else:
+                # BREAKING: legacy paired-list server form is removed.
+                vllm_raw = rollout_matching_raw.get("vllm")
+                if isinstance(vllm_raw, Mapping):
+                    server_raw = vllm_raw.get("server")
+                    if isinstance(server_raw, Mapping) and (
+                        "base_url" in server_raw or "group_port" in server_raw
+                    ):
+                        raise ValueError(
+                            "Legacy rollout server config has been removed: "
+                            "rollout_matching.vllm.server.base_url/group_port. "
+                            "Use rollout_matching.vllm.server.servers[] (list of {base_url, group_port})."
+                        )
+
+                rollout_matching = parse_dataclass_strict(
+                    RolloutMatchingConfig,
+                    rollout_matching_raw,
+                    path="rollout_matching",
+                )
+
         if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
-            if not rollout_matching:
+            if rollout_matching is None:
                 raise ValueError(
                     "rollout_matching section must be provided for rollout_matching_sft/stage2_ab_training"
-                )
-            custom_extra = custom.extra if isinstance(custom.extra, Mapping) else {}
-            if "rollout_matching" in custom_extra:
-                raise ValueError(
-                    "custom.extra.rollout_matching is unsupported. "
-                    "Move rollout settings to top-level rollout_matching.*."
                 )
 
         return cls(
@@ -1224,7 +1296,7 @@ class TrainingConfig:
             prompts=prompts,
             deepspeed=deepspeed,
             global_max_length=global_max_length,
-            extra=extra,
+            extra={},
         )
 
 # warnings: this is deprecated and not used

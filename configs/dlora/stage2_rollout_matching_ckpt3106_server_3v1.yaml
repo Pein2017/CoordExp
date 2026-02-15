@@ -13,36 +13,33 @@ training:
   run_name: debug
   logging_dir: .tb/stage2_ckpt3106_server_3v1
 
-custom:
-  extra:
-    rollout_matching:
-      rollout_backend: vllm
+rollout_matching:
+  rollout_backend: vllm
 
-      # vLLM server mode: connect to external rollout server(s).
-      vllm:
-        mode: server
+  # vLLM server mode: connect to external rollout server(s).
+  vllm:
+    mode: server
 
-        # Weight sync mode:
-        # - Recommended default: full merged-weight sync (robust for multimodal + DoRA).
-        # - Optional: adapter-only sync when vLLM LoRA is enabled on the server.
-        enable_lora: false
-        sync:
-          mode: full        # full|adapter|auto
-          fallback_to_full: true
+    # Weight sync mode:
+    # - Recommended default: full merged-weight sync (robust for multimodal + DoRA).
+    # - Optional: adapter-only sync when vLLM LoRA is enabled on the server.
+    enable_lora: false
+    sync:
+      mode: full        # full|adapter|auto
+      fallback_to_full: true
 
-        # Server connectivity (preferred explicit list form).
-        #
-        # base_url should expose:
-        # - /health/
-        # - /infer/
-        # - /get_world_size/
-        # - /init_communicator/
-        #
-        # group_port is the NCCL communicator port (NOT the HTTP server port).
-        server:
-          timeout_s: 240.0
-          infer_timeout_s: null
-          servers:
-            - base_url: http://127.0.0.1:8000
-              group_port: 51216
-
+    # Server connectivity (preferred explicit list form).
+    #
+    # base_url should expose:
+    # - /health/
+    # - /infer/
+    # - /get_world_size/
+    # - /init_communicator/
+    #
+    # group_port is the NCCL communicator port (NOT the HTTP server port).
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: null
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

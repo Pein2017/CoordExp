@@ -167,6 +167,51 @@ Treat configs as first-class artifacts:
 - Prefer adding knobs to YAML + `src/config/schema.py` over adding CLI flags.
 - Keep experiment names descriptive and reproducible (dataset + model + key knobs + seed).
 - Keep `prompts:` empty unless the code explicitly supports it (prompt changes should live in code, not in YAML).
+- Config loading is strict and schema-derived: unknown keys fail fast at load time with dotted-path errors
+  (including list indices like `rollout_matching.vllm.server.servers[0].unknown_flag`).
+
+### 8.1 Strict Schema-Derived Validation (Unknown Keys)
+
+Config validation is intentionally fail-fast:
+- Unknown top-level keys are rejected during config load.
+- Each top-level section (`model`, `quantization`, `template`, `data`, `tuner`, `training`, `rlhf`, `custom`,
+  `debug`, `stage2_ab`, `rollout_matching`, `deepspeed`, `global_max_length`) is validated for unknown keys
+  before trainer construction.
+- Top-level `extra:` is reserved and rejected. Use `custom.extra` for minor residual knobs only.
+
+Extension-bucket policy:
+- `custom.extra` is the only explicit author-facing escape hatch.
+- Unknown `custom.*` keys do not silently "fall into" `custom.extra`; they fail fast.
+- `custom.extra.rollout_matching.*` is explicitly unsupported; rollout settings must live under top-level
+  `rollout_matching.*`.
+
+Implementation references:
+- Loader orchestrator: `src/config/schema.py` (`TrainingConfig.from_mapping`)
+- Strict nested parser: `src/config/strict_dataclass.py` (`parse_dataclass_strict`)
+- Rollout schema: `src/config/rollout_matching_schema.py`
+
+### 8.2 Rollout Matching Authoring Rules
+
+Rollout-matching settings are a first-class top-level namespace:
+- Author all rollout knobs under `rollout_matching.*` (not under `custom.extra.*`).
+- vLLM server connectivity supports only:
+  - `rollout_matching.vllm.server.servers: [{base_url: ..., group_port: ...}, ...]`
+- Legacy paired-list server form (`rollout_matching.vllm.server.base_url` + `rollout_matching.vllm.server.group_port`)
+  is removed and must fail fast with migration guidance.
+
+### 8.3 Adding a New YAML Knob (Checklist)
+
+When adding a new config key, keep strictness and reproducibility intact:
+1) Decide ownership:
+   - If ms-swift supports it as a `TrainArguments` / `RLHFArguments` dataclass field, put it in the appropriate
+     YAML section and keep the name exact (typos are rejected).
+   - If it's CoordExp-specific, add it as a first-class schema key (preferred) or explicitly enumerate it as an
+     internal key in the loader with a clear comment (do not rely on permissive dict pass-through).
+2) Add schema validation (shape + invariants):
+   - For structured/nested namespaces, define a typed `@dataclass` schema and parse via `parse_dataclass_strict`.
+3) Add tests:
+   - Add at least one negative test proving unknown keys fail with dotted-path errors (including list indices for lists).
+   - `tests/test_training_config_strict_unknown_keys.py` is a good reference template.
 
 When adding a new knob:
 1) Add it to the schema with validation and sensible defaults.
@@ -183,4 +228,3 @@ These are correctness/compatibility constraints:
 - Do not edit upstream HF model internals (off-limits files).
 
 If you need to change a contract or introduce a breaking change, follow `openspec/` governance.
-

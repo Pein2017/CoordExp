@@ -83,19 +83,21 @@ def extract_single_geometry(
     pts = flatten_points(raw)
     if pts is None:
         raise ValueError(f"{path}.{geom_type} has invalid point container shape")
-    if len(pts) % 2 != 0:
-        raise ValueError(f"{path}.{geom_type} must contain an even number of values")
 
-    if geom_type == "bbox_2d" and len(pts) != 4:
-        raise ValueError(
-            f"{path}.bbox_2d must contain exactly 4 values; got len={len(pts)}"
-        )
-
-    if geom_type == "poly":
+    # Keep error messages precise per-geometry.
+    if geom_type == "bbox_2d":
+        if len(pts) != 4:
+            raise ValueError(
+                f"{path}.bbox_2d must contain exactly 4 values; got len={len(pts)}"
+            )
+    elif geom_type == "poly":
         if len(pts) < 6 or (len(pts) % 2 != 0):
             raise ValueError(
                 f"{path}.poly must contain an even number of values and at least 6 coordinates; got len={len(pts)}"
             )
+    else:  # pragma: no cover - defensive
+        if len(pts) % 2 != 0:
+            raise ValueError(f"{path}.{geom_type} must contain an even number of values")
 
     return str(geom_type), list(pts)
 

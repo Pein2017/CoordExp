@@ -30,7 +30,7 @@ Stage-2 AB note (Channel-B path):
   - FP prefix: structure/desc/coord CE OFF,
   - FN-injected: structure+desc CE ON, coord CE OFF,
   - geometry loss on matched + FN, FP geometry OFF.
-- Legacy `reordered_gt_sft` remains opt-in ablation behavior.
+- Legacy `reordered_gt_sft` has been removed (unified Channel-B only).
 
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
 

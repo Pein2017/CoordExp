@@ -39,33 +39,34 @@ custom:
   val_sample_with_replacement: false
   token_type_metrics:
     enabled: true
-  # Log + dump offending samples when loss spikes / logits go non-finite.
-  # Dumps into `<output_dir>/<run_name>/instability_dumps/`.
-  instability_monitor:
-    enabled: true
-    max_meta_samples: 16
-    ema_decay: 0.98
-    spike_factor: 8.0
-    abs_loss_threshold: 0.2
-    min_supervised_tokens: 64
-    dump_samples: true
-    early_stop:
+  extra:
+    # Log + dump offending samples when loss spikes / logits go non-finite.
+    # Dumps into `<output_dir>/<run_name>/instability_dumps/`.
+    instability_monitor:
       enabled: true
-      on_reasons: ["zero_token_acc"]
-    guard:
+      max_meta_samples: 16
+      ema_decay: 0.98
+      spike_factor: 8.0
+      abs_loss_threshold: 0.2
+      min_supervised_tokens: 64
+      dump_samples: true
+      early_stop:
+        enabled: true
+        on_reasons: ["zero_token_acc"]
+      guard:
+        enabled: true
+        guard_in_eval: false
+        guard_on_nonfinite: true
+        guard_on_spike: true
+        guard_on_zero_acc: true
+        min_token_acc: 0.01
+        max_abs_logit: 200.0
+    # Mirror logs into output_dir for quick review.
+    log_file:
       enabled: true
-      guard_in_eval: false
-      guard_on_nonfinite: true
-      guard_on_spike: true
-      guard_on_zero_acc: true
-      min_token_acc: 0.01
-      max_abs_logit: 200.0
-  # Mirror logs into output_dir for quick review.
-  log_file:
-    enabled: true
-    filename: train.log
-    capture_stdout: false
-    capture_stderr: false
+      filename: train.log
+      capture_stdout: false
+      capture_stderr: false
   coord_soft_ce_w1:
     enabled: true
     soft_ce_weight: 1.0

@@ -25,9 +25,10 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
             "trainer_variant": "stage2_ab_training",
         },
         "training": dict(training_section),
+        "rollout_matching": {"rollout_backend": "hf"},
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "channel_b": {"semantic_desc_gate": {"enabled": False}},
+            "channel_b": {},
         },
     }
     prompts = ConfigLoader.resolve_prompts(raw)
@@ -51,6 +52,9 @@ def _patch_loader_runtime(monkeypatch: pytest.MonkeyPatch, *, world_size: int) -
         ({"rollouts_per_step": 16}, r"rollouts_per_step has been removed"),
         ({"enable_pipeline": True}, r"enable_pipeline has been removed"),
         ({"rollout_decode_batch_size": 4}, r"rollout_decode_batch_size has been removed"),
+        ({"reordered_gt_sft": False}, r"reordered_gt_sft has been removed"),
+        ({"desc_ce_weight_matched": 0.0}, r"desc_ce_weight_matched has been removed"),
+        ({"semantic_desc_gate": {"enabled": False}}, r"semantic_desc_gate has been removed"),
     ],
 )
 def test_stage2_ab_channel_b_removed_keys_fail_fast(payload: dict, expected_msg: str):

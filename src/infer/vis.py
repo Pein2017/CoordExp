@@ -9,6 +9,7 @@ Input contract: unified artifact `gt_vs_pred.jsonl`.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -69,12 +70,22 @@ def _draw_objs(draw: ImageDraw.ImageDraw, objs: List[Dict[str, Any]], *, outline
             draw.line(xy + [xy[0]], fill=outline, width=3)
 
 
-def render_vis_from_jsonl(jsonl_path: Path, *, out_dir: Path, limit: int = 20) -> None:
+def render_vis_from_jsonl(
+    jsonl_path: Path,
+    *,
+    out_dir: Path,
+    limit: int = 20,
+    root_image_dir: Optional[Path] = None,
+    root_source: str = "none",
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    from src.infer.pipeline import resolve_root_image_dir_for_jsonl
+    if root_image_dir is None:
+        root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
+        if root_env:
+            root_image_dir = Path(root_env).resolve()
+            root_source = "env"
 
-    root_image_dir, root_source = resolve_root_image_dir_for_jsonl(jsonl_path)
     if root_image_dir is not None:
         logger.info(
             "vis: resolved ROOT_IMAGE_DIR (source=%s): %s", root_source, root_image_dir
@@ -107,8 +118,12 @@ def render_vis_from_jsonl(jsonl_path: Path, *, out_dir: Path, limit: int = 20) -
         # Overlay: GT (green) + pred (red)
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         d = ImageDraw.Draw(overlay)
-        gt = rec.get("gt") if isinstance(rec.get("gt"), list) else []
-        pred = rec.get("pred") if isinstance(rec.get("pred"), list) else []
+        gt_raw = rec.get("gt")
+        gt = gt_raw if isinstance(gt_raw, list) else []
+
+        pred_raw = rec.get("pred")
+        pred = pred_raw if isinstance(pred_raw, list) else []
+
         _draw_objs(d, gt, outline="#00ff00")
         _draw_objs(d, pred, outline="#ff0000")
 
