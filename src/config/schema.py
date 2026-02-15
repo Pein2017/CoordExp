@@ -463,6 +463,10 @@ class VisualKDTargetConfig:
             raise ValueError("visual_kd.*.distance must be one of {mse, cosine}")
 
 # warnings: this is deprecated and not used
+
+_ALLOWED_VISUAL_KD_KEYS = {"enabled", "vit", "aligner", "deepstack"}
+_ALLOWED_VISUAL_KD_TARGET_KEYS = {"enabled", "weight", "distance"}
+
 @dataclass(frozen=True)
 class VisualKDConfig:
     enabled: bool
@@ -490,6 +494,33 @@ class VisualKDConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("custom.visual_kd must be a mapping when provided")
 
+        _validate_section_keys_strict(
+            "custom.visual_kd", payload, allowed=_ALLOWED_VISUAL_KD_KEYS
+        )
+
+        def _validate_target_mapping(
+            name: str, raw: Optional[Mapping[str, Any]]
+        ) -> Optional[Mapping[str, Any]]:
+            if raw is None:
+                return None
+            if not isinstance(raw, Mapping):
+                raise TypeError(
+                    f"custom.visual_kd.{name} must be a mapping when provided"
+                )
+
+            _validate_section_keys_strict(
+                f"custom.visual_kd.{name}",
+                raw,
+                allowed=_ALLOWED_VISUAL_KD_TARGET_KEYS,
+            )
+            return raw
+
+        # Validate nested target keys even when visual_kd.enabled is false, so
+        # typos in disabled subtrees are still caught early.
+        vit_raw = _validate_target_mapping("vit", payload.get("vit"))
+        aligner_raw = _validate_target_mapping("aligner", payload.get("aligner"))
+        deepstack_raw = _validate_target_mapping("deepstack", payload.get("deepstack"))
+
         enabled = bool(payload.get("enabled", False))
         if not enabled:
             return cls.disabled()
@@ -499,10 +530,6 @@ class VisualKDConfig:
         ) -> VisualKDTargetConfig:
             if raw is None:
                 return VisualKDTargetConfig()
-            if not isinstance(raw, Mapping):
-                raise TypeError(
-                    f"custom.visual_kd.{name} must be a mapping when provided"
-                )
 
             target_enabled = bool(raw.get("enabled", False))
             raw_weight = raw.get("weight", 0.0)
@@ -529,9 +556,9 @@ class VisualKDConfig:
                 distance=distance,  # type: ignore[arg-type]
             )
 
-        vit_cfg = parse_target("vit", payload.get("vit"))
-        aligner_cfg = parse_target("aligner", payload.get("aligner"))
-        deepstack_cfg = parse_target("deepstack", payload.get("deepstack"))
+        vit_cfg = parse_target("vit", vit_raw)
+        aligner_cfg = parse_target("aligner", aligner_raw)
+        deepstack_cfg = parse_target("deepstack", deepstack_raw)
 
         if not (vit_cfg.enabled or aligner_cfg.enabled or deepstack_cfg.enabled):
             raise ValueError(

@@ -85,6 +85,45 @@ def test_unknown_nested_rollout_key_fails_before_trainer_init():
     assert "rollout_matching.vllm.server.servers[0].unknown_flag" in str(exc.value)
 
 
+def test_unknown_rollout_decoding_key_fails_fast():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "vllm",
+        "decoding": {"unknown": True},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.decoding.unknown" in str(exc.value)
+
+
+def test_unknown_rollout_monitor_dump_key_fails_fast():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "vllm",
+        "monitor_dump": {"unknown": True},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.monitor_dump.unknown" in str(exc.value)
+
+
+def test_unknown_rollout_vllm_sync_key_fails_fast():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "vllm",
+        "vllm": {"sync": {"unknown": True}},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.vllm.sync.unknown" in str(exc.value)
+
+
 def test_legacy_rollout_server_paired_list_shape_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
@@ -102,6 +141,46 @@ def test_legacy_rollout_server_paired_list_shape_fails_fast():
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
     assert "rollout_matching.vllm.server.base_url/group_port" in str(exc.value)
+
+
+def test_custom_visual_kd_unknown_section_key_fails():
+    payload = _base_training_payload()
+    payload["custom"]["visual_kd"] = {
+        "enabled": True,
+        "vit": {"enabled": True, "weight": 1.0},
+        "extra_flag": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "custom.visual_kd.extra_flag" in str(exc.value)
+
+
+def test_custom_visual_kd_target_unknown_key_fails():
+    payload = _base_training_payload()
+    payload["custom"]["visual_kd"] = {
+        "enabled": True,
+        "vit": {"enabled": True, "weight": 1.0, "unknown": 5},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "custom.visual_kd.vit.unknown" in str(exc.value)
+
+
+def test_custom_visual_kd_target_unknown_key_fails_even_when_disabled():
+    payload = _base_training_payload()
+    payload["custom"]["visual_kd"] = {
+        "enabled": False,
+        "vit": {"unknown": 5},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "custom.visual_kd.vit.unknown" in str(exc.value)
 
 
 def test_top_level_extra_presence_fails_fast():
