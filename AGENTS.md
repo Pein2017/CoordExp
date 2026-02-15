@@ -24,7 +24,6 @@
 ## Environment
 - Repo root: `.`.
 - Use `conda run -n ms python ...` for commands (e.g., tests).
-- Target models: `/data/home/xiaoyan/AIteam/data/Qwen3-VL`.
 - Use `temp/` for one-off debug artifacts; clean up when done.
 
 ## Navigation (Progressive)
