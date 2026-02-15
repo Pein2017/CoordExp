@@ -976,7 +976,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         # Validate unified decode batch size knob.
-        decode_bs_raw = cfg.get("decode_batch_size", 4)
+        decode_bs_raw = cfg.get("decode_batch_size", 1)
         try:
             decode_bs = int(decode_bs_raw)
         except Exception as exc:
@@ -1465,125 +1465,65 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _vllm_server_specs(self) -> List[Dict[str, Any]]:
         """Normalize server list config to a list of {base_url, group_port} dicts.
 
-        Spec contract: config MUST be expressed in exactly one of:
-        - `server.servers: [...]` (preferred)
-        - legacy paired lists: `server.base_url` + `server.group_port`
+        Spec contract (2026-02-15 strict schema):
+        - Only `rollout_matching.vllm.server.servers: [...]` is supported.
+        - Legacy paired-list form (`server.base_url` + `server.group_port`) is removed.
         """
+
         scfg = self._vllm_server_cfg()
 
+        if "base_url" in scfg or "group_port" in scfg:
+            # Loader-level schema already fails fast for this shape, but keep a defensive
+            # runtime error for direct-instantiation / test helpers.
+            raise ValueError(
+                "Legacy rollout server config has been removed: "
+                "rollout_matching.vllm.server.base_url/group_port. "
+                "Use rollout_matching.vllm.server.servers[] (list of {base_url, group_port})."
+            )
+
         servers_raw = scfg.get("servers", None)
-        base_url_raw = scfg.get("base_url", None)
-        group_port_raw = scfg.get("group_port", None)
-
-        if servers_raw is not None:
-            if base_url_raw is not None or group_port_raw is not None:
-                raise ValueError(
-                    "rollout_matching.vllm.server must define exactly one of 'servers' or ('base_url','group_port'), not both"
-                )
-
-            if not isinstance(servers_raw, list) or not servers_raw:
-                raise ValueError(
-                    "rollout_matching.vllm.server.servers must be a non-empty list"
-                )
-            out: List[Dict[str, Any]] = []
-            for i, s in enumerate(servers_raw):
-                if not isinstance(s, Mapping):
-                    raise ValueError(
-                        "rollout_matching.vllm.server.servers[%d] must be a mapping"
-                        % int(i)
-                    )
-                base_url = s.get("base_url")
-                if not isinstance(base_url, str) or not base_url.strip():
-                    raise ValueError(
-                        "rollout_matching.vllm.server.servers[%d].base_url must be a non-empty string"
-                        % int(i)
-                    )
-                group_port_entry_raw = s.get("group_port")
-                try:
-                    group_port_entry = int(group_port_entry_raw)
-                except Exception as exc:
-                    raise ValueError(
-                        "rollout_matching.vllm.server.servers[%d].group_port must be an int"
-                        % int(i)
-                    ) from exc
-                if group_port_entry <= 0:
-                    raise ValueError(
-                        "rollout_matching.vllm.server.servers[%d].group_port must be > 0"
-                        % int(i)
-                    )
-                out.append(
-                    {
-                        "base_url": base_url.strip().rstrip("/"),
-                        "group_port": int(group_port_entry),
-                    }
-                )
-            return out
-
-        # Legacy paired-list form.
-        if base_url_raw is None or group_port_raw is None:
+        if not isinstance(servers_raw, list) or not servers_raw:
             raise ValueError(
-                "rollout_matching.vllm.server must define either 'servers' or ('base_url','group_port')"
+                "rollout_matching.vllm.server.servers must be a non-empty list"
             )
 
-        if isinstance(base_url_raw, str):
-            if not isinstance(group_port_raw, int):
+        out: List[Dict[str, Any]] = []
+        for i, s in enumerate(servers_raw):
+            if not isinstance(s, Mapping):
                 raise ValueError(
-                    "rollout_matching.vllm.server.group_port must be an int when base_url is a string"
+                    "rollout_matching.vllm.server.servers[%d] must be a mapping"
+                    % int(i)
                 )
-            if group_port_raw <= 0:
+
+            base_url = s.get("base_url")
+            if not isinstance(base_url, str) or not base_url.strip():
                 raise ValueError(
-                    "rollout_matching.vllm.server.group_port must be > 0"
+                    "rollout_matching.vllm.server.servers[%d].base_url must be a non-empty string"
+                    % int(i)
                 )
-            return [
+
+            group_port_entry_raw = s.get("group_port")
+            try:
+                group_port_entry = int(group_port_entry_raw)
+            except Exception as exc:
+                raise ValueError(
+                    "rollout_matching.vllm.server.servers[%d].group_port must be an int"
+                    % int(i)
+                ) from exc
+            if group_port_entry <= 0:
+                raise ValueError(
+                    "rollout_matching.vllm.server.servers[%d].group_port must be > 0"
+                    % int(i)
+                )
+
+            out.append(
                 {
-                    "base_url": base_url_raw.strip().rstrip("/"),
-                    "group_port": int(group_port_raw),
+                    "base_url": base_url.strip().rstrip("/"),
+                    "group_port": int(group_port_entry),
                 }
-            ]
-
-        if not isinstance(base_url_raw, list) or not all(
-            isinstance(u, str) and u.strip() for u in base_url_raw
-        ):
-            raise ValueError(
-                "rollout_matching.vllm.server.base_url must be a string or a list of non-empty strings"
-            )
-        base_urls = [u.strip().rstrip("/") for u in base_url_raw]
-
-        group_ports: List[int] = []
-        if isinstance(group_port_raw, int):
-            if group_port_raw <= 0:
-                raise ValueError(
-                    "rollout_matching.vllm.server.group_port must be > 0"
-                )
-            group_ports = [int(group_port_raw) + i for i in range(len(base_urls))]
-        elif isinstance(group_port_raw, list):
-            if len(group_port_raw) != len(base_urls):
-                raise ValueError(
-                    "rollout_matching.vllm.server.group_port list length must match base_url list length"
-                )
-            for i, gp_raw in enumerate(group_port_raw):
-                try:
-                    gp = int(gp_raw)
-                except Exception as exc:
-                    raise ValueError(
-                        "rollout_matching.vllm.server.group_port[%d] must be an int"
-                        % int(i)
-                    ) from exc
-                if gp <= 0:
-                    raise ValueError(
-                        "rollout_matching.vllm.server.group_port[%d] must be > 0"
-                        % int(i)
-                    )
-                group_ports.append(int(gp))
-        else:
-            raise ValueError(
-                "rollout_matching.vllm.server.group_port must be an int or list of ints"
             )
 
-        return [
-            {"base_url": u, "group_port": int(gp)}
-            for u, gp in zip(base_urls, group_ports)
-        ]
+        return out
 
     def _vllm_server_timeouts(self) -> Tuple[float, Optional[float]]:
         scfg = self._vllm_server_cfg()
@@ -1784,7 +1724,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return int((base + gs * 1000003) & 0x7FFFFFFF)
 
     def _decode_batch_size(self) -> int:
-        raw = self._cfg("decode_batch_size", 4)
+        raw = self._cfg("decode_batch_size", 1)
         try:
             v = int(raw)
         except Exception as exc:

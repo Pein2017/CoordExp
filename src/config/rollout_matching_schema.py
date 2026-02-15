@@ -1,0 +1,225 @@
+"""Typed schema contracts for `rollout_matching.*`.
+
+This module defines the YAML-visible rollout-matching configuration surface as a
+set of dataclasses. It is used for schema-derived strict parsing (unknown-key
+fail-fast with dotted paths) at config-load time.
+
+Notes:
+- This is intentionally dependency-light (no torch/vllm imports).
+- Runtime-only validations (world-size, backend readiness, etc.) remain in the
+  trainer.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Optional
+
+
+@dataclass(frozen=True)
+class RolloutDecodingConfig:
+    temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = -1
+
+
+@dataclass(frozen=True)
+class RolloutOffloadConfig:
+    enabled: bool = False
+    offload_model: bool = False
+    offload_optimizer: bool = False
+
+
+@dataclass(frozen=True)
+class RolloutMonitorDumpConfig:
+    enabled: bool = False
+    every_steps: Optional[int] = None
+    dump_first_step: Optional[bool] = None
+    only_world_process_zero: bool = True
+    max_events: int = 20
+    max_samples: int = 1
+    max_text_chars: int = 4000
+    out_dir: Optional[str] = None
+    write_markdown: bool = True
+
+
+@dataclass(frozen=True)
+class RolloutDescMonitorConfig:
+    enabled: bool = False
+    every_steps: int = 0
+    max_pairs: int = 64
+    semantic_threshold: float = 0.6
+    mode: str = "semantic"  # semantic|both|exact
+
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    semantic_device: str = "cpu"
+    semantic_batch_size: int = 64
+    semantic_max_length: int = 64
+
+
+@dataclass(frozen=True)
+class VllmServerDebugDumpConfig:
+    enabled: bool = False
+    every_steps: Optional[int] = None
+    dump_first_step: Optional[bool] = None
+    only_world_process_zero: bool = True
+    max_events: int = 3
+    max_samples: int = 1
+    max_chars: int = 4000
+    out_dir: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class VllmServerEntryConfig:
+    base_url: str
+    group_port: int
+
+
+@dataclass(frozen=True)
+class VllmServerConfig:
+    timeout_s: float = 240.0
+    infer_timeout_s: Optional[float] = None
+    servers: list[VllmServerEntryConfig] = field(default_factory=list)
+    debug_dump: VllmServerDebugDumpConfig = field(default_factory=VllmServerDebugDumpConfig)
+
+
+@dataclass(frozen=True)
+class VllmSyncConfig:
+    mode: str = "full"  # full|adapter|auto
+    fallback_to_full: bool = True
+
+
+@dataclass(frozen=True)
+class VllmConfig:
+    # server|colocate
+    mode: Optional[str] = None
+
+    tensor_parallel_size: Optional[int] = None
+    max_model_len: Optional[int] = None
+    gpu_memory_utilization: float = 0.45
+
+    enable_lora: bool = False
+    load_format: Optional[str] = None
+
+    enable_prefix_caching: bool = True
+    sleep_level: int = 0
+    enforce_eager: bool = False
+    disable_custom_all_reduce: bool = True
+
+    max_num_seqs: Optional[int] = None
+    max_num_batched_tokens: Optional[int] = None
+
+    distributed_executor_backend: Optional[str] = None
+
+    # Optional micro-batching for colocate /infer.
+    infer_batch_size: Optional[int] = None
+
+    # Optional vLLM EngineArgs passthrough (kept explicit to catch typos).
+    enable_chunked_prefill: Optional[bool] = None
+    disable_chunked_mm_input: Optional[bool] = None
+    kv_cache_dtype: Optional[str] = None
+    cpu_offload_gb: Optional[float] = None
+    swap_space: Optional[float] = None
+    limit_mm_per_prompt: Optional[Mapping[str, int]] = None
+    mm_encoder_tp_mode: Optional[str] = None
+    skip_mm_profiling: Optional[bool] = None
+
+    server: Optional[VllmServerConfig] = None
+    sync: Optional[VllmSyncConfig] = None
+
+
+@dataclass(frozen=True)
+class RolloutRepeatTerminateConfig:
+    enabled: bool = False
+    min_new_tokens: int = 0
+    max_consecutive_token_repeats: int = 0
+    ngram_size: int = 0
+    ngram_repeats: int = 0
+    max_object_keys: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class RolloutMatchingConfig:
+    # Core backend selection.
+    rollout_backend: str = "vllm"
+
+    # Decode / generation.
+    decode_batch_size: int = 1
+    decode_mode: str = "greedy"
+    max_new_tokens: int = 512
+    num_beams: int = 1
+    num_return_sequences: Optional[int] = None
+    repetition_penalty: float = 1.0
+
+    decoding: Optional[RolloutDecodingConfig] = None
+    repeat_terminate: Optional[RolloutRepeatTerminateConfig] = None
+
+    # Matching knobs.
+    candidate_top_k: int = 10
+    maskiou_gate: float = 0.3
+    maskiou_resolution: int = 256
+    fp_cost: float = 1.0
+    fn_cost: float = 1.0
+
+    ot_cost: str = "l2"
+    ot_epsilon: float = 10.0
+    ot_iters: int = 30
+
+    # Nested namespaces.
+    offload: Optional[RolloutOffloadConfig] = None
+    monitor_dump: Optional[RolloutMonitorDumpConfig] = None
+    desc_monitor: Optional[RolloutDescMonitorConfig] = None
+    vllm: Optional[VllmConfig] = None
+
+    # Optional coord-loss override knobs (advanced; default to custom.coord_soft_ce_w1).
+    target_sigma: Optional[float] = None
+    target_truncate: Optional[int] = None
+    temperature_coord: Optional[float] = None
+    soft_ce_weight: Optional[float] = None
+    w1_weight: Optional[float] = None
+    gate_weight: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        # Lightweight semantic checks that do not require runtime state.
+        try:
+            decode_bs = int(self.decode_batch_size)
+        except Exception as exc:
+            raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
+        if decode_bs <= 0:
+            raise ValueError("rollout_matching.decode_batch_size must be > 0")
+
+        if self.decoding is not None:
+            dec = self.decoding
+            try:
+                temperature = float(getattr(dec, "temperature", 0.0) or 0.0)
+            except Exception as exc:
+                raise TypeError(
+                    "rollout_matching.decoding.temperature must be a float"
+                ) from exc
+            if temperature < 0.0:
+                raise ValueError(
+                    "rollout_matching.decoding.temperature must be >= 0"
+                )
+
+            try:
+                top_p = float(getattr(dec, "top_p", 1.0) if dec.top_p is not None else 1.0)
+            except Exception as exc:
+                raise TypeError("rollout_matching.decoding.top_p must be a float") from exc
+            if not (0.0 < top_p <= 1.0):
+                raise ValueError("rollout_matching.decoding.top_p must be in (0, 1]")
+
+            try:
+                top_k = int(getattr(dec, "top_k", -1))
+            except Exception as exc:
+                raise TypeError("rollout_matching.decoding.top_k must be an int") from exc
+            if top_k != -1 and top_k < 1:
+                raise ValueError(
+                    "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
+                )
+
+        if self.vllm is not None and self.vllm.sync is not None:
+            mode = str(self.vllm.sync.mode or "full").strip().lower()
+            if mode not in {"full", "adapter", "auto"}:
+                raise ValueError(
+                    "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
+                )

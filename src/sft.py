@@ -8,7 +8,7 @@ import math
 import os
 import re
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
@@ -27,6 +27,7 @@ from .coord_tokens.offset_adapter import (
     reattach_coord_offset_hooks,
 )
 from .config import ConfigLoader, SaveDelayConfig
+from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
 from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
 from .trainers.metrics.mixins import (
@@ -1091,13 +1092,20 @@ def main():
 
         # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
-        rollout_cfg_for_batch = getattr(training_config, "rollout_matching", {})
+        rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
+        if rollout_cfg_obj is None:
+            rollout_cfg_for_batch = {}
+        elif is_dataclass(rollout_cfg_obj):
+            rollout_cfg_for_batch = dataclass_asdict_no_none(rollout_cfg_obj)
+        else:
+            rollout_cfg_for_batch = rollout_cfg_obj
+
         if rollout_cfg_for_batch is None:
             rollout_cfg_for_batch = {}
         if not isinstance(rollout_cfg_for_batch, Mapping):
             raise TypeError("rollout_matching must be a mapping when provided")
 
-        decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 4)
+        decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
         try:
             rollout_decode_bs = int(decode_bs_raw)
         except Exception as exc:
@@ -1256,7 +1264,14 @@ def main():
 
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         try:
-            rollout_cfg_raw = getattr(training_config, "rollout_matching", {})
+            rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
+            if rollout_cfg_obj is None:
+                rollout_cfg_raw = {}
+            elif is_dataclass(rollout_cfg_obj):
+                rollout_cfg_raw = dataclass_asdict_no_none(rollout_cfg_obj)
+            else:
+                rollout_cfg_raw = rollout_cfg_obj
+
             if rollout_cfg_raw is None:
                 rollout_cfg_raw = {}
             if not isinstance(rollout_cfg_raw, Mapping):

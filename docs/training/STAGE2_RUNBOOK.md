@@ -192,6 +192,8 @@ Minimum required edits:
 Breaking config migrations (no backward compatibility):
 - Rollout sampling knobs are configured under `rollout_matching.decoding.*`:
   - `decoding.temperature`, `decoding.top_p`, `decoding.top_k`
+- Rollout-matching settings must be authored under top-level `rollout_matching.*`:
+  - `custom.extra.rollout_matching.*` is removed and MUST fail fast if present.
 - Legacy keys are removed and MUST fail fast if present:
   - `rollout_matching.temperature`, `rollout_matching.top_p`, `rollout_matching.top_k`
   - `rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + `decode_batch_size` to scale throughput)
@@ -288,19 +290,17 @@ Stage-2 can optionally monitor `desc` quality on matched pairs. This does not af
 Enable under `rollout_matching.desc_monitor`:
 
 ```yaml
-custom:
-  extra:
-    rollout_matching:
-      desc_monitor:
-        enabled: true
-        # 'exact'|'semantic'|'both'
-        mode: semantic
-        every_steps: 20
-        semantic_model: sentence-transformers/all-MiniLM-L6-v2
-        semantic_threshold: 0.6
-        semantic_device: cpu
-        semantic_batch_size: 32
-        max_pairs: 64
+rollout_matching:
+  desc_monitor:
+    enabled: true
+    # 'exact'|'semantic'|'both'
+    mode: semantic
+    every_steps: 20
+    semantic_model: sentence-transformers/all-MiniLM-L6-v2
+    semantic_threshold: 0.6
+    semantic_device: cpu
+    semantic_batch_size: 32
+    max_pairs: 64
 ```
 
 ---
@@ -408,16 +408,14 @@ Stage-2 AB extras:
 Enable periodic dumps of (Prompt, Rollout, Target) triplets (rank0 only):
 
 ```yaml
-custom:
-  extra:
-    rollout_matching:
-      monitor_dump:
-        enabled: true
-        # If omitted, follows training.logging_steps.
-        every_steps: 4
-        max_events: 50
-        max_samples: 1
-        max_text_chars: 4000
+rollout_matching:
+  monitor_dump:
+    enabled: true
+    # If omitted, follows training.logging_steps.
+    every_steps: 4
+    max_events: 50
+    max_samples: 1
+    max_text_chars: 4000
 ```
 
 Outputs land in `<training.output_dir>/monitor_dumps/` (both `.json` and `.md` per dump).

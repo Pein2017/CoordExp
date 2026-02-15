@@ -247,15 +247,14 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 "  effective_batch_size: 1",
                 "stage2_ab:",
                 "  channel_b: {}",
-                "custom:",
-                "  extra:",
-                "    rollout_matching:",
-                "      max_new_tokens: 256",
-                "      vllm:",
-                "        server:",
-                "          servers:",
-                f"            - base_url: {base_url}",
-                f"              group_port: {group_port}",
+                "rollout_matching:",
+                "  max_new_tokens: 256",
+                "  vllm:",
+                f"    max_model_len: {vllm_max_model_len}",
+                "    server:",
+                "      servers:",
+                f"        - base_url: {base_url}",
+                f"          group_port: {group_port}",
                 "",
             ]
         ),
@@ -275,6 +274,31 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     if ms_swift_root is not None:
         py_path_parts.append(str(ms_swift_root))
     server_env["PYTHONPATH"] = os.pathsep.join(py_path_parts)
+
+    # Resolve Stage-2 launcher preflight (repeat-terminate plugin + ROOT_IMAGE_DIR).
+    #
+    # Stage-2 configs default to repeat_terminate.enabled=true; when enabled, the learner
+    # requires the rollout server to emit coordexp.repeat_terminate_triggered.
+    from src.trainers.rollout_matching.preflight import resolve_stage2_launcher_preflight
+
+    preflight = resolve_stage2_launcher_preflight(str(cfg_path))
+    root_image_dir = str(preflight.get("root_image_dir_resolved") or "").strip()
+    if root_image_dir:
+        server_env["ROOT_IMAGE_DIR"] = root_image_dir
+
+    repeat_enabled = bool(preflight.get("repeat_terminate_enabled"))
+    repeat_plugin = repo_root / "scripts" / "vllm_repeat_terminate_plugin.py"
+    if repeat_enabled:
+        if not repeat_plugin.is_file():
+            raise FileNotFoundError(
+                f"repeat-terminate plugin not found: {repeat_plugin}"
+            )
+        server_env["COORDEXP_ENABLE_VLLM_REPEAT_TERMINATE_INJECTION"] = "1"
+        server_env["COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON"] = json.dumps(
+            preflight.get("repeat_terminate_config") or {},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
 
     server_cmd = [
         swift_bin,
@@ -298,6 +322,9 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         "--vllm_enable_lora",
         "false",
     ]
+
+    if repeat_enabled:
+        server_cmd.extend(["--external_plugins", str(repeat_plugin)])
 
     proc: Optional[subprocess.Popen[str]] = None
     try:

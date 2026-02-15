@@ -37,7 +37,7 @@ def test_contiguous_chunk_slices_preserves_order_on_reassembly():
     assert reassembled == items
 
 
-def test_vllm_server_specs_rejects_mixed_server_config_forms():
+def test_vllm_server_specs_rejects_removed_legacy_base_url_group_port_fields():
     t = _mk_uninit_trainer(
         {
             "vllm": {
@@ -51,7 +51,7 @@ def test_vllm_server_specs_rejects_mixed_server_config_forms():
             }
         }
     )
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="Legacy rollout server config has been removed"):
         t._vllm_server_specs()
 
 

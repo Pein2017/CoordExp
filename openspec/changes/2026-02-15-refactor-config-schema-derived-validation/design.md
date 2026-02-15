@@ -138,6 +138,17 @@ Rationale:
 - Strong reduction in long-term maintenance churn and drift risk.
 - Strictness is preserved; ergonomics improve by centralizing where key acceptance is defined.
 
+## Change Notes (Validation Ownership)
+
+| Surface | Before | After |
+| --- | --- | --- |
+| Top-level keys | Unknown keys could drift between loader/runtime checks; author-facing `extra` behavior was ambiguous. | Unknown top-level keys fail fast at load; any top-level `extra:` presence is rejected with actionable guidance. |
+| `model`/`quantization`/`template`/`data`/`tuner`/`training` sections | Passed through as dicts; typos often surfaced later as `TypeError` during `TrainArguments(**kwargs)` without dotted-path context. | Loader validates keys against schema-derived ms-swift dataclass fields (`TrainArguments`), reporting unknown keys as dotted paths (e.g., `training.bad_key`). |
+| `rlhf` section | Same late-failure pattern as above; local knobs could drift from ms-swift surface. | Loader validates against schema-derived ms-swift dataclass fields (`RLHFArguments`) plus explicit local knobs, reporting dotted paths (e.g., `rlhf.bad_key`). |
+| `custom` extension bucket | Legacy behavior allowed unknown `custom.*` knobs to “fall into” `custom.extra` implicitly (drift-prone). | Unknown `custom.*` keys fail fast; `custom.extra` is the only explicit escape hatch, and it does not allow canonical rollout keys. |
+| Rollout matching namespace | Stage-2 fixtures/configs sometimes authored rollout knobs under `custom.extra.rollout_matching.*`; runtime and loader both carried schema-shape responsibility. | Canonical top-level `rollout_matching.*` only; `custom.extra.rollout_matching.*` is explicit fail-fast with migration guidance; unknown rollout keys are rejected during schema load with list-indexed dotted paths. |
+| vLLM server config shape | Legacy paired-list server form (`vllm.server.base_url` + `vllm.server.group_port`) was supported in runtime normalization. | Legacy paired-list server form is removed; only `vllm.server.servers[]` is supported (fail-fast at load with consistent runtime defensive error). |
+
 ## Verification Strategy
 
 1. Positive config-load checks for canonical Stage-2 prod/smoke profiles.
