@@ -84,6 +84,35 @@ def _normalize_ignore_tags(tags: Sequence[str]) -> Tuple[Set[str], List[str]]:
         normalized.add(canonical)
     return normalized, sorted(set(deprecated))
 
+
+def _resolve_image_path(run_dir: Path, image_value: Any, image_root: Optional[Path]) -> str:
+    if not image_value:
+        return ""
+    image_rel = str(image_value).strip()
+    if not image_rel:
+        return ""
+    candidate = Path(image_rel)
+    if candidate.is_absolute():
+        return str(candidate)
+    if image_root is not None:
+        return str((image_root / candidate).resolve())
+    return str((run_dir / candidate))
+
+
+def _coerce_raw_output(rec: Dict[str, Any]) -> Tuple[Any, str]:
+    raw_output = rec.get("raw_output_json")
+    if raw_output is None:
+        raw_output = rec.get("raw_output")
+    if raw_output is None:
+        raw_output = rec.get("raw_output_text")
+    if raw_output is None:
+        raw_output = ""
+    if isinstance(raw_output, (dict, list)):
+        raw_text = json.dumps(raw_output, ensure_ascii=False)
+    else:
+        raw_text = str(raw_output)
+    return raw_output, raw_text
+
 def _infer_paths(
     pred_jsonl: Path, *, summary_json: Optional[Path], eval_metrics_json: Optional[Path]
 ) -> Tuple[Optional[Path], Optional[Path]]:
@@ -184,26 +213,43 @@ def _dump_failed_rollout_rows(path: Path, rows: Sequence[Dict[str, Any]]) -> Non
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\\n")
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _build_failure_row(run_name: str, run_dir: Path, local_idx: int, rec: Dict[str, Any], errors: List[str], ignore_errors: Set[str]) -> Dict[str, Any]:
+def _build_failure_row(
+    run_name: str,
+    run_dir: Path,
+    local_idx: int,
+    rec: Dict[str, Any],
+    errors: List[str],
+    ignore_errors: Set[str],
+    image_root: Optional[Path],
+) -> Dict[str, Any]:
     effective_errors = [e for e in errors if e not in ignore_errors]
+    image = str(rec.get("image", ""))
+    raw_sample, raw_text = _coerce_raw_output(rec)
     gt = rec.get("gt") or []
     pred = rec.get("pred") or []
-    raw_output = str(rec.get("raw_output", "") or "")
     return {
         "run_name": run_name,
         "run_dir": str(run_dir),
         "index": int(rec.get("index", local_idx)),
-        "image": str(rec.get("image", "")),
+        "image": image,
+        "image_path": _resolve_image_path(run_dir, image, image_root),
         "errors": errors,
         "effective_errors": effective_errors,
+        "width": int(rec.get("width")) if isinstance(rec.get("width"), int) else rec.get("width"),
+        "height": int(rec.get("height")) if isinstance(rec.get("height"), int) else rec.get("height"),
+        "mode": rec.get("mode", ""),
+        "coord_mode": rec.get("coord_mode", ""),
         "gt_count": len(gt) if isinstance(gt, list) else 0,
         "pred_count": len(pred) if isinstance(pred, list) else 0,
-        "raw_output": raw_output,
-        "raw_output_len": len(raw_output),
-        "raw_output_preview": raw_output.replace("\\n", "\\\\n")[:240],
+        "gt": gt if isinstance(gt, list) else [],
+        "pred": pred if isinstance(pred, list) else [],
+        "raw_sample": raw_sample,
+        "raw_output": raw_text,
+        "raw_output_len": len(raw_text),
+        "raw_output_preview": raw_text.replace("\\n", "\\\\n")[:240],
     }
 
 
@@ -217,7 +263,8 @@ def _analyze_rollout(
     object_miss_threshold: float,
     max_examples: int,
     max_raw_chars: int,
-) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    image_root: Optional[Path],
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     records = list(_iter_jsonl(pred_jsonl))
     if not records:
         raise SystemExit(f"No valid JSON records found in: {pred_jsonl}")
@@ -236,6 +283,7 @@ def _analyze_rollout(
     pred_counts: List[int] = []
     gt_counts: List[int] = []
     failure_rows: List[Dict[str, Any]] = []
+    plot_rows: List[Dict[str, Any]] = []
     examples: List[Dict[str, Any]] = []
     object_row_errors: List[Tuple[int, str, List[str], str]] = []
 
@@ -281,11 +329,20 @@ def _analyze_rollout(
                 has_any_pred += 1
 
         should_dump_failure = (not pred and not did_skip) or ("empty_pred" in errors) or has_effective_fail
+        row = _build_failure_row(
+            run_name=run_name,
+            run_dir=run_dir,
+            local_idx=local_idx,
+            rec=rec,
+            errors=errors,
+            ignore_errors=ignore_error_tags,
+            image_root=image_root,
+        )
+        plot_rows.append(row)
         if should_dump_failure:
-            row = _build_failure_row(run_name, run_dir, local_idx, rec, errors, ignore_error_tags)
             failure_rows.append(row)
             if len(examples) < max_examples:
-                raw = str(rec.get("raw_output", "") or "")
+                raw = row["raw_output"]
                 raw = raw.replace("\n", "\\n")
                 if len(raw) > max_raw_chars:
                     raw = raw[:max_raw_chars] + "…"
@@ -360,7 +417,7 @@ def _analyze_rollout(
         }
         for idx, image, errs, raw in object_row_errors
     ]
-    return run_payload, failure_rows, failure_examples
+    return run_payload, failure_rows, failure_examples, plot_rows
 
 
 def _fmt_pct(x: float) -> str:
@@ -414,6 +471,21 @@ def main() -> None:
         ),
     )
     ap.add_argument(
+        "--plot_rollout_dump",
+        type=Path,
+        default=None,
+        help=(
+            "Path to write JSONL all rows (gt-vs-pred) for plotting and error triage. "
+            "If omitted with a single run, defaults to <run_dir>/eval/gt_vs_pred_plot.jsonl."
+        ),
+    )
+    ap.add_argument(
+        "--image_root",
+        type=Path,
+        default=None,
+        help="Optional base directory to resolve absolute image_path.",
+    )
+    ap.add_argument(
         "--comparison_out",
         type=Path,
         default=None,
@@ -444,10 +516,11 @@ def main() -> None:
 
     summaries = []
     all_failed_rows: List[Dict[str, Any]] = []
+    all_plot_rows: List[Dict[str, Any]] = []
     print("=== Rollout Stability Report ===")
 
     for run_name, run_dir, pred_jsonl, summary_path, eval_path in run_specs:
-        summary_payload, failed_rows, failure_examples = _analyze_rollout(
+        summary_payload, failed_rows, failure_examples, plot_rows = _analyze_rollout(
             run_name,
             run_dir,
             pred_jsonl,
@@ -457,9 +530,11 @@ def main() -> None:
             object_miss_threshold=args.object_miss_threshold,
             max_examples=args.max_examples,
             max_raw_chars=args.max_raw_chars,
+            image_root=args.image_root,
         )
         summaries.append(summary_payload)
         all_failed_rows.extend(failed_rows)
+        all_plot_rows.extend(plot_rows)
 
         print("")
         print(f"--- Run: {run_name} ---")
@@ -567,10 +642,21 @@ def main() -> None:
         print(f"=== Failed rollout dossier written: {failed_out} ===")
         print(f"records: {len(all_failed_rows)}")
 
+    plot_out: Optional[Path] = args.plot_rollout_dump
+    if args.plot_rollout_dump is None and len(summaries) == 1:
+        plot_out = run_specs[0][1] / "eval" / "gt_vs_pred_plot.jsonl"
+    if plot_out is not None:
+        _dump_failed_rollout_rows(plot_out, all_plot_rows)
+        print("")
+        print(f"=== Plot-ready gt-vs-pred rows written: {plot_out} ===")
+        print(f"records: {len(all_plot_rows)}")
+
     if args.comparison_out:
         payload = {
             "runs": summaries,
             "failed_rollout_dump": str(args.failed_rollout_dump or ""),
+            "plot_rollout_dump": str(plot_out or ""),
+            "image_root": str(args.image_root or ""),
             "ignored_error_tags": sorted(ignore_error_tags),
             "object_miss_threshold": args.object_miss_threshold,
         }
