@@ -678,14 +678,6 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
     from src.eval.detection import EvalOptions, evaluate_and_save
 
     eval_cfg = _get_map(cfg, "eval")
-    for deprecated_key in ("unknown_policy", "semantic_fallback"):
-        if deprecated_key in eval_cfg:
-            val = eval_cfg[deprecated_key]
-            if val is not None and str(val).strip():
-                logger.warning(
-                    "Eval config key '%s' is deprecated and ignored; description matching always uses sentence-transformers/all-MiniLM-L6-v2.",
-                    deprecated_key,
-                )
 
     # Unified pipeline contract: evaluator consumes artifact with embedded GT.
     pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)

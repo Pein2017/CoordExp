@@ -327,7 +327,8 @@ class ConfigLoader:
             "eval_packing",
             "packing_avg_samples",
         }
-        packing_overrides = {k: training_section.pop(k) for k in list(training_section.keys()) if k in _packing_keys}
+        for key in _packing_keys:
+            training_section.pop(key, None)
 
         # Auto-calculate gradient_accumulation_steps from effective_batch_size
         #
@@ -442,6 +443,16 @@ class ConfigLoader:
                 "Set rlhf.llm_kd_weight to 0 and disable custom.visual_kd to run without a teacher."
             )
 
+        # Compose run-scoped output root before ms-swift appends auto-version.
+        run_name_raw = training_section.get("run_name")
+        output_dir_raw = training_section.get("output_dir")
+        if run_name_raw and output_dir_raw:
+            run_name = str(run_name_raw)
+            output_dir = str(output_dir_raw)
+            output_dir_path = Path(output_dir)
+            if output_dir_path.name != run_name:
+                training_section["output_dir"] = str(output_dir_path / run_name)
+
         args_dict: Dict[str, Any] = {}
         for section in (
             model_section,
@@ -540,13 +551,6 @@ class ConfigLoader:
             raise RuntimeError(
                 "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
-
-        # Surface packing overrides for downstream consumption (optional)
-        if packing_overrides:
-            try:
-                setattr(train_args, "_packing_overrides", packing_overrides)
-            except Exception:
-                pass
 
         return train_args
 

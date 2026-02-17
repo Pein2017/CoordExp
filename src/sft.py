@@ -229,92 +229,42 @@ def main():
     register_coord_offset_optimizer()
     custom_config = training_config.custom
     debug_config = getattr(training_config, "debug", None)
-    # Append run_name to output_dir and logging_dir to form final paths
-    try:
-        run_name = getattr(train_args, "run_name", None)
-        training_args = getattr(train_args, "training_args", None)
+    # Keep directory targets aligned across ms-swift wrappers.
+    run_name = getattr(train_args, "run_name", None)
+    training_args = getattr(train_args, "training_args", None)
 
-        # Debug: collapse output_dir + logging_dir into a single folder for easy cleanup.
-        if debug_config is not None and getattr(debug_config, "enabled", False):
-            debug_output_dir = getattr(debug_config, "output_dir", None)
-            if debug_output_dir:
-                logger.warning(
-                    "Debug output override enabled: setting output_dir=logging_dir=%s",
-                    debug_output_dir,
-                )
-                try:
-                    setattr(train_args, "output_dir", str(debug_output_dir))
-                except Exception:
-                    pass
-                try:
-                    setattr(train_args, "logging_dir", str(debug_output_dir))
-                except Exception:
-                    pass
-                if training_args is not None:
-                    try:
-                        setattr(training_args, "output_dir", str(debug_output_dir))
-                    except Exception:
-                        pass
-                    try:
-                        setattr(training_args, "logging_dir", str(debug_output_dir))
-                    except Exception:
-                        pass
+    def _set_train_dir_attr(attr_name: str, value: str) -> None:
+        setattr(train_args, attr_name, value)
+        if training_args is not None:
+            setattr(training_args, attr_name, value)
 
-        # Resolve and update output_dir
-        base_output_dir = getattr(train_args, "output_dir", None)
-        if base_output_dir is None and training_args is not None:
-            base_output_dir = getattr(training_args, "output_dir", None)
+    # Debug: collapse output_dir + logging_dir into a single folder for easy cleanup.
+    if debug_config is not None and getattr(debug_config, "enabled", False):
+        debug_output_dir = getattr(debug_config, "output_dir", None)
+        if debug_output_dir:
+            debug_output_dir_s = str(debug_output_dir)
+            logger.warning(
+                "Debug output override enabled: setting output_dir=logging_dir=%s",
+                debug_output_dir_s,
+            )
+            _set_train_dir_attr("output_dir", debug_output_dir_s)
+            _set_train_dir_attr("logging_dir", debug_output_dir_s)
 
-        add_version = getattr(train_args, "add_version", None)
-        if add_version is None and training_args is not None:
-            add_version = getattr(training_args, "add_version", None)
-        add_version_enabled = bool(add_version) if add_version is not None else False
+    add_version = getattr(train_args, "add_version", None)
+    if add_version is None and training_args is not None:
+        add_version = getattr(training_args, "add_version", None)
+    add_version_enabled = bool(add_version) if add_version is not None else False
 
-        def _resolve_run_output_dir(base_dir: str, run_name_value: str) -> str:
-            normalized = os.path.normpath(base_dir)
-            run_name_str = str(run_name_value)
-            if os.path.basename(normalized) == run_name_str:
-                return base_dir
-            if os.path.basename(os.path.dirname(normalized)) == run_name_str:
-                return base_dir
-            if add_version_enabled:
-                return os.path.join(
-                    os.path.dirname(normalized), run_name_str, os.path.basename(normalized)
-                )
-            return os.path.join(base_dir, run_name_str)
-
-        if run_name and base_output_dir:
-            final_output_dir = _resolve_run_output_dir(base_output_dir, str(run_name))
-            try:
-                setattr(train_args, "output_dir", final_output_dir)
-            except Exception:
-                pass
-            if training_args is not None:
-                try:
-                    setattr(training_args, "output_dir", final_output_dir)
-                except Exception:
-                    pass
-
-        # Resolve and update logging_dir (tensorboard dir)
+    # add_version already scopes output/logging under a versioned run dir in ms-swift.
+    if run_name and not add_version_enabled:
         base_logging_dir = getattr(train_args, "logging_dir", None)
         if base_logging_dir is None and training_args is not None:
             base_logging_dir = getattr(training_args, "logging_dir", None)
-        if run_name and base_logging_dir:
+        if base_logging_dir:
             base_logging_dir_norm = os.path.normpath(base_logging_dir)
             if os.path.basename(base_logging_dir_norm) != str(run_name):
                 final_logging_dir = os.path.join(base_logging_dir, str(run_name))
-                try:
-                    setattr(train_args, "logging_dir", final_logging_dir)
-                except Exception:
-                    pass
-                if training_args is not None:
-                    try:
-                        setattr(training_args, "logging_dir", final_logging_dir)
-                    except Exception:
-                        pass
-    except Exception:
-        # Non-fatal: fall back to directories as provided by YAML
-        pass
+                _set_train_dir_attr("logging_dir", final_logging_dir)
 
     # Optional: mirror logs into output_dir for quick review (rank 0 only).
     try:
@@ -530,10 +480,6 @@ def main():
 
     # Build training dataset (single JSONL or fusion config)
     # Require minimal explicit keys; others have sane defaults
-    if not custom_config.user_prompt:
-        raise ValueError(
-            "custom.user_prompt must be provided (emit_norm is fixed to 'none')"
-        )
 
     # Extract mode control parameters
     use_summary = bool(custom_config.use_summary)
