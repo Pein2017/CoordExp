@@ -264,19 +264,36 @@ def main():
         base_output_dir = getattr(train_args, "output_dir", None)
         if base_output_dir is None and training_args is not None:
             base_output_dir = getattr(training_args, "output_dir", None)
+
+        add_version = getattr(train_args, "add_version", None)
+        if add_version is None and training_args is not None:
+            add_version = getattr(training_args, "add_version", None)
+        add_version_enabled = bool(add_version) if add_version is not None else False
+
+        def _resolve_run_output_dir(base_dir: str, run_name_value: str) -> str:
+            normalized = os.path.normpath(base_dir)
+            run_name_str = str(run_name_value)
+            if os.path.basename(normalized) == run_name_str:
+                return base_dir
+            if os.path.basename(os.path.dirname(normalized)) == run_name_str:
+                return base_dir
+            if add_version_enabled:
+                return os.path.join(
+                    os.path.dirname(normalized), run_name_str, os.path.basename(normalized)
+                )
+            return os.path.join(base_dir, run_name_str)
+
         if run_name and base_output_dir:
-            base_output_dir_norm = os.path.normpath(base_output_dir)
-            if os.path.basename(base_output_dir_norm) != str(run_name):
-                final_output_dir = os.path.join(base_output_dir, str(run_name))
+            final_output_dir = _resolve_run_output_dir(base_output_dir, str(run_name))
+            try:
+                setattr(train_args, "output_dir", final_output_dir)
+            except Exception:
+                pass
+            if training_args is not None:
                 try:
-                    setattr(train_args, "output_dir", final_output_dir)
+                    setattr(training_args, "output_dir", final_output_dir)
                 except Exception:
                     pass
-                if training_args is not None:
-                    try:
-                        setattr(training_args, "output_dir", final_output_dir)
-                    except Exception:
-                        pass
 
         # Resolve and update logging_dir (tensorboard dir)
         base_logging_dir = getattr(train_args, "logging_dir", None)
