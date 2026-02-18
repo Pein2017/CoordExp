@@ -5,6 +5,11 @@ import json
 import os
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Tuple
 
+from src.common.object_field_order import (
+    ObjectFieldOrder,
+    build_object_payload,
+    normalize_object_field_order,
+)
 from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
 
 from ..contracts import ConversationRecord, validate_conversation_record
@@ -48,6 +53,7 @@ class JSONLinesBuilder(BaseBuilder):
         mode: Literal["dense", "summary"] = "dense",
         json_format: Literal["standard"] = "standard",
         coord_tokens_enabled: bool = False,
+        object_field_order: ObjectFieldOrder = "desc_first",
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -56,6 +62,7 @@ class JSONLinesBuilder(BaseBuilder):
         self.mode = mode
         self.json_format = json_format
         self.coord_tokens_enabled = bool(coord_tokens_enabled)
+        self.object_field_order = normalize_object_field_order(object_field_order)
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
         """Extract and validate summary from record.
@@ -155,14 +162,17 @@ class JSONLinesBuilder(BaseBuilder):
                     f"Object object_{idx} must contain exactly one valid geometry field"
                 )
 
-            payload: Dict[str, Any] = {
-                "desc": self._sanitize_desc(obj.get("desc"), idx)
-            }
+            desc = self._sanitize_desc(obj.get("desc"), idx)
             text_points = self._select_text_points(obj, geom_type, points)
             numeric_points = self._select_numeric_points(obj, geom_type, points)
             obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
-            payload[geom_type] = self._format_points(
-                text_points, width, height, geom_type
+            payload = build_object_payload(
+                desc=desc,
+                geometry_key=geom_type,
+                geometry_value=self._format_points(
+                    text_points, width, height, geom_type
+                ),
+                object_field_order=self.object_field_order,
             )
             grouped_objects[f"object_{idx}"] = payload
         return grouped_objects

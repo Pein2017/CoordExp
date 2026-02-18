@@ -11,6 +11,10 @@ import json
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from src.common.object_field_order import (
+    build_object_payload,
+    normalize_object_field_order,
+)
 from src.common.geometry import flatten_points
 from src.coord_tokens.codec import get_coord_token_ids, token_to_int, value_in_coord_range
 
@@ -550,7 +554,11 @@ def serialize_append_fragment(
     fn_objects: Sequence[GTObject],
     start_index: int,
     prefix_text: str,
+    object_field_order: str = "desc_first",
 ) -> str:
+    resolved_field_order = normalize_object_field_order(
+        object_field_order, path="custom.object_field_order"
+    )
     tail = prefix_text.rstrip()
     if not tail:
         raise ValueError("empty rollout prefix is not append-ready")
@@ -645,18 +653,24 @@ def serialize_append_fragment(
     entries: List[str] = []
     n = int(start_index)
     for obj in fn_objects:
-        payload: Dict[str, Any] = {"desc": obj.desc}
         if obj.geom_type == "bbox_2d":
             if len(obj.points_norm1000) != 4:
                 continue
-            payload["bbox_2d"] = [f"<|coord_{int(v)}|>" for v in obj.points_norm1000]
+            geometry_key = "bbox_2d"
+            geometry_value = [f"<|coord_{int(v)}|>" for v in obj.points_norm1000]
         else:
             pts = obj.points_norm1000
-            pairs = [
+            geometry_key = "poly"
+            geometry_value = [
                 [f"<|coord_{int(pts[i])}|>", f"<|coord_{int(pts[i + 1])}|>"]
                 for i in range(0, len(pts), 2)
             ]
-            payload["poly"] = pairs
+        payload: Dict[str, Any] = build_object_payload(
+            desc=str(obj.desc),
+            geometry_key=geometry_key,
+            geometry_value=geometry_value,
+            object_field_order=resolved_field_order,
+        )
         entries.append(
             f'"object_{n}": {json.dumps(payload, ensure_ascii=False, separators=(", ", ": "))}'
         )

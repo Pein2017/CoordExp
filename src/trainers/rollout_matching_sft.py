@@ -42,6 +42,7 @@ from swift.trainers.rlhf_trainer.utils import (
 )
 from swift.utils import get_logger, unwrap_model_for_generation
 
+from src.common.object_field_order import normalize_object_field_order
 from src.common.geometry import bbox_from_points, flatten_points
 from src.common.repeat_terminate import (
     ForceEosOnRepeatBatchGuard,
@@ -928,6 +929,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         except Exception:
             raise
         return default
+
+    def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:
+        raw = getattr(self, "object_field_order", None)
+        if raw is None:
+            raw = self._cfg("object_field_order", "desc_first")
+        return normalize_object_field_order(raw, path="custom.object_field_order")
 
     def _validate_rollout_matching_cfg(self) -> None:
         cfg = getattr(self, "rollout_matching_cfg", None)
@@ -4616,7 +4623,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             max_idx = parse.max_object_index_in_prefix
             start_idx = (max_idx + 1) if max_idx is not None else 1
             append_text = _serialize_append_fragment(
-                fn_objects=fn_objs, start_index=start_idx, prefix_text=parse.prefix_text
+                fn_objects=fn_objs,
+                start_index=start_idx,
+                prefix_text=parse.prefix_text,
+                object_field_order=self._object_field_order(),
             )
             append_ids = tok.encode(append_text, add_special_tokens=False)
             # Ignore desc value tokens in the appended tail for CE (GT desc can be noisy).

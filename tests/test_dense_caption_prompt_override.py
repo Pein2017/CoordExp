@@ -63,3 +63,42 @@ def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> N
     assert encoded_b["messages"][0]["role"] == "system"
     assert encoded_b["messages"][0]["content"] == "SYSTEM_B"
     assert template.system == "BASE_SYSTEM"
+
+
+def test_template_boundary_reflects_geometry_first_assistant_text_order() -> None:
+    class _CaptureTemplate(_FakeTemplate):
+        def __init__(self) -> None:
+            super().__init__()
+            self.last_assistant_text = ""
+
+        def encode(
+            self, merged: dict[str, Any], return_length: bool = False
+        ) -> dict[str, Any]:
+            messages = merged.get("messages", []) if isinstance(merged, dict) else []
+            if len(messages) >= 2:
+                assistant = messages[1]
+                content = assistant.get("content", []) if isinstance(assistant, dict) else []
+                if content and isinstance(content[0], dict):
+                    self.last_assistant_text = str(content[0].get("text", ""))
+            return super().encode(merged, return_length=return_length)
+
+    template = _CaptureTemplate()
+    ds = BaseCaptionDataset(
+        base_records=[_record()],
+        template=template,
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=False),
+        object_ordering="sorted",
+        object_field_order="geometry_first",
+    )
+
+    encoded = ds[0]
+    obj = encoded["assistant_payload"]["object_1"]
+    assert list(obj.keys()) == ["bbox_2d", "desc"]
+    assert template.last_assistant_text.index('"bbox_2d"') < template.last_assistant_text.index(
+        '"desc"'
+    )

@@ -4,12 +4,13 @@ from src.datasets.builders.jsonlines import JSONLinesBuilder
 from src.datasets.utils import extract_geometry, extract_object_points, sort_objects_by_topleft
 
 
-def _builder() -> JSONLinesBuilder:
+def _builder(object_field_order: str = "desc_first") -> JSONLinesBuilder:
     return JSONLinesBuilder(
         user_prompt="Locate objects",
         emit_norm="none",
         mode="dense",
         coord_tokens_enabled=False,
+        object_field_order=object_field_order,
     )
 
 
@@ -113,3 +114,40 @@ def test_sort_objects_by_topleft_supports_coord_tokens() -> None:
 
     sorted_objects = sort_objects_by_topleft(objects)
     assert [o["desc"] for o in sorted_objects] == ["a", "b"]
+
+
+def test_jsonlines_builder_object_field_order_switches_bbox_per_object_key_order():
+    record = _record_with_objects([{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}])
+
+    desc_first = _builder("desc_first").build_many([record])
+    geometry_first = _builder("geometry_first").build_many([record])
+
+    desc_first_obj = desc_first["assistant_payload"]["object_1"]
+    geometry_first_obj = geometry_first["assistant_payload"]["object_1"]
+
+    assert list(desc_first_obj.keys()) == ["desc", "bbox_2d"]
+    assert list(geometry_first_obj.keys()) == ["bbox_2d", "desc"]
+
+    desc_first_text = desc_first["messages"][1]["content"][0]["text"]
+    geometry_first_text = geometry_first["messages"][1]["content"][0]["text"]
+    assert desc_first_text.index('"desc"') < desc_first_text.index('"bbox_2d"')
+    assert geometry_first_text.index('"bbox_2d"') < geometry_first_text.index('"desc"')
+
+
+def test_jsonlines_builder_poly_output_omits_poly_points_metadata():
+    record = _record_with_objects(
+        [
+            {
+                "desc": "region",
+                "poly": [10, 20, 30, 20, 30, 40, 10, 40],
+                "poly_points": [[10, 20], [30, 20], [30, 40], [10, 40]],
+            }
+        ]
+    )
+    built = _builder("geometry_first").build_many([record])
+    obj = built["assistant_payload"]["object_1"]
+    assistant_text = built["messages"][1]["content"][0]["text"]
+
+    assert list(obj.keys()) == ["poly", "desc"]
+    assert "poly_points" not in obj
+    assert "poly_points" not in assistant_text

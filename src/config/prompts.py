@@ -1,5 +1,7 @@
 """Unified English prompts for CoordExp general detection/grounding."""
 
+from src.common.object_field_order import normalize_object_field_order
+
 # Shared prior rules (kept flat for easy embedding in system prompt)
 PRIOR_RULES = "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
 
@@ -79,49 +81,91 @@ SYSTEM_PROMPT_SUMMARY = "You are an assistant that writes a concise English one-
 USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 
+def _apply_geometry_first_system_wording(base_prompt: str) -> str:
+    return base_prompt.replace(
+        "Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.",
+        "Each object must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
+    )
+
+
+def _apply_geometry_first_user_wording(base_prompt: str) -> str:
+    return base_prompt.replace(
+        "has desc plus one geometry (bbox_2d or poly)",
+        "has one geometry (bbox_2d or poly) before desc",
+    )
+
+
 def build_dense_system_prompt(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    object_field_order: str = "desc_first",
 ) -> str:
     """Return system prompt for dense mode given ordering and coordinate representation."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
+    field_order = normalize_object_field_order(
+        object_field_order, path="custom.object_field_order"
+    )
     if str(coord_mode).lower() == "numeric":
-        return (
+        base = (
             SYSTEM_PROMPT_RANDOM_NUMERIC
             if ordering_key == "random"
             else SYSTEM_PROMPT_SORTED_NUMERIC
         )
-    return (
-        SYSTEM_PROMPT_RANDOM_TOKENS
-        if ordering_key == "random"
-        else SYSTEM_PROMPT_SORTED_TOKENS
-    )
+    else:
+        base = (
+            SYSTEM_PROMPT_RANDOM_TOKENS
+            if ordering_key == "random"
+            else SYSTEM_PROMPT_SORTED_TOKENS
+        )
+    if field_order == "geometry_first":
+        return _apply_geometry_first_system_wording(base)
+    return base
 
 
 def build_dense_user_prompt(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    object_field_order: str = "desc_first",
 ) -> str:
     """Return user prompt for dense mode given ordering and coordinate representation."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
+    field_order = normalize_object_field_order(
+        object_field_order, path="custom.object_field_order"
+    )
     if str(coord_mode).lower() == "numeric":
-        return (
+        base = (
             USER_PROMPT_RANDOM_NUMERIC
             if ordering_key == "random"
             else USER_PROMPT_SORTED_NUMERIC
         )
-    return (
-        USER_PROMPT_RANDOM_TOKENS
-        if ordering_key == "random"
-        else USER_PROMPT_SORTED_TOKENS
-    )
+    else:
+        base = (
+            USER_PROMPT_RANDOM_TOKENS
+            if ordering_key == "random"
+            else USER_PROMPT_SORTED_TOKENS
+        )
+    if field_order == "geometry_first":
+        return _apply_geometry_first_user_wording(base)
+    return base
 
 
 def get_template_prompts(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    object_field_order: str = "desc_first",
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode; coord_mode in {'coord_tokens','numeric'}."""
     return (
-        build_dense_system_prompt(ordering=ordering, coord_mode=coord_mode),
-        build_dense_user_prompt(ordering=ordering, coord_mode=coord_mode),
+        build_dense_system_prompt(
+            ordering=ordering,
+            coord_mode=coord_mode,
+            object_field_order=object_field_order,
+        ),
+        build_dense_user_prompt(
+            ordering=ordering,
+            coord_mode=coord_mode,
+            object_field_order=object_field_order,
+        ),
     )
 
 

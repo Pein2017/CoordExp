@@ -19,6 +19,10 @@ from typing import Any, Literal, MutableMapping, Optional, cast
 
 from torch.utils.data import get_worker_info
 
+from src.common.object_field_order import (
+    ObjectFieldOrder,
+    normalize_object_field_order,
+)
 from src.config.schema import CoordTokensConfig
 
 from ..config.prompts import USER_PROMPT_SUMMARY
@@ -69,6 +73,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
         sample_limit: Optional[int] = None,
         split: Literal["train", "eval"] = "train",
         object_ordering: Literal["sorted", "random"] = "sorted",
+        object_field_order: ObjectFieldOrder = "desc_first",
     ) -> None:
         self._fusion_config = fusion_config
         self._split: Literal["train", "eval"] = split
@@ -88,6 +93,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
         self.epoch_plan: dict[str, dict[str, Any]] = {}
         self._hard_sample_plan: dict[str, Any] | None = None
         self.object_ordering: Literal["sorted", "random"] = object_ordering
+        self.object_field_order = normalize_object_field_order(object_field_order)
 
         self._dataset_order = [spec.name for spec in fusion_config.datasets]
         default_system_prompt = system_prompt_dense
@@ -172,6 +178,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             dataset_name="fusion",
             allow_empty=True,
             object_ordering=object_ordering,
+            object_field_order=self.object_field_order,
         )
 
         self.set_epoch(0)
@@ -385,6 +392,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             mode=mode,
             json_format=self.json_format,
             coord_tokens_enabled=self.coord_tokens.enabled,
+            object_field_order=self.object_field_order,
         )
         encoded = self._encode_record(
             record=record,

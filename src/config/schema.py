@@ -14,6 +14,11 @@ from typing import (
     cast,
 )
 
+from src.common.object_field_order import (
+    ObjectFieldOrder,
+    normalize_object_field_order,
+)
+
 from .rollout_matching_schema import RolloutMatchingConfig
 from .strict_dataclass import parse_dataclass_strict
 
@@ -580,6 +585,7 @@ class CustomConfig:
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
     object_ordering: Literal["sorted", "random"] = "sorted"
+    object_field_order: ObjectFieldOrder = "desc_first"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
@@ -618,6 +624,10 @@ class CustomConfig:
         if self.object_ordering not in {"sorted", "random"}:
             raise ValueError(
                 "custom.object_ordering must be one of {'sorted', 'random'}"
+            )
+        if self.object_field_order not in {"desc_first", "geometry_first"}:
+            raise ValueError(
+                "custom.object_field_order must be one of {'desc_first', 'geometry_first'}"
             )
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
@@ -707,6 +717,7 @@ class CustomConfig:
         dump_conversation_text = bool(data.pop("dump_conversation_text", False))
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
+        object_field_order_raw = data.pop("object_field_order", "desc_first")
         val_jsonl = data.pop("val_jsonl", None)
         fusion_config_raw = data.pop("fusion_config", None)
         fusion_config: Optional[str]
@@ -775,6 +786,9 @@ class CustomConfig:
             raise ValueError(
                 "custom.object_ordering must be 'sorted' or 'random' when provided"
             )
+        object_field_order = normalize_object_field_order(
+            object_field_order_raw, path="custom.object_field_order"
+        )
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
@@ -787,6 +801,7 @@ class CustomConfig:
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
             object_ordering=cast(Literal["sorted", "random"], object_ordering),
+            object_field_order=object_field_order,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             coord_soft_ce_w1=coord_soft_ce_w1,
@@ -1299,4 +1314,3 @@ class TrainingConfig:
             global_max_length=global_max_length,
             extra={},
         )
-
