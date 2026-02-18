@@ -18,7 +18,7 @@
 
 ## Repo Safety (Prevent Data Loss)
 - Never run destructive cleanup commands unless the user explicitly asked (examples: `git restore`, `git clean -fd`, `git reset --hard`, `git checkout -- <path>`, `rm -rf`). If suggesting such a command, warn that it can delete uncommitted/untracked work.
-- Before making edits, check `git status --porcelain` and call out any dirty files; if there are unexpected changes (especially in files we didn’t touch), stop and ask how to proceed.
+- This is a concurrent developing environment—dirty changes from parallel work are always expected and acceptable. Focus only on your own edited changes.
 - Prefer small, incremental commits (or a `git stash`) during large refactors so work can’t be accidentally discarded.
 
 ## Environment
