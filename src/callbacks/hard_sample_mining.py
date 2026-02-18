@@ -15,8 +15,6 @@ import torch.distributed as dist
 from torch import nn
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 
-from ..config.schema import HardSampleMiningConfig
-
 
 @dataclass
 class _SampleStat:
@@ -105,7 +103,7 @@ def _per_sample_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor
     return per_sample
 
 
-def attach_hsm_compute_loss(trainer, tracker: HardSampleTracker, hsm_cfg: HardSampleMiningConfig):
+def attach_hsm_compute_loss(trainer, tracker: HardSampleTracker, hsm_cfg: Any):
     orig_compute_loss = trainer.compute_loss
 
     def _compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -147,7 +145,7 @@ class HardSampleMiningCallback(TrainerCallback):
         self,
         *,
         tracker: HardSampleTracker,
-        config: HardSampleMiningConfig,
+        config: Any,
         dataset: Any,
         target_dataset: str,
         trainer_ref: Any | None = None,

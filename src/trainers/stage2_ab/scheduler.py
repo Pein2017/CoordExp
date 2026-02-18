@@ -20,12 +20,9 @@ class Stage2ABSchedulerMixin:
         return cfg if isinstance(cfg, Mapping) else {}
 
     def _ab_get(self, key: str, default: Any) -> Any:
-        try:
-            cfg = self._ab_cfg()
-            if key in cfg:
-                return cfg[key]
-        except Exception:
-            pass
+        cfg = self._ab_cfg()
+        if key in cfg:
+            return cfg[key]
         return default
 
     def _ab_schedule_b_ratio(self) -> float:
@@ -68,17 +65,10 @@ class Stage2ABSchedulerMixin:
         return out
 
     def _ab_channel_b_get(self, key: str, default: Any) -> Any:
-        try:
-            cfg = self._ab_channel_b_cfg()
-            if key in cfg:
-                return cfg[key]
-        except Exception:
-            pass
+        cfg = self._ab_channel_b_cfg()
+        if key in cfg:
+            return cfg[key]
         return default
-
-    def _stage2_b_step_mode(self) -> Literal["step"]:
-        # Stage2-AB standardizes Channel-B execution to the step-budgeted pathway.
-        return "step"
 
     def _stage2_b_rollouts_per_step(self) -> int:
         # Single source of truth for raw-rollout budgeting: training.effective_batch_size.
@@ -178,20 +168,3 @@ class Stage2ABSchedulerMixin:
         b = math.floor(float(s) * float(b_ratio))
         return "B" if a > b else "A"
 
-    def _stage2_policy_channel_for_step(self, global_step: int) -> Literal["A", "B"]:
-        """Deterministic schedule policy (ignores any channel override).
-
-        Async actor-learner uses this to decide whether we *want* Channel-B for a given
-        optimizer step, before applying feasibility gates.
-        """
-        b_ratio = float(self._ab_schedule_b_ratio())
-        s = int(global_step)
-
-        if b_ratio <= 0.0:
-            return "A"
-        if b_ratio >= 1.0:
-            return "B"
-
-        a = math.floor(float(s + 1) * float(b_ratio))
-        b = math.floor(float(s) * float(b_ratio))
-        return "B" if a > b else "A"

@@ -281,13 +281,15 @@ def _candidate_resolved_config_paths_for_jsonl(jsonl_path: Path) -> List[Path]:
     if pointer_path.exists():
         try:
             pointer_raw = str(pointer_path.read_text(encoding="utf-8") or "").strip()
-            if pointer_raw:
-                pointed = Path(pointer_raw).expanduser()
-                if not pointed.is_absolute():
-                    pointed = (pointer_path.parent / pointed).resolve()
-                _push(pointed)
-        except Exception:
-            pass
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to read manifest pointer at {pointer_path}."
+            ) from exc
+        if pointer_raw:
+            pointed = Path(pointer_raw).expanduser()
+            if not pointed.is_absolute():
+                pointed = (pointer_path.parent / pointed).resolve()
+            _push(pointed)
 
     _push(jsonl_path.parent / "resolved_config.json")
 
@@ -296,120 +298,6 @@ def _candidate_resolved_config_paths_for_jsonl(jsonl_path: Path) -> List[Path]:
 
     return candidates
 
-
-def _iter_jsonl_records(path: Path) -> List[Dict[str, Any]]:
-    records: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                obj = json.loads(text)
-            except Exception:
-                continue
-            if isinstance(obj, dict):
-                records.append(obj)
-    return records
-
-
-def _coerce_raw_output(rec: Dict[str, Any]) -> Tuple[Any, str]:
-    raw_output = rec.get("raw_output_json")
-    if raw_output is None:
-        raw_output = rec.get("raw_output")
-    if raw_output is None:
-        raw_output = rec.get("raw_output_text")
-    if raw_output is None:
-        raw_output = ""
-    if isinstance(raw_output, (dict, list)):
-        raw_text = json.dumps(raw_output, ensure_ascii=False)
-    else:
-        raw_text = str(raw_output)
-    return raw_output, raw_text
-
-
-def _resolve_image_path_for_rollout(
-    root_image_dir: Optional[str],
-    run_dir: Path,
-    image_value: Any,
-) -> str:
-    if not image_value:
-        return ""
-    image_rel = str(image_value).strip()
-    if not image_rel:
-        return ""
-    candidate = Path(image_rel)
-    if candidate.is_absolute():
-        return str(candidate)
-    if root_image_dir is not None:
-        return str((Path(root_image_dir) / candidate).resolve())
-    return str(run_dir / candidate)
-
-
-def _build_plot_row(
-    run_name: str,
-    run_dir: Path,
-    local_idx: int,
-    rec: Dict[str, Any],
-    root_image_dir: Optional[str],
-) -> Dict[str, Any]:
-    image = str(rec.get("image", ""))
-    raw_sample, raw_text = _coerce_raw_output(rec)
-    gt = rec.get("gt") or []
-    pred = rec.get("pred") or []
-
-    index_raw = rec.get("index")
-    index = int(index_raw) if isinstance(index_raw, int) else local_idx
-
-    width_raw = rec.get("width")
-    width = int(width_raw) if isinstance(width_raw, int) else width_raw
-
-    height_raw = rec.get("height")
-    height = int(height_raw) if isinstance(height_raw, int) else height_raw
-
-    return {
-        "run_name": run_name,
-        "run_dir": str(run_dir),
-        "index": index,
-        "image": image,
-        "image_path": _resolve_image_path_for_rollout(root_image_dir, run_dir, image),
-        "width": width,
-        "height": height,
-        "mode": rec.get("mode", ""),
-        "coord_mode": rec.get("coord_mode", ""),
-        "gt_count": len(gt) if isinstance(gt, list) else 0,
-        "pred_count": len(pred) if isinstance(pred, list) else 0,
-        "gt": gt if isinstance(gt, list) else [],
-        "pred": pred if isinstance(pred, list) else [],
-        "raw_sample": raw_sample,
-        "raw_output": raw_text,
-        "raw_output_len": len(raw_text),
-        "raw_output_preview": raw_text.replace("\n", "\\n")[:240],
-    }
-
-
-def _write_gt_vs_pred_plot_rows(
-    pred_jsonl: Path,
-    out_jsonl: Path,
-    run_dir: Path,
-    root_image_dir: Optional[str],
-) -> int:
-    rows: List[Dict[str, Any]] = []
-    for local_idx, rec in enumerate(_iter_jsonl_records(pred_jsonl)):
-        row = _build_plot_row(
-            run_name=run_dir.name,
-            run_dir=run_dir,
-            local_idx=local_idx,
-            rec=rec,
-            root_image_dir=root_image_dir,
-        )
-        rows.append(row)
-
-    out_jsonl.parent.mkdir(parents=True, exist_ok=True)
-    with out_jsonl.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return len(rows)
 
 
 def _find_resolved_config_for_jsonl(jsonl_path: Path) -> Optional[Dict[str, Any]]:
@@ -421,7 +309,8 @@ def _find_resolved_config_for_jsonl(jsonl_path: Path) -> Optional[Dict[str, Any]
             continue
         try:
             resolved = load_resolved_config(candidate)
-        except Exception:
+        except (OSError, ValueError) as exc:
+            logger.warning("Skipping invalid resolved config candidate %s: %s", candidate, exc)
             continue
 
         if fallback is None:
@@ -433,57 +322,62 @@ def _find_resolved_config_for_jsonl(jsonl_path: Path) -> Optional[Dict[str, Any]
 
         gt_vs_pred_jsonl = artifacts.get("gt_vs_pred_jsonl")
         if isinstance(gt_vs_pred_jsonl, str) and gt_vs_pred_jsonl.strip():
-            try:
-                if Path(gt_vs_pred_jsonl).resolve() == jsonl_resolved:
-                    return resolved
-            except Exception:
-                pass
+            if Path(gt_vs_pred_jsonl).resolve() == jsonl_resolved:
+                return resolved
 
         run_dir = artifacts.get("run_dir")
         if isinstance(run_dir, str) and run_dir.strip():
-            try:
-                run_dir_resolved = Path(run_dir).resolve()
-                if run_dir_resolved in jsonl_resolved.parents:
-                    return resolved
-            except Exception:
-                pass
+            run_dir_resolved = Path(run_dir).resolve()
+            if run_dir_resolved in jsonl_resolved.parents:
+                return resolved
 
     return fallback
 
 
-def resolve_root_image_dir_for_jsonl(jsonl_path: Path) -> Tuple[Optional[Path], str]:
+def _resolve_root_image_dir_common(
+    *,
+    run_root_image_dir: Optional[str] = None,
+    gt_jsonl: Optional[str] = None,
+    resolved_cfg: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Optional[Path], str]:
     root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
     if root_env:
         return Path(root_env).resolve(), "env"
 
-    resolved = _find_resolved_config_for_jsonl(jsonl_path)
-    if resolved is None:
-        return None, "none"
+    if run_root_image_dir is not None and str(run_root_image_dir).strip():
+        return Path(str(run_root_image_dir)).resolve(), "config"
 
-    root_cfg = resolved.get("root_image_dir")
-    root_source = resolved.get("root_image_dir_source")
-    if isinstance(root_cfg, str) and root_cfg.strip():
-        return Path(root_cfg).resolve(), str(root_source)
+    if resolved_cfg is not None:
+        root_cfg = resolved_cfg.get("root_image_dir")
+        root_source = resolved_cfg.get("root_image_dir_source")
+        if isinstance(root_cfg, str) and root_cfg.strip():
+            source = str(root_source).strip() if root_source is not None else "config"
+            return Path(root_cfg).resolve(), source or "config"
+
+    if gt_jsonl is not None and str(gt_jsonl).strip():
+        return Path(str(gt_jsonl)).parent.resolve(), "gt_parent"
 
     return None, "none"
+
+def resolve_root_image_dir_for_jsonl(jsonl_path: Path) -> Tuple[Optional[Path], str]:
+    resolved = _find_resolved_config_for_jsonl(jsonl_path)
+    return _resolve_root_image_dir_common(resolved_cfg=resolved)
 
 
 def _resolve_root_image_dir(cfg: Mapping[str, Any]) -> Tuple[Optional[str], str]:
-    root_env = str(os.environ.get("ROOT_IMAGE_DIR") or "").strip()
-    if root_env:
-        return str(Path(root_env).resolve()), "env"
-
     run_cfg = _get_map(cfg, "run")
-    root_cfg = str(_get_str(run_cfg, "root_image_dir") or "").strip()
-    if root_cfg:
-        return str(Path(root_cfg).resolve()), "config"
-
     infer_cfg = _get_map(cfg, "infer")
-    gt_jsonl = str(_get_str(infer_cfg, "gt_jsonl") or "").strip()
-    if gt_jsonl:
-        return str(Path(gt_jsonl).parent.resolve()), "gt_parent"
 
-    return None, "none"
+    run_root_image_dir = _get_str(run_cfg, "root_image_dir")
+    gt_jsonl = _get_str(infer_cfg, "gt_jsonl")
+
+    root_path, source = _resolve_root_image_dir_common(
+        run_root_image_dir=run_root_image_dir,
+        gt_jsonl=gt_jsonl,
+    )
+    if root_path is None:
+        return None, source
+    return str(root_path), source
 
 
 def run_pipeline(
@@ -545,14 +439,11 @@ def run_pipeline(
 
     # Persist a manifest pointer next to the unified JSONL artifact so eval/vis can
     # recover the canonical run_dir manifest even when artifacts are laid out outside run_dir.
-    try:
-        artifacts.gt_vs_pred_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        (artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path").write_text(
-            str(resolved_config_path.resolve()),
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
+    artifacts.gt_vs_pred_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    (artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path").write_text(
+        str(resolved_config_path.resolve()),
+        encoding="utf-8",
+    )
 
     if stages.infer:
         _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)

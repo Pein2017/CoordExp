@@ -70,10 +70,9 @@ USER_PROMPT_RANDOM_NUMERIC = (
     "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using plain integer coordinates 0–999 (no coord tokens)."
 )
 
-# Defaults (coord-token, sorted) kept for backward compatibility
+# Defaults (coord-token, sorted)
 SYSTEM_PROMPT = SYSTEM_PROMPT_SORTED_TOKENS
 USER_PROMPT = USER_PROMPT_SORTED_TOKENS
-USER_PROMPT_JSON = USER_PROMPT  # legacy alias
 
 # Summary prompts remain unchanged
 SYSTEM_PROMPT_SUMMARY = "You are an assistant that writes a concise English one-sentence summary of the image contents."
@@ -143,8 +142,7 @@ __all__ = [
     "SYSTEM_PROMPT_RANDOM_NUMERIC",
     "USER_PROMPT_SORTED_NUMERIC",
     "USER_PROMPT_RANDOM_NUMERIC",
-    # summary / legacy
+    # summary
     "SYSTEM_PROMPT_SUMMARY",
     "USER_PROMPT_SUMMARY",
-    "USER_PROMPT_JSON",
 ]

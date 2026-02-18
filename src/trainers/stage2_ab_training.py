@@ -617,46 +617,6 @@ class Stage2ABTrainingTrainer(
             except Exception:
                 pass
 
-    def _maybe_seed_hf_sampling_rollout(
-        self, *, seed_base: int, backend: str, do_sample: bool
-    ) -> bool:
-        """Deprecated helper retained for backward compatibility within this file.
-
-        Prefer `_hf_sampling_seed_context(...)` so the training RNG state is restored
-        after HF rollout generation.
-        """
-        if str(backend).lower() != "hf" or not bool(do_sample):
-            return False
-        # Best-effort seed (state is *not* restored here).
-        sb = int(seed_base)
-        try:
-            from transformers.trainer_utils import set_seed
-
-            set_seed(sb)
-            return True
-        except Exception:
-            pass
-
-        try:
-            import random
-
-            random.seed(sb)
-        except Exception:
-            pass
-        try:
-            import numpy as np
-
-            np.random.seed(sb)
-        except Exception:
-            pass
-        try:
-            torch.manual_seed(sb)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(sb)
-        except Exception:
-            pass
-        return True
-
     @contextlib.contextmanager
     def _hf_sampling_seed_context(
         self, *, seed_base: int, backend: str, do_sample: bool

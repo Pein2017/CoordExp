@@ -3,6 +3,7 @@ import subprocess
 import sys
 import json
 import textwrap
+import types
 from pathlib import Path
 
 import pytest
@@ -361,7 +362,9 @@ def test_fusion_dataset_smoke_iterates_and_packs(tmp_path: Path):
     sample = ds_train[0]
     assert "input_ids" in sample
     assert "messages" in sample
+    assert isinstance(sample.get("sample_id"), int)
     assert sample.get("dataset") == "toy"
+    assert sample.get("base_idx") in {0, 1}
 
     # Eval split should include val_jsonl records.
     ds_eval = FusionCaptionDataset(
@@ -398,6 +401,64 @@ def test_fusion_dataset_smoke_iterates_and_packs(tmp_path: Path):
     packs = list(packed)
     assert packs
 
+
+def test_fusion_dataset_metadata_attachment_failure_is_fatal(tmp_path: Path) -> None:
+    img_path = tmp_path / "img.jpg"
+    img_path.write_bytes(b"\x00")
+
+    train_jsonl = tmp_path / "train.jsonl"
+    record = {
+        "images": [str(img_path)],
+        "width": 1000,
+        "height": 1000,
+        "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "cat"}],
+    }
+    _write_jsonl(train_jsonl, [record])
+
+    cfg_path = tmp_path / "fusion.yaml"
+    cfg_path.write_text(
+        textwrap.dedent(
+            """
+            targets:
+              - dataset: jsonl
+                name: toy
+                train_jsonl: {train_jsonl}
+                template: bbox_only
+                ratio: 1.0
+            """.format(train_jsonl=str(train_jsonl))
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class _ReadOnlyTemplate(_FakeTemplate):
+        def encode(self, merged, return_length=False):
+            payload = super().encode(merged, return_length=return_length)
+            return types.MappingProxyType(payload)
+
+    cfg = FusionConfig.from_file(str(cfg_path))
+    ds_train = FusionCaptionDataset(
+        fusion_config=cfg,
+        base_template=_ReadOnlyTemplate(max_length=64),
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        augmenter=None,
+        bypass_prob=0.0,
+        curriculum_state=None,
+        use_summary=False,
+        system_prompt_dense="SYSTEM",
+        system_prompt_summary=None,
+        coord_tokens=CoordTokensConfig(enabled=False),
+        seed=123,
+        shuffle=True,
+        sample_limit=None,
+        split="train",
+        object_ordering="sorted",
+    )
+
+    with pytest.raises(TypeError, match="mutable mapping"):
+        _ = ds_train[0]
 
 def test_training_config_materializes_with_fusion_config_without_train_jsonl(
     tmp_path: Path,

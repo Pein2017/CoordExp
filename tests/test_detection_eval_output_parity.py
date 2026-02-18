@@ -10,8 +10,11 @@ pytest.importorskip("pycocotools")
 from src.eval.detection import (
     EvalCounters,
     EvalOptions,
+    _prepare_all,
+    _prepare_all_separate,
     _prepare_pred_objects,
     evaluate_and_save,
+    preds_to_gt_records,
 )
 
 
@@ -22,7 +25,7 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
     )
 
 
-def _one_record(*, image: str) -> dict:
+def _one_record(*, image: str, gt_desc: str = "box", pred_desc: str = "box") -> dict:
     return {
         "image": image,
         "width": 64,
@@ -33,7 +36,7 @@ def _one_record(*, image: str) -> dict:
             {
                 "type": "bbox_2d",
                 "points": [0, 0, 63, 47],
-                "desc": "box",
+                "desc": gt_desc,
                 "score": 1.0,
             }
         ],
@@ -41,7 +44,7 @@ def _one_record(*, image: str) -> dict:
             {
                 "type": "bbox_2d",
                 "points": [0, 0, 63, 47],
-                "desc": "box",
+                "desc": pred_desc,
                 "score": 1.0,
             }
         ],
@@ -100,6 +103,80 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(tmp_path: Path) -> None:
     assert summary["metrics"]["bbox_AP50"] > 0.9
     assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
 
+
+def test_prepare_all_and_prepare_all_separate_parity(tmp_path: Path) -> None:
+    pred_records = [
+        _one_record(image="img_a.png"),
+        _one_record(image="img_b.png"),
+    ]
+    gt_records = preds_to_gt_records(pred_records)
+
+    options = EvalOptions(
+        metrics="both",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+        overlay=False,
+        num_workers=0,
+        semantic_model="",
+    )
+
+    counters_combined = EvalCounters()
+    counters_separate = EvalCounters()
+
+    combined = _prepare_all(
+        pred_records,
+        options,
+        counters_combined,
+        prepare_coco=True,
+    )
+    separate = _prepare_all_separate(
+        gt_records,
+        pred_records,
+        options,
+        counters_separate,
+        prepare_coco=True,
+    )
+
+    assert combined[0] == separate[0]  # gt_samples
+    assert combined[1] == separate[1]  # pred_samples
+    assert combined[2] == separate[2]  # categories
+    assert combined[3] == separate[3]  # coco_gt
+    assert combined[4] == separate[4]  # coco_preds
+    assert combined[5] == separate[5]  # run_segm
+    assert combined[6] == separate[6]  # per_image
+
+
+def test_evaluate_and_save_fails_when_semantic_encoder_unavailable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(
+        pred_path,
+        [_one_record(image="img.png", gt_desc="cat", pred_desc="dog")],
+    )
+
+    class _BrokenEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            raise RuntimeError("encoder unavailable")
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _BrokenEncoder)
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+        overlay=False,
+        num_workers=0,
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+    )
+
+    with pytest.raises(RuntimeError, match="Description matching requires the semantic encoder"):
+        evaluate_and_save(pred_path, options=options)
 
 def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
     counters = EvalCounters()

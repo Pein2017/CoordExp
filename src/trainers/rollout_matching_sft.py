@@ -1613,13 +1613,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         logger.info("vLLM rollout server world_size(s): %s", out)
         return list(out)
 
-    def _vllm_server_total_world_size(self) -> int:
-        sizes = self._vllm_server_world_sizes()
-        try:
-            total = int(sum(int(x) for x in sizes))
-        except Exception:
-            total = 0
-        return max(1, int(total))
 
     def _rollout_decode_batch_size_per_rank(self) -> int:
         """Derived rollout request chunk size per learner rank.
@@ -1789,10 +1782,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _packing_drop_last(self) -> bool:
         return bool(self._cfg("packing_drop_last", True))
 
-    def _post_rollout_pack_scope(self) -> str:
-        # `rollout_matching.post_rollout_pack_scope` has been removed.
-        # Standard behavior is micro-scope dynamic packing.
-        return "micro"
 
     @staticmethod
     def _extract_encoded_len(encoded: Mapping[str, Any]) -> int:
@@ -1988,143 +1977,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return self._coord_id_to_bin or {}
 
     # ------------------------ rollout + batch prep ------------------------ #
-    @torch.no_grad()
-    def _rollout_one(
-        self, sample: Mapping[str, Any]
-    ) -> Tuple[List[int], str, str, List[int]]:
-        """Generate a single rollout response.
-
-        Returns:
-          (response_token_ids, decoded_text, decode_mode, prompt_token_ids)
-        """
-        template = self.template
-        tok = template.tokenizer
-        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        num_beams = int(self._cfg("num_beams", 1))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
-
-        # Rollout generation MUST run without sequence packing/padding-free.
-        with self._template_packing_disabled():
-            with template.generate_context():
-                encoded = template.encode(dict(sample), return_length=True)
-            batch = template.data_collator([encoded])
-        from swift.llm import to_device
-
-        batch = to_device(batch, self.model.device)
-        prompt_len = int(batch["input_ids"].shape[1])
-        prompt_ids = batch["input_ids"][0].detach().cpu().tolist()
-
-        # Build GenerationConfig from model defaults.
-        gen_cfg = getattr(self.model, "generation_config", None)
-        if gen_cfg is None:
-            from transformers import GenerationConfig
-
-            gen_cfg = GenerationConfig()
-        # GenerationConfig doesn't provide a stable `.clone()` across transformers versions.
-        gen_cfg = deepcopy(gen_cfg)
-        gen_cfg.max_new_tokens = max_new_tokens
-        self._apply_rollout_decoding_to_generation_config(
-            gen_cfg=gen_cfg,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-        )
-        if decode_mode == "beam":
-            gen_cfg.num_beams = max(1, num_beams)
-            gen_cfg.num_return_sequences = max(
-                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
-            )
-        else:
-            gen_cfg.num_beams = 1
-            gen_cfg.num_return_sequences = 1
-
-        model_inputs = {k: v for k, v in batch.items() if k != "labels"}
-        model_inputs.pop("position_ids", None)
-        model_inputs.pop("text_position_ids", None)
-        logits_processor = None
-        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
-        if repeat_cfg.enabled:
-            obj_prefix_ids = (
-                encode_object_key_prefix(tok)
-                if repeat_cfg.max_object_keys is not None
-                else None
-            )
-            eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
-            if eos_id >= 0:
-                guard = ForceEosOnRepeatBatchGuard(
-                    eos_token_id=eos_id,
-                    prompt_len=prompt_len,
-                    cfg=repeat_cfg,
-                    object_key_prefix_token_ids=obj_prefix_ids,
-                )
-                try:
-                    from transformers.generation.logits_process import (
-                        LogitsProcessorList,
-                    )
-
-                    logits_processor = LogitsProcessorList([guard])
-                except Exception:
-                    logits_processor = [guard]
-        with unwrap_model_for_generation(
-            self.model_wrapped,
-            self.accelerator,
-            gather_deepspeed3_params=getattr(
-                self.args, "ds3_gather_for_generation", False
-            ),
-        ) as unwrapped:
-            unwrapped.eval()
-            # Keep packing disabled inside rollout generate.
-            with self._template_packing_disabled():
-                with template.generate_context():
-                    if (
-                        getattr(self.model, "model_meta", None) is not None
-                        and self.model.model_meta.is_multimodal
-                    ):
-                        _, model_inputs = template.pre_forward_hook(
-                            unwrapped, None, model_inputs
-                        )
-                    # Some templates add auxiliary position ids that the underlying model.generate
-                    # doesn't accept; strip them after any pre_forward_hook edits.
-                    model_inputs.pop("position_ids", None)
-                    model_inputs.pop("text_position_ids", None)
-                    out = template.generate(
-                        unwrapped,
-                        **model_inputs,
-                        generation_config=gen_cfg,
-                        return_dict_in_generate=True,
-                        logits_processor=logits_processor,
-                    )
-            unwrapped.train()
-
-        sequences = out.sequences  # [R, T]
-        if sequences.ndim != 2:
-            raise ValueError("unexpected generate output shape")
-        if (
-            sequences.shape[0] > 1
-            and hasattr(out, "sequences_scores")
-            and out.sequences_scores is not None
-        ):
-            best = int(torch.argmax(out.sequences_scores).item())
-        else:
-            best = 0
-        seq = sequences[best]
-        resp_ids = seq[prompt_len:].tolist()
-        resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
-        text = template.decode(
-            resp_ids,
-            is_finished=True,
-            first_token=True,
-            clean_up_tokenization_spaces=False,
-        )
-        return resp_ids, text, decode_mode, [int(t) for t in prompt_ids]
-
     # ---- rollout backends -------------------------------------------------
     def _ensure_vllm_engine(self) -> Any:
         """Initialize a colocated vLLM engine (lazy)."""

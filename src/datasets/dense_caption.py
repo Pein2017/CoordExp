@@ -71,16 +71,20 @@ class BaseCaptionDataset(Dataset):
                 )
             try:
                 setattr(self.template, "system", self.system_prompt_summary)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Failed to set template.system for summary-mode dataset initialization."
+                ) from exc
         else:
             if self.system_prompt_dense is None:
                 self.system_prompt_dense = getattr(self.template, "system", None)
             if self.system_prompt_dense is not None:
                 try:
                     setattr(self.template, "system", self.system_prompt_dense)
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    raise RuntimeError(
+                        "Failed to set template.system for dense-mode dataset initialization."
+                    ) from exc
 
         validated_records: List[ConversationRecord] = []
         for idx, record in enumerate(base_records):
@@ -114,10 +118,7 @@ class BaseCaptionDataset(Dataset):
                 else SequentialPreprocessor(preprocessors)
             )
             if hasattr(self.preprocessor, "curriculum_state"):
-                try:
-                    self.preprocessor.curriculum_state = curriculum_state
-                except Exception:
-                    pass
+                setattr(self.preprocessor, "curriculum_state", curriculum_state)
         else:
             self.preprocessor = None
 
@@ -254,22 +255,31 @@ class BaseCaptionDataset(Dataset):
                 *conversation_messages,
             ]
 
-        original_system = None
+        original_system = getattr(self.template, "system", None)
         if system_prompt is not None:
             try:
-                original_system = getattr(self.template, "system", None)
-                self.template.system = system_prompt
-            except Exception:
-                original_system = None
+                setattr(self.template, "system", system_prompt)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Failed to apply temporary template.system override before encoding."
+                ) from exc
 
         try:
             encoded = self.template.encode(merged, return_length=True)
         finally:
-            if system_prompt is not None and original_system is not None:
+            if system_prompt is not None:
                 try:
-                    self.template.system = original_system
-                except Exception:
-                    pass
+                    setattr(self.template, "system", original_system)
+                except Exception as exc:  # noqa: BLE001
+                    raise RuntimeError(
+                        "Failed to restore template.system after encoding."
+                    ) from exc
+
+        if not isinstance(encoded, MutableMapping):
+            raise TypeError(
+                "Template encode output must be a mutable mapping for conversation payload "
+                "and downstream metadata keys ('sample_id', 'dataset', 'base_idx')."
+            )
 
         encoded["messages"] = conversation_messages
         for key in ("assistant_payload", "objects", "metadata"):
@@ -319,38 +329,43 @@ class BaseCaptionDataset(Dataset):
             system_prompt=system_prompt,
         )
 
-        # Track last-sample debug info for OOM/root-cause tracing
+        if not isinstance(encoded, MutableMapping):
+            raise TypeError(
+                "Dataset encode output must be a mutable mapping to attach metadata keys "
+                "('sample_id', 'dataset', 'base_idx')."
+            )
+
+        objects = record.get("objects") or []
+        max_poly = 0
+        for obj in objects:
+            if "poly_points" in obj:
+                max_poly = max(max_poly, int(obj.get("poly_points") or 0))
+        info = {
+            "dataset": self.dataset_name,
+            "base_idx": base_idx,
+            "objects": len(objects),
+            "max_poly_points": max_poly,
+            "width": record.get("width"),
+            "height": record.get("height"),
+            "mode": mode,
+        }
+        input_ids = encoded.get("input_ids")
+        if input_ids is not None and hasattr(input_ids, "__len__"):
+            info["input_ids_len"] = len(input_ids)
+
+        sample_id = self._make_sample_id(self.dataset_name, base_idx)
         try:
-            objects = record.get("objects") or []
-            max_poly = 0
-            for obj in objects:
-                if "poly_points" in obj:
-                    max_poly = max(max_poly, int(obj.get("poly_points") or 0))
-            info = {
-                "dataset": self.dataset_name,
-                "base_idx": base_idx,
-                "objects": len(objects),
-                "max_poly_points": max_poly,
-                "width": record.get("width"),
-                "height": record.get("height"),
-                "mode": mode,
-            }
-            input_ids = encoded.get("input_ids")
-            if input_ids is not None and hasattr(input_ids, "__len__"):
-                try:
-                    info["input_ids_len"] = len(input_ids)
-                except Exception:
-                    pass
-            # attach sample metadata for downstream mining
-            sample_id = self._make_sample_id(self.dataset_name, base_idx)
             encoded["sample_id"] = sample_id
             encoded["dataset"] = self.dataset_name
             encoded["base_idx"] = base_idx
-            self.last_sample_debug = info
-            LAST_SAMPLE_DEBUG.update(info)
-        except Exception:
-            # Best-effort; do not block training
-            pass
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Failed to attach sample metadata keys ('sample_id', 'dataset', 'base_idx') "
+                f"for dataset={self.dataset_name!r}, base_idx={base_idx}."
+            ) from exc
+
+        self.last_sample_debug = info
+        LAST_SAMPLE_DEBUG.update(info)
 
         return encoded
 

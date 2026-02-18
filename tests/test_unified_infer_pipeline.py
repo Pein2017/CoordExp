@@ -258,6 +258,49 @@ def test_resolve_root_image_dir_for_jsonl_uses_manifest_pointer(tmp_path: Path, 
     assert source == "config"
 
 
+@pytest.mark.parametrize(
+    "deprecated_key, value",
+    [
+        ("unknown_policy", "drop"),
+        ("semantic_fallback", "drop"),
+    ],
+)
+def test_pipeline_eval_stage_rejects_deprecated_eval_keys(
+    tmp_path: Path,
+    monkeypatch,
+    deprecated_key: str,
+    value: str,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    external_jsonl = tmp_path / "external" / "preds" / "gt_vs_pred.jsonl"
+    external_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    external_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "artifacts": {"gt_vs_pred_jsonl": str(external_jsonl)},
+        "stages": {"infer": False, "eval": True, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+        "eval": {deprecated_key: value},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match=fr"eval\.{deprecated_key}"):
+        run_pipeline(config_path=config_path)
+
 def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
     tmp_path: Path, monkeypatch
 ) -> None:

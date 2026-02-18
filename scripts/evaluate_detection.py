@@ -24,14 +24,13 @@ from src.utils import get_logger
 logger = get_logger(__name__)
 
 
-def _warn_deprecated_option(key: str, source: str, value: Any) -> None:
+def _reject_deprecated_option(key: str, source: str, value: Any) -> None:
     if value is None:
         return
-    logger.warning(
-        "Ignoring %s=%s from %s; description matching always uses sentence-transformers/all-MiniLM-L6-v2 and drops unmatched predictions.",
-        key,
-        value,
-        source,
+    raise ValueError(
+        f"{key} is deprecated and unsupported in {source}. "
+        "Description matching is mandatory via sentence-transformers/all-MiniLM-L6-v2; "
+        "remove deprecated keys/flags to continue."
     )
 
 
@@ -177,13 +176,17 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         else bool(_get(ycfg, "use_segm", True))
     )
 
-    _warn_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
-    _warn_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
-    yaml_unknown_policy = _get(ycfg, "unknown_policy", None)
-    yaml_semantic_fallback = _get(ycfg, "semantic_fallback", None)
+    _reject_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
+    _reject_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
     config_src = f"YAML config '{args.config}'"
-    _warn_deprecated_option("unknown_policy", config_src, yaml_unknown_policy)
-    _warn_deprecated_option("semantic_fallback", config_src, yaml_semantic_fallback)
+    if "unknown_policy" in ycfg:
+        _reject_deprecated_option(
+            "unknown_policy", config_src, ycfg.get("unknown_policy", "<present>")
+        )
+    if "semantic_fallback" in ycfg:
+        _reject_deprecated_option(
+            "semantic_fallback", config_src, ycfg.get("semantic_fallback", "<present>")
+        )
 
     options = EvalOptions(
         metrics=metrics,
@@ -217,8 +220,8 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
 
     out_dir = args.out_dir or Path("eval_out")
 
-    _warn_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
-    _warn_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
+    _reject_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
+    _reject_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
 
     options = EvalOptions(
         metrics=str(args.metrics or "f1ish"),

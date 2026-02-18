@@ -474,15 +474,28 @@ def _prepare_pred_objects(
     invalid: List[Dict[str, Any]] = []
 
     # Size mismatch tracking
-    try:
-        pred_w = int(record.get("width")) if record.get("width") is not None else None
-        pred_h = int(record.get("height")) if record.get("height") is not None else None
-        if pred_w and pred_w != width:
-            counters.size_mismatch += 1
-        if pred_h and pred_h != height:
-            counters.size_mismatch += 1
-    except Exception:
-        pass
+    pred_w_raw = record.get("width")
+    pred_h_raw = record.get("height")
+    pred_w = None
+    pred_h = None
+    if pred_w_raw is not None:
+        try:
+            pred_w = int(pred_w_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Prediction width must be int-compatible, got {pred_w_raw!r}."
+            ) from exc
+    if pred_h_raw is not None:
+        try:
+            pred_h = int(pred_h_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Prediction height must be int-compatible, got {pred_h_raw!r}."
+            ) from exc
+    if pred_w and pred_w != width:
+        counters.size_mismatch += 1
+    if pred_h and pred_h != height:
+        counters.size_mismatch += 1
 
     if isinstance(record.get("pred"), list):
         objs_raw = record["pred"]
@@ -832,7 +845,8 @@ def _draw_overlays(
         plt.close(fig)
 
 
-def _prepare_all(
+def _prepare_all_from_records(
+    gt_records: List[Dict[str, Any]],
     pred_records: List[Dict[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
@@ -847,8 +861,6 @@ def _prepare_all(
     bool,
     List[Dict[str, Any]],
 ]:
-    # Derive GT from prediction file (must be present per line)
-    gt_records = preds_to_gt_records(pred_records)
     gt_samples: List[Sample] = []
     for idx, rec in enumerate(
         tqdm(gt_records, desc="GT", unit="img", disable=len(gt_records) < 10)
@@ -891,8 +903,8 @@ def _prepare_all(
                 pred_samples.append((image_id, preds))
                 if invalid:
                     invalid_preds[image_id] = invalid
-                for k, v in local_counts.items():
-                    setattr(counters, k, getattr(counters, k) + v)
+                for key, value in local_counts.items():
+                    setattr(counters, key, getattr(counters, key) + value)
         pred_samples.sort(key=lambda x: x[0])
     else:
         for sample in tqdm(
@@ -927,9 +939,7 @@ def _prepare_all(
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
     )
-    results = _to_coco_preds(
-        pred_samples, categories, options=options, counters=counters
-    )
+    results = _to_coco_preds(pred_samples, categories, options=options, counters=counters)
     run_segm = options.use_segm and any("segmentation" in r for r in results)
     return (
         gt_samples,
@@ -939,6 +949,30 @@ def _prepare_all(
         results,
         run_segm,
         per_image,
+    )
+
+def _prepare_all(
+    pred_records: List[Dict[str, Any]],
+    options: EvalOptions,
+    counters: EvalCounters,
+    *,
+    prepare_coco: bool,
+) -> Tuple[
+    List[Sample],
+    List[Tuple[int, List[Dict[str, Any]]]],
+    Dict[str, int],
+    Dict[str, Any],
+    List[Dict[str, Any]],
+    bool,
+    List[Dict[str, Any]],
+]:
+    gt_records = preds_to_gt_records(pred_records)
+    return _prepare_all_from_records(
+        gt_records,
+        pred_records,
+        options,
+        counters,
+        prepare_coco=prepare_coco,
     )
 
 
@@ -958,65 +992,12 @@ def _prepare_all_separate(
     bool,
     List[Dict[str, Any]],
 ]:
-    gt_samples: List[Sample] = []
-    for idx, rec in enumerate(
-        tqdm(gt_records, desc="GT", unit="img", disable=len(gt_records) < 10)
-    ):
-        sample = _prepare_gt_record(rec, idx, counters, strict=options.strict_parse)
-        if sample:
-            gt_samples.append(sample)
-        elif options.strict_parse:
-            raise ValueError(f"Failed to prepare GT for index {idx}")
-
-    pred_map: Dict[int, Dict[str, Any]] = {}
-    for i, rec in enumerate(pred_records):
-        image_id = rec.get("index", i)
-        pred_map[int(image_id)] = rec
-
-    pred_samples: List[Tuple[int, List[Dict[str, Any]]]] = []
-    invalid_preds: Dict[int, List[Dict[str, Any]]] = {}
-    for sample in tqdm(gt_samples, desc="Pred", unit="img", disable=len(gt_samples) < 10):
-        rec = pred_map.get(sample.image_id, {})
-        preds, invalid = _prepare_pred_objects(
-            rec,
-            width=sample.width,
-            height=sample.height,
-            options=options,
-            counters=counters,
-        )
-        pred_samples.append((sample.image_id, preds))
-        if invalid:
-            invalid_preds[sample.image_id] = invalid
-
-    per_image = build_per_image_report(gt_samples, pred_samples, invalid_preds)
-
-    if not prepare_coco:
-        return (
-            gt_samples,
-            pred_samples,
-            {},
-            {},
-            [],
-            False,
-            per_image,
-        )
-
-    categories = _build_categories(gt_samples)
-    coco_gt_dict = _to_coco_gt(
-        gt_samples, categories, add_box_segmentation=options.use_segm
-    )
-    results = _to_coco_preds(
-        pred_samples, categories, options=options, counters=counters
-    )
-    run_segm = options.use_segm and any("segmentation" in r for r in results)
-    return (
-        gt_samples,
-        pred_samples,
-        categories,
-        coco_gt_dict,
-        results,
-        run_segm,
-        per_image,
+    return _prepare_all_from_records(
+        gt_records,
+        pred_records,
+        options,
+        counters,
+        prepare_coco=prepare_coco,
     )
 
 

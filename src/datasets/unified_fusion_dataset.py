@@ -392,32 +392,39 @@ class FusionCaptionDataset(BaseCaptionDataset):
             system_prompt=system_prompt or None,
         )
 
+        if not isinstance(encoded, MutableMapping):
+            raise TypeError(
+                "FusionCaptionDataset encode output must be a mutable mapping to attach metadata keys "
+                "('sample_id', 'dataset', 'base_idx')."
+            )
+
+        info = {
+            "dataset": dataset_name,
+            "base_idx": base_idx,
+            "objects": objects_after,
+            "mode": mode,
+            "prompt_source": prompts.source,
+            "augmentation_enabled": was_augmented,
+            "object_cap_applied": cap_applied,
+            "object_cap_limit": policy.max_objects_per_image,
+        }
+        input_ids = encoded.get("input_ids")
+        if input_ids is not None and hasattr(input_ids, "__len__"):
+            info["input_length"] = len(input_ids)
+
+        sample_id = self._make_sample_id(dataset_name, base_idx)
         try:
-            info = {
-                "dataset": dataset_name,
-                "base_idx": base_idx,
-                "objects": objects_after,
-                "mode": mode,
-                "prompt_source": prompts.source,
-                "augmentation_enabled": was_augmented,
-                "object_cap_applied": cap_applied,
-                "object_cap_limit": policy.max_objects_per_image,
-            }
-            input_ids = encoded.get("input_ids")
-            if input_ids is not None and hasattr(input_ids, "__len__"):
-                try:
-                    info["input_length"] = len(input_ids)
-                except Exception:
-                    pass
-            sample_id = self._make_sample_id(dataset_name, base_idx)
             encoded["sample_id"] = sample_id
             encoded["dataset"] = dataset_name
             encoded["base_idx"] = base_idx
-            self.last_sample_debug = info
-            LAST_SAMPLE_DEBUG.update(info)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Failed to attach fusion metadata keys ('sample_id', 'dataset', 'base_idx') "
+                f"for dataset={dataset_name!r}, base_idx={base_idx}."
+            ) from exc
 
+        self.last_sample_debug = info
+        LAST_SAMPLE_DEBUG.update(info)
         return encoded
 
 
