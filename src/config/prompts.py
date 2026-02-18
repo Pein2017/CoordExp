@@ -1,8 +1,8 @@
-"""Unified English prompts for CoordExp general detection/grounding."""
-
 from __future__ import annotations
 
 from typing import Optional
+
+from src.common.object_field_order import normalize_object_field_order
 
 from .prompt_variants import (
     DEFAULT_PROMPT_VARIANT,
@@ -65,10 +65,25 @@ SYSTEM_PROMPT_SUMMARY = "You are an assistant that writes a concise English one-
 USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 
+def _apply_geometry_first_system_wording(base_prompt: str) -> str:
+    return base_prompt.replace(
+        "Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.",
+        "Each object must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
+    )
+
+
+def _apply_geometry_first_user_wording(base_prompt: str) -> str:
+    return base_prompt.replace(
+        "has desc plus one geometry (bbox_2d or poly)",
+        "has one geometry (bbox_2d or poly) before desc",
+    )
+
+
 def build_dense_system_prompt(
     ordering: str = "sorted",
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
+    object_field_order: str = "desc_first",
 ) -> str:
     """Return system prompt for dense mode with coord-tokens-only contract."""
     coord_mode_key = str(coord_mode).lower()
@@ -84,6 +99,12 @@ def build_dense_system_prompt(
         else SYSTEM_PROMPT_SORTED_TOKENS
     )
 
+    field_order = normalize_object_field_order(
+        object_field_order, path="custom.object_field_order"
+    )
+    if field_order == "geometry_first":
+        base_prompt = _apply_geometry_first_system_wording(base_prompt)
+
     variant = resolve_prompt_variant(prompt_variant)
     return f"{base_prompt}{variant.dense_system_suffix}"
 
@@ -92,6 +113,7 @@ def build_dense_user_prompt(
     ordering: str = "sorted",
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
+    object_field_order: str = "desc_first",
 ) -> str:
     """Return user prompt for dense mode with coord-tokens-only contract."""
     coord_mode_key = str(coord_mode).lower()
@@ -107,6 +129,12 @@ def build_dense_user_prompt(
         else USER_PROMPT_SORTED_TOKENS
     )
 
+    field_order = normalize_object_field_order(
+        object_field_order, path="custom.object_field_order"
+    )
+    if field_order == "geometry_first":
+        base_prompt = _apply_geometry_first_user_wording(base_prompt)
+
     variant = resolve_prompt_variant(prompt_variant)
     return f"{base_prompt}{variant.dense_user_suffix}"
 
@@ -115,6 +143,7 @@ def get_template_prompts(
     ordering: str = "sorted",
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
+    object_field_order: str = "desc_first",
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode with variant support."""
     return (
@@ -122,11 +151,13 @@ def get_template_prompts(
             ordering=ordering,
             coord_mode=coord_mode,
             prompt_variant=prompt_variant,
+            object_field_order=object_field_order,
         ),
         build_dense_user_prompt(
             ordering=ordering,
             coord_mode=coord_mode,
             prompt_variant=prompt_variant,
+            object_field_order=object_field_order,
         ),
     )
 

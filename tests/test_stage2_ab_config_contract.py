@@ -110,3 +110,42 @@ def test_stage2_ab_derives_gradient_accumulation_from_effective_batch(
 
     args = ConfigLoader.build_train_arguments(cfg)
     assert args.kwargs["gradient_accumulation_steps"] == 2
+
+
+def test_resolve_prompts_geometry_first_keeps_random_object_ordering_wording():
+    raw = {
+        "custom": {
+            "object_ordering": "random",
+            "object_field_order": "geometry_first",
+            "coord_tokens": {"enabled": True},
+        }
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    assert "before desc" in prompts.user
+    assert "any ordering is acceptable" in prompts.user
+    assert "before desc" in str(prompts.system)
+
+
+def test_resolve_prompts_desc_first_remains_baseline_wording():
+    raw = {
+        "custom": {
+            "object_ordering": "sorted",
+            "object_field_order": "desc_first",
+            "coord_tokens": {"enabled": False},
+        }
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    assert "desc plus one geometry" in prompts.user
+    assert "before desc" not in prompts.user
+
+
+def test_resolve_prompts_invalid_object_field_order_fails_fast():
+    raw = {
+        "custom": {
+            "object_field_order": "bbox_first",
+        }
+    }
+    with pytest.raises(ValueError, match="custom.object_field_order"):
+        ConfigLoader.resolve_prompts(raw)

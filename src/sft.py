@@ -505,6 +505,11 @@ def main():
     dataset_seed = 42
     dataset: Any
     fusion_cfg = None
+    logger.info(
+        "Serialization order config: object_ordering=%s object_field_order=%s",
+        custom_config.object_ordering,
+        custom_config.object_field_order,
+    )
 
     if custom_config.fusion_config:
         from .datasets.fusion import FusionConfig
@@ -539,6 +544,7 @@ def main():
             sample_limit=fusion_train_limit,
             split="train",
             object_ordering=custom_config.object_ordering,
+            object_field_order=custom_config.object_field_order,
         )
     else:
         logger.info(f"Loading training dataset: {train_jsonl}")
@@ -558,6 +564,7 @@ def main():
             coord_tokens=custom_config.coord_tokens,
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
+            object_field_order=custom_config.object_field_order,
         )
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
@@ -941,6 +948,7 @@ def main():
                 sample_limit=fusion_eval_limit,
                 split="eval",
                 object_ordering=custom_config.object_ordering,
+                object_field_order=custom_config.object_field_order,
             )
             base_eval_len = len(eval_dataset)
             if val_sample_with_replacement:
@@ -977,6 +985,7 @@ def main():
             coord_tokens=custom_config.coord_tokens,
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
+            object_field_order=custom_config.object_field_order,
         )
         base_eval_len = len(eval_dataset)
         if val_sample_with_replacement:
@@ -1277,9 +1286,11 @@ def main():
                     "packing_buffer": int(packing_cfg.buffer_size),
                     "packing_min_fill_ratio": float(packing_cfg.min_fill_ratio),
                     "packing_drop_last": bool(packing_cfg.drop_last),
+                    "object_field_order": str(custom_config.object_field_order),
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)
+            setattr(trainer, "object_field_order", str(custom_config.object_field_order))
 
             validate_hook = getattr(trainer, "_validate_rollout_matching_cfg", None)
             if callable(validate_hook):

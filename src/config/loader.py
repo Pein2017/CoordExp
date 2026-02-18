@@ -9,6 +9,8 @@ import yaml
 from swift.llm.argument import RLHFArguments, TrainArguments
 from swift.utils import get_dist_setting
 
+from src.common.object_field_order import normalize_object_field_order
+
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
     USER_PROMPT_SUMMARY,
@@ -214,6 +216,7 @@ class ConfigLoader:
 
         use_summary = False
         ordering_hint: str = "sorted"
+        object_field_order: str = "desc_first"
         prompt_variant: Optional[str] = None
 
         custom_section = config.get("custom")
@@ -238,6 +241,13 @@ class ConfigLoader:
                     raise ValueError(
                         "custom.object_ordering must be 'sorted' or 'random' when provided"
                     )
+
+            object_field_order_raw = custom_section.get(
+                "object_field_order", "desc_first"
+            )
+            object_field_order = normalize_object_field_order(
+                object_field_order_raw, path="custom.object_field_order"
+            )
 
             coord_tokens_cfg = custom_section.get("coord_tokens")
             if coord_tokens_cfg is None:
@@ -286,6 +296,7 @@ class ConfigLoader:
                 ordering=ordering_hint,
                 coord_mode="coord_tokens",
                 prompt_variant=prompt_variant,
+                object_field_order=object_field_order,
             )
             output_variant = "dense"
 

@@ -61,6 +61,13 @@ def main() -> None:
         default=80,
         help="How many token ids to print from the start (default: 80)",
     )
+    parser.add_argument(
+        "--object-field-order",
+        type=str,
+        default="desc_first",
+        choices=["desc_first", "geometry_first"],
+        help="Per-object key order for assistant payload serialization.",
+    )
     args = parser.parse_args()
 
     record = load_record(args.jsonl, args.index)
@@ -69,6 +76,7 @@ def main() -> None:
         user_prompt=USER_PROMPT,
         emit_norm="norm1000",
         coord_tokens_enabled=True,
+        object_field_order=args.object_field_order,
     )
     merged = builder.build(record)
     messages = merged["messages"]

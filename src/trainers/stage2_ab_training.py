@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
 
+from src.common.object_field_order import build_object_payload
+
 from .rollout_matching_sft import RolloutMatchingSFTTrainer
 from .rollout_matching.contracts import GTObject
 from .rollout_matching.matching import hungarian_match_maskiou
@@ -297,6 +299,33 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
     if not objs:
         raise ValueError("no valid GT objects found in assistant_payload")
     return objs
+
+
+def _build_teacher_forced_payload(
+    *, gt_objects: Sequence[GTObject], object_field_order: str
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    for obj in gt_objects:
+        if obj.geom_type == "bbox_2d":
+            geometry_key = "bbox_2d"
+            geometry_value = [f"<|coord_{int(v)}|>" for v in obj.points_norm1000]
+        elif obj.geom_type == "poly":
+            points = obj.points_norm1000
+            geometry_key = "poly"
+            geometry_value = [
+                [f"<|coord_{int(points[i])}|>", f"<|coord_{int(points[i + 1])}|>"]
+                for i in range(0, len(points), 2)
+            ]
+        else:
+            raise ValueError(f"unsupported geometry type for stage2 payload: {obj.geom_type!r}")
+
+        payload[f"object_{int(obj.index)}"] = build_object_payload(
+            desc=str(obj.desc),
+            geometry_key=geometry_key,
+            geometry_value=geometry_value,
+            object_field_order=object_field_order,
+        )
+    return payload
 
 
 def _stage2_ab_tail_closure_positions(
@@ -1167,12 +1196,10 @@ class Stage2ABTrainingTrainer(
 
             gts = _extract_gt_bboxonly(sample)
 
-            payload: Dict[str, Any] = {}
-            for obj in gts:
-                payload[f"object_{int(obj.index)}"] = {
-                    "desc": str(obj.desc),
-                    "bbox_2d": [f"<|coord_{int(v)}|>" for v in obj.points_norm1000],
-                }
+            payload = _build_teacher_forced_payload(
+                gt_objects=gts,
+                object_field_order=self._object_field_order(),
+            )
             assistant_text = json.dumps(
                 payload, ensure_ascii=False, separators=(", ", ": ")
             )
@@ -1705,6 +1732,7 @@ class Stage2ABTrainingTrainer(
                 fn_objects=fn_objs,
                 start_index=start_idx,
                 prefix_text=parse.prefix_text,
+                object_field_order=self._object_field_order(),
             )
             append_ids = tok.encode(append_text, add_special_tokens=False)
 

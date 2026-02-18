@@ -12,6 +12,7 @@ from src.trainers.stage2_ab_training import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
     _bbox_smoothl1_ciou_loss,
+    _build_teacher_forced_payload,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
     _matched_prefix_structure_positions,
@@ -787,6 +788,44 @@ def test_extract_gt_bboxonly_rejects_invalid_bbox_order():
     }
     with pytest.raises(ValueError, match="invalid bbox_2d"):
         _extract_gt_bboxonly(sample)
+
+
+def test_build_teacher_forced_payload_honors_object_field_order():
+    gt_objects = [
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[1, 2, 3, 4],
+            desc="cat",
+        )
+    ]
+
+    desc_first = _build_teacher_forced_payload(
+        gt_objects=gt_objects, object_field_order="desc_first"
+    )
+    geometry_first = _build_teacher_forced_payload(
+        gt_objects=gt_objects, object_field_order="geometry_first"
+    )
+
+    assert list(desc_first["object_1"].keys()) == ["desc", "bbox_2d"]
+    assert list(geometry_first["object_1"].keys()) == ["bbox_2d", "desc"]
+
+
+def test_stage2_channel_b_fragment_supports_geometry_first_order():
+    frag = _serialize_append_fragment(
+        fn_objects=[
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[5, 6, 7, 8],
+                desc="fn",
+            )
+        ],
+        start_index=1,
+        prefix_text="{",
+        object_field_order="geometry_first",
+    )
+    assert frag.index('"bbox_2d"') < frag.index('"desc"')
 
 
 def test_compute_loss_raises_on_sliced_logits():

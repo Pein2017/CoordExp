@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, 
 
 from torch.utils.data import Dataset, get_worker_info
 
+from src.common.object_field_order import (
+    ObjectFieldOrder,
+    normalize_object_field_order,
+)
 from src.config.prompts import USER_PROMPT_SUMMARY
 from src.config.schema import CoordTokensConfig
 from src.coord_tokens.validator import annotate_coord_tokens
@@ -49,6 +53,7 @@ class BaseCaptionDataset(Dataset):
         allow_empty: bool = False,
         coord_tokens: Optional[CoordTokensConfig] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
+        object_field_order: ObjectFieldOrder = "desc_first",
     ):
         self.use_summary = bool(use_summary)
         self.system_prompt_dense = system_prompt_dense
@@ -64,6 +69,7 @@ class BaseCaptionDataset(Dataset):
         )
         self.coord_tokens = coord_tokens or CoordTokensConfig()
         self.object_ordering: Literal["sorted", "random"] = object_ordering
+        self.object_field_order = normalize_object_field_order(object_field_order)
 
         if self.use_summary:
             if self.system_prompt_summary is None:
@@ -223,6 +229,7 @@ class BaseCaptionDataset(Dataset):
             mode=mode,
             json_format=self.json_format,
             coord_tokens_enabled=self.coord_tokens.enabled,
+            object_field_order=self.object_field_order,
         )
 
 

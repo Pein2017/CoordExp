@@ -905,6 +905,38 @@ def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
     assert '"object_8"' in frag_non_empty
 
 
+def test_serialize_append_fragment_supports_geometry_first_field_order():
+    frag_bbox = _serialize_append_fragment(
+        fn_objects=[
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[1, 2, 3, 4],
+                desc="bbox",
+            )
+        ],
+        start_index=1,
+        prefix_text="{",
+        object_field_order="geometry_first",
+    )
+    assert frag_bbox.index('"bbox_2d"') < frag_bbox.index('"desc"')
+
+    frag_poly = _serialize_append_fragment(
+        fn_objects=[
+            GTObject(
+                index=2,
+                geom_type="poly",
+                points_norm1000=[10, 20, 30, 20, 30, 40, 10, 40],
+                desc="poly",
+            )
+        ],
+        start_index=2,
+        prefix_text="{",
+        object_field_order="geometry_first",
+    )
+    assert frag_poly.index('"poly"') < frag_poly.index('"desc"')
+
+
 def test_rollout_parse_poly_captures_coord_indices_through_nested_arrays():
     tok = _DummyTokenizerRM()
     text = (

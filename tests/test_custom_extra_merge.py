@@ -48,3 +48,20 @@ def test_custom_extra_rollout_matching_is_rejected():
         )
 
     assert "custom.extra.rollout_matching is unsupported" in str(exc.value)
+
+
+def test_custom_object_field_order_accepts_geometry_first():
+    cfg = CustomConfig.from_mapping(
+        {**_base_custom_payload(), "object_field_order": "geometry_first"},
+        prompts=PromptOverrides(),
+    )
+
+    assert cfg.object_field_order == "geometry_first"
+
+
+def test_custom_object_field_order_invalid_fails_fast():
+    with pytest.raises(ValueError, match="custom.object_field_order"):
+        CustomConfig.from_mapping(
+            {**_base_custom_payload(), "object_field_order": "bbox_first"},
+            prompts=PromptOverrides(),
+        )
