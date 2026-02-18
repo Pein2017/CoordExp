@@ -63,7 +63,11 @@ from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
-from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
+from src.config.prompts import (
+    DEFAULT_PROMPT_VARIANT,
+    get_template_prompts,
+    resolve_dense_prompt_variant_key,
+)
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.common.paths import resolve_image_path_best_effort
 from src.utils import get_logger
@@ -110,6 +114,7 @@ class InferenceConfig:
     gt_jsonl: str
     model_checkpoint: str
     mode: Literal["coord", "text", "auto"]
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
@@ -238,6 +243,9 @@ class InferenceEngine:
         self.cfg = cfg
         self.gen_cfg = gen_cfg
         self.logger = logger or get_logger(__name__)
+
+        self.prompt_variant = resolve_dense_prompt_variant_key(cfg.prompt_variant)
+        self.cfg.prompt_variant = self.prompt_variant
 
         self.requested_mode = cfg.mode
         self.resolved_mode = cfg.mode
@@ -524,8 +532,11 @@ class InferenceEngine:
         )
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
-        user_prompt = USER_PROMPT
-        system_prompt = SYSTEM_PROMPT
+        system_prompt, user_prompt = get_template_prompts(
+            ordering="sorted",
+            coord_mode="coord_tokens",
+            prompt_variant=self.prompt_variant,
+        )
         return [
             {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
             {
@@ -759,12 +770,17 @@ class InferenceEngine:
         image.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
+        system_prompt, user_prompt = get_template_prompts(
+            ordering="sorted",
+            coord_mode="coord_tokens",
+            prompt_variant=self.prompt_variant,
+        )
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": USER_PROMPT},
+                    {"type": "text", "text": user_prompt},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -839,6 +855,12 @@ class InferenceEngine:
         except Exception as exc:  # noqa: BLE001
             return [GenerationResult(text="", error=exc) for _ in images]
 
+        system_prompt, user_prompt = get_template_prompts(
+            ordering="sorted",
+            coord_mode="coord_tokens",
+            prompt_variant=self.prompt_variant,
+        )
+
         # Build OpenAI-style messages; vLLM supports a batch of message lists.
         msg_batch = []
         for image in images:
@@ -847,11 +869,11 @@ class InferenceEngine:
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             msg_batch.append(
                 [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": USER_PROMPT},
+                            {"type": "text", "text": user_prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -983,6 +1005,7 @@ class InferenceEngine:
             "model_checkpoint": self.cfg.model_checkpoint,
             "gt_jsonl": self.cfg.gt_jsonl,
             "pred_coord_mode": self.cfg.pred_coord_mode,
+            "prompt_variant": self.prompt_variant,
             "device": self.cfg.device,
             "limit": self.cfg.limit,
             "generation": {
@@ -1219,6 +1242,7 @@ class InferenceEngine:
             "infer": {
                 "gt_jsonl": self.cfg.gt_jsonl,
                 "pred_coord_mode": self.cfg.pred_coord_mode,
+                "prompt_variant": self.prompt_variant,
                 "device": self.cfg.device,
                 "limit": self.cfg.limit,
             },

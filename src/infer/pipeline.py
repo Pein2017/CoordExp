@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
+from src.config.prompts import resolve_dense_prompt_variant_key
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -416,6 +417,12 @@ def run_pipeline(
     if overrides:
         cfg = apply_overrides(cfg, overrides)
 
+    infer_cfg = _get_map(cfg, "infer")
+    prompt_variant_raw = infer_cfg.get("prompt_variant", None)
+    if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
+        raise ValueError("infer.prompt_variant must be a string when provided")
+    resolved_prompt_variant = resolve_dense_prompt_variant_key(prompt_variant_raw)
+
     artifacts, stages = resolve_artifacts(cfg)
 
     artifacts.run_dir.mkdir(parents=True, exist_ok=True)
@@ -443,6 +450,9 @@ def run_pipeline(
             "summary_json": str(artifacts.summary_json),
             "eval_dir": str(artifacts.eval_dir),
             "vis_dir": str(artifacts.vis_dir),
+        },
+        "infer": {
+            "prompt_variant": resolved_prompt_variant,
         },
         # Persist a redacted view of the config (avoid leaking secrets into artifacts).
         "cfg": cfg_redacted,
@@ -516,6 +526,11 @@ def _run_infer_stage(
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
     mode = cast(Literal["coord", "text", "auto"], mode_raw)
 
+    prompt_variant_raw = infer_cfg.get("prompt_variant", None)
+    if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
+        raise ValueError("infer.prompt_variant must be a string when provided")
+    prompt_variant = resolve_dense_prompt_variant_key(prompt_variant_raw)
+
     pred_coord_mode_raw = _require_choice(
         infer_cfg, "pred_coord_mode", {"auto", "norm1000", "pixel"}
     )
@@ -566,6 +581,7 @@ def _run_infer_stage(
         gt_jsonl=gt_jsonl,
         model_checkpoint=model_checkpoint,
         mode=mode,
+        prompt_variant=prompt_variant,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         summary_path=str(artifacts.summary_json),

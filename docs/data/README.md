@@ -67,6 +67,8 @@ custom:
   val_jsonl: /path/to/val.jsonl
   emit_norm: none                    # required (runtime normalization is disabled)
   object_ordering: sorted            # sorted|random
+  extra:
+    prompt_variant: default          # optional: default|coco_80
   coord_tokens:
     enabled: false                   # true if JSONL uses <|coord_k|> strings
     skip_bbox_norm: true             # keep true if pre-normalized/tokenized
@@ -75,6 +77,22 @@ custom:
 Notes:
 - `data.dataset: ["dummy"]` is a placeholder to satisfy ms-swift argument validation; training data is loaded from `custom.train_jsonl`.
 - Training encodes with `do_resize=False` (images should already be prepared offline).
+
+## Prompt Variants (Train/Infer Parity)
+
+Dense prompts are variant-aware and YAML-first:
+- Training key: `custom.extra.prompt_variant`
+- Inference key: `infer.prompt_variant`
+- Built-ins today: `default`, `coco_80`
+- Effective construction: `{fixed_base_prompt} + {variant_suffix}`
+  - fixed base: sorted object-order instruction + coord-token geometry instruction
+  - variant suffix: dataset-specific class/extra policy text
+
+COCO runs should keep train/infer parity:
+- If training uses `coco_80`, inference should also use `coco_80`.
+- Inference artifacts record the resolved variant in:
+  - `<run_dir>/resolved_config.json` → `infer.prompt_variant`
+  - `<run_dir>/summary.json` → `infer.prompt_variant`
 
 ---
 
@@ -129,4 +147,4 @@ Packing is the primary efficiency lever for long dense JSON outputs.
 
 ---
 
-**Last Updated**: 2026-02-01
+**Last Updated**: 2026-02-18
