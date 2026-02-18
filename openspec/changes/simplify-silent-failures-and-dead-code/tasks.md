@@ -4,6 +4,9 @@
   - `unknown_policy`
   - `semantic_fallback`
 - [ ] 1.2 Add a unit test asserting that including `unknown_policy` or `semantic_fallback` in eval config fails fast (no warning-only behavior).
+- [ ] 1.3 Enforce that deprecated training key `training.packing_length` is rejected (fail-fast) with an actionable error message:
+  - Removal guidance: use `global_max_length` and/or `template.max_length` instead.
+- [ ] 1.4 Add a unit test asserting that including `training.packing_length` fails fast (no warning-only behavior).
 
 ## 2. Silent-Failure Policy Enforcement (Datasets/Trainers/Infer/Eval)
 
