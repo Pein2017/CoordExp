@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,225 @@ def test_adapter_registry_known_and_unknown() -> None:
 
     with pytest.raises(KeyError, match="Unknown dataset id"):
         reg.get("unknown_dataset")
+
+
+def test_adapter_registry_duplicate_registration_fails_fast() -> None:
+    from public_data.pipeline.adapters.coco import CocoAdapter
+    from public_data.pipeline.adapters.registry import AdapterRegistry
+
+    reg = AdapterRegistry()
+    reg.register(CocoAdapter())
+
+    with pytest.raises(ValueError, match="already registered"):
+        reg.register(CocoAdapter())
+
+
+def test_adapter_ingestion_hooks_delegate_to_plugin_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.pipeline.adapters import build_default_registry
+    from public_data.pipeline.adapters.base import DatasetAdapter
+
+    calls: list[tuple[str, str, tuple[str, ...], Path]] = []
+
+    def _fake_run_plugin_ingestion(
+        self: DatasetAdapter,
+        *,
+        dataset_dir: Path,
+        subcommand: str,
+        passthrough_args=(),
+    ) -> None:
+        calls.append((self.dataset_id, subcommand, tuple(passthrough_args), dataset_dir))
+
+    monkeypatch.setattr(DatasetAdapter, "_run_plugin_ingestion", _fake_run_plugin_ingestion)
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    adapter = build_default_registry().get("coco")
+    adapter.download_raw_images(dataset_dir, passthrough_args=["--foo", "bar"])
+    adapter.download_and_parse_annotations(dataset_dir, passthrough_args=["--split", "train"])
+
+    assert calls == [
+        ("coco", "download", ("--foo", "bar"), dataset_dir),
+        ("coco", "convert", ("--split", "train"), dataset_dir),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "passthrough_args", "expected_subcommand"),
+    [
+        ("download", ["--foo", "bar"], "download"),
+        ("convert", ["--split", "train"], "convert"),
+    ],
+)
+def test_run_pipeline_factory_ingestion_dispatches_adapter_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    passthrough_args: list[str],
+    expected_subcommand: str,
+) -> None:
+    from public_data.pipeline.adapters.base import DatasetAdapter
+    from public_data.scripts import run_pipeline_factory
+
+    class _StubAdapter(DatasetAdapter):
+        dataset_id = "stub"
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, Path, tuple[str, ...]]] = []
+
+        def download_raw_images(self, dataset_dir: Path, *, passthrough_args=()) -> None:
+            self.calls.append(("download", dataset_dir, tuple(passthrough_args)))
+
+        def download_and_parse_annotations(self, dataset_dir: Path, *, passthrough_args=()) -> None:
+            self.calls.append(("convert", dataset_dir, tuple(passthrough_args)))
+
+    class _StubRegistry:
+        def __init__(self, adapter: _StubAdapter) -> None:
+            self._adapter = adapter
+
+        def get(self, dataset_id: str) -> _StubAdapter:
+            assert dataset_id == "stub"
+            return self._adapter
+
+    adapter = _StubAdapter()
+    monkeypatch.setattr(run_pipeline_factory, "build_default_registry", lambda: _StubRegistry(adapter))
+
+    dataset_dir = tmp_path / "public_data" / "stub"
+    raw_dir = dataset_dir / "raw"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_pipeline_factory.py",
+            "--mode",
+            mode,
+            "--dataset-id",
+            "stub",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--raw-dir",
+            str(raw_dir),
+            "--",
+            *passthrough_args,
+        ],
+    )
+
+    run_pipeline_factory.main()
+    captured = capsys.readouterr()
+
+    assert adapter.calls == [(expected_subcommand, dataset_dir, tuple(passthrough_args))]
+    assert f"[pipeline] ingestion={mode}" in captured.out
+
+
+def test_coco_adapter_prefers_fast_path_without_passthrough(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.pipeline.adapters.base import DatasetAdapter
+    from public_data.pipeline.adapters.coco import CocoAdapter
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    fast_path_calls: list[Path] = []
+    plugin_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def _fake_fast_path(self: CocoAdapter, dir_path: Path) -> bool:
+        fast_path_calls.append(dir_path)
+        return True
+
+    def _fake_plugin_ingestion(
+        self: DatasetAdapter,
+        *,
+        dataset_dir: Path,
+        subcommand: str,
+        passthrough_args=(),
+    ) -> None:
+        plugin_calls.append((subcommand, tuple(passthrough_args)))
+
+    monkeypatch.setattr(CocoAdapter, "_download_raw_images_aria2c", _fake_fast_path)
+    monkeypatch.setattr(DatasetAdapter, "_run_plugin_ingestion", _fake_plugin_ingestion)
+
+    CocoAdapter().download_raw_images(dataset_dir)
+
+    assert fast_path_calls == [dataset_dir]
+    assert plugin_calls == []
+
+
+def test_coco_adapter_falls_back_to_plugin_when_fast_path_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.pipeline.adapters.base import DatasetAdapter
+    from public_data.pipeline.adapters.coco import CocoAdapter
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    fast_path_calls: list[Path] = []
+    plugin_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def _fake_fast_path(self: CocoAdapter, dir_path: Path) -> bool:
+        fast_path_calls.append(dir_path)
+        return False
+
+    def _fake_plugin_ingestion(
+        self: DatasetAdapter,
+        *,
+        dataset_dir: Path,
+        subcommand: str,
+        passthrough_args=(),
+    ) -> None:
+        plugin_calls.append((subcommand, tuple(passthrough_args)))
+
+    monkeypatch.setattr(CocoAdapter, "_download_raw_images_aria2c", _fake_fast_path)
+    monkeypatch.setattr(DatasetAdapter, "_run_plugin_ingestion", _fake_plugin_ingestion)
+
+    CocoAdapter().download_raw_images(dataset_dir)
+
+    assert fast_path_calls == [dataset_dir]
+    assert plugin_calls == [("download", tuple())]
+
+
+def test_coco_adapter_passthrough_skips_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.pipeline.adapters.base import DatasetAdapter
+    from public_data.pipeline.adapters.coco import CocoAdapter
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    fast_path_calls: list[Path] = []
+    plugin_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def _fake_fast_path(self: CocoAdapter, dir_path: Path) -> bool:
+        fast_path_calls.append(dir_path)
+        return True
+
+    def _fake_plugin_ingestion(
+        self: DatasetAdapter,
+        *,
+        dataset_dir: Path,
+        subcommand: str,
+        passthrough_args=(),
+    ) -> None:
+        plugin_calls.append((subcommand, tuple(passthrough_args)))
+
+    monkeypatch.setattr(CocoAdapter, "_download_raw_images_aria2c", _fake_fast_path)
+    monkeypatch.setattr(DatasetAdapter, "_run_plugin_ingestion", _fake_plugin_ingestion)
+
+    CocoAdapter().download_raw_images(dataset_dir, passthrough_args=["--mirror", "cn"])
+
+    assert fast_path_calls == []
+    assert plugin_calls == [("download", ("--mirror", "cn"))]
 
 
 def test_suffix_policy_and_legacy_equivalence(tmp_path: Path) -> None:
