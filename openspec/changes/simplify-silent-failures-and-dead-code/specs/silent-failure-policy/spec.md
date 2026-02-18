@@ -20,20 +20,13 @@ Blanket `except Exception: pass` is forbidden in core execution paths.
 - **THEN** the deprecated knob is removed (or causes fail-fast) rather than silently ignored for backward compatibility.
 - **AND** warning-only behavior is not permitted for deprecated knobs (runs stop instead of continuing with a no-op).
 
-### Requirement: Exception suppression is limited to explicit sinks
-The system SHALL suppress exceptions only in explicitly-identified best-effort sinks where failures cannot affect model inputs/labels/metrics artifacts and where emitting logging is unsafe (for example, stdout/stderr tee I/O).
+### Requirement: Blanket suppression is forbidden by direct CI scanning
+CoordExp SHALL NOT maintain exception-suppression registries. Compliance MUST be enforced directly by CI scanning source files.
 
-All other best-effort telemetry code MUST either log failures (once per process) or re-raise.
-
-#### Operationalization: Explicit sink allowlist
-To keep compliance objective (reviewable and testable), CoordExp SHALL maintain a single authoritative allowlist of exception-suppression sites.
-
-- The allowlist SHALL live in `tests/test_silent_failure_policy.py` as a list of permitted file paths and/or symbol names.
-- Any blanket suppression outside the allowlist SHALL fail CI. At minimum, the CI check MUST treat the following as equivalent suppression patterns:
+At minimum, the CI check in `tests/test_silent_failure_policy.py` MUST treat the following as equivalent blanket suppression patterns and fail:
   - `except Exception: pass`
   - `except: pass` (bare except)
   - `except BaseException: pass`
-- Adding a new allowlisted sink MUST include a one-line justification explaining why failures cannot affect model inputs/labels/metrics artifacts.
 
 #### Scenario: Log tee I/O failure does not abort training
 - **WHEN** the file logging tee fails to write to its mirror file

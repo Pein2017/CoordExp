@@ -55,7 +55,7 @@ YAML config -> dataset preprocessors/packing -> training/inference -> JSONL arti
 ## Risks / Trade-offs
 
 - [Risk] Fail-fast surfaces issues earlier and can stop long runs that previously continued.
-  -> Mitigation: failures become actionable; add targeted tests around dataset encoding and prompt restoration; keep the allowlist of exception suppression narrow and explicit.
+  -> Mitigation: failures become actionable; add targeted tests around dataset encoding and prompt restoration; enforce CI scanning so blanket suppression fails immediately.
 - [Risk] Removing dead private helpers could break out-of-repo scripts that reached into internals.
   -> Mitigation: restrict deletions to private helpers with no in-repo call sites; document removals in the change.
 - [Risk] Refactoring evaluator prep code could accidentally change metrics.
