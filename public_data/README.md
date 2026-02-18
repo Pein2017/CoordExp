@@ -1,7 +1,7 @@
 # Public Data Pipeline (Unified Runner)
 
 This folder contains dataset preparation for public detection/grounding datasets
-(currently LVIS + Visual Genome), and shared preprocessing utilities.
+(currently COCO, LVIS, and Visual Genome), and shared preprocessing utilities.
 
 The preferred interface is the unified runner:
 `./public_data/run.sh <dataset> <command> ...`
@@ -19,12 +19,17 @@ For a dataset id `<ds>`:
   - `public_data/<ds>/raw/val.jsonl` (optional; if the dataset defines a val split)
   - `public_data/<ds>/raw/images/...` (typical; dataset-specific)
 
-- Preset outputs (shared steps write these):
-  - `public_data/<ds>/<preset>/train.jsonl`
-  - `public_data/<ds>/<preset>/val.jsonl` (optional)
-  - `public_data/<ds>/<preset>/images/...`
-  - `public_data/<ds>/<preset>/train.coord.jsonl`
+- Preset outputs (shared stages write these):
+  - `public_data/<ds>/<preset>/train.raw.jsonl` (pixel-space canonical artifact)
+  - `public_data/<ds>/<preset>/val.raw.jsonl` (optional)
+  - `public_data/<ds>/<preset>/train.norm.jsonl` (norm1000 integer artifact)
+  - `public_data/<ds>/<preset>/val.norm.jsonl` (optional)
+  - `public_data/<ds>/<preset>/train.coord.jsonl` (coord-token artifact)
   - `public_data/<ds>/<preset>/val.coord.jsonl` (optional)
+  - `public_data/<ds>/<preset>/images/...`
+  - Legacy compatibility alias:
+    - `public_data/<ds>/<preset>/train.jsonl` maps to `train.raw.jsonl`
+    - `public_data/<ds>/<preset>/val.jsonl` maps to `val.raw.jsonl`
 
 Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
 (`docs/data/JSONL_CONTRACT.md`).
@@ -33,7 +38,8 @@ Image paths in JSONL are a contract requirement: they MUST be relative to the JS
 
 Show help / command grammar:
 ```bash
-./public_data/run.sh help
+./public_data/run.sh <dataset> help
+# Example:
 ./public_data/run.sh lvis help
 ```
 
@@ -63,6 +69,40 @@ Notes:
 - For `all`, args after `--` are forwarded only to dataset-specific steps (`download`/`convert`) to avoid ambiguity.
 - `validate` also runs a best-effort prompt/template sanity check on `train.coord.jsonl` (it warns+skips if no cached model is available under `model_cache/`).
 
+## Unified Internal Architecture
+`public_data/run.sh` keeps the same external command grammar, while shared internals are now routed through a modular pipeline/factory:
+
+- Source adapter layer:
+  - registry-based adapters for `coco`, `lvis`, `vg`, and `vg_ref`
+  - adapter boundary owns source-ingestion normalization only
+- Deterministic shared stage plan:
+  - always-on structural preflight checks
+  - smart-resize
+  - optional max-object filtering
+  - norm1000 numeric normalization
+  - coord-token expansion
+  - writer + manifest emission
+  - optional in-plan validation stage
+- Output layer:
+  - standardized `*.raw.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`
+  - relative image-path preservation
+  - reproducibility manifest: `pipeline_manifest.json`
+
+## Max-Object Filtering (`max_{N}`)
+Max-object filtering is **off by default**.
+
+Enable it by setting:
+```bash
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh <dataset> <command> --preset <preset>
+```
+
+Behavior:
+- Filtering policy is drop-only: samples with `len(objects) > N` are removed (never truncated).
+- Effective preset naming appends token `max_{N}` (rendered path suffix `_max_<N>`, for example `rescale_32_768_bbox_max_60`).
+- Legacy naming compatibility is preserved:
+  - existing `_max<N>` directories (for example `_max60`) are treated as equivalent
+  - when only legacy naming exists, runner/pipeline reuses it instead of forking paths.
+
 ## Dataset Plugins (Download/Convert)
 Datasets implement a small executable plugin contract:
 `public_data/datasets/<dataset>.sh`
@@ -72,6 +112,7 @@ The runner executes the plugin (it does NOT `source` it). Plugins receive requir
 Existing plugins:
 - `public_data/datasets/lvis.sh`
 - `public_data/datasets/vg.sh`
+- `public_data/datasets/vg_ref.sh`
 - `public_data/datasets/coco.sh`
 
 Tip: standard proxy env vars like `http_proxy`/`https_proxy` are still honored by underlying tools (wget/huggingface), but they are not part of the runner/plugin *contract*.
@@ -108,7 +149,9 @@ Produced records look like:
   "height": 480
 }
 ```
-- Pixel coordinates (not normalized); templates normalize to norm1000 at encode time.
+- `*.raw.jsonl` uses pixel coordinates.
+- `*.norm.jsonl` uses normalized integers in [0,999].
+- `*.coord.jsonl` uses `<|coord_k|>` tokens.
 - Exactly one geometry per object (`bbox_2d` OR `poly`).
 
 ## Validation
@@ -149,3 +192,4 @@ Reproducer and details:
 - If `all` fails because `scripts/tools/inspect_chat_template.py` cannot run (no cached model), it will warn+skip; the JSONL contract validation still runs.
 - If `validate` fails on `*.coord.jsonl` with `x2 <= x1` / `y2 <= y1`, it is typically caused by very thin (1px) boxes collapsing under norm1000 quantization in older coord conversion logic. Re-run `./public_data/run.sh <ds> coord --preset <preset>` after updating `public_data/scripts/convert_to_coord_tokens.py`.
 - Disk pressure: use `public_data/scripts/sample_dataset.py` to produce smaller JSONLs before training.
+- Full-cutover rollback (operator): if parity regression is discovered post-cutover, revert this refactor change in VCS (for example `git revert` the cutover commit) to restore legacy shared-stage behavior from history.

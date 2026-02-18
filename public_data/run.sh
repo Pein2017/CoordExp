@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Unified public dataset preparation runner for CoordExp.
-# See: openspec/changes/2026-01-22-add-unified-public-data-pipeline
+# See: openspec/changes/refactor-public-data-pipeline-factory
 
 set -euo pipefail
 
@@ -56,10 +56,10 @@ Runner flags:
   --preset-only            For validate: validate only preset artifacts
 
 Passthrough args:
-  Everything after `--` is forwarded verbatim to the underlying implementation:
+  Everything after `--` is forwarded to the underlying implementation:
     - download/convert: dataset plugin script (public_data/datasets/<dataset>.sh)
-    - rescale: public_data/scripts/rescale_jsonl.py
-    - coord:   public_data/scripts/convert_to_coord_tokens.py
+    - rescale/coord/validate: unified pipeline factory (public_data/scripts/run_pipeline_factory.py)
+  The pipeline factory supports a curated subset of flags and warns on unsupported args.
   For `all`, passthrough args are forwarded ONLY to dataset plugin steps (download/convert).
 
 Examples:
@@ -204,10 +204,33 @@ set_paths_for_preset() {
   # Requires PRESET to already be set (may be empty).
   PRESET_DIR="${DATASET_DIR}/${PRESET}"
   PRESET_IMAGE_DIR="${PRESET_DIR}/images"
+  PRESET_TRAIN_RAW_JSONL="${PRESET_DIR}/train.raw.jsonl"
+  PRESET_VAL_RAW_JSONL="${PRESET_DIR}/val.raw.jsonl"
+  PRESET_TRAIN_NORM_JSONL="${PRESET_DIR}/train.norm.jsonl"
+  PRESET_VAL_NORM_JSONL="${PRESET_DIR}/val.norm.jsonl"
   PRESET_TRAIN_JSONL="${PRESET_DIR}/train.jsonl"
   PRESET_VAL_JSONL="${PRESET_DIR}/val.jsonl"
   PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
   PRESET_VAL_COORD_JSONL="${PRESET_DIR}/val.coord.jsonl"
+}
+
+resolve_effective_preset_name() {
+  local base_preset="$1"
+  local max_objects="${2:-}"
+  if [[ -z "${max_objects}" ]]; then
+    echo "${base_preset}"
+    return 0
+  fi
+  [[ "${max_objects}" =~ ^[0-9]+$ ]] || die "PUBLIC_DATA_MAX_OBJECTS must be an integer if set"
+  local root
+  root="$(echo "${base_preset}" | sed -E 's/(_max_?[0-9]+)+$//')"
+  local canonical="${root}_max_${max_objects}"
+  local legacy="${root}_max${max_objects}"
+  if [[ -d "${DATASET_DIR}/${legacy}" && ! -d "${DATASET_DIR}/${canonical}" ]]; then
+    echo "${legacy}"
+  else
+    echo "${canonical}"
+  fi
 }
 
 require_repo_root
@@ -272,6 +295,8 @@ RAW_TRAIN_JSONL="${RAW_DIR}/train.jsonl"
 RAW_VAL_JSONL="${RAW_DIR}/val.jsonl"
 set_paths_for_preset
 
+PIPELINE_MAX_OBJECTS="${PUBLIC_DATA_MAX_OBJECTS:-}"
+
 case "${COMMAND}" in
   help)
     usage
@@ -311,42 +336,44 @@ case "${COMMAND}" in
     ;;
   rescale)
     [[ -n "${PRESET}" ]] || die "rescale requires --preset <name>"
+    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
     banner "[${DATASET}] rescale -> ${PRESET_DIR}"
     require_file "${RAW_TRAIN_JSONL}"
-    run_cmd mkdir -p "${PRESET_DIR}"
-    run_py public_data/scripts/rescale_jsonl.py \
-      "${PASSTHROUGH_ARGS[@]}" \
-      --input-jsonl "${RAW_TRAIN_JSONL}" \
-      --output-jsonl "${PRESET_TRAIN_JSONL}" \
-      --output-images "${PRESET_DIR}" \
-      --relative-images
-    if [[ -f "${RAW_VAL_JSONL}" ]]; then
-      run_py public_data/scripts/rescale_jsonl.py \
-        "${PASSTHROUGH_ARGS[@]}" \
-        --input-jsonl "${RAW_VAL_JSONL}" \
-        --output-jsonl "${PRESET_VAL_JSONL}" \
-        --output-images "${PRESET_DIR}" \
-        --relative-images
+    PIPELINE_ARGS=(
+      --mode rescale
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+      --preset "${PRESET}"
+    )
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
     fi
+    run_py public_data/scripts/run_pipeline_factory.py \
+      "${PIPELINE_ARGS[@]}" \
+      "${PASSTHROUGH_ARGS[@]}"
+    set_paths_for_preset
     ;;
   coord)
     [[ -n "${PRESET}" ]] || die "coord requires --preset <name>"
+    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
     banner "[${DATASET}] coord -> ${PRESET_DIR}"
-    require_file "${PRESET_TRAIN_JSONL}"
-    run_py public_data/scripts/convert_to_coord_tokens.py \
-      "${PASSTHROUGH_ARGS[@]}" \
-      --input "${PRESET_TRAIN_JSONL}" \
-      --output-tokens "${PRESET_TRAIN_COORD_JSONL}" \
-      --keys bbox_2d poly
-    if [[ -f "${PRESET_VAL_JSONL}" ]]; then
-      run_py public_data/scripts/convert_to_coord_tokens.py \
-        "${PASSTHROUGH_ARGS[@]}" \
-        --input "${PRESET_VAL_JSONL}" \
-        --output-tokens "${PRESET_VAL_COORD_JSONL}" \
-        --keys bbox_2d poly
+    PIPELINE_ARGS=(
+      --mode coord
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+      --preset "${PRESET}"
+    )
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
     fi
+    run_py public_data/scripts/run_pipeline_factory.py \
+      "${PIPELINE_ARGS[@]}" \
+      "${PASSTHROUGH_ARGS[@]}"
+    set_paths_for_preset
     ;;
   validate)
     if [[ "${RAW_ONLY}" == "true" && "${PRESET_ONLY}" == "true" ]]; then
@@ -370,35 +397,34 @@ case "${COMMAND}" in
         die "validate requires --preset <name> (or a dataset plugin default preset) unless --raw-only is set"
       fi
     fi
+    if [[ "${DO_PRESET}" == "true" ]]; then
+      PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
+    fi
     set_paths_for_preset
 
     banner "[${DATASET}] validate"
-    VALIDATE_ARGS=()
-    if [[ "${SKIP_IMAGE_CHECK}" == "true" ]]; then
-      VALIDATE_ARGS+=(--skip-image-check)
+    PIPELINE_ARGS=(
+      --mode validate
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+      --preset "${PRESET}"
+    )
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
     fi
-
     if [[ "${DO_RAW}" == "true" ]]; then
-      require_file "${RAW_TRAIN_JSONL}"
-      run_py public_data/scripts/validate_jsonl.py "${RAW_TRAIN_JSONL}" "${VALIDATE_ARGS[@]}"
-      if [[ -f "${RAW_VAL_JSONL}" ]]; then
-        run_py public_data/scripts/validate_jsonl.py "${RAW_VAL_JSONL}" "${VALIDATE_ARGS[@]}"
-      fi
+      PIPELINE_ARGS+=(--validate-raw)
     fi
+    if [[ "${DO_PRESET}" == "true" ]]; then
+      PIPELINE_ARGS+=(--validate-preset)
+    fi
+    if [[ "${SKIP_IMAGE_CHECK}" == "true" ]]; then
+      PIPELINE_ARGS+=(--skip-image-check)
+    fi
+    run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
 
     if [[ "${DO_PRESET}" == "true" ]]; then
-      require_file "${PRESET_TRAIN_JSONL}"
-      run_py public_data/scripts/validate_jsonl.py "${PRESET_TRAIN_JSONL}" "${VALIDATE_ARGS[@]}"
-      if [[ -f "${PRESET_VAL_JSONL}" ]]; then
-        run_py public_data/scripts/validate_jsonl.py "${PRESET_VAL_JSONL}" "${VALIDATE_ARGS[@]}"
-      fi
-
-      require_file "${PRESET_TRAIN_COORD_JSONL}"
-      run_py public_data/scripts/validate_jsonl.py "${PRESET_TRAIN_COORD_JSONL}" "${VALIDATE_ARGS[@]}"
-      if [[ -f "${PRESET_VAL_COORD_JSONL}" ]]; then
-        run_py public_data/scripts/validate_jsonl.py "${PRESET_VAL_COORD_JSONL}" "${VALIDATE_ARGS[@]}"
-      fi
-
       # Prompt/template sanity check on coord-token JSONL.
       if INSPECT_MODEL="$(choose_inspect_model)"; then
         if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
@@ -423,6 +449,7 @@ case "${COMMAND}" in
         die "all requires --preset <name> (or a dataset plugin default preset)"
       fi
     fi
+    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
 
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
@@ -452,35 +479,35 @@ case "${COMMAND}" in
       --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
       --raw-val-jsonl "${RAW_VAL_JSONL}" \
       -- "${PASSTHROUGH_ARGS[@]}"
-    banner "[${DATASET}] stage: rescale"
-    # Shared steps run with runner defaults (no passthrough args here).
-    run_py public_data/scripts/rescale_jsonl.py \
-      --input-jsonl "${RAW_TRAIN_JSONL}" \
-      --output-jsonl "${PRESET_TRAIN_JSONL}" \
-      --output-images "${PRESET_DIR}" \
-      --relative-images
-    if [[ -f "${RAW_VAL_JSONL}" ]]; then
-      run_py public_data/scripts/rescale_jsonl.py \
-        --input-jsonl "${RAW_VAL_JSONL}" \
-        --output-jsonl "${PRESET_VAL_JSONL}" \
-        --output-images "${PRESET_DIR}" \
-        --relative-images
+    banner "[${DATASET}] stage: shared-pipeline"
+    PIPELINE_ARGS=(
+      --mode full
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+      --preset "${PRESET}"
+      --run-validation-stage
+    )
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
     fi
-    banner "[${DATASET}] stage: coord"
-    run_py public_data/scripts/convert_to_coord_tokens.py \
-      --input "${PRESET_TRAIN_JSONL}" \
-      --output-tokens "${PRESET_TRAIN_COORD_JSONL}" \
-      --keys bbox_2d poly
-    if [[ -f "${PRESET_VAL_JSONL}" ]]; then
-      run_py public_data/scripts/convert_to_coord_tokens.py \
-        --input "${PRESET_VAL_JSONL}" \
-        --output-tokens "${PRESET_VAL_COORD_JSONL}" \
-        --keys bbox_2d poly
+    if [[ "${SKIP_IMAGE_CHECK}" == "true" ]]; then
+      PIPELINE_ARGS+=(--skip-image-check)
     fi
-    banner "[${DATASET}] stage: validate"
-    # validate defaults to raw+preset; it will also run inspect_chat_template.py.
-    run_cmd bash "${0}" "${DATASET}" validate --preset "${PRESET}" \
-      $([[ "${SKIP_IMAGE_CHECK}" == "true" ]] && echo "--skip-image-check" || true)
+    run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+    set_paths_for_preset
+
+    # Prompt/template sanity check on coord-token JSONL.
+    if INSPECT_MODEL="$(choose_inspect_model)"; then
+      if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
+        --jsonl "${PRESET_TRAIN_COORD_JSONL}" \
+        --index 0 \
+        --model "${INSPECT_MODEL}"; then
+        warn "inspect_chat_template.py failed (model/deps missing?); skipping template check."
+      fi
+    else
+      warn "Skipping inspect_chat_template.py (no cached model found under model_cache/)."
+    fi
     ;;
   *)
     echo "[error] Unknown command '${COMMAND}'." >&2

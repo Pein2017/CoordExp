@@ -15,18 +15,21 @@ PUBLIC_DATA_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PUBLIC_DATA_DIR}"
 
 # Run converter tests
-echo -e "\n[1/3] Running LVIS Pre-sorting Tests..."
+echo -e "\n[1/5] Running LVIS Pre-sorting Tests..."
 "${PYTHON_BIN}" tests/test_lvis_presort.py
 
-echo -e "\n[2/3] Running LVIS Converter Tests..."
+echo -e "\n[2/5] Running LVIS Converter Tests..."
 "${PYTHON_BIN}" tests/test_lvis_converter.py
 
 # Run polygon cap smoke tests
-echo -e "\n[3/4] Running Polygon Cap Smoke Tests..."
+echo -e "\n[3/5] Running Polygon Cap Smoke Tests..."
 "${PYTHON_BIN}" tests/test_poly_cap.py
 
-echo -e "\n[4/4] Running COCO Converter/Validator Smoke Tests..."
+echo -e "\n[4/5] Running COCO Converter/Validator Smoke Tests..."
 "${PYTHON_BIN}" tests/test_coco_converter.py
+
+echo -e "\n[5/5] Running Unified Pipeline Factory Tests..."
+"${PYTHON_BIN}" -m pytest -q tests/test_pipeline_factory.py
 
 echo -e "\n======================================"
 echo "All tests completed!"

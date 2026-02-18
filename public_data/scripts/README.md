@@ -3,7 +3,11 @@ Offline normalization defaults
 
 Default behavior
 - All LVIS pipeline outputs are pre-normalized to norm1000 (0–999) for both numeric text JSONLs and coord-token JSONLs. No runtime normalization is required.
-- Pixel-space intermediates (`*.raw.jsonl`) are temporary; final `{split}.jsonl` and `{split}.coord.jsonl` are normalized.
+- Unified canonical artifacts:
+  - `{split}.raw.jsonl`: pixel-space records after resize/filter
+  - `{split}.norm.jsonl`: normalized integer coords in [0,999]
+  - `{split}.coord.jsonl`: coord-token records
+- Legacy compatibility alias `{split}.jsonl` maps to `{split}.raw.jsonl` in the unified runner path.
 
 LVIS: bbox-only vs poly-prefer (fallback-to-bbox)
 ================================================
