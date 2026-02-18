@@ -1,25 +1,23 @@
-# CoordExp Project Overview (Current Codebase)
+# CoordExp Project Overview
 
-- Goal: Extend Qwen3-VL for grounding/detection research via coord tokens + distributional coord supervision, coord-offset adapters, and order-invariant supervision (stage-2 rollout matching).
-- Main entrypoint: `src/sft.py` (YAML-only; `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`).
-- Config system:
-  - `src/config/loader.py`: YAML merge with `extends`/`inherit`, prompt selection, TrainArguments construction (ms-swift).
-  - `src/config/schema.py`: typed config validation (`TrainingConfig`, `CustomConfig`, etc).
-- Data pipeline:
-  - Contract: `docs/data/JSONL_CONTRACT.md`.
-  - Single JSONL dataset: `src/datasets/dense_caption.py` (`BaseCaptionDataset`, alias `DenseCaptionDataset`) + `src/datasets/builders/jsonlines.py` (`JSONLinesBuilder`).
-  - Optional fusion dataset: `src/datasets/fusion.py` + `src/datasets/unified_fusion_dataset.py`.
-  - Augmentation/preprocess: `src/datasets/preprocessors/*`, `src/datasets/augmentation/*`, `src/datasets/geometry.py`.
-- Coord stack: `src/coord_tokens/*` (coord token codec, record annotation/validation, template adapter, coord-offset adapter, softCE+W1 utilities).
-- Trainer variants (selected via `custom.trainer_variant` / `train_args.trainer_variant`):
-  - Default: ms-swift trainer via `swift.TrainerFactory`.
-  - `rollout_matching_sft`: `src/trainers/rollout_matching_sft.py` (rollout -> strict parse -> match -> build masked targets; post-rollout packing).
-  - `gkd_monitor` (when `rlhf_type: gkd`): `src/trainers/gkd_monitor.py`.
-- Metrics/collators:
-  - Collator wrapping for per-batch metrics: `src/data_collators/dataset_metrics.py`.
-  - Trainer mixins (coord loss, token-type metrics, instability monitor, grad-accum fix): `src/metrics/dataset_metrics.py`.
-- Eval/infer/tools:
-  - Detection evaluator: `scripts/evaluate_detection.py` -> `src/eval/detection.py`.
-  - Inference: `scripts/run_infer.py` -> `src/infer/engine.py`.
-  - Utilities: `scripts/tools/inspect_chat_template.py`, coord vocab/token scripts in `scripts/tools/`.
-- Public datasets: `public_data/` provides tested conversion pipelines (see `public_data/README.md`).
+## Purpose
+- Extend Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant matching to advance open-vocabulary detection/grounding while remaining within the ms-swift SFT pipeline.
+- Keep experiments YAML/config-driven, reproducible, and ready for paper-ready runs (single-dataset by default, fusion via `custom.fusion_config`).
+
+## Tech Stack
+- Python 3 on Linux, running inside `conda run -n ms` with `ms-swift` (trainer/orchestrator) plus Hugging Face Qwen3-VL checkpoints.
+- Geometry-focused tooling under `src/datasets/geometry.py` and shared dataset/data-contract helpers in `public_data/`.
+- Config-first YAML loader (`configs/` + `src/config/`) and ms-swift for training/inference.
+
+## Structure
+- `src/`: training stack (`src/sft.py` entrypoint), dataset builders, config loader, callbacks, inference/eval helpers.
+- `configs/`: YAML experiment definitions (base, dlora, LoRA, fusion overrides).
+- `scripts/` and `public_data/scripts/`: utilities for vocab expansion, JSONL validation, data packing, LVIS pipeline, etc.
+- `docs/`: runbooks, data contracts, standards (`docs/standards/CODE_STYLE.md`), and evaluation/training guides.
+
+## Key Commands
+- `PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug]` (main training entrypoint).
+- `PYTHONPATH=. conda run -n ms python scripts/tools/expand_coord_vocab.py --src <base> --dst <expanded>` (coord vocab prep).
+- `PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <file> --index <n>` (preview prompt rendering).
+- `PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path>` (JSONL contract check).
+- `bash public_data/scripts/lvis_full_pipeline.sh` (LVIS data prep reproducible pipeline).
