@@ -216,21 +216,21 @@ class _TeeStream:
         try:
             self._stream.write(data)
         except Exception:
-            pass
+            raise
         try:
             self._file.write(data)
         except Exception:
-            pass
+            raise
 
     def flush(self):
         try:
             self._stream.flush()
         except Exception:
-            pass
+            raise
         try:
             self._file.flush()
         except Exception:
-            pass
+            raise
 
     def isatty(self):
         try:
@@ -298,12 +298,12 @@ def enable_output_dir_file_logging(
             try:
                 sys.stdout = _TeeStream(sys.stdout, file_obj)
             except Exception:
-                pass
+                raise
         if cfg.capture_stderr:
             try:
                 sys.stderr = _TeeStream(sys.stderr, file_obj)
             except Exception:
-                pass
+                raise
 
     return log_path
 

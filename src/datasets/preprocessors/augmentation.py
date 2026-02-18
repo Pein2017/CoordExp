@@ -249,8 +249,7 @@ class AugmentationPreprocessor(BasePreprocessor):
                         rec["width"] = int(im0.width)
                         rec["height"] = int(im0.height)
         except Exception:
-            # Non-fatal: leave original width/height
-            pass
+            raise
 
         return rec
 
@@ -353,7 +352,7 @@ class AugmentationPreprocessor(BasePreprocessor):
                         ints = [int(v) for v in cached_vals]
                         return ints, True
                     except Exception:
-                        pass
+                        raise
             # Otherwise attempt numeric cast
             try:
                 ints = [int(round(float(v))) for v in values]

@@ -34,8 +34,7 @@ class GradAccumLossScaleMixin:
 
             pop_and_stash_batch_extras(self, inputs)
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         loss, outputs = super().compute_loss(  # type: ignore[misc]
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
@@ -64,8 +63,7 @@ class GradAccumLossScaleMixin:
 
             best_effort(self, name="runtime_metrics", fn=_log_runtime_metrics)
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         return (loss, outputs) if return_outputs else loss
 
@@ -115,8 +113,7 @@ class AggregateTokenTypeMetricsMixin:
             )
             best_effort(self, name="dataset_metric_key_sync", fn=self._sync_dataset_metrics)
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         return (loss, outputs) if return_outputs else loss
 
@@ -333,8 +330,7 @@ class CoordSoftCEW1LossMixin:
 
             maybe_pop_and_stash_batch_extras(self, inputs)
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
         if cfg is None or not getattr(cfg, "enabled", False):
@@ -439,8 +435,7 @@ class CoordSoftCEW1LossMixin:
                         if gas_int > 1:
                             loss = loss / float(gas_int)
             except Exception:
-                # Best-effort only; never block training.
-                pass
+                raise
         except Exception:
             # Fail-fast: never silently train without coord supervision.
             if not getattr(self, "_coord_softce_w1_error_warned", False):
@@ -520,7 +515,7 @@ class CoordSoftCEW1LossMixin:
             # Stash for the stage1 total-per-sample estimate (logged from coord loss block).
             setattr(self, "_coordexp_last_base_loss_per_sample", float(loss_per_sample))
         except Exception:
-            pass
+            raise
 
     def _maybe_add_coord_softce_w1_loss(
         self,
@@ -586,7 +581,7 @@ class CoordSoftCEW1LossMixin:
                 batch_size=int(labels.shape[0]),
             )
         except Exception:
-            pass
+            raise
 
         return loss + result.coord_loss.to(dtype=loss.dtype)
 
@@ -696,7 +691,7 @@ class CoordSoftCEW1LossMixin:
                     float(base_loss_per_sample) + float(coord_loss_per_sample),
                 )
         except Exception:
-            pass
+            raise
 
     def _coord_vocab_gate_loss(
         self,

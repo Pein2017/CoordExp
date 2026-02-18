@@ -551,7 +551,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
                         current = get_base_model()
                         continue
                     except Exception:
-                        pass
+                        raise
                 current = None
         return None
 
@@ -590,7 +590,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
             try:
                 handle.remove()
             except Exception:
-                pass
+                raise
         hooks.clear()
 
     def _compute_visual_kd_loss(self) -> Optional[torch.Tensor]:
@@ -714,7 +714,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
         try:
             self._remove_visual_hooks()
         except Exception:
-            pass
+            raise
 
     def _ensure_visual_kd_state(self) -> None:
         if not hasattr(self, "_visual_kd_enabled"):

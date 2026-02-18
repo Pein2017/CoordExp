@@ -82,7 +82,7 @@ class PackedCaptionDataset(IterableDataset):
             try:
                 self.dataset.set_epoch(self._epoch)
             except Exception:
-                pass
+                raise
 
         iterator = self._iter_base_dataset()
         buffer: list[Tuple[dict, int]] = []

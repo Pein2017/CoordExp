@@ -615,7 +615,7 @@ class Stage2ABTrainingTrainer(
                     close_sessions=True,
                 )
             except Exception:
-                pass
+                raise
 
     @contextlib.contextmanager
     def _hf_sampling_seed_context(
@@ -678,19 +678,19 @@ class Stage2ABTrainingTrainer(
 
                 random.seed(sb)
             except Exception:
-                pass
+                raise
             try:
                 import numpy as np
 
                 np.random.seed(sb)
             except Exception:
-                pass
+                raise
             try:
                 torch.manual_seed(sb)
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(sb)
             except Exception:
-                pass
+                raise
 
         try:
             yield True
@@ -702,25 +702,25 @@ class Stage2ABTrainingTrainer(
 
                     random.setstate(py_state)
                 except Exception:
-                    pass
+                    raise
             if np_state is not None:
                 try:
                     import numpy as np
 
                     np.random.set_state(np_state)
                 except Exception:
-                    pass
+                    raise
             if torch_state is not None:
                 try:
                     torch.set_rng_state(torch_state)
                 except Exception:
-                    pass
+                    raise
             if cuda_state is not None:
                 try:
                     if torch.cuda.is_available():
                         torch.cuda.set_rng_state_all(cuda_state)
                 except Exception:
-                    pass
+                    raise
 
     # Stage-2 AB scheduler helpers live in `src/trainers/stage2_ab/scheduler.py`.
 
@@ -937,7 +937,7 @@ class Stage2ABTrainingTrainer(
                     reduced.pop("rollout/_parse_truncated_den", None)
                     logs.update(reduced)
         except Exception:
-            pass
+            raise
         return super().log(logs)
 
     def training_step(self, model, inputs, *args, **kwargs):
@@ -1557,7 +1557,7 @@ class Stage2ABTrainingTrainer(
                         except Exception:
                             continue
             except Exception:
-                pass
+                raise
 
             drop_poly = 0
             drop_unknown = 0
@@ -2709,18 +2709,18 @@ class Stage2ABTrainingTrainer(
                         try:
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
                         except Exception:
-                            pass
+                            raise
             if isinstance(batch_metrics, Mapping):
                 for k, v in batch_metrics.items():
                     if str(k).startswith("stage2_ab/"):
                         try:
                             stage2_logs[str(k)] = float(v or 0.0)
                         except Exception:
-                            pass
+                            raise
 
             pending2.add(stage2_logs)
         except Exception:
-            pass
+            raise
 
         # Also feed the base rollout-matching pending log so its timing/packing/buffer plots stay intact.
         try:
@@ -2756,6 +2756,6 @@ class Stage2ABTrainingTrainer(
                 else None,
             )
         except Exception:
-            pass
+            raise
 
         return (total, outputs) if return_outputs else total

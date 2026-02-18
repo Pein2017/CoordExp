@@ -28,7 +28,7 @@ class SequentialPreprocessor(BasePreprocessor):
                 try:
                     pre.curriculum_state = state
                 except Exception:
-                    pass
+                    raise
 
     @property
     def rng(self) -> Any:
@@ -42,7 +42,7 @@ class SequentialPreprocessor(BasePreprocessor):
                 try:
                     pre.rng = rng_obj
                 except Exception:
-                    pass
+                    raise
 
     def preprocess(self, row: Any) -> Optional[Any]:
         current = row

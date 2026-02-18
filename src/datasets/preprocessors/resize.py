@@ -388,7 +388,7 @@ class Resizer:
                     if existing.size == (width, height):
                         return out_path
             except Exception:
-                pass  # fall through to rewrite if probing fails
+                raise
 
         with Image.open(image_path) as img:
             if self.exif_fn:

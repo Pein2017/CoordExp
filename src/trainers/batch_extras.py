@@ -65,7 +65,7 @@ def stash_batch_extras(trainer: Any, extras: BatchExtras) -> None:
     try:
         setattr(trainer, "_coordexp_pack_num_samples", extras.pack_num_samples)
     except Exception:
-        pass
+        raise
 
 
 def pop_and_stash_batch_extras(trainer: Any, inputs: Any) -> BatchExtras:

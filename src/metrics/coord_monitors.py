@@ -190,7 +190,7 @@ def compute_coord_diag_metrics_for_pure_ce(
         try:
             setattr(trainer, "_coordexp_coord_token_ids", list(coord_token_ids))
         except Exception:
-            pass
+            raise
 
     if not coord_token_ids:
         return out
@@ -461,6 +461,6 @@ def compute_coord_diag_metrics_for_pure_ce(
             coord_loss_per_sample = float(coord_loss.detach().cpu().item()) * float(coord_tokens) / float(total_samples)
             out["coord_diag/loss_per_sample"] = float(coord_loss_per_sample)
         except Exception:
-            pass
+            raise
 
     return out

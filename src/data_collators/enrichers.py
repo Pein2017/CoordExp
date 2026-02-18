@@ -101,8 +101,7 @@ class DatasetMetaEnricher:
                 pack_num_samples, dtype=torch.long, device=device
             )
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         return DatasetMeta(
             dataset_labels=dataset_labels,

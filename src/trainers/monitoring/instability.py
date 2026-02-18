@@ -66,8 +66,7 @@ class InstabilityMonitorMixin:
                 default=loss,
             )
         except Exception:
-            # Best-effort only; never block training.
-            pass
+            raise
 
         return (loss, outputs) if return_outputs else loss
 
@@ -247,19 +246,19 @@ class InstabilityMonitorMixin:
                 try:
                     control.should_training_stop = True
                 except Exception:
-                    pass
+                    raise
                 try:
                     control.should_epoch_stop = True
                 except Exception:
-                    pass
+                    raise
         except Exception:
-            pass
+            raise
         try:
             state = getattr(self, "state", None)
             if state is not None:
                 setattr(state, "should_training_stop", True)
         except Exception:
-            pass
+            raise
 
         if self._is_main_process():
             logger.error(
@@ -453,7 +452,7 @@ class InstabilityMonitorMixin:
                     meta_json=meta_str,
                 )
             except Exception:
-                pass
+                raise
 
         if self._is_main_process():
             ema_s = None if ema_loss is None else f"{float(ema_loss):.6f}"
@@ -477,7 +476,7 @@ class InstabilityMonitorMixin:
             try:
                 self._request_training_stop(reason=stop_reason, mode=mode, step=step)
             except Exception:
-                pass
+                raise
 
         if not guard_enabled:
             return loss

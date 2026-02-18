@@ -926,7 +926,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if isinstance(cfg, Mapping) and key in cfg:
                 return cfg[key]
         except Exception:
-            pass
+            raise
         return default
 
     def _validate_rollout_matching_cfg(self) -> None:
@@ -1170,7 +1170,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 return bool(acc.is_main_process)
             except Exception:
-                pass
+                raise
         return bool(getattr(self, "is_world_process_zero", False))
 
     def _should_monitor_dump(self, *, global_step: int) -> bool:
@@ -1256,7 +1256,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 with open(md_path, "w", encoding="utf-8") as f:
                     f.write(md)
             except Exception:
-                pass
+                raise
 
     def _format_monitor_dump_markdown(self, payload: Mapping[str, Any]) -> str:
         # Human-readable dump; keep it ASCII-safe to avoid surprising tooling issues.
@@ -1795,7 +1795,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if n > 0:
                     return n
             except Exception:
-                pass
+                raise
         raise ValueError("encoded sample is missing a valid length/input_ids")
 
     @contextmanager
@@ -1841,12 +1841,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     template.packing = bool(packing)
                 except Exception:
-                    pass
+                    raise
             if padding_free is not None:
                 try:
                     template.padding_free = bool(padding_free)
                 except Exception:
-                    pass
+                    raise
             if (
                 mode is not None
                 and old_mode is not None
@@ -1856,7 +1856,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if str(old_mode) != str(mode):
                         template.set_mode(str(mode))
                 except Exception:
-                    pass
+                    raise
 
             yield
         finally:
@@ -1869,15 +1869,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     template.set_mode(old_mode)
                 except Exception:
-                    pass
+                    raise
             try:
                 template.padding_free = old_padding_free
             except Exception:
-                pass
+                raise
             try:
                 template.packing = old_packing
             except Exception:
-                pass
+                raise
 
             try:
                 tls.depth = int(getattr(tls, "depth", 1) or 1) - 1
@@ -1889,7 +1889,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     tls.stack = []
                 except Exception:
-                    pass
+                    raise
                 if acquired:
                     lock.release()
 
@@ -2201,7 +2201,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     max_lora_rank = int(getattr(cfg0, "r", max_lora_rank))
                 except Exception:
-                    pass
+                    raise
 
         # Build TP subgroup (colocate only; server mode unsupported here).
         if tp_size > 1:
@@ -2224,7 +2224,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             vllm_template.padding_free = False
             vllm_template.set_mode("vllm")
         except Exception:
-            pass
+            raise
 
         logger.info(
             "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
@@ -2283,7 +2283,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 engine.engine.sleep(sleep_level)
             except Exception:
-                pass
+                raise
 
         self._vllm_engine = engine
         return engine
@@ -2395,7 +2395,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         try:
             engine.engine.reset_prefix_cache()
         except Exception:
-            pass
+            raise
 
         self._vllm_last_loaded_step = step
 
@@ -2471,7 +2471,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 engine.engine.reset_prefix_cache()
             except Exception:
-                pass
+                raise
         except Exception as exc:
             raise RuntimeError(
                 "Failed to load LoRA adapter into vLLM. "
@@ -2574,7 +2574,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 info = client.get_engine_type()
                 logger.info("vLLM rollout server engine_type: %s", info)
             except Exception:
-                pass
+                raise
 
             self._vllm_server_client = client
             return client
@@ -2666,9 +2666,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 if callable(close_fn):
                                     close_fn()
                             except Exception:
-                                pass
+                                raise
                 except Exception:
-                    pass
+                    raise
 
             self._vllm_server_client = None
             setattr(self, "_vllm_server_comm_inited", False)
@@ -4299,7 +4299,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self._rm_last_pack_segments = int(len(selected))
             self._rm_last_pack_buffer_after = int(len(self._post_rollout_segments))
         except Exception:
-            pass
+            raise
 
         if fill < target:
             logger.warning(
@@ -4346,7 +4346,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 pack_metrics["packing/avg_segment_len_last"] = float(avg)
                 pack_metrics["packing/avg_segment_len_ema"] = float(ema)
         except Exception:
-            pass
+            raise
 
         return selected, pack_metrics
 
@@ -4787,7 +4787,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         }
                     )
                 except Exception:
-                    pass
+                    raise
 
             meta_entry = {
                 "prompt_len": int(len(prompt_ids)),
@@ -4878,7 +4878,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 self._write_monitor_dump(global_step=int(gs), payload=payload)
                 self._monitor_dump_count += 1
             except Exception:
-                pass
+                raise
 
         if packing_enabled:
             self._append_post_rollout_segments(segments)
@@ -5292,7 +5292,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         getattr(self, "_rm_train_samples_seen", 0) or 0
                     )
         except Exception:
-            pass
+            raise
 
         return super().log(logs)
 
@@ -5499,7 +5499,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             payload["rollout/top_p"] = float(top_p)
             payload["rollout/top_k"] = float(top_k)
         except Exception:
-            pass
+            raise
 
         # Desc monitor outputs (matched pairs only).
         try:
@@ -5539,7 +5539,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         )
                         payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
         except Exception:
-            pass
+            raise
 
         return payload
 
@@ -5826,7 +5826,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 else None,
             )
         except Exception:
-            pass
+            raise
 
         return (total, outputs) if return_outputs else total
 

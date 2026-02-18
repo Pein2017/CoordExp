@@ -279,7 +279,7 @@ def main():
         if log_path:
             logger.info(f"File logging enabled: {log_path}")
     except Exception:
-        pass
+        raise
 
     # Debug mode: print full configuration
     if args.debug:
@@ -1046,7 +1046,7 @@ def main():
             if getattr(train_args, "training_args", None) is not None:
                 train_args.training_args.remove_unused_columns = False
         except Exception:
-            pass
+            raise
 
         # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
@@ -1091,7 +1091,7 @@ def main():
         try:
             setattr(train_args, "per_device_eval_batch_size", int(rollout_decode_bs))
         except Exception:
-            pass
+            raise
 
         try:
             from swift.trainers.rlhf_trainer.utils import identity_data_collator
@@ -1327,27 +1327,27 @@ def main():
         try:
             setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
         except Exception:
-            pass
+            raise
     if token_type_cfg is not None:
         try:
             setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
         except Exception:
-            pass
+            raise
     if instability_monitor_cfg is not None:
         try:
             setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
         except Exception:
-            pass
+            raise
         # Provide JSONL paths so the monitor can dump offending records by base_idx.
         try:
             setattr(trainer, "instability_train_jsonl", str(train_jsonl))
         except Exception:
-            pass
+            raise
         try:
             if val_jsonl:
                 setattr(trainer, "instability_val_jsonl", str(val_jsonl))
         except Exception:
-            pass
+            raise
 
     # Patch DeepSpeed __del__ to avoid noisy cleanup errors (safe no-op)
     try:
@@ -1360,12 +1360,11 @@ def main():
                 try:
                     _orig_ds_del(self)
                 except Exception:
-                    # Suppress non-fatal cleanup errors
-                    pass
+                    raise
 
             deepspeed.runtime.engine.DeepSpeedEngine.__del__ = _safe_ds_del  # type: ignore[assignment]
     except Exception:
-        pass
+        raise
 
     # Start training
     logger.info("=" * 70)

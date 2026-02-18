@@ -176,7 +176,7 @@ def _salvage_top_level_entries(text: str) -> Dict[str, Any] | None:
         try:
             out[str(key)] = json.loads(val_raw)
         except Exception:
-            pass
+            raise
         i = i3
 
     return out or None
@@ -222,7 +222,7 @@ def extract_json_block(text: str) -> str | None:
                 json.loads(repaired)
                 return repaired
             except Exception:
-                pass
+                raise
 
         last_comma_idx = candidate.rfind("},")
         if last_comma_idx > 0:
@@ -231,7 +231,7 @@ def extract_json_block(text: str) -> str | None:
                 json.loads(repaired)
                 return repaired
             except Exception:
-                pass
+                raise
 
         if "<im_end>" in text:
             open_braces = candidate.count("{")
@@ -250,13 +250,13 @@ def _load_json_loose(payload: str) -> Any | None:
     try:
         return json.loads(payload)
     except Exception:
-        pass
+        raise
 
     fixed = re.sub(r",\s*([}\]])", r"\1", payload)
     try:
         return json.loads(fixed)
     except Exception:
-        pass
+        raise
 
     return None
 

@@ -64,8 +64,7 @@ def build_batch_extras_collator(
             try:
                 instab_enricher(batch=batch, collated=collated, packed=meta.packed)
             except Exception:
-                # Best-effort only; never block training.
-                pass
+                raise
 
         if token_type_enricher is not None:
             try:
@@ -76,8 +75,7 @@ def build_batch_extras_collator(
                     packed=meta.packed,
                 )
             except Exception:
-                # Best-effort only; never block training.
-                pass
+                raise
 
         return collated
 

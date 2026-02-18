@@ -999,10 +999,10 @@ class InferenceEngine:
             },
         }
         if backend == "vllm":
-            # Persist only non-sensitive backend fields (allowlist).
-            allowed = {"mode", "base_url", "model", "timeout_s", "client_concurrency"}
+            # Persist only non-sensitive backend fields.
+            public_fields = {"mode", "base_url", "model", "timeout_s", "client_concurrency"}
             resolved_meta["backend_cfg"] = {
-                k: v for k, v in (self.cfg.backend or {}).items() if str(k) in allowed
+                k: v for k, v in (self.cfg.backend or {}).items() if str(k) in public_fields
             }
 
         self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
