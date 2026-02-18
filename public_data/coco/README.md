@@ -6,7 +6,7 @@ COCO 2017 images + annotations and convert them into CoordExp's JSONL contract:
 
 Outputs live under:
 - `public_data/coco/raw/` (downloaded artifacts + converted JSONL)
-- `public_data/coco/<preset>/` (optional shared rescale/coord/validate via `public_data/run.sh`)
+- `public_data/coco/<preset>/` (shared unified pipeline artifacts via `public_data/run.sh`)
 
 ## What you get
 - Raw COCO 2017 download (images + `instances_{train,val}2017.json`)
@@ -50,6 +50,18 @@ Optional: run the shared pipeline to generate training-ready preset artifacts
 ```bash
 ./public_data/run.sh coco all --preset rescale_32_768_bbox
 ```
+
+Canonical preset artifacts:
+- `train.raw.jsonl` / `val.raw.jsonl` (pixel-space)
+- `train.norm.jsonl` / `val.norm.jsonl` (norm1000 integers)
+- `train.coord.jsonl` / `val.coord.jsonl` (coord tokens)
+- Legacy alias compatibility: `train.jsonl` and `val.jsonl` map to `*.raw.jsonl`
+
+Optional max-object filter (off by default):
+```bash
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco all --preset rescale_32_768_bbox
+```
+When enabled, output preset naming auto-resolves to `..._max_60` (or reuses existing legacy `..._max60` directory when present).
 
 ## One-command smoke test (tiny, no images required)
 This downloads only annotations, converts a small sample, validates, and emits a 5-image sample file:

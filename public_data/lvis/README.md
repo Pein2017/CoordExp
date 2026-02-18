@@ -7,6 +7,12 @@ Key constraint (CoordExp JSONL contract):
 - 1 image record -> multiple instances
 - each instance has exactly **one** geometry: `bbox_2d` OR `poly` (never both)
 
+Unified runner note:
+- `./public_data/run.sh lvis ...` now routes shared internals through the modular pipeline/factory.
+- Canonical preset artifacts are `*.raw.jsonl`, `*.norm.jsonl`, and `*.coord.jsonl`.
+- Legacy alias `*.jsonl` is preserved as a compatibility view of `*.raw.jsonl`.
+- Optional max-object filtering stays off by default; enable with `PUBLIC_DATA_MAX_OBJECTS=<N>` and the preset name auto-resolves to suffix token `max_<N>` (rendered as `_max_<N>`, with legacy `_max<N>` reuse when present).
+
 ## Background: why LVIS `poly` can be tricky
 
 LVIS follows COCO-style `segmentation`, where **one instance can contain multiple

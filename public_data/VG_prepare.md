@@ -2,7 +2,7 @@
 
 - **Runner sanity** (no dataset required; validates the runner wiring):
   ```bash
-  ./public_data/run.sh help
+  ./public_data/run.sh lvis help
   ./public_data/run.sh vg help
   ```
 
