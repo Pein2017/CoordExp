@@ -12,12 +12,14 @@
 
 - [ ] 2.1 Operationalize “explicit sink” compliance with an objective allowlist:
   - Define the initial allowlist (minimal) for exception suppression sites that are permitted to be best-effort.
-  - Add `tests/test_silent_failure_policy.py` that fails CI if forbidden suppression patterns appear outside the allowlist (start with `except Exception: pass`).
+  - Add `tests/test_silent_failure_policy.py` that fails CI if forbidden suppression patterns appear outside the allowlist.
+    Phase 1 (required): flag `except Exception: pass` and `except: pass` (bare except).
+    Phase 2 (follow-up): expand to other equivalent blanket suppression patterns (for example `except BaseException: pass`, and catch-all blocks that continue execution without raising).
 - [ ] 2.2 Add/standardize a deterministic mechanism for temporary `template.system` overrides that guarantees restoration (via `finally`) or fails fast.
 - [ ] 2.3 Add a minimal unit test covering prompt override restoration (no leakage across two sequential encodes).
 - [ ] 2.4 Scan core paths (at least `src/trainers/`, `src/infer/`, `src/eval/`) for blanket exception swallowing and either:
   - delete it (preferred), or
-  - narrow catches to explicit exception types and return an explicit failure sentinel (no silent `pass`), or
+  - narrow catches to explicit exception types, add actionable context, and re-raise (fail-fast; no sentinel/quiet continue paths), or
   - move it behind an allowlisted explicit sink (only when failure cannot affect model inputs/labels/metrics artifacts).
 
 ## 3. Dataset Silent-Failure Cleanup (Fusion + Dense Caption)

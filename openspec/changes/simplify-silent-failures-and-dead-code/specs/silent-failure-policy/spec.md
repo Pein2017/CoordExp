@@ -29,7 +29,10 @@ All other best-effort telemetry code MUST either log failures (once per process)
 To keep compliance objective (reviewable and testable), CoordExp SHALL maintain a single authoritative allowlist of exception-suppression sites.
 
 - The allowlist SHALL live in `tests/test_silent_failure_policy.py` as a list of permitted file paths and/or symbol names.
-- Any `except Exception: pass` (or equivalent blanket suppression) outside the allowlist SHALL fail CI.
+- Any blanket suppression outside the allowlist SHALL fail CI. At minimum, the CI check MUST treat the following as equivalent suppression patterns:
+  - `except Exception: pass`
+  - `except: pass` (bare except)
+  - `except BaseException: pass`
 - Adding a new allowlisted sink MUST include a one-line justification explaining why failures cannot affect model inputs/labels/metrics artifacts.
 
 #### Scenario: Log tee I/O failure does not abort training
