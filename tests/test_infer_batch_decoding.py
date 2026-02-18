@@ -265,3 +265,64 @@ def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeyp
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["counters"]["generation_failed"] == 1
+
+
+def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    _write_img(tmp_path / "img_0.png")
+
+    gt_path = tmp_path / "gt.jsonl"
+    gt_path.write_text(
+        json.dumps(
+            {
+                "images": ["img_0.png"],
+                "width": 32,
+                "height": 32,
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "obj"}],
+            },
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint="dummy",
+        mode="text",
+        prompt_variant="coco_80",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    monkeypatch.setattr(engine, "load_model", lambda: None)
+
+    def _fake_generate_batch(images):
+        text = '{"0": {"desc": "obj", "bbox_2d": [0, 0, 10, 10]}}<|im_end|>'
+        return [GenerationResult(text=text, error=None) for _ in images]
+
+    monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+
+    engine.infer()
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["infer"]["prompt_variant"] == "coco_80"

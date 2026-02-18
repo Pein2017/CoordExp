@@ -1,5 +1,16 @@
 """Unified English prompts for CoordExp general detection/grounding."""
 
+from __future__ import annotations
+
+from typing import Optional
+
+from .prompt_variants import (
+    DEFAULT_PROMPT_VARIANT,
+    available_prompt_variant_keys,
+    resolve_prompt_variant,
+    resolve_prompt_variant_key,
+)
+
 # Shared prior rules (kept flat for easy embedding in system prompt)
 PRIOR_RULES = "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
 
@@ -80,49 +91,76 @@ USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 
 def build_dense_system_prompt(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    prompt_variant: Optional[str] = None,
 ) -> str:
-    """Return system prompt for dense mode given ordering and coordinate representation."""
+    """Return system prompt for dense mode given ordering/coord mode/variant."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if str(coord_mode).lower() == "numeric":
-        return (
+        base_prompt = (
             SYSTEM_PROMPT_RANDOM_NUMERIC
             if ordering_key == "random"
             else SYSTEM_PROMPT_SORTED_NUMERIC
         )
-    return (
-        SYSTEM_PROMPT_RANDOM_TOKENS
-        if ordering_key == "random"
-        else SYSTEM_PROMPT_SORTED_TOKENS
-    )
+    else:
+        base_prompt = (
+            SYSTEM_PROMPT_RANDOM_TOKENS
+            if ordering_key == "random"
+            else SYSTEM_PROMPT_SORTED_TOKENS
+        )
+
+    variant = resolve_prompt_variant(prompt_variant)
+    return f"{base_prompt}{variant.dense_system_suffix}"
 
 
 def build_dense_user_prompt(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    prompt_variant: Optional[str] = None,
 ) -> str:
-    """Return user prompt for dense mode given ordering and coordinate representation."""
+    """Return user prompt for dense mode given ordering/coord mode/variant."""
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if str(coord_mode).lower() == "numeric":
-        return (
+        base_prompt = (
             USER_PROMPT_RANDOM_NUMERIC
             if ordering_key == "random"
             else USER_PROMPT_SORTED_NUMERIC
         )
-    return (
-        USER_PROMPT_RANDOM_TOKENS
-        if ordering_key == "random"
-        else USER_PROMPT_SORTED_TOKENS
-    )
+    else:
+        base_prompt = (
+            USER_PROMPT_RANDOM_TOKENS
+            if ordering_key == "random"
+            else USER_PROMPT_SORTED_TOKENS
+        )
+
+    variant = resolve_prompt_variant(prompt_variant)
+    return f"{base_prompt}{variant.dense_user_suffix}"
 
 
 def get_template_prompts(
-    ordering: str = "sorted", coord_mode: str = "coord_tokens"
+    ordering: str = "sorted",
+    coord_mode: str = "coord_tokens",
+    prompt_variant: Optional[str] = None,
 ) -> tuple[str, str]:
-    """Return (system, user) prompts for dense mode; coord_mode in {'coord_tokens','numeric'}."""
+    """Return (system, user) prompts for dense mode with variant support."""
     return (
-        build_dense_system_prompt(ordering=ordering, coord_mode=coord_mode),
-        build_dense_user_prompt(ordering=ordering, coord_mode=coord_mode),
+        build_dense_system_prompt(
+            ordering=ordering,
+            coord_mode=coord_mode,
+            prompt_variant=prompt_variant,
+        ),
+        build_dense_user_prompt(
+            ordering=ordering,
+            coord_mode=coord_mode,
+            prompt_variant=prompt_variant,
+        ),
     )
+
+
+def resolve_dense_prompt_variant_key(prompt_variant: Optional[str] = None) -> str:
+    """Resolve dense prompt variant with default fallback and strict validation."""
+    return resolve_prompt_variant_key(prompt_variant)
 
 
 __all__ = [
@@ -130,6 +168,10 @@ __all__ = [
     "build_dense_system_prompt",
     "build_dense_user_prompt",
     "get_template_prompts",
+    "resolve_dense_prompt_variant_key",
+    "available_prompt_variant_keys",
+    # prompt variant defaults
+    "DEFAULT_PROMPT_VARIANT",
     # coord-token variants
     "SYSTEM_PROMPT",
     "USER_PROMPT",

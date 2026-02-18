@@ -485,6 +485,81 @@ def test_training_config_materializes_with_fusion_config_without_train_jsonl(
     assert training.custom.fusion_config == "some/fusion.yaml"
 
 
+def test_fusion_dataset_prompt_overrides_take_precedence_over_variant_defaults(
+    tmp_path: Path,
+):
+    img_path = tmp_path / "img.jpg"
+    img_path.write_bytes(b"\x00")
+
+    train_jsonl = tmp_path / "train.jsonl"
+    record = {
+        "images": [str(img_path)],
+        "width": 1000,
+        "height": 1000,
+        "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "cat"}],
+    }
+    _write_jsonl(train_jsonl, [record])
+
+    cfg_path = tmp_path / "fusion.yaml"
+    cfg_path.write_text(
+        textwrap.dedent(
+            """
+            targets:
+              - dataset: jsonl
+                name: override
+                train_jsonl: {train_jsonl}
+                template: bbox_only
+                user_prompt: dataset user prompt
+                system_prompt: dataset system prompt
+                ratio: 1.0
+              - dataset: jsonl
+                name: inherit
+                train_jsonl: {train_jsonl}
+                template: bbox_only
+                ratio: 1.0
+            """.format(train_jsonl=str(train_jsonl))
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    prompts = ConfigLoader.resolve_prompts(
+        {"custom": {"extra": {"prompt_variant": "coco_80"}}}
+    )
+
+    fusion_cfg = FusionConfig.from_file(str(cfg_path))
+    ds_train = FusionCaptionDataset(
+        fusion_config=fusion_cfg,
+        base_template=_FakeTemplate(max_length=64),
+        user_prompt=prompts.user or "",
+        emit_norm="none",
+        json_format="standard",
+        augmenter=None,
+        bypass_prob=0.0,
+        curriculum_state=None,
+        use_summary=False,
+        system_prompt_dense=prompts.system,
+        system_prompt_summary=None,
+        coord_tokens=CoordTokensConfig(enabled=False),
+        seed=123,
+        shuffle=False,
+        sample_limit=None,
+        split="train",
+        object_ordering="sorted",
+    )
+
+    override_prompts = ds_train._policies["override"].prompts
+    inherited_prompts = ds_train._policies["inherit"].prompts
+
+    assert override_prompts.source == "dataset"
+    assert override_prompts.user == "dataset user prompt"
+    assert override_prompts.system == "dataset system prompt"
+
+    assert inherited_prompts.source == "default"
+    assert inherited_prompts.user == prompts.user
+    assert inherited_prompts.system == prompts.system
+
+
 def test_offline_merge_is_reproducible_across_python_hash_seeds(tmp_path: Path):
     # This should not depend on PYTHONHASHSEED; we use a stable hash function.
     train_jsonl = tmp_path / "train.jsonl"

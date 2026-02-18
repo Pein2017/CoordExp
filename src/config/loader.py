@@ -214,8 +214,7 @@ class ConfigLoader:
 
         use_summary = False
         custom_section = config.get("custom")
-        ordering_hint: str = "sorted"
-        coord_mode: str = "coord_tokens"
+        prompt_variant: Optional[str] = None
         if custom_section is not None:
             if not isinstance(custom_section, dict):
                 raise TypeError(
@@ -229,16 +228,18 @@ class ConfigLoader:
                 use_summary = ConfigLoader._coerce_bool(
                     custom_section["use_summary"], "custom.use_summary"
                 )
-            ordering_hint_raw = custom_section.get("object_ordering")
-            if ordering_hint_raw is not None:
-                ordering_hint = str(ordering_hint_raw).lower()
-                if ordering_hint not in {"sorted", "random"}:
-                    raise ValueError(
-                        "custom.object_ordering must be 'sorted' or 'random' when provided"
-                    )
-            coord_tokens_cfg = custom_section.get("coord_tokens", {})
-            if isinstance(coord_tokens_cfg, dict):
-                coord_mode = "coord_tokens" if coord_tokens_cfg.get("enabled", False) else "numeric"
+
+            extra_cfg = custom_section.get("extra", {})
+            if extra_cfg is None:
+                extra_cfg = {}
+            if not isinstance(extra_cfg, dict):
+                raise TypeError("custom.extra must be a mapping when resolving prompts")
+            prompt_variant_raw = extra_cfg.get("prompt_variant")
+            if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
+                raise TypeError(
+                    "custom.extra.prompt_variant must be a string when provided"
+                )
+            prompt_variant = prompt_variant_raw
 
         if use_summary:
             default_system = SYSTEM_PROMPT_SUMMARY
@@ -246,7 +247,7 @@ class ConfigLoader:
             output_variant = "summary"
         else:
             default_system, default_user = get_template_prompts(
-                ordering=ordering_hint, coord_mode=coord_mode
+                prompt_variant=prompt_variant,
             )
             output_variant = "dense"
 

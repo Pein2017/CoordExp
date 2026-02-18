@@ -63,6 +63,39 @@ PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco all --preset rescale_32_768
 ```
 When enabled, output preset naming auto-resolves to `..._max_60` (or reuses existing legacy `..._max60` directory when present).
 
+## Prompt Variant for COCO-80
+
+For COCO closed-class experiments, use the built-in `coco_80` prompt variant on
+both training and inference configs.
+
+Prompt composition follows:
+- `{fixed_base_prompt} + {dynamic_variant_suffix}`
+- fixed base keeps sorted object-order and coord-token instructions (universal)
+- `coco_80` suffix adds the closed-class label policy
+
+Training YAML:
+```yaml
+custom:
+  extra:
+    prompt_variant: coco_80
+```
+
+Inference YAML:
+```yaml
+infer:
+  prompt_variant: coco_80
+```
+
+Parity guidance:
+- Keep the same prompt variant between training and inference for reproducible eval.
+- Verify artifacts include the resolved variant:
+  - `<run_dir>/resolved_config.json` (`infer.prompt_variant`)
+  - `<run_dir>/summary.json` (`infer.prompt_variant`)
+
+The canonical COCO-80 class source-of-truth snapshot is
+`public_data/coco/raw/categories.json`; the built-in `coco_80` variant is frozen
+in code for deterministic behavior across machines.
+
 ## One-command smoke test (tiny, no images required)
 This downloads only annotations, converts a small sample, validates, and emits a 5-image sample file:
 ```bash
