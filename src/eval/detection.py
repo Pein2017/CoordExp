@@ -376,6 +376,15 @@ class EvalOptions:
     semantic_device: str = "auto"
     semantic_batch_size: int = 64
 
+    def __post_init__(self) -> None:
+        semantic_model = str(self.semantic_model or "").strip()
+        if not semantic_model:
+            raise ValueError(
+                "semantic_model must be a non-empty HuggingFace model id. "
+                "Semantic matching is mandatory; empty values are unsupported."
+            )
+        self.semantic_model = semantic_model
+
 
 @dataclass
 class Sample:
@@ -1220,7 +1229,9 @@ def _try_build_semantic_embeddings(
         return {}
     model_name = str(options.semantic_model or "").strip()
     if not model_name:
-        return {}
+        raise ValueError(
+            "semantic_model must be a non-empty HuggingFace model id for F1-ish evaluation"
+        )
     device = options.semantic_device or "auto"
     bs = max(1, int(options.semantic_batch_size))
 

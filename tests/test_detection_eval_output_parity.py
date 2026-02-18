@@ -83,9 +83,22 @@ def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
     assert (out_dir / "per_image.json").exists()
 
 
-def test_evaluate_and_save_both_includes_f1ish_metrics(tmp_path: Path) -> None:
+def test_evaluate_and_save_both_includes_f1ish_metrics(
+    tmp_path: Path, monkeypatch
+) -> None:
     pred_path = tmp_path / "gt_vs_pred.jsonl"
     _write_jsonl(pred_path, [_one_record(image="img.png")])
+
+    class _StubEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            import numpy as np
+
+            return {str(t): np.array([1.0, 0.0], dtype=np.float32) for t in texts}
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _StubEncoder)
 
     out_dir = tmp_path / "eval"
     options = EvalOptions(
@@ -95,8 +108,7 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(tmp_path: Path) -> None:
         output_dir=out_dir,
         overlay=False,
         num_workers=0,
-        # Avoid model downloads in unit tests.
-        semantic_model="",
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
     summary = evaluate_and_save(pred_path, options=options)
@@ -118,7 +130,7 @@ def test_prepare_all_and_prepare_all_separate_parity(tmp_path: Path) -> None:
         output_dir=tmp_path / "eval",
         overlay=False,
         num_workers=0,
-        semantic_model="",
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
     counters_combined = EvalCounters()
@@ -208,6 +220,16 @@ def test_evaluate_and_save_f1ish_fails_when_semantic_encoder_unavailable(
 
     with pytest.raises(RuntimeError, match="F1-ish semantic filtering requires the semantic encoder"):
         evaluate_and_save(pred_path, options=options)
+
+def test_eval_options_rejects_empty_semantic_model() -> None:
+    with pytest.raises(ValueError, match="semantic_model must be a non-empty"):
+        EvalOptions(
+            metrics="coco",
+            strict_parse=True,
+            use_segm=False,
+            output_dir=Path("eval_out"),
+            semantic_model="",
+        )
 
 def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
     counters = EvalCounters()

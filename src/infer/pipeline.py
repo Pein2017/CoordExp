@@ -282,23 +282,19 @@ def _candidate_resolved_config_paths_for_jsonl(jsonl_path: Path) -> List[Path]:
         try:
             pointer_raw = str(pointer_path.read_text(encoding="utf-8") or "").strip()
         except OSError as exc:
-            logger.warning("Failed to read manifest pointer at %s: %s", pointer_path, exc)
-            pointer_raw = ""
+            raise RuntimeError(
+                f"Failed to read manifest pointer at {pointer_path}."
+            ) from exc
         if pointer_raw:
             pointed = Path(pointer_raw).expanduser()
             if not pointed.is_absolute():
                 try:
                     pointed = (pointer_path.parent / pointed).resolve()
                 except OSError as exc:
-                    logger.warning(
-                        "Failed to resolve manifest pointer target %s from %s: %s",
-                        pointer_raw,
-                        pointer_path,
-                        exc,
-                    )
-                    pointed = None
-            if pointed is not None:
-                _push(pointed)
+                    raise RuntimeError(
+                        f"Failed to resolve manifest pointer target {pointer_raw!r} from {pointer_path}."
+                    ) from exc
+            _push(pointed)
 
     _push(jsonl_path.parent / "resolved_config.json")
 
@@ -334,30 +330,22 @@ def _find_resolved_config_for_jsonl(jsonl_path: Path) -> Optional[Dict[str, Any]
             try:
                 gt_vs_pred_path = Path(gt_vs_pred_jsonl).resolve()
             except (OSError, ValueError) as exc:
-                logger.warning(
-                    "Skipping invalid artifact path gt_vs_pred_jsonl=%r in %s: %s",
-                    gt_vs_pred_jsonl,
-                    candidate,
-                    exc,
-                )
-            else:
-                if gt_vs_pred_path == jsonl_resolved:
-                    return resolved
+                raise RuntimeError(
+                    f"Invalid artifact path gt_vs_pred_jsonl={gt_vs_pred_jsonl!r} in {candidate}."
+                ) from exc
+            if gt_vs_pred_path == jsonl_resolved:
+                return resolved
 
         run_dir = artifacts.get("run_dir")
         if isinstance(run_dir, str) and run_dir.strip():
             try:
                 run_dir_resolved = Path(run_dir).resolve()
             except (OSError, ValueError) as exc:
-                logger.warning(
-                    "Skipping invalid artifact path run_dir=%r in %s: %s",
-                    run_dir,
-                    candidate,
-                    exc,
-                )
-            else:
-                if run_dir_resolved in jsonl_resolved.parents:
-                    return resolved
+                raise RuntimeError(
+                    f"Invalid artifact path run_dir={run_dir!r} in {candidate}."
+                ) from exc
+            if run_dir_resolved in jsonl_resolved.parents:
+                return resolved
 
     return fallback
 
@@ -467,18 +455,11 @@ def run_pipeline(
 
     # Persist a manifest pointer next to the unified JSONL artifact so eval/vis can
     # recover the canonical run_dir manifest even when artifacts are laid out outside run_dir.
-    try:
-        artifacts.gt_vs_pred_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        (artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path").write_text(
-            str(resolved_config_path.resolve()),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        logger.warning(
-            "Failed to write manifest pointer %s: %s",
-            artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path",
-            exc,
-        )
+    artifacts.gt_vs_pred_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    (artifacts.gt_vs_pred_jsonl.parent / "resolved_config.path").write_text(
+        str(resolved_config_path.resolve()),
+        encoding="utf-8",
+    )
 
     if stages.infer:
         _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)

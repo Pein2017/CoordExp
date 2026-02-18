@@ -7,44 +7,85 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Authoritative allowlist for intentional suppression sinks.
-# Key format: "relative/path.py:line".
-# Add entries only for explicit best-effort sinks where failures cannot affect
-# model inputs, labels, or metrics artifacts.
-ALLOWLIST: dict[str, str] = {}
+# Directory-wide policy applies to all Python modules under src/.
+POLICY_GLOB = "src/**/*.py"
 
-# Phase-1 scope: infer/eval modules plus core dataset/trainer entry paths.
-CORE_POLICY_FILES = [
-    "src/datasets/dense_caption.py",
-    "src/datasets/unified_fusion_dataset.py",
-    "src/trainers/stage2_ab/scheduler.py",
-]
-CORE_POLICY_GLOBS = [
-    "src/infer/**/*.py",
-    "src/eval/**/*.py",
-]
+# Temporary wave-2 debt ledger for existing blanket-suppression sites.
+# Format: path -> (expected_count, one-line justification)
+ALLOWLIST_FILE_COUNTS: dict[str, tuple[int, str]] = {
+    "src/common/prediction_parsing.py": (
+        5,
+        "Legacy tolerant parsing fallbacks pending wave-2 cleanup.",
+    ),
+    "src/data_collators/batch_extras_collator.py": (
+        2,
+        "Legacy optional batch-extras handling pending wave-2 cleanup.",
+    ),
+    "src/data_collators/enrichers.py": (
+        1,
+        "Legacy optional enricher fallback pending wave-2 cleanup.",
+    ),
+    "src/datasets/preprocessors/augmentation.py": (
+        2,
+        "Legacy augmentation best-effort paths pending wave-2 cleanup.",
+    ),
+    "src/datasets/preprocessors/resize.py": (
+        1,
+        "Legacy resize probing fallback pending wave-2 cleanup.",
+    ),
+    "src/datasets/preprocessors/sequential.py": (
+        2,
+        "Legacy sequential-preprocessor fallback pending wave-2 cleanup.",
+    ),
+    "src/datasets/wrappers/packed_caption.py": (
+        1,
+        "Legacy packed-wrapper fallback pending wave-2 cleanup.",
+    ),
+    "src/metrics/coord_monitors.py": (
+        2,
+        "Legacy metrics-only fallback pending wave-2 cleanup.",
+    ),
+    "src/sft.py": (
+        10,
+        "Legacy SFT transitional fallback paths pending wave-2 cleanup.",
+    ),
+    "src/trainers/batch_extras.py": (
+        1,
+        "Legacy optional batch extras fallback pending wave-2 cleanup.",
+    ),
+    "src/trainers/gkd_monitor.py": (
+        3,
+        "Legacy telemetry fallback paths pending wave-2 cleanup.",
+    ),
+    "src/trainers/metrics/mixins.py": (
+        8,
+        "Legacy trainer metrics fallback paths pending wave-2 cleanup.",
+    ),
+    "src/trainers/monitoring/instability.py": (
+        7,
+        "Legacy instability-monitor fallback paths pending wave-2 cleanup.",
+    ),
+    "src/trainers/rollout_matching_sft.py": (
+        27,
+        "Legacy rollout-matching fallback paths pending wave-2 cleanup.",
+    ),
+    "src/trainers/stage2_ab_training.py": (
+        14,
+        "Legacy stage2-ab fallback paths pending wave-2 cleanup.",
+    ),
+    "src/utils/logger.py": (
+        6,
+        "Explicit logging sink fallback paths.",
+    ),
+}
 
 
 def _iter_policy_files() -> list[str]:
     out: list[str] = []
-    seen: set[str] = set()
-
-    for rel in CORE_POLICY_FILES:
-        if rel in seen:
+    for path in sorted(REPO_ROOT.glob(POLICY_GLOB)):
+        if not path.is_file():
             continue
-        seen.add(rel)
-        out.append(rel)
-
-    for pattern in CORE_POLICY_GLOBS:
-        for path in sorted(REPO_ROOT.glob(pattern)):
-            if not path.is_file():
-                continue
-            rel = str(path.relative_to(REPO_ROOT))
-            if rel in seen:
-                continue
-            seen.add(rel)
-            out.append(rel)
-
+        out.append(str(path.relative_to(REPO_ROOT)))
     return out
 
 
@@ -98,22 +139,41 @@ def _iter_blanket_pass_handlers(source: str):
                 yield int(handler.lineno), _handler_label(handler.type)
 
 
-def test_core_paths_forbid_blanket_exception_suppression_phase1() -> None:
+def test_src_paths_forbid_blanket_exception_suppression_phase1() -> None:
     violations: list[str] = []
+    observed_counts: dict[str, int] = {}
 
     for rel_path in _iter_policy_files():
         file_path = REPO_ROOT / rel_path
         source = file_path.read_text(encoding="utf-8")
+        handlers = list(_iter_blanket_pass_handlers(source))
+        if not handlers:
+            continue
 
-        for lineno, label in _iter_blanket_pass_handlers(source):
-            allowlist_key = f"{rel_path}:{lineno}"
-            if allowlist_key in ALLOWLIST:
-                continue
-            violations.append(f"{allowlist_key}: {label}: pass")
+        observed_counts[rel_path] = len(handlers)
+        allow = ALLOWLIST_FILE_COUNTS.get(rel_path)
+        if allow is None:
+            for lineno, label in handlers:
+                violations.append(f"{rel_path}:{lineno}: {label}: pass")
+            continue
+
+        expected_count, reason = allow
+        if len(handlers) != int(expected_count):
+            violations.append(
+                f"{rel_path}: expected {expected_count} allowlisted blanket suppressions "
+                f"({reason}), found {len(handlers)}"
+            )
+
+    for rel_path, (expected_count, reason) in ALLOWLIST_FILE_COUNTS.items():
+        actual = observed_counts.get(rel_path, 0)
+        if actual == 0:
+            violations.append(
+                f"{rel_path}: allowlist expects {expected_count} blanket suppressions "
+                f"({reason}), but found none; remove/update allowlist entry"
+            )
 
     assert not violations, (
-        "Forbidden blanket suppression found outside the explicit allowlist. "
-        "Either remove/narrow the catch or add an allowlist entry with a one-line "
-        "justification for why this site is a safe best-effort sink.\n"
+        "Forbidden blanket suppression found outside the explicit wave-2 allowlist, "
+        "or allowlist drift detected.\n"
         + "\n".join(violations)
     )
