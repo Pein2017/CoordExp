@@ -19,6 +19,18 @@ Coordinate handling:
 - **WHEN** the evaluator ingests the record
 - **THEN** it evaluates `gt` and `pred` using the provided pixel coordinates without denormalization.
 
+#### Scenario: Malformed prediction is counted and skipped
+- GIVEN a prediction object with both `bbox_2d` and `poly`
+- WHEN the evaluator ingests the predictions JSONL
+- THEN that object is dropped, increments an "invalid_geometry" counter, and does not appear in the COCO outputs.
+
+
+#### Scenario: Multi-image record handled deterministically
+- GIVEN a JSONL record with `images: ["a.jpg", "b.jpg"]`
+- WHEN the evaluator ingests the record
+- THEN it evaluates only `a.jpg`, logs one `multi_image_ignored`, and proceeds without failure.
+
+
 ### Requirement: Parsing and coordinate handling
 - The evaluator SHALL reuse the shared coord-processing module (via `src/common/geometry`/`src/common/schemas`) used by inference/visualization, supporting coord tokens or ints in 0–999 with one geometry per object.
 - Coordinates SHALL be converted according to `coord_mode`: when `norm1000`, denormalize using per-image width/height, clamp to bounds, and round; when `pixel`, only clamp/round applies to avoid double scaling. Missing width/height SHALL cause the object to be dropped and counted. If invalid/degenerate, the evaluator SHALL drop the object, increment a counter, and retain the raw geometry in per-image diagnostics.
@@ -33,6 +45,12 @@ Coordinate handling:
 - GIVEN a GT bbox and a prediction polygon overlapping the same region with `coord_mode="norm1000"`
 - WHEN the evaluator derives a bbox/segmentation via the shared helper
 - THEN the polygon prediction is eligible for IoU matching against the bbox GT instead of being discarded for geometry mismatch.
+
+#### Scenario: Line geometry is rejected
+- GIVEN a prediction object that contains `line`
+- WHEN the evaluator ingests the predictions JSONL
+- THEN that object is dropped, increments an `invalid_geometry` counter, and does not contribute to matches/metrics.
+
 
 ### Requirement: Semantic description matching
 The evaluator SHALL always run description matching via `sentence-transformers/all-MiniLM-L6-v2` when deriving COCO annotations. Predictions whose normalized descriptions are not mapped with cosine similarity ≥ `semantic_threshold` SHALL be dropped (counted in `unknown_dropped`) rather than assigned to synthetic categories.
@@ -93,6 +111,12 @@ Macro definition (required for reproducibility):
 - **WHEN** F1-ish evaluation mode runs
 - **THEN** `metrics.json` includes `f1ish@{iou_thr}_*` keys and `per_image.json` includes `matched/missing/hallucination` counts for each requested `iou_thr`.
 
+#### Scenario: Metrics summary persisted
+- GIVEN a valid GT/pred pair
+- WHEN the evaluator runs
+- THEN it writes `metrics.json` containing the COCO summary metrics and the robustness counters.
+
+
 ### Requirement: CLI, configuration, and outputs
 The evaluator SHALL support a YAML config template under `configs/eval/` and SHOULD accept `--config` to run evaluation reproducibly.
 
@@ -102,6 +126,12 @@ If both CLI flags and YAML are provided, CLI flags SHALL override YAML values, a
 - **GIVEN** `configs/eval/detection.yaml` and a prediction JSONL artifact
 - **WHEN** the user runs evaluator with `--config configs/eval/detection.yaml`
 - **THEN** it produces `metrics.json`, `per_class.csv`, `per_image.json` under the configured output directory.
+
+#### Scenario: CLI run produces artifacts
+- GIVEN GT and prediction JSONL files and an output directory
+- WHEN `python -m src.eval.detection --gt_jsonl ... --pred_jsonl ... --out_dir ...` is executed
+- THEN the output directory contains `metrics.json`, `per_class.csv`, and `per_image.json` (and overlays if enabled).
+
 
 ### Requirement: Tests and fixtures
 - The change SHALL include a small fixture dataset (2–3 images) with deterministic predictions and a CI smoke test that exercises parsing, category mapping, COCOeval (AP50 threshold), and robustness counters.
@@ -206,3 +236,107 @@ The evaluator SHALL be callable as a stage from the unified inference pipeline r
 - **GIVEN** a unified pipeline run directory containing `gt_vs_pred.jsonl`
 - **WHEN** the pipeline runner executes the eval stage
 - **THEN** evaluation outputs are written under the run directory (or a deterministic subdirectory) without requiring additional user inputs.
+
+
+### Requirement: Category mapping and unknown handling
+The evaluator SHALL support an `unknown_policy` configuration with modes:
+- `bucket`: map unknown desc to a synthetic `unknown` category id (COCO export only),
+- `drop`: drop unknown desc predictions (COCO export only),
+- `semantic`: keep predicted desc unchanged, but for COCO export MAY map unknown predicted desc to the nearest GT-desc category by embedding similarity.
+
+If `unknown_policy=semantic` is requested and the embedding model cannot be loaded, the evaluator SHALL fail loudly with a clear error message (it SHALL NOT silently degrade into bucketing).
+
+#### Scenario: Synonym without alias falls to unknown
+- GIVEN GT contains "traffic light" and a prediction uses desc "stoplight"
+- WHEN exported without alias/fuzzy mapping
+- THEN the prediction is assigned to category `unknown` unless `unknown` dropping is enabled, in which case it is dropped.
+
+#### Scenario: Semantic unknown handling fails loudly when model is missing
+- **GIVEN** `unknown_policy=semantic` and the configured semantic model is not available in local cache and cannot be downloaded
+- **WHEN** the evaluator is executed
+- **THEN** it raises a runtime error describing how to disable semantic mapping or provide the model.
+
+
+### Requirement: Evaluator ingestion diagnostics are path-and-line explicit
+Detection-evaluator SHALL provide path-and-line explicit diagnostics for malformed JSONL ingestion failures.
+Diagnostics MUST identify source file and 1-based line number for parse failures.
+Diagnostics SHOULD include a clipped payload snippet for rapid operator triage.
+
+#### Scenario: Malformed JSONL line reports precise source context
+- **GIVEN** an input artifact containing malformed JSON on one line
+- **WHEN** evaluator ingestion parses the file
+- **THEN** diagnostics identify the source path and 1-based line number for the malformed record
+- **AND** diagnostics include a clipped snippet of the malformed payload.
+
+
+### Requirement: Evaluator reuses shared coordinate and geometry helpers
+Detection-evaluator SHALL reuse shared coordinate/geometry helper contracts for conversion and validation, rather than maintaining parallel helper implementations.
+For overlapping active deltas, helper-level strictness/diagnostic defaults are authoritative in `2026-02-11-src-ambiguity-cleanup`; this change MUST remain consistent with that contract.
+This requirement SHALL preserve existing evaluation metric intent and artifact compatibility.
+
+#### Scenario: Shared helper reuse preserves evaluation eligibility behavior
+- **GIVEN** bbox/poly mixed geometry records
+- **WHEN** evaluator processes coordinates through shared helpers
+- **THEN** match eligibility decisions remain consistent with canonical helper behavior.
+
+
+### Requirement: Evaluation artifact and metric schema parity is preserved during refactor
+Detection-evaluator SHALL preserve existing evaluation artifact schema (`metrics.json`, per-image outputs, match artifacts where enabled) and existing metric naming conventions during internal refactor.
+
+#### Scenario: Refactored evaluator produces schema-compatible outputs
+- **GIVEN** the same evaluator inputs and settings
+- **WHEN** evaluation runs before and after refactor
+- **THEN** output artifact schema and stable metric key names remain compatible for downstream consumers.
+
+
+### Requirement: Evaluator strict-parse behavior is config-driven and bounded
+Evaluator ingestion strictness SHALL be controlled by `eval.strict_parse` (default `false`).
+- `eval.strict_parse=true`: fail fast on first malformed/non-object JSONL record.
+- `eval.strict_parse=false`: warn+skip malformed records deterministically with bounded diagnostics (`warn_limit=5`, `max_snippet_len=200`).
+
+For overlapping helper-consolidation deltas, this change MUST stay consistent with `2026-02-11-src-ambiguity-cleanup` as the authoritative strict-parse helper contract.
+
+#### Scenario: Strict and non-strict parse modes remain deterministic
+- **GIVEN** one malformed JSONL record in evaluator input
+- **WHEN** `eval.strict_parse=true`
+- **THEN** evaluation fails immediately with explicit path+line diagnostics
+- **AND WHEN** `eval.strict_parse=false`
+- **THEN** evaluator emits bounded warnings and skips the malformed record deterministically.
+
+
+### Requirement: Semantic encoder implementation is shared across training and evaluator
+Semantic description normalization and sentence-embedding computation used for evaluator description mapping and Stage-2 semantic gating/monitoring SHALL use the same canonical implementation (normalization rules, mean pooling, and L2 normalization).
+The evaluator MUST NOT carry a separate parallel encoder implementation that could drift.
+
+#### Scenario: Normalization rules are consistent across surfaces
+- **GIVEN** two descriptions that differ only by punctuation/whitespace (e.g., `Armchair/Chair (Wood)` and `armchair chair wood`)
+- **WHEN** training gating and evaluation normalize descriptions
+- **THEN** they produce the same normalized description string.
+
+
+### Requirement: Evaluation JSONL ingestion diagnostics are centralized
+When the evaluator loads `gt_vs_pred.jsonl`, JSON parsing diagnostics (path + 1-based line number + clipped snippet) SHALL be implemented via a shared helper so parsing/warning behavior is consistent.
+Strict mode MUST fail fast on malformed records; non-strict mode MUST warn a bounded number of times and skip malformed records deterministically.
+The governing config key is `eval.strict_parse` (default `false`).
+Bounded diagnostics defaults are normative: `warn_limit=5`, `max_snippet_len=200`.
+
+#### Scenario: Malformed JSONL line is reported with path and line number
+- **GIVEN** a `gt_vs_pred.jsonl` containing a malformed JSON line at line 3
+- **WHEN** the evaluator loads records in non-strict mode
+- **THEN** it emits a warning containing the file path and `:3`
+- **AND** it skips the malformed record.
+
+#### Scenario: Strict parse mode fails on first malformed JSONL record
+- **GIVEN** a `gt_vs_pred.jsonl` containing malformed JSON
+- **WHEN** the evaluator loads records with `eval.strict_parse=true`
+- **THEN** it fails immediately with explicit path+line diagnostics
+- **AND** it does not continue with partial record ingestion.
+
+
+### Requirement: Image-path resolution helper is shared
+Evaluator surfaces that resolve image paths (e.g., overlay rendering) SHALL delegate to shared image-path resolution helpers rather than implementing ad-hoc base-dir logic.
+
+#### Scenario: Relative image path resolves deterministically
+- **GIVEN** an image field `images/foo.jpg` and an explicit base directory
+- **WHEN** the evaluator resolves the image path via the shared helper
+- **THEN** it deterministically resolves to `<base_dir>/images/foo.jpg` (absolute path).

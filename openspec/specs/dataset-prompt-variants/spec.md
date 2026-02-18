@@ -18,8 +18,9 @@ The system SHALL provide a centralized prompt-variant registry for dense detecti
 - **THEN** configuration resolution MUST fail with an error that includes the unknown key and available variant keys
 
 #### Scenario: Deterministic repeated resolution
-- **WHEN** the same variant key is resolved repeatedly with the same prompt inputs (ordering)
+- **WHEN** the same variant key is resolved repeatedly with the same prompt inputs (ordering and coord mode)
 - **THEN** the resolver MUST return byte-identical system and user prompt text across calls
+- **AND** `coord mode` refers to the resolver `coord_mode` input (current contract: `coord_tokens`).
 
 #### Scenario: Deterministic cross-surface resolution
 - **WHEN** training and inference resolve the same variant key with equivalent prompt inputs

@@ -102,6 +102,12 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - **WHEN** the training config is loaded
 - **THEN** parsing succeeds and the legacy field is ignored.
 
+#### Scenario: Legacy coord-loss config rejected
+- **GIVEN** a YAML config that provides `custom.coord_loss` or `custom.coord_expectation_metrics`
+- **WHEN** the training config is loaded
+- **THEN** the load fails with a clear error message
+- **AND** the error indicates the supported replacement is `custom.coord_soft_ce_w1`.
+
 ### Requirement: Coord-gated soft-label losses for Stage-1
 When an opt-in Stage-1 coord-loss mode is enabled, the system SHALL support computing coordinate supervision strictly at `<|coord_*|>` token positions by:
 - restricting logits to the coord vocab (coord-vocab gate) at those positions, and
@@ -142,3 +148,66 @@ The system SHALL provide utilities to build unimodal soft targets over ordered c
 - **GIVEN** two identical normalized distributions over coord bins
 - **WHEN** W1(CDF) is computed
 - **THEN** the result is exactly zero (up to numerical tolerance).
+
+
+### Requirement: Numeric path remains unchanged
+The augmentation pipeline SHALL preserve current behaviour for datasets that are not in coord-token mode.
+
+#### Scenario: Coord tokens disabled
+- **GIVEN** `custom.coord_tokens.enabled` is false
+- **WHEN** augmentation runs on a record (token or numeric geometries)
+- **THEN** the existing numeric-only augmentation behaviour is used and no token↔int conversion occurs.
+
+
+### Requirement: Coord-token mode is gated
+- The system SHALL expose a config flag (e.g., `coord_tokens.enabled`) that, when false or absent, preserves the current numeric geometry workflow unchanged.
+- When the flag is true, coord-token handling is enabled across loader, template, and loss helpers.
+
+#### Scenario: Default path unchanged
+- GIVEN coord-token mode is disabled
+- WHEN a numeric JSONL sample is loaded
+- THEN validation, template normalization, and losses behave exactly as today (pixel → norm1000 in template; text untouched).
+
+
+### Requirement: Loss helpers for coord tokens
+- Coord-token mode SHALL include helpers that (a) restrict logits to coord tokens, (b) expectation-decode coords using the ordered coord-token id list (0..999), (c) assemble decoded boxes from coord positions, and (d) provide numeric targets and coord-position masks for CE/L1/GIoU.
+- Expectation decoding SHALL support top-k selection where `top_k` may be a fraction (0 < top_k < 1) of the coord vocab or an integer count; fractional values SHALL be converted to a count via `ceil(top_k * 1000)` and clamped to [1, 1000]. Top-k selection SHALL use the highest logits; tie order is implementation-defined.
+
+#### Scenario: Expectation decoding ready for loss
+- GIVEN logits over vocab and coord-position indices
+- WHEN passed to the helper
+- THEN it returns decoded boxes in normalized space and masks for CE/geom losses without needing the template to renormalize.
+
+#### Scenario: Top-k expectation decoding uses coord token ids
+- **GIVEN** coord token ids for `<|coord_0|>`..`<|coord_999|>` are available
+- **WHEN** expectation decoding runs with `top_k = 0.1`
+- **THEN** it uses the top 10% (100 tokens) of coord-token logits mapped to bins 0..999 and returns normalized coords in [0,1].
+
+
+### Requirement: Loss-scale weighting for coord/text CE
+The system SHALL apply coord/text CE weights via ms-swift `loss_scale` when `coord_loss` is enabled and `coord_ce_weight` or `non_coord_ce_weight` differs from 1.0. The `loss_scale` tensor SHALL be built from labels as follows: 0.0 for `labels == -100`, `coord_ce_weight` for coord-token labels, and `non_coord_ce_weight` for all other supervised labels. The tensor length SHALL match `labels` for both padded and packed batches so that ms-swift’s shift (`roll(-1)`) aligns weights to target tokens.
+
+#### Scenario: Weighted coord CE
+- **GIVEN** `coord_loss.enabled` is true and `coord_ce_weight=2.0`, `non_coord_ce_weight=1.0`
+- **WHEN** a batch contains both coord and text labels
+- **THEN** `loss_scale` is attached with 2.0 at coord-label positions, 1.0 at non-coord label positions, and 0.0 at masked positions
+- **AND** ms-swift applies the weights via the loss_scale path in CE computation.
+
+#### Scenario: Default weights avoid loss_scale
+- **GIVEN** `coord_ce_weight=1.0` and `non_coord_ce_weight=1.0`
+- **WHEN** a batch is collated
+- **THEN** `loss_scale` is omitted and the default CE loss path is used.
+
+#### Scenario: Packed batch alignment
+- **GIVEN** packing is enabled for training or eval
+- **WHEN** `loss_scale` is attached
+- **THEN** its length matches packed labels length and weights correspond to packed label positions.
+
+
+### Requirement: Aux losses remain coord-only
+Auxiliary coord losses (L1, GIoU, poly mask/smooth) SHALL continue to be computed only on coord-token positions, independent of `loss_scale` values.
+
+#### Scenario: Aux loss excludes text
+- **GIVEN** a batch with both coord and text labels
+- **WHEN** auxiliary coord losses are computed
+- **THEN** only coord-token positions contribute to aux losses and text tokens do not.

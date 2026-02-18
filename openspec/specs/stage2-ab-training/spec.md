@@ -26,6 +26,12 @@ Canonical config location (typed):
 - **WHEN** training starts
 - **THEN** configuration parsing fails fast with guidance to fix/remove the unknown key.
 
+#### Scenario: Selecting the trainer variant
+- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **WHEN** training starts
+- **THEN** the Stage-2 AB trainer is constructed and used for training.
+
+
 ### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
 Stage-2 AB experiment profiles under `configs/stage2_ab/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
 
@@ -123,10 +129,12 @@ Normative behavior:
   - `rollout_backend` (string),
   - `vllm_mode` (string or null),
   - `server_base_urls` (array of strings; empty allowed when backend/mode does not require server URLs).
+- `server_base_urls` MUST be a launch-time projection derived from normalized `rollout_matching.vllm.server.servers[].base_url`.
 - Launcher preflight JSON contract defined for Stage-2 canonical rollout normalization remains required:
   - Python resolver emits shell assignment lines; the `ROLLOUT_CONTRACT_JSON` value MUST be newline-terminated single-line JSON,
   - required keys/types: `rollout_backend` (string), `vllm_mode` (string or null), `server_base_urls` (array of strings),
   - invalid/missing JSON contract fields MUST fail fast before launch.
+- The preflight projection above MUST NOT replace canonical schema validation for `rollout_matching.vllm.server.servers[]` (including `group_port`) defined in rollout-matching contracts.
 - The 3-key JSON contract above is the minimum normative contract; additional preflight payload keys are allowed but MUST NOT weaken or replace the minimum contract.
 - Launcher preflight MUST fail fast (non-zero exit) and MUST NOT launch training when config normalization fails, JSON is invalid, or any required key is missing/typed incorrectly.
 - The normalization output MUST preserve existing rollout semantics (backend, server, decoding, repeat-terminate, matching, and packing-related runtime knobs).
@@ -339,6 +347,27 @@ Legacy rollout namespace placement:
 - **WHEN** configuration is parsed/materialized
 - **THEN** it fails fast with guidance to remove `rollout_buffer`.
 
+#### Scenario: Pattern schedule repeats deterministically
+- **GIVEN** `schedule.pattern: ["A","A","B"]`
+- **WHEN** `global_step` is 0, 1, 2, 3, 4
+- **THEN** the selected channels are A, A, B, A, A respectively.
+
+
+#### Scenario: Rollout buffer reuse forces Channel-B
+- **GIVEN** `stage2_ab.schedule.b_ratio: 0.0` (Channel-A would be selected)
+- **AND** rollout buffering is enabled with `custom.extra.rollout_matching.rollout_buffer.m_steps > 1`
+- **AND** the trainer is in a reuse step (reusing a buffered Channel-B batch)
+- **WHEN** the trainer selects the channel for that optimizer step
+- **THEN** it selects Channel-B (buffer reuse override).
+
+
+#### Scenario: Multi-process learner uses rank0 broadcast for step kind
+- **GIVEN** Stage-2 AB training is enabled under `torchrun` with `world_size=2`
+- **WHEN** one optimizer step executes
+- **THEN** rank0 broadcasts the step kind (`A` or `B`) for that optimizer step
+- **AND** all ranks execute the same step kind for all micro-steps in the accumulation window.
+
+
 ### Requirement: Bbox-only v1 guardrails are enforced
 The Stage-2 AB trainer MUST enforce bbox-only v1 guardrails on both GT objects and predicted rollout objects.
 
@@ -366,6 +395,12 @@ Diagnostics (normative):
 - **WHEN** the trainer applies strict validation
 - **THEN** invalid instances are dropped deterministically (no repair)
 - **AND** the trainer exposes `N_valid_pred` and `N_drop_invalid` with at least one reason bucket incremented.
+
+#### Scenario: GT poly fails fast
+- **GIVEN** a training sample whose GT `assistant_payload` contains an object with `poly`
+- **WHEN** the trainer prepares the sample for either channel
+- **THEN** it raises an error indicating bbox-only v1 requires filtering out polygons upstream.
+
 
 ### Requirement: Channel-A performs iterative soft self-context via N× full-forwards (no rollout)
 Channel-A MUST implement iterative soft self-context using `stage2_ab.n_softctx_iter` full forward passes:
@@ -396,6 +431,13 @@ Causal shift convention (normative):
 - **WHEN** Channel-A runs the softctx loop
 - **THEN** it executes two full forward passes
 - **AND** it does not detach the expected coord embeddings used to update coord-slot inputs.
+
+#### Scenario: n_softctx_iter=2 runs exactly two forwards and uses final logits
+- **GIVEN** `n_softctx_iter: 2`
+- **WHEN** Channel-A runs on a batch
+- **THEN** it executes two full forward passes
+- **AND** it computes geometry loss using logits from the second forward only.
+
 
 ### Requirement: Channel-A forward path is compatible with Qwen3-VL multimodal semantics
 For Qwen3-VL (dense) models, each forward MUST provide **exactly one** of `input_ids` or `inputs_embeds`.
@@ -596,6 +638,104 @@ Efficiency rule (normative):
 - **WHEN** Channel-B builds CE weights for structure tokens in B3
 - **THEN** it MAY multiply the structure-token CE weights by `1.5` (bounded) for that sample/window.
 
+#### Scenario: Desc can be fully masked while keeping structure CE
+- **GIVEN** `desc_ce_weight: 0`
+- **WHEN** CE labels are built for a batch
+- **THEN** JSON structure tokens remain supervised by CE
+- **AND** desc value tokens do not contribute to CE.
+
+
+#### Scenario: Expectation decoding uses probability-weighted mean (not argmax)
+- **GIVEN** a coord-slot distribution with `p(k=0)=0.5` and `p(k=999)=0.5`
+- **WHEN** the trainer decodes the coordinate via expectation decoding
+- **THEN** the decoded value is approximately `0.5` (i.e., `(0*0.5 + 999*0.5)/999`)
+- **AND** it is not equal to an argmax decode of `0` or `1`.
+
+
+#### Scenario: Geometry losses operate on normalized coordinates
+- **GIVEN** a GT bbox coordinate bin value `k=999`
+- **WHEN** the trainer converts GT bins to normalized floats for geometry loss
+- **THEN** the converted value is `999/999 = 1.0`
+- **AND** geometry losses are computed using normalized floats in `[0, 1]`.
+
+
+#### Scenario: Channel-B geometry includes matched and FN but excludes FP
+- **GIVEN** Channel-B where matching yields non-empty matched, FP, and FN sets
+- **WHEN** Channel-B losses are computed
+- **THEN** geometry loss is accumulated for matched and FN-injected objects
+- **AND** FP objects contribute zero geometry loss.
+
+
+#### Scenario: Start key avoids collision even when highest key object is invalid
+- **GIVEN** retained rollout prefix contains keys `object_2` (valid) and `object_7` (invalid and dropped by strict validation)
+- **WHEN** FN entries are injected
+- **THEN** `max_object_index_in_prefix` is `7`
+- **AND** FN key assignment starts at `object_8`.
+
+
+#### Scenario: Closure-supervision brace target is the same brace used for injection
+- **GIVEN** Channel-B injects FN entries before the outermost close brace resolved by brace-depth scan
+- **WHEN** CE masks are produced
+- **THEN** that same outermost close brace token position remains CE-supervised
+- **AND** `<|im_end|>` remains CE-supervised.
+
+
+#### Scenario: CE masking follows matched/FP/FN policy
+- **GIVEN** Channel-B contains one matched object, one FP object, and one FN-injected object
+- **WHEN** CE weights are materialized
+- **THEN** matched structure tokens are supervised while matched desc tokens are masked
+- **AND** FP structure/desc/coord tokens are all masked
+- **AND** FN-injected structure and desc tokens are supervised.
+
+
+#### Scenario: Channel-B supervises top-level closure and `<|im_end|>`
+- **GIVEN** Channel-B builds a teacher-forced target that ends with a top-level `}` followed by `<|im_end|>`
+- **WHEN** the trainer builds CE labels/weights for Channel-B
+- **THEN** it keeps CE supervision on that top-level `}` token position
+- **AND** it keeps CE supervision on `<|im_end|>`.
+
+
+#### Scenario: Stop-neutral masking is not applied
+- **GIVEN** Stage-2 AB Channel-B configuration
+- **WHEN** CE masks are constructed for Channel-B
+- **THEN** top-level `}` and `<|im_end|>` are not masked out by any stop-neutral branch
+- **AND** FP-neutral masking remains limited to unmatched predicted object spans.
+
+
+#### Scenario: Legacy stop-neutral config keys fail fast
+- **GIVEN** Stage-2 AB config includes legacy stop-neutral keys under Channel-B
+- **WHEN** trainer configuration is validated
+- **THEN** startup fails fast before training
+- **AND** the error indicates stop-neutral knobs are unsupported under the typed contract.
+
+
+#### Scenario: Closure marker resolution failure is dropped and counted
+- **GIVEN** a Channel-B sample where the trainer cannot deterministically locate the outermost `}` / `<|im_end|>` marker positions (e.g., truncation)
+- **WHEN** the trainer constructs CE labels/weights for Channel-B
+- **THEN** it drops the sample from Channel-B supervision for that step
+- **AND** it increments `stage2_ab/channel_b/closure_supervision/N_drop`.
+
+
+#### Scenario: No valid predictions fall back to canonical GT order
+- **GIVEN** strict validation yields `N_valid_pred == 0`
+- **WHEN** Channel-B builds `y_GT_reordered` for B3
+- **THEN** it sets `y_GT_reordered := y_GT_canonical`
+- **AND** this is equivalent to appending all GT objects as FN-supervised targets.
+
+
+#### Scenario: Out-of-range struct CE multiplier is handled safely
+- **GIVEN** `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` is outside `[1.0, 4.0]`
+- **WHEN** trainer parses Channel-B config
+- **THEN** it clamps the value into `[1.0, 4.0]` or fails fast (implementation choice)
+- **AND** it MUST NOT run with an effective multiplier outside the safe range `[1.0, 4.0]`.
+
+
+#### Scenario: B2 forward is skipped when there are no valid matched pairs
+- **GIVEN** Channel-B sample/batch has zero valid matched pairs
+- **WHEN** trainer executes Channel-B steps
+- **THEN** it skips B2 geo-only forward
+- **AND** runs B3 only.
+
 ### Requirement: Coord quantization is globally consistent (k/999 only)
 The Stage-2 AB trainer MUST use a single consistent coord quantization scheme:
 - Encode: `k = clamp(round(999*c), 0, 999)`
@@ -621,7 +761,56 @@ The trainer MUST NOT use any `1000`-based normalization (e.g., `round(1000*c)` o
 - **THEN** the bin index is `k = 0`
 - **AND** decoding returns `k/999 = 0.0`.
 
-### Requirement: Channel-B is step-budgeted in raw rollouts and learns-to-completion under packing
+### Requirement: Channel-B step mode supports an in-step bounded pipeline queue between rollout and learning
+When Channel-B executes in step mode with packing enabled, the trainer SHALL support overlapping rollout generation with learner compute within the optimizer step using a bounded producer/consumer queue (size 1 is sufficient).
+
+Normative safety guardrail:
+- If the in-step pipeline queue is enabled, rollouts MUST run on dedicated GPUs via vLLM server mode.
+  - Concretely: the trainer MUST require `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`.
+  - If this condition is not met, the trainer MUST error fast with a clear message (to avoid unsafe concurrent rollout+train on the same process/device).
+
+#### Scenario: Rollout and learner overlap within a step
+- **GIVEN** rollout runs on dedicated GPUs via vLLM server mode
+- **AND** learner training runs on a separate GPU
+- **WHEN** Channel-B executes one optimizer step
+- **THEN** the trainer overlaps rollout generation and learner forward/backward where feasible
+- **AND** the trainer does not build an unbounded rollout pool.
+
+### Requirement: Channel-B rollout decode batching is configurable and independent of learner microbatch
+When Channel-B executes, the trainer SHALL allow configuring rollout decode batching independently of learner microbatch size (which remains 1 under packing).
+
+Configuration (normative):
+- The decode batching knob MUST be `rollout_matching.decode_batch_size` (int).
+- It MUST denote the maximum number of sequences decoded per rollout GPU in one backend generation call.
+
+#### Scenario: Rollout decode batch size 2 with learner microbatch 1
+- **GIVEN** `training.per_device_train_batch_size=1`
+- **AND** `rollout_matching.decode_batch_size: 2`
+- **WHEN** rollouts are generated
+- **THEN** the rollout backend generates responses for 2 samples in one decode call
+- **AND** learner training still runs one packed sequence per forward/backward.
+
+#### Scenario: Rollout decode batch size 4 with learner microbatch 1
+- **GIVEN** `training.per_device_train_batch_size=1`
+- **AND** `rollout_matching.decode_batch_size: 4`
+- **WHEN** rollouts are generated
+- **THEN** the rollout backend generates responses with per-device decode batch size bounded by 4
+- **AND** learner training still runs one packed sequence per forward/backward
+- **AND** legacy key path `custom.extra.rollout_matching.decode_batch_size` remains fail-fast.
+
+### Requirement: Deprecated legacy coord-loss knobs are silently ignored
+To enable config refactors without blocking training runs, the configuration system MUST silently ignore deprecated legacy coord-loss knobs under `custom.*` that are no longer supported by the project’s coord-loss contract.
+
+Normative minimum:
+- If `custom.coord_loss` is present in a YAML config, configuration parsing MUST NOT raise, and the value MUST be ignored.
+
+#### Scenario: custom.coord_loss does not hard error
+- **GIVEN** a config that includes `custom.coord_loss` (legacy)
+- **WHEN** configuration is parsed
+- **THEN** parsing succeeds and the legacy field is ignored.
+
+
+### Requirement: Channel-B step mode is step-budgeted in raw rollouts and learns-to-completion under packing
 When Stage-2 AB training is enabled, Channel-B SHALL interpret the Channel-B batch size in terms of **raw rollouts per optimizer step**, not “packed sequences per optimizer step”.
 
 Config contract (normative):
@@ -660,42 +849,259 @@ Normative behavior:
 - **AND** the full Channel-B loop (rollout→pack→learn-to-completion) runs on the 8th (final) micro-step
 - **AND** the outer Trainer performs exactly one optimizer update for the step.
 
-### Requirement: Channel-B step mode supports an in-step bounded pipeline queue between rollout and learning
-When Channel-B executes in step mode with packing enabled, the trainer SHALL support overlapping rollout generation with learner compute within the optimizer step using a bounded producer/consumer queue (size 1 is sufficient).
 
-Normative safety guardrail:
-- If the in-step pipeline queue is enabled, rollouts MUST run on dedicated GPUs via vLLM server mode.
-  - Concretely: the trainer MUST require `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`.
-  - If this condition is not met, the trainer MUST error fast with a clear message (to avoid unsafe concurrent rollout+train on the same process/device).
+### Requirement: Channel-B supports semantic-tolerant matched desc supervision
+Channel-B desc supervision MUST support a semantic tolerance mode for matched objects:
+- For each matched pair `(pred_i -> gt_j)`, compute a similarity score between:
+  - the predicted description string `pred_desc_i` from rollout parsing, and
+  - the GT description string `gt_desc_j` from the dataset.
+- If similarity is at least a configurable threshold, the trainer MUST treat the predicted desc as acceptable and MUST NOT penalize the matched object’s GT desc token positions in CE (i.e., weight 0 / masked).
+- If similarity is below the threshold, the trainer MUST apply a (small) desc CE weight to pull toward GT.
 
-#### Scenario: Rollout and learner overlap within a step
-- **GIVEN** rollout runs on dedicated GPUs via vLLM server mode
-- **AND** learner training runs on a separate GPU
-- **WHEN** Channel-B executes one optimizer step
-- **THEN** the trainer overlaps rollout generation and learner forward/backward where feasible
-- **AND** the trainer does not build an unbounded rollout pool.
-
-### Requirement: Channel-B rollout decode batching is configurable and independent of learner microbatch
-When Channel-B executes, the trainer SHALL allow configuring rollout decode batching independently of learner microbatch size (which remains 1 under packing).
+Scope constraints (normative):
+- Semantic tolerance MUST apply only to **matched** objects.
+- FN-appended objects MUST be supervised normally (no semantic gating), since they have no competing predicted description.
 
 Configuration (normative):
-- The decode batching knob MUST be `rollout_matching.decode_batch_size` (int).
-- It MUST denote the maximum number of sequences decoded per rollout GPU in one backend generation call.
+- `stage2_ab.channel_b.semantic_desc_gate.enabled` MUST accept a boolean and MUST default to `true`.
+- `stage2_ab.channel_b.semantic_desc_gate.threshold` MUST accept a float in `[0.0, 1.0]` and MUST default to `0.5`.
+- `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path` MUST accept a string and MUST default to `sentence-transformers/all-MiniLM-L6-v2`.
+- If semantic gating is enabled, `stage2_ab.channel_b.semantic_desc_gate.revision` MUST be provided as a string to pin the embedding model version.
+- If semantic gating is enabled, the resolved model identity MUST be logged for reproducibility (including the provided `revision`).
+- If semantic gating is enabled but the sentence-transformer dependency or the specified model weights are not available at runtime, the trainer MUST NOT fail fast and MUST instead:
+  - disable semantic gating for the affected step/run (treating matched desc tokens as not semantically acceptable unless they match the normal non-gated rules), and
+  - emit a stable warning log at least once describing that semantic gating is disabled due to missing dependency/weights, and
+  - expose a stable boolean metric/log key indicating whether semantic gating is active for the step (e.g., `stage2_ab/channel_b/semantic_desc_gate/is_active`).
+Performance (non-normative guidance):
+- The implementation SHOULD compute sentence embeddings in a batched manner per optimizer step (or per micro-batch) and MAY cache embeddings within the step to bound overhead without changing semantics.
 
-#### Scenario: Rollout decode batch size 2 with learner microbatch 1
-- **GIVEN** `training.per_device_train_batch_size=1`
-- **AND** `rollout_matching.decode_batch_size: 2`
-- **WHEN** rollouts are generated
-- **THEN** the rollout backend generates responses for 2 samples in one decode call
-- **AND** learner training still runs one packed sequence per forward/backward.
+#### Scenario: Semantically close matched desc is not penalized
+- **GIVEN** a matched object whose rollout desc is semantically close to GT (similarity ≥ threshold)
+- **WHEN** Channel-B builds CE labels/weights for the matched object’s GT desc tokens
+- **THEN** those desc token positions are masked (weight 0) so the model is not forced to match the GT string exactly.
 
-### Requirement: Deprecated legacy coord-loss knobs are silently ignored
-To enable config refactors without blocking training runs, the configuration system MUST silently ignore deprecated legacy coord-loss knobs under `custom.*` that are no longer supported by the project’s coord-loss contract.
+#### Scenario: Semantic gate is disabled when the model is unavailable
+- **GIVEN** `stage2_ab.channel_b.semantic_desc_gate.enabled: true`
+- **AND** `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path: "/path/does/not/exist"`
+- **AND** `stage2_ab.channel_b.semantic_desc_gate.revision: "pinned"`
+- **WHEN** training starts and Channel-B attempts to compute semantic gating
+- **THEN** the trainer continues without semantic gating for that step/run
+- **AND** it emits a warning that semantic gating is disabled due to missing dependency/weights
+- **AND** it exposes `stage2_ab/channel_b/semantic_desc_gate/is_active = false`.
 
-Normative minimum:
-- If `custom.coord_loss` is present in a YAML config, configuration parsing MUST NOT raise, and the value MUST be ignored.
+#### Scenario: Semantic gate requires a pinned revision/version
+- **GIVEN** `stage2_ab.channel_b.semantic_desc_gate.enabled: true`
+- **AND** `stage2_ab.channel_b.semantic_desc_gate.model_name_or_path: "sentence-transformers/all-MiniLM-L6-v2"`
+- **AND** `stage2_ab.channel_b.semantic_desc_gate.revision` is not provided
+- **WHEN** training starts and Channel-B attempts to load the semantic gate model
+- **THEN** the trainer fails fast with guidance to provide `stage2_ab.channel_b.semantic_desc_gate.revision`.
 
-#### Scenario: custom.coord_loss does not hard error
-- **GIVEN** a config that includes `custom.coord_loss` (legacy)
-- **WHEN** configuration is parsed
-- **THEN** parsing succeeds and the legacy field is ignored.
+
+### Requirement: Channel-B supports async actor-learner mode (versioned ready-pack queues)
+Stage-2 AB SHALL support an async actor-learner mode configured as:
+- `stage2_ab.channel_b.mode: async`
+
+Topology / backend requirements (v1, robustness-first):
+- Async mode MUST require server-mode rollouts:
+  - `custom.extra.rollout_matching.rollout_backend: vllm`
+  - `custom.extra.rollout_matching.vllm.mode: server`
+  - `custom.extra.rollout_matching.vllm.sync.mode: full`
+- Async mode MUST NOT use HF rollouts or vLLM colocate rollouts in v1.
+
+Queue model (per-rank):
+- Each learner rank MUST maintain its own FIFO queue of “ready packs”.
+- Each ready pack MUST represent exactly **one** packed micro-batch dict suitable for one forward/backward.
+- Queue depth MUST be bounded by `stage2_ab.channel_b.async.queue_limit`:
+  - when full, the system MUST drop the oldest items first (drop-oldest).
+- The prefetcher SHOULD target a steady-state queue depth driven by `stage2_ab.channel_b.async.prefetch_target_packs`.
+
+Freshness / versioning:
+- Rank0 maintains a monotonic sync-counter `ver` and broadcasts it to all ranks at safe boundaries.
+- Each ready pack MUST be tagged with the `ver` used for its rollout generation.
+- Each ready pack MUST be **version-pure**:
+  - all segments inside a pack MUST have been generated under the same `ver`
+  - a pack MUST NOT mix segments from multiple `ver` values.
+- Learner consumption MUST enforce freshness:
+  - only consume packs with `ver >= current_ver - version_window`
+  - stale packs MUST be dropped and counted.
+
+Policy vs feasibility gate:
+- Policy gate: `stage2_ab.schedule.b_ratio` decides whether an optimizer step *wants* Channel-B.
+- Feasibility gate: Channel-B may execute only if all ranks have at least `gradient_accumulation_steps` eligible packs available
+  at optimizer-step start.
+- If policy wants B but feasibility fails, the learner MUST execute Channel-A for that optimizer step and log:
+  - `stage2_ab/async/b_step_skipped_due_to_queue = 1`
+
+#### Scenario: Async B step is skipped when queues are empty
+- **GIVEN** `stage2_ab.channel_b.mode: async`
+- **AND** `stage2_ab.schedule.b_ratio` selects B for a step
+- **AND** one or more ranks have fewer than `gradient_accumulation_steps` eligible ready packs
+- **WHEN** the optimizer step begins
+- **THEN** the trainer executes Channel-A for that step
+- **AND** logs `stage2_ab/async/b_step_skipped_due_to_queue = 1`.
+
+#### Scenario: Stale packs are dropped under a tight version window
+- **GIVEN** async mode is enabled with `version_window: 1`
+- **AND** the ready queue contains a pack with `ver < current_ver - 1`
+- **WHEN** the learner attempts to consume a ready pack for Channel-B
+- **THEN** it drops the stale pack and increments a stale-drop counter
+- **AND** it does not train on the stale pack.
+
+#### Scenario: Ready packs are version-pure
+- **GIVEN** async mode is enabled
+- **AND** the prefetcher has buffered leftover segments from a previous step
+- **WHEN** `ver` increments due to a policy sync
+- **THEN** the prefetcher does not combine old-version segments with new-version segments into a single ready pack
+- **AND** any old-version leftover segments are either flushed into old-version packs or dropped before building new-version packs.
+
+
+### Requirement: DDP-safe Channel-B execution semantics for multi-GPU learners
+When `world_size > 1`, Channel-B MUST be executed in a DDP-safe way:
+- Each micro-step MUST perform exactly one packed forward/backward per rank.
+- The trainer MUST NOT run any inner loops that cause different ranks to perform different numbers of forwards within the same micro-step.
+
+Legacy guardrail (v1):
+- Under `world_size > 1`, the legacy `stage2_ab.channel_b.mode: step` MUST fail fast with actionable guidance to use `async`.
+
+#### Scenario: Legacy step mode fails fast under DDP
+- **GIVEN** Stage-2 AB is launched with `world_size=2`
+- **AND** config sets `stage2_ab.channel_b.mode: step`
+- **WHEN** training starts
+- **THEN** the trainer fails fast with guidance to use `stage2_ab.channel_b.mode: async`.
+
+
+### Requirement: Unified Channel-B is the default contract and reordered_gt_sft is legacy opt-in
+For Stage-2 AB, Unified Channel-B semantics SHALL be the normative default behavior.
+
+Legacy `reordered_gt_sft` behavior SHALL be treated as experimental/ablation-only:
+- it MUST NOT be the default path,
+- it MAY be enabled only via explicit opt-in configuration,
+- it MUST be documented as legacy behavior when enabled.
+
+#### Scenario: Default Stage-2 AB run uses unified Channel-B semantics
+- **GIVEN** a Stage-2 AB config that does not explicitly opt into legacy `reordered_gt_sft`
+- **WHEN** Channel-B behavior is materialized
+- **THEN** the trainer uses unified rollout-prefix + FN-injection semantics
+- **AND** legacy `reordered_gt_sft` behavior is not selected by default.
+
+#### Scenario: Legacy reordered_gt_sft requires explicit opt-in
+- **GIVEN** a Stage-2 AB run where legacy `reordered_gt_sft` mode is enabled
+- **WHEN** configuration is validated and training starts
+- **THEN** the mode is treated as explicit ablation/legacy behavior
+- **AND** the run does not claim unified-default Channel-B semantics.
+
+
+### Requirement: Channel-B vLLM rollouts honor repeat-aware termination settings
+When Stage-2 AB Channel-B performs rollouts through vLLM rollout server backend, repeat-aware termination MUST be applied according to rollout-matching config.
+
+Normative behavior:
+- Channel-B rollout path MUST propagate the full `custom.extra.rollout_matching.repeat_terminate` subtree (`enabled`, `min_new_tokens`, `max_consecutive_token_repeats`, `ngram_size`, `ngram_repeats`, optional `max_object_keys`) into the active vLLM rollout serving startup path.
+- Because the rollout server is launched as a separate process (external dependency stack), the full subtree MUST be transmitted into that server startup process.
+  - Recommended compliant approach: the server launcher:
+    - sets `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON=<json>` and enables injection with `COORDEXP_ENABLE_VLLM_REPEAT_TERMINATE_INJECTION=1`, and
+    - launches `swift rollout` with `--external_plugins <repo-owned-plugin>` so the server can attach repeat-aware processing at startup without external library source edits.
+- For this stack, Channel-B MUST NOT assume request-time logits-processor fields in rollout request payloads; repeat-aware activation is validated at rollout-server startup.
+- If `repeat_terminate.enabled: true` and startup activation is unavailable, Stage-2 AB MUST fail before entering training steps.
+- Channel-B MUST preserve FP/matching contracts and MUST NOT change geometry supervision semantics due to repeat-aware processing.
+- Channel-B logs/metrics MUST emit concrete audit keys (as entries in the neutral trainer-metrics payload `metrics` map; see `src/metrics/payload_contract.py`):
+  - `rollout/repeat_terminate_active` (0 or 1),
+  - `rollout/repeat_terminate_triggered_sequences` (counter).
+  - Metric meaning (normative):
+    - `rollout/repeat_terminate_active`: 1 iff repeat-aware processing is active for the step under the current rollout backend/mode when `repeat_terminate.enabled: true`; otherwise 0.
+    - `rollout/repeat_terminate_triggered_sequences`: number of rollout sequences in the step for which repeat-aware processing **triggered at least once** and forced EOS due to configured repeat thresholds.
+      - This key MUST be derived from an explicit trigger signal produced by the repeat-aware processor/server stack (not inferred from finish-reason heuristics alone).
+- The vLLM server `/infer/` response MUST expose the explicit per-sequence trigger signal in an additive-only wrapper envelope.
+  - A compliant per-output schema is:
+    - `{"response": <ChatCompletionResponse-dict>, "coordexp": {"repeat_terminate_triggered": 0|1}}`
+  - The wrapper MUST be additive-only:
+    - it MUST NOT remove or rename fields within the inner `response` payload compared to the unwrapped server output,
+    - and it MUST preserve the detail fields required for strict alignment and token-aligned parsing (at minimum `prompt_token_ids` and `choices[0].token_ids` when `request_config.return_details: true`).
+  - The learner MUST compute `rollout/repeat_terminate_triggered_sequences` from this wrapper signal (sum of `repeat_terminate_triggered` across sequences in the step), not from stop-reason heuristics.
+- All metrics emitted via the neutral trainer-metrics payload `metrics` map (see `src/metrics/payload_contract.py`) MUST be emitted as **global** aggregates after:
+  - micro-batch/gradient-accumulation aggregation to one optimizer-step payload, and
+  - distributed aggregation across ranks (e.g., DDP all-reduce) when `world_size > 1`.
+  - Global aggregation semantics are defined per metric family (normative):
+    - counters: global sum,
+    - wall-time seconds (e.g., `time/*_s`): global max,
+    - boolean-style activation flags: global max,
+    - rates: ratio of globally-summed numerator/denominator (never mean of rank-local ratios).
+  - For this requirement's audit keys:
+    - `rollout/repeat_terminate_active` MUST remain in `{0,1}` after global aggregation (a compliant approach is a global max over rank-local 0/1 values).
+    - `rollout/repeat_terminate_triggered_sequences` MUST be a non-negative global counter for the step (a compliant approach is a global sum over rank-local counts).
+- For auditability, Channel-B rollout steps MUST emit tail-control metrics (as entries in the neutral trainer-metrics payload `metrics` map; see `src/metrics/payload_contract.py`):
+  - `rollout/gen_new_tokens_p99`,
+  - `rollout/parse_truncated_rate`,
+  - `rollout/parse_dropped_invalid`.
+  - Metric definitions/aggregation (normative, distributed):
+    - `rollout/parse_truncated_rate` MUST be computed as `(sum(num_truncated_samples) / sum(num_rollout_samples))` over ranks for the step (0 when `sum(num_rollout_samples) == 0`).
+    - `rollout/gen_new_tokens_p99` MUST be computed as a global conservative proxy using only all-reduce:
+      - compute rank-local p99 over that rank's rollout samples for the step,
+      - then compute the global metric as `max(rank_local_p99)` via all-reduce max.
+      - Rationale: this preserves a simple, reproducible global metric without requiring all-gather of variable-length lists.
+
+#### Scenario: Channel-B run in vLLM mode uses repeat-aware termination
+- **GIVEN** Stage-2 AB with Channel-B and vLLM rollout backend
+- **AND** `repeat_terminate.enabled: true`
+- **WHEN** a rollout sequence enters degenerate repetition
+- **THEN** Channel-B rollout output is terminated early for that sequence by repeat-aware logic
+- **AND** downstream parse/match training continues for the batch.
+
+#### Scenario: Channel-B startup fails when repeat-aware contract is enabled but inactive
+- **GIVEN** Stage-2 AB Channel-B with vLLM backend
+- **AND** `repeat_terminate.enabled: true`
+- **WHEN** rollout server startup cannot activate repeat-aware processing
+- **THEN** trainer startup fails with an error that reports the missing processor activation path
+- **AND** no training step is executed.
+
+#### Scenario: Tail-control audit metrics are emitted
+- **GIVEN** Stage-2 AB with Channel-B and vLLM rollout backend
+- **WHEN** a Channel-B rollout step executes
+- **THEN** logs include `rollout/gen_new_tokens_p99`, `rollout/parse_truncated_rate`, and `rollout/parse_dropped_invalid`.
+
+
+### Requirement: Stage-2 AB consumes rollout helpers through public contracts only
+The Stage-2 AB capability SHALL consume rollout parsing/matching/packing helpers only through a public rollout-matching contract module.
+It MUST NOT import underscore-prefixed symbols from trainer implementation files.
+
+#### Scenario: Private rollout helper removal does not break Stage-2 imports
+- **WHEN** private underscore-prefixed helpers are removed from the rollout trainer implementation file
+- **THEN** Stage-2 AB still imports successfully via public contract modules
+- **AND** training initialization does not fail due to missing private symbols.
+
+
+### Requirement: No-private-import boundary is regression-guarded
+The Stage-2 AB capability SHALL include a regression guard that detects imports from underscore-prefixed rollout symbols and fails validation when such imports reappear.
+This guard MUST use AST import inspection (test or static check) rather than regex text matching so formatting/comment changes do not create false signals.
+The guard MUST run in routine validation for this capability.
+The guard scope MUST cover the full Stage-2 AB capability surface:
+- `src/trainers/stage2_ab_training.py`
+- `src/trainers/stage2_ab/**/*.py`
+
+#### Scenario: Validation fails when a private rollout helper import is reintroduced
+- **GIVEN** any Stage-2 AB source file in the guarded surface imports an underscore-prefixed rollout helper
+- **WHEN** capability validation checks execute
+- **THEN** validation fails with a boundary-violation diagnostic
+- **AND** the regression is caught before merge.
+
+
+### Requirement: Stage-2 AB trainer is decomposed into orchestrator plus owned components
+The Stage-2 AB trainer SHALL be structured as an orchestration surface that delegates scheduling, async queue management, and channel execution to dedicated components.
+The decomposition MUST preserve deterministic channel selection and existing Stage-2 contract semantics.
+
+#### Scenario: Scheduling policy changes are isolated from trainer orchestration
+- **GIVEN** a change to channel scheduling policy implementation
+- **WHEN** Stage-2 AB training is run with unchanged YAML semantics
+- **THEN** only scheduling component modules require modification
+- **AND** the top-level trainer orchestration entrypoint remains interface-compatible.
+
+
+### Requirement: Stage-2 critical invariants fail fast with contextual diagnostics
+Stage-2 AB SHALL classify critical runtime invariants (queue feasibility, version-window gating, sync boundaries, required batch fields) as fail-fast conditions.
+Unexpected failures on critical invariants MUST raise errors with step/channel/version context.
+Best-effort diagnostics MAY continue under guarded warning paths.
+
+#### Scenario: Async queue invariant violation raises actionable error
+- **GIVEN** async mode is enabled and queue state violates required invariants for a scheduled Channel-B step
+- **WHEN** Stage-2 attempts to execute that step
+- **THEN** training raises with contextual diagnostics including step kind and queue/version state
+- **AND** the failure is not silently suppressed.

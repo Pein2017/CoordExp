@@ -247,6 +247,40 @@ Determinism (server mode):
 - **THEN** the trainer fails fast with an actionable error message
 - **AND** the user can explicitly switch back to `rollout_matching.vllm.mode: colocate` or `rollout_matching.rollout_backend: hf`.
 
+#### Scenario: vLLM backend produces token ids suitable for strict alignment
+- **GIVEN** rollout-matching training is enabled
+- **AND** the rollout backend is set to vLLM colocate
+- **WHEN** one training step executes
+- **THEN** the trainer obtains per-sample `response_token_ids` and `prompt_token_ids` from vLLM
+- **AND** the existing prompt-prefix sanity check is applied using those token ids
+- **AND** the rest of parsing/matching/loss computation proceeds unchanged.
+
+
+#### Scenario: Invalid vLLM configuration fails fast
+- **GIVEN** rollout-matching training is enabled
+- **AND** the rollout backend is set to vLLM
+- **WHEN** vLLM is unavailable, tensor-parallel settings are incompatible, or LoRA sync is not possible
+- **THEN** the trainer fails fast with an actionable error message
+- **AND** the user can explicitly switch back to HF rollout via `rollout_backend: "hf"`.
+
+
+#### Scenario: Multi-process learner does not deadlock in server mode
+- **GIVEN** rollout-matching training is enabled
+- **AND** `custom.extra.rollout_matching.rollout_backend: vllm`
+- **AND** `custom.extra.rollout_matching.vllm.mode: server`
+- **AND** training is launched under `torchrun` with `world_size=2`
+- **WHEN** the trainer performs a fresh-rollout step that requires a server sync
+- **THEN** rank0 performs the server weight sync and other ranks do not
+- **AND** all ranks proceed to issue rollout `/infer/` requests without deadlock.
+
+
+#### Scenario: Non-full sync mode fails fast under multi-process learner
+- **GIVEN** rollout-matching training is enabled with server mode under `world_size > 1`
+- **AND** `custom.extra.rollout_matching.vllm.sync.mode: adapter` (or `auto` resolving to adapter)
+- **WHEN** training starts (before the first rollout)
+- **THEN** configuration validation fails fast with actionable guidance to use `sync.mode: full`.
+
+
 ### Requirement: Stage_2 supports a 3v1 rollout-server + learner workflow (actors vs learner)
 The stage_2 rollout-matching trainer (`custom.trainer_variant: rollout_matching_sft`) MUST support a practical single-node workflow where rollout generation runs on dedicated GPUs via a vLLM server, and teacher-forced SFT training runs on a separate GPU.
 
@@ -313,6 +347,7 @@ Schema-derived strictness (normative):
 - Unknown-key dotted paths MUST include list indices when present (e.g., `rollout_matching.vllm.server.servers[0].unknown_flag`).
 - Runtime rollout validators MAY enforce execution-dependent constraints (runtime mode compatibility, numeric bounds) but MUST NOT be the long-term owner of static schema key acceptance.
 - Rollout server schema supports only `rollout_matching.vllm.server.servers[]`; legacy paired-list form (`vllm.server.base_url` + `vllm.server.group_port`) is removed and MUST fail fast with migration guidance.
+- Stage-2 launcher preflight MAY expose a projected `server_base_urls` array for launch wiring, but that projection MUST be derived from canonical `servers[]` entries and MUST NOT replace schema requirements for `base_url` + `group_port`.
 
 Semantics (normative):
 - `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
@@ -533,6 +568,12 @@ There SHALL be exactly ONE forward pass per sample on the canonical encoding (sa
 - **WHEN** the trainer executes one training step
 - **THEN** it performs exactly one forward pass per sample on `Y_train`
 - **AND** it computes exactly one total loss from that forward pass by applying per-token supervision masks.
+
+#### Scenario: Highest retained object key controls FN start even when object is invalid
+- **GIVEN** retained rollout prefix contains `object_2` (valid) and `object_9` (invalid object body)
+- **WHEN** `SerializeAppend(FN_gt_objects)` assigns new keys
+- **THEN** `max_object_index_in_prefix` is `9`
+- **AND** the first FN key is `object_10`.
 
 ### Requirement: Rollout generation returns token IDs (no grad) and selects one response
 When rollout-matching training is enabled, the trainer SHALL perform an autoregressive rollout (generation) for each training sample:
@@ -802,3 +843,122 @@ These counters SHALL NOT include IoU/GIoU/maskIoU numeric metric logging (those 
 - **WHEN** the trainer processes that batch
 - **THEN** invalid objects are dropped and counted
 - **AND** the training step completes without crashing due to mandatory FN append supervision in the tail.
+
+
+### Requirement: Server/HF rollout sampling is configured under decoding.*
+Rollout decoding knobs MUST be expressed under:
+- `custom.extra.rollout_matching.decoding` (mapping)
+
+Supported decoding keys (v1):
+- `custom.extra.rollout_matching.decoding.temperature` (float, `>= 0`; greedy if `== 0`)
+- `custom.extra.rollout_matching.decoding.top_p` (float, `(0, 1]`, default `1.0`)
+- `custom.extra.rollout_matching.decoding.top_k` (int, default `-1`)
+
+Legacy decoding keys are removed (breaking):
+- If a config provides any of:
+  - `custom.extra.rollout_matching.temperature`
+  - `custom.extra.rollout_matching.top_p`
+  - `custom.extra.rollout_matching.top_k`
+  the system MUST fail fast with guidance to migrate to `custom.extra.rollout_matching.decoding.*`.
+
+Robustness-first sampling note:
+- When sampling is enabled (e.g., `temperature > 0`) and the server backend retries/splits requests for robustness,
+  strict bitwise determinism is not required; the trainer MUST log sufficient metadata to audit effective decoding behavior.
+
+#### Scenario: Legacy decoding keys fail fast
+- **GIVEN** rollout-matching training is enabled
+- **AND** the config provides `custom.extra.rollout_matching.temperature`
+- **WHEN** training starts
+- **THEN** config validation fails fast with guidance to use `custom.extra.rollout_matching.decoding.temperature` instead.
+
+
+### Requirement: vLLM rollout backend supports repeat-aware per-sequence early termination
+When rollout generation uses vLLM server backend (`custom.extra.rollout_matching.rollout_backend: vllm` in rollout-server mode), the system MUST support repeat-aware termination semantics equivalent to the existing HF repeat guard.
+
+Normative behavior:
+- This requirement scope is vLLM rollout server mode used by Stage-2 AB; colocate/non-server vLLM paths are out of scope for this change and remain unchanged.
+- Repeat-aware termination MUST be controlled by `custom.extra.rollout_matching.repeat_terminate`.
+- On the current vLLM V1-default stack, when `repeat_terminate.enabled: true`, vLLM rollout serving MUST activate repeat-aware processing in server mode via startup-time plugin injection (e.g., launching `swift rollout` with `--external_plugins <repo-owned-plugin>`).
+  - The plugin MUST attach a repeat-aware logits processor on the server side via vLLM `SamplingParams.logits_processors` (or an equivalent vLLM-native hook) so the learner does not need to inject processors per request.
+- The vLLM rollout server MUST receive the full `repeat_terminate` subtree at startup (recommended: `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON=<json>` or `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON_PATH=<path>`).
+- Repeat-aware vLLM rollout termination MUST be implemented without modifying external library source code (e.g., ms-swift or vLLM). A compliant approach is to use `swift rollout --external_plugins` to import a repo-owned plugin at rollout-server startup.
+- The processor MUST evaluate the configured thresholds from the full subtree (`enabled`, `min_new_tokens`, `max_consecutive_token_repeats`, `ngram_size`, `ngram_repeats`, and optional `max_object_keys`).
+- Triggering repeat-aware termination for one sequence MUST NOT abort or cancel generation for unrelated sequences in the same rollout batch.
+- If repeat-aware processing is required by config but cannot be activated in vLLM rollout serving, startup MUST fail fast with actionable diagnostics.
+
+#### Scenario: Offending sequence is terminated without batch abort
+- **WHEN** vLLM rollout generation receives a batch and one sequence exceeds configured repeat thresholds
+- **THEN** that sequence is forced to EOS on the next decode step
+- **AND** remaining sequences continue generation normally in the same batch.
+
+#### Scenario: Config-required repeat-aware processor missing fails fast
+- **WHEN** `repeat_terminate.enabled` is true and vLLM rollout server cannot load repeat-aware processing
+- **THEN** rollout startup fails before training proceeds
+- **AND** the error reports the missing processor activation path.
+
+#### Scenario: vLLM V1 rollout does not rely on request-time logits processors
+- **GIVEN** vLLM V1-default rollout serving
+- **AND** `repeat_terminate.enabled: true`
+- **WHEN** rollout requests are issued
+- **THEN** repeat-aware behavior is provided by startup-loaded plugin state (server-side)
+- **AND** correctness does not depend on learner-provided per-request `logits_processors` fields.
+
+#### Scenario: Non-server vLLM paths are unchanged by this delta
+- **GIVEN** a non-server/colocate vLLM rollout path
+- **WHEN** this change is applied
+- **THEN** no new repeat-aware contract is imposed by this delta on that path.
+
+
+### Requirement: Repeat-termination contract is backend-parity and config-first
+The rollout-matching contract MUST keep repeat-termination behavior config-first and backend-parity.
+
+Normative behavior:
+- The same YAML subtree (`custom.extra.rollout_matching.repeat_terminate`) MUST drive both HF and vLLM guard behavior.
+- vLLM mode MUST NOT require new standalone CLI flags for repeat-aware behavior.
+- Existing configs that set `repeat_terminate.enabled: true` MUST activate repeat-aware behavior in vLLM mode (i.e., vLLM MUST honor YAML when enabled; no extra knobs are required).
+- Legacy “repeat_terminate is HF-only / ignored by vLLM” config or docs statements MUST be removed or updated as part of migration.
+
+#### Scenario: Existing YAML enables repeat-aware behavior in vLLM mode
+- **GIVEN** a rollout-matching config with `repeat_terminate.enabled: true`
+- **WHEN** rollout backend is switched from HF to vLLM
+- **THEN** repeat-aware termination remains enabled without adding new CLI parameters.
+
+
+### Requirement: Rollout-matching exposes stable submodule contracts by concern
+The rollout-matching capability SHALL expose stable public contracts for parsing, matching, packing, and backend orchestration via dedicated submodules.
+The trainer-facing module MAY provide compatibility re-exports during migration, but behavior ownership MUST live in the dedicated submodules.
+
+#### Scenario: Shared parsing contract is importable without trainer class dependency
+- **WHEN** a consumer imports rollout parsing contracts for validation/testing
+- **THEN** it can do so without importing the trainer class implementation
+- **AND** parsed output contracts remain stable for downstream use.
+
+
+### Requirement: Rollout backend orchestration uses a backend interface contract
+Rollout backend selection and synchronization SHALL be mediated through a backend interface contract rather than inline trainer branches.
+Supported backend implementations MUST preserve existing rollout semantics and output fields required by strict parsing/matching.
+
+#### Scenario: Backend implementation swap preserves rollout contract
+- **GIVEN** the same rollout config semantics and sample inputs
+- **WHEN** backend implementation is switched through the backend interface
+- **THEN** returned rollout payload fields required by parsing/matching are preserved
+- **AND** trainer-side supervision construction remains valid.
+
+
+### Requirement: Post-rollout packing scheduling is reusable and deterministic
+Post-rollout packing/window scheduling SHALL be implemented in reusable helpers consumable by rollout and Stage-2 paths.
+Given identical segment inputs and ordering, helper outputs MUST be deterministic.
+
+#### Scenario: Shared packing helper yields deterministic selection
+- **GIVEN** identical segment metadata and insertion order
+- **WHEN** the shared packing scheduler runs twice
+- **THEN** it yields the same selected segment set and order in both runs.
+
+
+### Requirement: Coord-vocab gate math reuses the shared canonical helper
+When computing coord-vocab gate loss/mass terms (used as part of coord supervision and diagnostics), rollout-matching paths SHALL delegate to the shared helper used by training and metrics so numeric fences (NaN/Inf handling, clamping, temperature scaling) remain consistent across consumers.
+
+#### Scenario: Gate-loss numeric fences are consistent across training and rollout paths
+- **GIVEN** identical full-vocab logits, coord-vocab logits, and temperature
+- **WHEN** the gate term is computed in training/metrics and in rollout-matching
+- **THEN** the per-token gate-loss values match (up to floating-point tolerance) due to shared helper reuse.

@@ -44,6 +44,11 @@ Transition support:
 - **WHEN** a user runs the inference entrypoint with `--config configs/infer/<exp>.yaml`
 - **THEN** the run executes and writes `gt_vs_pred.jsonl` and `summary.json` under the resolved run directory.
 
+#### Scenario: Run inference with required flags
+- **WHEN** a user runs the inference CLI with `--gt_jsonl`, `--model_checkpoint`, `--mode text`, output path, and generation flags
+- **THEN** the run succeeds without prompting for missing mode/config files and processes samples up to the optional `--limit`.
+
+
 ### Requirement: Coord-mode scaling and validation
 In `coord` mode, the engine SHALL treat both GT and predictions as normalized (0-999) coordinates, enforce the 0-999 range, require `width` and `height`, denormalize to absolute pixels using those dimensions, and skip any sample with invalid coords or missing size while recording an error.
 
@@ -85,6 +90,12 @@ Legacy mixed-format fields (e.g., raw norm `predictions`/dual schemas) SHALL NOT
 - **WHEN** a sample fails validation (e.g., missing height)
 - **THEN** the JSONL line contains an `errors` list describing the issue, `width`/`height` keys are present (values may be null), `pred` is empty, and processing continues for subsequent samples.
 
+#### Scenario: Line in raw output is dropped
+- **GIVEN** a generated JSON object that includes a `line` geometry
+- **WHEN** the inference engine parses and validates predictions
+- **THEN** the `line` object is excluded from `pred` and an error/counter reflects invalid geometry.
+
+
 ### Requirement: Polygon preservation and evaluation
 Polygons (`poly`) SHALL be preserved in outputs and evaluated via COCO-style polygon segmentation (mask IoU) derived from the vertex list (single ring, clamped, non-degenerate). Bounding boxes MAY be derived for ancillary needs but SHALL NOT replace the polygon geometry in the output schema.
 
@@ -110,6 +121,11 @@ vLLM determinism scope:
 - **GIVEN** `backend.type: vllm` and a configured `seed`
 - **WHEN** inference is executed
 - **THEN** `summary.json` records a determinism note that does not claim byte-identical repeatability (e.g., `determinism: best_effort`).
+
+#### Scenario: Reproducible runs
+- **WHEN** inference is executed twice with identical inputs and `--seed 1234`
+- **THEN** the produced `pred.jsonl` files are byte-identical (ordering preserved, floating points only from deterministic scaling/rounding).
+
 
 ### Requirement: Limit handling
 If `infer.limit N` is set, the engine SHALL process and emit at most N samples (images) from the GT JSONL, maintaining alignment between read GT records and emitted output lines in `gt_vs_pred.jsonl`.
@@ -176,3 +192,54 @@ Contract requirements (backend-agnostic):
 - **GIVEN** the same input dataset and resolved generation configuration
 - **WHEN** the user switches backend from `hf` to `vllm` in YAML
 - **THEN** the pipeline produces the same prediction JSONL schema and artifact layout, enabling evaluation/visualization without schema translation.
+
+
+### Requirement: Line tolerance without metrics
+Line geometries MAY appear in input/output for forward compatibility, MUST pass through validation/clamping, but SHALL NOT be included in current metric computations.
+
+#### Scenario: Line present
+- **WHEN** a `line` object appears in predictions
+- **THEN** it is carried in the output schema (clamped to bounds) but excluded from metric scoring.
+
+
+### Requirement: HF attention backend selection is resilient across environments
+Inference-engine SHALL support resilient HF attention backend selection.
+If a preferred backend is unavailable in the runtime environment, engine initialization MUST fall back to a supported backend with explicit diagnostics while preserving output contract semantics.
+The selected backend (including fallback choice when applied) MUST be recorded in run artifacts via exact `summary.json` fields:
+- `backend.attn_implementation_requested`
+- `backend.attn_implementation_selected`
+
+`resolved_config.json` MAY mirror these values, but `summary.json` fields are the required compatibility surface for this contract.
+
+#### Scenario: Missing preferred attention backend falls back with warning
+- **GIVEN** HF backend inference configuration prefers an unavailable attention backend
+- **WHEN** model initialization runs
+- **THEN** the engine selects a supported fallback backend
+- **AND** emits explicit diagnostics without changing output artifact schema.
+
+#### Scenario: Selected attention backend is captured in run artifacts
+- **GIVEN** inference runs under either preferred or fallback attention backend
+- **WHEN** artifacts are persisted
+- **THEN** `summary.json.backend.attn_implementation_requested` and `summary.json.backend.attn_implementation_selected` are present
+- **AND** operators can determine from artifacts whether fallback occurred by comparing requested vs selected values.
+
+
+### Requirement: Backend runtime is selected through an explicit backend contract
+Inference-engine SHALL use an explicit backend runtime contract to isolate backend-specific generation details from artifact standardization.
+All backend runtimes MUST produce standardized prediction payloads consumed by shared post-processing.
+
+#### Scenario: Backend runtime swap preserves standardized output payload
+- **GIVEN** equivalent inputs and generation settings
+- **WHEN** backend runtime selection changes via config
+- **THEN** standardized output payload fields remain compatible with shared post-processing and artifact writers.
+
+
+### Requirement: Inference error reporting remains structured and sample-scoped
+Inference-engine SHALL preserve structured, per-sample error reporting in output artifacts and summary counters during internal refactor.
+Internal exceptions MUST map to explicit sample error entries rather than silent skips.
+
+#### Scenario: Sample-level generation failure is reflected in structured errors
+- **GIVEN** generation fails for one sample
+- **WHEN** inference continues for the batch/run
+- **THEN** the failed sample includes a structured error entry
+- **AND** summary counters include the failure classification.
