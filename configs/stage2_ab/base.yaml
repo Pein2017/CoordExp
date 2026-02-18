@@ -1,5 +1,19 @@
 extends: ../base.yaml
 
+# Stage-2 AB canonical profile base.
+#
+# Migration notes (no backward compatibility):
+# - Author rollout knobs under top-level `rollout_matching.*` (NOT `custom.extra.rollout_matching.*`).
+# - `rollout_matching.decode_batch_size` is the single source of truth for rollout decode/eval microbatching;
+#   rollout-aware trainer variants override `training.per_device_eval_batch_size` to match it.
+# - Removed keys fail fast (examples): `rollout_matching.rollout_buffer`, `stage2_ab.schedule.pattern`,
+#   `stage2_ab.channel_b.reordered_gt_sft`, `stage2_ab.channel_b.desc_ce_weight_matched`,
+#   `stage2_ab.channel_b.semantic_desc_gate`.
+#
+# Iterative variants:
+# - Keep them as one-hop leaves extending this file and pinning high-signal leaf keys; avoid multi-hop or
+#   dual-parent inheritance so each run remains auditable from a single YAML.
+
 model:
   model: output/1-26/checkpoint-1516-merged
 

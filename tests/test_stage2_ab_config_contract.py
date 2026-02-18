@@ -132,7 +132,7 @@ def test_resolve_prompts_desc_first_remains_baseline_wording():
         "custom": {
             "object_ordering": "sorted",
             "object_field_order": "desc_first",
-            "coord_tokens": {"enabled": False},
+            "coord_tokens": {"enabled": True},
         }
     }
 
@@ -149,3 +149,23 @@ def test_resolve_prompts_invalid_object_field_order_fails_fast():
     }
     with pytest.raises(ValueError, match="custom.object_field_order"):
         ConfigLoader.resolve_prompts(raw)
+
+
+
+def test_rollout_decode_batch_size_overrides_eval_batch_size_when_mismatched():
+    from src.sft import _apply_rollout_decode_batch_size_override
+
+    train_args = types.SimpleNamespace(
+        trainer_variant="stage2_ab_training",
+        training_args=types.SimpleNamespace(per_device_eval_batch_size=1),
+    )
+    training_config = types.SimpleNamespace(rollout_matching={"decode_batch_size": 4})
+
+    resolved = _apply_rollout_decode_batch_size_override(
+        train_args=train_args,
+        training_config=training_config,
+    )
+
+    assert resolved == 4
+    assert train_args.training_args.per_device_eval_batch_size == 4
+    assert train_args.per_device_eval_batch_size == 4

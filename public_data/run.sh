@@ -51,6 +51,7 @@ Commands:
 
 Runner flags:
   --preset <name>          Preset dir name under public_data/<dataset>/ (used by rescale|coord|validate|all)
+  --conda-env <name>       Conda env name for python steps (default: ms)
   --skip-image-check       Skip image existence checks during validation
   --raw-only               For validate: validate only raw artifacts (no preset required)
   --preset-only            For validate: validate only preset artifacts
@@ -69,15 +70,31 @@ Examples:
 EOF
 }
 
+_resolve_conda_exe() {
+  if command -v conda >/dev/null 2>&1; then
+    echo "conda"
+    return 0
+  fi
+  if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
+    echo "${CONDA_EXE}"
+    return 0
+  fi
+  die "Missing 'conda' on PATH (and CONDA_EXE is unset); required for python steps."
+}
+
 run_py() {
-  echo "+ PYTHONPATH=. python $*" >&2
-  PYTHONPATH=. python "$@"
+  local conda_exe
+  conda_exe="$(_resolve_conda_exe)"
+  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python $*" >&2
+  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python "$@"
 }
 
 run_py_best_effort() {
   set +e
-  echo "+ PYTHONPATH=. python $*" >&2
-  PYTHONPATH=. python "$@"
+  local conda_exe
+  conda_exe="$(_resolve_conda_exe)"
+  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python $*" >&2
+  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python "$@"
   local rc=$?
   set -e
   return $rc
@@ -175,6 +192,7 @@ fi
 
 # Runner flags (parsed before --). Only this small surface area is supported.
 PRESET=""
+CONDA_ENV="ms"
 SKIP_IMAGE_CHECK="false"
 RAW_ONLY="false"
 PRESET_ONLY="false"
@@ -191,6 +209,12 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "--preset requires a value"
       PRESET="$1"
+      shift
+      ;;
+    --conda-env)
+      shift
+      [[ $# -gt 0 ]] || die "--conda-env requires a value"
+      CONDA_ENV="$1"
       shift
       ;;
     --skip-image-check)

@@ -26,6 +26,230 @@ Canonical config location (typed):
 - **WHEN** training starts
 - **THEN** configuration parsing fails fast with guidance to fix/remove the unknown key.
 
+### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
+Stage-2 AB experiment profiles under `configs/stage2_ab/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
+
+Normative structure:
+- `configs/stage2_ab/base.yaml` MUST be the canonical shared base for Stage-2 AB profile runs.
+- Canonical profile leaves under `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml` MUST extend exactly one file, and that file MUST be `../base.yaml`.
+- Canonical smoke leaves MUST inline smoke runtime overrides and MUST NOT use dual-parent `extends` lists.
+- Canonical profile leaves MUST NOT use multi-hop inheritance chains (e.g., leaf -> intermediate -> base).
+- Additional optional Stage-2 profile leaves (outside the canonical trio) are allowed only if they satisfy the same one-hop + explicit-leaf contract.
+
+Validation behavior:
+- Config loading for Stage-2 AB profile leaves MUST fail fast when one-hop structure is violated.
+- Error messages MUST include actionable migration guidance (expected parent path and offending `extends` chain).
+- Strict hierarchy/explicitness validation targets the canonical profile directories (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`) and is expected to pass for all files in those paths.
+- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`.
+
+#### Scenario: One-hop profile inheritance passes validation
+- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_ab/prod/` extends only `../base.yaml`
+- **THEN** config loading succeeds for hierarchy validation.
+
+#### Scenario: Multi-hop profile inheritance fails fast
+- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_ab/smoke/` extends an intermediate profile file
+- **THEN** config loading fails fast with guidance to extend `../base.yaml` directly.
+
+#### Scenario: Dual-parent smoke inheritance fails fast
+- **WHEN** a Stage-2 AB smoke profile leaf uses `extends` with two parents (e.g., prod leaf + smoke base)
+- **THEN** config loading fails fast with guidance to inline smoke runtime overrides in a one-hop leaf.
+
+#### Scenario: Canonical profile discovery is scoped to prod/smoke
+- **WHEN** a config discovery utility scans canonical Stage-2 profiles
+- **THEN** it includes only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`
+
+### Requirement: Stage-2 AB downstream profiles explicitly pin high-signal knobs
+Each canonical Stage-2 AB profile leaf MUST explicitly declare high-signal run and ablation knobs so the file is self-consistent without traversing parent configs.
+
+Required explicit leaf fields:
+- `model.model`
+- `training.run_name`
+- `training.output_dir`
+- `training.logging_dir`
+- `training.learning_rate`
+- `training.vit_lr`
+- `training.aligner_lr`
+- `training.effective_batch_size`
+- `training.eval_strategy`
+- `training.eval_steps`
+- `training.save_strategy`
+- `training.save_steps`
+- `stage2_ab.schedule.b_ratio`
+- `stage2_ab.n_softctx_iter`
+
+Rationale for strict explicitness:
+- The LR trio (`training.learning_rate`, `training.vit_lr`, `training.aligner_lr`) is treated as MUST for canonical leaves to avoid hidden optimizer-group drift across ablations.
+
+Validation behavior:
+- Canonical Stage-2 AB profile loading MUST fail fast if any required explicit field is missing from the leaf profile.
+- Error text MUST identify missing fields by full key path.
+
+#### Scenario: Downstream profile with explicit high-signal fields is accepted
+- **WHEN** a Stage-2 AB profile leaf includes all required explicit high-signal keys
+- **THEN** config loading succeeds and the profile is considered self-consistent.
+
+#### Scenario: Missing explicit run identity fails fast
+- **WHEN** a Stage-2 AB profile leaf omits `training.run_name`
+- **THEN** config loading fails fast and reports `training.run_name` as missing.
+
+#### Scenario: Missing explicit model path fails fast
+- **WHEN** a Stage-2 AB profile leaf omits `model.model`
+- **THEN** config loading fails fast and reports `model.model` as missing.
+
+### Requirement: Stage-2 AB canonical rollout namespace is normalized before trainer injection
+Stage-2 AB canonical profile authoring MUST use a grouped rollout namespace outside `custom.extra`, and the loader/runtime MUST normalize this namespace into the trainer-consumed rollout config through a schema-derived strict parsing path.
+
+Normative behavior:
+- Stage-2 AB profiles MUST author rollout settings under canonical grouped section `rollout_matching.*`.
+- For rollout knobs that previously lived under `custom.extra.rollout_matching.*`, canonical migration is path-only relocation to `rollout_matching.*` with unchanged subkey names.
+- Config shape validation for Stage-2 profiles MUST be driven by typed schema contracts (dataclass field definitions), not duplicated manual nested allowlists in multiple modules.
+- Unknown keys MUST fail fast with full dotted-path errors during config load before trainer construction.
+- Runtime trainer validators MAY enforce runtime-dependent invariants, but MUST NOT be the primary owner of static config shape/key acceptance.
+- Removed Stage-2 Channel-B knobs MUST fail fast at config-load time:
+  - `stage2_ab.channel_b.reordered_gt_sft`
+  - `stage2_ab.channel_b.desc_ce_weight_matched`
+  - `stage2_ab.channel_b.semantic_desc_gate`
+- Any legacy Stage-2 rollout key placement under `custom.extra.rollout_matching.*` remains unsupported and MUST fail fast with actionable migration guidance to `rollout_matching.*`.
+- `src/sft.py` rollout normalization/injection path remains authoritative for trainer wiring:
+  - normalized top-level `rollout_matching` is injected as `rollout_matching_cfg`,
+  - parser refactor MUST NOT alter this injection contract semantics.
+- Before trainer construction, runtime MUST normalize canonical grouped rollout fields into the rollout config object injected into Stage-2 AB / rollout-matching trainers.
+- For rollout-aware trainer variants, rollout decode/evaluation microbatching MUST be driven by `rollout_matching.decode_batch_size` as the single source of truth.
+- `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batching behavior.
+- For `custom.trainer_variant=stage2_ab_training`, top-level `rollout_matching` remains required and missing it MUST fail fast.
+- Stage-2 launcher preflight (`scripts/train_stage2.sh`) MUST resolve rollout settings from the same shared normalization contract used by runtime, and MUST NOT maintain a divergent raw-field contract.
+- Launcher preflight MUST call the shared Python loader/normalizer (`ConfigLoader.load_training_config(...)` path) and consume machine-readable normalized fields rather than parsing rollout keys directly in bash.
+- Launcher preflight machine-readable output MUST be newline-terminated single-line JSON with keys:
+  - `rollout_backend` (string),
+  - `vllm_mode` (string or null),
+  - `server_base_urls` (array of strings; empty allowed when backend/mode does not require server URLs).
+- Launcher preflight JSON contract defined for Stage-2 canonical rollout normalization remains required:
+  - Python resolver emits shell assignment lines; the `ROLLOUT_CONTRACT_JSON` value MUST be newline-terminated single-line JSON,
+  - required keys/types: `rollout_backend` (string), `vllm_mode` (string or null), `server_base_urls` (array of strings),
+  - invalid/missing JSON contract fields MUST fail fast before launch.
+- The 3-key JSON contract above is the minimum normative contract; additional preflight payload keys are allowed but MUST NOT weaken or replace the minimum contract.
+- Launcher preflight MUST fail fast (non-zero exit) and MUST NOT launch training when config normalization fails, JSON is invalid, or any required key is missing/typed incorrectly.
+- The normalization output MUST preserve existing rollout semantics (backend, server, decoding, repeat-terminate, matching, and packing-related runtime knobs).
+- Cutover ordering is atomic for canonical profiles: leaf YAML migration, runtime normalization/injection, and launcher preflight consumption of normalized fields MUST land together before strict legacy-key fail-fast gates are enabled.
+
+Normalization mapping sketch (minimum required):
+- `rollout_matching.rollout_backend` -> `rollout_matching_cfg.rollout_backend`
+- `rollout_matching.decode_batch_size` -> `rollout_matching_cfg.decode_batch_size`
+- `rollout_matching.vllm.mode` -> `rollout_matching_cfg.vllm.mode`
+- `rollout_matching.vllm.server.servers[].base_url` -> `rollout_matching_cfg.vllm.server.servers[].base_url`
+- Additional rollout fields keep existing key names while relocating from `custom.extra.rollout_matching.*` to top-level `rollout_matching.*` (no compatibility aliasing).
+
+#### Scenario: Canonical grouped rollout config is visible to trainer
+- **WHEN** a Stage-2 AB profile defines rollout settings under `rollout_matching.*`
+- **THEN** trainer initialization receives equivalent rollout settings through injected `rollout_matching_cfg`.
+
+#### Scenario: Any legacy rollout key path fails fast
+- **WHEN** a Stage-2 AB profile sets `custom.extra.rollout_matching.decode_batch_size` (with or without canonical keys)
+- **THEN** config loading fails fast with guidance to migrate to `rollout_matching.decode_batch_size`.
+
+#### Scenario: Launcher preflight uses normalized rollout contract
+- **WHEN** a Stage-2 AB profile defines rollout settings only under `rollout_matching.*`
+- **THEN** `scripts/train_stage2.sh` preflight resolves server/backend settings successfully through shared normalization and does not require `custom.extra.rollout_matching.*` keys.
+
+#### Scenario: Launcher preflight fails on invalid normalization JSON contract
+- **WHEN** shared normalization output is invalid JSON or omits required keys/types (`rollout_backend`, `vllm_mode`, `server_base_urls`)
+- **THEN** `scripts/train_stage2.sh` exits non-zero and blocks training launch with actionable contract error text.
+
+#### Scenario: Rollout batching ignores eval per-device mismatch
+- **WHEN** a Stage-2 AB rollout profile sets `rollout_matching.decode_batch_size=4` and `training.per_device_eval_batch_size=1`
+- **THEN** rollout decode/evaluation behavior uses microbatch size `4`
+- **AND** `training.per_device_eval_batch_size` does not alter rollout decode/evaluation batching.
+
+#### Scenario: Unknown nested rollout key fails at schema load
+- **WHEN** a Stage-2 AB config defines `rollout_matching.vllm.server.servers[0].unknown_flag`
+- **THEN** config loading fails fast before trainer init
+- **AND** the error reports a full nested path including list index (e.g., `rollout_matching.vllm.server.servers[0].unknown_flag`).
+
+#### Scenario: Runtime validator does not own static key allowlists
+- **WHEN** schema parsing succeeds for canonical rollout keys
+- **THEN** trainer initialization does not require duplicate static unknown-key allowlist ownership for the same config shape.
+
+#### Scenario: sft injection contract remains stable
+- **WHEN** canonical rollout config is valid and loaded
+- **THEN** `src/sft.py` injects normalized rollout config into trainer `rollout_matching_cfg`
+- **AND** parser architecture changes do not require alternate rollout source paths.
+
+### Requirement: Stage-2 config sections are parsed by schema-derived strict contracts
+Stage-2 training config loading MUST enforce unknown-key fail-fast across all top-level sections using schema-derived strict parsing.
+
+Normative section coverage:
+- `model`
+- `quantization`
+- `template`
+- `data`
+- `tuner`
+- `training`
+- `rlhf`
+- `custom`
+- `debug`
+- `stage2_ab`
+- `rollout_matching`
+- `deepspeed`
+- `global_max_length`
+- `extra` (reserved/rejected at top-level)
+
+Normative behavior:
+- The loader MUST derive accepted keys from typed section contracts.
+- Any unsupported key in any covered section MUST fail fast with full dotted-path key reporting.
+- Semantic/value constraints (range checks, required combinations) MUST remain enforced after shape validation.
+- Explicit schema extension buckets remain allowed only where declared by contract (currently `custom.extra`).
+- Extension-bucket allowance MUST NOT relax strictness for canonical grouped sections.
+- Top-level `extra:` is not an author-facing extension bucket; presence of top-level `extra:` MUST fail fast.
+- Section-coverage entry `extra` means loader-level explicit detection/rejection ownership; it does not permit arbitrary top-level `extra` payload parsing.
+- Dotted-path unknown-key reporting format MUST include list indices where applicable (`field[index].subfield`).
+- Regression verification MUST include fixture coverage for:
+  - strict `custom.extra` policy behavior,
+  - Stage-2 smoke/profile configs using canonical top-level `rollout_matching.*`,
+  - `stage2_ab_training` requirement for top-level `rollout_matching`.
+
+#### Scenario: Unknown top-level section key fails fast
+- **WHEN** a config includes an unsupported top-level key under canonical Stage-2 profile loading
+- **THEN** loader fails fast and reports the unknown key.
+
+#### Scenario: Unknown key inside covered section fails fast
+- **WHEN** a config includes `custom.unknown_knob`
+- **THEN** loader fails fast and reports `custom` section unknown-key details.
+
+#### Scenario: Removed Channel-B semantic-desc gate key fails fast
+- **WHEN** a config includes `stage2_ab.channel_b.semantic_desc_gate`
+- **THEN** loader fails fast before trainer init
+- **AND** error includes dotted path `stage2_ab.channel_b.semantic_desc_gate`
+- **AND** error message indicates removed-or-unknown key with actionable removal guidance.
+
+#### Scenario: Removed Channel-B reordered-gt key fails fast
+- **WHEN** a config includes `stage2_ab.channel_b.reordered_gt_sft`
+- **THEN** loader fails fast before trainer init
+- **AND** error includes dotted path `stage2_ab.channel_b.reordered_gt_sft`
+- **AND** error message indicates removed-or-unknown key with actionable removal guidance.
+
+#### Scenario: Removed Channel-B desc-ce-weight key fails fast
+- **WHEN** a config includes `stage2_ab.channel_b.desc_ce_weight_matched`
+- **THEN** loader fails fast before trainer init
+- **AND** error includes dotted path `stage2_ab.channel_b.desc_ce_weight_matched`
+- **AND** error message indicates removed-or-unknown key with actionable removal guidance.
+
+#### Scenario: Extension bucket accepts minor residual keys
+- **WHEN** a config includes `custom.extra.some_minor_toggle`
+- **THEN** config loading can succeed if all canonical grouped sections remain valid.
+
+#### Scenario: Top-level extra presence fails fast
+- **WHEN** a config includes top-level `extra:` (including empty `{}`)
+- **THEN** config loading fails fast with guidance that only `custom.extra` is the escape-hatch bucket.
+
+#### Scenario: Missing top-level rollout_matching still fails for stage2_ab_training
+- **WHEN** `custom.trainer_variant=stage2_ab_training` and top-level `rollout_matching` is omitted
+- **THEN** config loading fails fast with actionable requirement text for top-level `rollout_matching`.
+
+#### Scenario: Preflight contract format is strict
+- **WHEN** launcher preflight emits contract JSON
+- **THEN** the `ROLLOUT_CONTRACT_JSON` value contains the minimum 3-key contract as newline-terminated single-line JSON
+- **AND** malformed format or missing required keys fails fast before launch.
+
 ### Requirement: Stage-2 AB remains compatible with ms-swift and Transformers (no upstream patches)
 Stage-2 AB training MUST be implemented in a way that is compatible with:
 - the ms-swift training harness (trainer construction, dataloader/collator semantics, and checkpoint/resume flow), and
@@ -205,6 +429,51 @@ Channel-B MUST reuse the rollout-matching pipeline:
 - **GIVEN** Channel-B is selected and rollout generation succeeds
 - **WHEN** the trainer builds `Y_train` for teacher forcing
 - **THEN** `Y_train` contains the rollout prefix (suffix-trimmed only) followed by a JSON-only FN append fragment.
+
+### Requirement: Stage-2 serialized object field order follows shared config
+Stage-2 AB serialization paths SHALL honor `custom.object_field_order` exactly as stage-1 serialization does.
+
+Scope:
+- Channel-A teacher-forced assistant payload construction.
+- Channel-B FN append serialization path used to build `Y_train`.
+
+Normative behavior:
+- `desc_first`: per-object payload order is `desc` then concrete geometry key (`bbox_2d` or `poly`).
+- `geometry_first`: per-object payload order is concrete geometry key (`bbox_2d` or `poly`) then `desc`.
+- Object instance ordering and object key numbering remain unchanged.
+- The serializer MUST NOT emit a synthetic key literally named `geometry`.
+
+#### Scenario: Channel-A uses geometry-first payload when configured
+- **GIVEN** `custom.object_field_order: geometry_first`
+- **WHEN** Channel-A constructs teacher-forced assistant payload text
+- **THEN** each serialized object payload places its concrete geometry key before `desc`
+- **AND** object keys remain sequential (`object_1`, `object_2`, ...).
+
+#### Scenario: Channel-B uses geometry-first for FN append when configured
+- **GIVEN** `custom.object_field_order: geometry_first`
+- **AND** Channel-B appends unmatched GT objects
+- **WHEN** `Y_train` is constructed
+- **THEN** appended object payloads place their concrete geometry key before `desc`
+- **AND** matching/masking logic remains unchanged.
+
+#### Scenario: Default desc-first behavior is preserved in both channels
+- **GIVEN** `custom.object_field_order` is omitted
+- **WHEN** Channel-A or Channel-B serializes object payloads
+- **THEN** payloads remain `desc` before the concrete geometry key (`bbox_2d` or `poly`).
+
+### Requirement: Stage-2 object instance ordering contract is unchanged
+`custom.object_field_order` SHALL NOT modify stage-2 object instance ordering behavior.
+
+Normative behavior:
+- Object sequence remains determined by existing pipeline semantics (GT order, parsed rollout appearance order, and current matching/index continuation logic).
+- Only intra-object field order is configurable.
+
+#### Scenario: geometry-first does not change rollout appearance order handling
+- **GIVEN** rollout parsed objects appear in a specific raw-text order
+- **AND** `custom.object_field_order: geometry_first`
+- **WHEN** Stage-2 performs matching and FN append
+- **THEN** parsed predicted order remains the same as raw-text appearance
+- **AND** only field order inside serialized object payloads differs.
 
 ### Requirement: Channel-B invalid rollouts fall back deterministically (no silent skips)
 When Channel-B is selected and a rollout response cannot be parsed into an append-ready JSON prefix (e.g., there is no top-level `{` in the response), the trainer MUST:

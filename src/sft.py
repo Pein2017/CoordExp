@@ -141,6 +141,63 @@ def _parse_sample_size(value: Any, field_name: str) -> int | None:
     return size
 
 
+def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_config: Any) -> int:
+    """Override eval batching for rollout-aware trainer variants.
+
+    Rollout-aware variants treat `rollout_matching.decode_batch_size` as the single
+    source of truth for rollout decode/eval microbatching. We mirror that by
+    forcing `per_device_eval_batch_size` to match the resolved decode batch size.
+
+    Returns the resolved decode batch size.
+    """
+
+    trainer_variant = getattr(train_args, "trainer_variant", None)
+    if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
+        return 1
+
+    rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
+    if rollout_cfg_obj is None:
+        rollout_cfg_for_batch: Any = {}
+    elif is_dataclass(rollout_cfg_obj):
+        rollout_cfg_for_batch = dataclass_asdict_no_none(rollout_cfg_obj)
+    else:
+        rollout_cfg_for_batch = rollout_cfg_obj
+
+    if rollout_cfg_for_batch is None:
+        rollout_cfg_for_batch = {}
+    if not isinstance(rollout_cfg_for_batch, Mapping):
+        raise TypeError("rollout_matching must be a mapping when provided")
+
+    decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
+    try:
+        rollout_decode_bs = int(decode_bs_raw)
+    except Exception as exc:
+        raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
+    if rollout_decode_bs <= 0:
+        raise ValueError("rollout_matching.decode_batch_size must be > 0")
+
+    if getattr(train_args, "training_args", None) is not None:
+        current_eval_bs_raw = getattr(
+            train_args.training_args,
+            "per_device_eval_batch_size",
+            rollout_decode_bs,
+        )
+        try:
+            current_eval_bs = int(current_eval_bs_raw)
+        except Exception:
+            current_eval_bs = int(rollout_decode_bs)
+        if int(current_eval_bs) != int(rollout_decode_bs):
+            logger.warning(
+                "Overriding per_device_eval_batch_size=%s with rollout decode_batch_size=%s for rollout trainer variants.",
+                int(current_eval_bs),
+                int(rollout_decode_bs),
+            )
+        train_args.training_args.per_device_eval_batch_size = int(rollout_decode_bs)
+
+    setattr(train_args, "per_device_eval_batch_size", int(rollout_decode_bs))
+    return int(rollout_decode_bs)
+
+
 def parse_args():
     """Parse minimal runtime arguments.
 
@@ -1059,48 +1116,10 @@ def main():
 
         # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
-        rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
-        if rollout_cfg_obj is None:
-            rollout_cfg_for_batch = {}
-        elif is_dataclass(rollout_cfg_obj):
-            rollout_cfg_for_batch = dataclass_asdict_no_none(rollout_cfg_obj)
-        else:
-            rollout_cfg_for_batch = rollout_cfg_obj
-
-        if rollout_cfg_for_batch is None:
-            rollout_cfg_for_batch = {}
-        if not isinstance(rollout_cfg_for_batch, Mapping):
-            raise TypeError("rollout_matching must be a mapping when provided")
-
-        decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
-        try:
-            rollout_decode_bs = int(decode_bs_raw)
-        except Exception as exc:
-            raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
-        if rollout_decode_bs <= 0:
-            raise ValueError("rollout_matching.decode_batch_size must be > 0")
-
-        if getattr(train_args, "training_args", None) is not None:
-            current_eval_bs_raw = getattr(
-                train_args.training_args,
-                "per_device_eval_batch_size",
-                rollout_decode_bs,
-            )
-            try:
-                current_eval_bs = int(current_eval_bs_raw)
-            except Exception:
-                current_eval_bs = int(rollout_decode_bs)
-            if int(current_eval_bs) != int(rollout_decode_bs):
-                logger.warning(
-                    "Overriding per_device_eval_batch_size=%s with rollout decode_batch_size=%s for rollout trainer variants.",
-                    int(current_eval_bs),
-                    int(rollout_decode_bs),
-                )
-            train_args.training_args.per_device_eval_batch_size = int(rollout_decode_bs)
-        try:
-            setattr(train_args, "per_device_eval_batch_size", int(rollout_decode_bs))
-        except Exception:
-            raise
+        _apply_rollout_decode_batch_size_override(
+            train_args=train_args,
+            training_config=training_config,
+        )
 
         try:
             from swift.trainers.rlhf_trainer.utils import identity_data_collator

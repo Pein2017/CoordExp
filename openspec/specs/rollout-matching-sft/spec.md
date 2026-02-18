@@ -293,24 +293,107 @@ At minimum, the trainer MUST log:
 - **THEN** it logs the server endpoints, sync mode, and rollout seed for that step.
 
 ### Requirement: Rollout generation supports microbatched decoding within each rank
-When rollout-matching training is enabled, the trainer SHALL support generating rollouts for multiple samples in a single backend decode call (HF `generate()` or vLLM `/infer/`), controlled by a YAML knob:
+When rollout-matching training is enabled, the trainer SHALL support generating rollouts for multiple samples in a single backend decode call (HF `generate()` or vLLM `/infer/`), controlled by a normalized rollout configuration knob.
 
-- `rollout_matching.decode_batch_size` (int)
+Rollout config keys and nested structures MUST be validated through schema-derived strict contracts before runtime rollout execution.
+
+Normalized rollout knob (normative):
+- `decode_batch_size` (int) in the trainer’s injected rollout config contract.
+
+Config source semantics (normative):
+- For canonical grouped authoring, rollout backend selection MUST come from `rollout_matching.rollout_backend`.
+- For canonical grouped authoring, `decode_batch_size` MUST come from `rollout_matching.decode_batch_size`.
+- For Stage-2 AB rollout knobs that previously existed under `custom.extra.rollout_matching.*`, canonical migration MUST be path-only relocation to `rollout_matching.*` with the same subkey names.
+- Legacy Stage-2 alias keys under `custom.extra.rollout_matching.*` are unsupported and MUST fail fast with migration guidance.
+- The trainer/runtime contract MUST expose a single resolved `decode_batch_size` value to rollout execution code.
+
+Schema-derived strictness (normative):
+- Rollout config key acceptance MUST be derived from typed schema definitions and enforced at config-load time.
+- Unknown rollout keys (top-level or nested) MUST fail fast with dotted-path error messages.
+- Unknown-key dotted paths MUST include list indices when present (e.g., `rollout_matching.vllm.server.servers[0].unknown_flag`).
+- Runtime rollout validators MAY enforce execution-dependent constraints (runtime mode compatibility, numeric bounds) but MUST NOT be the long-term owner of static schema key acceptance.
+- Rollout server schema supports only `rollout_matching.vllm.server.servers[]`; legacy paired-list form (`vllm.server.base_url` + `vllm.server.group_port`) is removed and MUST fail fast with migration guidance.
 
 Semantics (normative):
 - `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
 - The trainer MUST enforce this bound for both HF and vLLM backends.
+- `decode_batch_size` is the single source of truth for rollout decode/evaluation microbatching in rollout-aware trainer variants.
+- `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batch behavior.
 
 Defaulting (normative):
-- If `rollout_matching.decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
+- If `decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
 - Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_ab/**` uses `4`).
 
+#### Scenario: Canonical Stage-2 key controls decode microbatching
+- **WHEN** a Stage-2 AB config sets `rollout_matching.decode_batch_size: M` where `M > 1`
+- **THEN** rollout generation uses `M` as the resolved decode batch size in trainer rollout config.
+
 #### Scenario: Microbatching increases decode parallelism without changing outputs format
-- **GIVEN** rollout-matching training is enabled
-- **AND** `rollout_matching.decode_batch_size: M` where `M > 1`
-- **WHEN** the trainer generates rollouts for a batch of `M` samples on one rank
-- **THEN** the trainer performs one batched generate call for those `M` samples
+- **WHEN** rollout-matching training runs with resolved `decode_batch_size=M` where `M > 1`
+- **THEN** the trainer performs batched decode calls for up to `M` samples per rollout GPU
 - **AND** it returns per-sample `response_token_ids` suitable for strict token-aligned parsing.
+
+#### Scenario: Eval per-device knobs do not override rollout decode batching
+- **WHEN** rollout-matching training runs with `rollout_matching.decode_batch_size=M` and `training.per_device_eval_batch_size=N` where `M != N`
+- **THEN** rollout decode/evaluation microbatching follows `M`
+- **AND** `training.per_device_eval_batch_size` does not independently change rollout decode/evaluation behavior.
+
+#### Scenario: Legacy decode key path fails fast
+- **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.decode_batch_size`
+- **THEN** config loading fails fast with guidance to migrate to `rollout_matching.decode_batch_size`.
+
+#### Scenario: Legacy rollout backend key path fails fast
+- **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.rollout_backend`
+- **THEN** config loading fails fast with guidance to migrate to `rollout_matching.rollout_backend`.
+
+#### Scenario: Unknown rollout key fails before rollout trainer execution
+- **WHEN** config includes `rollout_matching.unknown_rollout_key`
+- **THEN** loader fails fast during schema parsing
+- **AND** rollout trainer is not constructed.
+
+#### Scenario: Unknown nested decoding key fails before execution
+- **WHEN** config includes `rollout_matching.decoding.unknown_decoding_key`
+- **THEN** loader fails fast during schema parsing with nested dotted-path context.
+
+#### Scenario: Legacy rollout server paired-list shape fails fast
+- **WHEN** config uses `rollout_matching.vllm.server.base_url` and `rollout_matching.vllm.server.group_port`
+- **THEN** schema loading fails fast with guidance to migrate to `rollout_matching.vllm.server.servers[]`.
+
+### Requirement: Trainer rollout contract is source-agnostic after normalization
+Rollout-matching trainer internals MUST consume a source-agnostic rollout config contract after normalization from canonical grouped keys.
+
+Normative behavior:
+- Runtime normalization MUST produce one `rollout_matching_cfg` mapping injected into rollout-aware trainers.
+- Rollout execution code MUST read resolved rollout values from the injected contract and MUST NOT branch on original YAML source path.
+- Normalized contract fields MUST include at least:
+  - rollout backend selection,
+  - vLLM mode/server/sync settings,
+  - decoding parameters,
+  - repeat-terminate settings,
+  - matching/packing runtime knobs consumed by trainer validation and execution.
+
+#### Scenario: Canonical grouped config drives trainer contract
+- **WHEN** a config defines rollout settings under canonical grouped keys
+- **THEN** trainer-side `rollout_matching_cfg` contains the normalized rollout contract used by rollout execution.
+
+### Requirement: Rollout schema validation ownership is centralized
+The rollout schema contract MUST be owned centrally by config schema parsing, and reused consistently by runtime/preflight consumers.
+
+Normative behavior:
+- One schema-driven rollout contract defines accepted rollout keys and nested structures.
+- Preflight/runtime consumers read normalized rollout config from the shared loader path and MUST NOT define conflicting parallel schema ownership.
+- Contract changes for rollout keys MUST be implemented by updating typed schema definitions, not by adding independent manual allowlists in each consumer.
+- Runtime duplicate static-key checks may remain temporarily during migration as safety gates, but MUST be removed once loader-level parity checks pass.
+- `src/sft.py` continues to inject normalized rollout configuration into trainer `rollout_matching_cfg`; schema refactor MUST keep this runtime interface stable.
+
+#### Scenario: Preflight/runtime consume a shared validated rollout contract
+- **WHEN** canonical rollout config is valid and loaded
+- **THEN** both launcher preflight and trainer runtime observe the same validated rollout contract.
+
+#### Scenario: Runtime rollout injection path stays stable
+- **WHEN** rollout config passes schema validation
+- **THEN** runtime still injects `rollout_matching_cfg` from the normalized loader contract
+- **AND** rollout trainers do not depend on alternative legacy config source paths.
 
 ### Requirement: Legacy rollout batch-size knobs fail fast
 The system MUST fail fast if a config provides any legacy rollout batch-size knob under `rollout_matching`, with actionable guidance to migrate to the unified decode batching knob `rollout_matching.decode_batch_size`.
@@ -478,6 +561,45 @@ Rationale (normative): GT annotations may be incomplete, but they do not halluci
 - **WHEN** `Y_train` is constructed
 - **THEN** `FN_gt_objects` equals the full GT object set for that sample
 - **AND** `SerializeAppend(FN_gt_objects)` is appended to `Y_rollout_prefix` before EOS.
+
+### Requirement: FN append serialization honors configured object field order
+When rollout-matching builds `Y_train` via mandatory FN append, each appended object payload SHALL follow `custom.object_field_order`.
+
+Normative behavior:
+- `desc_first`: append payload uses `{desc, bbox_2d}` or `{desc, poly}` depending on object geometry type.
+- `geometry_first`: append payload uses `{bbox_2d, desc}` or `{poly, desc}` depending on object geometry type.
+- Geometry key can be `bbox_2d` or `poly`.
+- The serializer MUST NOT emit a synthetic key literally named `geometry`.
+
+This requirement applies only to field order within each appended object payload and MUST NOT alter:
+- object key numbering (`object_{n}` continuation),
+- predicted object appearance-order parsing,
+- matching order semantics.
+
+#### Scenario: geometry-first changes only per-object field order in FN append
+- **GIVEN** `custom.object_field_order: geometry_first`
+- **AND** Channel-B has unmatched GT objects to append
+- **WHEN** `SerializeAppend(FN_gt_objects)` is produced
+- **THEN** each appended object places its concrete geometry key (`bbox_2d` or `poly`) before `desc`
+- **AND** object keys still start at `max_object_index_in_prefix + 1`.
+
+#### Scenario: desc-first remains baseline append layout
+- **GIVEN** `custom.object_field_order` is omitted or set to `desc_first`
+- **WHEN** FN append fragment is serialized
+- **THEN** appended object payloads keep `desc` before the concrete geometry key (`bbox_2d` or `poly`).
+
+### Requirement: Field-order variation is schema-equivalent for strict parsing
+Strict parsing for rollout matching SHALL treat `desc_first` and `geometry_first` object payloads as schema-equivalent.
+
+Normative behavior:
+- Reordering `{desc, bbox_2d}` to `{bbox_2d, desc}` or `{desc, poly}` to `{poly, desc}` MUST NOT by itself invalidate an object.
+- Existing strict checks (missing desc, invalid geometry, wrong arity, bad coord tokens, etc.) remain unchanged.
+
+#### Scenario: geometry-first object remains valid under strict parse
+- **GIVEN** a rollout object encoded as `{\"bbox_2d\": [...], \"desc\": \"...\"}`
+- **WHEN** strict parsing runs
+- **THEN** the object is considered valid if all existing schema constraints pass
+- **AND** it is not dropped solely due to field order.
 
 ### Requirement: Predicted order is defined by raw rollout text appearance (no silent reordering)
 “Predicted order” SHALL be defined as the appearance order in the raw rollout string (the assistant response text decoded from `response_token_ids`).
