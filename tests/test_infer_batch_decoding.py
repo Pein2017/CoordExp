@@ -295,6 +295,7 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
         model_checkpoint="dummy",
         mode="text",
         prompt_variant="coco_80",
+        object_field_order="geometry_first",
         pred_coord_mode="auto",
         out_path=str(out_path),
         summary_path=str(summary_path),
@@ -326,3 +327,4 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["infer"]["prompt_variant"] == "coco_80"
+    assert summary["infer"]["object_field_order"] == "geometry_first"

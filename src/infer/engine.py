@@ -63,6 +63,10 @@ from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
+from src.common.object_field_order import (
+    ObjectFieldOrder,
+    normalize_object_field_order,
+)
 from src.config.prompts import (
     DEFAULT_PROMPT_VARIANT,
     get_template_prompts,
@@ -115,6 +119,7 @@ class InferenceConfig:
     model_checkpoint: str
     mode: Literal["coord", "text", "auto"]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
+    object_field_order: ObjectFieldOrder = "desc_first"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
@@ -246,6 +251,11 @@ class InferenceEngine:
 
         self.prompt_variant = resolve_dense_prompt_variant_key(cfg.prompt_variant)
         self.cfg.prompt_variant = self.prompt_variant
+        self.object_field_order = normalize_object_field_order(
+            cfg.object_field_order,
+            path="infer.object_field_order",
+        )
+        self.cfg.object_field_order = self.object_field_order
 
         self.requested_mode = cfg.mode
         self.resolved_mode = cfg.mode
@@ -536,6 +546,7 @@ class InferenceEngine:
             ordering="sorted",
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
+            object_field_order=self.object_field_order,
         )
         return [
             {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
@@ -774,6 +785,7 @@ class InferenceEngine:
             ordering="sorted",
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
+            object_field_order=self.object_field_order,
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -859,6 +871,7 @@ class InferenceEngine:
             ordering="sorted",
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
+            object_field_order=self.object_field_order,
         )
 
         # Build OpenAI-style messages; vLLM supports a batch of message lists.
@@ -1006,6 +1019,7 @@ class InferenceEngine:
             "gt_jsonl": self.cfg.gt_jsonl,
             "pred_coord_mode": self.cfg.pred_coord_mode,
             "prompt_variant": self.prompt_variant,
+            "object_field_order": self.object_field_order,
             "device": self.cfg.device,
             "limit": self.cfg.limit,
             "generation": {
@@ -1243,6 +1257,7 @@ class InferenceEngine:
                 "gt_jsonl": self.cfg.gt_jsonl,
                 "pred_coord_mode": self.cfg.pred_coord_mode,
                 "prompt_variant": self.prompt_variant,
+                "object_field_order": self.object_field_order,
                 "device": self.cfg.device,
                 "limit": self.cfg.limit,
             },

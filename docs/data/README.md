@@ -85,6 +85,7 @@ Notes:
 Dense prompts are variant-aware and YAML-first:
 - Training key: `custom.extra.prompt_variant`
 - Inference key: `infer.prompt_variant`
+- Field-order parity keys: `custom.object_field_order` (train), `infer.object_field_order` (infer)
 - Built-ins today: `default`, `coco_80`
 - Effective construction: `{fixed_base_prompt} + {variant_suffix}`
   - fixed base: ordering instruction (`sorted` means `(minY, minX)` / `random` means unrestricted) + coord-token geometry instruction

@@ -21,6 +21,10 @@ infer:
   # HF checkpoint path OR a served model name (for vllm backend)
   model_checkpoint: output/1-24/stage_1/poly_prefer_semantic_max60/epoch_4-softce_w1-LRs-2e-4_1e-4_4e-4-from-base-4B/checkpoint-1520_merged
 
+  # Prompt controls (keep train/infer parity)
+  prompt_variant: default            # default | coco_80
+  object_field_order: desc_first     # desc_first | geometry_first
+
   # coord | text | auto
   mode: auto
 

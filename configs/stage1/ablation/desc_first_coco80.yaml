@@ -1,0 +1,11 @@
+extends: ../sft_stage1_softce_w1-bbox-only.yaml
+
+training:
+  output_dir: ./output/stage1/coco_bbox_max60-coco80-desc_first
+  run_name: epoch_4-softce_w1-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-4B
+  logging_dir: ./tb/stage1/coco_bbox_max60-coco80-desc_first
+
+custom:
+  object_field_order: desc_first
+  extra:
+    prompt_variant: coco_80
