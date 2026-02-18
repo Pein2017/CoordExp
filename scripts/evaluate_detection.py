@@ -29,7 +29,8 @@ def _reject_deprecated_option(key: str, source: str, value: Any) -> None:
         return
     raise ValueError(
         f"{key} is deprecated and unsupported in {source}. "
-        "Description matching is mandatory via sentence-transformers/all-MiniLM-L6-v2; "
+        "Description matching requires a semantic encoder "
+        "(default: sentence-transformers/all-MiniLM-L6-v2); "
         "remove deprecated keys/flags to continue."
     )
 

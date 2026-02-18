@@ -178,6 +178,37 @@ def test_evaluate_and_save_fails_when_semantic_encoder_unavailable(
     with pytest.raises(RuntimeError, match="Description matching requires the semantic encoder"):
         evaluate_and_save(pred_path, options=options)
 
+def test_evaluate_and_save_f1ish_fails_when_semantic_encoder_unavailable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(
+        pred_path,
+        [_one_record(image="img.png", gt_desc="cat", pred_desc="dog")],
+    )
+
+    class _BrokenEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            raise RuntimeError("encoder unavailable")
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _BrokenEncoder)
+
+    options = EvalOptions(
+        metrics="f1ish",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+        overlay=False,
+        num_workers=0,
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+    )
+
+    with pytest.raises(RuntimeError, match="F1-ish semantic filtering requires the semantic encoder"):
+        evaluate_and_save(pred_path, options=options)
+
 def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
     counters = EvalCounters()
     options = EvalOptions(strict_parse=False, use_segm=False, output_dir=Path("eval_out"))

@@ -294,25 +294,34 @@ class InferenceEngine:
         )
 
         kwargs: Dict[str, Any] = {}
-        try:
-            tp = server_opts.get("vllm_tensor_parallel_size", None)
-            if tp is not None:
+
+        tp = server_opts.get("vllm_tensor_parallel_size", None)
+        if tp is not None:
+            try:
                 kwargs["tensor_parallel_size"] = int(tp)
-        except Exception:
-            pass
-        try:
-            util = server_opts.get("vllm_gpu_memory_utilization", None)
-            if util is not None:
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "infer.backend.server_options.vllm_tensor_parallel_size must be int-compatible"
+                ) from exc
+
+        util = server_opts.get("vllm_gpu_memory_utilization", None)
+        if util is not None:
+            try:
                 kwargs["gpu_memory_utilization"] = float(util)
-        except Exception:
-            pass
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "infer.backend.server_options.vllm_gpu_memory_utilization must be float-compatible"
+                ) from exc
+
         # `max_model_len` is a vLLM kwarg (mirrors --max-model-len on the server).
-        try:
-            mml = server_opts.get("vllm_max_model_len", None)
-            if mml is not None:
+        mml = server_opts.get("vllm_max_model_len", None)
+        if mml is not None:
+            try:
                 kwargs["max_model_len"] = int(mml)
-        except Exception:
-            pass
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "infer.backend.server_options.vllm_max_model_len must be int-compatible"
+                ) from exc
 
         # Note: local vLLM does not guarantee single OS process (it may manage workers
         # internally), but avoids running a separate HTTP server.
@@ -351,16 +360,14 @@ class InferenceEngine:
 
         # Best-effort determinism for HF generation.
         # (vLLM backend does not guarantee byte-identical outputs.)
-        try:
+        if hasattr(torch.backends, "cudnn"):
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-        except Exception:
-            pass
-        try:
-            torch.backends.cuda.matmul.allow_tf32 = False
-            torch.backends.cudnn.allow_tf32 = False
-        except Exception:
-            pass
+            if hasattr(torch.backends.cudnn, "allow_tf32"):
+                torch.backends.cudnn.allow_tf32 = False
+        if hasattr(torch.backends, "cuda") and hasattr(torch.backends.cuda, "matmul"):
+            if hasattr(torch.backends.cuda.matmul, "allow_tf32"):
+                torch.backends.cuda.matmul.allow_tf32 = False
 
     def _validate_vllm_backend(self) -> None:
         """Fail fast on global vLLM backend misconfiguration/unavailability."""
@@ -465,17 +472,11 @@ class InferenceEngine:
                     )
 
                 # Best-effort cleanup between attempts.
-                try:
-                    import gc
+                import gc
 
-                    gc.collect()
-                except Exception:
-                    pass
-                try:
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                except Exception:
-                    pass
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         if self.model is None:
             raise RuntimeError(
@@ -495,13 +496,21 @@ class InferenceEngine:
         )
 
         # Decoder-only models require left padding for correct generation.
-        try:
-            if getattr(self.processor, "tokenizer", None) is not None:
-                self.processor.tokenizer.padding_side = "left"
-                if self.processor.tokenizer.pad_token_id is None:
-                    self.processor.tokenizer.pad_token_id = self.processor.tokenizer.eos_token_id
-        except Exception:
-            pass
+        tokenizer = getattr(self.processor, "tokenizer", None)
+        if tokenizer is not None:
+            try:
+                setattr(tokenizer, "padding_side", "left")
+                if getattr(tokenizer, "pad_token_id", None) is None:
+                    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+                    if eos_token_id is None:
+                        raise ValueError(
+                            "tokenizer.eos_token_id is required when tokenizer.pad_token_id is unset"
+                        )
+                    setattr(tokenizer, "pad_token_id", eos_token_id)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Failed to configure tokenizer left-padding for inference."
+                ) from exc
 
     def _resolve_image_path(self, jsonl_path: Path, image_rel: str) -> Path:
         root_image_dir: Path | None = None

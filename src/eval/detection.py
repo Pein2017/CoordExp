@@ -1229,10 +1229,11 @@ def _try_build_semantic_embeddings(
     try:
         embs = encoder.encode_norm_texts(unique_norm_texts)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "F1-ish semantic embeddings unavailable (model='%s'): %s", model_name, exc
-        )
-        return {}
+        raise RuntimeError(
+            "F1-ish semantic filtering requires the semantic encoder "
+            f"'{model_name}', but loading/encoding failed. Ensure the model is "
+            "available in the local HuggingFace cache or that downloads are allowed."
+        ) from exc
 
     out: Dict[str, np.ndarray] = {}
     for text in unique_norm_texts:

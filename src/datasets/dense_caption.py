@@ -255,7 +255,8 @@ class BaseCaptionDataset(Dataset):
                 *conversation_messages,
             ]
 
-        original_system = getattr(self.template, "system", None)
+        had_system_attr = hasattr(self.template, "system")
+        original_system = getattr(self.template, "system", None) if had_system_attr else None
         if system_prompt is not None:
             try:
                 setattr(self.template, "system", system_prompt)
@@ -269,7 +270,10 @@ class BaseCaptionDataset(Dataset):
         finally:
             if system_prompt is not None:
                 try:
-                    setattr(self.template, "system", original_system)
+                    if had_system_attr:
+                        setattr(self.template, "system", original_system)
+                    elif hasattr(self.template, "system"):
+                        delattr(self.template, "system")
                 except Exception as exc:  # noqa: BLE001
                     raise RuntimeError(
                         "Failed to restore template.system after encoding."
