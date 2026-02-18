@@ -1,0 +1,25 @@
+# CoordExp Project Overview (Current Codebase)
+
+- Goal: Extend Qwen3-VL for grounding/detection research via coord tokens + distributional coord supervision, coord-offset adapters, and order-invariant supervision (stage-2 rollout matching).
+- Main entrypoint: `src/sft.py` (YAML-only; `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`).
+- Config system:
+  - `src/config/loader.py`: YAML merge with `extends`/`inherit`, prompt selection, TrainArguments construction (ms-swift).
+  - `src/config/schema.py`: typed config validation (`TrainingConfig`, `CustomConfig`, etc).
+- Data pipeline:
+  - Contract: `docs/data/JSONL_CONTRACT.md`.
+  - Single JSONL dataset: `src/datasets/dense_caption.py` (`BaseCaptionDataset`, alias `DenseCaptionDataset`) + `src/datasets/builders/jsonlines.py` (`JSONLinesBuilder`).
+  - Optional fusion dataset: `src/datasets/fusion.py` + `src/datasets/unified_fusion_dataset.py`.
+  - Augmentation/preprocess: `src/datasets/preprocessors/*`, `src/datasets/augmentation/*`, `src/datasets/geometry.py`.
+- Coord stack: `src/coord_tokens/*` (coord token codec, record annotation/validation, template adapter, coord-offset adapter, softCE+W1 utilities).
+- Trainer variants (selected via `custom.trainer_variant` / `train_args.trainer_variant`):
+  - Default: ms-swift trainer via `swift.TrainerFactory`.
+  - `rollout_matching_sft`: `src/trainers/rollout_matching_sft.py` (rollout -> strict parse -> match -> build masked targets; post-rollout packing).
+  - `gkd_monitor` (when `rlhf_type: gkd`): `src/trainers/gkd_monitor.py`.
+- Metrics/collators:
+  - Collator wrapping for per-batch metrics: `src/data_collators/dataset_metrics.py`.
+  - Trainer mixins (coord loss, token-type metrics, instability monitor, grad-accum fix): `src/metrics/dataset_metrics.py`.
+- Eval/infer/tools:
+  - Detection evaluator: `scripts/evaluate_detection.py` -> `src/eval/detection.py`.
+  - Inference: `scripts/run_infer.py` -> `src/infer/engine.py`.
+  - Utilities: `scripts/tools/inspect_chat_template.py`, coord vocab/token scripts in `scripts/tools/`.
+- Public datasets: `public_data/` provides tested conversion pipelines (see `public_data/README.md`).

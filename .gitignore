@@ -33,7 +33,16 @@
 !public_data/**/*.md
 !public_data/**/*.sh
 !progress/**
+
+# Serena project memories (track these, keep other .serena/* ignored)
+!.serena/
+!.serena/memories/
 !.serena/memories/**
+
+# Codex skills (track these, keep other .codex_config/* ignored)
+!.codex_config/
+!.codex_config/pein/
+!.codex_config/pein/skills/
 !.codex_config/pein/skills/**
 
 # Ignore common Python cache folders

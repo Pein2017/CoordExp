@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit Review"
+  short_description: "Deep code/spec/design audit (read-only)"
+  default_prompt: "Audit the requested code/spec/design/change. Prefer breadth-first context mapping (docs/specs/configs/tests) then depth-first inspection of highest-risk paths. Use rg for discovery and Serena for Python symbol navigation. Do not modify production code; if needed, write temporary tests under temp/ and delete them. Report P0/P1/P2 findings with file:line evidence, risks, and concrete verification steps. Ask for clarifications when intent is ambiguous."
