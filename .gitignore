@@ -33,6 +33,8 @@
 !public_data/**/*.md
 !public_data/**/*.sh
 !progress/**
+!.serena/memories/**
+
 
 # Ignore common Python cache folders
 **/__pycache__/**
