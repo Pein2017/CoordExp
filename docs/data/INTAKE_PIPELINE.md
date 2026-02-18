@@ -85,7 +85,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.
 ```
 - Converts pixel coords into **norm1000 integer coords** (0..999) and/or `<|coord_k|>` tokens.
 - Pixel -> norm scaling clamps into range and ensures `bbox_2d` stays strictly valid after rounding (no collapse).
-- Train with `custom.emit_norm: none`. If you use coord tokens, also set `custom.coord_tokens.enabled: true` and keep `custom.coord_tokens.skip_bbox_norm: true`.
+- Train with `custom.emit_norm: none`, `custom.coord_tokens.enabled: true`, and `custom.coord_tokens.skip_bbox_norm: true`.
 
 ---
 

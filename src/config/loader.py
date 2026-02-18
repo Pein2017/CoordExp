@@ -213,8 +213,10 @@ class ConfigLoader:
             )
 
         use_summary = False
-        custom_section = config.get("custom")
+        ordering_hint: str = "sorted"
         prompt_variant: Optional[str] = None
+
+        custom_section = config.get("custom")
         if custom_section is not None:
             if not isinstance(custom_section, dict):
                 raise TypeError(
@@ -227,6 +229,40 @@ class ConfigLoader:
             if "use_summary" in custom_section:
                 use_summary = ConfigLoader._coerce_bool(
                     custom_section["use_summary"], "custom.use_summary"
+                )
+
+            ordering_hint_raw = custom_section.get("object_ordering")
+            if ordering_hint_raw is not None:
+                ordering_hint = str(ordering_hint_raw).lower()
+                if ordering_hint not in {"sorted", "random"}:
+                    raise ValueError(
+                        "custom.object_ordering must be 'sorted' or 'random' when provided"
+                    )
+
+            coord_tokens_cfg = custom_section.get("coord_tokens")
+            if coord_tokens_cfg is None:
+                coord_tokens_cfg = {}
+            if not isinstance(coord_tokens_cfg, dict):
+                raise TypeError(
+                    "custom.coord_tokens must be a mapping when provided"
+                )
+
+            coord_tokens_enabled = ConfigLoader._coerce_bool(
+                coord_tokens_cfg.get("enabled", True),
+                "custom.coord_tokens.enabled",
+            )
+            if not coord_tokens_enabled:
+                raise ValueError(
+                    "Coord-token-only contract: custom.coord_tokens.enabled must be true."
+                )
+
+            skip_bbox_norm = ConfigLoader._coerce_bool(
+                coord_tokens_cfg.get("skip_bbox_norm", True),
+                "custom.coord_tokens.skip_bbox_norm",
+            )
+            if not skip_bbox_norm:
+                raise ValueError(
+                    "Coord-token-only contract: custom.coord_tokens.skip_bbox_norm must be true."
                 )
 
             extra_cfg = custom_section.get("extra", {})
@@ -247,6 +283,8 @@ class ConfigLoader:
             output_variant = "summary"
         else:
             default_system, default_user = get_template_prompts(
+                ordering=ordering_hint,
+                coord_mode="coord_tokens",
                 prompt_variant=prompt_variant,
             )
             output_variant = "dense"

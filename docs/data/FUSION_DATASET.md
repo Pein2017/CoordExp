@@ -94,8 +94,7 @@ The eval dataset is built from **any entry with a non-null `val_jsonl`**.
 - **Packing**: fusion datasets are compatible with `training.packing: true`.
   - Packing still forces `per_device_train_batch_size=1`.
   - Recommend keeping `global_max_length` consistent across runs.
-- **Coord-token mode**: fusion datasets work with `custom.coord_tokens.enabled: true`.
-  - If your JSONLs already contain `<|coord_N|>` tokens, set `custom.coord_tokens.skip_bbox_norm: true`.
+- **Coord-token mode (required)**: fusion datasets require `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`.
 
 ## 4) Example
 

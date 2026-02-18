@@ -1,7 +1,10 @@
 # dataset-prompt-variants Specification
 
 ## Purpose
-TBD - created by archiving change add-dataset-prompt-variants-coco80. Update Purpose after archive.
+Define the fixed-vs-dynamic prompt contract for dense coord-token training/inference:
+- fixed base prompt encodes universal invariants (ordering policy + coord-token geometry rules),
+- variant suffix encodes dataset-specific policy (class definitions and optional metadata/aux guidance),
+- training/inference resolve the same variant semantics for reproducibility.
 ## Requirements
 ### Requirement: Variant Registry and Deterministic Resolution
 The system SHALL provide a centralized prompt-variant registry for dense detection prompts and SHALL resolve prompt variants by explicit key with deterministic behavior.
@@ -15,12 +18,27 @@ The system SHALL provide a centralized prompt-variant registry for dense detecti
 - **THEN** configuration resolution MUST fail with an error that includes the unknown key and available variant keys
 
 #### Scenario: Deterministic repeated resolution
-- **WHEN** the same variant key is resolved repeatedly with the same prompt inputs (ordering and coord mode)
+- **WHEN** the same variant key is resolved repeatedly with the same prompt inputs (ordering)
 - **THEN** the resolver MUST return byte-identical system and user prompt text across calls
 
 #### Scenario: Deterministic cross-surface resolution
 - **WHEN** training and inference resolve the same variant key with equivalent prompt inputs
 - **THEN** both surfaces MUST produce equivalent policy instructions in system and user prompts
+
+### Requirement: Fixed Base Prompt Invariants
+Dense prompt resolution SHALL keep universal invariants in a fixed base prompt that is independent of dataset variant selection.
+
+#### Scenario: Sorted-order invariant text
+- **WHEN** dense prompt resolution uses `ordering=sorted`
+- **THEN** the fixed base prompt MUST explicitly state ordering by `(minY, minX)` (top-to-bottom then left-to-right)
+
+#### Scenario: Random-order ablation text
+- **WHEN** dense prompt resolution uses `ordering=random`
+- **THEN** the fixed base prompt MUST explicitly state that object ordering is unrestricted
+
+#### Scenario: Coord-token-only invariant text
+- **WHEN** dense prompt resolution runs in this repository
+- **THEN** the fixed base prompt MUST keep coord-token geometry instructions fixed (`<|coord_k|>`, `k in [0,999]`) and MUST NOT switch to numeric coordinate text by variant
 
 ### Requirement: Built-in COCO-80 Prompt Variant
 The system SHALL include a built-in `coco_80` prompt variant for dense mode that constrains `desc` generation to the canonical 80 COCO class names using a compact class-list instruction.
@@ -40,6 +58,17 @@ The system SHALL include a built-in `coco_80` prompt variant for dense mode that
 #### Scenario: Summary prompt behavior remains unchanged
 - **WHEN** summary mode is active
 - **THEN** summary prompts MUST remain unchanged and MUST NOT be replaced with dense COCO-80 instructions
+
+### Requirement: Dynamic Variant Suffix Scope
+Prompt variants SHALL express dataset-specific policy in a dynamic suffix while keeping fixed invariants unchanged.
+
+#### Scenario: Class-definition policy in dynamic suffix
+- **WHEN** a dataset variant defines a closed or canonical label set
+- **THEN** that label-set policy MUST be encoded in the variant suffix, not by mutating fixed invariant text
+
+#### Scenario: Metadata/aux policy in dynamic suffix
+- **WHEN** a dataset variant needs additional metadata or auxiliary guidance
+- **THEN** that guidance MUST be encoded in the variant suffix, not by mutating fixed invariant text
 
 ### Requirement: Cross-Surface Prompt Parity
 Training and inference prompt construction SHALL use the same variant-aware resolver so that a selected variant produces equivalent policy instructions across surfaces.
@@ -88,4 +117,3 @@ Inference artifacts SHALL include the resolved prompt variant for reproducibilit
 #### Scenario: Summary metadata
 - **WHEN** inference emits summary output
 - **THEN** the summary MUST include the resolved prompt variant value used to build generation messages
-

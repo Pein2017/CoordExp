@@ -29,14 +29,14 @@ training:
 
 
 custom:
-  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
-  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl  # Use numeric .jsonl (not .coord.jsonl) when coord_tokens.enabled: false
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
   # Pre-normalized JSONLs; no runtime scaling
   emit_norm: none
-  # ABLATION: Disable coord tokens - use pure numeric coordinates instead of <|coord_*|> tokens
+  # Coord-token-only contract in this repo.
   coord_tokens:
-    enabled: false  # Use numeric coordinates instead of <|coord_*|> tokens
-    skip_bbox_norm: false  # Re-enable bbox normalization since we're using numeric coords
+    enabled: true
+    skip_bbox_norm: true
   # ABLATION: Disable coord_offset adapter (no need to tune lm_head/token_embedding for pure strings)
   coord_offset:
     enabled: false

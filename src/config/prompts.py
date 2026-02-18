@@ -15,7 +15,9 @@ from .prompt_variants import (
 PRIOR_RULES = "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
 
 # Ordering instructions (shared across coord modes)
-_ORDER_RULE_SORTED = "- Order objects top-to-bottom then left-to-right. Index from 1.\n"
+_ORDER_RULE_SORTED = (
+    "- Order objects by (minY, minX): top-to-bottom then left-to-right. Index from 1.\n"
+)
 _ORDER_RULE_RANDOM = "- Object order is unrestricted; any ordering is acceptable. Index objects consecutively starting from 1.\n"
 
 # Coord-token mode (model asked to emit <|coord_N|> tokens)
@@ -43,7 +45,8 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
     "Prior rules:\n", _ORDER_RULE_RANDOM + "Prior rules:\n"
 )
 USER_PROMPT_SORTED_TOKENS = (
-    "Detect and list every object in the image, ordered top-to-bottom then left-to-right. "
+    "Detect and list every object in the image, ordered by (minY, minX) "
+    "(top-to-bottom then left-to-right). "
     "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using `<|coord_N|>` tokens (0–999)."
 )
 USER_PROMPT_RANDOM_TOKENS = (
@@ -51,35 +54,7 @@ USER_PROMPT_RANDOM_TOKENS = (
     "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using `<|coord_N|>` tokens (0–999)."
 )
 
-# Numeric mode (model asked to emit plain integers already normalized to 0–999)
-_SYSTEM_PREFIX_NUMERIC = (
-    'You are a general-purpose object detection and grounding assistant. Output exactly one JSON object like {"object_1":{...}} with no extra text.\n'
-    "- Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
-    '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
-    "- Geometry formatting rules:\n"
-    "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
-    "  * poly is a single closed polygon as an ordered list of [x, y] vertices.\n"
-    "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
-    "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
-    "    - Do NOT sort poly points by x/y; that can create self-intersections.\n"
-    "- Coordinates must be plain integers in [0,999] (already normalized from pixels); do not wrap them in coord tokens.\n"
-    "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
-    "Prior rules:\n" + PRIOR_RULES
-)
-SYSTEM_PROMPT_SORTED_NUMERIC = _SYSTEM_PREFIX_NUMERIC.replace(
-    "Prior rules:\n", _ORDER_RULE_SORTED + "Prior rules:\n"
-)
-SYSTEM_PROMPT_RANDOM_NUMERIC = _SYSTEM_PREFIX_NUMERIC.replace(
-    "Prior rules:\n", _ORDER_RULE_RANDOM + "Prior rules:\n"
-)
-USER_PROMPT_SORTED_NUMERIC = (
-    "Detect and list every object in the image, ordered top-to-bottom then left-to-right. "
-    "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using plain integer coordinates 0–999 (no coord tokens)."
-)
-USER_PROMPT_RANDOM_NUMERIC = (
-    "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using plain integer coordinates 0–999 (no coord tokens)."
-)
+# Coord-token-only contract: numeric dense prompt variants are intentionally unsupported.
 
 # Defaults (coord-token, sorted)
 SYSTEM_PROMPT = SYSTEM_PROMPT_SORTED_TOKENS
@@ -95,20 +70,19 @@ def build_dense_system_prompt(
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
 ) -> str:
-    """Return system prompt for dense mode given ordering/coord mode/variant."""
+    """Return system prompt for dense mode with coord-tokens-only contract."""
+    coord_mode_key = str(coord_mode).lower()
+    if coord_mode_key != "coord_tokens":
+        raise ValueError(
+            "Coord-token-only contract: coord_mode must be 'coord_tokens'."
+        )
+
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
-    if str(coord_mode).lower() == "numeric":
-        base_prompt = (
-            SYSTEM_PROMPT_RANDOM_NUMERIC
-            if ordering_key == "random"
-            else SYSTEM_PROMPT_SORTED_NUMERIC
-        )
-    else:
-        base_prompt = (
-            SYSTEM_PROMPT_RANDOM_TOKENS
-            if ordering_key == "random"
-            else SYSTEM_PROMPT_SORTED_TOKENS
-        )
+    base_prompt = (
+        SYSTEM_PROMPT_RANDOM_TOKENS
+        if ordering_key == "random"
+        else SYSTEM_PROMPT_SORTED_TOKENS
+    )
 
     variant = resolve_prompt_variant(prompt_variant)
     return f"{base_prompt}{variant.dense_system_suffix}"
@@ -119,20 +93,19 @@ def build_dense_user_prompt(
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
 ) -> str:
-    """Return user prompt for dense mode given ordering/coord mode/variant."""
+    """Return user prompt for dense mode with coord-tokens-only contract."""
+    coord_mode_key = str(coord_mode).lower()
+    if coord_mode_key != "coord_tokens":
+        raise ValueError(
+            "Coord-token-only contract: coord_mode must be 'coord_tokens'."
+        )
+
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
-    if str(coord_mode).lower() == "numeric":
-        base_prompt = (
-            USER_PROMPT_RANDOM_NUMERIC
-            if ordering_key == "random"
-            else USER_PROMPT_SORTED_NUMERIC
-        )
-    else:
-        base_prompt = (
-            USER_PROMPT_RANDOM_TOKENS
-            if ordering_key == "random"
-            else USER_PROMPT_SORTED_TOKENS
-        )
+    base_prompt = (
+        USER_PROMPT_RANDOM_TOKENS
+        if ordering_key == "random"
+        else USER_PROMPT_SORTED_TOKENS
+    )
 
     variant = resolve_prompt_variant(prompt_variant)
     return f"{base_prompt}{variant.dense_user_suffix}"
@@ -179,11 +152,6 @@ __all__ = [
     "SYSTEM_PROMPT_RANDOM_TOKENS",
     "USER_PROMPT_SORTED_TOKENS",
     "USER_PROMPT_RANDOM_TOKENS",
-    # numeric variants
-    "SYSTEM_PROMPT_SORTED_NUMERIC",
-    "SYSTEM_PROMPT_RANDOM_NUMERIC",
-    "USER_PROMPT_SORTED_NUMERIC",
-    "USER_PROMPT_RANDOM_NUMERIC",
     # summary
     "SYSTEM_PROMPT_SUMMARY",
     "USER_PROMPT_SUMMARY",

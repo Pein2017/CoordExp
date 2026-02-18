@@ -1,7 +1,7 @@
 # coord-token-mode Specification
 
 ## Purpose
-Define the CoordExp coord-token mode contract: how JSONL geometry may be expressed as `<|coord_k|>` tokens (0-999), how augmentation/template/training treat those tokens, and which legacy coord-loss knobs are supported.
+Define the CoordExp coord-token-only contract: how JSONL geometry is represented/consumed as `<|coord_k|>` tokens (0-999), how augmentation/template/training treat those tokens, and which legacy coord-loss knobs are supported.
 
 ## Requirements
 ### Requirement: Coord-token augmentation compatibility
@@ -21,14 +21,6 @@ The system SHALL support data augmentation on records whose geometries are expre
 - **AND** rounds transformed coordinates to the nearest integer (consistent with existing numeric path)
 - **AND** converts the transformed integer values back to coord tokens in the output record, keeping geometry fields as tokens.
 
-### Requirement: Numeric path remains unchanged
-The augmentation pipeline SHALL preserve current behaviour for datasets that are not in coord-token mode.
-
-#### Scenario: Coord tokens disabled
-- **GIVEN** `custom.coord_tokens.enabled` is false
-- **WHEN** augmentation runs on a record (token or numeric geometries)
-- **THEN** the existing numeric-only augmentation behaviour is used and no token↔int conversion occurs.
-
 ### Requirement: Clear failure on invalid coord tokens
 The system SHALL emit a clear validation error before augmentation if coord-token inputs fall outside 0–999 or have odd-length coordinate lists.
 
@@ -38,14 +30,15 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - **WHEN** preprocessing runs
 - **THEN** a ValueError is raised indicating the token exceeds the allowed range for the current config.
 
-### Requirement: Coord-token mode is gated
-- The system SHALL expose a config flag (e.g., `coord_tokens.enabled`) that, when false or absent, preserves the current numeric geometry workflow unchanged.
-- When the flag is true, coord-token handling is enabled across loader, template, and coord-token supervision helpers.
+### Requirement: Coord-token mode is mandatory
+- The system SHALL require `custom.coord_tokens.enabled: true`.
+- The system SHALL require `custom.coord_tokens.skip_bbox_norm: true` to avoid double normalization on pre-quantized coordinates.
+- Configs that disable coord-token mode (or disable skip-bbox-norm) MUST fail fast with actionable errors.
 
-#### Scenario: Default path unchanged
-- GIVEN coord-token mode is disabled
-- WHEN a numeric JSONL sample is loaded
-- THEN validation, template normalization, and losses behave exactly as today (pixel → norm1000 in template; text untouched).
+#### Scenario: Coord-token mode cannot be disabled
+- GIVEN a training config with `custom.coord_tokens.enabled: false`
+- WHEN config parsing or prompt resolution runs
+- THEN loading fails with a clear error indicating coord-token mode is mandatory.
 
 ### Requirement: Coord token codec utilities
 - The system SHALL provide a reusable codec that maps `<|coord_k|>` ↔ int k ↔ normalized float k/999 and builds a coord-token id mask for CE/logit restriction.
@@ -58,7 +51,7 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 
 ### Requirement: Token-aware validation
 - The loader/validator SHALL accept geometry expressed as coord tokens (arrays of `<|coord_k|>`), provided width/height metadata is present to allow pixel recovery.
-- Numeric geometry remains supported.
+- Numeric geometry inputs may be accepted internally but SHALL be converted/emitted under the coord-token contract for model-facing payloads.
 
 #### Scenario: Token geometry accepted
 - GIVEN a JSONL object with `bbox_2d: ["<|coord_10|>", "<|coord_20|>", "<|coord_200|>", "<|coord_220|>"]` and width/height
@@ -66,7 +59,7 @@ The system SHALL emit a clear validation error before augmentation if coord-toke
 - THEN it is accepted and numeric equivalents are available for downstream loss.
 
 ### Requirement: Template bypass for pre-quantized coords
-- In coord-token mode, the template SHALL skip bbox re-normalization when data is already quantized to norm1000 tokens, while keeping the existing normalization path for numeric data.
+- In coord-token mode, the template SHALL skip bbox re-normalization when data is already quantized to norm1000 tokens.
 
 #### Scenario: No double normalization
 - GIVEN coord-token mode is enabled and a sample already encoded as coord tokens

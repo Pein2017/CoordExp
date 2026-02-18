@@ -61,7 +61,7 @@ def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> N
         json_format="standard",
         use_summary=False,
         system_prompt_dense="BASE_SYSTEM",
-        coord_tokens=CoordTokensConfig(enabled=False),
+        coord_tokens=CoordTokensConfig(enabled=True),
         object_ordering="sorted",
     )
 
@@ -89,7 +89,7 @@ def test_sorted_ordering_raises_on_unsorted_objects() -> None:
         json_format="standard",
         use_summary=False,
         system_prompt_dense="BASE_SYSTEM",
-        coord_tokens=CoordTokensConfig(enabled=False),
+        coord_tokens=CoordTokensConfig(enabled=True),
         object_ordering="sorted",
     )
 
@@ -107,7 +107,7 @@ def test_random_ordering_accepts_unsorted_objects() -> None:
         json_format="standard",
         use_summary=False,
         system_prompt_dense="BASE_SYSTEM",
-        coord_tokens=CoordTokensConfig(enabled=False),
+        coord_tokens=CoordTokensConfig(enabled=True),
         object_ordering="random",
     )
 

@@ -38,7 +38,9 @@ See: [`JSONL_CONTRACT.md`](JSONL_CONTRACT.md).
 CoordExp disables runtime normalization:
 - You must set `custom.emit_norm: none` (enforced by config validation).
 - Numeric coords that appear in JSON must already be **norm1000 integer values** in `0..999`.
-- Coord-token mode is opt-in (`<|coord_k|>` where `k in [0,999]`) via `custom.coord_tokens.enabled: true`.
+- Coord-token mode is mandatory (`<|coord_k|>` where `k in [0,999]`):
+  - `custom.coord_tokens.enabled: true`
+  - `custom.coord_tokens.skip_bbox_norm: true`
 
 Why this is strict:
 - Prevents silent scaling drift between datasets/runs.
@@ -66,12 +68,12 @@ custom:
   train_jsonl: /path/to/train.jsonl
   val_jsonl: /path/to/val.jsonl
   emit_norm: none                    # required (runtime normalization is disabled)
-  object_ordering: sorted            # sorted|random
+  object_ordering: sorted            # sorted|minY,minX default; random for ablation only
   extra:
     prompt_variant: default          # optional: default|coco_80
   coord_tokens:
-    enabled: false                   # true if JSONL uses <|coord_k|> strings
-    skip_bbox_norm: true             # keep true if pre-normalized/tokenized
+    enabled: true                    # coord-token mode is required
+    skip_bbox_norm: true             # required: avoid double-normalizing tokenized coords
 ```
 
 Notes:
@@ -85,8 +87,8 @@ Dense prompts are variant-aware and YAML-first:
 - Inference key: `infer.prompt_variant`
 - Built-ins today: `default`, `coco_80`
 - Effective construction: `{fixed_base_prompt} + {variant_suffix}`
-  - fixed base: sorted object-order instruction + coord-token geometry instruction
-  - variant suffix: dataset-specific class/extra policy text
+  - fixed base: ordering instruction (`sorted` means `(minY, minX)` / `random` means unrestricted) + coord-token geometry instruction
+  - variant suffix: dataset-specific policy text (class definitions and optional metadata/aux constraints)
 
 COCO runs should keep train/infer parity:
 - If training uses `coco_80`, inference should also use `coco_80`.

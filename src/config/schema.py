@@ -170,8 +170,18 @@ class TokenTypeMetricsConfig:
 
 @dataclass(frozen=True)
 class CoordTokensConfig:
-    enabled: bool = False
+    enabled: bool = True
     skip_bbox_norm: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.enabled:
+            raise ValueError(
+                "Coord-token-only contract: custom.coord_tokens.enabled must be true."
+            )
+        if not self.skip_bbox_norm:
+            raise ValueError(
+                "Coord-token-only contract: custom.coord_tokens.skip_bbox_norm must be true to avoid double normalization."
+            )
 
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordTokensConfig":
@@ -180,7 +190,7 @@ class CoordTokensConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("coord_tokens section must be a mapping when provided")
 
-        enabled = bool(payload.get("enabled", False))
+        enabled = bool(payload.get("enabled", True))
         skip_bbox_norm = bool(payload.get("skip_bbox_norm", True))
         return cls(
             enabled=enabled,

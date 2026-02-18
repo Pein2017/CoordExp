@@ -27,20 +27,21 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - Numeric coords must be integers in `0..999`, OR
   - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
   Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
-- When pre-tokenizing (`custom.coord_tokens.enabled: true`), keep geometry in tokens and keep `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
+- Coord-token mode is mandatory: keep geometry in `<|coord_k|>` tokens and keep `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
 
 ## Invariants
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
+- Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL. `random` ordering is supported only as an ablation mode.
 - Polygon vertices should be canonicalized offline for determinism:
   - drop duplicated closing point if present
   - order vertices clockwise around the centroid (angle sort)
   - rotate so the top-most (then left-most) vertex is first
   This matches the public-data converters (e.g., `public_data/scripts/convert_to_coord_tokens.py`) and the prompt spec.
 - Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
-- **Coord-token mode (opt-in)**: When `custom.coord_tokens.enabled` is true, geometry may be pre-quantized as `<|coord_k|>` tokens (0–999). Set `custom.coord_tokens.skip_bbox_norm: true` to avoid double normalization when feeding tokenized records.
+- **Coord-token mode (required)**: Geometry must be pre-quantized as `<|coord_k|>` tokens (0–999), and `custom.coord_tokens.skip_bbox_norm` must stay `true`.
 
 ## Example
 ```json

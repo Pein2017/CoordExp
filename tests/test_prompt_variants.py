@@ -27,12 +27,12 @@ def test_prompt_variant_default_fallback_matches_explicit_default() -> None:
 def test_prompt_variant_resolution_is_deterministic_across_repeated_calls() -> None:
     first = get_template_prompts(
         ordering="random",
-        coord_mode="numeric",
+        coord_mode="coord_tokens",
         prompt_variant="coco_80",
     )
     second = get_template_prompts(
         ordering="random",
-        coord_mode="numeric",
+        coord_mode="coord_tokens",
         prompt_variant="coco_80",
     )
 
@@ -66,7 +66,7 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference() ->
     assert infer_user == train_prompts.user
 
 
-def test_training_prompt_resolution_uses_fixed_base_plus_variant() -> None:
+def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
     sorted_tokens = ConfigLoader.resolve_prompts(
         {
             "custom": {
@@ -76,22 +76,66 @@ def test_training_prompt_resolution_uses_fixed_base_plus_variant() -> None:
             }
         }
     )
-    random_numeric = ConfigLoader.resolve_prompts(
+    random_tokens = ConfigLoader.resolve_prompts(
         {
             "custom": {
                 "object_ordering": "random",
-                "coord_tokens": {"enabled": False},
+                "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "coco_80"},
             }
         }
     )
 
-    expected_system, expected_user = get_template_prompts(prompt_variant="coco_80")
+    expected_sorted_system, expected_sorted_user = get_template_prompts(
+        ordering="sorted",
+        prompt_variant="coco_80",
+    )
+    expected_random_system, expected_random_user = get_template_prompts(
+        ordering="random",
+        prompt_variant="coco_80",
+    )
 
-    assert sorted_tokens.system == expected_system
-    assert sorted_tokens.user == expected_user
-    assert random_numeric.system == expected_system
-    assert random_numeric.user == expected_user
+    assert sorted_tokens.system == expected_sorted_system
+    assert sorted_tokens.user == expected_sorted_user
+    assert random_tokens.system == expected_random_system
+    assert random_tokens.user == expected_random_user
+    assert sorted_tokens.system != random_tokens.system
+    assert sorted_tokens.user != random_tokens.user
+
+
+def test_coord_mode_numeric_is_rejected() -> None:
+    with pytest.raises(ValueError, match="coord_mode must be 'coord_tokens'"):
+        get_template_prompts(coord_mode="numeric")
+
+
+def test_training_prompt_resolution_rejects_coord_tokens_disabled() -> None:
+    with pytest.raises(
+        ValueError,
+        match="custom.coord_tokens.enabled must be true",
+    ):
+        ConfigLoader.resolve_prompts(
+            {
+                "custom": {
+                    "coord_tokens": {"enabled": False},
+                    "extra": {"prompt_variant": "default"},
+                }
+            }
+        )
+
+
+def test_training_prompt_resolution_rejects_skip_bbox_norm_false() -> None:
+    with pytest.raises(
+        ValueError,
+        match="custom.coord_tokens.skip_bbox_norm must be true",
+    ):
+        ConfigLoader.resolve_prompts(
+            {
+                "custom": {
+                    "coord_tokens": {"enabled": True, "skip_bbox_norm": False},
+                    "extra": {"prompt_variant": "default"},
+                }
+            }
+        )
 
 
 def test_coco_80_prompt_variant_has_compact_canonical_unique_list() -> None:
