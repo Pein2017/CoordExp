@@ -145,13 +145,6 @@ def build_stage2_launcher_preflight(
 
     enable_lora = bool(vllm_cfg.get("enable_lora", False))
 
-    repeat_terminate_raw = rollout_cfg.get("repeat_terminate", {})
-    if repeat_terminate_raw is None:
-        repeat_terminate_raw = {}
-    if not isinstance(repeat_terminate_raw, Mapping):
-        raise TypeError("rollout_matching.repeat_terminate must be a mapping when provided")
-    repeat_terminate = dict(repeat_terminate_raw)
-
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "vllm_mode": rollout_contract["vllm_mode"],
@@ -160,8 +153,6 @@ def build_stage2_launcher_preflight(
         "root_image_dir_resolved": str(root_image_dir),
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
-        "repeat_terminate_config": repeat_terminate,
-        "repeat_terminate_enabled": bool(repeat_terminate.get("enabled", False)),
     }
 
 

@@ -28,7 +28,7 @@ class _DummyTokenizerRM:
 
     - coord tokens <|coord_k|> map to ids 0..999
     - all other characters map to ids >= 1000 (1 char = 1 token)
-    - supports a special fused token id that decodes to '}}'
+    - supports a special fused token id that decodes to ']}'
     """
 
     _coord_re = re.compile(r"<\|coord_(\d{1,4})\|>")
@@ -37,9 +37,9 @@ class _DummyTokenizerRM:
         self._char_to_id: dict[str, int] = {}
         self._id_to_piece: dict[int, str] = {}
         self._next = 1000
-        # Fused '}}' token
+        # Fused ']}' token
         self.fused_brace_id = 2000
-        self._id_to_piece[self.fused_brace_id] = "}}"
+        self._id_to_piece[self.fused_brace_id] = "]}"
 
     def convert_tokens_to_ids(self, tokens):
         out = []
@@ -69,7 +69,7 @@ class _DummyTokenizerRM:
 
     def encode(self, text: str, add_special_tokens: bool = False, **kwargs):
         # Special-case token-internal cuts: allow encoding of single braces.
-        if text == "}}":
+        if text == "]}":
             return [self.fused_brace_id]
         if text and text in self._char_to_id:
             return [self._char_to_id[text]]
@@ -150,13 +150,12 @@ class _FakeRequestConfig:
     seed: int | None = None
 
 
-def _make_rollout_server_trainer(*, repeat_cfg):
+def _make_rollout_server_trainer():
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
         "decode_mode": "greedy",
         "max_new_tokens": 8,
         "repetition_penalty": 1.0,
-        "repeat_terminate": dict(repeat_cfg),
     }
     trainer.state = types.SimpleNamespace(global_step=3)
     trainer._vllm_server_last_logged_step = -1
@@ -192,63 +191,6 @@ def test_shutdown_vllm_server_client_closes_resources():
     assert all(s.closed for s in client.sessions)
     assert trainer._vllm_server_client is None
     assert trainer._vllm_server_comm_inited is False
-
-
-def test_vllm_server_repeat_cfg_subtree_is_forwarded_and_missing_signal_fails_fast(
-    monkeypatch,
-):
-    repeat_cfg = {
-        "enabled": True,
-        "min_new_tokens": 9,
-        "max_consecutive_repeat": 7,
-        "max_repeated_ngram": 5,
-        "max_object_keys": 3,
-    }
-    trainer = _make_rollout_server_trainer(repeat_cfg=repeat_cfg)
-
-    captured_payloads: list[dict] = []
-    raw_cfg_seen: dict[str, object] = {}
-
-    from src.common.repeat_terminate import parse_repeat_terminate_config as _parse_cfg
-    import src.trainers.rollout_matching_sft as rm_mod
-
-    def _capture_parse(raw_cfg):
-        raw_cfg_seen["raw"] = raw_cfg
-        return _parse_cfg(raw_cfg)
-
-    monkeypatch.setattr(rm_mod, "parse_repeat_terminate_config", _capture_parse)
-    monkeypatch.setitem(
-        sys.modules,
-        "swift.llm",
-        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
-    )
-
-    response_payload = [
-        {
-            "response": {
-                "prompt_token_ids": [1, 2],
-                "choices": [
-                    {
-                        "message": {"content": "{}"},
-                        "token_ids": [3, 4],
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
-            # Intentionally no coordexp signal: should fail fast when enabled=true.
-        }
-    ]
-    fake_client = types.SimpleNamespace(
-        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
-    )
-    trainer._ensure_vllm_server_client = lambda: fake_client
-
-    sample = {"messages": [{"role": "user", "content": "ping"}]}
-    with pytest.raises(RuntimeError, match=r"coordexp\.repeat_terminate_triggered"):
-        trainer._rollout_many_vllm_server([sample])
-
-    assert raw_cfg_seen["raw"] == repeat_cfg
-    assert len(captured_payloads) == 1
 
 
 def test_vllm_server_timeouts_allow_null_or_non_positive_infer_timeout() -> None:
@@ -307,7 +249,7 @@ def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology()
 
 def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
-    trainer.rollout_matching_cfg = {"repeat_terminate": {"enabled": False}}
+    trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
     call_samples: list[list[dict[str, object]]] = []
@@ -337,7 +279,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": f"prompt-{i}"},
-                {"role": "assistant", "content": '{"object_1": {"desc": "cat"}}'},
+                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
             ]
         }
         for i in range(5)
@@ -359,8 +301,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
 def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
     monkeypatch,
 ):
-    repeat_cfg = {"enabled": False}
-    trainer = _make_rollout_server_trainer(repeat_cfg=repeat_cfg)
+    trainer = _make_rollout_server_trainer()
 
     captured_payloads: list[dict] = []
     monkeypatch.setitem(
@@ -398,7 +339,7 @@ def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
 
 def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
     trainer = object.__new__(RolloutMatchingSFTTrainer)
-    trainer.rollout_matching_cfg = {"repeat_terminate": {"enabled": False}}
+    trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
     captured: dict[str, object] = {}
@@ -424,7 +365,7 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": "prompt"},
-                {"role": "assistant", "content": '{"object_1": {"desc": "cat"}}'},
+                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
             ]
         }
     ]
@@ -543,12 +484,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         100: types.SimpleNamespace(
             response_token_ids=[100],
             valid_objects=[
-                types.SimpleNamespace(
-                    index=0,
-                    geom_type="bbox",
-                    coord_token_indices=[0, 1, 2, 3],
-                    desc="",
-                )
+                    types.SimpleNamespace(
+                        index=0,
+                        geom_type="bbox_2d",
+                        coord_token_indices=[0, 1, 2, 3],
+                        desc="",
+                    )
             ],
             dropped_invalid=0,
             dropped_ambiguous=0,
@@ -557,12 +498,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         101: types.SimpleNamespace(
             response_token_ids=[101],
             valid_objects=[
-                types.SimpleNamespace(
-                    index=0,
-                    geom_type="bbox",
-                    coord_token_indices=[0, 1, 2, 3],
-                    desc="",
-                )
+                    types.SimpleNamespace(
+                        index=0,
+                        geom_type="bbox_2d",
+                        coord_token_indices=[0, 1, 2, 3],
+                        desc="",
+                    )
             ],
             dropped_invalid=1,
             dropped_ambiguous=1,
@@ -572,7 +513,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "src.trainers.rollout_matching_sft.parse_rollout_for_matching",
-        lambda *, tokenizer, response_token_ids: parse_map[int(response_token_ids[0])],
+        lambda **kwargs: parse_map[int(kwargs["response_token_ids"][0])],
     )
     monkeypatch.setattr(
         "src.trainers.rollout_matching_sft._points_from_coord_tokens",
@@ -644,102 +585,8 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     assert "eval_time/runtime_s" in metrics
 
 
-def test_vllm_server_repeat_activation_does_not_use_request_time_logits_processors(
-    monkeypatch,
-):
-    trainer = _make_rollout_server_trainer(repeat_cfg={"enabled": True})
-    captured_payloads: list[dict] = []
-
-    monkeypatch.setitem(
-        sys.modules,
-        "swift.llm",
-        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
-    )
-
-    response_payload = [
-        {
-            "response": {
-                "prompt_token_ids": [10],
-                "choices": [
-                    {
-                        "message": {"content": "ok"},
-                        "token_ids": [11, 12],
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
-            "coordexp": {"repeat_terminate_triggered": 1},
-        }
-    ]
-    fake_client = types.SimpleNamespace(
-        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
-    )
-    trainer._ensure_vllm_server_client = lambda: fake_client
-
-    sample = {"messages": [{"role": "user", "content": "hello"}]}
-    outputs = trainer._rollout_many_vllm_server([sample])
-
-    assert len(outputs) == 1
-    assert getattr(trainer, "_last_rollout_repeat_terminate_active", 0) == 1
-    assert getattr(trainer, "_last_rollout_repeat_terminate_triggers", []) == [1]
-
-
-def test_vllm_server_repeat_trigger_metric_uses_explicit_coordexp_signal(
-    monkeypatch,
-):
-    trainer = _make_rollout_server_trainer(repeat_cfg={"enabled": True})
-    # Keep this test focused on signal semantics, not chunking rounds.
-    trainer.rollout_matching_cfg["decode_batch_size"] = 2
-
-    captured_payloads: list[dict] = []
-    monkeypatch.setitem(
-        sys.modules,
-        "swift.llm",
-        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
-    )
-
-    response_payload = [
-        {
-            "response": {
-                "prompt_token_ids": [1],
-                "choices": [
-                    {
-                        "message": {"content": "a"},
-                        "token_ids": [2],
-                        "finish_reason": "repeat_terminate",
-                    }
-                ],
-            },
-            "coordexp": {"repeat_terminate_triggered": 0},
-        },
-        {
-            "response": {
-                "prompt_token_ids": [3],
-                "choices": [
-                    {
-                        "message": {"content": "b"},
-                        "token_ids": [4],
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
-            "coordexp": {"repeat_terminate_triggered": 1},
-        },
-    ]
-    fake_client = types.SimpleNamespace(
-        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
-    )
-    trainer._ensure_vllm_server_client = lambda: fake_client
-
-    samples = [
-        {"messages": [{"role": "user", "content": "q1"}]},
-        {"messages": [{"role": "user", "content": "q2"}]},
-    ]
-    _ = trainer._rollout_many_vllm_server(samples)
-
-
 def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):
-    trainer = _make_rollout_server_trainer(repeat_cfg={"enabled": False})
+    trainer = _make_rollout_server_trainer()
     trainer.rollout_matching_cfg["decode_batch_size"] = 1
 
     captured_payloads: list[dict] = []
@@ -773,7 +620,7 @@ def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):
                                 }
                             ],
                         },
-                        "coordexp": {"repeat_terminate_triggered": 0},
+                        "coordexp": {},
                     }
                 )
             return _FakeHTTPResponse(out, status_code=200)
@@ -796,83 +643,71 @@ def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):
         21,
         22,
     ]
-    assert getattr(trainer, "_last_rollout_repeat_terminate_triggers", []) == [0, 0, 0]
 
 
 def test_rollout_parse_preserves_appearance_order_and_prefix_cut():
     tok = _DummyTokenizerRM()
     text = (
-        '{"object_10": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
-        '"object_2": {"desc": "b", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>", "<|coord_8|>"]}}'
+        '{"objects": [{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
+        '{"desc": "b", "bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
 
-    assert [o.index for o in parsed.valid_objects] == [10, 2]
-    assert parsed.max_object_index_in_prefix == 10
-    # Prefix ends after last object value dict; top-level JSON is left open for append.
+    assert [o.index for o in parsed.valid_objects] == [0, 1]
+    assert parsed.invalid_rollout is False
+    # Prefix ends after last object dict; top-level array/object are left open for append.
     assert parsed.prefix_text.endswith("}")
-    assert not parsed.prefix_text.endswith("}}")
+    assert parsed.prefix_text == text[:-2]
 
 
 def test_rollout_parse_drops_invalid_objects_without_repair():
     tok = _DummyTokenizerRM()
-    # object_2 has only 3 bbox coords -> invalid and dropped.
+    # objects[1] has only 3 bbox coords -> invalid and dropped.
     text = (
-        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
-        '"object_2": {"desc": "b", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>"]}, '
-        '"object_3": {"desc": "c", "bbox_2d": ["<|coord_8|>", "<|coord_9|>", "<|coord_10|>", "<|coord_11|>"]}}'
+        '{"objects": ['
+        '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
+        '{"desc": "b", "bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>]}, '
+        '{"desc": "c", "bbox_2d": [<|coord_8|>, <|coord_9|>, <|coord_10|>, <|coord_11|>]}'
+        ']}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
-    assert [o.index for o in parsed.valid_objects] == [1, 3]
+    assert [o.index for o in parsed.valid_objects] == [0, 2]
     assert parsed.dropped_invalid >= 1
 
 
-def test_rollout_parse_max_index_includes_invalid_retained_keys():
+def test_rollout_parse_drops_order_violation_for_geometry_first():
     tok = _DummyTokenizerRM()
-    # object_9 has empty desc -> dropped by strict validation, but key index must still
-    # reserve FN numbering space for collision-safe append.
     text = (
-        '{"object_2": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
-        '"object_9": {"desc": " ", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>", "<|coord_8|>"]}}'
+        '{"objects": ['
+        '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
+        '{"bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>], "desc": "b"}'
+        ']}'
     )
     ids = tok.encode(text, add_special_tokens=False)
-    parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
+    parsed = parse_rollout_for_matching(
+        tokenizer=tok,
+        response_token_ids=ids,
+        object_field_order="geometry_first",
+    )
 
-    assert [o.index for o in parsed.valid_objects] == [2]
+    assert [o.index for o in parsed.valid_objects] == [1]
     assert parsed.dropped_invalid >= 1
-    assert parsed.max_object_index_in_prefix == 9
+    assert parsed.dropped_invalid_by_reason.get("order_violation", 0) >= 1
 
 
-def test_rollout_parse_max_index_includes_non_dict_retained_keys():
+def test_serialize_append_fragment_rejects_non_append_ready_prefix():
     tok = _DummyTokenizerRM()
-    # object_4 has a non-dict value; it is retained in prefix key space and must
-    # reserve FN numbering to avoid duplicate object keys.
-    text = (
-        '{"object_4": 123, '
-        '"object_3": {"desc": "a", "bbox_2d": ['
-        '"<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}'
-    )
-    ids = tok.encode(text, add_special_tokens=False)
-    parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
-
-    assert [o.index for o in parsed.valid_objects] == [3]
-    assert parsed.max_object_index_in_prefix == 4
-
     fn_obj = GTObject(
         index=0,
         geom_type="bbox_2d",
         points_norm1000=[5, 6, 7, 8],
         desc="fn",
     )
-    append_text = _serialize_append_fragment(
-        fn_objects=[fn_obj],
-        start_index=(parsed.max_object_index_in_prefix or 0) + 1,
-        prefix_text=parsed.prefix_text,
-    )
-    assert '"object_5"' in append_text
-    assert '"object_4"' not in append_text
+    with pytest.raises(ValueError, match="append-ready"):
+        _serialize_append_fragment(fn_objects=[fn_obj], prefix_text="{}")
+    _ = tok  # keep tokenizer fixture parity in this test module
 
 
 def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
@@ -887,22 +722,20 @@ def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
 
     frag_empty = _serialize_append_fragment(
         fn_objects=fn_objs,
-        start_index=1,
-        prefix_text="{",
+        prefix_text='{"objects": [',
     )
-    assert frag_empty.startswith('"object_1"')
+    assert frag_empty.startswith('{"')
+    assert frag_empty.endswith("]}")
 
     prefix_with_entry = (
-        '{"object_7": {"desc": "p", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", '
-        '"<|coord_3|>", "<|coord_4|>"]}'
+        '{"objects": [{"desc": "p", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}'
     )
     frag_non_empty = _serialize_append_fragment(
         fn_objects=fn_objs,
-        start_index=8,
         prefix_text=prefix_with_entry,
     )
     assert frag_non_empty.startswith(", ")
-    assert '"object_8"' in frag_non_empty
+    assert '"bbox_2d"' in frag_non_empty
 
 
 def test_serialize_append_fragment_supports_geometry_first_field_order():
@@ -915,8 +748,7 @@ def test_serialize_append_fragment_supports_geometry_first_field_order():
                 desc="bbox",
             )
         ],
-        start_index=1,
-        prefix_text="{",
+        prefix_text='{"objects": [',
         object_field_order="geometry_first",
     )
     assert frag_bbox.index('"bbox_2d"') < frag_bbox.index('"desc"')
@@ -930,19 +762,17 @@ def test_serialize_append_fragment_supports_geometry_first_field_order():
                 desc="poly",
             )
         ],
-        start_index=2,
-        prefix_text="{",
+        prefix_text='{"objects": [',
         object_field_order="geometry_first",
     )
     assert frag_poly.index('"poly"') < frag_poly.index('"desc"')
 
 
-def test_rollout_parse_poly_captures_coord_indices_through_nested_arrays():
+def test_rollout_parse_poly_captures_coord_indices_for_flat_arrays():
     tok = _DummyTokenizerRM()
     text = (
-        '{"object_1": {"desc": "p", "poly": [['
-        '"<|coord_1|>", "<|coord_2|>"], ["<|coord_3|>", "<|coord_4|>"], '
-        '["<|coord_5|>", "<|coord_6|>"], ["<|coord_7|>", "<|coord_8|>"]]}}'
+        '{"objects": [{"desc": "p", "poly": [<|coord_1|>, <|coord_2|>, <|coord_3|>, '
+        '<|coord_4|>, <|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
@@ -954,53 +784,58 @@ def test_rollout_parse_poly_captures_coord_indices_through_nested_arrays():
 
 def test_rollout_parse_truncated_tail_is_suffix_trimmed():
     tok = _DummyTokenizerRM()
-    # Truncated mid-object_2: only object_1 should remain.
+    # Truncated mid-objects[1]: only objects[0] should remain.
     text = (
-        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
-        '"object_2": {"desc": "b", "bbox_2d": ["<|coord_5|>"'
+        '{"objects": ['
+        '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
+        '{"desc": "b", "bbox_2d": [<|coord_5|>'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
     assert parsed.truncated is True
-    assert [o.index for o in parsed.valid_objects] == [1]
+    assert [o.index for o in parsed.valid_objects] == [0]
     assert parsed.prefix_text.endswith("}")
 
 
 def test_rollout_parse_truncated_tail_keeps_all_previous_complete_objects():
     tok = _DummyTokenizerRM()
-    # Truncated mid-object_3: object_1 and object_2 should remain.
+    # Truncated mid-objects[2]: objects[0] and objects[1] should remain.
     text = (
-        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}, '
-        '"object_2": {"desc": "b", "bbox_2d": ["<|coord_5|>", "<|coord_6|>", "<|coord_7|>", "<|coord_8|>"]}, '
-        '"object_3": {"desc": "c", "bbox_2d": ["<|coord_9|>"'
+        '{"objects": ['
+        '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
+        '{"desc": "b", "bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}, '
+        '{"desc": "c", "bbox_2d": [<|coord_9|>'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
     assert parsed.truncated is True
-    assert [o.index for o in parsed.valid_objects] == [1, 2]
-    assert "object_3" not in parsed.prefix_text
+    assert [o.index for o in parsed.valid_objects] == [0, 1]
     assert parsed.prefix_text.endswith("}")
 
 
 def test_rollout_parse_handles_fused_closing_braces_token_internal_cut():
     tok = _DummyTokenizerRM()
-    base = '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}'
+    base = (
+        '{"objects": [{"desc": "a", '
+        '"bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'
+    )
     ids = tok.encode(base, add_special_tokens=False)
-    # Replace the final two '}' character tokens with a single fused '}}' token.
-    assert tok.decode(ids[-2:], clean_up_tokenization_spaces=False) == "}}"
+    # Replace the final top-level ']}' with a single fused token.
+    assert tok.decode(ids[-2:], clean_up_tokenization_spaces=False) == "]}"
     ids_fused = ids[:-2] + [tok.fused_brace_id]
 
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids_fused)
-    assert [o.index for o in parsed.valid_objects] == [1]
-    # Prefix should not include the top-level closing brace.
+    assert [o.index for o in parsed.valid_objects] == [0]
+    # Prefix should exclude the top-level closing ']}' while preserving record closure.
     assert parsed.prefix_text.endswith("}")
-    assert not parsed.prefix_text.endswith("}}")
+    assert parsed.prefix_text == base[:-2]
 
 
 def test_rollout_parse_strips_im_end_hard_stop():
     tok = _DummyTokenizerRM()
     base = (
-        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}'
+        '{"objects": [{"desc": "a", '
+        '"bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'
         "<|im_end|>GARBAGE"
     )
     ids = tok.encode(base, add_special_tokens=False)
@@ -1016,9 +851,9 @@ def test_rollout_parse_fallback_when_no_open_brace():
     text = "NOT_JSON<|im_end|>"
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
-    assert parsed.prefix_text == "{"
+    assert parsed.prefix_text == '{"objects": ['
     assert parsed.valid_objects == []
-    assert parsed.truncated is True
+    assert parsed.invalid_rollout is True
 
 
 def test_hungarian_matching_with_gating_and_dummy_augmentation():

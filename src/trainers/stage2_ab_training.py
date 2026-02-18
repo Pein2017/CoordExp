@@ -2,7 +2,6 @@ import contextlib
 import json
 import math
 import os
-import re
 import time
 import logging
 from collections import deque
@@ -16,6 +15,7 @@ from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
 
 from src.common.object_field_order import build_object_payload
+from src.utils.assistant_json import dumps_coordjson
 
 from .rollout_matching_sft import RolloutMatchingSFTTrainer
 from .rollout_matching.contracts import GTObject
@@ -36,9 +36,6 @@ from .stage2_ab.scheduler import Stage2ABSchedulerMixin
 
 
 logger = logging.getLogger(__name__)
-
-
-_OBJECT_KEY_RE = re.compile(r"^object_(\d+)$")
 
 
 @dataclass
@@ -63,16 +60,11 @@ class _PendingStage2Log:
         out: Dict[str, float] = {}
         n_micro = float(self.n_micro)
         for k, v in self.sums.items():
-            if k == "rollout/repeat_terminate_active":
-                out[k] = 1.0 if float(v) > 0.0 else 0.0
-                continue
-
             if k == "rollout/parse_truncated_rate":
                 # Always derived from numerator/denominator.
                 continue
 
             if k in {
-                "rollout/repeat_terminate_triggered_sequences",
                 "rollout/parse_truncated",
                 "rollout/_parse_truncated_num",
                 "rollout/_parse_truncated_den",
@@ -253,16 +245,14 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
     if not isinstance(payload, Mapping):
         raise ValueError("stage2-ab requires assistant_payload in each sample")
 
+    objects = payload.get("objects")
+    if not isinstance(objects, Sequence):
+        raise ValueError("assistant_payload must contain top-level 'objects' list")
+
     objs: List[GTObject] = []
-    for key, entry in payload.items():
-        if not isinstance(key, str):
-            continue
-        m = _OBJECT_KEY_RE.match(key)
-        if not m:
-            continue
-        idx = int(m.group(1))
+    for idx, entry in enumerate(objects):
         if not isinstance(entry, Mapping):
-            raise ValueError(f"assistant_payload[{key}] must be a mapping")
+            raise ValueError(f"assistant_payload.objects[{int(idx)}] must be a mapping")
 
         # Enforce bbox-only v1 on GT: exactly one geometry field, and it must be bbox_2d.
         # Any other geometry key (including poly) must fail fast.
@@ -276,13 +266,13 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
         if geom_keys != ["bbox_2d"]:
             raise ValueError(
                 "bbox-only v1 requires each GT object to contain exactly one geometry field 'bbox_2d' "
-                f"(no poly/other geometry keys); got geometry keys={geom_keys} for {key}"
+                f"(no poly/other geometry keys); got geometry keys={geom_keys} for objects[{int(idx)}]"
             )
 
         pts = _coerce_bbox_bins(entry.get("bbox_2d"))
         if pts is None:
             raise ValueError(
-                f"invalid bbox_2d for {key}; expected 4 bins in [0,999] and ordered xyxy"
+                f"invalid bbox_2d for objects[{int(idx)}]; expected 4 bins in [0,999] and ordered xyxy"
             )
 
         desc = entry.get("desc", "")
@@ -295,7 +285,6 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
             )
         )
 
-    objs.sort(key=lambda o: int(o.index))
     if not objs:
         raise ValueError("no valid GT objects found in assistant_payload")
     return objs
@@ -304,7 +293,11 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
 def _build_teacher_forced_payload(
     *, gt_objects: Sequence[GTObject], object_field_order: str
 ) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {}
+    payload: Dict[str, Any] = {"objects": []}
+    objects = payload["objects"]
+    if not isinstance(objects, list):
+        raise RuntimeError("internal error: objects payload is not a list")
+
     for obj in gt_objects:
         if obj.geom_type == "bbox_2d":
             geometry_key = "bbox_2d"
@@ -312,18 +305,17 @@ def _build_teacher_forced_payload(
         elif obj.geom_type == "poly":
             points = obj.points_norm1000
             geometry_key = "poly"
-            geometry_value = [
-                [f"<|coord_{int(points[i])}|>", f"<|coord_{int(points[i + 1])}|>"]
-                for i in range(0, len(points), 2)
-            ]
+            geometry_value = [f"<|coord_{int(v)}|>" for v in points]
         else:
             raise ValueError(f"unsupported geometry type for stage2 payload: {obj.geom_type!r}")
 
-        payload[f"object_{int(obj.index)}"] = build_object_payload(
-            desc=str(obj.desc),
-            geometry_key=geometry_key,
-            geometry_value=geometry_value,
-            object_field_order=object_field_order,
+        objects.append(
+            build_object_payload(
+                desc=str(obj.desc),
+                geometry_key=geometry_key,
+                geometry_value=geometry_value,
+                object_field_order=object_field_order,
+            )
         )
     return payload
 
@@ -525,14 +517,10 @@ def _matched_prefix_structure_positions(
         if obj is None:
             continue
 
-        key = str(getattr(obj, "key", "") or "")
-        if not key:
-            raise ValueError("matched object is missing key for prefix-structure supervision")
-
         value_span = getattr(obj, "value_span", None)
         if not isinstance(value_span, tuple) or len(value_span) != 2:
             raise ValueError(
-                f"matched object {key} is missing value_span for prefix-structure supervision"
+                "matched object is missing value_span for prefix-structure supervision"
             )
 
         try:
@@ -540,24 +528,18 @@ def _matched_prefix_structure_positions(
             value_end = int(value_span[1])
         except Exception as exc:
             raise ValueError(
-                f"matched object {key} has non-integer value_span: {value_span!r}"
+                f"matched object has non-integer value_span: {value_span!r}"
             ) from exc
 
         if value_start < 0 or value_end <= value_start or value_end > prefix_len_chars:
             raise ValueError(
-                f"matched object {key} value_span is outside retained prefix: {value_span!r}"
+                f"matched object value_span is outside retained prefix: {value_span!r}"
             )
 
-        key_anchor = int(prefix_scan_text.rfind(f'"{key}"', 0, int(value_start) + 1))
-        if key_anchor < 0:
-            raise ValueError(
-                f"could not locate matched object key {key!r} in retained prefix"
-            )
-
-        entry_tokens = _tok_indices_overlapping(int(key_anchor), int(value_end))
+        entry_tokens = _tok_indices_overlapping(int(value_start), int(value_end))
         if not entry_tokens:
             raise ValueError(
-                f"could not map matched object entry {key!r} to prefix tokens"
+                "could not map matched object entry span to prefix tokens"
             )
 
         desc_tokens: set[int] = set()
@@ -826,10 +808,6 @@ class Stage2ABTrainingTrainer(
         mean_key_set: set[str] = set()
 
         for key in metric_keys:
-            if key == "rollout/repeat_terminate_active":
-                max_key_set.add(key)
-                continue
-
             if key.startswith("time/") or key in {
                 "rollout/backend_hf",
                 "rollout/backend_vllm",
@@ -844,10 +822,10 @@ class Stage2ABTrainingTrainer(
             if key in {
                 "stage2/raw_rollouts",
                 "stage2/invalid_rollout",
+                "stage2_ab/channel_b/invalid_rollout",
                 "stage2/drop_poly",
                 "stage2/drop_unknown",
                 "stage2/drop_bbox_invalid",
-                "rollout/repeat_terminate_triggered_sequences",
                 "rollout/parse_truncated",
                 trunc_num_key,
                 trunc_den_key,
@@ -870,7 +848,7 @@ class Stage2ABTrainingTrainer(
             trunc_num_key,
             trunc_den_key,
             "stage2/raw_rollouts",
-            "rollout/repeat_terminate_triggered_sequences",
+            "stage2_ab/channel_b/invalid_rollout",
             "rollout/parse_truncated",
         ]
         sum_keys: List[str] = []
@@ -880,13 +858,7 @@ class Stage2ABTrainingTrainer(
                 sum_key_set.remove(k)
         sum_keys.extend(sorted(sum_key_set))
 
-        max_priority = ["rollout/repeat_terminate_active"]
-        max_keys: List[str] = []
-        for k in max_priority:
-            if k in max_key_set:
-                max_keys.append(k)
-                max_key_set.remove(k)
-        max_keys.extend(sorted(max_key_set))
+        max_keys: List[str] = sorted(max_key_set)
 
         mean_keys: List[str] = sorted(mean_key_set)
         if dist is not None and int(world_size) > 1:
@@ -1200,9 +1172,7 @@ class Stage2ABTrainingTrainer(
                 gt_objects=gts,
                 object_field_order=self._object_field_order(),
             )
-            assistant_text = json.dumps(
-                payload, ensure_ascii=False, separators=(", ", ": ")
-            )
+            assistant_text = dumps_coordjson(payload)
             y_train_ids = tok.encode(assistant_text, add_special_tokens=False)
 
             # Desc spans for CE weighting (relative to tail ids).
@@ -1468,8 +1438,6 @@ class Stage2ABTrainingTrainer(
                 rollout_infer_bs = min(int(rollout_infer_bs), int(len(inputs)))
 
             rollout_results = []
-            rollout_repeat_trigger_flags: List[int] = []
-            rollout_repeat_active_flags: List[int] = []
             for off in range(0, int(len(inputs)), int(rollout_infer_bs)):
                 chunk = inputs[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
@@ -1478,38 +1446,10 @@ class Stage2ABTrainingTrainer(
                 chunk_results = self._rollout_many(chunk)
                 rollout_results.extend(chunk_results)
 
-                chunk_trigger_raw = getattr(
-                    self,
-                    "_last_rollout_repeat_terminate_triggers",
-                    None,
-                )
-                if (
-                    isinstance(chunk_trigger_raw, list)
-                    and len(chunk_trigger_raw) == len(chunk_results)
-                ):
-                    chunk_trigger = [int(1 if bool(x) else 0) for x in chunk_trigger_raw]
-                else:
-                    chunk_trigger = [0 for _ in range(len(chunk_results))]
-                rollout_repeat_trigger_flags.extend(chunk_trigger)
-
-                chunk_active = int(
-                    1
-                    if bool(
-                        getattr(self, "_last_rollout_repeat_terminate_active", 0)
-                    )
-                    else 0
-                )
-                rollout_repeat_active_flags.append(chunk_active)
-
             if len(rollout_results) != len(inputs):
                 raise RuntimeError(
                     "rollout backend returned unexpected number of results"
                 )
-            if len(rollout_repeat_trigger_flags) != len(rollout_results):
-                rollout_repeat_trigger_flags = [0 for _ in range(len(rollout_results))]
-            repeat_terminate_active = int(
-                1 if any(int(x) != 0 for x in rollout_repeat_active_flags) else 0
-            )
             t_gen_s = time.perf_counter() - t_gen0
 
         encoded_batch: List[Dict[str, Any]] = []
@@ -1524,17 +1464,15 @@ class Stage2ABTrainingTrainer(
         drop_bbox_invalid_total = 0
         invalid_rollout_total = 0
         parse_truncated_total = 0
-        repeat_triggered_total = 0
         closure_supervision_drop_total = 0
 
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
         strict_drop_by_reason_total: Dict[str, int] = {}
 
-        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids), repeat_triggered in zip(
+        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
             inputs,
             rollout_results,
-            rollout_repeat_trigger_flags,
         ):
             if "messages" not in sample:
                 raise ValueError("stage2-ab requires 'messages' in dataset samples")
@@ -1553,23 +1491,15 @@ class Stage2ABTrainingTrainer(
 
             t_pm0 = time.perf_counter()
             parse = parse_rollout_for_matching(
-                tokenizer=tok, response_token_ids=resp_ids_local
+                tokenizer=tok,
+                response_token_ids=resp_ids_local,
+                object_field_order=self._object_field_order(),
+            )
+            invalid_rollout = int(
+                1 if bool(getattr(parse, "invalid_rollout", False)) else 0
             )
 
-            # Invalid rollout fallback detection: prefix is exactly "{" and no valid objects.
-            invalid_rollout = 0
-            try:
-                brace_ids = tok.encode("{", add_special_tokens=False)
-                if (
-                    list(parse.prefix_token_ids) == [int(x) for x in brace_ids]
-                    and not parse.valid_objects
-                ):
-                    invalid_rollout = 1
-            except Exception:
-                invalid_rollout = 0
-
             parse_truncated_total += int(1 if bool(parse.truncated) else 0)
-            repeat_triggered_total += int(1 if bool(repeat_triggered) else 0)
 
             gts = _extract_gt_bboxonly(sample)
 
@@ -1726,11 +1656,8 @@ class Stage2ABTrainingTrainer(
             fn_objs = [gts[i] for i in fn_gt_indices_final]
             fn_count_for_meta = int(len(fn_objs))
 
-            max_idx = parse.max_object_index_in_prefix
-            start_idx = (max_idx + 1) if max_idx is not None else 1
             append_text = serialize_append_fragment(
                 fn_objects=fn_objs,
-                start_index=start_idx,
                 prefix_text=parse.prefix_text,
                 object_field_order=self._object_field_order(),
             )
@@ -1931,7 +1858,6 @@ class Stage2ABTrainingTrainer(
                 "parse_dropped_invalid": int(parse.dropped_invalid),
                 "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
                 "parse_truncated": bool(parse.truncated),
-                "repeat_terminate_triggered": int(1 if bool(repeat_triggered) else 0),
                 "drop_invalid_total": int(n_drop_invalid),
                 "drop_invalid_struct_ce_multiplier": float(
                     drop_invalid_struct_ce_multiplier
@@ -1965,6 +1891,7 @@ class Stage2ABTrainingTrainer(
             "stage2/channel_a": float(0.0),
             "stage2/channel_b": float(1.0),
             "stage2/invalid_rollout": float(invalid_rollout_total),
+            "stage2_ab/channel_b/invalid_rollout": float(invalid_rollout_total),
             "stage2_ab/channel_b/closure_supervision/N_drop": float(
                 closure_supervision_drop_total
             ),
@@ -1986,10 +1913,6 @@ class Stage2ABTrainingTrainer(
             "rollout/max_new_tokens": float(max_new_tokens),
             "rollout/num_beams": float(num_beams),
             "rollout/repetition_penalty": float(repetition_penalty),
-            "rollout/repeat_terminate_active": float(repeat_terminate_active),
-            "rollout/repeat_terminate_triggered_sequences": float(
-                repeat_triggered_total
-            ),
             "rollout/parse_truncated": float(parse_truncated_total),
             "rollout/parse_truncated_rate": float(
                 (float(parse_truncated_total) / float(len(rollout_results)))
@@ -2722,12 +2645,11 @@ class Stage2ABTrainingTrainer(
                 for k in (
                     "stage2/raw_rollouts",
                     "stage2/invalid_rollout",
+                    "stage2_ab/channel_b/invalid_rollout",
                     "stage2/drop_poly",
                     "stage2/drop_unknown",
                     "stage2/drop_bbox_invalid",
                     "rollout/seed_base",
-                    "rollout/repeat_terminate_active",
-                    "rollout/repeat_terminate_triggered_sequences",
                     "rollout/parse_truncated",
                     "rollout/parse_truncated_rate",
                     "rollout/_parse_truncated_num",

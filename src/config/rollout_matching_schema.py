@@ -129,16 +129,6 @@ class VllmConfig:
 
 
 @dataclass(frozen=True)
-class RolloutRepeatTerminateConfig:
-    enabled: bool = False
-    min_new_tokens: int = 0
-    max_consecutive_token_repeats: int = 0
-    ngram_size: int = 0
-    ngram_repeats: int = 0
-    max_object_keys: Optional[int] = None
-
-
-@dataclass(frozen=True)
 class RolloutMatchingConfig:
     # Core backend selection.
     rollout_backend: str = "vllm"
@@ -152,8 +142,6 @@ class RolloutMatchingConfig:
     repetition_penalty: float = 1.0
 
     decoding: Optional[RolloutDecodingConfig] = None
-    repeat_terminate: Optional[RolloutRepeatTerminateConfig] = None
-
     # Matching knobs.
     candidate_top_k: int = 10
     maskiou_gate: float = 0.3

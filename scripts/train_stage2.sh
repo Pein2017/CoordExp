@@ -131,16 +131,6 @@ emit("SERVER_MODEL", preflight["server_model"])
 emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
-emit(
-    "REPEAT_TERMINATE_CONFIG_JSON",
-    json.dumps(
-        preflight["repeat_terminate_config"], ensure_ascii=False, separators=(",", ":")
-    ),
-)
-emit(
-    "REPEAT_TERMINATE_ENABLED",
-    "true" if bool(preflight["repeat_terminate_enabled"]) else "false",
-)
 PY
 )
 
@@ -214,11 +204,6 @@ if [[ "${SERVER_MODEL}" != /* ]]; then
 fi
 if [[ ! -d "${SERVER_MODEL}" ]]; then
   echo "[ERROR] Server model directory not found: ${SERVER_MODEL}" >&2
-  exit 1
-fi
-REPEAT_PLUGIN_PATH="${REPO_DIR}/scripts/vllm_repeat_terminate_plugin.py"
-if [[ ! -f "${REPEAT_PLUGIN_PATH}" ]]; then
-  echo "[ERROR] Repeat-terminate plugin not found: ${REPEAT_PLUGIN_PATH}" >&2
   exit 1
 fi
 
@@ -306,8 +291,6 @@ if [[ -n "${NO_PROXY:-}" ]]; then
   SERVER_ENV+=(NO_PROXY="${NO_PROXY}" no_proxy="${NO_PROXY}")
 fi
 SERVER_ENV+=(ROOT_IMAGE_DIR="${ROOT_IMAGE_DIR_RESOLVED}")
-SERVER_ENV+=(COORDEXP_ENABLE_VLLM_REPEAT_TERMINATE_INJECTION=1)
-SERVER_ENV+=(COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON="${REPEAT_TERMINATE_CONFIG_JSON}")
 
 SERVER_CMD=(conda run -n "${CONDA_ENV}" swift rollout \
   --model "${SERVER_MODEL}" \
@@ -320,8 +303,7 @@ SERVER_CMD=(conda run -n "${CONDA_ENV}" swift rollout \
   --vllm_enforce_eager "${SERVER_VLLM_ENFORCE_EAGER}" \
   --vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
   --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
-  --vllm_enable_lora "${VLLM_ENABLE_LORA}" \
-  --external_plugins "${REPEAT_PLUGIN_PATH}")
+  --vllm_enable_lora "${VLLM_ENABLE_LORA}")
 
 echo "[RUN] ${SERVER_ENV[*]} ${SERVER_CMD[*]}"
 if command -v setsid >/dev/null 2>&1; then
@@ -371,45 +353,6 @@ while true; do
 done
 
 echo "[INFO] vLLM server is ready. world_size: $(curl --noproxy \"*\" -s \"${WORLD_URL}\" || true)"
-
-if [[ "${REPEAT_TERMINATE_ENABLED}" == "true" ]]; then
-  echo "[INFO] Validating repeat-terminate server activation via /infer/ probe"
-  INFER_URL="http://${HEALTH_HOST}:${SERVER_PORT}/infer/"
-  probe_payload='{"infer_requests":[{"messages":[{"role":"user","content":"ping"}]}],"request_config":{"max_tokens":1,"temperature":0.0,"top_p":1.0,"top_k":-1,"repetition_penalty":1.0,"n":1,"stream":false,"seed":123,"logprobs":false,"top_logprobs":null,"return_details":true},"metrics":null,"template":null,"use_tqdm":null,"adapter_request":null}'
-  probe_resp="$(curl --noproxy "*" -sS -X POST -H "Content-Type: application/json" "${INFER_URL}" -d "${probe_payload}")" || {
-    echo "[ERROR] Repeat-terminate probe request failed: ${INFER_URL}" >&2
-    exit 1
-  }
-  PROBE_RESP="${probe_resp}" conda run -n "${CONDA_ENV}" python - <<'PY'
-import json
-import os
-import sys
-
-raw = os.environ.get("PROBE_RESP", "")
-try:
-    data = json.loads(raw)
-except Exception as exc:
-    print(f"[ERROR] Repeat-terminate probe returned non-JSON: {exc}", file=sys.stderr)
-    sys.exit(1)
-
-if not isinstance(data, list) or not data:
-    print("[ERROR] Repeat-terminate probe returned empty/non-list payload.", file=sys.stderr)
-    sys.exit(1)
-
-first = data[0]
-if not isinstance(first, dict):
-    print("[ERROR] Repeat-terminate probe first item is not an object.", file=sys.stderr)
-    sys.exit(1)
-
-coordexp = first.get("coordexp")
-if not isinstance(coordexp, dict) or "repeat_terminate_triggered" not in coordexp:
-    print(
-        "[ERROR] Repeat-terminate activation missing coordexp.repeat_terminate_triggered in /infer/ payload.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-PY
-fi
 
 TRAIN_CMD="config=${CONFIG_PATH} gpus=${TRAIN_GPUS} bash ${REPO_DIR}/scripts/train.sh"
 if [[ "${DEBUG}" == "true" ]]; then

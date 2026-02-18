@@ -33,6 +33,11 @@ The dataset/trainer stack consumes JSONL records with:
 
 See: [`JSONL_CONTRACT.md`](JSONL_CONTRACT.md).
 
+Rendering note:
+- Raw JSONL stays strict JSON with quoted coord-token strings.
+- Assistant dense targets are rendered as CoordJSON `{"objects": [...]}` with bare coord tokens in geometry arrays.
+- Assistant-output-like parsing paths transpile CoordJSON -> strict JSON before `json.loads`.
+
 ### Coordinate Conventions (Critical)
 
 CoordExp disables runtime normalization:

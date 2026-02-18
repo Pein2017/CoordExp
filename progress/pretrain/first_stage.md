@@ -37,13 +37,14 @@ At a high level, each record contains:
 - `width` / `height`
 - `objects`: list of objects where each has:
   - `desc` (string)
-  - exactly one geometry field: `bbox_2d` **or** `poly` **or** `line`
+  - exactly one geometry field: `bbox_2d` **or** `poly`
 
-In **coord-token mode**, geometry values are serialized as strings like `"<|coord_12|>"` so the tokenizer treats them as special tokens.
+In raw JSONL, coord-token mode stores geometry values as strings like `"<|coord_12|>"`.
+During chat rendering, assistant CoordJSON emits bare coord tokens (no quotes).
 
-Assistant output (dense mode) is a single JSON object, e.g.:
+Assistant output (dense mode) is a single CoordJSON object with an `objects` array, e.g.:
 ```json
-{"object_1": {"desc": "...", "bbox_2d": ["<|coord_12|>", "<|coord_34|>", "<|coord_56|>", "<|coord_78|>"]}, "...": "..."}
+{"objects": [{"desc": "...", "bbox_2d": [<|coord_12|>, <|coord_34|>, <|coord_56|>, <|coord_78|>]}]}
 ```
 
 Geometry guardrails:

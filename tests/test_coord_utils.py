@@ -92,7 +92,10 @@ def test_degenerate_bbox_flagged():
 
 
 def test_parse_prediction_drops_truncated_json_without_terminator():
-    raw = '{"object_1":{"bbox_2d":["<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"], "desc":"box"'
+    raw = (
+        '{"objects": [{"bbox_2d": [<|coord_10|>, <|coord_20|>, <|coord_30|>, '
+        '<|coord_40|>], "desc": "box"'
+    )
     parsed = parse_prediction(raw)
     assert parsed == []
 

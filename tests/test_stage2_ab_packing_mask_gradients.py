@@ -7,6 +7,8 @@ import torch
 from PIL import Image
 from swift.llm import get_model_tokenizer, get_template
 
+from src.utils.assistant_json import dumps_coordjson
+
 
 def test_stage2_ab_packing_masks_and_coord_grads_smoke():
     """Regression test mirroring temp/smoke_stage2_ab_packing.py.
@@ -43,17 +45,19 @@ def test_stage2_ab_packing_masks_and_coord_grads_smoke():
 
     def _make(desc: str, c: int):
         payload = {
-            "object_1": {
-                "desc": desc,
-                "bbox_2d": [
-                    f"<|coord_{int(c)}|>",
-                    f"<|coord_{int(c)}|>",
-                    "<|coord_999|>",
-                    "<|coord_999|>",
-                ],
-            }
+            "objects": [
+                {
+                    "desc": desc,
+                    "bbox_2d": [
+                        f"<|coord_{int(c)}|>",
+                        f"<|coord_{int(c)}|>",
+                        "<|coord_999|>",
+                        "<|coord_999|>",
+                    ],
+                }
+            ]
         }
-        assistant_text = json.dumps(payload, ensure_ascii=True, separators=(", ", ": "))
+        assistant_text = dumps_coordjson(payload)
         y_ids = tok.encode(assistant_text, add_special_tokens=False)
         return template.encode(
             {

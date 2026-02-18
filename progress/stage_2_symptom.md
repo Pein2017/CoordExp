@@ -17,12 +17,12 @@ The intent is to help you audit whether the current architecture/algorithm match
 
 **Likely root causes (P0):**
 - **Schedule mismatch vs design intent**: the design recommends Channel-A hot / Channel-B cold (e.g., 95% / 5%), but prod configs run **B hot** (`b_ratio=0.85`).
-- **No hard stop on object count**: `rollout_matching.repeat_terminate.max_object_keys` is `null` (base config), so decoding has no "max 60 objects" safeguard and relies on token-repeat heuristics that don't trigger for "object spam".
+- **No hard stop on object count** (historical): old configs used `rollout_matching.repeat_terminate.max_object_keys`; this mechanism is now removed from the codebase.
 - **Token budget too large in continue**: `ab_mixed_continue.yaml` sets `rollout_matching.max_new_tokens=3084`, which gives the model room to over-generate and still often truncates (because it expands into the budget).
 
 **Highest-leverage cures (config-first):**
 1. **Restore A-hot / B-cold schedule** (start with `b_ratio=0.05` per design; ramp only after stability).
-2. **Set `rollout_matching.repeat_terminate.max_object_keys: 60`** (since you train on `bbox_max60`).
+2. **Rely on strict objects-array parsing + invalid-rollout fallback** (repeat-terminate is removed).
 3. **Bring `max_new_tokens` back down (e.g., 2048 or lower)**, especially until object-count termination is enforced.
 
 These three should directly reduce truncation, invalid parses, and duplicate spam, while preserving Stage-1's already-good geometry.
@@ -93,7 +93,7 @@ On training Channel-B steps, rollout token statistics show that the continue run
 From the continue run training logs (`rollout/gen_new_tokens_*`):
 - At step 100: `gen_new_tokens_p90 = 3084` and truncation rate ~0.286.
 - At step 800: `gen_new_tokens_mean = 1351.5`, `gen_new_tokens_p90 = 3084`, truncation rate ~0.393.
-- At step 800: `rollout/repeat_terminate_triggered_sequences = 0.0` (repeat terminate active, but not stopping the sequences).
+- At step 800 (historical): repeat-terminate counters stayed inactive while truncation remained high.
 
 By contrast, the baseline run's training rollouts remain much shorter:
 - step 100 baseline: `gen_new_tokens_mean ~318`, `p90 ~711`, truncation ~0.0.
@@ -179,11 +179,11 @@ The observed pattern (precision collapse + duplication + malformed) is exactly w
 
 Evidence:
 - Continue config sets `rollout_matching.max_new_tokens: 3084` (vs baseline 2048).
-- `configs/stage2_ab/base.yaml` keeps `rollout_matching.repeat_terminate.max_object_keys: null`.
+- `configs/stage2_ab/base.yaml` previously kept `rollout_matching.repeat_terminate.max_object_keys: null` (legacy; removed now).
 - Continue training logs at step 800:
   - `rollout/gen_new_tokens_p90 = 3084` (budget saturation)
   - `rollout/parse_truncated_rate ~ 0.393`
-  - `rollout/repeat_terminate_triggered_sequences = 0.0`
+  - legacy repeat-terminate trigger counters remained zero
 - vLLM debug dumps show rollout JSON parsing failures consistent with truncation mid-string.
 
 Mechanism:
@@ -249,16 +249,15 @@ Interpretation:
   - `eval_rollout/parse_truncated_rate` should decrease (or at least stop increasing).
   - `eval_rollout/parse_dropped_invalid` should fall sharply.
 
-### 5.2 P0 cure: enforce a hard object-count stop (`max_object_keys: 60`)
+### 5.2 P0 cure (historical): enforce a hard object-count stop (`max_object_keys: 60`)
 
 **Recommendation (config-first)**
 Set (or override) the repeat terminate object cap:
 
 ```yaml
 rollout_matching:
-  repeat_terminate:
-    enabled: true
-    max_object_keys: 60
+  # Legacy (removed): repeat_terminate.max_object_keys
+  # Current behavior: no repeat-terminate plugin/config path.
 ```
 
 **Why it helps**
@@ -272,7 +271,7 @@ rollout_matching:
 - Training logs:
   - `rollout/gen_new_tokens_p90` drops (should stop pegging at `max_new_tokens`).
   - `rollout/parse_truncated_rate` drops.
-  - `rollout/repeat_terminate_triggered_sequences` becomes > 0 at least occasionally (if the model tries to exceed the cap).
+  - legacy repeat-terminate trigger counter would become > 0 occasionally.
 - vLLM debug dumps:
   - rollout JSON should parse at >95% (ideally 100%).
   - number of `object_*` keys should be <= 60.
@@ -315,7 +314,7 @@ rollout_matching:
 
 **Recommendation**
 - Prefer controls that target *object-level repetition*, not token-level repetition:
-  - object-key cap (`max_object_keys`) is the first and easiest.
+  - object-count control is now delegated to parser robustness + sequence length caps (legacy `max_object_keys` removed).
   - optionally add "stop if the next object is a near-duplicate of a previous one" (bbox IoU + same desc).
 
 **Why it helps**
@@ -346,7 +345,7 @@ rollout_matching:
 - `rollout/gen_new_tokens_p90` (should not peg at `max_new_tokens`)
 - `rollout/parse_truncated_rate` (should be low, ideally < 0.05)
 - `stage2_ab/channel_b/strict_drop/N_drop_invalid` (should fall)
-- `rollout/repeat_terminate_triggered_sequences` (should become >0 when model tries to exceed caps)
+- legacy repeat-terminate trigger counters (removed)
 
 ### 6.2 Eval-time quality signals
 - `eval_rollout/precision` (should improve as over-generation is controlled)
@@ -369,7 +368,7 @@ rollout_matching:
 Keep everything identical to prod, only override a few keys in a derived YAML:
 
 1. **Fix termination only**
-   - `repeat_terminate.max_object_keys: 60`
+   - `repeat_terminate.max_object_keys: 60` (legacy, removed)
    - keep `b_ratio: 0.85`
    - keep `max_new_tokens: 3084`
    - Goal: verify truncation + invalid JSON improve immediately.
@@ -381,7 +380,7 @@ Keep everything identical to prod, only override a few keys in a derived YAML:
 
 3. **Fix both (recommended)**
    - `b_ratio: 0.05`
-   - `repeat_terminate.max_object_keys: 60`
+   - `repeat_terminate.max_object_keys: 60` (legacy, removed)
    - `max_new_tokens: 2048`
 
 Run each for ~200 steps with the same eval interval and compare:

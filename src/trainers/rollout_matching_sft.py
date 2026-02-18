@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 import threading
 import time
 from contextlib import contextmanager, nullcontext
@@ -44,11 +43,6 @@ from swift.utils import get_logger, unwrap_model_for_generation
 
 from src.common.object_field_order import normalize_object_field_order
 from src.common.geometry import bbox_from_points, flatten_points
-from src.common.repeat_terminate import (
-    ForceEosOnRepeatBatchGuard,
-    encode_object_key_prefix,
-    parse_repeat_terminate_config,
-)
 from src.coord_tokens.codec import (
     get_coord_token_ids,
     token_to_int,
@@ -328,7 +322,7 @@ def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any
     HF template.encode() injects the resolved template/system prompt internally.
     In vLLM backends (colocate/server), we send raw OpenAI-style messages to
     ms-swift/vLLM, so we must include the system instruction explicitly to keep
-    output formatting stable (e.g., top-level object_k keys).
+    output formatting stable (e.g., top-level {"objects": [...]} CoordJSON).
 
     NOTE: ms-swift's rollout server expects the system message `content` to be a
     plain string (OpenAI-style), not the multimodal `[{'type':'text',...}]` list.
@@ -350,7 +344,6 @@ def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any
     return [sys_msg, *messages_list]
 
 
-_OBJECT_KEY_RE = re.compile(r"^object_(\d+)$")
 _IM_END = "<|im_end|>"
 
 
@@ -406,28 +399,32 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
     payload = sample.get("assistant_payload")
     if not isinstance(payload, Mapping):
         raise ValueError("rollout-matching requires assistant_payload in each sample")
+    objects_raw = payload.get("objects")
+    if not isinstance(objects_raw, list):
+        raise ValueError("assistant_payload must contain top-level 'objects' list")
+
     objs: List[GTObject] = []
-    for key, entry in payload.items():
-        if not isinstance(key, str):
-            continue
-        m = _OBJECT_KEY_RE.match(key)
-        if not m:
-            continue
-        idx = int(m.group(1))
+    for idx, entry in enumerate(objects_raw):
         if not isinstance(entry, Mapping):
-            continue
+            raise ValueError(f"assistant_payload.objects[{int(idx)}] must be a mapping")
         desc = entry.get("desc")
         if not isinstance(desc, str) or not desc.strip():
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].desc must be a non-empty string"
+            )
         geom_keys = [
             k for k in ("bbox_2d", "poly") if k in entry and entry[k] is not None
         ]
         if len(geom_keys) != 1:
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}] must contain exactly one geometry key (bbox_2d|poly)"
+            )
         geom_key = geom_keys[0]
         raw_pts = flatten_points(entry.get(geom_key))
         if raw_pts is None or len(raw_pts) % 2 != 0:
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].{geom_key} must be a flat even-length sequence"
+            )
         pts: List[int] = []
         ok = True
         for v in raw_pts:
@@ -444,17 +441,25 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
                     break
                 pts.append(int(vi))
         if not ok:
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].{geom_key} contains invalid coordinate values"
+            )
         if geom_key == "bbox_2d" and len(pts) != 4:
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].bbox_2d must contain exactly 4 coordinates"
+            )
         if geom_key == "poly" and (len(pts) < 6 or len(pts) % 2 != 0):
-            continue
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].poly must contain >=6 coordinates and even arity"
+            )
         objs.append(
             GTObject(
-                index=idx, geom_type=geom_key, points_norm1000=pts, desc=desc.strip()
+                index=int(idx),
+                geom_type=geom_key,
+                points_norm1000=pts,
+                desc=desc.strip(),
             )
         )
-    objs.sort(key=lambda o: o.index)
     return objs
 
 
@@ -3366,32 +3371,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             model_inputs.pop("text_position_ids", None)
 
             logits_processor = None
-            repeat_cfg = parse_repeat_terminate_config(
-                self._cfg("repeat_terminate", None)
-            )
-            if repeat_cfg.enabled:
-                obj_prefix_ids = (
-                    encode_object_key_prefix(tok)
-                    if repeat_cfg.max_object_keys is not None
-                    else None
-                )
-                eos_id = int(getattr(tok, "eos_token_id", -1) or -1)
-                if eos_id >= 0:
-                    guard = ForceEosOnRepeatBatchGuard(
-                        eos_token_id=eos_id,
-                        prompt_len=prompt_pad_len,
-                        cfg=repeat_cfg,
-                        object_key_prefix_token_ids=obj_prefix_ids,
-                    )
-                    try:
-                        from transformers.generation.logits_process import (
-                            LogitsProcessorList,
-                        )
-
-                        logits_processor = LogitsProcessorList([guard])
-                    except Exception:
-                        # Fallback: transformers may accept a plain list.
-                        logits_processor = [guard]
 
             with unwrap_model_for_generation(
                 self.model_wrapped,
@@ -3587,17 +3566,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "vLLM server rollout backend currently supports decode_mode=greedy only"
             )
 
-        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
-        repeat_signal_required = bool(repeat_cfg.enabled)
-
         n = int(len(samples))
         if n == 0:
-            setattr(self, "_last_rollout_repeat_terminate_triggers", [])
-            setattr(
-                self,
-                "_last_rollout_repeat_terminate_active",
-                int(1 if repeat_cfg.enabled else 0),
-            )
             return []
 
         # Sync weights to server only when fresh rollouts are requested.
@@ -3788,31 +3758,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         results: List[Optional[Tuple[List[int], str, str, List[int]]]] = [None] * len(
             infer_requests
         )
-        repeat_triggered_flags: List[int] = [0 for _ in range(len(infer_requests))]
 
-        def _parse_output(raw: Any) -> Tuple[List[int], str, List[int], int]:
-            triggered = 0
-            has_coordexp_signal = False
+        def _parse_output(raw: Any) -> Tuple[List[int], str, List[int]]:
 
             if isinstance(raw, dict):
-                coordexp = raw.get("coordexp")
-                if isinstance(coordexp, Mapping):
-                    has_coordexp_signal = True
-                    try:
-                        triggered = int(
-                            coordexp.get("repeat_terminate_triggered", 0) or 0
-                        )
-                    except Exception:
-                        triggered = 0
-
                 if isinstance(raw.get("response"), dict):
                     raw = raw.get("response")
-
-            if repeat_signal_required and not has_coordexp_signal:
-                raise RuntimeError(
-                    "repeat_terminate.enabled=true but vLLM server output is missing "
-                    "coordexp.repeat_terminate_triggered. Ensure rollout server plugin injection is active."
-                )
 
             if not isinstance(raw, dict):
                 raise RuntimeError("vLLM server returned a non-dict output")
@@ -3844,7 +3795,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "vLLM server response missing token_ids; ensure request_config.return_details=true"
                 )
             token_ids = [int(t) for t in token_ids_raw]
-            return token_ids, text, prompt_ids, int(1 if triggered else 0)
+            return token_ids, text, prompt_ids
 
         def _infer_on_server(server_idx: int, start: int, end: int) -> None:
             if start >= end:
@@ -3923,10 +3874,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
 
             for j, raw_out in enumerate(data):
-                token_ids, text, prompt_ids, triggered = _parse_output(raw_out)
+                token_ids, text, prompt_ids = _parse_output(raw_out)
                 idx = int(start + j)
                 results[idx] = (token_ids, text, decode_mode, prompt_ids)
-                repeat_triggered_flags[idx] = int(triggered)
 
         # Parallelize by server within each round.
         # Each round enforces strict per-server caps for this learner rank.
@@ -3982,17 +3932,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             samples=debug_samples if debug_samples is not None else samples,
         )
 
-        setattr(
-            self,
-            "_last_rollout_repeat_terminate_triggers",
-            [int(1 if x else 0) for x in repeat_triggered_flags],
-        )
-        setattr(
-            self,
-            "_last_rollout_repeat_terminate_active",
-            int(1 if repeat_cfg.enabled else 0),
-        )
-
         return out
 
     @torch.no_grad()
@@ -4000,7 +3939,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         backend = self._rollout_backend()
-        repeat_cfg = parse_repeat_terminate_config(self._cfg("repeat_terminate", None))
 
         # vLLM backends receive raw OpenAI-style messages; ensure the resolved
         # system prompt is present so output formatting is stable.
@@ -4052,18 +3990,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 samples_for_rollout.append(s)
 
         if backend == "hf":
-            out = self._rollout_many_hf(samples_for_rollout)
-            setattr(
-                self,
-                "_last_rollout_repeat_terminate_triggers",
-                [0 for _ in range(len(out))],
-            )
-            setattr(
-                self,
-                "_last_rollout_repeat_terminate_active",
-                int(1 if repeat_cfg.enabled else 0),
-            )
-            return out
+            return self._rollout_many_hf(samples_for_rollout)
 
         if backend == "vllm":
             mode = self._vllm_mode()
@@ -4075,8 +4002,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     chunk_size = min(chunk_size, int(len(samples_for_rollout)))
 
                 out: List[Tuple[List[int], str, str, List[int]]] = []
-                flags: List[int] = []
-                active = int(1 if repeat_cfg.enabled else 0)
 
                 for off in range(0, int(len(samples_for_rollout)), int(chunk_size)):
                     chunk_samples = samples_for_rollout[
@@ -4089,49 +4014,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         request_index_offset=int(off),
                     )
                     out.extend(chunk_out)
-
-                    flags_raw = getattr(
-                        self,
-                        "_last_rollout_repeat_terminate_triggers",
-                        None,
-                    )
-                    if (
-                        isinstance(flags_raw, list)
-                        and len(flags_raw) == len(chunk_out)
-                        and all(isinstance(x, (int, bool)) for x in flags_raw)
-                    ):
-                        chunk_flags = [int(1 if x else 0) for x in flags_raw]
-                    else:
-                        chunk_flags = [0 for _ in range(len(chunk_out))]
-                    flags.extend(chunk_flags)
-
-                    active = max(
-                        active,
-                        int(
-                            1
-                            if bool(
-                                getattr(
-                                    self,
-                                    "_last_rollout_repeat_terminate_active",
-                                    0,
-                                )
-                            )
-                            else 0
-                        ),
-                    )
-
-                if len(flags) != len(out):
-                    flags = [0 for _ in range(len(out))]
             else:
                 out = self._rollout_many_vllm(
                     samples_for_rollout,
                     debug_samples=samples,
                 )
-                flags = [0 for _ in range(len(out))]
-                active = int(1 if repeat_cfg.enabled else 0)
-
-            setattr(self, "_last_rollout_repeat_terminate_triggers", flags)
-            setattr(self, "_last_rollout_repeat_terminate_active", active)
             return out
 
         raise AssertionError("unreachable")
@@ -4436,7 +4323,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # 1) Strict token-aligned parsing + suffix-only prefix trimming
             t_pm0 = time.perf_counter()
             parse = parse_rollout_for_matching(
-                tokenizer=tok, response_token_ids=resp_ids
+                tokenizer=tok,
+                response_token_ids=resp_ids,
+                object_field_order=self._object_field_order(),
             )
             rollout_lens.append(int(len(parse.response_token_ids)))
             self._maybe_debug_dump_parse_failure(
@@ -4620,11 +4509,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             fn_objs = [gts[i] for i in fn_gt_indices_final]
 
             # 4) Serialize append fragment (mandatory FN append) and build Y_train ids
-            max_idx = parse.max_object_index_in_prefix
-            start_idx = (max_idx + 1) if max_idx is not None else 1
             append_text = _serialize_append_fragment(
                 fn_objects=fn_objs,
-                start_index=start_idx,
                 prefix_text=parse.prefix_text,
                 object_field_order=self._object_field_order(),
             )
@@ -5064,7 +4950,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/desc_sem_enabled",
             "rollout/gen_new_tokens_p90",
             "rollout/gen_new_tokens_p99",
-            "rollout/repeat_terminate_active",
         }
 
         for key in metric_keys:
@@ -5993,7 +5878,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     n_samples += 1.0
 
                     parse = parse_rollout_for_matching(
-                        tokenizer=tok, response_token_ids=resp_ids
+                        tokenizer=tok,
+                        response_token_ids=resp_ids,
+                        object_field_order=self._object_field_order(),
                     )
                     dropped_invalid_total += float(parse.dropped_invalid)
                     dropped_ambiguous_total += float(parse.dropped_ambiguous)

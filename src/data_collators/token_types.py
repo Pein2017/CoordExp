@@ -27,46 +27,36 @@ class TokenType:
 def _format_payload_for_text(payload: Any) -> Any:
     """Match the JSON formatting used in dataset builders for assistant_text.
 
-    In dense mode, JSONLinesBuilder formats `poly` sequences as
-    list-of-pairs (e.g. [[x, y], ...]) for readability. The stored
-    `assistant_payload` is kept in the raw/flat representation.
-
-    Token-type alignment must mirror the serialized assistant_text, otherwise
-    token ids may not match supervised labels (especially for long polygons).
+    Token-type alignment must mirror the serialized assistant_text exactly;
+    otherwise token ids may not match supervised labels.
     """
-
-    def looks_grouped_xy(values: Any) -> bool:
-        if not isinstance(values, list) or not values:
-            return False
-        for item in values:
-            if not isinstance(item, (list, tuple)) or len(item) != 2:
-                return False
-        return True
-
-    def group_xy(values: list[Any]) -> list[Any]:
-        if looks_grouped_xy(values):
-            # Ensure nested tuples become lists for stable JSON serialization.
-            return [list(pair) for pair in values]
-        if len(values) % 2 != 0:
-            return list(values)
-        grouped: list[Any] = []
-        for idx in range(0, len(values), 2):
-            grouped.append([values[idx], values[idx + 1]])
-        return grouped
 
     if not isinstance(payload, dict):
         return payload
 
     formatted: dict[str, Any] = {}
     for key, entry in payload.items():
+        if str(key) == "objects" and isinstance(entry, list):
+            out_items: list[Any] = []
+            for item in entry:
+                if not isinstance(item, dict):
+                    out_items.append(item)
+                    continue
+                formatted_entry: dict[str, Any] = {}
+                for field, value in item.items():
+                    if field in {"poly", "bbox_2d"} and isinstance(value, list):
+                        formatted_entry[field] = list(value)
+                    else:
+                        formatted_entry[field] = value
+                out_items.append(formatted_entry)
+            formatted[str(key)] = out_items
+            continue
         if not isinstance(entry, dict):
             formatted[str(key)] = entry
             continue
         formatted_entry: dict[str, Any] = {}
         for field, value in entry.items():
-            if field in {"poly"} and isinstance(value, list):
-                formatted_entry[field] = group_xy(value)
-            elif field == "bbox_2d" and isinstance(value, list):
+            if field in {"poly", "bbox_2d"} and isinstance(value, list):
                 formatted_entry[field] = list(value)
             else:
                 formatted_entry[field] = value
@@ -100,12 +90,8 @@ def _dumps_with_types(payload: Any) -> Tuple[str, List[Tuple[int, int, int]]]:
             write(text, TokenType.COORD if context == "coord" else TokenType.FORMAT)
         elif isinstance(value, str):
             if context == "coord" and is_coord_token(value):
-                # Important: mark the surrounding JSON quotes as FORMAT, and only the inner
-                # `<|coord_k|>` substring as COORD. If we label the quotes as COORD too,
-                # "GT coord" monitors (flip/mass) get diluted by punctuation tokens.
-                write('"', TokenType.FORMAT)
+                # CoordJSON uses bare CoordTok literals in geometry arrays.
                 write(value, TokenType.COORD)
-                write('"', TokenType.FORMAT)
             else:
                 text = json.dumps(value, ensure_ascii=False)
                 write(text, TokenType.DESC if context == "desc" else TokenType.FORMAT)

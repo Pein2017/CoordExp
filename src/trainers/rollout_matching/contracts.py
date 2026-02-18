@@ -36,7 +36,7 @@ class RolloutParseResult:
     prefix_token_ids: List[int]
     prefix_text: str
 
-    max_object_index_in_prefix: Optional[int]
+    invalid_rollout: bool
     valid_objects: List[ParsedPredObject]
     dropped_invalid: int
     dropped_invalid_by_reason: Dict[str, int] = field(default_factory=dict)

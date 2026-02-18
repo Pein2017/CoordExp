@@ -166,7 +166,7 @@ Index → Epoch-seeded permutation
 2. **Preprocessing**: `AugmentationPreprocessor` applies affine transforms to images + geometries atomically.
 3. **Mode Selection**: `custom.use_summary` toggles summary-only runs; dense mode keeps JSON object outputs per sample.
 4. **Message Building**:
-   - `JSONLinesBuilder`: User prompt embeds the image; assistant returns `{ "object_1": {...}, ... }` (no per-image wrapper).
+   - `JSONLinesBuilder`: User prompt embeds the image; assistant returns CoordJSON `{"objects": [{...}, ...]}` (no per-image wrapper).
    - Summary mode yields a single formatted string. Top-level `objects` retain exact point arrays for template normalization.
 5. **Template Encoding**: ms-swift adds `<image>` tokens, normalizes bbox to norm1000, and tokenizes text.
 
@@ -175,8 +175,8 @@ Index → Epoch-seeded permutation
 1) JSONL record loaded (images, objects, width/height, optional summary)
 2) Optional preprocessing (augmentation, validation)
 3) Mode select (dense or summary) in `DenseCaptionDataset` → instantiate `JSONLinesBuilder(mode=...)`
-4) Builder assembles one-turn chat: user embeds image + prompt; assistant returns minimal object hierarchy or summary string
-5) Template encodes: inserts vision tokens, normalizes top-level `objects.bbox` to norm1000, tokenizes text
+4) Builder assembles one-turn chat: user embeds image + prompt; assistant returns CoordJSON `{"objects": [...]}` or a summary string
+5) Template encodes: inserts vision tokens and tokenizes rendered chat text (assistant coordinates are already pre-normalized)
 6) DataLoader yields tensors: `input_ids`, `attention_mask`, `labels`, `pixel_values`, `image_grid_thw`, `objects`
 
 **Key Transformations**:
@@ -199,14 +199,16 @@ Index → Epoch-seeded permutation
 **JSONLinesBuilder**（单图输出）:
 ```json
 {
-  "object_1": {
-    "poly": [x1,y1,...,x4,y4],
-    "desc": "tool cabinet / front panel / clean"
-  },
-  "object_2": {
-    "bbox_2d": [x1,y1,x2,y2],
-    "desc": "fiber cable / protected / gentle bend"
-  }
+  "objects": [
+    {
+      "desc": "tool cabinet / front panel / clean",
+      "poly": [<|coord_12|>, <|coord_34|>, <|coord_56|>, <|coord_34|>, <|coord_56|>, <|coord_78|>, <|coord_12|>, <|coord_78|>]
+    },
+    {
+      "desc": "fiber cable / protected / gentle bend",
+      "bbox_2d": [<|coord_100|>, <|coord_120|>, <|coord_180|>, <|coord_200|>]
+    }
+  ]
 }
 ```
 
@@ -253,8 +255,8 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
   - Best for variable-length samples; ~90-95% GPU utilization
 
 **Dual Representation Strategy**:
-1. **Assistant 文本**: 使用 object-index JSON（`object_{n}`），几何字段直接暴露（bbox_2d/poly）。
-2. **顶层 objects**: 精确像素坐标供模板在编码阶段转换为 norm1000。
+1. **Assistant 文本**: 使用 CoordJSON `{"objects": [...]}`，每条 record 仅包含 `desc` + 一个几何键（`bbox_2d`/`poly`），几何数组使用 bare `<|coord_N|>` tokens。
+2. **顶层 objects（样本元数据）**: 数据记录中的 `objects` 仍保留几何语义，模板编码阶段按 contract 处理坐标空间。
 3. 增广后的几何与文本保持一致。
 
 
@@ -308,14 +310,14 @@ custom:
   train_jsonl: public_data/lvis/rescale_32_768_poly_20/train.jsonl
   val_jsonl: public_data/lvis/rescale_32_768_poly_20/val.jsonl
   emit_norm: norm1000               # none | norm100 | norm1000
-  # 无需配置 group_key_prefix；输出已是单图 object_{n} 结构
+  # 无需配置 group_key_prefix；输出为单图 CoordJSON {"objects": [...]} 结构
 
 # prompts section is no longer required - default system prompt is used automatically
 # Custom prompts can be specified via:
 # prompts:
 #   system: |
 #     你是图像密集标注助手。只返回原始 JSON-lines…
-#     输出仅包含 object_{n} 键，无需在文本中手动分段
+#     输出仅包含 {"objects": [...]}，无需在文本中手动分段
 #   user: 描述所有对象
 ```
 
