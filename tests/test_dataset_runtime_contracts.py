@@ -14,7 +14,7 @@ def _builder(object_field_order: str = "desc_first") -> JSONLinesBuilder:
         user_prompt="Locate objects",
         emit_norm="none",
         mode="dense",
-        coord_tokens_enabled=False,
+        coord_tokens_enabled=True,
         object_field_order=object_field_order,
     )
 
@@ -83,14 +83,33 @@ def test_jsonlines_builder_rejects_multi_geometry_object():
 
 def test_jsonlines_builder_rejects_invalid_bbox_arity():
     builder = _builder()
-    record = _record_with_objects([{"desc": "cat", "bbox_2d": [1, 2, 3]}])
+    record = _record_with_objects(
+        [
+            {
+                "desc": "cat",
+                "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>"],
+            }
+        ]
+    )
     with pytest.raises(ValueError, match="exactly 4"):
         builder.build_many([record])
 
 
 def test_jsonlines_builder_rejects_empty_desc():
     builder = _builder()
-    record = _record_with_objects([{"desc": "   ", "bbox_2d": [1, 2, 3, 4]}])
+    record = _record_with_objects(
+        [
+            {
+                "desc": "   ",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    )
     with pytest.raises(ValueError, match="empty 'desc'"):
         builder.build_many([record])
 
@@ -157,13 +176,25 @@ def test_find_first_unsorted_object_pair_by_topleft_accepts_sorted() -> None:
 
 
 def test_jsonlines_builder_object_field_order_switches_bbox_per_object_key_order():
-    record = _record_with_objects([{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}])
+    record = _record_with_objects(
+        [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    )
 
     desc_first = _builder("desc_first").build_many([record])
     geometry_first = _builder("geometry_first").build_many([record])
 
-    desc_first_obj = desc_first["assistant_payload"]["object_1"]
-    geometry_first_obj = geometry_first["assistant_payload"]["object_1"]
+    desc_first_obj = desc_first["assistant_payload"]["objects"][0]
+    geometry_first_obj = geometry_first["assistant_payload"]["objects"][0]
 
     assert list(desc_first_obj.keys()) == ["desc", "bbox_2d"]
     assert list(geometry_first_obj.keys()) == ["bbox_2d", "desc"]
@@ -179,13 +210,22 @@ def test_jsonlines_builder_poly_output_omits_poly_points_metadata():
         [
             {
                 "desc": "region",
-                "poly": [10, 20, 30, 20, 30, 40, 10, 40],
+                "poly": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                    "<|coord_10|>",
+                    "<|coord_40|>",
+                ],
                 "poly_points": [[10, 20], [30, 20], [30, 40], [10, 40]],
             }
         ]
     )
     built = _builder("geometry_first").build_many([record])
-    obj = built["assistant_payload"]["object_1"]
+    obj = built["assistant_payload"]["objects"][0]
     assistant_text = built["messages"][1]["content"][0]["text"]
 
     assert list(obj.keys()) == ["poly", "desc"]

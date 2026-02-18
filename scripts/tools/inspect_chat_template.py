@@ -23,8 +23,9 @@ if str(ROOT) not in sys.path:
 
 from transformers import AutoProcessor  # type: ignore
 
-from src.config.prompts import SYSTEM_PROMPT, USER_PROMPT
+from src.config.prompts import get_template_prompts
 from src.datasets.builders import JSONLinesBuilder
+from src.utils.coordjson_transpiler import coordjson_to_strict_json_with_meta
 
 
 def load_record(path: Path, index: int) -> Dict[str, Any]:
@@ -68,19 +69,39 @@ def main() -> None:
         choices=["desc_first", "geometry_first"],
         help="Per-object key order for assistant payload serialization.",
     )
+    parser.add_argument(
+        "--object-ordering",
+        type=str,
+        default="sorted",
+        choices=["sorted", "random"],
+        help="Object instance ordering instruction used when building prompts.",
+    )
+    parser.add_argument(
+        "--prompt-variant",
+        type=str,
+        default=None,
+        help="Optional dense prompt variant key (for example: coco_80).",
+    )
     args = parser.parse_args()
 
     record = load_record(args.jsonl, args.index)
 
+    system_prompt, user_prompt = get_template_prompts(
+        ordering=args.object_ordering,
+        coord_mode="coord_tokens",
+        prompt_variant=args.prompt_variant,
+        object_field_order=args.object_field_order,
+    )
+
     builder = JSONLinesBuilder(
-        user_prompt=USER_PROMPT,
+        user_prompt=user_prompt,
         emit_norm="norm1000",
         coord_tokens_enabled=True,
         object_field_order=args.object_field_order,
     )
     merged = builder.build(record)
     messages = merged["messages"]
-    messages_sys = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+    messages_sys = [{"role": "system", "content": system_prompt}, *messages]
 
     # Render text with the model's native (jinja) chat template
     processor = AutoProcessor.from_pretrained(args.model)
@@ -89,12 +110,35 @@ def main() -> None:
     )
     tokenized = processor.tokenizer(chat_text, add_special_tokens=False)
 
+    assistant_text = str(messages[1]["content"][0]["text"])
+    strict_text, strict_meta = coordjson_to_strict_json_with_meta(
+        assistant_text,
+        mode="salvage",
+        object_field_order=args.object_field_order,
+    )
+
     print("=== USER TEXT ===")
     for c in messages[0]["content"]:
         if isinstance(c, dict) and "text" in c:
             print(c["text"])
-    print("\n=== ASSISTANT JSON TEXT ===")
-    print(messages[1]["content"][0]["text"])
+    print("\n=== ASSISTANT COORDJSON TEXT ===")
+    print(assistant_text)
+    print("\n=== ASSISTANT STRICT JSON VIEW (transpiled) ===")
+    print(strict_text)
+    print("\n=== TRANSPILE META ===")
+    print(
+        json.dumps(
+            {
+                "parse_failed": bool(strict_meta.parse_failed),
+                "truncated": bool(strict_meta.truncated),
+                "dropped_invalid_records": int(strict_meta.dropped_invalid_records),
+                "dropped_invalid_by_reason": dict(strict_meta.dropped_invalid_by_reason),
+                "dropped_incomplete_tail": int(strict_meta.dropped_incomplete_tail),
+            },
+            ensure_ascii=False,
+            separators=(", ", ": "),
+        )
+    )
     print("\n=== CHAT TEMPLATE (exact text fed to tokenizer) ===")
     print(chat_text)
     print("\n=== TOKEN IDS (head) ===")

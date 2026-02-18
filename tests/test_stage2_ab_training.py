@@ -575,11 +575,11 @@ def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     p1 = parse_rollout_for_matching(tokenizer=tok, response_token_ids=list(resp_ids))
     p2 = parse_rollout_for_matching(tokenizer=tok, response_token_ids=list(resp_ids))
 
-    assert p1.prefix_token_ids == tok.encode("{", add_special_tokens=False)
+    assert p1.prefix_token_ids == tok.encode('{"objects": [', add_special_tokens=False)
     assert p1.prefix_token_ids == p2.prefix_token_ids
-    assert p1.prefix_text == p2.prefix_text == "{"
+    assert p1.prefix_text == p2.prefix_text == '{"objects": ['
     assert p1.valid_objects == []
-    assert p1.truncated is True
+    assert p1.invalid_rollout is True
 
 
 def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
@@ -656,7 +656,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
     sample = {
         "messages": [],
         "assistant_payload": {
-            "object_0": {"bbox_2d": [0, 0, 0, 0], "desc": ""},
+            "objects": [{"bbox_2d": [0, 0, 0, 0], "desc": "x"}],
         },
     }
     with pytest.raises(_StopAfterMatch):
@@ -752,12 +752,7 @@ def test_packing_enabled_requires_qwen_packing_metadata():
 
 def test_extract_gt_bboxonly_rejects_poly_geometry():
     sample = {
-        "assistant_payload": {
-            "object_1": {
-                "desc": "x",
-                "poly": [0, 1, 2, 3],
-            }
-        }
+        "assistant_payload": {"objects": [{"desc": "x", "poly": [0, 1, 2, 3]}]}
     }
     with pytest.raises(ValueError, match="bbox-only v1"):
         _extract_gt_bboxonly(sample)
@@ -766,12 +761,14 @@ def test_extract_gt_bboxonly_rejects_poly_geometry():
 def test_extract_gt_bboxonly_rejects_other_geometry_key_even_with_bbox():
     sample = {
         "assistant_payload": {
-            "object_1": {
-                "desc": "x",
-                "bbox_2d": [0, 0, 10, 10],
-                "mask_rle": {"counts": "abc", "size": [1, 1]},
-            }
-        }
+            "objects": [
+                {
+                    "desc": "x",
+                    "bbox_2d": [0, 0, 10, 10],
+                    "mask_rle": {"counts": "abc", "size": [1, 1]},
+                }
+            ]
+        },
     }
     with pytest.raises(ValueError, match="bbox-only v1"):
         _extract_gt_bboxonly(sample)
@@ -780,11 +777,8 @@ def test_extract_gt_bboxonly_rejects_other_geometry_key_even_with_bbox():
 def test_extract_gt_bboxonly_rejects_invalid_bbox_order():
     sample = {
         "assistant_payload": {
-            "object_1": {
-                "desc": "x",
-                "bbox_2d": [10, 10, 0, 0],
-            }
-        }
+            "objects": [{"desc": "x", "bbox_2d": [10, 10, 0, 0]}]
+        },
     }
     with pytest.raises(ValueError, match="invalid bbox_2d"):
         _extract_gt_bboxonly(sample)
@@ -807,8 +801,8 @@ def test_build_teacher_forced_payload_honors_object_field_order():
         gt_objects=gt_objects, object_field_order="geometry_first"
     )
 
-    assert list(desc_first["object_1"].keys()) == ["desc", "bbox_2d"]
-    assert list(geometry_first["object_1"].keys()) == ["bbox_2d", "desc"]
+    assert list(desc_first["objects"][0].keys()) == ["desc", "bbox_2d"]
+    assert list(geometry_first["objects"][0].keys()) == ["bbox_2d", "desc"]
 
 
 def test_stage2_channel_b_fragment_supports_geometry_first_order():
@@ -821,8 +815,7 @@ def test_stage2_channel_b_fragment_supports_geometry_first_order():
                 desc="fn",
             )
         ],
-        start_index=1,
-        prefix_text="{",
+        prefix_text='{"objects": [',
         object_field_order="geometry_first",
     )
     assert frag.index('"bbox_2d"') < frag.index('"desc"')
@@ -910,7 +903,7 @@ def test_channel_b_includes_fn_geometry_loss():
     assert float(loss.detach().cpu().item()) > 0.0
 
 
-def test_channel_b_repeat_trigger_flag_does_not_change_supervision_semantics() -> None:
+def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
@@ -944,7 +937,7 @@ def test_channel_b_repeat_trigger_flag_does_not_change_supervision_semantics() -
         model,
         {
             "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(base_meta, repeat_terminate_triggered=0)],
+            "_rollout_matching_meta": [dict(base_meta, legacy_unused_flag=0)],
             "input_ids": input_ids,
         },
     )
@@ -952,7 +945,7 @@ def test_channel_b_repeat_trigger_flag_does_not_change_supervision_semantics() -
         model,
         {
             "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(base_meta, repeat_terminate_triggered=1)],
+            "_rollout_matching_meta": [dict(base_meta, legacy_unused_flag=1)],
             "input_ids": input_ids,
         },
     )
@@ -1022,16 +1015,15 @@ def test_matched_prefix_structure_positions_excludes_desc_and_fp_tokens():
     tok = _DummyTokenizer()
 
     prefix_text = (
-        '{"object_1":{"desc":"matched","bbox_2d":[0,0,1,1]},'
-        '"object_2":{"desc":"fp","bbox_2d":[2,2,3,3]}'
+        '{"objects":[{"desc":"matched","bbox_2d":[0,0,1,1]},'
+        '{"desc":"fp","bbox_2d":[2,2,3,3]}'
     )
     prefix_token_ids = list(tok.encode(prefix_text))
 
-    key_anchor = int(prefix_text.find('"object_1"'))
-    value_start = int(prefix_text.find("{", key_anchor))
-    value_end = int(prefix_text.find('},"object_2"')) + 1
+    first_obj_anchor = int(prefix_text.find('{"desc":"matched"'))
+    value_start = int(first_obj_anchor)
+    value_end = int(prefix_text.find('},{"desc":"fp"')) + 1
     matched_obj = types.SimpleNamespace(
-        key="object_1",
         value_span=(value_start, value_end),
     )
 
@@ -1042,19 +1034,19 @@ def test_matched_prefix_structure_positions_excludes_desc_and_fp_tokens():
         matched_pred_objects=[matched_obj],
     )
 
-    key_pos_matched = int(prefix_text.find('"object_1"'))
-    key_pos_fp = int(prefix_text.find('"object_2"'))
+    struct_pos_matched = int(prefix_text.find('"bbox_2d"'))
+    struct_pos_fp = int(prefix_text.find('{"desc":"fp"'))
     desc_pos_matched = int(prefix_text.find("matched"))
 
-    assert key_pos_matched >= 0 and key_pos_matched in rel
-    assert key_pos_fp >= 0 and key_pos_fp not in rel
+    assert struct_pos_matched >= 0 and struct_pos_matched in rel
+    assert struct_pos_fp >= 0 and struct_pos_fp not in rel
     assert desc_pos_matched >= 0 and desc_pos_matched not in rel
 
 
 def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_checks():
     tok = _PieceFrameMismatchTokenizer()
 
-    source_text = '{"object_1":{"desc":"~","bbox_2d":[0,0,1,1]}}'
+    source_text = '{"objects":[{"desc":"~","bbox_2d":[0,0,1,1]}'
     prefix_token_ids = list(tok.encode(source_text))
 
     prefix_text = tok.decode(
@@ -1072,11 +1064,9 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
     )
     assert int(len(piece_text)) > int(len(prefix_text))
 
-    key_anchor = int(piece_text.find('"object_1"'))
-    value_start = int(piece_text.find("{", key_anchor))
+    value_start = int(piece_text.find('{"desc":'))
     value_end = int(piece_text.rfind("}")) + 1
     matched_obj = types.SimpleNamespace(
-        key="object_1",
         value_span=(value_start, value_end),
     )
 
@@ -1087,7 +1077,7 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
         matched_pred_objects=[matched_obj],
     )
 
-    key_pos = int(piece_text.find('"object_1"'))
+    key_pos = int(piece_text.find('"bbox_2d"'))
     desc_tok_idx = next(
         i
         for i, t in enumerate(prefix_token_ids)
@@ -1168,7 +1158,7 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
 def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
     tok = _DummyTokenizer()
 
-    rollout_text = '{"object_7":{"desc":"p","bbox_2d":[0,0,1,1]}}'
+    rollout_text = '{"objects":[{"desc":"p","bbox_2d":[<|coord_0|>,<|coord_0|>,<|coord_1|>,<|coord_1|>]}]}'
     parsed = parse_rollout_for_matching(
         tokenizer=tok,
         response_token_ids=list(tok.encode(rollout_text)),
@@ -1183,7 +1173,6 @@ def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
                 desc="fn",
             )
         ],
-        start_index=8,
         prefix_text=parsed.prefix_text,
     )
 
@@ -1209,7 +1198,7 @@ def test_tail_closure_positions_ignore_braces_inside_quoted_desc():
 
     # Include a literal '}' inside a quoted desc string; closure-marker parsing must
     # ignore it and select the brace that closes the *outermost* JSON object.
-    json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a } b"}}'
+    json_text = '{"objects":[{"bbox_2d":[0,0,1,1],"desc":"a } b"}]}'
     ids = list(tok.encode(json_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
@@ -1228,7 +1217,7 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
 
     # Include a literal '<|im_end|>' substring inside a quoted desc string; closure-marker
     # parsing must select the *turn-end* token that occurs after the outermost JSON close brace.
-    json_text = '{"object_1":{"bbox_2d":[0,0,1,1],"desc":"a <|im_end|> b"}}'
+    json_text = '{"objects":[{"bbox_2d":[0,0,1,1],"desc":"a <|im_end|> b"}]}'
     ids = list(tok.encode(json_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
@@ -1242,14 +1231,13 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
     assert ignore_rel == [len(json_text) - 1, len(json_text)]
 
 
-def test_pending_stage2_log_aggregates_closure_and_repeat_metrics() -> None:
+def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
             "stage2/raw_rollouts": 3.0,
+            "stage2_ab/channel_b/invalid_rollout": 1.0,
             "stage2_ab/channel_b/closure_supervision/N_drop": 1.0,
-            "rollout/repeat_terminate_active": 0.0,
-            "rollout/repeat_terminate_triggered_sequences": 2.0,
             "rollout/_parse_truncated_num": 1.0,
             "rollout/_parse_truncated_den": 3.0,
         }
@@ -1257,9 +1245,8 @@ def test_pending_stage2_log_aggregates_closure_and_repeat_metrics() -> None:
     pending.add(
         {
             "stage2/raw_rollouts": 7.0,
+            "stage2_ab/channel_b/invalid_rollout": 2.0,
             "stage2_ab/channel_b/closure_supervision/N_drop": 4.0,
-            "rollout/repeat_terminate_active": 1.0,
-            "rollout/repeat_terminate_triggered_sequences": 5.0,
             "rollout/_parse_truncated_num": 4.0,
             "rollout/_parse_truncated_den": 7.0,
         }
@@ -1268,15 +1255,14 @@ def test_pending_stage2_log_aggregates_closure_and_repeat_metrics() -> None:
     out = pending.finalize()
 
     assert out["stage2/raw_rollouts"] == pytest.approx(10.0)
+    assert out["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(3.0)
     assert out["stage2_ab/channel_b/closure_supervision/N_drop"] == pytest.approx(5.0)
-    assert out["rollout/repeat_terminate_active"] == pytest.approx(1.0)
-    assert out["rollout/repeat_terminate_triggered_sequences"] == pytest.approx(7.0)
     assert out["rollout/parse_truncated_rate"] == pytest.approx(0.5)
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
 
 
-def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_max_flag() -> None:
+def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> None:
     class _FakeReduceOp:
         SUM = "sum"
         MAX = "max"
@@ -1288,20 +1274,9 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_max_flag() ->
             if op == self.ReduceOp.SUM:
                 tensor.add_(
                     torch.tensor(
-                        [3.0, 6.0, 6.0, 1.0],
+                        [3.0, 6.0, 6.0, 1.0, 2.0],
                         dtype=tensor.dtype,
                         device=tensor.device,
-                    )
-                )
-            elif op == self.ReduceOp.MAX:
-                tensor.copy_(
-                    torch.maximum(
-                        tensor,
-                        torch.tensor(
-                            [1.0],
-                            dtype=tensor.dtype,
-                            device=tensor.device,
-                        ),
                     )
                 )
 
@@ -1313,14 +1288,13 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_max_flag() ->
             "rollout/_parse_truncated_num": 1.0,
             "rollout/_parse_truncated_den": 4.0,
             "stage2/raw_rollouts": 4.0,
-            "rollout/repeat_terminate_triggered_sequences": 2.0,
-            "rollout/repeat_terminate_active": 0.0,
+            "stage2_ab/channel_b/invalid_rollout": 1.0,
+            "rollout/parse_truncated": 1.0,
         }
     )
 
     assert out["rollout/parse_truncated_rate"] == pytest.approx(0.4)
-    assert out["rollout/repeat_terminate_triggered_sequences"] == pytest.approx(3.0)
-    assert out["rollout/repeat_terminate_active"] == pytest.approx(1.0)
+    assert out["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(2.0)
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
 

@@ -188,11 +188,9 @@ These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Ch
   - **What:** number of samples dropped because deterministic closure-marker resolution failed (`}` / `<|im_end|>` alignment).
   - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
 
-- `rollout/repeat_terminate_active`
-  - **What:** 1 when repeat-aware termination is active for the step under the current rollout backend/mode, else 0.
-
-- `rollout/repeat_terminate_triggered_sequences`
-  - **What:** number of rollout sequences in the step where repeat-aware termination triggered at least once.
+- `stage2_ab/channel_b/invalid_rollout`
+  - **What:** number of samples in this step where rollout parsing could not produce an append-ready `{"objects": [` prefix and therefore fell back to empty-pred mode.
+  - **Why:** tracks sample-level rollout/container failures that force FN-only completion supervision.
 
 Aggregation semantics (training-time `metrics` payload):
 - counters are global sums across grad-accum + DDP ranks

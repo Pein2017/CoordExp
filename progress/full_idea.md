@@ -67,61 +67,70 @@ Concretely:
 ## 1. Output Format / Token Protocol
 
 ### 1.1 Canonical object record format (JSON-only, dense mode)
-CoordExp uses JSON-only assistant outputs (no wrapper tags like `<obj>`/`<box>`). In dense mode, the assistant emits a single top-level JSON object mapping `"object_1"`, `"object_2"`, ... to per-object payloads. This payload is derived from the dataset JSONL record contract (`docs/data/JSONL_CONTRACT.md` / `docs/data/README.md`), which stores objects as a list; the template enumerates that list and assigns stable `object_i` keys.
+CoordExp uses JSON-only assistant outputs (no wrapper tags like `<obj>`/`<box>`). In dense mode, the assistant emits a single top-level CoordJSON object:
 
-Each `object_i` value is a JSON object with:
+```json
+{"objects": [{...}, {...}]}
+```
+
+Each `objects[]` record is a JSON object with:
 - `desc` (string, required): open-vocabulary description / class phrase.
 - Exactly one geometry field (required, mutually exclusive):
   - `bbox_2d`: `[x1, y1, x2, y2]`
-  - `poly`: polygon vertices (>= 3 points). In text it may appear as a flat list `[x1, y1, ...]` or as paired points `[[x1, y1], ...]` as long as it flattens to an even-length list. JSONL records may also include `poly_points` as metadata, but the assistant output does not need it (and strict parsing may drop unexpected keys).
+  - `poly`: flat polygon list `[x1, y1, x2, y2, ...]` with even length and >= 6 values. JSONL may include `poly_points` metadata, but assistant output does not emit metadata keys.
 
 Coordinate representation (norm1000):
-- Coord-token mode (recommended for Stage-2): each coordinate is a string `"<|coord_k|>"` where `k ∈ [0, 999]`.
-- Numeric mode: coordinates are integers in `[0, 999]` (pre-normalized offline; runtime normalization is disabled).
+- Raw JSONL stores coord tokens as quoted strings `"<|coord_k|>"`.
+- Assistant CoordJSON uses **bare** CoordTok literals `<|coord_k|>` where `k ∈ [0, 999]`.
+- Internally, assistant CoordJSON is transpiled to strict JSON with integer geometry bins before matching/eval/loss.
 
 Example (coord-token mode, bbox only):
 
 ```json
 {
-  "object_1": {
-    "desc": "black cat",
-    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"]
-  },
-  "object_2": {
-    "desc": "yellow dog",
-    "bbox_2d": ["<|coord_520|>", "<|coord_285|>", "<|coord_890|>", "<|coord_660|>"]
-  }
+  "objects": [
+    {
+      "desc": "black cat",
+      "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]
+    },
+    {
+      "desc": "yellow dog",
+      "bbox_2d": [<|coord_520|>, <|coord_285|>, <|coord_890|>, <|coord_660|>]
+    }
+  ]
 }
 ```
 
-Optional: bbox-first object payload order
+Optional: geometry-first object payload order
 
 Default remains `desc` then `bbox_2d` (desc-first).
 
-An optional order is `bbox_2d` then `desc` (bbox-first). This can reduce early long-text noise on geometry decoding and make coordinates available earlier for parsing, while desc-first usually gives stronger early semantic anchoring in dense scenes. If bbox-first is adopted as the default template, a short format-refresh SFT / Stage-1 refresh may be needed to re-stabilize output.
+An optional ablation order is `bbox_2d`/`poly` then `desc` (geometry-first). This can reduce early long-text noise on geometry decoding and make coordinates available earlier for parsing, while desc-first usually gives stronger early semantic anchoring in dense scenes.
 
-Optional bbox-first example:
+Optional geometry-first example:
 
 ```json
 {
-  "object_1": {
-    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"],
-    "desc": "black cat near sofa"
-  }
+  "objects": [
+    {
+      "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>],
+      "desc": "black cat near sofa"
+    }
+  ]
 }
 ```
 
 ### 1.2 Parsing invariants
 - The response MUST contain a top-level JSON object.
-- Valid objects are entries whose keys match `object_<N>` (1-indexed).
-- Each object MUST contain:
+- The top-level object MUST contain exactly one key: `objects`.
+- `objects` MUST be an array; each record MUST contain:
   - a non-empty `desc`, and
   - exactly one geometry field: `bbox_2d` or `poly`.
-- Objects SHOULD NOT contain extra keys beyond `desc` + the geometry field (strict parsing may drop them).
+- Records MUST NOT contain extra keys beyond `desc` + geometry.
 - Geometry arity rules (after flattening nested lists, if any):
   - `bbox_2d` must contain exactly 4 coordinates.
-  - `poly` must flatten to an even-length list with length >= 6.
-- In coord-token mode, geometry values MUST be coord-token strings `"<|coord_k|>"` with `k ∈ [0, 999]`. Malformed objects are dropped (no repair).
+  - `poly` must be a flat even-length list with length >= 6.
+- In CoordJSON mode, geometry values MUST be bare coord-token literals `<|coord_k|>` with `k ∈ [0, 999]`.
 
 ---
 
@@ -471,19 +480,13 @@ Channel-B is a single Unified one-pass pipeline, run sparsely to correct set-lev
    - `FP` (valid predicted objects not in `ValidMatched`),
    - `FN` (GT objects not matched).
 
-#### Step B3 — Build `y_in` by FN injection inside outermost JSON dict (BUG-1 + BUG-2 fix)
+#### Step B3 — Build `y_in` by FN append inside `{"objects": [...]}` (BUG-1 + BUG-2 fix)
 5) Construct the one-pass teacher-forced target sequence `y_in` from `ŷ_full`:
-   - Do **not** construct `y_in` as `ŷ_full + RenderGT(FN)`: rollout usually already contains outermost `}` and `<|im_end|>`, so direct concatenation would place FN entries outside the JSON dict.
-   - Locate the **outermost** JSON closing brace `}` with brace-stack scan (or equivalent streaming parse).
-   - Insert FN entries **before** that outermost `}` so FN stays inside the same top-level dict.
-   - If prefix body already has at least one object entry, insert `,` before the first FN entry; otherwise insert FN entries directly.
-   - Preserve suffix tokens after the outermost `}` (including `<|im_end|>`); these closure/end tokens remain supervised by CE.
-
-6) FN key numbering (conflict-safe):
-   - Parse existing keys matching `"object_N"` in prefix body and compute `maxN`.
-   - `start_id = maxN + 1` (or `1` if no existing object key).
-   - Render FN entries in **GT canonical order** using keys:
-     - `"object_{start_id}"`, `"object_{start_id+1}"`, ...
+   - Do **not** construct `y_in` as `ŷ_full + RenderGT(FN)`: rollout usually already contains top-level closures and `<|im_end|>`, so direct concatenation places FN entries outside the container.
+   - Suffix-trim rollout text to an append-ready prefix that ends inside the `objects` array (`{"objects": [` or `{"objects": [{...}`).
+   - Append FN records as additional array elements in GT canonical order.
+   - If prefix already contains at least one retained object, prepend `, ` before the first FN record.
+   - Close container with `]}` and preserve suffix tokens after container closure (including `<|im_end|>`), which remain supervised by CE.
 
 #### Step B4 — One-pass teacher-forced forward + loss
 7) Single forward on the constructed sequence:
@@ -521,12 +524,10 @@ def channel_b_unified(sample, model):
     parsed = strict_parse_and_validate(y_hat_full)
     valid_matched, fp_ids, fn_ids = hungarian_with_gating(parsed, sample.gt_objects)
 
-    close_idx = locate_outermost_close_brace(y_hat_full)  # brace-stack scan
-    body = extract_json_body(y_hat_full, close_idx)
-    max_n = max_object_key_id(body)  # parse "object_N", return 0 if none
-    fn_entries = render_fn_entries(sample.gt_objects, fn_ids, start_id=max_n + 1, order="gt_canonical")
-    comma = "," if has_any_object_entry(body) and fn_entries else ""
-    y_in = inject_before_close_brace(y_hat_full, close_idx, comma + fn_entries)  # FN stays inside dict
+    y_prefix = trim_to_append_ready_objects_prefix(y_hat_full)  # ends inside {"objects": [...]
+    fn_entries = render_fn_array_entries(sample.gt_objects, fn_ids, order="gt_canonical")
+    comma = ", " if prefix_has_any_object_entry(y_prefix) and fn_entries else ""
+    y_in = y_prefix + comma + fn_entries + "]}"
 
     ce_mask = zeros_like(y_in)  # default all-off
     ce_mask = apply_matched_mask(ce_mask, parsed, struct_on=True, desc_on=False, coord_on=False)
@@ -570,8 +571,8 @@ Practical defaults (based on current evidence that hard-CE is not weak):
 Given image + prompt:
 1) Autoregressively generate sequence `y_pred` (greedy/beam).
 2) Parse objects:
-   - parse the JSON dict and read each object's `desc` string
-   - parse `bbox_2d` as 4 coord-token strings `"<|coord_k|>"` (x1,y1,x2,y2)
+   - parse CoordJSON `{"objects": [...]}` and read each record `desc`
+   - parse `bbox_2d` as 4 bare coord tokens `<|coord_k|>` (x1,y1,x2,y2)
 3) Convert coord tokens to box values:
    - discrete: `k/999`
    - optional: if you want continuous decode at inference, you can compute CoordExp from logits during generation, but simplest is discrete token readout.
@@ -589,8 +590,7 @@ Given image + prompt:
 - Parser: predicted sequence → list of objects + coord token indices
 - Coord vocab index list: indices of `<|coord_0|>.. <|coord_999|>` in tokenizer
 - Ability to record object spans and coord logit indices during strict parse on rollout prefix (`y_prefix`) with explicit input-position vs logit-position mapping (causal-shift aware).
-- Ability to locate the outermost `}` injection point and rebuild `y_in` by inserting FN entries inside the same top-level JSON dict.
-- FN key numbering rule: parse existing `"object_N"` keys, set `start_id = maxN + 1` (or `1` if none), and append FN entries in GT canonical order.
+- Ability to keep an append-ready `{"objects": [` prefix and rebuild `y_in` by appending FN records as array elements.
 - Ability to map each object to coord logit positions (shift-aware) for both prefix parsed objects and FN injected objects.
 - Loss-mask builder that applies `CE_struct` to matched+FN only, sets all FP-span losses to zero (Strategy A), and keeps CE on outermost `}` and `<|im_end|>` (closure supervision on).
 
@@ -608,9 +608,8 @@ Given image + prompt:
 - Model forward must support `inputs_embeds` (Qwen3-VL does; ensure your trainer path passes it correctly).
 
 ### 10.1.2 Unified Channel-B construction utilities
-- Outermost-brace scanner (brace-stack) that returns the insertion position for FN entries inside top-level JSON dict.
-- Comma insertion logic for FN injection (`insert ',' iff prefix body already has object entries and FN is non-empty`).
-- Object-key allocator for FN injection (`object_{start_id+i}` with `start_id = max_object_key + 1`).
+- Prefix scanner that returns an append-ready cut inside top-level `{"objects": [...]}`.
+- Comma insertion logic for FN append (`insert ', ' iff prefix already has retained entries and FN is non-empty`).
 - Span/index exporter for matched prefix objects, FP objects, and injected FN objects.
 
 ### 10.2 Matching utilities
@@ -650,7 +649,7 @@ Given image + prompt:
 - parse rollout -> valid objects
 - Hungarian + gating -> matches / ValidMatched
 - build sets -> `ValidMatched / FP / FN`
-- locate outermost `}` + inject FN entries into top-level JSON dict (with comma/key rules)
+- build append-ready prefix + append FN entries into top-level `objects[]` (with comma rules)
 - export span/index metadata for matched-prefix coords, FP spans, and FN-injected coords
 - build CE masks with FP full-mask only; keep outermost `}` and `<|im_end|>` supervised
 
@@ -689,28 +688,32 @@ Given image + prompt:
 ### GT (JSON-only assistant payload; bbox only)
 ```json
 {
-  "object_1": {
-    "desc": "black cat",
-    "bbox_2d": ["<|coord_110|>", "<|coord_310|>", "<|coord_410|>", "<|coord_705|>"]
-  },
-  "object_2": {
-    "desc": "yellow dog",
-    "bbox_2d": ["<|coord_520|>", "<|coord_285|>", "<|coord_890|>", "<|coord_660|>"]
-  }
+  "objects": [
+    {
+      "desc": "black cat",
+      "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]
+    },
+    {
+      "desc": "yellow dog",
+      "bbox_2d": [<|coord_520|>, <|coord_285|>, <|coord_890|>, <|coord_660|>]
+    }
+  ]
 }
 ```
 
 ### Rollout (model output; JSON-only, bbox only)
 ```json
 {
-  "object_1": {
-    "desc": "black cat",
-    "bbox_2d": ["<|coord_120|>", "<|coord_300|>", "<|coord_420|>", "<|coord_700|>"]
-  },
-  "object_2": {
-    "desc": "yellow dog",
-    "bbox_2d": ["<|coord_500|>", "<|coord_280|>", "<|coord_880|>", "<|coord_650|>"]
-  }
+  "objects": [
+    {
+      "desc": "black cat",
+      "bbox_2d": [<|coord_120|>, <|coord_300|>, <|coord_420|>, <|coord_700|>]
+    },
+    {
+      "desc": "yellow dog",
+      "bbox_2d": [<|coord_500|>, <|coord_280|>, <|coord_880|>, <|coord_650|>]
+    }
+  ]
 }
 ```
 
@@ -722,7 +725,7 @@ Given image + prompt:
 ### Unified one-pass Channel-B update
 
 * rollout -> strict parse -> Hungarian/gating to get `ValidMatched / FP / FN`
-* inject FN entries into the same top-level JSON dict before the outermost `}` (with key numbering `start_id = max_object_N + 1`)
+* append FN records into the same top-level `objects[]` container
 * run one teacher-forced forward on injected sequence `y_in`
 * apply CE masks: matched `CE_struct=1, CE_desc=0`; FP spans all zero; FN `CE_struct=1, CE_desc=1`; keep CE on outermost `}` and `<|im_end|>`
 * decode coords with CoordExp and apply SmoothL1 + CIoU on matched + FN geometry from the same logits

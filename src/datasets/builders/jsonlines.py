@@ -1,9 +1,8 @@
 """JSON conversation builder for dense captioning"""
 
 import base64
-import json
 import os
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional
 
 from src.common.object_field_order import (
     ObjectFieldOrder,
@@ -11,6 +10,8 @@ from src.common.object_field_order import (
     normalize_object_field_order,
 )
 from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
+from src.utils.assistant_json import dumps_coordjson
+from src.utils.coordjson_transpiler import coordjson_to_strict_json
 
 from ..contracts import ConversationRecord, validate_conversation_record
 from ..utils import extract_object_points
@@ -40,8 +41,7 @@ class JSONLinesBuilder(BaseBuilder):
     assistant emitting the minimal object hierarchy (no 图片_N wrapper).
 
     Modes:
-    - ``dense``: assistant returns a JSON object mapping ``object_{n}`` keys to
-      geometry/description payloads.
+    - ``dense``: assistant returns CoordJSON with top-level ``{"objects": [...]}``.
     - ``summary``: assistant returns the summary string stored in the record.
     """
 
@@ -154,12 +154,12 @@ class JSONLinesBuilder(BaseBuilder):
         width = float(record.get("width") or 1)
         height = float(record.get("height") or 1)
 
-        grouped_objects: Dict[str, Any] = {}
+        grouped_objects: List[Dict[str, Any]] = []
         for idx, obj in enumerate(objects, start=1):
             geom_type, points = extract_object_points(obj)
             if not geom_type or not points:
                 raise ValueError(
-                    f"Object object_{idx} must contain exactly one valid geometry field"
+                    f"Object objects[{int(idx) - 1}] must contain exactly one valid geometry field"
                 )
 
             desc = self._sanitize_desc(obj.get("desc"), idx)
@@ -174,32 +174,32 @@ class JSONLinesBuilder(BaseBuilder):
                 ),
                 object_field_order=self.object_field_order,
             )
-            grouped_objects[f"object_{idx}"] = payload
-        return grouped_objects
+            grouped_objects.append(payload)
+        return {"objects": grouped_objects}
 
     def _sanitize_desc(self, value: Any, object_index: int) -> str:
         if not isinstance(value, str):
             raise ValueError(
-                f"Object object_{object_index} must provide a string 'desc'; got {type(value)!r}"
+                f"Object objects[{int(object_index) - 1}] must provide a string 'desc'; got {type(value)!r}"
             )
 
         desc = value.strip()
         if not desc:
             raise ValueError(
-                f"Object object_{object_index} has empty 'desc' after stripping whitespace"
+                f"Object objects[{int(object_index) - 1}] has empty 'desc' after stripping whitespace"
             )
 
         if any(char in desc for char in "\n\r\t"):
             raise ValueError(
-                f"Object object_{object_index} desc contains forbidden control whitespace"
+                f"Object objects[{int(object_index) - 1}] desc contains forbidden control whitespace"
             )
 
         disallowed_patterns = (" ,", ", ", " /", "/ ", " :", ": ", "  ")
         for pattern in disallowed_patterns:
             if pattern in desc:
                 raise ValueError(
-                    "Object object_{} desc contains disallowed whitespace pattern '{}'".format(
-                        object_index, pattern
+                    "Object objects[{}] desc contains disallowed whitespace pattern '{}'".format(
+                        int(object_index) - 1, pattern
                     )
                 )
 
@@ -264,18 +264,26 @@ class JSONLinesBuilder(BaseBuilder):
 
     def _render_json_text(self, payload: Mapping[str, Any]) -> str:
         text_payload = self._prepare_text_payload(payload)
-        indent, separators = self._json_style()
-        assistant_text = json.dumps(
-            text_payload,
-            ensure_ascii=False,
-            indent=indent,
-            separators=separators,
-        )
+        assistant_text = dumps_coordjson(text_payload)
+        if self.mode == "dense":
+            # Deterministic stages must fail-fast when rendered CoordJSON drifts
+            # from the strict contract.
+            coordjson_to_strict_json(
+                assistant_text,
+                mode="strict",
+                object_field_order=self.object_field_order,
+            )
         return assistant_text
 
     def _prepare_text_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         formatted: Dict[str, Any] = {}
         for key, entry in payload.items():
+            if str(key) == "objects" and isinstance(entry, list):
+                formatted[key] = [
+                    self._format_object_entry(item) if isinstance(item, Mapping) else item
+                    for item in entry
+                ]
+                continue
             if isinstance(entry, Mapping):
                 formatted[key] = self._format_object_entry(entry)
             else:
@@ -286,27 +294,12 @@ class JSONLinesBuilder(BaseBuilder):
         formatted_entry: Dict[str, Any] = {}
         for field, value in entry.items():
             if field in {"poly"} and isinstance(value, list):
-                formatted_entry[field] = self._format_geometry_sequence(value)
+                formatted_entry[field] = list(value)
             elif field == "bbox_2d" and isinstance(value, list):
                 formatted_entry[field] = list(value)
             else:
                 formatted_entry[field] = value
         return formatted_entry
-
-    def _format_geometry_sequence(self, values: List[int | float]) -> List[Any]:
-        if not values:
-            return []
-        if len(values) % 2 != 0:
-            return list(values)
-        grouped: List[Any] = []
-        for idx in range(0, len(values), 2):
-            x = values[idx]
-            y = values[idx + 1]
-            grouped.append([x, y])
-        return grouped
-
-    def _json_style(self) -> Tuple[Optional[int], Tuple[str, str]]:
-        return None, (", ", ": ")
 
     def _to_url(self, image: Any) -> str:
         """Canonicalize an image entry to a URL string for the template.

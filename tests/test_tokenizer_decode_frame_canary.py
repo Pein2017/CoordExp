@@ -217,15 +217,15 @@ def test_tokenizer_decode_frame_consistency_canary():
 
     tokenizers = _load_tokenizers(tok_path)
 
-    # Stage-2-relevant synthetic fragments.
+    # Stage-2-relevant synthetic fragments in CoordJSON objects[] format.
     samples = [
-        '{"object_1":{"desc":"a","bbox_2d":["<|coord_1|>","<|coord_2|>","<|coord_3|>","<|coord_4|>"]}}',
-        '{"object_1": {"desc": "a", "bbox_2d": ["<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"]}}',
-        '{"object_1":{"desc":"a b","bbox_2d":["<|coord_12|>","<|coord_34|>","<|coord_256|>","<|coord_480|>"]}}',
+        '{"objects": [{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
+        '{"objects":[{"desc":"a","bbox_2d":[<|coord_1|>,<|coord_2|>,<|coord_3|>,<|coord_4|>]}]}',
+        '{"objects": [{"desc": "a b", "bbox_2d": [<|coord_12|>, <|coord_34|>, <|coord_256|>, <|coord_480|>]}]}',
         # Include stop marker token if present in vocab.
-        '{"object_1":{"desc":"x","bbox_2d":["<|coord_0|>","<|coord_0|>","<|coord_1|>","<|coord_1|>"]}}<|im_end|>',
+        '{"objects": [{"desc": "x", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_1|>, <|coord_1|>]}]}<|im_end|>',
         # Include backslashes/quotes to stress escape handling.
-        '{"object_1":{"desc":"a\\\"b","bbox_2d":["<|coord_1|>","<|coord_2|>","<|coord_3|>","<|coord_4|>"]}}',
+        '{"objects": [{"desc": "a\\\"b", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
     ]
 
     all_mismatches: List[Dict[str, Any]] = []

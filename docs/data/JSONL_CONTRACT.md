@@ -2,6 +2,10 @@
 
 This document defines the universal JSONL format consumed by all CoordExp training/eval datasets (public detection/grounding and any legacy sources). Every record MUST adhere to this contract so the shared chat-template pipeline can process all sources.
 
+Important separation:
+- This contract is for **raw JSONL files** (`*.train/val.coord.jsonl`), which must remain strict JSON.
+- Model-facing assistant text is rendered as **CoordJSON** (`{"objects": [...]}` with bare coord tokens in geometry arrays) and is transpiled to strict JSON before parsing/matching/eval.
+
 ## Top-Level Record
 - **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see [`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)). Regardless of source, they MUST match this contract.
 - `images` (list[str], required): Relative paths to image files; resolved against the JSONL directory.
@@ -28,6 +32,11 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
   Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
 - Coord-token mode is mandatory: keep geometry in `<|coord_k|>` tokens and keep `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
+
+### Raw JSONL vs assistant CoordJSON
+- Raw JSONL must stay strict JSON, so coord tokens are quoted strings (e.g., `"<|coord_123|>"`).
+- Assistant dense outputs use top-level `{"objects": [...]}` and bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`).
+- Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
 
 ## Invariants
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.

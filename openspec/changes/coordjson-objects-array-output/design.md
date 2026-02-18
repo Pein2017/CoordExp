@@ -48,10 +48,11 @@ Constraints:
    - Rationale: Hungarian matching, evaluation, and losses can keep using existing JSON-based utilities and do not need to become CoordJSON-aware.
 
 4) **Strictness split: SFT/GT vs rollout preds**
-   - Decision:
-     - Cooked SFT/GT: strict mode MUST fail-fast on any schema, ordering, or serialization violation (record-level).
-     - Rollout preds: salvage mode MUST drop invalid records and ignore an incomplete final record caused by max-length truncation; keep earlier valid records.
-   - Rationale: SFT/GT is controllable and should never violate the contract; rollouts are inherently noisy and must not crash training.
+- Decision:
+  - Cooked SFT/GT: strict mode MUST fail-fast on any schema, ordering, or serialization violation (record-level).
+  - Rollout preds: salvage mode MUST drop invalid records and ignore an incomplete final record caused by max-length truncation; keep earlier valid records.
+  - Inference/eval parsing: salvage-first; MAY try both per-record key orders (`desc_first` / `geometry_first`) and keep the parse with the most objects (does not enforce `custom.object_field_order`).
+  - Rationale: SFT/GT is controllable and should never violate the contract; rollouts are inherently noisy and must not crash training.
 
 5) **No extra keys in records**
    - Decision: record schema is minimal and closed: only `bbox_2d` OR `poly`, plus `desc`.

@@ -21,14 +21,14 @@ targets:
     val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
     user_prompt: >-
       Detect and list every object in the image, ordered top-to-bottom then left-to-right.
-      Return a single JSON object.
+      Return a single CoordJSON object with an "objects" array.
     system_prompt: |-
       You are a general-purpose object detection and grounding assistant.
-      Output exactly one JSON object like {"object_1":{...}} with no extra text.
-      - Order objects top-to-bottom then left-to-right. Index from 1.
+      Output exactly one CoordJSON object like {"objects": [{...}]} with no extra text.
+      - Order objects top-to-bottom then left-to-right.
       - Each object must have a plain English desc and one bbox_2d only.
-      - bbox_2d format: [x1, y1, x2, y2] with x1<=x2 and y1<=y2.
-      - Coordinates must be written as coord tokens `<|coord_N|>` only (N in [0,999]).
+      - bbox_2d format: [<|coord_x1|>, <|coord_y1|>, <|coord_x2|>, <|coord_y2|>] with x1<=x2 and y1<=y2.
+      - Coordinates must be bare coord tokens `<|coord_N|>` only (N in [0,999]); do not quote coord tokens.
       - JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.
 
   - dataset: lvis
@@ -39,18 +39,18 @@ targets:
     val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
     user_prompt: >-
       Detect and list every object in the image, ordered top-to-bottom then left-to-right.
-      Return a single JSON object.
+      Return a single CoordJSON object with an "objects" array.
     system_prompt: |-
       You are a general-purpose object detection and grounding assistant.
-      Output exactly one JSON object like {"object_1":{...}} with no extra text.
-      - Order objects top-to-bottom then left-to-right. Index from 1.
+      Output exactly one CoordJSON object like {"objects": [{...}]} with no extra text.
+      - Order objects top-to-bottom then left-to-right.
       - Each object must have a plain English desc and exactly one geometry key: bbox_2d OR poly (never both).
       - Prefer poly whenever the object shape is reasonably representable. Use bbox_2d as a semantic approximation when:
         - the visible region is only a tiny fragment (heavy occlusion), or
         - the polygon would be too complex/unstable to describe reliably.
-      - poly format: a single closed polygon as an ordered list of [x, y] vertices (<=20 vertices).
+      - poly format: a single closed polygon as a flat coord list [x1, y1, x2, y2, ...] (<=20 vertices / <=40 values).
         - Preserve adjacency; last vertex connects back to the first.
         - Canonical vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.
-      - bbox_2d format: [x1, y1, x2, y2] with x1<=x2 and y1<=y2.
-      - Coordinates must be written as coord tokens `<|coord_N|>` only (N in [0,999]).
+      - bbox_2d format: [<|coord_x1|>, <|coord_y1|>, <|coord_x2|>, <|coord_y2|>] with x1<=x2 and y1<=y2.
+      - Coordinates must be bare coord tokens `<|coord_N|>` only (N in [0,999]); do not quote coord tokens.
       - JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.

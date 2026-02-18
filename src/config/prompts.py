@@ -12,29 +12,32 @@ from .prompt_variants import (
 )
 
 # Shared prior rules (kept flat for easy embedding in system prompt)
-PRIOR_RULES = "- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return an empty JSON {}.\n"
+PRIOR_RULES = '- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return {"objects": []}.\n'
 
 # Ordering instructions (shared across coord modes)
 _ORDER_RULE_SORTED = (
-    "- Order objects by (minY, minX): top-to-bottom then left-to-right. Index from 1.\n"
+    "- Order objects by (minY, minX): top-to-bottom then left-to-right.\n"
 )
-_ORDER_RULE_RANDOM = "- Object order is unrestricted; any ordering is acceptable. Index objects consecutively starting from 1.\n"
+_ORDER_RULE_RANDOM = (
+    "- Object order is unrestricted; any ordering is acceptable.\n"
+)
 
 # Coord-token mode (model asked to emit <|coord_N|> tokens)
 _SYSTEM_PREFIX_TOKENS = (
-    'You are a general-purpose object detection and grounding assistant. Output exactly one JSON object like {"object_1":{...}} with no extra text.\n'
-    "- Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
+    'You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
+    '- The top-level object must contain exactly one key "objects".\n'
+    "- Each objects[] record must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
     '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
     "- Geometry formatting rules:\n"
     "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
-    "  * poly is a single closed polygon as an ordered list of [x, y] vertices.\n"
+    "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
     "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
     "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
     "    - Do NOT sort poly points by x/y; that can create self-intersections.\n"
     "- Coordinates must be written as coord tokens `<|coord_N|>` only. Examples that tokenize correctly:\n"
-    "  * bbox_2d: ['<|coord_12|>', '<|coord_34|>', '<|coord_256|>', '<|coord_480|>']\n"
-    "  * poly: [['<|coord_10|>', '<|coord_20|>'], ['<|coord_200|>', '<|coord_20|>'], ['<|coord_200|>', '<|coord_220|>'], ['<|coord_10|>', '<|coord_220|>']]\n"
-    "- Coordinates are integers in [0,999]; always keep the `<|coord_...|>` form so the tokenizer parses them as special tokens.\n"
+    "  * bbox_2d: [<|coord_12|>, <|coord_34|>, <|coord_256|>, <|coord_480|>]\n"
+    "  * poly: [<|coord_10|>, <|coord_20|>, <|coord_200|>, <|coord_20|>, <|coord_200|>, <|coord_220|>, <|coord_10|>, <|coord_220|>]\n"
+    "- Coordinates are integers in [0,999]; always keep bare `<|coord_...|>` literals (no quotes) in geometry arrays.\n"
     "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
     "Prior rules:\n" + PRIOR_RULES
 )
@@ -47,11 +50,11 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
 USER_PROMPT_SORTED_TOKENS = (
     "Detect and list every object in the image, ordered by (minY, minX) "
     "(top-to-bottom then left-to-right). "
-    "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using `<|coord_N|>` tokens (0–999)."
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc plus one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
 )
 USER_PROMPT_RANDOM_TOKENS = (
     "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single JSON object where each entry has desc plus one geometry (bbox_2d or poly) using `<|coord_N|>` tokens (0–999)."
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc plus one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
 )
 
 # Coord-token-only contract: numeric dense prompt variants are intentionally unsupported.
@@ -67,8 +70,8 @@ USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 def _apply_geometry_first_system_wording(base_prompt: str) -> str:
     return base_prompt.replace(
-        "Each object must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.",
-        "Each object must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
+        "Each objects[] record must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.",
+        "Each objects[] record must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
     )
 
 

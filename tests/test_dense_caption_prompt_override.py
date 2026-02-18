@@ -35,7 +35,17 @@ def _record() -> dict[str, Any]:
         "images": ["img.jpg"],
         "width": 32,
         "height": 32,
-        "objects": [{"bbox_2d": [1, 1, 10, 10], "desc": "cat"}],
+        "objects": [
+            {
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_1|>",
+                    "<|coord_10|>",
+                    "<|coord_10|>",
+                ],
+                "desc": "cat",
+            }
+        ],
     }
 
 
@@ -45,8 +55,24 @@ def _unsorted_record() -> dict[str, Any]:
         "width": 32,
         "height": 32,
         "objects": [
-            {"bbox_2d": [8, 12, 16, 20], "desc": "later"},
-            {"bbox_2d": [1, 1, 6, 6], "desc": "earlier"},
+            {
+                "bbox_2d": [
+                    "<|coord_8|>",
+                    "<|coord_12|>",
+                    "<|coord_16|>",
+                    "<|coord_20|>",
+                ],
+                "desc": "later",
+            },
+            {
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_1|>",
+                    "<|coord_6|>",
+                    "<|coord_6|>",
+                ],
+                "desc": "earlier",
+            },
         ],
     }
 
@@ -147,7 +173,7 @@ def test_template_boundary_reflects_geometry_first_assistant_text_order() -> Non
     )
 
     encoded = ds[0]
-    obj = encoded["assistant_payload"]["object_1"]
+    obj = encoded["assistant_payload"]["objects"][0]
     assert list(obj.keys()) == ["bbox_2d", "desc"]
     assert template.last_assistant_text.index('"bbox_2d"') < template.last_assistant_text.index(
         '"desc"'

@@ -119,12 +119,9 @@ Worked example (default launcher):
   - FN-injected objects: structure CE ON, desc CE ON, coord CE OFF.
 - FP-neutral geometry: Channel-B geometry loss includes matched prefix objects and FN-injected objects; FP objects contribute no geometry loss.
 - Deterministic FN injection:
-  - locate the outermost top-level JSON close brace via brace-depth parsing,
-  - inject FN entries before that same brace,
+  - retain an append-ready rollout prefix inside `{"objects": [ ...`,
+  - append unmatched GT records as extra `objects[]` elements,
   - insert a leading comma iff the retained prefix body already has object entries.
-- Deterministic FN key allocation:
-  - `start_id = max_object_index_in_prefix + 1` (or `1` when none),
-  - `max_object_index_in_prefix` scans retained `object_N` keys in the prefix body even when entries are later dropped by strict validation; malformed keys are ignored.
 - Closure supervision: keep CE ON for the same outermost `}` used as FN injection anchor, and keep CE ON for `<|im_end|>` (no stop-neutral masking).
 - Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
@@ -156,10 +153,10 @@ The current rollout behavior commonly includes a trailing `<|im_end|>` token and
 Parsing policy:
 - Treat `<|im_end|>` as a hard stop (strip it, even when fused into the final token).
 - If the rollout is truncated mid-object, suffix-trim to the last complete object boundary.
-- Make the prefix append-ready by dropping the final top-level `}` (open JSON object).
+- Keep the prefix append-ready inside the top-level `objects` array (`{"objects": [` or `{"objects": [{...}`).
 - Failure fallback:
-  - If no opening `{` exists, or no append-ready prefix can be produced, use `Y_rollout_prefix = "{"`
-    (no prefix supervision; all GT become FN and are appended).
+  - If no valid `{"objects": [...]}` container exists, or no append-ready prefix can be produced, use `Y_rollout_prefix = "{\"objects\": ["`
+    (empty predicted set; all GT are appended as FN).
 
 ---
 
@@ -253,11 +250,7 @@ vLLM has a mode switch under `rollout_matching.vllm.mode`:
     - `rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
     - `server_gpus` and `train_gpus` must be disjoint device sets
-    - rollout server starts with repo-owned `--external_plugins scripts/vllm_repeat_terminate_plugin.py`
-      and receives the full `rollout_matching.repeat_terminate` subtree via
-      `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON`
-    - when `repeat_terminate.enabled: true`, launcher probes `/infer/` and fails fast unless
-      responses include `coordexp.repeat_terminate_triggered`
+    - no external repeat-terminate plugin is required
 
 ### HF (Fallback)
 
@@ -278,7 +271,6 @@ Notes:
   - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_non_beam_count`.
 - vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
-- If rollouts occasionally generate repetitive garbage until `max_new_tokens`, enable `repeat_terminate` to force EOS for offending sequences (HF and vLLM server mode).
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
 
 ---
@@ -390,8 +382,6 @@ Channel scheduling (AB):
 
 Rollout health:
 - `rollout/parse_truncated_rate`
-- `rollout/repeat_terminate_active`
-- `rollout/repeat_terminate_triggered_sequences`
 - `rollout/sample_valid_pred_rate`
 - `rollout/f1`
 

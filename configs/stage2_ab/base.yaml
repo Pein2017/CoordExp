@@ -111,13 +111,6 @@ rollout_matching:
     top_p: 1.0
     top_k: -1
   repetition_penalty: 1.08
-  repeat_terminate:
-    enabled: true
-    min_new_tokens: 8
-    max_consecutive_token_repeats: 8
-    ngram_size: 8
-    ngram_repeats: 3
-    max_object_keys: null
   candidate_top_k: 5
   maskiou_gate: 0.3
   maskiou_resolution: 256

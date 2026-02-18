@@ -10,28 +10,31 @@ def _char_types_from_spans(length: int, spans: list[tuple[int, int, int]]) -> li
     return arr
 
 
-def test_coord_token_string_marks_quotes_as_format() -> None:
+def test_coord_token_literals_are_bare_and_marked_as_coord() -> None:
     payload = {
-        "object_1": {
-            "desc": "x",
-            "bbox_2d": ["<|coord_12|>", "<|coord_34|>", "<|coord_56|>", "<|coord_78|>"],
-        }
+        "objects": [
+            {
+                "desc": "x",
+                "bbox_2d": [
+                    "<|coord_12|>",
+                    "<|coord_34|>",
+                    "<|coord_56|>",
+                    "<|coord_78|>",
+                ],
+            }
+        ]
     }
     text, spans = _dumps_with_types(payload)
-    # Find the first coord token string in the serialized JSON.
-    needle = '"<|coord_12|>"'
+    # CoordJSON literals are bare (no surrounding quotes).
+    needle = "<|coord_12|>"
     start = text.find(needle)
-    assert start >= 0, f"coord token string not found in JSON text: {text!r}"
-    end = start + len(needle) - 1  # index of the closing quote
+    assert start >= 0, f"coord token literal not found in JSON text: {text!r}"
+    assert f'"{needle}"' not in text
+    end = start + len(needle) - 1
 
     char_types = _char_types_from_spans(len(text), spans)
 
-    # Quotes are FORMAT; inner substring is COORD.
-    assert text[start] == "\""
-    assert char_types[start] == TokenType.FORMAT
-    assert char_types[end] == TokenType.FORMAT
-
-    assert text[start + 1] == "<"
-    assert char_types[start + 1] == TokenType.COORD
-    assert text[end - 1] == ">"
-    assert char_types[end - 1] == TokenType.COORD
+    assert text[start] == "<"
+    assert char_types[start] == TokenType.COORD
+    assert text[end] == ">"
+    assert char_types[end] == TokenType.COORD
