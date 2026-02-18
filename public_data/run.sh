@@ -57,7 +57,7 @@ Runner flags:
 
 Passthrough args:
   Everything after `--` is forwarded to the underlying implementation:
-    - download/convert: dataset plugin script (public_data/datasets/<dataset>.sh)
+    - download/convert: adapter ingestion hook (which invokes dataset plugin contract)
     - rescale/coord/validate: unified pipeline factory (public_data/scripts/run_pipeline_factory.py)
   The pipeline factory supports a curated subset of flags and warns on unsupported args.
   For `all`, passthrough args are forwarded ONLY to dataset plugin steps (download/convert).
@@ -104,64 +104,6 @@ require_file() {
   [[ -f "${path}" ]] || die "Missing required file: ${path}"
 }
 
-require_cmd() {
-  local cmd="$1"
-  command -v "${cmd}" >/dev/null 2>&1 || die "Missing required command on PATH: ${cmd}"
-}
-
-download_coco_raw_aria2c() {
-  # Fast path for COCO 2017 raw download using aria2c multi-connection downloads.
-  # Layout matches public_data/coco/raw/ conventions used elsewhere in this repo.
-  require_cmd aria2c
-  require_cmd unzip
-  require_cmd sha256sum
-
-  local downloads_dir="${RAW_DIR}/downloads"
-  run_cmd mkdir -p "${downloads_dir}"
-  run_cmd mkdir -p "${RAW_IMAGE_DIR}"
-
-  # Canonical URLs. Prefer plain HTTP here because some cluster environments
-  # MITM/terminate TLS and can cause aria2c hostname mismatch failures.
-  local url_train="http://images.cocodataset.org/zips/train2017.zip"
-  local url_val="http://images.cocodataset.org/zips/val2017.zip"
-  local url_ann="http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
-
-  banner "[coco] aria2c download (multi-conn) -> ${downloads_dir}"
-  local train_zip="${downloads_dir}/train2017.zip"
-  local val_zip="${downloads_dir}/val2017.zip"
-  local ann_zip="${downloads_dir}/annotations_trainval2017.zip"
-
-  # Skip already-complete downloads (prevents re-hitting the server and failing on transient 503s).
-  # If a corresponding *.aria2 file exists, treat it as incomplete and resume with -c.
-  if [[ -f "${train_zip}" && ! -f "${train_zip}.aria2" ]]; then
-    echo "[coco] skip download: already present ${train_zip}" >&2
-  else
-    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_train}"
-  fi
-
-  if [[ -f "${val_zip}" && ! -f "${val_zip}.aria2" ]]; then
-    echo "[coco] skip download: already present ${val_zip}" >&2
-  else
-    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_val}"
-  fi
-
-  if [[ -f "${ann_zip}" && ! -f "${ann_zip}.aria2" ]]; then
-    echo "[coco] skip download: already present ${ann_zip}" >&2
-  else
-    run_cmd aria2c -c -x 16 -s 16 -k 1M -d "${downloads_dir}" "${url_ann}"
-  fi
-
-  banner "[coco] sha256 checksums -> ${downloads_dir}/SHA256SUMS.txt"
-  run_cmd bash -c "cd \"${downloads_dir}\" && sha256sum train2017.zip val2017.zip annotations_trainval2017.zip > SHA256SUMS.txt"
-
-  banner "[coco] extract images -> ${RAW_IMAGE_DIR}"
-  run_cmd unzip -q -n "${downloads_dir}/train2017.zip" -d "${RAW_IMAGE_DIR}"
-  run_cmd unzip -q -n "${downloads_dir}/val2017.zip" -d "${RAW_IMAGE_DIR}"
-
-  banner "[coco] extract annotations -> ${RAW_DIR}"
-  run_cmd unzip -q -n "${downloads_dir}/annotations_trainval2017.zip" -d "${RAW_DIR}"
-}
-
 plugin_path() {
   echo "${REPO_ROOT}/public_data/datasets/${DATASET}.sh"
 }
@@ -191,15 +133,6 @@ plugin_default_preset() {
   echo "${out}"
 }
 
-run_plugin() {
-  local subcmd="$1"
-  shift
-  local plugin
-  plugin="$(plugin_path)"
-  require_plugin_file
-  run_cmd bash "${plugin}" "${subcmd}" "$@"
-}
-
 set_paths_for_preset() {
   # Requires PRESET to already be set (may be empty).
   PRESET_DIR="${DATASET_DIR}/${PRESET}"
@@ -222,15 +155,10 @@ resolve_effective_preset_name() {
     return 0
   fi
   [[ "${max_objects}" =~ ^[0-9]+$ ]] || die "PUBLIC_DATA_MAX_OBJECTS must be an integer if set"
-  local root
-  root="$(echo "${base_preset}" | sed -E 's/(_max_?[0-9]+)+$//')"
-  local canonical="${root}_max_${max_objects}"
-  local legacy="${root}_max${max_objects}"
-  if [[ -d "${DATASET_DIR}/${legacy}" && ! -d "${DATASET_DIR}/${canonical}" ]]; then
-    echo "${legacy}"
-  else
-    echo "${canonical}"
-  fi
+  run_py public_data/scripts/resolve_effective_preset.py \
+    --dataset-dir "${DATASET_DIR}" \
+    --base-preset "${base_preset}" \
+    --max-objects "${max_objects}"
 }
 
 require_repo_root
@@ -303,36 +231,38 @@ case "${COMMAND}" in
     exit 0
     ;;
   download)
-    require_plugin_file
     banner "[${DATASET}] download -> ${RAW_DIR}"
     run_cmd mkdir -p "${RAW_DIR}"
-    if [[ "${DATASET}" == "coco" && ${#PASSTHROUGH_ARGS[@]} -eq 0 ]]; then
-      download_coco_raw_aria2c
-    else
-      run_plugin download \
-        --repo-root "${REPO_ROOT}" \
-        --dataset "${DATASET}" \
-        --dataset-dir "${DATASET_DIR}" \
-        --raw-dir "${RAW_DIR}" \
-        --raw-image-dir "${RAW_IMAGE_DIR}" \
-        --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
-        --raw-val-jsonl "${RAW_VAL_JSONL}" \
+    PIPELINE_ARGS=(
+      --mode download
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+    )
+    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+      run_py public_data/scripts/run_pipeline_factory.py \
+        "${PIPELINE_ARGS[@]}" \
         -- "${PASSTHROUGH_ARGS[@]}"
+    else
+      run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
     fi
     ;;
   convert)
-    require_plugin_file
     banner "[${DATASET}] convert -> ${RAW_TRAIN_JSONL}"
     run_cmd mkdir -p "${RAW_DIR}"
-    run_plugin convert \
-      --repo-root "${REPO_ROOT}" \
-      --dataset "${DATASET}" \
-      --dataset-dir "${DATASET_DIR}" \
-      --raw-dir "${RAW_DIR}" \
-      --raw-image-dir "${RAW_IMAGE_DIR}" \
-      --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
-      --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      -- "${PASSTHROUGH_ARGS[@]}"
+    PIPELINE_ARGS=(
+      --mode convert
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+    )
+    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+      run_py public_data/scripts/run_pipeline_factory.py \
+        "${PIPELINE_ARGS[@]}" \
+        -- "${PASSTHROUGH_ARGS[@]}"
+    else
+      run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+    fi
     ;;
   rescale)
     [[ -n "${PRESET}" ]] || die "rescale requires --preset <name>"
@@ -439,8 +369,6 @@ case "${COMMAND}" in
     fi
     ;;
   all)
-    require_plugin_file
-
     # Preset resolution: --preset overrides plugin default; error if neither.
     if [[ -z "${PRESET}" ]]; then
       if PRESET="$(plugin_default_preset)"; then
@@ -460,25 +388,32 @@ case "${COMMAND}" in
     banner "[${DATASET}] all (preset: ${PRESET})"
     run_cmd mkdir -p "${RAW_DIR}"
     banner "[${DATASET}] stage: download"
-    run_plugin download \
-      --repo-root "${REPO_ROOT}" \
-      --dataset "${DATASET}" \
-      --dataset-dir "${DATASET_DIR}" \
-      --raw-dir "${RAW_DIR}" \
-      --raw-image-dir "${RAW_IMAGE_DIR}" \
-      --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
-      --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      -- "${PASSTHROUGH_ARGS[@]}"
+    PIPELINE_INGEST_ARGS=(
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+    )
+    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+      run_py public_data/scripts/run_pipeline_factory.py \
+        --mode download \
+        "${PIPELINE_INGEST_ARGS[@]}" \
+        -- "${PASSTHROUGH_ARGS[@]}"
+    else
+      run_py public_data/scripts/run_pipeline_factory.py \
+        --mode download \
+        "${PIPELINE_INGEST_ARGS[@]}"
+    fi
     banner "[${DATASET}] stage: convert"
-    run_plugin convert \
-      --repo-root "${REPO_ROOT}" \
-      --dataset "${DATASET}" \
-      --dataset-dir "${DATASET_DIR}" \
-      --raw-dir "${RAW_DIR}" \
-      --raw-image-dir "${RAW_IMAGE_DIR}" \
-      --raw-train-jsonl "${RAW_TRAIN_JSONL}" \
-      --raw-val-jsonl "${RAW_VAL_JSONL}" \
-      -- "${PASSTHROUGH_ARGS[@]}"
+    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+      run_py public_data/scripts/run_pipeline_factory.py \
+        --mode convert \
+        "${PIPELINE_INGEST_ARGS[@]}" \
+        -- "${PASSTHROUGH_ARGS[@]}"
+    else
+      run_py public_data/scripts/run_pipeline_factory.py \
+        --mode convert \
+        "${PIPELINE_INGEST_ARGS[@]}"
+    fi
     banner "[${DATASET}] stage: shared-pipeline"
     PIPELINE_ARGS=(
       --mode full

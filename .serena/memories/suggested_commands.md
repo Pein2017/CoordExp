@@ -1,8 +1,24 @@
-# CoordExp Suggested Commands
+# Command Cribsheet (Memory)
 
-- `PYTHONPATH=. conda run -n ms python -m src.sft --config configs/<run>.yaml [--base_config configs/base.yaml]` – run a YAML-first SFT training experiment (single dataset or extend with `custom.fusion_config`).
-- `PYTHONPATH=. conda run -n ms python scripts/tools/expand_coord_vocab.py --src <base> --dst <coord-expanded>` – regenerate coord tokens before training to avoid ID drift.
-- `PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <file> --index 0` – preview how a JSONL record renders through the Qwen3-VL chat template and prompt.
-- `PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.jsonl>` – verify JSONL records adhere to the canonical contract before packing.
-- `bash public_data/scripts/lvis_full_pipeline.sh` (with optional `MAX_BLOCKS`, `FACTOR`, etc.) – run the LVIS raw-to-packed data pipeline for reproducible geometry.
-- `git status --porcelain` and `git diff` – check working tree cleanliness before editing; repo safety requires avoiding destructive commands unless explicitly requested.
+Role separation:
+- Memory role: short, high-frequency command recall.
+- Canonical docs for full run procedures: `docs/data/README.md`, `docs/training/STAGE2_RUNBOOK.md`, `public_data/README.md`.
+- Update trigger: when script CLIs or recommended launcher patterns change.
+
+Environment baseline:
+- Prefer `PYTHONPATH=. conda run -n ms ...`
+
+Training:
+- `PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`
+- `PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
+
+Validation/sanity:
+- `conda run -n ms python public_data/scripts/validate_jsonl.py <jsonl>`
+- `conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path> --index 0`
+
+Inference/eval:
+- `CKPT=<ckpt> GT_JSONL=<gt.jsonl> OUTPUT_BASE_DIR=<out_dir> bash scripts/run_infer_eval.sh`
+- `PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --pred_jsonl <pred.jsonl> --out_dir <eval_out> --metrics both`
+
+Coord-token verification:
+- `conda run -n ms python scripts/tools/verify_coord_tokens.py --original <base_ckpt> --merged <merged_ckpt> [--adapter <adapter_ckpt>]`

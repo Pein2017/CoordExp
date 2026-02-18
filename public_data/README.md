@@ -192,4 +192,10 @@ Reproducer and details:
 - If `all` fails because `scripts/tools/inspect_chat_template.py` cannot run (no cached model), it will warn+skip; the JSONL contract validation still runs.
 - If `validate` fails on `*.coord.jsonl` with `x2 <= x1` / `y2 <= y1`, it is typically caused by very thin (1px) boxes collapsing under norm1000 quantization in older coord conversion logic. Re-run `./public_data/run.sh <ds> coord --preset <preset>` after updating `public_data/scripts/convert_to_coord_tokens.py`.
 - Disk pressure: use `public_data/scripts/sample_dataset.py` to produce smaller JSONLs before training.
-- Full-cutover rollback (operator): if parity regression is discovered post-cutover, revert this refactor change in VCS (for example `git revert` the cutover commit) to restore legacy shared-stage behavior from history.
+- Migration-time dataset rollback (operator, parity-gate failure):
+  1. Find the last parity-passing commit for the affected dataset (`<legacy_sha>`).
+  2. Create a dataset-scoped rollback worktree: `git worktree add temp/rollback-<ds> <legacy_sha>`.
+  3. Re-run only that dataset from the rollback worktree (for example `./public_data/run.sh <ds> all --preset <preset>`).
+  4. Keep other datasets on the current branch; only the failing dataset is temporarily pinned to legacy internals.
+  5. Remove the temporary worktree after parity is restored: `git worktree remove temp/rollback-<ds>`.
+- Full-cutover rollback (operator): if a regression is discovered after global cutover, revert the cutover commit in VCS (for example `git revert <cutover_sha>`) to restore legacy behavior globally.

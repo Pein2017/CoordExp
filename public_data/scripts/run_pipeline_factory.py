@@ -5,15 +5,23 @@ import argparse
 from pathlib import Path
 
 from public_data.pipeline import PipelineConfig, PipelinePlanner
+from public_data.pipeline.adapters import build_default_registry
+
+INGESTION_MODES = {"download", "convert"}
+PIPELINE_MODES = {"rescale", "coord", "validate", "full"}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Unified public-data pipeline/factory entrypoint")
-    parser.add_argument("--mode", choices=["rescale", "coord", "validate", "full"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=sorted(INGESTION_MODES | PIPELINE_MODES),
+        required=True,
+    )
     parser.add_argument("--dataset-id", required=True)
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--raw-dir", type=Path, required=True)
-    parser.add_argument("--preset", type=str, required=True)
+    parser.add_argument("--preset", type=str, default=None)
 
     parser.add_argument("--max-objects", type=int, default=None)
 
@@ -31,13 +39,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validate-preset", action="store_true")
 
     args, unknown = parser.parse_known_args()
-    if unknown:
+    if unknown and unknown[0] == "--":
+        unknown = unknown[1:]
+    args.passthrough_args = tuple(unknown)
+
+    if args.mode in {"rescale", "coord", "full"} and not args.preset:
+        parser.error(f"--preset is required for mode '{args.mode}'")
+
+    if args.mode == "validate":
+        requires_preset = bool(args.validate_preset) or (not args.validate_raw and not args.validate_preset)
+        if requires_preset and not args.preset:
+            parser.error("--preset is required for mode 'validate' unless validating raw artifacts only")
+
+    if args.mode in PIPELINE_MODES and unknown:
         print(f"[pipeline][warn] Ignoring unsupported passthrough args: {' '.join(unknown)}")
+
     return args
 
 
 def main() -> None:
     args = parse_args()
+
+    if args.mode in INGESTION_MODES:
+        registry = build_default_registry()
+        adapter = registry.get(args.dataset_id)
+        if args.mode == "download":
+            adapter.download_raw_images(args.dataset_dir, passthrough_args=args.passthrough_args)
+        else:
+            adapter.download_and_parse_annotations(args.dataset_dir, passthrough_args=args.passthrough_args)
+
+        print(f"[pipeline] dataset={args.dataset_id}")
+        print(f"[pipeline] ingestion={args.mode}")
+        print(f"[pipeline] raw_dir={args.dataset_dir / 'raw'}")
+        return
 
     if args.mode == "validate":
         validate_raw = bool(args.validate_raw)
@@ -53,7 +87,7 @@ def main() -> None:
         dataset_id=args.dataset_id,
         dataset_dir=args.dataset_dir,
         raw_dir=args.raw_dir,
-        preset=args.preset,
+        preset=args.preset or "",
         max_objects=args.max_objects,
         image_factor=args.image_factor,
         max_pixels=args.max_pixels,

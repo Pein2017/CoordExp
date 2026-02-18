@@ -1,23 +1,33 @@
-# CoordExp Project Overview
+# CoordExp Overview (Memory)
 
-## Purpose
-- Extend Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant matching to advance open-vocabulary detection/grounding while remaining within the ms-swift SFT pipeline.
-- Keep experiments YAML/config-driven, reproducible, and ready for paper-ready runs (single-dataset by default, fusion via `custom.fusion_config`).
+Role separation:
+- Memory role: quick routing for day-to-day implementation turns (what to open next).
+- Canonical docs: `progress/full_idea.md`, `docs/data/README.md`, `docs/training/STAGE2_RUNBOOK.md`, `public_data/README.md`.
+- Update trigger: when entrypoints, trainer variants, or default workflow posture changes.
 
-## Tech Stack
-- Python 3 on Linux, running inside `conda run -n ms` with `ms-swift` (trainer/orchestrator) plus Hugging Face Qwen3-VL checkpoints.
-- Geometry-focused tooling under `src/datasets/geometry.py` and shared dataset/data-contract helpers in `public_data/`.
-- Config-first YAML loader (`configs/` + `src/config/`) and ms-swift for training/inference.
+Current workspace posture:
+- Default: single-dataset training.
+- Primary efficiency lever: packing.
+- Fusion-config training: legacy/experimental.
 
-## Structure
-- `src/`: training stack (`src/sft.py` entrypoint), dataset builders, config loader, callbacks, inference/eval helpers.
-- `configs/`: YAML experiment definitions (base, dlora, LoRA, fusion overrides).
-- `scripts/` and `public_data/scripts/`: utilities for vocab expansion, JSONL validation, data packing, LVIS pipeline, etc.
-- `docs/`: runbooks, data contracts, standards (`docs/standards/CODE_STYLE.md`), and evaluation/training guides.
+Primary entrypoints:
+- Training: `src/sft.py`
+- Inference pipeline: `scripts/run_infer.py`
+- Detection evaluation: `scripts/evaluate_detection.py`
 
-## Key Commands
-- `PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug]` (main training entrypoint).
-- `PYTHONPATH=. conda run -n ms python scripts/tools/expand_coord_vocab.py --src <base> --dst <expanded>` (coord vocab prep).
-- `PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <file> --index <n>` (preview prompt rendering).
-- `PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path>` (JSONL contract check).
-- `bash public_data/scripts/lvis_full_pipeline.sh` (LVIS data prep reproducible pipeline).
+Trainer variants (quick map):
+- Default ms-swift trainer (via `TrainerFactory`).
+- `rollout_matching_sft`.
+- `stage2_ab_training`.
+- `gkd_monitor` (with `rlhf_type: gkd`).
+
+Memory topic map (owner memory per domain):
+- Config contract: `.serena/memories/config_yaml_guide.md`
+- Data contract + dataset flow: `.serena/memories/data_contract_and_datasets.md`
+- Coord-token/offset specifics: `.serena/memories/coord_tokens_and_coord_offset.md`
+- Packing + stage2 runtime behavior: `.serena/memories/packing_and_stage2_rollout_matching.md`
+- Inference/eval tooling: `.serena/memories/evaluation_inference_and_tools.md`
+- Public-data runner/output contract: `.serena/memories/public_data_module.md`
+- Coding/process guardrails: `.serena/memories/style_and_conventions.md`
+- Command cribsheet: `.serena/memories/suggested_commands.md`
+- Completion checklist: `.serena/memories/task_completion.md`

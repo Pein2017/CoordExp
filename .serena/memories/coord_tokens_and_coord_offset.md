@@ -1,31 +1,22 @@
-# Coord Tokens, Losses, and Coord-Offset Adapter
+# Coord Tokens + Coord Offset (Memory)
 
-Coord tokens:
-- Text form: `<|coord_k|>` where `k in [0, 999]`.
-- Codec helpers: `src/coord_tokens/codec.py` (`is_coord_token`, `token_to_int`, `ints_to_tokens`, masks for coord-id ranges).
+Role separation:
+- Memory role: quick recall for coord-token mechanics and adapter wiring.
+- Canonical docs: `docs/training/COORD_OBJECTIVE_AND_ADAPTER.md` (plus stage docs when applicable).
+- Canonical code paths: `src/coord_tokens/`, `src/trainers/metrics/mixins.py`.
+- Update trigger: when coord tokenization, coord losses, or offset adapter wiring changes.
 
-Coord-token mode (data + template):
-- Record annotation: `src/coord_tokens/validator.py::annotate_coord_tokens(record)` adds cached token/int forms under `*_coord_*` keys.
-- Builder behavior: `src/datasets/builders/jsonlines.py` emits either numeric `[0,999]` or token strings depending on `coord_tokens_enabled`.
-- Template adapter: `src/coord_tokens/template_adapter.py::apply_coord_template_adapter()` patches `template.normalize_bbox` to a no-op when
-  `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true` (prevents double scaling).
+Core reminders:
+- Coord token form: `<|coord_k|>`, `k in [0, 999]`.
+- Annotation helper: `annotate_coord_tokens(...)` caches `_coord_tokens`, `_coord_token_ints`, `_coord_token_norm`, and sets `_coord_tokens_enabled`.
+- Dataset builder emits numeric or tokenized coordinates based on coord-token mode.
 
-Distributional coord supervision (stage-1 + parts of stage-2):
-- Core math: `src/coord_tokens/soft_ce_w1.py` (Gaussian soft targets, soft CE, W1 on CDF).
-- Trainer integration: `CoordSoftCEW1LossMixin` in `src/metrics/dataset_metrics.py`.
-- Config: `custom.coord_soft_ce_w1.*` in `src/config/schema.py`.
-- Schema guard: `custom.coord_tokens.enabled` REQUIRES `custom.coord_soft_ce_w1.enabled`.
+Loss/optimization reminders:
+- Coord distributional objective utilities live in `src/coord_tokens/soft_ce_w1.py`.
+- Trainer mixin lives in `src/trainers/metrics/mixins.py` (re-exported elsewhere).
+- Coord-token enablement does not force coord-soft-ce enablement at schema level.
 
-Coord-offset adapter (optional):
-- Purpose: train only coord-token rows without updating the full vocab.
-- Implementation: `src/coord_tokens/offset_adapter.py`:
-  - `install_coord_offset_adapter(model, coord_ids=...)` freezes base `embed_tokens.weight` + `lm_head.weight` and adds trainable offsets.
-  - `reattach_coord_offset_hooks(model)` is required after PEFT/Swift wrapping so the active adapter instance hooks the wrapped modules.
-- Runner wiring: `src/sft.py`:
-  - installs adapter before `sft.prepare_model()`;
-  - adds `coord_offset_adapter` to `modules_to_save`;
-  - sanity-checks `coord_offset.ids` vs `model.config.vocab_size`.
-- Optimizer: set `training.optimizer: multimodal_coord_offset`; registered in `src/optim/coord_offset_optimizer.py`.
-
-Export/merge note:
-- Some workflows require merging LoRA + coord offsets; see `scripts/merge_coord.sh` and `README.md`.
+Coord-offset adapter reminders:
+- Adapter install/reattach lives in `src/coord_tokens/offset_adapter.py`.
+- Runner wiring + module-save integration is in `src/sft.py`.
+- Optimizer path: `training.optimizer: multimodal_coord_offset`.

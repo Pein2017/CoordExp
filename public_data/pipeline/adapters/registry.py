@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Sequence
 
 from .base import DatasetAdapter
 from .coco import CocoAdapter
@@ -14,6 +14,12 @@ class AdapterRegistry:
         self._adapters: Dict[str, DatasetAdapter] = {}
 
     def register(self, adapter: DatasetAdapter) -> None:
+        existing = self._adapters.get(adapter.dataset_id)
+        if existing is not None:
+            raise ValueError(
+                f"Dataset id '{adapter.dataset_id}' is already registered "
+                f"with adapter type '{type(existing).__name__}'."
+            )
         self._adapters[adapter.dataset_id] = adapter
 
     def get(self, dataset_id: str) -> DatasetAdapter:
@@ -31,11 +37,16 @@ class AliasAdapter(DatasetAdapter):
         self.dataset_id = dataset_id
         self._delegate = delegate
 
-    def download_raw_images(self, dataset_dir: Path) -> None:
-        self._delegate.download_raw_images(dataset_dir)
+    def download_raw_images(self, dataset_dir: Path, *, passthrough_args: Sequence[str] = ()) -> None:
+        self._delegate.download_raw_images(dataset_dir, passthrough_args=passthrough_args)
 
-    def download_and_parse_annotations(self, dataset_dir: Path) -> None:
-        self._delegate.download_and_parse_annotations(dataset_dir)
+    def download_and_parse_annotations(
+        self,
+        dataset_dir: Path,
+        *,
+        passthrough_args: Sequence[str] = (),
+    ) -> None:
+        self._delegate.download_and_parse_annotations(dataset_dir, passthrough_args=passthrough_args)
 
     def source_normalize_record(self, record: dict, split: str) -> dict:
         return self._delegate.source_normalize_record(record, split)

@@ -1,21 +1,20 @@
-# Public Data Module (`public_data/`)
+# Public Data Runner (Memory)
 
-Purpose:
-- Provides geometry-aware, tested pipelines to turn public datasets (LVIS first; expanding) into JSONLs that match the CoordExp training contract.
+Role separation:
+- Memory role: quick operational contract for public-data intake artifacts.
+- Canonical docs: `public_data/README.md`, `docs/data/INTAKE_PIPELINE.md`, `docs/data/JSONL_CONTRACT.md`.
+- Update trigger: when runner stages, output layout, or plugin contract changes.
 
-Entry points:
-- High-level overview: `public_data/README.md`.
-- Operational docs + dataset-specific notes: `public_data/README.md`.
-
-Unified runner (recommended):
+Primary interface:
 - `./public_data/run.sh <dataset> <command> [runner-flags] [-- <passthrough-args>]`
-- Dataset plugins live under `public_data/datasets/<dataset>.sh`.
+- Dataset plugin boundary: `public_data/datasets/<dataset>.sh`
 
-Shared preprocessing steps (dataset-agnostic):
-- `public_data/scripts/rescale_jsonl.py` (smart resize / pixel budget + geometry rewrite).
-- `public_data/scripts/convert_to_coord_tokens.py` (convert norm1000 numeric coords to `<|coord_k|>` tokens).
-- `public_data/scripts/validate_jsonl.py` (schema + geometry validation).
+Output contract reminders:
+- Raw artifacts under `public_data/<ds>/raw/`.
+- Preset artifacts under `public_data/<ds>/<preset>/` include `*.raw.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`.
+- Repro metadata includes `pipeline_manifest.json`.
+- JSONL image paths must remain relative to JSONL directory.
 
-Output expectations:
-- Pipelines typically emit `train.jsonl` / `val.jsonl` plus a coord-token version `*.coord.jsonl`.
-- Training consumes them via `custom.train_jsonl`/`custom.val_jsonl` or via `custom.fusion_config`.
+Operational controls:
+- Optional max-object filtering via `PUBLIC_DATA_MAX_OBJECTS=<N>`.
+- Validation can be structure-only (`--skip-image-check`) when image assets are unavailable.
