@@ -1,9 +1,7 @@
-# object-field-ordering Specification
+## ADDED Requirements
 
-## Purpose
 Define a config-driven contract for per-object JSON field order in detection training targets, enabling controlled autoregressive ablations while preserving object instance ordering and geometry semantics.
 
-## Requirements
 ### Requirement: Object field order is config-driven and strict
 The system SHALL expose `custom.object_field_order` as the single source of truth for per-object field order in:
 - serialized assistant payload objects, and
