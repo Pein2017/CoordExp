@@ -34,7 +34,7 @@
 !public_data/**/*.sh
 !progress/**
 !.serena/memories/**
-
+!.codex_config/pein/skills/**
 
 # Ignore common Python cache folders
 **/__pycache__/**
