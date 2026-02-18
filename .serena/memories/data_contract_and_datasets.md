@@ -1,34 +1,25 @@
-# Data Contract + Dataset Pipeline
+# Data Contract + Dataset Flow (Memory)
 
-Contract:
-- Global JSONL contract is documented in `docs/data/JSONL_CONTRACT.md`.
-- Each record has:
-  - `images: [str]` (paths resolved relative to JSONL dir unless absolute),
-  - `objects: [...]` where each object has non-empty `desc` and exactly ONE geometry (`bbox_2d` OR `poly` (+ optional `poly_points`)),
-  - `width`, `height` always present,
-  - optional `summary`, `metadata`.
+Role separation:
+- Memory role: retrieval-first reminders for data assumptions in code changes.
+- Canonical docs: `docs/data/JSONL_CONTRACT.md`, `docs/data/INTAKE_PIPELINE.md`, `docs/data/README.md`.
+- Canonical code paths: `src/datasets/`, `src/datasets/geometry.py`, `src/datasets/builders/jsonlines.py`.
+- Update trigger: when JSONL schema, preprocessing steps, or dataset loader behavior changes.
 
-Coord conventions (important for training):
-- The training runner currently enforces `custom.emit_norm: none` (see `CustomConfig.__post_init__` in `src/config/schema.py`).
-- That means runtime normalization is disabled; numeric geometry used in text MUST already be within `[0, 999]` (norm1000).
-- Coord-token mode (`custom.coord_tokens.enabled: true`) expects `<|coord_k|>` tokens (k in [0,999]) in the JSONL.
+Training assumptions (must hold):
+- Contract fields: `images`, `objects`, `width`, `height`.
+- One geometry per object (`bbox_2d` or `poly`), with non-empty `desc`.
+- Runtime normalization is disabled (`custom.emit_norm: none`), so geometry must already be norm1000 or coord-tokenized.
 
-Runner behavior:
-- `src/sft.py` auto-sets `ROOT_IMAGE_DIR` to the parent directory of `custom.train_jsonl` (or `custom.fusion_config`) if unset.
-- In fusion mode, `custom.fusion_config` loads multiple datasets via `FusionConfig` and builds `FusionCaptionDataset`.
+Runtime flow (single JSONL):
+- Loader path: `src/datasets/dense_caption.py`.
+- Preprocessor chain may include validation/augmentation/object-capping.
+- Optional object ordering + optional coord-token annotation.
+- Message build via `src/datasets/builders/jsonlines.py`, then template encode.
 
-Per-sample flow (single JSONL path):
-- Dataset: `BaseCaptionDataset.from_jsonl()` in `src/datasets/dense_caption.py`.
-- `__getitem__` roughly does:
-  - epoch-seeded index permutation (deterministic shuffle),
-  - deep copy record -> optional preprocessors (validation, augmentation),
-  - optional object reordering (`custom.object_ordering`: sorted|random),
-  - if coord_tokens enabled: `annotate_coord_tokens(record)` (`src/coord_tokens/validator.py`),
-  - build messages via `JSONLinesBuilder` (`src/datasets/builders/jsonlines.py`),
-  - encode via the ms-swift template -> tensors (`input_ids`, `labels`, `pixel_values`, `image_grid_thw`, etc),
-  - attaches raw `messages` + `assistant_payload` / `objects` metadata for downstream trainers.
+Fusion mode:
+- Use `custom.fusion_config` only when needed; treat as legacy/experimental path.
+- Multi-dataset loading path: `src/datasets/fusion.py` + `src/datasets/unified_fusion_dataset.py`.
 
-Augmentation:
-- YAML-driven augmentation under `custom.augmentation` and optional curriculum (`custom.augmentation_curriculum`).
-- Implemented in `src/datasets/augmentation/*` and geometry helpers in `src/datasets/geometry.py` (affine transforms update geometry atomically).
-- Training assumes images are already prepared offline (no runtime "smart resize" in the training path).
+Operational note:
+- `src/sft.py` auto-sets `ROOT_IMAGE_DIR` from dataset path hints when unset.

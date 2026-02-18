@@ -1,25 +1,33 @@
-# CoordExp Project Overview (Current Codebase)
+# CoordExp Overview (Memory)
 
-- Goal: Extend Qwen3-VL for grounding/detection research via coord tokens + distributional coord supervision, coord-offset adapters, and order-invariant supervision (stage-2 rollout matching).
-- Main entrypoint: `src/sft.py` (YAML-only; `python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`).
-- Config system:
-  - `src/config/loader.py`: YAML merge with `extends`/`inherit`, prompt selection, TrainArguments construction (ms-swift).
-  - `src/config/schema.py`: typed config validation (`TrainingConfig`, `CustomConfig`, etc).
-- Data pipeline:
-  - Contract: `docs/data/JSONL_CONTRACT.md`.
-  - Single JSONL dataset: `src/datasets/dense_caption.py` (`BaseCaptionDataset`, alias `DenseCaptionDataset`) + `src/datasets/builders/jsonlines.py` (`JSONLinesBuilder`).
-  - Optional fusion dataset: `src/datasets/fusion.py` + `src/datasets/unified_fusion_dataset.py`.
-  - Augmentation/preprocess: `src/datasets/preprocessors/*`, `src/datasets/augmentation/*`, `src/datasets/geometry.py`.
-- Coord stack: `src/coord_tokens/*` (coord token codec, record annotation/validation, template adapter, coord-offset adapter, softCE+W1 utilities).
-- Trainer variants (selected via `custom.trainer_variant` / `train_args.trainer_variant`):
-  - Default: ms-swift trainer via `swift.TrainerFactory`.
-  - `rollout_matching_sft`: `src/trainers/rollout_matching_sft.py` (rollout -> strict parse -> match -> build masked targets; post-rollout packing).
-  - `gkd_monitor` (when `rlhf_type: gkd`): `src/trainers/gkd_monitor.py`.
-- Metrics/collators:
-  - Collator wrapping for per-batch metrics: `src/data_collators/dataset_metrics.py`.
-  - Trainer mixins (coord loss, token-type metrics, instability monitor, grad-accum fix): `src/metrics/dataset_metrics.py`.
-- Eval/infer/tools:
-  - Detection evaluator: `scripts/evaluate_detection.py` -> `src/eval/detection.py`.
-  - Inference: `scripts/run_infer.py` -> `src/infer/engine.py`.
-  - Utilities: `scripts/tools/inspect_chat_template.py`, coord vocab/token scripts in `scripts/tools/`.
-- Public datasets: `public_data/` provides tested conversion pipelines (see `public_data/README.md`).
+Role separation:
+- Memory role: quick routing for day-to-day implementation turns (what to open next).
+- Canonical docs: `progress/full_idea.md`, `docs/data/README.md`, `docs/training/STAGE2_RUNBOOK.md`, `public_data/README.md`.
+- Update trigger: when entrypoints, trainer variants, or default workflow posture changes.
+
+Current workspace posture:
+- Default: single-dataset training.
+- Primary efficiency lever: packing.
+- Fusion-config training: legacy/experimental.
+
+Primary entrypoints:
+- Training: `src/sft.py`
+- Inference pipeline: `scripts/run_infer.py`
+- Detection evaluation: `scripts/evaluate_detection.py`
+
+Trainer variants (quick map):
+- Default ms-swift trainer (via `TrainerFactory`).
+- `rollout_matching_sft`.
+- `stage2_ab_training`.
+- `gkd_monitor` (with `rlhf_type: gkd`).
+
+Memory topic map (owner memory per domain):
+- Config contract: `.serena/memories/config_yaml_guide.md`
+- Data contract + dataset flow: `.serena/memories/data_contract_and_datasets.md`
+- Coord-token/offset specifics: `.serena/memories/coord_tokens_and_coord_offset.md`
+- Packing + stage2 runtime behavior: `.serena/memories/packing_and_stage2_rollout_matching.md`
+- Inference/eval tooling: `.serena/memories/evaluation_inference_and_tools.md`
+- Public-data runner/output contract: `.serena/memories/public_data_module.md`
+- Coding/process guardrails: `.serena/memories/style_and_conventions.md`
+- Command cribsheet: `.serena/memories/suggested_commands.md`
+- Completion checklist: `.serena/memories/task_completion.md`
