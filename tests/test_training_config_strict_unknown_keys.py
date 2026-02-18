@@ -61,6 +61,18 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_buffer"] == 128
 
 
+def test_training_packing_length_deprecated_fails_fast():
+    payload = _base_training_payload()
+    payload["training"] = {"packing": True, "packing_length": 128}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "training.packing_length" in msg
+    assert "deprecated" in msg.lower()
+
+
 def test_unknown_nested_rollout_key_fails_before_trainer_init():
     payload = _base_training_payload()
     payload["rollout_matching"] = {

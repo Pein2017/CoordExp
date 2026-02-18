@@ -101,12 +101,7 @@ def _parse_packing_config(
         train_args, "max_model_len", None
     )
 
-    # Deprecate explicit packing_length: prefer global_max_length -> template.max_length
-    if "packing_length" in cfg:
-        logger.warning(
-            "training.packing_length is deprecated; using template/global_max_length=%s instead",
-            default_length,
-        )
+    # Packing length is derived from the model/template max length.
     packing_length = int(default_length or 0)
     if packing_length <= 0:
         raise ValueError(

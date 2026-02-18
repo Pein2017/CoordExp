@@ -82,7 +82,6 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "save_last_epoch",
     # Packing-only knobs consumed by our runner (not ms-swift args).
     "packing",
-    "packing_length",
     "packing_buffer",
     "packing_min_fill_ratio",
     "packing_drop_last",
@@ -1204,6 +1203,11 @@ class TrainingConfig:
         )
 
         training = dict(_as_dict(data.pop("training", None), path="training"))
+        if "packing_length" in training:
+            raise ValueError(
+                "training.packing_length is deprecated and unsupported. "
+                "Remove it and set global_max_length/template.max_length instead."
+            )
         _validate_section_keys_strict(
             "training", training, allowed=_training_allowed_keys()
         )

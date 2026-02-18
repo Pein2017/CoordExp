@@ -679,6 +679,16 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
 
     eval_cfg = _get_map(cfg, "eval")
 
+    deprecated_keys = [
+        k for k in ("unknown_policy", "semantic_fallback") if k in eval_cfg
+    ]
+    if deprecated_keys:
+        rendered = ", ".join(f"eval.{k}" for k in deprecated_keys)
+        raise ValueError(
+            f"Deprecated evaluation keys are unsupported: {rendered}. "
+            "Remove these keys to continue."
+        )
+
     # Unified pipeline contract: evaluator consumes artifact with embedded GT.
     pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
