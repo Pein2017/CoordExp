@@ -19,7 +19,7 @@ Normative clarification:
 - `geometry_first` means "emit the object's existing geometry key (`bbox_2d` or `poly`) before `desc`."
 - The contract MUST NOT introduce or require a synthetic key literally named `geometry`.
 - `geometry_first` is the generalized term for the direction doc's "bbox-first"; they are equivalent when geometry is `bbox_2d`.
-- For a given sample, assistant payload object order and rendered assistant JSON text order MUST be equivalent for each object (no split-brain ordering between structured payload and emitted text).
+- For a given sample, assistant payload per-object key order and rendered assistant JSON text per-object key order MUST be equivalent (no split-brain ordering between structured payload and emitted text).
 
 #### Scenario: Default behavior remains desc-first
 - **GIVEN** `custom.object_field_order` is omitted
