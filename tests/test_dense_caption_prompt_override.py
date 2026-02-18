@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.config.schema import CoordTokensConfig
 from src.datasets.dense_caption import BaseCaptionDataset
 
@@ -37,6 +39,18 @@ def _record() -> dict[str, Any]:
     }
 
 
+def _unsorted_record() -> dict[str, Any]:
+    return {
+        "images": ["img.jpg"],
+        "width": 32,
+        "height": 32,
+        "objects": [
+            {"bbox_2d": [8, 12, 16, 20], "desc": "later"},
+            {"bbox_2d": [1, 1, 6, 6], "desc": "earlier"},
+        ],
+    }
+
+
 def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> None:
     template = _FakeTemplate()
     ds = BaseCaptionDataset(
@@ -63,3 +77,39 @@ def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> N
     assert encoded_b["messages"][0]["role"] == "system"
     assert encoded_b["messages"][0]["content"] == "SYSTEM_B"
     assert template.system == "BASE_SYSTEM"
+
+
+def test_sorted_ordering_raises_on_unsorted_objects() -> None:
+    template = _FakeTemplate()
+    ds = BaseCaptionDataset(
+        base_records=[_unsorted_record()],
+        template=template,
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=False),
+        object_ordering="sorted",
+    )
+
+    with pytest.raises(ValueError, match="must already be top-left sorted"):
+        ds[0]
+
+
+def test_random_ordering_accepts_unsorted_objects() -> None:
+    template = _FakeTemplate()
+    ds = BaseCaptionDataset(
+        base_records=[_unsorted_record()],
+        template=template,
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=False),
+        object_ordering="random",
+    )
+
+    encoded = ds[0]
+    assert "input_ids" in encoded

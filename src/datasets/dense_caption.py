@@ -13,7 +13,10 @@ from src.coord_tokens.validator import annotate_coord_tokens
 from .builders import JSONLinesBuilder
 from .contracts import ConversationRecord, validate_conversation_record
 from .preprocessors import AugmentationPreprocessor, SequentialPreprocessor
-from .utils import load_jsonl, sort_objects_by_topleft
+from .utils import (
+    find_first_unsorted_object_pair_by_topleft,
+    load_jsonl,
+)
 
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
@@ -227,13 +230,25 @@ class BaseCaptionDataset(Dataset):
         self, record: Dict[str, Any], rng_local: random.Random
     ) -> None:
         objects_list = record.get("objects") or []
-        if isinstance(objects_list, list) and objects_list:
-            if self.object_ordering == "sorted":
-                record["objects"] = sort_objects_by_topleft(objects_list)
-            elif self.object_ordering == "random":
-                objs_copy = list(objects_list)
-                rng_local.shuffle(objs_copy)
-                record["objects"] = objs_copy
+        if not isinstance(objects_list, list) or not objects_list:
+            return
+
+        if self.object_ordering == "sorted":
+            unsorted = find_first_unsorted_object_pair_by_topleft(objects_list)
+            if unsorted is not None:
+                prev_idx, curr_idx, prev_anchor, curr_anchor = unsorted
+                raise ValueError(
+                    "Objects must already be top-left sorted when "
+                    "custom.object_ordering='sorted'; "
+                    f"found out-of-order pair at positions {prev_idx}->{curr_idx} "
+                    f"with anchors {prev_anchor}->{curr_anchor}."
+                )
+            return
+
+        if self.object_ordering == "random":
+            objs_copy = list(objects_list)
+            rng_local.shuffle(objs_copy)
+            record["objects"] = objs_copy
 
     def _maybe_annotate_coord_tokens(self, record: Dict[str, Any]) -> None:
         if self.coord_tokens.enabled:

@@ -44,31 +44,48 @@ def _points_to_floats(points: Sequence[Any]) -> List[float] | None:
     return numeric
 
 
+def _topleft_anchor(obj: Dict[str, Any]) -> Tuple[float, float]:
+    """Return stable top-left ordering anchor `(y, x)` for one object."""
+    geom_type, points = extract_object_points(obj)
+    if not points or not geom_type:
+        return (float("inf"), float("inf"))
+
+    numeric = _points_to_floats(points)
+    if not numeric:
+        return (float("inf"), float("inf"))
+
+    if geom_type == "bbox_2d":
+        # bbox ordering assumed [x1, y1, x2, y2]
+        if len(numeric) < 2:
+            return (float("inf"), float("inf"))
+        return (numeric[1], numeric[0])
+
+    xs = numeric[0::2]
+    ys = numeric[1::2]
+    if not xs or not ys:
+        return (float("inf"), float("inf"))
+    return (min(ys), min(xs))
+
+
+def find_first_unsorted_object_pair_by_topleft(
+    objects: Sequence[Dict[str, Any]],
+) -> Tuple[int, int, Tuple[float, float], Tuple[float, float]] | None:
+    """Return the first out-of-order adjacent pair for TLBR ordering."""
+    if len(objects) < 2:
+        return None
+
+    previous_anchor = _topleft_anchor(objects[0])
+    for index in range(1, len(objects)):
+        current_anchor = _topleft_anchor(objects[index])
+        if current_anchor < previous_anchor:
+            return (index - 1, index, previous_anchor, current_anchor)
+        previous_anchor = current_anchor
+    return None
+
+
 def sort_objects_by_topleft(objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Return objects sorted top-to-bottom then left-to-right using geometry."""
-
-    def anchor(obj: Dict[str, Any]) -> Tuple[float, float]:
-        geom_type, points = extract_object_points(obj)
-        if not points or not geom_type:
-            return (float("inf"), float("inf"))
-
-        numeric = _points_to_floats(points)
-        if not numeric:
-            return (float("inf"), float("inf"))
-
-        if geom_type == "bbox_2d":
-            # bbox ordering assumed [x1, y1, x2, y2]
-            if len(numeric) < 2:
-                return (float("inf"), float("inf"))
-            return (numeric[1], numeric[0])
-
-        xs = numeric[0::2]
-        ys = numeric[1::2]
-        if not xs or not ys:
-            return (float("inf"), float("inf"))
-        return (min(ys), min(xs))
-
-    return sorted(list(objects), key=anchor)
+    return sorted(list(objects), key=_topleft_anchor)
 
 
 def extract_geometry(obj: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -104,5 +121,6 @@ __all__ = [
     "extract_object_points",
     "extract_geometry",
     "is_same_record",
+    "find_first_unsorted_object_pair_by_topleft",
     "sort_objects_by_topleft",
 ]

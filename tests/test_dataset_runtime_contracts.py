@@ -1,7 +1,12 @@
 import pytest
 
 from src.datasets.builders.jsonlines import JSONLinesBuilder
-from src.datasets.utils import extract_geometry, extract_object_points, sort_objects_by_topleft
+from src.datasets.utils import (
+    extract_geometry,
+    extract_object_points,
+    find_first_unsorted_object_pair_by_topleft,
+    sort_objects_by_topleft,
+)
 
 
 def _builder() -> JSONLinesBuilder:
@@ -113,3 +118,38 @@ def test_sort_objects_by_topleft_supports_coord_tokens() -> None:
 
     sorted_objects = sort_objects_by_topleft(objects)
     assert [o["desc"] for o in sorted_objects] == ["a", "b"]
+
+
+def test_find_first_unsorted_object_pair_by_topleft_detects_unsorted() -> None:
+    objects = [
+        {
+            "desc": "b",
+            "bbox_2d": [
+                "<|coord_10|>",
+                "<|coord_20|>",
+                "<|coord_30|>",
+                "<|coord_40|>",
+            ],
+        },
+        {
+            "desc": "a",
+            "bbox_2d": [
+                "<|coord_0|>",
+                "<|coord_0|>",
+                "<|coord_1|>",
+                "<|coord_1|>",
+            ],
+        },
+    ]
+
+    pair = find_first_unsorted_object_pair_by_topleft(objects)
+    assert pair == (0, 1, (20.0, 10.0), (0.0, 0.0))
+
+
+def test_find_first_unsorted_object_pair_by_topleft_accepts_sorted() -> None:
+    objects = [
+        {"desc": "a", "bbox_2d": [0, 0, 1, 1]},
+        {"desc": "b", "bbox_2d": [10, 20, 30, 40]},
+    ]
+
+    assert find_first_unsorted_object_pair_by_topleft(objects) is None
