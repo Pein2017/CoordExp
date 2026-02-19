@@ -10,7 +10,7 @@ CoordExp currently contains try/except blocks in core training/inference/eval pa
 - **Operator-controlled inputs**: training inputs (dataset encoding, cooked targets, GT) and inference/eval inputs (JSONL + images + required metadata) that are deterministic and can be validated in advance.
 - **Resolvable sample-scoped violations**: sample-scoped validation/parse/contract failures for operator-controlled inputs (invalid JSONL line, wrong schema, missing/corrupt image, malformed geometry, missing width/height, wrong format, etc.). These MUST fail fast (raise and terminate the run) so operators fix data/contracts ahead of compute.
 - **Model-generated output invalidity (explicit model-output consumers only)**: invalid/truncated/partial model outputs produced during codepaths that explicitly consume model-generated text (e.g., inference prediction parsing/validation and salvage-mode training subpaths like rollout parsing/matching). Only these contexts MAY drop/skip invalid model outputs *per sample* (never by substituting “safe” defaults), and MUST be observable (structured errors + counters).
-- **Unexpected internal exceptions**: anything not explicitly treated as salvage-mode model-generated output invalidity; MUST terminate the run (fail fast).
+- **Unexpected internal exceptions**: anything not explicitly treated as explicit model-output consumer model-generated output invalidity; MUST terminate the run (fail fast).
 - **Observable**: recorded via structured per-sample `errors` and run-level counters; warnings may be rate-limited but are not sufficient alone.
 
 - Enforce **strict-by-default** exception handling in core `src/` execution paths:
