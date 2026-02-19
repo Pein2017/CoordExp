@@ -616,6 +616,26 @@ class ConfigLoader:
             ) from exc
 
     @staticmethod
+    def load_materialized_training_config(
+        config_path: str, base_config_path: Optional[str] = None
+    ) -> TrainingConfig:
+        """Load + materialize a TrainingConfig without constructing ms-swift TrainArguments.
+
+        This is intentionally side-effect free (no hub downloads / model probing) and is
+        safe to run from arbitrary working directories.
+        """
+
+        ConfigLoader._validate_stage2_leaf_contract(config_path)
+        config = ConfigLoader.load_yaml_with_extends(config_path)
+
+        if base_config_path:
+            base_config = ConfigLoader.load_yaml_with_extends(base_config_path)
+            config = ConfigLoader.merge_configs(base_config, config)
+
+        prompts = ConfigLoader.resolve_prompts(config)
+        return ConfigLoader._materialize_training_config(config, prompts)
+
+    @staticmethod
     def load_training_config(
         config_path: str, base_config_path: Optional[str] = None
     ) -> tuple[TrainArguments, TrainingConfig]:

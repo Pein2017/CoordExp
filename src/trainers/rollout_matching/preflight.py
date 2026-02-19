@@ -28,19 +28,35 @@ __all__ = [
 def resolve_rollout_matching_contract(
     config_path: str, base_config_path: Optional[str] = None
 ) -> RolloutContract:
-    """Load a config via *ConfigLoader* and build the rollout contract."""
+    """Load a config via *ConfigLoader* and build the rollout contract.
 
-    _, training_config = ConfigLoader.load_training_config(config_path, base_config_path)
+    This preflight intentionally avoids building ms-swift TrainArguments so it can run
+    in CPU-only environments and from arbitrary working directories.
+    """
+
+    training_config = ConfigLoader.load_materialized_training_config(
+        config_path, base_config_path
+    )
     return build_rollout_matching_contract(training_config)
 
 
 def resolve_stage2_launcher_preflight(
     config_path: str, base_config_path: Optional[str] = None
 ) -> Stage2LauncherPreflight:
-    """Load a config via *ConfigLoader* and build launcher preflight settings."""
+    """Load a config via *ConfigLoader* and build launcher preflight settings.
 
-    _, training_config = ConfigLoader.load_training_config(config_path, base_config_path)
-    return build_stage2_launcher_preflight(training_config)
+    NOTE: This function must be safe to call from arbitrary working directories.
+    The launcher passes absolute config paths, but JSONL/model paths inside the
+    YAML are frequently repo-relative (e.g. public_data/*).
+
+    This preflight intentionally avoids building ms-swift TrainArguments so it can run
+    in CPU-only environments and without triggering hub downloads.
+    """
+
+    training_config = ConfigLoader.load_materialized_training_config(
+        config_path, base_config_path
+    )
+    return build_stage2_launcher_preflight(training_config, config_path=config_path)
 
 
 def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutContract:
@@ -109,11 +125,25 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
 
 def build_stage2_launcher_preflight(
     training_config: TrainingConfig,
+    config_path: Optional[str] = None,
 ) -> Stage2LauncherPreflight:
-    """Build the single preflight payload consumed by `scripts/train_stage2.sh`."""
+    """Build the single preflight payload consumed by `scripts/train_stage2.sh`.
+
+    This preflight is consumed by the bash launcher, so it must:
+    - resolve repo-relative paths deterministically (independent of cwd)
+    - fail fast with actionable diagnostics on objective-changing misconfig
+    """
 
     rollout_contract = build_rollout_matching_contract(training_config)
     rollout_cfg = _extract_rollout_mapping(training_config)
+
+    server_base_urls = list(rollout_contract["server_base_urls"])
+    if len(server_base_urls) != 1:
+        raise ValueError(
+            "scripts/train_stage2.sh supports exactly 1 vLLM rollout server (it selects urls[0]). "
+            "Set rollout_matching.vllm.server.servers to a single entry or use external orchestration. "
+            f"Got {len(server_base_urls)} servers."
+        )
 
     model_raw = training_config.model.get("model")
     if not isinstance(model_raw, str) or not model_raw.strip():
@@ -125,9 +155,7 @@ def build_stage2_launcher_preflight(
         raise ValueError(
             "custom.train_jsonl must be set to resolve ROOT_IMAGE_DIR for server-mode rollouts."
         )
-    train_jsonl_path = Path(train_jsonl_raw.strip())
-    if not train_jsonl_path.is_absolute():
-        train_jsonl_path = (Path.cwd() / train_jsonl_path).resolve()
+    train_jsonl_path = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
     root_image_dir = train_jsonl_path.parent
 
     vllm_cfg = _extract_required_mapping(rollout_cfg, "rollout_matching.vllm")
@@ -148,12 +176,56 @@ def build_stage2_launcher_preflight(
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "vllm_mode": rollout_contract["vllm_mode"],
-        "server_base_urls": list(rollout_contract["server_base_urls"]),
+        "server_base_urls": server_base_urls,
         "server_model": model_path,
         "root_image_dir_resolved": str(root_image_dir),
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
     }
+
+
+def _infer_repo_root_from_config_path(config_path: Path) -> Optional[Path]:
+    """Best-effort repo-root inference from a config path.
+
+    CoordExp configs live under `<repo>/configs/...`. When this holds, we treat
+    non-dot-prefixed relative paths (e.g. `public_data/...`, `output/...`) as
+    repo-relative.
+
+    Returns None when the config path is outside a standard repo layout.
+    """
+
+    for parent in config_path.parents:
+        if parent.name == "configs":
+            return parent.parent
+    return None
+
+
+def _resolve_path_for_config(raw_path: str, config_path: Optional[str]) -> Path:
+    """Resolve a possibly-relative path in a way that is stable across cwd.
+
+    Resolution policy:
+    - absolute paths are resolved directly
+    - if `raw_path` starts with '.' (./ or ../), resolve relative to the config directory
+    - otherwise, resolve relative to the repo root inferred from the config path
+      (fallback: config directory)
+    - fallback when config_path is missing: resolve relative to cwd
+    """
+
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+
+    if config_path:
+        config_file = Path(config_path).expanduser().resolve()
+        config_dir = config_file.parent
+        repo_root = _infer_repo_root_from_config_path(config_file)
+        if raw_path.startswith("."):
+            anchor = config_dir
+        else:
+            anchor = repo_root or config_dir
+        return (anchor / path).resolve()
+
+    return (Path.cwd() / path).resolve()
 
 
 def _extract_rollout_mapping(training_config: TrainingConfig) -> Mapping[str, Any]:
