@@ -38,6 +38,10 @@ Guiding policy (strict-by-default):
   - Risk: silent semantics change (config override is ignored) and hard-to-debug experiment drift.
   - Recommendation: **Fix** — replace with explicit type checks and catch only `(TypeError, ValueError)`; surface an error when a configured override cannot be coerced.
 
+- `src/datasets/preprocessors/augmentation.py:270-272` — curriculum override of `bypass_prob` silently ignores invalid values via `except (TypeError, ValueError): pass`.
+  - Risk: silent config drift.
+  - Recommendation: **Fix** — at minimum log a warning (include the raw value); consider failing fast when augmentation curriculum is enabled.
+
 - `src/datasets/preprocessors/resize.py:352-355` — fallback path computation uses `except Exception` to substitute a guessed `images/<filename>` path without diagnostics.
   - Risk: silently produces incorrect relative paths and can cascade into missing-file errors later.
   - Recommendation: **Fix** — catch `ValueError`/`RuntimeError` specifically, and add at least a warning counter/log when the “last resort” fallback is taken.
@@ -59,6 +63,12 @@ Guiding policy (strict-by-default):
 
 - `src/coord_tokens/offset_adapter.py:215-216` and `src/optim/coord_offset_optimizer.py:15` — optional dependency imports guarded by `except Exception`.
   - Recommendation: **Narrow** — use `except ImportError`/`ModuleNotFoundError` (fail fast on other runtime errors).
+
+- `src/datasets/preprocessors/sequential.py:30-31` and `src/datasets/preprocessors/sequential.py:44-45` — `except Exception: raise` wrappers.
+  - Recommendation: **Remove** — no behavior change; rely on natural exception propagation.
+
+- `src/datasets/preprocessors/resize.py:390-391` and `src/datasets/preprocessors/augmentation.py:251-252` — `except Exception: raise` wrappers.
+  - Recommendation: **Remove** — no added context; keep code simpler to audit.
 
 ## Inventory status
 
