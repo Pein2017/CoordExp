@@ -70,7 +70,7 @@ def test_infer_hf_batch_size_microbatches(tmp_path, monkeypatch):
 
     def _fake_generate_batch(images):
         calls.append(len(images))
-        text = '{"0": {"desc": "obj", "bbox_2d": [0, 0, 10, 10]}}<|im_end|>'
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
         return [GenerationResult(text=text, error=None) for _ in images]
 
     monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
@@ -183,7 +183,7 @@ def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypa
     assert engine.attn_implementation_selected == "sdpa"
 
     def _fake_generate_batch(images):
-        text = '{"0": {"desc": "obj", "bbox_2d": [0, 0, 10, 10]}}<|im_end|>'
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
         return [GenerationResult(text=text, error=None) for _ in images]
 
     monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
@@ -243,7 +243,7 @@ def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeyp
 
     def _fake_generate_batch(images):
         assert len(images) == 2
-        ok = '{"0": {"desc": "obj", "bbox_2d": [0, 0, 10, 10]}}<|im_end|>'
+        ok = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
         return [
             GenerationResult(text=ok, error=None),
             GenerationResult(text="", error=RuntimeError("boom")),
@@ -318,7 +318,7 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
     monkeypatch.setattr(engine, "load_model", lambda: None)
 
     def _fake_generate_batch(images):
-        text = '{"0": {"desc": "obj", "bbox_2d": [0, 0, 10, 10]}}<|im_end|>'
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
         return [GenerationResult(text=text, error=None) for _ in images]
 
     monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)

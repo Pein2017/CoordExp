@@ -16,9 +16,9 @@
 
 ## 3. Data Factory And Data Processing (Raw -> Cooked -> Samples)
 
-- [ ] 3.1 Trace the code path from `custom.train_jsonl` / `custom.val_jsonl` to dataset construction, including any caching/cooking layers, and document the intermediate artifacts (if any) and their schemas.
-- [ ] 3.2 Verify JSONL contract validation is strict and fail-fast for cooked GT (no silent object drops) and enumerate the explicit edge-case policies (empty objects, invalid arity, missing width/height).
-- [ ] 3.3 Verify geometry invariants in preprocessing/augmentation: coordinate order is preserved, no coord dropping/reordering, and training-side `do_resize=false` is respected end-to-end.
+- [x] 3.1 Trace the code path from `custom.train_jsonl` / `custom.val_jsonl` to dataset construction, including any caching/cooking layers, and document the intermediate artifacts (if any) and their schemas.
+- [x] 3.2 Verify JSONL contract validation is strict and fail-fast for cooked GT (no silent object drops) and enumerate the explicit edge-case policies (empty objects, invalid arity, missing width/height).
+- [x] 3.3 Verify geometry invariants in preprocessing/augmentation: coordinate order is preserved, no coord dropping/reordering, and training-side `do_resize=false` is respected end-to-end.
 - [ ] 3.4 Audit sampling and determinism: `train_sample_limit`, `val_sample_limit`, with/without replacement, multi-worker shuffling/seed handling, and packing-buffer determinism under DDP.
 - [ ] 3.5 Verify image path resolution and `ROOT_IMAGE_DIR` handling is consistent across learner and rollout server (server-mode), including relative-path behavior.
 - [ ] 3.6 Audit offline public-data pipeline drop policies (object drops, record drops, max-object filtering) and ensure every drop mode is surfaced as explicit counters in manifests and carried into run artifacts for audit signoff.

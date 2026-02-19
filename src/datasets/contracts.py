@@ -46,7 +46,74 @@ def validate_conversation_record(record: Mapping[str, Any]) -> ConversationRecor
 
     messages = record.get("messages")
     if messages is None:
-        # Raw dense-caption records (images/objects/summary) are accepted as-is.
+        # Raw dense-caption records (images/objects/summary).
+        #
+        # Even though these records are not yet rendered into chat messages, we still
+        # enforce the JSONL contract shape here so failures are early + actionable.
+        images = record.get("images")
+        if images is None:
+            raise ValueError("record is missing required key 'images'")
+        if not isinstance(images, Sequence) or isinstance(images, (str, bytes)):
+            raise ValueError("record['images'] must be a list of image-path strings")
+        for idx, image in enumerate(images):
+            if not isinstance(image, str):
+                raise ValueError(f"images[{idx}] must be a string path, got {type(image)!r}")
+
+        objects = record.get("objects")
+        if objects is None:
+            raise ValueError("record is missing required key 'objects'")
+        if not isinstance(objects, Sequence) or isinstance(objects, (str, bytes)):
+            raise ValueError("record['objects'] must be a list")
+
+        def _require_positive_int(value: Any, *, name: str) -> int:
+            if value is None:
+                raise ValueError(f"record is missing required key '{name}'")
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{name} must be an int, got {type(value)!r}")
+            if value <= 0:
+                raise ValueError(f"{name} must be positive, got {value!r}")
+            return int(value)
+
+        _require_positive_int(record.get("width"), name="width")
+        _require_positive_int(record.get("height"), name="height")
+
+        # Object-level shape validation (desc + exactly one geometry field).
+        for idx, obj in enumerate(objects):
+            if not isinstance(obj, Mapping):
+                raise ValueError(f"objects[{idx}] must be a mapping")
+            desc = obj.get("desc")
+            if not isinstance(desc, str):
+                raise ValueError(f"objects[{idx}] must provide a string 'desc'")
+
+            has_bbox = "bbox_2d" in obj
+            has_poly = "poly" in obj
+            if has_bbox and has_poly:
+                raise ValueError(
+                    f"objects[{idx}] must contain exactly one geometry field (bbox_2d xor poly), got both"
+                )
+            if not has_bbox and not has_poly:
+                raise ValueError(
+                    f"objects[{idx}] must contain exactly one geometry field (bbox_2d xor poly), got none"
+                )
+            if "bbox" in obj or "polygon" in obj:
+                raise ValueError(
+                    f"objects[{idx}] uses legacy geometry keys ('bbox'/'polygon'); expected bbox_2d|poly"
+                )
+
+            geom_key = "bbox_2d" if has_bbox else "poly"
+            geom = obj.get(geom_key)
+            if not isinstance(geom, Sequence) or isinstance(geom, (str, bytes)):
+                raise ValueError(f"objects[{idx}].{geom_key} must be a sequence")
+            if geom_key == "bbox_2d" and len(geom) != 4:
+                raise ValueError(
+                    f"objects[{idx}].bbox_2d must contain exactly 4 values; got len={len(geom)}"
+                )
+            if geom_key == "poly":
+                if len(geom) < 6 or (len(geom) % 2 != 0):
+                    raise ValueError(
+                        f"objects[{idx}].poly must contain an even number of values and at least 6 coordinates; got len={len(geom)}"
+                    )
+
         return cast(ConversationRecord, record)
 
     if not isinstance(messages, Sequence):
