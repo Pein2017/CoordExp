@@ -7,7 +7,7 @@ CoordExp currently contains try/except blocks in core training/inference/eval pa
 ### Definitions (normative)
 
 - **Core execution paths**: dataset encoding, trainer steps, inference pipeline stages, and evaluation metric computation (i.e., correctness-affecting logic under `src/`).
-- **Expected per-sample errors**: sample-scoped validation/parse failures that do not indicate a code bug. These MAY be recorded and skipped *per sample* (never by substituting “safe” defaults) in inference/eval and in explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching). For deterministic training inputs (dataset encoding / cooked targets / GT), such errors MUST fail fast.
+- **Expected per-sample errors**: sample-scoped validation/parse failures that do not indicate a code bug. For deterministic inputs that can be validated in advance (dataset encoding / cooked targets / GT and inference/eval inputs), such errors MUST fail fast (raise) so operators fix data/contracts ahead of runs. Only explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY record and skip invalid model outputs *per sample* (never by substituting “safe” defaults), and MUST be observable (structured errors + counters).
 - **Unexpected internal exceptions**: anything not explicitly treated as an expected per-sample error; MUST terminate the run (fail fast).
 - **Observable**: recorded via structured per-sample `errors` and run-level counters; warnings may be rate-limited but are not sufficient alone.
 

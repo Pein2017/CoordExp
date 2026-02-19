@@ -10,17 +10,17 @@ This delta modifies only inference error-handling requirements; all other base `
 ### Requirement: Inference error reporting remains structured and sample-scoped
 Inference-engine SHALL preserve structured, per-sample error reporting in output artifacts and summary counters.
 
-When inference/eval intentionally continues past an expected per-sample validation/parse failure, the failure MUST map to an explicit sample error entry rather than a silent skip.
+Inference/eval inputs are operator-controlled and should be validated in advance. Therefore, any input-dependent validation/parse failure (invalid JSON line, missing/corrupt image, malformed geometry, wrong schema, etc.) MUST fail fast (terminate the run) rather than silently skipping.
 
-Expected per-sample errors include sample-scoped, input-dependent failures that can be isolated to one record (e.g., invalid JSON line, missing/corrupt image, malformed geometry, or a per-request generation error that is returned for that sample). These errors MUST be recorded on that sample and MAY allow the run to continue.
+If the implementation records a structured error entry for the failing sample, it MAY do so, but it MUST still terminate the run with a non-zero exit code.
 
 Unexpected internal exceptions (anything not explicitly treated as an expected per-sample error) MUST terminate the run (fail fast) to prevent silent corruption of artifacts and metrics.
 
 #### Scenario: Sample-level post-processing failure is reflected in structured errors
 - **GIVEN** post-processing/validation fails for one sample (e.g., malformed geometry)
-- **WHEN** inference continues for the remaining samples
-- **THEN** the failed sample includes a structured error entry
-- **AND** summary counters include the failure classification.
+- **WHEN** the failure is encountered
+- **THEN** the run terminates with a non-zero exit code
+- **AND** the failure is surfaced with actionable diagnostics (sample identifier and reason).
 
 #### Scenario: Unexpected internal exception terminates inference
 - **GIVEN** an unexpected internal exception occurs during inference (not an enumerated expected per-sample error)

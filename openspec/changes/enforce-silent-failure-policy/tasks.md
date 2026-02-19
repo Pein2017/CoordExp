@@ -32,7 +32,7 @@
 - [ ] 3.1 Remove blanket suppression in core paths (e.g., `except Exception: pass`) and replace with:
   - explicit exception types, and either
   - re-raise with context, or
-  - expected-error recording (in inference/eval only).
+  - (only for explicitly salvage-mode model-output consumers) expected-error recording with counters.
 - [ ] 3.1.1 Fix known P0 offenders (evidence-backed):
   - `src/trainers/rollout_matching/parsing.py` — replace `except Exception: pass` around `parse_coordjson(...)` with explicit expected parse exception handling; unexpected exceptions must propagate.
   - `src/trainers/rollout_matching/matching.py` — replace `except Exception: return 0.0` in maskIoU with input validation + narrow exceptions + explicit counters (or fail fast on unexpected).
@@ -45,6 +45,11 @@
 - [ ] 3.3 Tighten optional dependency handling to `ImportError` / `ModuleNotFoundError` with actionable guidance (no blanket catch).
 - [ ] 3.4 Strip redundant `try/except` wrappers that only re-raise without adding context; keep context at meaningful boundaries.
 - [ ] 3.5 Ensure any `finally` blocks that restore temporary mutable state remain deterministic; restoration failures terminate the run.
+- [ ] 3.6 Add inference/eval preflight validation for resolvable errors:
+  - validate JSONL schema/required keys and image path resolvability/readability (respecting `limit`),
+  - abort before generation/evaluation on the first violation (or after a bounded set of examples),
+  - emit actionable diagnostics (sample identifier and reason),
+  - ensure CUDA OOM and other internal exceptions are not suppressed.
 
 ## 4. Verification
 

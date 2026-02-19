@@ -30,21 +30,22 @@ The following are forbidden in core execution paths:
 - **AND** training does not continue with a silently-skipped sample.
 
 ### Requirement: Expected per-sample errors are explicit and observable
-When the system intentionally continues past a sample-scoped validation/parse error (in inference/eval only), it MUST:
+Deterministic inputs that can be validated in advance MUST fail fast on any sample-scoped validation/parse error, including:
+- training inputs (dataset encoding, cooked targets, GT), and
+- inference/eval inputs (JSONL format/schema, image path resolvability/readability, required width/height, geometry well-formedness).
+
+When the system intentionally continues past a sample-scoped error (ONLY in explicitly salvage-mode subpaths that consume model-generated outputs), it MUST:
 - record a structured per-sample error entry (e.g., `errors=[...]`) in the relevant artifact, AND
 - increment a run-level counter/metric for that error class, AND
 - avoid emitting “fake success” outputs (e.g., empty predictions) without an accompanying error record.
 
-Training MUST fail fast on expected per-sample errors arising from deterministic inputs (dataset encoding, cooked targets, GT).
-
 Explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY continue past invalid model outputs per-sample, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
 
-#### Scenario: Inference skips an invalid-sample with an error record
+#### Scenario: Inference fails fast on invalid input that can be validated in advance
 - **GIVEN** inference/eval processing
-- **WHEN** a sample fails validation (e.g., malformed geometry)
-- **THEN** the sample is skipped
-- **AND** the output artifact records an `errors` entry for that sample
-- **AND** run-level counters reflect the failure classification.
+- **WHEN** an input sample fails validation (e.g., invalid JSON line, missing image, malformed geometry)
+- **THEN** the run terminates with a non-zero exit code
+- **AND** the failure is surfaced with actionable diagnostics (sample identifier and reason).
 
 ### Requirement: Best-effort handling is limited to non-correctness sinks
 Best-effort exception handling is allowed ONLY for explicitly sink-scoped code that cannot affect correctness-affecting state (e.g., log tee mirroring or diagnostics/telemetry reporting).

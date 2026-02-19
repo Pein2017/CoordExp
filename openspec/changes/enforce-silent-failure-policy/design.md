@@ -46,22 +46,28 @@ Constraints:
   - deterministic inputs (dataset encoding, cooked targets, GT) treat validation/parse errors as contract violations and MUST fail fast,
   - explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY drop/skip invalid model outputs *per sample*, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
 - Inference/eval:
-  - expected per-sample validation/parse errors MAY be recorded and skipped per sample,
-  - unexpected internal exceptions MUST fail fast.
+  - input-dependent validation/parse failures (invalid JSON, missing/corrupt images, malformed geometry, wrong schema) are resolvable in advance and MUST fail fast (terminate the run),
+  - unexpected internal exceptions (including CUDA OOM) MUST fail fast.
 
-3) **Observability is required when continuing**
+3) **Preflight validation for resolvable errors**
+For deterministic inputs that can be checked before expensive compute (notably inference/eval inputs), prefer a preflight validation pass that:
+- validates JSONL format + required keys + path resolvability/readability for all samples to be processed (respecting `limit`),
+- aborts before generation/evaluation on the first violation (or after collecting a small bounded set of examples),
+- emits actionable diagnostics (sample_id/image path/line number).
+
+4) **Observability is required when continuing**
 When the system continues past an expected per-sample error, it MUST:
 - record a structured error entry on that sample (where a per-sample artifact exists),
 - increment a run-level counter/metric for that error class,
 - avoid producing “fake success” outputs (e.g., emitting empty predictions without an error record).
 
-4) **Best-effort is limited to non-correctness sinks**
+5) **Best-effort is limited to non-correctness sinks**
 Best-effort exception handling is allowed only for sinks that cannot affect correctness-affecting state, such as log tee mirroring and diagnostics/telemetry reporting. These handlers MUST:
 - catch narrow, expected exception classes when possible (e.g., `OSError` for file I/O),
 - emit explicit diagnostics (at least once; rate-limited is OK),
 - never suppress exceptions outside the sink scope itself.
 
-5) **Prefer elimination over wrapping**
+6) **Prefer elimination over wrapping**
 Where a `try/except` block only re-raises the same exception without adding actionable context, remove it. Where context is needed, add it once at a meaningful boundary using `raise ... from e`, not via repeated wrapper layers.
 
 ## Risks / Trade-offs
