@@ -12,6 +12,8 @@ Inference-engine SHALL preserve structured, per-sample error reporting in output
 
 When inference/eval intentionally continues past an expected per-sample validation/parse failure, the failure MUST map to an explicit sample error entry rather than a silent skip.
 
+Expected per-sample errors include sample-scoped, input-dependent failures that can be isolated to one record (e.g., invalid JSON line, missing/corrupt image, malformed geometry, or a per-request generation error that is returned for that sample). These errors MUST be recorded on that sample and MAY allow the run to continue.
+
 Unexpected internal exceptions (anything not explicitly treated as an expected per-sample error) MUST terminate the run (fail fast) to prevent silent corruption of artifacts and metrics.
 
 #### Scenario: Sample-level post-processing failure is reflected in structured errors
