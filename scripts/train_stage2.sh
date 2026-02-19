@@ -2,7 +2,7 @@
 # Launch vLLM rollout server (swift rollout) + Stage-2 AB learner training in one entrypoint.
 #
 # Example (single node, 8 GPUs; default 6 actors / 2 learners split):
-#   bash scripts/stage2_ab_server_train.sh \
+#   bash scripts/train_stage2.sh \
 #     server_gpus=0,1,2,3,4,5 train_gpus=6,7 \
 #     config=configs/stage2_ab/smoke/ab_mixed.yaml
 

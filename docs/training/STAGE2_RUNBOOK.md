@@ -245,7 +245,7 @@ vLLM has a mode switch under `rollout_matching.vllm.mode`:
     - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
     - `sync.mode: adapter`: adapter-only sync (requires server launched with `--vllm_enable_lora true`).
     - `sync.fallback_to_full: true` permanently falls back to full sync if adapter sync fails at runtime.
-  - Deploy-readiness gates (enforced by `scripts/stage2_ab_server_train.sh`):
+  - Deploy-readiness gates (enforced by `scripts/train_stage2.sh`):
     - `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`
     - `rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
@@ -333,7 +333,7 @@ Recommended launcher (starts server + learner, disables proxies, waits for `/hea
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 export NO_PROXY=127.0.0.1,localhost
 
-bash scripts/stage2_ab_server_train.sh \
+bash scripts/train_stage2.sh \
   server_gpus=0,1,2,3 train_gpus=4,5,6,7 \
   vllm_gpu_memory_utilization=0.75 \
   config=configs/stage2_ab/prod/ab_mixed.yaml

@@ -1,9 +1,9 @@
 ## 1. Baseline And Scope
 
-- [ ] 1.1 Capture the exact operational entrypoints + configs under audit (stage_1 and stage_2 AB) and record the resolved `training.run_name`, `training.output_dir`, and `training.logging_dir` for each.
-- [ ] 1.2 Produce a one-page “pipeline map” (data -> transforms/packing -> training/inference -> artifacts) with concrete owner modules (file paths) for each boundary.
-- [ ] 1.3 Reconcile operator-facing entrypoints in docs vs repo reality (e.g., `scripts/train_stage2.sh` vs references to `scripts/stage2_ab_server_train.sh`) and define the desired single canonical name.
-- [ ] 1.4 Inventory existing CPU-runnable tests already covering stage_1 / stage_2 AB contracts (start from `tests/test_stage2_ab_training.py`, `tests/test_rollout_matching_sft.py`, `tests/test_packing_wrapper.py`) and list known gaps.
+- [x] 1.1 Capture the exact operational entrypoints + configs under audit (stage_1 and stage_2 AB) and record the resolved `training.run_name`, `training.output_dir`, and `training.logging_dir` for each.
+- [x] 1.2 Produce a one-page “pipeline map” (data -> transforms/packing -> training/inference -> artifacts) with concrete owner modules (file paths) for each boundary.
+- [x] 1.3 Reconcile operator-facing entrypoints in docs vs repo reality (e.g., `scripts/train_stage2.sh` vs references to `scripts/stage2_ab_server_train.sh`) and define the desired single canonical name.
+- [x] 1.4 Inventory existing CPU-runnable tests already covering stage_1 / stage_2 AB contracts (start from `tests/test_stage2_ab_training.py`, `tests/test_rollout_matching_sft.py`, `tests/test_packing_wrapper.py`) and list known gaps.
 
 ## 2. Config Loading And Contract Strictness
 
