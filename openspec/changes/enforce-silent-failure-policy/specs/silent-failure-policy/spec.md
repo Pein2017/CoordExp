@@ -79,6 +79,8 @@ At minimum, counters MUST include:
 - `errors_total` (int), and
 - `errors_by_code` (map `code -> count`).
 
+If execution is distributed across ranks/processes, persisted counters MUST be globally aggregated, or explicitly labeled as rank-local.
+
 ### Requirement: Best-effort handling is limited to non-correctness sinks
 Best-effort exception handling is allowed ONLY for explicitly sink-scoped code that cannot affect correctness-affecting state (e.g., log tee mirroring or diagnostics/telemetry reporting).
 
