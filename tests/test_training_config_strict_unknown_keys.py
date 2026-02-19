@@ -136,6 +136,30 @@ def test_unknown_rollout_vllm_sync_key_fails_fast():
     assert "rollout_matching.vllm.sync.unknown" in str(exc.value)
 
 
+def test_unknown_stage2_ab_schedule_key_fails_fast():
+    payload = _base_training_payload()
+    payload["stage2_ab"] = {"schedule": {"b_ratio": 0.5, "unknown_flag": 1}}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "stage2_ab.schedule" in msg
+    assert "unknown_flag" in msg
+
+
+def test_unknown_stage2_ab_key_fails_fast():
+    payload = _base_training_payload()
+    payload["stage2_ab"] = {"schedule": {"b_ratio": 0.5}, "unknown_top": 1}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "stage2_ab" in msg
+    assert "unknown_top" in msg
+
+
 def test_legacy_rollout_server_paired_list_shape_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
