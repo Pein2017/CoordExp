@@ -8,7 +8,7 @@
 ## 2. Config Loading And Contract Strictness
 
 - [x] 2.1 Verify strict unknown-key fail-fast for the stage_1 and stage_2 configs (including nested `stage2_ab.*` and `rollout_matching.*`) via existing config-strictness tests; add a targeted regression if any uncovered section is silently ignored.
-- [ ] 2.2 Verify Stage-2 AB “profile leaf explicitness” for `configs/stage2_ab/prod/ab_mixed.yaml` matches the `stage2-ab-training` spec (required pinned high-signal keys); add/adjust the contract test if needed.
+- [x] 2.2 Verify Stage-2 AB “profile leaf explicitness” for `configs/stage2_ab/prod/ab_mixed.yaml` matches the `stage2-ab-training` spec (required pinned high-signal keys); add/adjust the contract test if needed.
 - [ ] 2.3 Validate coherence constraints among `global_max_length`, vLLM `max_model_len`, and `rollout_matching.max_new_tokens` (no silent truncation surprises); add fail-fast checks or diagnostics where currently ambiguous.
 - [ ] 2.4 Confirm coord-token mode invariants for the audited configs (`custom.coord_tokens.enabled`, `custom.coord_tokens.skip_bbox_norm`, and the `<|coord_0|>.. <|coord_999|>` id range) and add a unit test that detects double-normalization or id-range drift.
 - [ ] 2.5 Verify that server-launcher runtime knobs that are intentionally config-free (e.g., vLLM server `gpu_memory_utilization`, `enforce_eager`, dtype) are not simultaneously present as misleading YAML keys; either plumb them through preflight or document the separation explicitly.
