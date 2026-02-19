@@ -2,7 +2,9 @@
 
 import argparse
 import copy
+import importlib
 import json
+import sys
 import logging
 import math
 import os
@@ -139,6 +141,144 @@ def _parse_sample_size(value: Any, field_name: str) -> int | None:
     if size <= 0:
         raise ValueError(f"{field_name} must be > 0, got {size}")
     return size
+
+
+def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
+    """Resolve the dataset RNG seed for JSONL sampling / ordering.
+
+    Contract:
+    - Prefer the YAML-specified `training.seed` (single source of truth).
+    - Fallback to `train_args.seed` when training config seed is missing.
+
+    This avoids hidden nondeterminism from hard-coded constants and ensures dataset
+    sampling is coupled to the run seed used elsewhere in the training stack.
+    """
+
+    training_section = getattr(training_config, "training", None)
+    seed_raw = None
+    if isinstance(training_section, Mapping):
+        seed_raw = training_section.get("seed")
+
+    if seed_raw is None:
+        seed_raw = getattr(train_args, "seed", None)
+
+    if seed_raw is None:
+        logger.warning("training.seed is missing; defaulting dataset_seed=42")
+        return 42
+
+    try:
+        seed = int(seed_raw)
+    except Exception as exc:
+        raise TypeError(
+            f"training.seed must be an int (or int-like); got {seed_raw!r}"
+        ) from exc
+
+    return seed
+
+
+def _safe_module_info(module_name: str) -> dict[str, Any]:
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        return {"error": f"{exc.__class__.__name__}: {exc}"}
+
+    version = getattr(module, "__version__", None)
+    module_file = getattr(module, "__file__", None)
+
+    info: dict[str, Any] = {}
+    if version is not None:
+        info["version"] = str(version)
+    if module_file:
+        info["file"] = str(module_file)
+    return info
+
+
+def _find_git_repo_root(start_dir: Path) -> Path | None:
+    for parent in [start_dir, *start_dir.parents]:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def _safe_git_state(repo_root: Path) -> dict[str, Any]:
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_root),
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).strip()
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo_root),
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).strip()
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo_root),
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).strip()
+        dirty = bool(status.splitlines())
+        return {"sha": sha, "branch": branch, "dirty": dirty}
+    except Exception as exc:
+        return {"error": f"{exc.__class__.__name__}: {exc}"}
+
+
+def _collect_dependency_provenance() -> dict[str, Any]:
+    """Collect upstream dependency provenance for paper-ready reproducibility."""
+
+    deps: dict[str, Any] = {
+        "python": sys.version,
+        "conda_env": os.environ.get("CONDA_DEFAULT_ENV")
+        or os.environ.get("CONDA_ENV")
+        or None,
+        "transformers": _safe_module_info("transformers"),
+        "torch": _safe_module_info("torch"),
+        "vllm": _safe_module_info("vllm"),
+        "swift": _safe_module_info("swift"),
+    }
+
+    swift_info = deps.get("swift")
+    swift_file = None
+    if isinstance(swift_info, Mapping):
+        swift_file = swift_info.get("file")
+    if isinstance(swift_file, str) and swift_file:
+        repo_root = _find_git_repo_root(Path(swift_file).resolve().parent)
+        if repo_root is not None:
+            deps["ms_swift"] = {
+                "repo_root": str(repo_root),
+                **_safe_git_state(repo_root),
+            }
+
+    return deps
+
+
+_STAGE2_LAUNCHER_METADATA_ENV_KEYS = [
+    "COORDEXP_STAGE2_LAUNCHER",
+    "COORDEXP_STAGE2_SERVER_BASE_URL",
+    "COORDEXP_STAGE2_SERVER_MODEL",
+    "COORDEXP_STAGE2_SERVER_TORCH_DTYPE",
+    "COORDEXP_STAGE2_SERVER_DP",
+    "COORDEXP_STAGE2_SERVER_TP",
+    "COORDEXP_STAGE2_SERVER_ENFORCE_EAGER",
+    "COORDEXP_STAGE2_SERVER_GPU_MEMORY_UTILIZATION",
+    "COORDEXP_STAGE2_SERVER_MAX_MODEL_LEN",
+    "COORDEXP_STAGE2_SERVER_ENABLE_LORA",
+    "COORDEXP_STAGE2_SERVER_GPUS",
+    "COORDEXP_STAGE2_LEARNER_GPUS",
+]
+
+
+def _collect_launcher_metadata_from_env() -> dict[str, str]:
+    meta: dict[str, str] = {}
+    for key in _STAGE2_LAUNCHER_METADATA_ENV_KEYS:
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        meta[key] = value
+    return meta
 
 
 def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_config: Any) -> int:
@@ -559,7 +699,7 @@ def main():
     else:
         logger.info("Dense mode only (custom.use_summary=false)")
 
-    dataset_seed = 42
+    dataset_seed = _resolve_dataset_seed(training_config=training_config, train_args=train_args)
     dataset: Any
     fusion_cfg = None
     logger.info(
@@ -1461,7 +1601,13 @@ def main():
                     "git_branch": git_branch,
                     "git_dirty": git_dirty,
                     "git_status_porcelain": status_lines[:200],
+                    "dataset_seed": dataset_seed,
+                    "upstream": _collect_dependency_provenance(),
                 }
+
+                launcher_meta = _collect_launcher_metadata_from_env()
+                if launcher_meta:
+                    meta["launcher"] = launcher_meta
 
                 out_path = Path(str(out_dir)) / "run_metadata.json"
                 out_path.parent.mkdir(parents=True, exist_ok=True)
