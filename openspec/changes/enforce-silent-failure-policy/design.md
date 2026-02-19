@@ -78,4 +78,4 @@ Where a `try/except` block only re-raises the same exception without adding acti
 
 - **[Risk] Previously-masked issues now abort runs** → Mitigation: keep changes narrow, add actionable diagnostics for operator-controlled input violations, and improve observability of salvage-mode model-output invalidity.
 - **[Risk] CI scanning becomes brittle** → Mitigation: enforce only high-signal patterns (broad exception handlers that suppress/continue/return defaults), using AST-based checks rather than regex when feasible.
-- **[Risk] Partial artifact expectations in tooling** → Mitigation: clarify which artifacts are allowed to be partial (only when explicitly scoped to per-sample expected errors) and otherwise fail fast.
+- **[Risk] Partial artifact expectations in tooling** → Mitigation: clarify which artifacts are allowed to be partial (only when explicitly scoped to salvage-mode model-output invalidity) and otherwise fail fast.
