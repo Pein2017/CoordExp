@@ -9,14 +9,14 @@ CoordExp currently contains try/except blocks in core training/inference/eval pa
 - **Core execution paths**: dataset encoding, trainer steps, inference pipeline stages, and evaluation metric computation (i.e., correctness-affecting logic under `src/`).
 - **Operator-controlled inputs**: training inputs (dataset encoding, cooked targets, GT) and inference/eval inputs (JSONL + images + required metadata) that are deterministic and can be validated in advance.
 - **Resolvable sample-scoped violations**: sample-scoped validation/parse/contract failures for operator-controlled inputs (invalid JSONL line, wrong schema, missing/corrupt image, malformed geometry, missing width/height, wrong format, etc.). These MUST fail fast (raise and terminate the run) so operators fix data/contracts ahead of compute.
-- **Model-generated output invalidity (salvage-mode only)**: invalid/truncated/partial model outputs produced during explicitly salvage-mode training subpaths that consume model-generated text (e.g., rollout parsing/matching). Only these contexts MAY drop/skip invalid model outputs *per sample* (never by substituting “safe” defaults), and MUST be observable (structured errors + counters).
+- **Model-generated output invalidity (explicit model-output consumers only)**: invalid/truncated/partial model outputs produced during codepaths that explicitly consume model-generated text (e.g., inference prediction parsing/validation and salvage-mode training subpaths like rollout parsing/matching). Only these contexts MAY drop/skip invalid model outputs *per sample* (never by substituting “safe” defaults), and MUST be observable (structured errors + counters).
 - **Unexpected internal exceptions**: anything not explicitly treated as salvage-mode model-generated output invalidity; MUST terminate the run (fail fast).
 - **Observable**: recorded via structured per-sample `errors` and run-level counters; warnings may be rate-limited but are not sufficient alone.
 
 - Enforce **strict-by-default** exception handling in core `src/` execution paths:
   - unexpected internal exceptions MUST fail fast (raise),
   - operator-controlled input violations MUST fail fast (raise; no skip-and-continue),
-  - only explicitly salvage-mode training subpaths consuming model-generated outputs MAY continue past invalid model outputs, and MUST be observable (structured error codes + run-level counters; warnings may be bounded but are not sufficient alone).
+  - only explicitly model-output consumer subpaths MAY continue past invalid model outputs, and MUST be observable (structured error codes + run-level counters; warnings may be bounded but are not sufficient alone).
 - Remove/replace any blanket exception handlers in core paths that continue/return defaults without observability (counters + structured errors) or without re-raising.
 - Tighten optional-dependency handling by catching `ImportError`/`ModuleNotFoundError` (not blanket `Exception`) and raising actionable guidance.
 - Constrain best-effort handling to explicitly-justified I/O sinks (e.g., log tee writes), not to artifact parsing, matching, metrics, or model-state updates.
@@ -33,7 +33,7 @@ CoordExp currently contains try/except blocks in core training/inference/eval pa
 
 ### Modified Capabilities
 - `silent-failure-policy`: expand the definition of “silent swallowing” beyond `except Exception: pass` to include defaulting/continuing/returning in core paths without observability, and clarify strict-by-default behavior vs narrow best-effort I/O sinks.
-- `inference-engine`: clarify that operator-controlled input violations MUST terminate inference/eval (no skip-and-continue, even if an error record is written), and that unexpected internal exceptions also terminate (fail fast).
+- `inference-engine`: clarify that operator-controlled input violations MUST terminate inference/eval (no skip-and-continue), while model-output/prediction parse+validation failures are continue-but-observable; unexpected internal exceptions and generation failures terminate (fail fast).
 
 ## Impact
 

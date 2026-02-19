@@ -20,11 +20,9 @@
 
 ## 2. CI enforcement (minimal, high-signal)
 
-- [ ] 2.1 Replace/extend `tests/test_silent_failure_policy.py` with an AST-based scan that fails on:
-  - `except Exception: pass` in `src/`
-  - `except: pass` (bare except) in `src/`
-  - `except BaseException: pass` in `src/`
-  - (optional, staged) `except Exception: continue` / default-return suppression patterns in core paths where they currently hide failures.
+- [ ] 2.1 Replace/extend `tests/test_silent_failure_policy.py` with an AST-based scan with explicit enforcement tiers:
+  - **Tier 0 (blocking)**: fail on `except Exception: pass`, `except: pass`, `except BaseException: pass` in `src/`.
+  - **Tier 1 (staged → blocking)**: detect + report (file + line) for `except Exception: continue` / default-return suppression patterns in core paths; begin as non-blocking if needed, but promote to blocking once the inventory is clean.
 - [ ] 2.2 Add targeted regression tests for known offenders (at least one representative for: `pass`, `continue`, default-return).
 
 ## 3. Code fixes (fail fast + remove over-engineering)
@@ -32,7 +30,7 @@
 - [ ] 3.1 Remove blanket suppression in core paths (e.g., `except Exception: pass`) and replace with:
   - explicit exception types, and either
   - re-raise with context, or
-  - (only for explicitly salvage-mode model-output consumers) expected-error recording with counters.
+  - (only for explicitly model-output consumers) expected-error recording with counters (e.g., inference prediction parsing/validation, salvage-mode rollout parsing).
 - [ ] 3.1.1 Fix known P0 offenders (evidence-backed):
   - `src/trainers/rollout_matching/parsing.py` — replace `except Exception: pass` around `parse_coordjson(...)` with explicit expected parse exception handling; unexpected exceptions must propagate.
   - `src/trainers/rollout_matching/matching.py` — replace `except Exception: return 0.0` in maskIoU with input validation + narrow exceptions + explicit counters (or fail fast on unexpected).
@@ -60,5 +58,5 @@
 - [ ] 4.1 Run unit tests: `conda run -n ms python -m pytest tests/test_silent_failure_policy.py`.
 - [ ] 4.2 Run a targeted smoke on one representative pipeline path affected by changes (training or inference), verifying:
   - unexpected exceptions stop the run,
-  - salvage-mode model-output invalidity is recorded with counters (where permitted),
+  - model-output invalidity is recorded with counters (where permitted),
   - no “quiet” defaults mask failures.

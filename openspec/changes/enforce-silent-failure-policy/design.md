@@ -4,7 +4,7 @@ CoordExp currently contains `try/except` blocks in core training/inference/eval 
 
 This change enforces a strict-by-default error-handling policy:
 - unexpected exceptions fail fast (terminate the run),
-- operator-controlled input violations fail fast; only explicitly salvage-mode model-output invalidity may be handled (and must be observable),
+- operator-controlled input violations fail fast; only explicitly model-output consumer invalidity may be handled (and must be observable),
 - best-effort behavior is constrained to narrowly-defined I/O sinks and must not alter correctness-affecting state.
 
 Constraints:
@@ -31,17 +31,17 @@ Constraints:
 
 ## Decisions
 
-1) **Taxonomy: operator-controlled input violations vs salvage-mode model-output invalidity vs unexpected internal exceptions**
+1) **Taxonomy: operator-controlled input violations vs model-output invalidity vs unexpected internal exceptions**
 - Operator-controlled input violations:
   - sample-scoped validation/parse/contract failures for deterministic inputs that can be validated in advance (training inputs and inference/eval inputs),
   - MUST terminate the run (fail fast); these are contract violations and are not handled as “expected per-sample errors”.
-- Model-generated output invalidity (salvage-mode only):
-  - invalid/truncated/partial model outputs produced during explicitly salvage-mode training subpaths that consume model-generated text (e.g., rollout parsing/matching),
+- Model-generated output invalidity (explicit model-output consumers only):
+  - invalid/truncated/partial model outputs produced during codepaths that explicitly consume model-generated outputs (e.g., inference prediction parsing/validation and salvage-mode training rollout parsing/matching),
   - MAY be handled per-sample only when explicitly enumerated,
   - MUST be observable (structured `errors` + counters),
   - MUST NOT be “fixed” by substituting semantics-changing defaults.
 - Unexpected internal exceptions:
-  - anything not explicitly treated as salvage-mode model-output invalidity,
+  - anything not explicitly treated as model-output invalidity,
   - MUST terminate the run (fail fast).
 
 2) **Training vs inference/eval strictness**
@@ -50,6 +50,7 @@ Constraints:
   - explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY drop/skip invalid model outputs *per sample*, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
 - Inference/eval:
   - any input-dependent validation/parse failure (invalid JSON, missing/corrupt images, malformed geometry, wrong schema, wrong format) is resolvable in advance and MUST fail fast (terminate the run),
+  - model-output/prediction parse+validation failures (invalid/truncated prediction JSON/CoordJSON, malformed predicted geometry, out-of-range prediction coords) are continue-but-observable (structured errors + counters),
   - unexpected internal exceptions (including CUDA OOM) MUST fail fast.
   - there is no “continue-but-observable” mode for inference/eval inputs: even if an error entry is written, the run still terminates non-zero.
 
@@ -59,8 +60,8 @@ For deterministic inputs that can be checked before expensive compute (notably i
 - aborts before generation/evaluation if any violation is found (optionally after collecting a small bounded set of examples to reduce fix/re-run cycles),
 - emits actionable diagnostics (sample_id/image path/line number).
 
-4) **Continue-but-observable is restricted to salvage-mode model-output consumers**
-When an explicitly salvage-mode training subpath continues past model-output invalidity, it MUST:
+4) **Continue-but-observable is restricted to model-output consumers**
+When an explicitly model-output consumer subpath continues past model-output invalidity, it MUST:
 - record a structured error entry on that sample (where a per-sample artifact exists),
 - increment a run-level counter/metric for that error class,
 - avoid producing “fake success” outputs (e.g., emitting empty predictions without an error record).
