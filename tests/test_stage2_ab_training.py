@@ -1262,6 +1262,34 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     assert "rollout/_parse_truncated_den" not in out
 
 
+def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "stage2_ab/channel_b/strict_drop/N_valid_pred": 3.0,
+            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 2.0,
+            "stage2_ab/channel_b/strict_drop/reason/order_violation": 1.0,
+            "stage2_ab/channel_b/strict_drop/reason/wrong_arity": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "stage2_ab/channel_b/strict_drop/N_valid_pred": 4.0,
+            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 3.0,
+            "stage2_ab/channel_b/strict_drop/reason/order_violation": 2.0,
+            "stage2_ab/channel_b/strict_drop/reason/missing_desc": 1.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["stage2_ab/channel_b/strict_drop/N_valid_pred"] == pytest.approx(7.0)
+    assert out["stage2_ab/channel_b/strict_drop/N_drop_invalid"] == pytest.approx(5.0)
+    assert out["stage2_ab/channel_b/strict_drop/reason/order_violation"] == pytest.approx(3.0)
+    assert out["stage2_ab/channel_b/strict_drop/reason/wrong_arity"] == pytest.approx(1.0)
+    assert out["stage2_ab/channel_b/strict_drop/reason/missing_desc"] == pytest.approx(1.0)
+
+
 def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> None:
     class _FakeReduceOp:
         SUM = "sum"
