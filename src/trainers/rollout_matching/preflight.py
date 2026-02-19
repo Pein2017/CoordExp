@@ -173,6 +173,29 @@ def build_stage2_launcher_preflight(
 
     enable_lora = bool(vllm_cfg.get("enable_lora", False))
 
+    gpu_memory_utilization = None
+    gpu_mem_raw = vllm_cfg.get("gpu_memory_utilization")
+    if gpu_mem_raw is not None:
+        try:
+            gpu_memory_utilization = float(gpu_mem_raw)
+        except Exception as exc:
+            raise TypeError(
+                "rollout_matching.vllm.gpu_memory_utilization must be a float when provided"
+            ) from exc
+        if not (0.0 < gpu_memory_utilization <= 1.0):
+            raise ValueError(
+                "rollout_matching.vllm.gpu_memory_utilization must be in (0, 1] when provided"
+            )
+
+    server_torch_dtype = None
+    dtype_raw = training_config.model.get("dtype")
+    if dtype_raw is None:
+        dtype_raw = training_config.model.get("torch_dtype")
+    if dtype_raw is not None:
+        if not isinstance(dtype_raw, str):
+            raise TypeError("model.dtype/torch_dtype must be a string when provided")
+        server_torch_dtype = dtype_raw.strip() or None
+
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "vllm_mode": rollout_contract["vllm_mode"],
@@ -181,6 +204,8 @@ def build_stage2_launcher_preflight(
         "root_image_dir_resolved": str(root_image_dir),
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
+        "vllm_gpu_memory_utilization": gpu_memory_utilization,
+        "server_torch_dtype": server_torch_dtype,
     }
 
 

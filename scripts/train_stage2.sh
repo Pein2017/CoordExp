@@ -131,6 +131,9 @@ emit("SERVER_MODEL", preflight["server_model"])
 emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
+gpu_mem = preflight.get("vllm_gpu_memory_utilization")
+emit("VLLM_GPU_MEMORY_UTILIZATION_CFG", "" if gpu_mem is None else gpu_mem)
+emit("SERVER_TORCH_DTYPE_CFG", preflight.get("server_torch_dtype") or "")
 PY
 )
 
@@ -244,7 +247,7 @@ SERVER_DP="${server_dp:-${#server_gpu_array[@]}}"
 SERVER_TP="${server_tp:-1}"
 
 # Server runtime knobs (kept config-free; affects only server launch)
-SERVER_TORCH_DTYPE="${server_torch_dtype:-bfloat16}"
+SERVER_TORCH_DTYPE="${server_torch_dtype:-${SERVER_TORCH_DTYPE_CFG:-bfloat16}}"
 SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-true}"
 
 # Default server parallelism: **data-parallel first** (tp=1, dp=#gpus).
@@ -268,7 +271,7 @@ if [[ -z "${server_dp:-}" ]]; then
 fi
 
 # Default lower utilization for stability (avoid borderline OOM on busy nodes).
-VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-0.75}"
+VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}}"
 
 echo "========================================================================"
 echo "  Stage-2 AB vLLM Server + Learner Launcher"
