@@ -22,7 +22,7 @@
 - [ ] 3.4 Audit sampling and determinism: `train_sample_limit`, `val_sample_limit`, with/without replacement, multi-worker shuffling/seed handling, and packing-buffer determinism under DDP.
 - [ ] 3.5 Verify image path resolution and `ROOT_IMAGE_DIR` handling is consistent across learner and rollout server (server-mode), including relative-path behavior.
 - [ ] 3.6 Audit offline public-data pipeline drop policies (object drops, record drops, max-object filtering) and ensure every drop mode is surfaced as explicit counters in manifests and carried into run artifacts for audit signoff.
-- [ ] 3.7 Verify dataset seeding is derived from `training.seed` (or is explicitly recorded in run artifacts) rather than hardcoded constants; add a regression test that detects seed drift across entrypoints.
+- [x] 3.7 Verify dataset seeding is derived from `training.seed` (or is explicitly recorded in run artifacts) rather than hardcoded constants; add a regression test that detects seed drift across entrypoints.
 - [ ] 3.8 Add a CPU-only determinism probe for a tiny dataset slice with `data.dataloader_num_workers>0` to detect order-sensitive RNG behavior (sample_id sequence + packed lengths stable across two runs, or explicitly documented nondeterminism with rationale).
 
 ## 4. Chat Template Construction (Qwen3-VL, Causal AR)
@@ -32,7 +32,7 @@
 - [ ] 4.3 Verify the parse boundary contract: assistant CoordJSON must be transpiled to strict JSON before `json.loads` for downstream matching/eval; add an inventory gate to prevent reintroducing direct `json.loads` on CoordJSON.
 - [ ] 4.4 Verify tokenizer consistency across learner and rollout server in vLLM server mode: identical vocab/special tokens/coord-token IDs, and prompt-token-id alignment checks are enforced with actionable errors.
 - [ ] 4.5 Add/extend regression tests using `scripts/tools/inspect_chat_template.py` fixtures to lock down canonical serialization + tokenization for both `desc_first` and `geometry_first`.
-- [ ] 4.6 Add an upstream integration gate for runtime resizing: forbid ms-swift runtime rescaling for training/infer (images must be pre-rescaled offline). Treat `template.max_pixels` as a hard input constraint and fail fast if any record exceeds it (do not silently rescale); add a CPU-only regression that verifies oversize inputs raise with actionable guidance.
+- [x] 4.6 Add an upstream integration gate for runtime resizing: forbid ms-swift runtime rescaling for training/infer (images must be pre-rescaled offline). Treat `template.max_pixels` as a hard input constraint and fail fast if any record exceeds it (do not silently rescale); add a CPU-only regression that verifies oversize inputs raise with actionable guidance.
 
 ## 5. Packing + Masks (Packed Sequence Training)
 
@@ -56,7 +56,7 @@
 - [ ] 7.2 Audit evaluation triggers and behavior for stage_1 and stage_2 AB (eval_strategy, eval_steps, eval_packing) and confirm eval does not silently change semantics under packing.
 - [ ] 7.3 Verify checkpoint saving policy matches project intent (weight-only persistence; no full trainer state). If behavior differs between stage_1 and stage_2 trainers, make it explicit and test it.
 - [ ] 7.4 Add a reproducibility “run manifest” requirement: persist resolved config, key environment metadata, and seed information under `training.output_dir` for every run.
-- [ ] 7.5 Extend the run manifest to include upstream provenance (transformers/torch/vllm/swift versions, ms-swift git SHA + dirty status, and rollout-server launch flags actually used) so results remain paper-auditable across upstream drift.
+- [x] 7.5 Extend the run manifest to include upstream provenance (transformers/torch/vllm/swift versions, ms-swift git SHA + dirty status, and rollout-server launch flags actually used) so results remain paper-auditable across upstream drift.
 
 ## 8. Stage-2 AB Stability (vLLM Server + Learner Interaction)
 
@@ -67,10 +67,10 @@
 - [ ] 8.5 Enumerate abnormal behaviors (invalid rollouts, truncation at max_new_tokens, closure-marker alignment failures, server timeouts) and ensure each has a deterministic fallback and diagnosis metric.
 - [ ] 8.6 Verify launcher config resolution is self-consistent: the YAML used by the learner and the arguments passed to the rollout server do not drift in ways that change effective behavior silently (tokenizer/model path, max_model_len, LoRA enablement, sampling knobs).
 - [ ] 8.7 Audit any Stage-2 rollout queue / staleness controls (versioning, windowing, queue limits, drop/backpressure behavior) and ensure off-policy gap is bounded and observable when async pathways are enabled.
-- [ ] 8.8 Verify the combined stage-2 launcher behaves intentionally for multi-server configs: if `rollout_matching.vllm.server.servers` has length > 1, either fail fast with actionable guidance or document the required external orchestration (do not silently ignore additional servers).
+- [x] 8.8 Verify the combined stage-2 launcher behaves intentionally for multi-server configs: if `rollout_matching.vllm.server.servers` has length > 1, either fail fast with actionable guidance or document the required external orchestration (do not silently ignore additional servers).
 - [ ] 8.9 Expand DDP-safe weight sync audit to include failure propagation: any rank0 sync failure must trigger a synchronized global abort (or equivalent) so non-rank0 learners do not hang or continue with partially updated rollout state.
 - [ ] 8.10 Audit rollout seeding semantics end-to-end (including seed=0 edge cases) across learner, vLLM server, and ms-swift RequestConfig handling to prevent hidden nondeterminism/diversity drift.
-- [ ] 8.11 Add a “run from non-repo cwd” validation for the stage-2 launcher preflight: relative paths in configs (JSONL paths, model paths, root image dir) must resolve relative to the config or repo root, not `Path.cwd()`.
+- [x] 8.11 Add a “run from non-repo cwd” validation for the stage-2 launcher preflight: relative paths in configs (JSONL paths, model paths, root image dir) must resolve relative to the config or repo root, not `Path.cwd()`.
 
 ## 9. Stage-2 Training Performance (Bottlenecks)
 
@@ -92,10 +92,10 @@
 
 ## 12. Upstream Integration Contracts (Transformers / ms-swift / vLLM / Torch)
 
-- [ ] 12.1 Record upstream dependency provenance for this audit: ms-swift source path + git SHA, and `transformers`, `torch`, `vllm`, `swift` versions from env `ms`; ensure they are also captured in the run manifest task (7.5).
-- [ ] 12.2 Add an upstream API contract test for transformers `Trainer` helper methods used by CoordExp optimizer wiring (signature/behavior drift should fail fast against the pinned transformers version).
+- [x] 12.1 Record upstream dependency provenance for this audit: ms-swift source path + git SHA, and `transformers`, `torch`, `vllm`, `swift` versions from env `ms`; ensure they are also captured in the run manifest task (7.5).
+- [x] 12.2 Add an upstream API contract test for transformers `Trainer` helper methods used by CoordExp optimizer wiring (signature/behavior drift should fail fast against the pinned transformers version).
 - [ ] 12.3 For `rollout_backend=hf`, add a length-coherence gate: validate `prompt_len + max_new_tokens` against model `max_position_embeddings` and fail fast (or warn loudly) in truncation-risk regimes.
 - [ ] 12.4 Pin ms-swift rollout request/response schema assumptions: server-mode rollouts must use `return_details=True` and responses must include `prompt_token_ids` and per-choice `token_ids`; add CPU-only contract tests around request construction and response validation.
-- [ ] 12.5 Add a compatibility gate for `swift rollout` CLI flag surface used by `scripts/train_stage2.sh` (flags must exist and remain semantically compatible across ms-swift upgrades).
+- [x] 12.5 Add a compatibility gate for `swift rollout` CLI flag surface used by `scripts/train_stage2.sh` (flags must exist and remain semantically compatible across ms-swift upgrades).
 - [ ] 12.6 Add a lightweight compatibility test for Qwen3-VL multimodal payload shape construction through the same code path used in Stage-2 rollouts (detect tuple/list serialization edge cases early, without a live server).
 - [ ] 12.7 Pin the swift rollout HTTP endpoint surface the launcher depends on (`/health/`, `/infer/`, `/get_world_size/`, communicator init endpoints) and add a contract test that fails fast if endpoints drift or are disabled.
