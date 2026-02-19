@@ -22,6 +22,7 @@ class _FakeDataset:
     def __getitem__(self, idx):
         length = self.lengths[idx]
         return {
+            "idx": idx,
             "input_ids": [0] * length,
             "labels": [0] * length,
             "length": length,
@@ -131,3 +132,26 @@ def test_template_flags_set_on_init():
     )
     assert template.packing is True
     assert template.padding_free is True
+
+
+def test_packing_preserves_stable_intra_pack_order():
+    # Crafted so optimal packs are (50+30) and (50+30), but binpacking may return
+    # group items in a heuristic order. We require concatenation order to be stable
+    # and preserve base-dataset ordering within each pack.
+    dataset = _FakeDataset([50, 30, 50, 30])
+    template = _FakeTemplate(max_length=80)
+    wrapped = build_packed_dataset(
+        dataset,
+        template=template,
+        packing_length=80,
+        buffer_size=4,
+        min_fill_ratio=0.6,
+        drop_last=False,
+        allow_single_long=True,
+    )
+    packs = list(wrapped)
+    assert packs
+
+    for pack in packs:
+        idxs = [int(item["idx"]) for item in pack]
+        assert idxs == sorted(idxs)

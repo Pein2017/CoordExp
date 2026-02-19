@@ -1766,6 +1766,21 @@ class Stage2ABTrainingTrainer(
                     f"prompt_len={int(prompt_len)} encoded_len={int(encoded_len)} train_len={int(train_len_eff)}"
                 )
 
+            # Sanity: prompt prefix must exactly match the server-provided prompt_token_ids.
+            # Without this, coord-position offsets can silently drift and corrupt supervision.
+            if isinstance(prompt_ids, list) and prompt_ids:
+                prompt_ids_int = [int(t) for t in prompt_ids]
+                teacher_prefix = enc_ids_list[: len(prompt_ids_int)]
+                if teacher_prefix != prompt_ids_int:
+                    raise ValueError(
+                        "prompt tokenization mismatch between generation and teacher-forced encoding"
+                    )
+                if int(prompt_len) != int(len(prompt_ids_int)):
+                    raise ValueError(
+                        "stage2-ab prompt_len mismatch vs server prompt_token_ids length; "
+                        f"prompt_len={int(prompt_len)} server_prompt_len={int(len(prompt_ids_int))}"
+                    )
+
             prompt_ids_local = enc_ids_list[:prompt_len]
             delta_prompt = int(prompt_len) - int(len(prompt_ids))
 

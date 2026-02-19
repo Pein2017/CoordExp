@@ -183,6 +183,11 @@ class PackedCaptionDataset(IterableDataset):
             weight_pos=1,
         )
 
+        # Stabilize intra-pack ordering: always preserve the base-dataset index order
+        # within a pack. Binpacking can return items in a heuristic order, but our
+        # downstream padding-free collator concatenates in-list order.
+        sequences = [sorted(group, key=lambda x: int(x[0])) for group in sequences]
+
         carry: List[Tuple[dict, int]] = []
         if sequences and not finished:
             # Carry the last group forward to mimic ms-swift behavior

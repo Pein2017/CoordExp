@@ -28,19 +28,19 @@
 ## 4. Chat Template Construction (Qwen3-VL, Causal AR)
 
 - [ ] 4.1 Trace prompt building for stage_1 and stage_2 AB: system/user/assistant message construction, role boundaries, and special tokens (`<|im_start|>`, `<|im_end|>`) under the Qwen3-VL chat template.
-- [ ] 4.2 Validate assistant rendering format: CoordJSON container `{\"objects\": [...]}` with bare coord-token literals in geometry, plus key-order handling for `custom.object_field_order` (desc-first vs geometry-first).
-- [ ] 4.3 Verify the parse boundary contract: assistant CoordJSON must be transpiled to strict JSON before `json.loads` for downstream matching/eval; add an inventory gate to prevent reintroducing direct `json.loads` on CoordJSON.
-- [ ] 4.4 Verify tokenizer consistency across learner and rollout server in vLLM server mode: identical vocab/special tokens/coord-token IDs, and prompt-token-id alignment checks are enforced with actionable errors.
-- [ ] 4.5 Add/extend regression tests using `scripts/tools/inspect_chat_template.py` fixtures to lock down canonical serialization + tokenization for both `desc_first` and `geometry_first`.
+- [x] 4.2 Validate assistant rendering format: CoordJSON container `{\"objects\": [...]}` with bare coord-token literals in geometry, plus key-order handling for `custom.object_field_order` (desc-first vs geometry-first).
+- [x] 4.3 Verify the parse boundary contract: assistant CoordJSON must be transpiled to strict JSON before `json.loads` for downstream matching/eval; add an inventory gate to prevent reintroducing direct `json.loads` on CoordJSON.
+- [x] 4.4 Verify tokenizer consistency across learner and rollout server in vLLM server mode: identical vocab/special tokens/coord-token IDs, and prompt-token-id alignment checks are enforced with actionable errors.
+- [x] 4.5 Add/extend regression tests using `scripts/tools/inspect_chat_template.py` fixtures to lock down canonical serialization + tokenization for both `desc_first` and `geometry_first`.
 - [x] 4.6 Add an upstream integration gate for runtime resizing: forbid ms-swift runtime rescaling for training/infer (images must be pre-rescaled offline). Treat `template.max_pixels` as a hard input constraint and fail fast if any record exceeds it (do not silently rescale); add a CPU-only regression that verifies oversize inputs raise with actionable guidance.
 
 ## 5. Packing + Masks (Packed Sequence Training)
 
-- [ ] 5.1 Audit packing wrapper + collator behavior: multimodal fields are preserved per-sample, concatenation order is stable, and `position_ids` generation remains correct for Qwen3-VL (mRoPE) under packing.
-- [ ] 5.2 Validate attention mask correctness under packing (no cross-sample leakage, correct causal masking, correct padding-free behavior) and ensure label masking aligns with packed boundaries.
-- [ ] 5.3 Validate Stage-2 post-rollout packing selection behavior (deterministic, no segment splitting, oldest-segment inclusion) and ensure supervision offsets remain correct after packing.
-- [ ] 5.4 Add/extend unit tests for packing-related gradient correctness and masking invariants (start from `tests/test_stage2_ab_packing_mask_gradients.py` and `tests/test_packing_wrapper.py`).
-- [ ] 5.5 Add an integration gate for attention backend compatibility under packing: when `training.packing=true`, require a known-safe attention implementation for padding-free packed training (and fail fast or emit an actionable warning if misconfigured).
+- [x] 5.1 Audit packing wrapper + collator behavior: multimodal fields are preserved per-sample, concatenation order is stable, and `position_ids` generation remains correct for Qwen3-VL (mRoPE) under packing.
+- [x] 5.2 Validate attention mask correctness under packing (no cross-sample leakage, correct causal masking, correct padding-free behavior) and ensure label masking aligns with packed boundaries.
+- [x] 5.3 Validate Stage-2 post-rollout packing selection behavior (deterministic, no segment splitting, oldest-segment inclusion) and ensure supervision offsets remain correct after packing.
+- [x] 5.4 Add/extend unit tests for packing-related gradient correctness and masking invariants (start from `tests/test_stage2_ab_packing_mask_gradients.py` and `tests/test_packing_wrapper.py`).
+- [x] 5.5 Add an integration gate for attention backend compatibility under packing: when `training.packing=true`, require a known-safe attention implementation for padding-free packed training (and fail fast or emit an actionable warning if misconfigured).
 
 ## 6. Model Forward + Loss Composition (Correctness)
 

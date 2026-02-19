@@ -129,6 +129,38 @@ def _parse_packing_config(
     )
 
 
+def _validate_attention_backend_for_packing(*, training_config: Any) -> None:
+    """Fail-fast guard: packed training requires a padding-free-safe attention backend.
+
+    CoordExp relies on packing as the primary efficiency lever. In practice, our
+    packing paths assume a flash-attn style implementation (padding-free / varlen).
+    Misconfiguration here can lead to silent correctness or performance issues.
+    """
+
+    training_section = getattr(training_config, "training", None)
+    packing_enabled = False
+    if isinstance(training_section, Mapping):
+        packing_enabled = bool(training_section.get("packing", False))
+
+    if not packing_enabled:
+        return
+
+    model_section = getattr(training_config, "model", None)
+    attn_impl_raw = None
+    if isinstance(model_section, Mapping):
+        attn_impl_raw = model_section.get("attn_impl")
+
+    attn_impl = str(attn_impl_raw or "").strip().lower()
+    allowed = {"flash_attention_2", "flash_attn_2"}
+
+    if attn_impl not in allowed:
+        raise ValueError(
+            "training.packing=true requires model.attn_impl to be a flash-attn backend for padding-free packed training. "
+            f"Got model.attn_impl={attn_impl_raw!r}. Allowed: {sorted(allowed)}. "
+            "Fix: set model.attn_impl: flash_attention_2 (recommended) or disable training.packing."
+        )
+
+
 def _parse_sample_size(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
@@ -766,6 +798,7 @@ def main():
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
+    _validate_attention_backend_for_packing(training_config=training_config)
     trainer_variant = getattr(train_args, "trainer_variant", None)
     base_dataset_len = None
     try:

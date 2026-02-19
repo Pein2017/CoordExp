@@ -35,7 +35,7 @@ def test_stage2_ab_packing_masks_and_coord_grads_smoke():
         processor,
         max_length=256,
         truncation_strategy="right",
-        max_pixels=1572864999,
+        max_pixels=786432,
         padding_free=False,
     )
     template.set_mode("train")
@@ -89,6 +89,21 @@ def test_stage2_ab_packing_masks_and_coord_grads_smoke():
         int(e1["length"]),
         int(e1["length"]) + int(e2["length"]),
     ]
+
+    # Packing-position contract (Qwen3-VL mRoPE): position_ids is a [3, B, T] tensor
+    # and must reset to 0 at each packed segment boundary.
+    position_ids = batch.get("position_ids")
+    assert isinstance(position_ids, torch.Tensor)
+    assert position_ids.ndim == 3
+    assert int(position_ids.shape[0]) == 3
+    assert int(position_ids.shape[1]) == 1
+
+    boundary = int(e1["length"])
+    for comp in range(int(position_ids.shape[0])):
+        assert int(position_ids[comp, 0, 0].item()) == 0
+        assert int(position_ids[comp, 0, boundary].item()) == 0
+        if boundary + 1 < int(position_ids.shape[2]):
+            assert int(position_ids[comp, 0, boundary + 1].item()) == 1
 
     coord_start = tok.convert_tokens_to_ids("<|coord_0|>")
     assert isinstance(coord_start, int) and coord_start >= 0
