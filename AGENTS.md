@@ -8,6 +8,8 @@
 ## Working Style (Research-Grade)
 - Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability; keep rationales short.
 - State assumptions when underspecified; choose the simplest viable approach; do not invent metrics/results.
+- Fail fast: surface unexpected errors or behavior immediately.
+- Do not let unexpected errors or behavior slide away; document and resolve the root cause before moving on.
 - Code & architecture style guidance: `docs/standards/CODE_STYLE.md` (Transformers-inspired “Option A”)
 
 ## Guardrails
