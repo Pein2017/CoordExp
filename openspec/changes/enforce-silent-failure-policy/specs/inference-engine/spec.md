@@ -3,6 +3,8 @@
 ## Purpose
 Clarify inference error-handling behavior so that per-sample validation/parse failures are observable while unexpected internal exceptions fail fast (no silent partial successes).
 
+This delta modifies only inference error-handling requirements; all other base `inference-engine` requirements remain unchanged.
+
 ## Requirements
 
 ### Requirement: Inference error reporting remains structured and sample-scoped
@@ -23,4 +25,3 @@ Unexpected internal exceptions (anything not explicitly treated as an expected p
 - **WHEN** the exception is raised
 - **THEN** the run terminates with a non-zero exit code
 - **AND** the failure is not silently converted into empty outputs or partial “success”.
-

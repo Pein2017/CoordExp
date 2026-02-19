@@ -3,6 +3,8 @@
 ## Purpose
 Define a strict-by-default exception-handling policy so that core training/inference/evaluation behavior is reproducible and failures are observable, while allowing a narrow set of best-effort I/O sinks that do not affect correctness.
 
+This delta expands the base `silent-failure-policy` definition of silent swallowing; all other base requirements remain unchanged unless explicitly modified below.
+
 ## Requirements
 
 ### Requirement: Core execution paths do not silently swallow unexpected exceptions
@@ -11,6 +13,8 @@ The system SHALL NOT suppress unexpected exceptions in core execution paths (dat
 Code MUST either:
 - allow the exception to propagate (fail fast), OR
 - catch only explicitly-enumerated exception types and either re-raise with added context or handle them as an explicitly-defined expected per-sample error.
+
+Enumeration MUST be expressed directly in code (e.g., `except (ExpectedSampleError, ...)`) and MUST NOT be driven by external allowlists/registries.
 
 The following are forbidden in core execution paths:
 - `except Exception: pass`
@@ -59,9 +63,11 @@ Such handlers MUST:
 CoordExp SHALL NOT maintain exception-suppression registries/allowlists. Compliance MUST be enforced directly by CI scanning source files.
 
 At minimum, the CI check in `tests/test_silent_failure_policy.py` MUST fail on:
-- bare `except:` under `src/`,
-- `except Exception` or `except BaseException` handlers under `src/` unless they immediately re-raise,
-- broad exception handlers that suppress/continue/return defaults in core execution paths.
+- `except Exception: pass` under `src/`
+- `except: pass` (bare except) under `src/`
+- `except BaseException: pass` under `src/`
+
+The CI check SHOULD also flag other silent suppression patterns (e.g., `except Exception: continue` or `except Exception: return <default>`) in core paths, but enforcement MAY be staged to avoid brittle false positives.
 
 ### Requirement: Temporary mutable state is restored deterministically
 When code temporarily mutates shared mutable state to perform encoding (for example, overwriting `template.system` for one sample), the system MUST restore the original value in a `finally` block.

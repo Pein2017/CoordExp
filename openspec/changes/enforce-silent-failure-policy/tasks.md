@@ -21,9 +21,10 @@
 ## 2. CI enforcement (minimal, high-signal)
 
 - [ ] 2.1 Replace/extend `tests/test_silent_failure_policy.py` with an AST-based scan that fails on:
-  - bare `except:` in `src/`,
-  - `except Exception` / `except BaseException` in core paths,
-  - broad exception handlers that do not re-raise and do not emit structured errors + counters.
+  - `except Exception: pass` in `src/`
+  - `except: pass` (bare except) in `src/`
+  - `except BaseException: pass` in `src/`
+  - (optional, staged) `except Exception: continue` / default-return suppression patterns in core paths where they currently hide failures.
 - [ ] 2.2 Add targeted regression tests for known offenders (at least one representative for: `pass`, `continue`, default-return).
 
 ## 3. Code fixes (fail fast + remove over-engineering)
