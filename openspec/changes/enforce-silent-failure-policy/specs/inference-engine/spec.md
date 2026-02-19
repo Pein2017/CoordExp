@@ -15,6 +15,12 @@ Inference-engine SHALL preserve structured, per-sample error reporting in output
 
 This delta modifies base behavior by making operator-controlled input violations fail-fast while preserving continue-but-observable behavior for model-output/prediction parse+validation failures.
 
+### Requirement: This delta explicitly supersedes specific base behaviors
+To avoid base-vs-delta ambiguity during sync, this delta supersedes the following base `inference-engine` behaviors:
+- any base scenario that says operator-controlled input violations (e.g., missing `width`/`height`, malformed GT geometry, mode/coord_mode mismatch against GT) record an error and continue,
+- the base requirement that “internal exceptions MUST map to explicit sample error entries” is narrowed to handled, sample-scoped failures; unexpected internal exceptions MUST still terminate (fail fast),
+- the base scenario that models “generation fails for one sample while inference continues” MUST be rewritten during sync as “`pred_text` is produced but prediction parsing/validation fails for one sample while inference continues” (continue-but-observable). Generation failures that prevent producing `pred_text` MUST still terminate non-zero.
+
 ### Requirement: Operator-controlled input violations MUST fail fast (no skip-and-continue)
 Inference/eval inputs are operator-controlled and MUST be validated in advance (prefer a preflight pass). Any input-dependent validation/parse/contract failure MUST terminate the run with a non-zero exit code (fail fast); the system MUST NOT skip the sample and continue.
 
@@ -53,6 +59,11 @@ Examples (non-exhaustive):
 - **WHEN** a prediction contains a coord value outside 0–999
 - **THEN** invalid predictions are dropped for that sample, a structured error is recorded, and processing continues for subsequent samples.
 
+#### Scenario: `pred_text` produced but prediction parsing fails is reflected in structured errors
+- **GIVEN** generation produces a `pred_text` for one sample
+- **WHEN** prediction parsing/validation fails for that sample (e.g., invalid/truncated JSON/CoordJSON)
+- **THEN** the sample includes a structured error entry, `pred=[]`, counters are incremented, and processing continues for subsequent samples.
+
 ### Requirement: Unexpected internal exceptions MUST terminate (fail fast)
 Unexpected internal exceptions (including CUDA out-of-memory) MUST terminate the run (fail fast) to prevent silent corruption of artifacts and metrics.
 
@@ -70,3 +81,5 @@ If feasible, implementations SHOULD annotate the current sample with a structure
 If generation fails for a sample such that a valid `pred_text` cannot be produced (whether the backend raises or returns a failure), the run MUST terminate non-zero.
 
 Generation failures are treated as internal/runtime/config violations and MUST NOT be handled as continue-but-observable per-sample errors in inference/eval.
+
+This requirement does NOT apply to downstream parsing/validation of an already-produced `pred_text`; those failures are handled by the model-output/prediction parse+validation requirement above (continue-but-observable).
