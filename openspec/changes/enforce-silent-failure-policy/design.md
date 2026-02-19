@@ -4,7 +4,7 @@ CoordExp currently contains `try/except` blocks in core training/inference/eval 
 
 This change enforces a strict-by-default error-handling policy:
 - unexpected exceptions fail fast (terminate the run),
-- only explicitly-enumerated, sample-scoped validation/parse errors may be handled (and must be observable),
+- operator-controlled input violations fail fast; only explicitly salvage-mode model-output invalidity may be handled (and must be observable),
 - best-effort behavior is constrained to narrowly-defined I/O sinks and must not alter correctness-affecting state.
 
 Constraints:
@@ -31,14 +31,17 @@ Constraints:
 
 ## Decisions
 
-1) **Taxonomy: expected per-sample errors vs unexpected internal exceptions**
-- Expected per-sample errors:
-  - sample-scoped validation/parse failures that do not indicate a code bug,
-  - may be handled only when explicitly enumerated,
+1) **Taxonomy: operator-controlled input violations vs salvage-mode model-output invalidity vs unexpected internal exceptions**
+- Operator-controlled input violations:
+  - sample-scoped validation/parse/contract failures for deterministic inputs that can be validated in advance (training inputs and inference/eval inputs),
+  - MUST terminate the run (fail fast); these are contract violations and are not handled as “expected per-sample errors”.
+- Model-generated output invalidity (salvage-mode only):
+  - invalid/truncated/partial model outputs produced during explicitly salvage-mode training subpaths that consume model-generated text (e.g., rollout parsing/matching),
+  - MAY be handled per-sample only when explicitly enumerated,
   - MUST be observable (structured `errors` + counters),
   - MUST NOT be “fixed” by substituting semantics-changing defaults.
 - Unexpected internal exceptions:
-  - anything not explicitly treated as an expected per-sample error,
+  - anything not explicitly treated as salvage-mode model-output invalidity,
   - MUST terminate the run (fail fast).
 
 2) **Training vs inference/eval strictness**
@@ -46,17 +49,18 @@ Constraints:
   - deterministic inputs (dataset encoding, cooked targets, GT) treat validation/parse errors as contract violations and MUST fail fast,
   - explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY drop/skip invalid model outputs *per sample*, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
 - Inference/eval:
-  - input-dependent validation/parse failures (invalid JSON, missing/corrupt images, malformed geometry, wrong schema) are resolvable in advance and MUST fail fast (terminate the run),
+  - any input-dependent validation/parse failure (invalid JSON, missing/corrupt images, malformed geometry, wrong schema, wrong format) is resolvable in advance and MUST fail fast (terminate the run),
   - unexpected internal exceptions (including CUDA OOM) MUST fail fast.
+  - there is no “continue-but-observable” mode for inference/eval inputs: even if an error entry is written, the run still terminates non-zero.
 
 3) **Preflight validation for resolvable errors**
 For deterministic inputs that can be checked before expensive compute (notably inference/eval inputs), prefer a preflight validation pass that:
 - validates JSONL format + required keys + path resolvability/readability for all samples to be processed (respecting `limit`),
-- aborts before generation/evaluation on the first violation (or after collecting a small bounded set of examples),
+- aborts before generation/evaluation if any violation is found (optionally after collecting a small bounded set of examples to reduce fix/re-run cycles),
 - emits actionable diagnostics (sample_id/image path/line number).
 
-4) **Observability is required when continuing**
-When the system continues past an expected per-sample error, it MUST:
+4) **Continue-but-observable is restricted to salvage-mode model-output consumers**
+When an explicitly salvage-mode training subpath continues past model-output invalidity, it MUST:
 - record a structured error entry on that sample (where a per-sample artifact exists),
 - increment a run-level counter/metric for that error class,
 - avoid producing “fake success” outputs (e.g., emitting empty predictions without an error record).
@@ -72,6 +76,6 @@ Where a `try/except` block only re-raises the same exception without adding acti
 
 ## Risks / Trade-offs
 
-- **[Risk] Previously-masked issues now abort runs** → Mitigation: keep changes narrow, add actionable error messages, and improve observability of expected per-sample errors.
+- **[Risk] Previously-masked issues now abort runs** → Mitigation: keep changes narrow, add actionable diagnostics for operator-controlled input violations, and improve observability of salvage-mode model-output invalidity.
 - **[Risk] CI scanning becomes brittle** → Mitigation: enforce only high-signal patterns (broad exception handlers that suppress/continue/return defaults), using AST-based checks rather than regex when feasible.
 - **[Risk] Partial artifact expectations in tooling** → Mitigation: clarify which artifacts are allowed to be partial (only when explicitly scoped to per-sample expected errors) and otherwise fail fast.

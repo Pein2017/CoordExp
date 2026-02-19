@@ -4,8 +4,8 @@ Audit target: all `try/except` blocks under `src/`.
 
 Guiding policy (strict-by-default):
 - unexpected internal exceptions must not be silently swallowed,
-- semantics-changing fallbacks (default returns, empty outputs) are forbidden in core correctness paths unless the condition is explicitly classified as an expected, sample-scoped error and is observable (structured errors + counters),
-- salvage-mode handling is allowed only in explicitly salvage-oriented contexts that consume model-generated outputs (rollouts / inference), and must be observable,
+- operator-controlled input violations (training inputs and inference/eval inputs) MUST fail fast (raise); no skip-and-continue,
+- semantics-changing fallbacks (default returns, empty outputs) are forbidden in core correctness paths; continue-but-observable is allowed only for explicitly salvage-mode training subpaths consuming model-generated outputs,
 - remove redundant try/except wrappers that do not add actionable context (“strip over-engineering”).
 
 ## Findings (initial, high-signal patterns)

@@ -16,7 +16,7 @@
 
 - [ ] 1.1 Update `silent-failure-policy` spec to expand “silent swallowing” beyond `except ...: pass` to include `continue` / default-return / semantics-changing fallbacks in core paths.
 - [ ] 1.2 Update `silent-failure-policy` spec to define strict-by-default behavior and the narrow best-effort I/O sink carve-out.
-- [ ] 1.3 Update `inference-engine` spec to clarify expected per-sample error handling vs unexpected internal exceptions (fail fast), and align scenarios accordingly.
+- [ ] 1.3 Update `inference-engine` spec to clarify operator-controlled input violations MUST fail fast (no skip-and-continue), and that unexpected internal exceptions (including CUDA OOM) MUST fail fast; align scenarios accordingly.
 
 ## 2. CI enforcement (minimal, high-signal)
 
@@ -46,15 +46,19 @@
 - [ ] 3.4 Strip redundant `try/except` wrappers that only re-raise without adding context; keep context at meaningful boundaries.
 - [ ] 3.5 Ensure any `finally` blocks that restore temporary mutable state remain deterministic; restoration failures terminate the run.
 - [ ] 3.6 Add inference/eval preflight validation for resolvable errors:
-  - validate JSONL schema/required keys and image path resolvability/readability (respecting `limit`),
-  - abort before generation/evaluation on the first violation (or after a bounded set of examples),
+  - validate JSONL schema/required keys and image path resolvability/readability for all samples to be processed (respecting `limit`),
+  - abort before generation/evaluation if any violation is found (optionally after collecting a small bounded set of examples),
   - emit actionable diagnostics (sample identifier and reason),
   - ensure CUDA OOM and other internal exceptions are not suppressed.
+- [ ] 3.7 Strip over-engineering beyond error handling (evidence-backed, minimal):
+  - inventory pure re-export shims / redundant modules under `src/` discovered during the audit,
+  - remove shims that are unused (or have no justified compatibility value),
+  - avoid introducing new abstraction layers as part of this change.
 
 ## 4. Verification
 
 - [ ] 4.1 Run unit tests: `conda run -n ms python -m pytest tests/test_silent_failure_policy.py`.
 - [ ] 4.2 Run a targeted smoke on one representative pipeline path affected by changes (training or inference), verifying:
   - unexpected exceptions stop the run,
-  - expected per-sample errors are recorded with counters (where permitted),
+  - salvage-mode model-output invalidity is recorded with counters (where permitted),
   - no “quiet” defaults mask failures.

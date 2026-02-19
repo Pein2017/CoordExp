@@ -1,4 +1,4 @@
-# silent-failure-policy Specification (delta)
+# silent-failure-policy Specification (delta: strict fail-fast; strip over-engineering)
 
 ## Purpose
 Define a strict-by-default exception-handling policy so that core training/inference/evaluation behavior is reproducible and failures are observable, while allowing a narrow set of best-effort I/O sinks that do not affect correctness.
@@ -12,9 +12,9 @@ The system SHALL NOT suppress unexpected exceptions in core execution paths (dat
 
 Code MUST either:
 - allow the exception to propagate (fail fast), OR
-- catch only explicitly-enumerated exception types and either re-raise with added context or handle them as an explicitly-defined expected per-sample error.
+- catch only explicitly-enumerated exception types and either re-raise with added context, or (ONLY in explicitly salvage-mode model-output consumers) handle them as explicitly-defined model-output invalidity with structured errors + counters.
 
-Enumeration MUST be expressed directly in code (e.g., `except (ExpectedSampleError, ...)`) and MUST NOT be driven by external allowlists/registries.
+Enumeration MUST be expressed directly in code (e.g., `except (ExpectedModelOutputError, ...)`) and MUST NOT be driven by external allowlists/registries.
 
 The following are forbidden in core execution paths:
 - `except Exception: pass`
@@ -29,23 +29,33 @@ The following are forbidden in core execution paths:
 - **AND** the exception is not discarded by a blanket catch-all
 - **AND** training does not continue with a silently-skipped sample.
 
-### Requirement: Expected per-sample errors are explicit and observable
-Deterministic inputs that can be validated in advance MUST fail fast on any sample-scoped validation/parse error, including:
-- training inputs (dataset encoding, cooked targets, GT), and
-- inference/eval inputs (JSONL format/schema, image path resolvability/readability, required width/height, geometry well-formedness).
+### Requirement: Strip over-engineering in exception handling
+Where a `try/except` block only re-raises the same exception without adding actionable context, it MUST be removed.
 
-When the system intentionally continues past a sample-scoped error (ONLY in explicitly salvage-mode subpaths that consume model-generated outputs), it MUST:
+Where context is needed, it MUST be added once at a meaningful boundary using `raise ... from e`, not via repeated wrapper layers.
+
+### Requirement: Operator-controlled input violations MUST fail fast (no skip-and-continue)
+Operator-controlled inputs that can be validated in advance MUST be treated as strict contracts. Any sample-scoped validation/parse/contract failure MUST terminate the run with a non-zero exit code (fail fast); the system MUST NOT skip the sample and continue.
+
+This includes:
+- training inputs (dataset encoding, cooked targets, GT), and
+- inference/eval inputs (JSONL format/schema, image path resolvability/readability, required width/height, geometry well-formedness, wrong format, etc.).
+
+Implementations MAY emit a structured error record for the failing sample to aid debugging, but they MUST still raise and terminate the run.
+
+#### Scenario: Inference fails fast on invalid input that can be validated in advance
+- **GIVEN** inference/eval processing
+- **WHEN** an input sample fails validation (e.g., invalid JSON line, missing image, malformed geometry, wrong schema)
+- **THEN** the run terminates with a non-zero exit code
+- **AND** the failure is surfaced with actionable diagnostics (sample identifier and reason).
+
+### Requirement: Continue-but-observable is allowed ONLY for explicitly salvage-mode model-output consumers
+When the system intentionally continues past model-generated output invalidity (ONLY in explicitly salvage-mode training subpaths that consume model-generated outputs, such as rollout parsing/matching), it MUST:
 - record a structured per-sample error entry (e.g., `errors=[...]`) in the relevant artifact, AND
 - increment a run-level counter/metric for that error class, AND
 - avoid emitting “fake success” outputs (e.g., empty predictions) without an accompanying error record.
 
-Explicitly salvage-mode training subpaths that consume model-generated outputs (e.g., rollout parsing/matching) MAY continue past invalid model outputs per-sample, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
-
-#### Scenario: Inference fails fast on invalid input that can be validated in advance
-- **GIVEN** inference/eval processing
-- **WHEN** an input sample fails validation (e.g., invalid JSON line, missing image, malformed geometry)
-- **THEN** the run terminates with a non-zero exit code
-- **AND** the failure is surfaced with actionable diagnostics (sample identifier and reason).
+Explicitly salvage-mode training subpaths that consume model-generated outputs MAY continue past invalid model outputs per-sample, but MUST be observable (structured errors + counters) and MUST NOT suppress unexpected internal exceptions.
 
 ### Requirement: Best-effort handling is limited to non-correctness sinks
 Best-effort exception handling is allowed ONLY for explicitly sink-scoped code that cannot affect correctness-affecting state (e.g., log tee mirroring or diagnostics/telemetry reporting).
