@@ -10,7 +10,10 @@ model:
 template:
   template: qwen3_vl
   truncation_strategy: right
-  max_pixels: 1572864999  # an extremely large value so that never `do_resize`
+  # Hard cap: CoordExp forbids any runtime image resizing because it breaks
+  # grounding coordinates. Images must be pre-rescaled offline and JSONL
+  # width/height must match the rescaled images.
+  max_pixels: 786432  # 768*32*32
   # NOTE: RLHF defaults to loss_scale='last_round' which should be correct for single-round conversations
   # Keeping default (last_round) - need to debug why it unmasks 50% of tokens
   

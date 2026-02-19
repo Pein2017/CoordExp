@@ -261,6 +261,84 @@ class BaseCaptionDataset(Dataset):
         if self.coord_tokens.enabled:
             annotate_coord_tokens(record)
 
+    def _enforce_max_pixels(self, record: Mapping[str, Any], *, base_idx: int) -> None:
+        """Fail fast if a record would exceed template.max_pixels.
+
+        CoordExp forbids any runtime image resizing because it breaks grounding
+        coordinates. Images must be pre-rescaled offline and JSONL width/height
+        must match the rescaled images.
+        """
+
+        def _coerce_positive_int(value: Any, *, name: str) -> int:
+            if value is None:
+                raise ValueError(f"{name} is required")
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be an integer, got bool")
+            if isinstance(value, int):
+                out = value
+            elif isinstance(value, float):
+                if not value.is_integer():
+                    raise ValueError(f"{name} must be an integer, got {value!r}")
+                out = int(value)
+            elif isinstance(value, str):
+                s = value.strip()
+                if not s:
+                    raise ValueError(f"{name} must be a non-empty integer string")
+                if s.isdigit():
+                    out = int(s)
+                else:
+                    try:
+                        f = float(s)
+                    except ValueError as exc:
+                        raise ValueError(f"{name} must be integer-like, got {value!r}") from exc
+                    if not f.is_integer():
+                        raise ValueError(f"{name} must be an integer, got {value!r}")
+                    out = int(f)
+            else:
+                raise ValueError(
+                    f"{name} must be int/float/str (integer-like), got {type(value).__name__}"
+                )
+
+            if out <= 0:
+                raise ValueError(f"{name} must be positive, got {out!r}")
+            return out
+
+        image_hint = (
+            record.get("image_id")
+            or record.get("id")
+            or record.get("image")
+            or record.get("image_path")
+            or record.get("path")
+        )
+
+        max_pixels_raw = getattr(self.template, "max_pixels", None)
+        try:
+            max_pixels = _coerce_positive_int(max_pixels_raw, name="template.max_pixels")
+        except ValueError as exc:
+            raise ValueError(
+                "Invalid template.max_pixels for max_pixels enforcement; "
+                f"dataset={self.dataset_name!r}, base_idx={base_idx}, image={image_hint!r}: {exc}"
+            ) from exc
+
+        try:
+            width = _coerce_positive_int(record.get("width"), name="width")
+            height = _coerce_positive_int(record.get("height"), name="height")
+        except ValueError as exc:
+            raise ValueError(
+                "Invalid width/height for max_pixels enforcement; "
+                f"dataset={self.dataset_name!r}, base_idx={base_idx}, image={image_hint!r}: {exc}"
+            ) from exc
+
+        pixels = width * height
+        if pixels > max_pixels:
+            raise ValueError(
+                f"Image resolution {width}x{height}={pixels} exceeds template.max_pixels={max_pixels} "
+                f"for dataset={self.dataset_name!r}, base_idx={base_idx}, image={image_hint!r}. "
+                "Runtime image resizing is forbidden because it breaks grounding coordinates. "
+                "Pre-rescale images offline (and update JSONL width/height + geometry) so that "
+                "width*height <= template.max_pixels."
+            )
+
     def _encode_record(
         self,
         *,
@@ -336,6 +414,8 @@ class BaseCaptionDataset(Dataset):
                     "Preprocessor removed the record; dataset does not duplicate samples"
                 )
             record = processed
+
+        self._enforce_max_pixels(record, base_idx=base_idx)
 
         self._apply_object_ordering(record, rng_local)
         self._maybe_annotate_coord_tokens(record)
