@@ -1,0 +1,10 @@
+extends: geometry_first_coco80_ddp_cycle.yaml
+
+training:
+  run_name: smoke_stage1_cycle_ddp_retry
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/geometry_first_coco80_ddp_cycle_retry
+  train_sample_limit: 160
+  val_sample_limit: 64

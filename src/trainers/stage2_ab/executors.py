@@ -313,6 +313,28 @@ class Stage2ABChannelExecutorsMixin:
         packing_length = int(self._packing_length())
         target_fill = float(self._packing_min_fill_ratio())
 
+        wait_timeout_cfg = self._ab_channel_b_get("producer_wait_timeout_s", None)
+        if wait_timeout_cfg is None:
+            producer_wait_timeout_s = 0.0
+        else:
+            try:
+                producer_wait_timeout_s = float(wait_timeout_cfg)
+            except Exception as exc:
+                raise ValueError(
+                    "stage2_ab.channel_b.producer_wait_timeout_s must be a float/int when set"
+                ) from exc
+        if producer_wait_timeout_s <= 0.0:
+            try:
+                conn_timeout_s, infer_timeout_s = self._vllm_server_timeouts()  # type: ignore[attr-defined]
+                base_timeout = (
+                    float(infer_timeout_s)
+                    if infer_timeout_s is not None
+                    else float(conn_timeout_s)
+                )
+                producer_wait_timeout_s = max(120.0, float(base_timeout) * 2.0)
+            except Exception:
+                producer_wait_timeout_s = 300.0
+
         def _split_metrics(metrics: Mapping[str, Any]) -> Tuple[Dict[str, float], Dict[str, float]]:
             rollout_static: Dict[str, float] = {}
             step_totals: Dict[str, float] = {}
@@ -320,7 +342,7 @@ class Stage2ABChannelExecutorsMixin:
                 ks = str(k)
                 try:
                     fv = float(v)  # type: ignore[arg-type]
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if ks.startswith("rollout/"):
                     rollout_static[ks] = float(fv)
@@ -470,7 +492,12 @@ class Stage2ABChannelExecutorsMixin:
                 producer_exc.append(exc)
             finally:
                 setattr(self, "_stage2_skip_vllm_server_sync", prev_skip)
-                q.put(None)
+                while True:
+                    try:
+                        q.put(None, timeout=1.0)
+                        break
+                    except queue.Full:
+                        continue
 
         th = threading.Thread(target=_producer, daemon=True)
         th.start()
@@ -491,7 +518,22 @@ class Stage2ABChannelExecutorsMixin:
             while (not producer_done) and (
                 buf_total_len < float(target_fill) * float(packing_length)
             ):
-                item = q.get()
+                try:
+                    item = q.get(timeout=float(producer_wait_timeout_s))
+                except queue.Empty as exc:
+                    producer_alive = bool(th.is_alive())
+                    pending_buf = int(
+                        len(self._stage2_post_rollout_buffer(channel="B"))
+                    )
+                    raise RuntimeError(
+                        "stage2-ab Channel-B pipeline stalled while waiting for producer output; "
+                        f"waited={float(producer_wait_timeout_s):.1f}s "
+                        f"seen_segments={int(seen_segments)}/{int(total_segments_target)} "
+                        f"buf_total_len={int(buf_total_len)} pending_buf={int(pending_buf)} "
+                        f"producer_done={bool(producer_done)} producer_alive={bool(producer_alive)} "
+                        f"rollout_decode_batch_size={int(rollout_decode_bs)} "
+                        f"packing_length={int(packing_length)} target_fill={float(target_fill):.3f}."
+                    ) from exc
                 if item is None:
                     producer_done = True
                     break
@@ -550,7 +592,11 @@ class Stage2ABChannelExecutorsMixin:
             )
             loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
 
-        th.join()
+        th.join(timeout=5.0)
+        if th.is_alive():
+            raise RuntimeError(
+                "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
+            )
 
         if producer_exc:
             # Re-raise the first producer exception.

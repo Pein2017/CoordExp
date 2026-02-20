@@ -447,19 +447,19 @@ def _convert_pair_to_record(
     height = img_meta.get("height")
 
     if not isinstance(image_id, int) or not isinstance(url, str):
-        return None, 0
+        return None, 0, 0
     if not isinstance(width, int) or not isinstance(height, int):
-        return None, 0
+        return None, 0, 0
     if width <= 0 or height <= 0:
-        return None, 0
+        return None, 0, 0
 
     rel = _image_relpath_from_url(url)
     if rel is None:
-        return None, 0
+        return None, 0, 0
 
     objects = ann.get("objects")
     if not isinstance(objects, list) or not objects:
-        return None, 0
+        return None, 0, 0
 
     out_objs: List[Dict[str, Any]] = []
     kept = 0
@@ -588,19 +588,19 @@ def _convert_pair_to_region_record(
     height = img_meta.get("height")
 
     if not isinstance(image_id, int) or not isinstance(url, str):
-        return None, 0
+        return None, 0, 0
     if not isinstance(width, int) or not isinstance(height, int):
-        return None, 0
+        return None, 0, 0
     if width <= 0 or height <= 0:
-        return None, 0
+        return None, 0, 0
 
     rel = _image_relpath_from_url(url)
     if rel is None:
-        return None, 0
+        return None, 0, 0
 
     regions = ann.get("regions")
     if not isinstance(regions, list) or not regions:
-        return None, 0
+        return None, 0, 0
 
     out_objs: List[Dict[str, Any]] = []
     kept = 0
@@ -745,6 +745,8 @@ def convert(
                 continue
             meta_id = img_meta.get("image_id")
             ann_id = ann.get("image_id")
+            if ann_id is None:
+                ann_id = ann.get("id")
             if meta_id != ann_id:
                 raise ValueError(
                     "Misaligned VG arrays: image_data.json and objects.json are not aligned.\n"
@@ -821,6 +823,8 @@ def convert_regions(
                 continue
             meta_id = img_meta.get("image_id")
             ann_id = ann.get("image_id")
+            if ann_id is None:
+                ann_id = ann.get("id")
             if meta_id != ann_id:
                 raise ValueError(
                     "Misaligned VG arrays: image_data.json and region_descriptions.json are not aligned.\n"

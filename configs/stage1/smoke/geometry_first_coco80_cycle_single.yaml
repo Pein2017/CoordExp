@@ -1,0 +1,13 @@
+extends: geometry_first_coco80_ddp_cycle.yaml
+
+deepspeed:
+  enabled: false
+
+training:
+  run_name: smoke_stage1_cycle_single
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/geometry_first_coco80_cycle_single
+  train_sample_limit: 160
+  val_sample_limit: 64

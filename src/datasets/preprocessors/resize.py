@@ -463,7 +463,7 @@ def smart_resize_params_from_env(
             return default
         try:
             return int(raw)
-        except Exception:
+        except (TypeError, ValueError):
             logger.warning("Invalid %s=%s; using default %s", env_name, raw, default)
             return default
 

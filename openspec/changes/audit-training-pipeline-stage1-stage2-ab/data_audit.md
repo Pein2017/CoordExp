@@ -31,6 +31,23 @@ pre-rescaled images.
 There is **no intermediate “cooking cache” layer** in the learner path today: the cooked JSONL is read
 into memory once per dataset construction (a list of dicts), then encoded per-sample in `__getitem__`.
 
+## 1.1) Offline Public-Data Pipeline (Drop Counters Are Manifested)
+
+Offline conversion under `public_data/` is *allowed* to drop examples (record drops) or drop objects
+inside an example (object drops), but **every drop mode must be surfaced as explicit counters** in
+the preset manifest so dataset composition changes can’t silently slip into “paper-ready” runs.
+
+Evidence:
+- `public_data/pipeline/writer.py:write_pipeline_manifest` always writes `stage_stats` into
+  `pipeline_manifest.json`.
+- Max-object filtering (record drops) emits split-level `images_seen/images_written/images_dropped`
+  and `objects_seen/objects_written` counters:
+  - `public_data/pipeline/stages.py:_filter_records_drop_only`
+  - surfaced as `stage_stats["max_objects_filter"]["splits"][split]`.
+- Normalize stage now emits object-level counters, including safety-net invalid-bbox drops:
+  - `public_data/pipeline/stages.py:NormalizeStage` + `_write_norm_jsonl(..., stats=...)`
+  - surfaced as `stage_stats["normalize_norm1000"]["objects"][split]`.
+
 ## 2) Ingestion Path (custom.train_jsonl -> Dataset)
 
 **Config keys**
@@ -110,3 +127,48 @@ Outputs:
   (`sample_id`, `dataset`, `base_idx`), plus `messages` and `assistant_payload` snapshots used by
   monitoring/debugging paths.
 
+## 6) Sampling + Determinism (Audit Notes)
+
+### Per-epoch permutation and (optional) weighted sampling
+
+`BaseCaptionDataset` maintains an epoch-local index permutation `_index_perm`:
+- `src/datasets/dense_caption.py:_rebuild_perm_for_epoch`
+- Seeded by `self.seed` + epoch mixing (`_seed_for_epoch`)
+- Policies:
+  - Default: shuffle all indices once per epoch (no replacement).
+  - If a hard-sample plan includes `weights`, it samples indices with replacement via
+    `random.choices(..., weights=..., k=target_len)`.
+  - If `target_epoch_size > base_len` (oversampling), it appends extra indices sampled with
+    replacement (repeat sampling).
+
+### Sample limits and replacement knobs
+
+Record-level limits are applied at JSONL load time:
+- `BaseCaptionDataset.from_jsonl` slices the loaded JSONL list when `sample_limit` is provided
+  (deterministic, prefix slice).
+
+Eval-only replacement sampling is owned by the training entrypoint:
+- `custom.val_sample_limit` and `custom.val_sample_with_replacement` are interpreted in `src/sft.py`
+  when constructing eval datasets / loaders.
+
+### Multi-worker determinism
+
+Determinism risk:
+- Any randomness derived from a stateful RNG inside `__getitem__` becomes order-dependent under
+  multi-worker prefetching (worker scheduling changes which samples consume which RNG calls).
+
+Mitigation in CoordExp:
+- `src/datasets/dense_caption.py:__getitem__` derives a per-sample RNG seed as a pure function of:
+  `(dataset seed, epoch, base_idx, requested index)`.
+- Regression test: `tests/test_dataset_multworker_determinism_probe.py` asserts that changing
+  `DataLoader(num_workers=0)` vs `num_workers=2` does not change emitted `assistant_payload` order.
+
+### Packing buffer determinism
+
+Packing introduces an additional ordering surface:
+- `src/datasets/wrappers/packed_caption.py` groups samples via a binpacking heuristic.
+
+Mitigation:
+- Packs are forced to preserve base-dataset index ordering *within each pack* so concatenation order
+  is stable even when the binpacking heuristic returns items in a different internal order.
+- Regression test: `tests/test_packing_wrapper.py::test_packing_preserves_stable_intra_pack_order`.

@@ -24,7 +24,7 @@ import json
 from dataclasses import asdict
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Dict, MutableMapping, cast
+from typing import Any, Dict, Iterator, MutableMapping, cast
 
 from src.datasets.preprocessors.resize import SmartResizeParams, SmartResizePreprocessor
 
@@ -67,6 +67,24 @@ def _process_row_worker(args_tuple):
     return json.dumps(updated, ensure_ascii=False)
 
 
+def _iter_jsonl_rows(path: Path) -> Iterator[Dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as fin:
+        for line in fin:
+            line = line.strip()
+            if not line:
+                continue
+            yield json.loads(line)
+
+
+def _count_nonempty_rows(path: Path) -> int:
+    count = 0
+    with path.open("r", encoding="utf-8") as fin:
+        for line in fin:
+            if line.strip():
+                count += 1
+    return count
+
+
 def run_smart_resize(
     *,
     input_jsonl: Path,
@@ -82,17 +100,32 @@ def run_smart_resize(
     except ImportError:
         tqdm = None
 
+    if images_output_dir.exists() and images_output_dir.is_symlink():
+        raise RuntimeError(
+            f"Refusing to write resized images into symlinked output dir: {images_output_dir}"
+        )
+
     images_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Safety: if `images/` is a symlink (common disk-saving hack), writing resized images
+    # would follow the symlink and can overwrite the raw dataset. Always materialize a
+    # real directory for resized outputs.
+    out_images = images_output_dir / "images"
+    if out_images.exists():
+        if out_images.is_symlink():
+            out_images.unlink()
+            out_images.mkdir(parents=True, exist_ok=True)
+        elif out_images.is_file():
+            raise RuntimeError(f"Expected images dir, found file: {out_images}")
+
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
-    rows = []
-    with input_jsonl.open("r", encoding="utf-8") as fin:
-        for line in fin:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
+    total_rows = _count_nonempty_rows(input_jsonl)
+    if total_rows <= 0:
+        output_jsonl.write_text("", encoding="utf-8")
+        return
 
-    max_workers = max(1, min(num_workers, cpu_count(), len(rows)))
+    max_workers = max(1, min(num_workers, cpu_count(), total_rows))
     if max_workers == 1:
         pre = SmartResizePreprocessor(
             params=params,
@@ -102,30 +135,44 @@ def run_smart_resize(
             relative_output_root=output_jsonl.parent,
             images_root_override=images_root_override,
         )
-        iterator = rows if tqdm is None else tqdm(rows, desc="Resizing", unit="sample")
+        iterator = _iter_jsonl_rows(input_jsonl)
+        if tqdm is not None:
+            iterator = tqdm(iterator, total=total_rows, desc="Resizing", unit="sample")
         with output_jsonl.open("w", encoding="utf-8") as fout:
             for row in iterator:
                 updated = pre.preprocess(row) or row
                 if relative_image_paths:
-                    updated = _relativize_images(cast(MutableMapping[str, Any], updated), output_jsonl.parent)
+                    updated = _relativize_images(
+                        cast(MutableMapping[str, Any], updated), output_jsonl.parent
+                    )
                 fout.write(json.dumps(updated, ensure_ascii=False) + "\n")
     else:
         params_dict = asdict(params)
-        worker_args = [
-            (
-                row,
-                params_dict,
-                str(input_jsonl.parent),
-                str(images_output_dir),
-                str(output_jsonl.parent),
-                relative_image_paths,
-                str(images_root_override) if images_root_override else None,
-            )
-            for row in rows
-        ]
+
+        def _iter_worker_args():
+            for row in _iter_jsonl_rows(input_jsonl):
+                yield (
+                    row,
+                    params_dict,
+                    str(input_jsonl.parent),
+                    str(images_output_dir),
+                    str(output_jsonl.parent),
+                    relative_image_paths,
+                    str(images_root_override) if images_root_override else None,
+                )
+
         with Pool(processes=max_workers) as pool:
-            iterable = pool.imap(_process_row_worker, worker_args)
-            results = iterable if tqdm is None else tqdm(iterable, total=len(rows), desc=f"Resizing ({max_workers} workers)")
+            iterable = pool.imap(_process_row_worker, _iter_worker_args(), chunksize=32)
+            results = (
+                iterable
+                if tqdm is None
+                else tqdm(
+                    iterable,
+                    total=total_rows,
+                    desc=f"Resizing ({max_workers} workers)",
+                    unit="sample",
+                )
+            )
             with output_jsonl.open("w", encoding="utf-8") as fout:
                 for out_line in results:
                     fout.write(out_line + "\n")

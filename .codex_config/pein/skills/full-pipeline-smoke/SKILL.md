@@ -106,6 +106,50 @@ Recommended loop:
 4) Add/adjust a minimal test that runs the smoke config (if repo has such tests)
 5) Document the canonical smoke command in the relevant runbook
 
+## Worktree / Branch Smoke Runs
+
+When running smoke tests from a worktree or different branch, data paths in YAML configs may need dynamic adjustment.
+
+### Path Resolution Strategy
+
+1. **Use environment variables for base paths** in YAML configs:
+   ```yaml
+   data:
+     train_jsonl: "${DATA_DIR}/train.coord.jsonl"
+     val_jsonl: "${DATA_DIR}/val.coord.jsonl"
+   ```
+
+2. **Set `DATA_DIR` in the launcher** (e.g., `scripts/train.sh`):
+   ```bash
+   DATA_DIR="${DATA_DIR:-.}"  # default to current dir
+   export DATA_DIR
+   ```
+
+3. **Keep relative paths** within the worktree — avoid hardcoded absolute paths.
+
+### Worktree-Specific Smoke Override
+
+Create a worktree smoke variant that only overrides data paths:
+
+```yaml
+# configs/<area>/smoke/worktree_override.yaml
+extends: smoke/<entrypoint>.yaml
+
+custom:
+  train_jsonl: "${WORKTREE_DATA_DIR}/train.coord.jsonl"
+  val_jsonl: "${WORKTREE_DATA_DIR}/val.coord.jsonl"
+```
+
+Or use CLI override at launch:
+```bash
+bash scripts/train.sh config=configs/stage1/smoke/geometry_first_coco80.yaml custom.train_jsonl=${WORKTREE_DATA_DIR}/train.coord.jsonl
+```
+
+Set `WORKTREE_DATA_DIR` to point to the correct data location for the worktree:
+```bash
+export WORKTREE_DATA_DIR="/path/to/worktree/data"
+```
+
 ## Runtime Guardrails (CoordExp defaults)
 
 - Prefer YAML-first changes over adding new CLI flags.

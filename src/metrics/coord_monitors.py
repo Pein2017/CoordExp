@@ -214,7 +214,7 @@ def compute_coord_diag_metrics_for_pure_ce(
         for bin_idx, tok_id in enumerate(coord_token_ids):
             try:
                 tok_id_i = int(tok_id)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if 0 <= tok_id_i < vocab_size:
                 valid_pairs.append((bin_idx, tok_id_i))

@@ -345,6 +345,16 @@ Launcher knobs (runtime-only; no YAML drift):
 - `server_torch_dtype=bfloat16|float16|float32|None`: server model dtype passed to `swift rollout` (default: `bfloat16`).
 - `server_vllm_enforce_eager=true|false`: eager mode for vLLM server (default: `true`).
 
+Image root contract (`ROOT_IMAGE_DIR`):
+- The learner and rollout server must resolve image paths identically, otherwise multimodal tokens will not correspond to the same pixels the labels were built from.
+- When using `scripts/train_stage2.sh`, `ROOT_IMAGE_DIR` is resolved from `custom.train_jsonl` (the JSONL parent directory) during preflight and exported to both the server and learner processes.
+  - You normally do not need to set `ROOT_IMAGE_DIR` manually in this launcher flow.
+- If you run `python -m src.sft --config ...` directly (no combined launcher), you must export `ROOT_IMAGE_DIR` yourself unless your JSONL uses absolute image paths.
+
+Multi-server note:
+- `scripts/train_stage2.sh` currently supports exactly 1 rollout server entry in `rollout_matching.vllm.server.servers`.
+  - If you want multiple rollout servers, orchestrate them externally and run the learner with a server list that matches the orchestration (do not rely on the combined launcher).
+
 Operational tip:
 - Run the launcher inside `tmux` so a single `Ctrl-C` cleanly terminates both learner and server and frees GPU memory quickly.
 
@@ -405,7 +415,12 @@ rollout_matching:
     every_steps: 4
     max_events: 50
     max_samples: 1
+    # <=0 disables clipping (full text dumps).
     max_text_chars: 4000
+    # Safety rails: do not let dumps stall training or brick runs when disks are low.
+    async_write: true
+    max_pending_writes: 2
+    min_free_gb: 2.0
 ```
 
 Outputs land in `<training.output_dir>/monitor_dumps/` (both `.json` and `.md` per dump).

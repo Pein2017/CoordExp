@@ -18,7 +18,7 @@ def preprocess_logits_for_token_accuracy(logits: Any, labels: Any) -> Any:
         logits = logits[0]
     try:
         return logits.argmax(dim=-1)
-    except Exception:
+    except (AttributeError, TypeError):
         # If logits isn't a torch.Tensor, fall back to returning it unchanged.
         return logits
 

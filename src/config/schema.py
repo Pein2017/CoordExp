@@ -1138,8 +1138,12 @@ class Stage2ABConfig:
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
+            unknown = [f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
             raise ValueError(
-                f"Unknown stage2_ab keys: {sorted(str(k) for k in data.keys())}"
+                "Unknown stage2_ab keys: "
+                f"{unknown}. "
+                "Migration guidance: remove unsupported keys or move them into "
+                "the current stage2_ab schema (for Channel-B options use stage2_ab.channel_b.*)."
             )
 
         return cls(
@@ -1248,7 +1252,12 @@ class TrainingConfig:
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
-            raise ValueError(f"Unknown top-level config keys: {unknown}")
+            raise ValueError(
+                "Unknown top-level config keys: "
+                f"{unknown}. "
+                "Migration guidance: keep only documented top-level sections; "
+                "move residual experiment knobs under custom.extra."
+            )
 
         if global_max_length is not None:
             if not isinstance(global_max_length, int) or global_max_length <= 0:

@@ -236,20 +236,20 @@ class AugmentationPreprocessor(BasePreprocessor):
 
         rec["images"] = images_bytes
 
-        # Update record width/height to reflect any resize/pad ops in augmentation
-        try:
-            if images_bytes:
+        # Update record width/height to reflect any resize/pad ops in augmentation.
+        # Some unit tests stub apply_augmentations() to be identity and return the
+        # original image identifiers (strings). Only attempt to decode bytes when
+        # the augmented image payload is the expected mapping-with-bytes contract.
+        if images_bytes and isinstance(images_bytes[0], Mapping):
+            b0 = images_bytes[0].get("bytes")
+            if isinstance(b0, (bytes, bytearray)):
                 import io
                 from PIL import Image  # type: ignore
 
-                b0 = images_bytes[0].get("bytes")
-                if isinstance(b0, (bytes, bytearray)):
-                    with Image.open(io.BytesIO(b0)) as im0:
-                        im0 = im0.convert("RGB")
-                        rec["width"] = int(im0.width)
-                        rec["height"] = int(im0.height)
-        except Exception:
-            raise
+                with Image.open(io.BytesIO(b0)) as im0:
+                    im0 = im0.convert("RGB")
+                    rec["width"] = int(im0.width)
+                    rec["height"] = int(im0.height)
 
         return rec
 
@@ -290,12 +290,12 @@ class AugmentationPreprocessor(BasePreprocessor):
             if isinstance(current, int):
                 try:
                     return int(round(new_value))
-                except Exception:
+                except (TypeError, ValueError):
                     return current
             if isinstance(current, float):
                 try:
                     return float(new_value)
-                except Exception:
+                except (TypeError, ValueError):
                     return current
             if isinstance(current, tuple):
                 if isinstance(new_value, (list, tuple)):
@@ -326,7 +326,7 @@ class AugmentationPreprocessor(BasePreprocessor):
                     current = getattr(op, param_name, None)
                     coerced = _coerce_value(current, value)
                     setattr(op, param_name, coerced)
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     continue
 
     # -------------------- coord-token helpers --------------------

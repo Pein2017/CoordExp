@@ -93,7 +93,7 @@ def load_prediction_dict(text: str) -> Dict[str, Any] | None:
             if bool(meta.parse_failed):
                 continue
             parsed = json.loads(strict_text)
-        except Exception:
+        except (ValueError, TypeError):
             continue
         if not isinstance(parsed, dict):
             continue
@@ -109,15 +109,38 @@ def load_prediction_dict(text: str) -> Dict[str, Any] | None:
 
 
 def parse_prediction(text: str) -> List[Dict[str, Any]]:
-    """Parse model output JSON into a list of objects with integer coords."""
+    """Parse model output JSON into a list of objects with integer coords.
+
+    Primary path: CoordJSON salvage -> strict JSON via ``load_prediction_dict``.
+
+    Fallback path (legacy/unit tests): if salvage yields no payload, attempt to
+    parse a raw JSON object block directly.
+    """
 
     obj = load_prediction_dict(text)
     if obj is None:
-        return []
+        block = extract_json_block(text) or text
+        try:
+            parsed_raw = json.loads(block)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(parsed_raw, dict):
+            return []
+        obj = parsed_raw
 
-    objects = obj.get("objects")
-    if not isinstance(objects, list):
-        return []
+    objects_raw = obj.get("objects")
+    if isinstance(objects_raw, list):
+        objects = objects_raw
+    else:
+        # Legacy single-object schemas (used in some older checkpoints / tests).
+        if isinstance(obj.get("obj"), dict):
+            objects = [obj["obj"]]
+        elif isinstance(obj.get("object"), dict):
+            objects = [obj["object"]]
+        elif any(g in obj for g in GEOM_KEYS) or "line" in obj or "line_points" in obj:
+            objects = [obj]
+        else:
+            return []
 
     parsed: List[Dict[str, Any]] = []
     for entry in objects:

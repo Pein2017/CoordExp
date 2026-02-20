@@ -76,7 +76,7 @@ def load_jsonl_with_diagnostics(
 
             try:
                 parsed = json.loads(line)
-            except Exception as exc:  # noqa: BLE001
+            except (json.JSONDecodeError, TypeError) as exc:
                 invalid_seen += 1
                 snippet = (
                     line

@@ -1,12 +1,17 @@
-from __future__ import annotations
-
 import ast
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Iterator, NamedTuple, Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POLICY_GLOB = "src/**/*.py"
+
+
+class Violation(NamedTuple):
+    rel_path: str
+    lineno: int
+    label: str
+    action: str
 
 
 def _iter_policy_files() -> list[str]:
@@ -26,6 +31,8 @@ def _is_named_exception(node: ast.expr, names: set[str]) -> bool:
 
 
 def _is_blanket_exception_type(node: Optional[ast.expr]) -> bool:
+    """Return True for bare except + Exception/BaseException catch-alls."""
+
     if node is None:
         return True
 
@@ -55,33 +62,125 @@ def _handler_label(node: Optional[ast.expr]) -> str:
     return f"except {type(node).__name__}"
 
 
-def _iter_blanket_pass_handlers(source: str, rel_path: str):
+def _iter_try_handlers(tree: ast.AST) -> Iterable[ast.ExceptHandler]:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try):
+            yield from node.handlers
+
+
+def _last_stmt(stmts: list[ast.stmt]) -> ast.stmt | None:
+    if not stmts:
+        return None
+    return stmts[-1]
+
+
+def _iter_tier0_violations(source: str, rel_path: str) -> Iterator[Violation]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise AssertionError(
-            f"{rel_path}:{exc.lineno}: syntax error while enforcing fail-fast policy: {exc.msg}"
+            f"{rel_path}:{exc.lineno}: syntax error while enforcing silent-failure policy: {exc.msg}"
         ) from exc
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Try):
+    for handler in _iter_try_handlers(tree):
+        if not _is_blanket_exception_type(handler.type):
             continue
-        for handler in node.handlers:
-            if not _is_blanket_exception_type(handler.type):
-                continue
-            if len(handler.body) == 1 and isinstance(handler.body[0], ast.Pass):
-                yield int(handler.lineno), _handler_label(handler.type)
+        if len(handler.body) == 1 and isinstance(handler.body[0], ast.Pass):
+            yield Violation(
+                rel_path,
+                int(handler.lineno),
+                _handler_label(handler.type),
+                "pass",
+            )
 
 
-def test_src_paths_forbid_blanket_exception_suppression() -> None:
+def _iter_tier1_violations(source: str, rel_path: str) -> Iterator[Violation]:
+    """Tier 1: blanket suppression via continue/break/return."""
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise AssertionError(
+            f"{rel_path}:{exc.lineno}: syntax error while enforcing silent-failure policy: {exc.msg}"
+        ) from exc
+
+    for handler in _iter_try_handlers(tree):
+        if not _is_blanket_exception_type(handler.type):
+            continue
+
+        last = _last_stmt(handler.body)
+        if isinstance(last, ast.Continue):
+            yield Violation(rel_path, int(last.lineno), _handler_label(handler.type), "continue")
+        elif isinstance(last, ast.Break):
+            yield Violation(rel_path, int(last.lineno), _handler_label(handler.type), "break")
+        elif isinstance(last, ast.Return):
+            yield Violation(rel_path, int(last.lineno), _handler_label(handler.type), "return")
+
+
+def test_src_paths_forbid_blanket_exception_pass_tier0() -> None:
     violations: list[str] = []
 
     for rel_path in _iter_policy_files():
         source = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
-        for lineno, label in _iter_blanket_pass_handlers(source, rel_path):
-            violations.append(f"{rel_path}:{lineno}: {label}: pass")
+        for v in _iter_tier0_violations(source, rel_path):
+            violations.append(f"{v.rel_path}:{v.lineno}: {v.label}: {v.action}")
 
     assert not violations, (
-        "Blanket suppression is forbidden in src/. Replace with fail-fast handling.\n"
+        "Tier 0 (blocking): blanket pass is forbidden in src/.\n"
+        "Fix by narrowing exception types and either re-raising with context, "
+        "or using an explicitly-defined model-output consumer path with structured errors + counters.\n"
         + "\n".join(violations)
     )
+
+
+def test_src_paths_forbid_blanket_suppression_tier1() -> None:
+    violations: list[str] = []
+
+    for rel_path in _iter_policy_files():
+        source = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
+        for v in _iter_tier1_violations(source, rel_path):
+            violations.append(f"{v.rel_path}:{v.lineno}: {v.label}: {v.action}")
+
+    assert not violations, (
+        "Tier 1 (blocking): blanket Exception/BaseException handlers must not suppress via continue/break/return.\n"
+        "Fix by narrowing exception types, validating inputs preflight, and avoiding semantics-changing defaults in core paths.\n"
+        + "\n".join(violations)
+    )
+
+
+def test_policy_scan_detects_known_patterns() -> None:
+    bad_pass = """
+try:
+    x = 1
+except Exception:
+    pass
+"""
+    bad_continue = """
+for _ in range(1):
+    try:
+        x = 1
+    except Exception:
+        continue
+"""
+    bad_return = """
+def f():
+    try:
+        x = 1
+    except Exception:
+        return 0.0
+    return 1.0
+"""
+    ok_narrow = """
+for _ in range(1):
+    try:
+        int("nope")
+    except (TypeError, ValueError):
+        continue
+"""
+
+    assert list(_iter_tier0_violations(bad_pass, "<mem>"))
+    assert not list(_iter_tier0_violations(ok_narrow, "<mem>"))
+
+    assert list(_iter_tier1_violations(bad_continue, "<mem>"))
+    assert list(_iter_tier1_violations(bad_return, "<mem>"))
+    assert not list(_iter_tier1_violations(ok_narrow, "<mem>"))

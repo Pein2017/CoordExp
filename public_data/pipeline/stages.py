@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from public_data.scripts.convert_to_coord_tokens import (
     _canonicalize_and_sort_objects_in_place,
@@ -137,21 +137,26 @@ class NormalizeStage(PipelineStage):
     name = "normalize_norm1000"
 
     def run(self, state: PipelineState) -> None:
-        stats = {}
+        record_counts: dict[str, int] = {}
+        object_counts: dict[str, dict] = {}
         for split in sorted(state.split_artifacts.keys()):
             src = state.split_raw_sources.get(split) or state.split_artifacts[split].raw
             outp = state.split_artifacts[split].norm
+            per_split_objects: dict = {}
             n = _write_norm_jsonl(
                 input_path=src,
                 output_path=outp,
                 assume_normalized=bool(state.config.assume_normalized),
                 compact=bool(state.config.compact_json),
+                stats=per_split_objects,
             )
-            stats[split] = n
+            record_counts[split] = n
+            object_counts[split] = per_split_objects
 
         state.stage_stats[self.name] = {
             "assume_normalized": bool(state.config.assume_normalized),
-            "records": stats,
+            "records": record_counts,
+            "objects": object_counts,
         }
 
 
@@ -230,19 +235,73 @@ class ValidationStage(PipelineStage):
     def run(self, state: PipelineState) -> None:
         target_paths, missing = self._targets(state)
         if missing:
-            raise FileNotFoundError("Validation stage missing expected artifacts: " + ", ".join(str(p) for p in missing))
+            raise FileNotFoundError(
+                "Validation stage missing expected artifacts: "
+                + ", ".join(str(p) for p in missing)
+            )
+
+        cfg = state.config
+        check_images = not self.skip_image_check
+
+        raw_inputs: set[Path] = {p for p in state.split_inputs.values() if p is not None}
+
+        # Avoid opening every image multiple times: only do the expensive size check on the
+        # most downstream preset artifact we emit for each split.
+        preset_size_check_targets: set[Path] = set()
+        for split in sorted(state.split_artifacts.keys()):
+            paths = state.split_artifacts[split]
+            if self.include_coord:
+                preset_size_check_targets.add(paths.coord)
+            elif self.include_norm:
+                preset_size_check_targets.add(paths.norm)
+            elif self.include_preset:
+                preset_size_check_targets.add(paths.raw)
+
+        # Rescale presets must materialize a real images/ directory. A symlink can cause
+        # meta/image misalignment and can also lead to accidentally overwriting raw images.
+        if (self.include_preset or self.include_norm or self.include_coord) and "rescale" in state.effective_preset:
+            images_dir = state.preset_dir / "images"
+            if images_dir.exists() and images_dir.is_symlink():
+                raise RuntimeError(
+                    "Preset images dir must not be a symlink for rescale presets: "
+                    f"{images_dir} (preset={state.effective_preset})"
+                )
 
         failed: list[str] = []
         for path in target_paths:
-            validator = JSONLValidator(check_images=not self.skip_image_check, verbose=False)
+            is_raw_input = path in raw_inputs
+            expected_max_pixels: Optional[int] = None
+            expected_multiple_of: Optional[int] = None
+            if not is_raw_input:
+                expected_max_pixels = int(cfg.max_pixels)
+                expected_multiple_of = int(cfg.image_factor)
+
+            check_image_sizes = False
+            if check_images:
+                if is_raw_input:
+                    check_image_sizes = True
+                elif path in preset_size_check_targets:
+                    check_image_sizes = True
+
+            validator = JSONLValidator(
+                check_images=check_images,
+                verbose=False,
+                expected_max_pixels=expected_max_pixels,
+                expected_multiple_of=expected_multiple_of,
+                check_image_sizes=check_image_sizes,
+            )
             if not validator.validate_file(str(path)):
                 failed.append(str(path))
+
         if failed:
             raise RuntimeError("Validation stage failed for: " + ", ".join(failed))
 
         state.stage_stats[self.name] = {
             "files": [str(p) for p in target_paths],
             "skip_image_check": self.skip_image_check,
+            "max_pixels": int(cfg.max_pixels),
+            "image_factor": int(cfg.image_factor),
+            "size_check_files": sorted(str(p) for p in preset_size_check_targets),
         }
 
 
@@ -299,7 +358,14 @@ def _filter_records_drop_only(input_path: Path, output_path: Path, max_objects: 
     return stats
 
 
-def _write_norm_jsonl(*, input_path: Path, output_path: Path, assume_normalized: bool, compact: bool) -> int:
+def _write_norm_jsonl(
+    *,
+    input_path: Path,
+    output_path: Path,
+    assume_normalized: bool,
+    compact: bool,
+    stats: Optional[dict] = None,
+) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     compact_separators = (",", ":") if compact else None
     n = 0
@@ -313,6 +379,7 @@ def _write_norm_jsonl(*, input_path: Path, output_path: Path, assume_normalized:
                 json.loads(json.dumps(record_raw)),
                 ["bbox_2d", "poly"],
                 assume_normalized=assume_normalized,
+                stats=stats,
             )
             record_ints = _canonicalize_and_sort_objects_in_place(record_ints)
             json.dump(record_ints, fout, ensure_ascii=False, separators=compact_separators)

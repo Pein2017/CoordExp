@@ -235,7 +235,7 @@ class _TeeStream:
     def isatty(self):
         try:
             return bool(self._stream.isatty())
-        except Exception:
+        except (AttributeError, OSError):
             return False
 
 
@@ -259,7 +259,7 @@ def enable_output_dir_file_logging(
 
     try:
         os.makedirs(output_dir, exist_ok=True)
-    except Exception:
+    except OSError:
         return None
 
     filename = cfg.filename.strip() if isinstance(cfg.filename, str) else "train.log"
@@ -275,7 +275,7 @@ def enable_output_dir_file_logging(
 
     try:
         handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
-    except Exception:
+    except OSError:
         return None
 
     handler.setLevel(logging.DEBUG)
@@ -290,7 +290,7 @@ def enable_output_dir_file_logging(
 
     try:
         file_obj = open(log_path, "a", encoding="utf-8")
-    except Exception:
+    except OSError:
         file_obj = None
 
     if file_obj is not None:

@@ -93,7 +93,24 @@ class AggregateTokenTypeMetricsMixin:
             extras = maybe_pop_and_stash_batch_extras(self, inputs)
             token_types = extras.token_types
         except Exception:
-            # Best-effort only; never block training.
+            # Best-effort only, but never silent: surface contract drift.
+            try:
+                from src.metrics.reporter import warn_once
+
+                warn_once(
+                    self,
+                    key="batch_extras_failed",
+                    message=(
+                        "Failed to pop batch_extras for aggregate token-type metrics; "
+                        "token_types diagnostics will be skipped."
+                    ),
+                    exc_info=True,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to pop batch_extras for aggregate token-type metrics; skipping.",
+                    exc_info=True,
+                )
             token_types = None
 
         # Snapshot labels before downstream mixins mutate them (e.g., coord loss masking).

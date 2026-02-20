@@ -22,13 +22,13 @@ def slim_rollout_meta_for_logging(meta: Mapping[str, Any]) -> Dict[str, Any]:
     def _as_int(x: Any, default: int = 0) -> int:
         try:
             return int(x)
-        except Exception:
+        except (TypeError, ValueError):
             return int(default)
 
     def _as_float(x: Any, default: float = 0.0) -> float:
         try:
             return float(x)
-        except Exception:
+        except (TypeError, ValueError):
             return float(default)
 
     out: Dict[str, Any] = {

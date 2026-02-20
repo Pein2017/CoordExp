@@ -211,7 +211,7 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
 def _safe_module_info(module_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(module_name)
-    except Exception as exc:
+    except ImportError as exc:
         return {"error": f"{exc.__class__.__name__}: {exc}"}
 
     version = getattr(module, "__version__", None)
@@ -254,7 +254,7 @@ def _safe_git_state(repo_root: Path) -> dict[str, Any]:
         ).strip()
         dirty = bool(status.splitlines())
         return {"sha": sha, "branch": branch, "dirty": dirty}
-    except Exception as exc:
+    except (OSError, subprocess.CalledProcessError) as exc:
         return {"error": f"{exc.__class__.__name__}: {exc}"}
 
 
@@ -540,11 +540,20 @@ def main():
         )
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_hint = train_jsonl or fusion_config_path
-        if root_hint:
-            root_dir = os.path.abspath(os.path.dirname(str(root_hint)))
+        if train_jsonl:
+            root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))
             os.environ["ROOT_IMAGE_DIR"] = root_dir
-            logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
+            logger.info(f"Set ROOT_IMAGE_DIR={root_dir} (from custom.train_jsonl)")
+        elif fusion_config_path:
+            # Fusion configs are legacy/experimental. Using the fusion-config file directory
+            # as a root is a heuristic; surface this explicitly to prevent silent path drift.
+            root_dir = os.path.abspath(os.path.dirname(str(fusion_config_path)))
+            os.environ["ROOT_IMAGE_DIR"] = root_dir
+            logger.warning(
+                "Set ROOT_IMAGE_DIR=%s (heuristic from custom.fusion_config path). "
+                "For fusion configs, set ROOT_IMAGE_DIR explicitly (preferred) or provide custom.train_jsonl.",
+                root_dir,
+            )
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")
@@ -668,6 +677,29 @@ def main():
     debug_enabled = bool(
         debug_config is not None and getattr(debug_config, "enabled", False)
     )
+    heartbeat_env_raw = str(os.environ.get("COORDEXP_TRAIN_HEARTBEAT", "")).strip()
+    heartbeat_env = heartbeat_env_raw.lower()
+    heartbeat_enabled = debug_enabled or heartbeat_env in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if heartbeat_env and heartbeat_env not in {
+        "0",
+        "false",
+        "no",
+        "off",
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        logger.warning(
+            "Unrecognized COORDEXP_TRAIN_HEARTBEAT=%r; expected one of "
+            "{0,1,false,true,no,yes,off,on}. Treating as disabled unless debug.enabled=true.",
+            heartbeat_env_raw,
+        )
     if debug_enabled:
         train_sample_limit = getattr(debug_config, "train_sample_limit", None)
         val_sample_limit = getattr(debug_config, "val_sample_limit", None)
@@ -1323,6 +1355,25 @@ def main():
             token_type_cfg=token_type_cfg,
             instability_monitor_cfg=instability_monitor_cfg,
         )
+
+    heartbeat_writer = None
+    heartbeat_callback = None
+    if heartbeat_enabled:
+        from .callbacks.train_heartbeat import (
+            HeartbeatDataCollator,
+            TrainHeartbeatCallback,
+            TrainHeartbeatWriter,
+        )
+
+        rank_s = str(os.environ.get("RANK", "0") or "0")
+        output_dir_for_heartbeat = Path(str(getattr(train_args, "output_dir", ".") or "."))
+        heartbeat_path = output_dir_for_heartbeat / f"train_heartbeat.rank{rank_s}.jsonl"
+        heartbeat_writer = TrainHeartbeatWriter(path=heartbeat_path, enabled=True)
+        heartbeat_writer.emit("heartbeat_enabled", rank=rank_s)
+        data_collator = HeartbeatDataCollator(data_collator, writer=heartbeat_writer)
+        heartbeat_callback = TrainHeartbeatCallback(heartbeat_writer)
+        logger.info("Train heartbeat enabled: %s", str(heartbeat_path))
+
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
     if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
@@ -1344,8 +1395,10 @@ def main():
             {},
         )
 
-    # Add SaveDelayCallback if save_delay_steps is configured
+    # Add callbacks (including optional heartbeat instrumentation for debug/smokes).
     callbacks = sft.callbacks.copy() if sft.callbacks else []
+    if heartbeat_callback is not None:
+        callbacks.append(heartbeat_callback)
     if curriculum_scheduler is not None and curriculum_state is not None:
         from .callbacks.augmentation_curriculum import (
             AugmentationCurriculumCallback,
@@ -1389,6 +1442,8 @@ def main():
     trainer_kwargs = (
         sft._get_trainer_kwargs() if hasattr(sft, "_get_trainer_kwargs") else {}
     )
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("trainer_init_start")
     trainer = trainer_cls(
         model=sft.model,
         args=train_args.training_args,
@@ -1399,6 +1454,8 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("trainer_init_done")
     # Rollout-matching evaluators emit rollout/* metrics only.
     # Guard against inherited defaults like eval_token_acc, which would crash
     # best-checkpoint selection at evaluation time.
@@ -1593,72 +1650,108 @@ def main():
         is_rank0 = True
 
     if is_rank0:
+        out_dir = getattr(train_args, "output_dir", None)
+        written = None
+        if out_dir:
+            # ------------------------------------------------------------------
+            # Required run manifest files (fail-fast)
+            # ------------------------------------------------------------------
+            from src.utils.run_manifest import write_run_manifest_files
+
+            written = write_run_manifest_files(
+                output_dir=Path(str(out_dir)),
+                training_config=training_config,
+                config_path=str(getattr(args, "config", "") or ""),
+                base_config_path=str(getattr(args, "base_config", "") or "")
+                if getattr(args, "base_config", None)
+                else None,
+                dataset_seed=dataset_seed,
+            )
+            logger.info(
+                "Wrote run manifest files: %s",
+                ", ".join(f"{k}={v}" for k, v in sorted(written.items())),
+            )
+
+        # ------------------------------------------------------------------
+        # Required run metadata (fail-fast): git + upstream provenance
+        # ------------------------------------------------------------------
+        if not out_dir:
+            raise ValueError("train_args.output_dir is not set; cannot write run metadata")
+
+        repo_root = Path(__file__).resolve().parents[1]
+
+        def _git(*argv: str) -> str:
+            return subprocess.check_output(
+                ["git", *argv],
+                cwd=str(repo_root),
+                stderr=subprocess.STDOUT,
+                text=True,
+            ).strip()
+
+        git_sha = None
+        git_branch = None
+        git_dirty = None
+        status_lines = []
         try:
-            out_dir = getattr(train_args, "output_dir", None)
-            if out_dir:
-                repo_root = Path(__file__).resolve().parents[1]
+            git_sha = _git("rev-parse", "HEAD")
+            git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+            status = _git("status", "--porcelain")
+            status_lines = [line for line in status.splitlines() if line.strip()]
+            git_dirty = bool(status_lines)
+        except Exception:
+            git_sha = None
+            git_branch = None
+            git_dirty = None
+            status_lines = []
 
-                def _git(*argv: str) -> str:
-                    return subprocess.check_output(
-                        ["git", *argv],
-                        cwd=str(repo_root),
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                    ).strip()
+        meta = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "config": str(getattr(args, "config", "") or ""),
+            "base_config": str(getattr(args, "base_config", "") or ""),
+            "run_name": str(getattr(train_args, "run_name", "") or ""),
+            "output_dir": str(out_dir),
+            "git_sha": git_sha,
+            "git_branch": git_branch,
+            "git_dirty": git_dirty,
+            "git_status_porcelain": status_lines[:200],
+            "dataset_seed": dataset_seed,
+            "upstream": _collect_dependency_provenance(),
+        }
 
-                git_sha = None
-                git_branch = None
-                git_dirty = None
-                status_lines = []
-                try:
-                    git_sha = _git("rev-parse", "HEAD")
-                    git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-                    status = _git("status", "--porcelain")
-                    status_lines = [
-                        line for line in status.splitlines() if line.strip()
-                    ]
-                    git_dirty = bool(status_lines)
-                except Exception:
-                    git_sha = None
-                    git_branch = None
-                    git_dirty = None
-                    status_lines = []
+        if written is not None:
+            meta["run_manifest_files"] = dict(written)
 
-                meta = {
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "config": str(getattr(args, "config", "") or ""),
-                    "base_config": str(getattr(args, "base_config", "") or ""),
-                    "run_name": str(getattr(train_args, "run_name", "") or ""),
-                    "output_dir": str(out_dir),
-                    "git_sha": git_sha,
-                    "git_branch": git_branch,
-                    "git_dirty": git_dirty,
-                    "git_status_porcelain": status_lines[:200],
-                    "dataset_seed": dataset_seed,
-                    "upstream": _collect_dependency_provenance(),
-                }
+        launcher_meta = _collect_launcher_metadata_from_env()
+        if launcher_meta:
+            meta["launcher"] = launcher_meta
 
-                launcher_meta = _collect_launcher_metadata_from_env()
-                if launcher_meta:
-                    meta["launcher"] = launcher_meta
+        out_path = Path(str(out_dir)) / "run_metadata.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        logger.info("Wrote run metadata: %s", str(out_path))
 
-                out_path = Path(str(out_dir)) / "run_metadata.json"
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(
-                    json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-                logger.info("Wrote run metadata: %s", str(out_path))
-        except Exception as exc:
-            logger.warning("Failed to write run metadata: %s", exc)
-
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("train_call_enter")
     try:
         sft.train(trainer)
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_return")
     except torch.cuda.OutOfMemoryError:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_oom")
         debug_info = getattr(dataset, "last_sample_debug", None)
         logger.error(f"CUDA OOM encountered. Last sample debug: {debug_info}")
         raise
+    except Exception as exc:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_exception", exc_type=type(exc).__name__)
+        raise
     finally:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_finally")
         # Explicit cleanup to prevent DeepSpeed cleanup errors during GC
         # This addresses a known DeepSpeed issue where __del__ can fail
         # when accessing bf16_groups that are already partially destroyed

@@ -105,7 +105,7 @@ def _segm_iou(
             rle_b = maskUtils.merge(rle_b)
         ious = maskUtils.iou([rle_a], [rle_b], [0])
         return float(ious[0][0]) if ious.size else 0.0
-    except Exception:
+    except (IndexError, TypeError, ValueError, RuntimeError):
         return 0.0
 
 
@@ -790,7 +790,7 @@ def _draw_overlays(
         import matplotlib.patches as patches
         import matplotlib.pyplot as plt
         from PIL import Image
-    except Exception as exc:
+    except (ImportError, OSError) as exc:
         logger.warning("Overlay rendering skipped (missing matplotlib/PIL): %s", exc)
         return
 
@@ -803,7 +803,7 @@ def _draw_overlays(
             continue
         try:
             img = Image.open(img_path).convert("RGB")
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("Overlay skipped: failed to load %s (%s)", img_path, exc)
             continue
 

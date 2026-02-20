@@ -170,7 +170,7 @@ def detect_mode_from_gt(
                 continue
             try:
                 rec = json.loads(line)
-            except Exception:
+            except json.JSONDecodeError:
                 continue
             if not isinstance(rec, dict):
                 continue
@@ -180,7 +180,7 @@ def detect_mode_from_gt(
             try:
                 width_i = int(width)
                 height_i = int(height)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if width_i <= 0 or height_i <= 0:
                 continue
@@ -590,6 +590,7 @@ class InferenceEngine:
             return []
 
         # Best-effort batched generate; fall back to per-sample generation on error.
+        out: List[GenerationResult] = []
         try:
             messages = [self._build_messages(img) for img in images]
             prompt_texts = [
@@ -628,7 +629,7 @@ class InferenceEngine:
             with torch.inference_mode():
                 gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
 
-            out: List[GenerationResult] = []
+            out = []
             for i in range(len(images)):
                 prompt_len = int(prompt_lens[i])
                 gen_only = gen_ids[i, prompt_len:]
@@ -638,17 +639,18 @@ class InferenceEngine:
                     clean_up_tokenization_spaces=False,
                 )
                 out.append(GenerationResult(text=raw_text, error=None))
-            return out
-        except Exception:
-            out: List[GenerationResult] = []
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "HF batched generate failed; falling back to per-sample generation: %r",
+                exc,
+            )
+            out = []
             for img in images:
                 try:
-                    out.append(
-                        GenerationResult(text=self._generate_hf(img), error=None)
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    out.append(GenerationResult(text="", error=exc))
-            return out
+                    out.append(GenerationResult(text=self._generate_hf(img), error=None))
+                except Exception as per_exc:  # noqa: BLE001
+                    out.append(GenerationResult(text="", error=per_exc))
+        return out
 
     def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
         if not images:
@@ -864,7 +866,7 @@ class InferenceEngine:
         try:
             import base64
             import io
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:
             return [GenerationResult(text="", error=exc) for _ in images]
 
         system_prompt, user_prompt = get_template_prompts(
@@ -897,10 +899,18 @@ class InferenceEngine:
             )
 
         sp = self._vllm_sampling_params()
+        outs = None
+        chat_exc: Optional[Exception] = None
         try:
             outs = self.vllm_llm.chat(msg_batch, sampling_params=sp, use_tqdm=False)
         except Exception as exc:  # noqa: BLE001
-            return [GenerationResult(text="", error=exc) for _ in images]
+            chat_exc = exc
+            outs = None
+
+        if outs is None:
+            if chat_exc is None:
+                chat_exc = RuntimeError("vLLM local chat() produced no outputs")
+            return [GenerationResult(text="", error=chat_exc) for _ in images]
 
         results: List[GenerationResult] = []
         for o in outs:
@@ -988,7 +998,7 @@ class InferenceEngine:
         img_path = self._resolve_image_path(jsonl_path, images[0])
         try:
             image = Image.open(img_path).convert("RGB")
-        except Exception:
+        except (OSError, ValueError):
             return img_path, None
         return img_path, image
 
@@ -1139,7 +1149,7 @@ class InferenceEngine:
                 counters.total_read += 1
                 try:
                     record = json.loads(line)
-                except Exception:
+                except json.JSONDecodeError:
                     counters.add("invalid_json")
                     continue
 

@@ -225,7 +225,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def convert_record_to_ints(record: dict, keys: Iterable[str], *, assume_normalized: bool) -> dict:
+def convert_record_to_ints(
+    record: dict,
+    keys: Iterable[str],
+    *,
+    assume_normalized: bool,
+    stats: dict | None = None,
+) -> dict:
     """Return a record with geometry normalized to norm1000 ints."""
     objects = record.get("objects") or []
     width = record.get("width")
@@ -240,8 +246,14 @@ def convert_record_to_ints(record: dict, keys: Iterable[str], *, assume_normaliz
     # after normalization. This should be extremely rare after the stricter
     # bbox normalization above, but keeps the pipeline "paper-ready".
     out_objects = []
+    objects_seen = 0
+    objects_written = 0
+    objects_dropped_non_dict = 0
+    objects_dropped_invalid_bbox = 0
     for obj in objects:
+        objects_seen += 1
         if not isinstance(obj, dict):
+            objects_dropped_non_dict += 1
             continue
 
         obj_out = obj
@@ -264,13 +276,25 @@ def convert_record_to_ints(record: dict, keys: Iterable[str], *, assume_normaliz
             b = obj_out["bbox_2d"]
             if isinstance(b, list) and len(b) == 4 and (int(b[2]) > int(b[0])) and (int(b[3]) > int(b[1])):
                 out_objects.append(obj_out)
+                objects_written += 1
             else:
                 # Drop invalid bbox objects to keep downstream validator/train happy.
+                objects_dropped_invalid_bbox += 1
                 continue
         else:
             out_objects.append(obj_out)
+            objects_written += 1
 
     record["objects"] = out_objects
+    if stats is not None:
+        stats["objects_seen"] = int(stats.get("objects_seen", 0)) + int(objects_seen)
+        stats["objects_written"] = int(stats.get("objects_written", 0)) + int(objects_written)
+        stats["objects_dropped_non_dict"] = int(
+            stats.get("objects_dropped_non_dict", 0)
+        ) + int(objects_dropped_non_dict)
+        stats["objects_dropped_invalid_bbox"] = int(
+            stats.get("objects_dropped_invalid_bbox", 0)
+        ) + int(objects_dropped_invalid_bbox)
     return record
 
 

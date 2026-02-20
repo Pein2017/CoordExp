@@ -158,6 +158,23 @@ def build_stage2_launcher_preflight(
     train_jsonl_path = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
     root_image_dir = train_jsonl_path.parent
 
+    val_jsonl_raw = getattr(training_config.custom, "val_jsonl", None)
+    val_jsonl_path = None
+    if isinstance(val_jsonl_raw, str) and val_jsonl_raw.strip():
+        val_jsonl_path = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
+
+    max_pixels_raw = training_config.template.get("max_pixels")
+    if max_pixels_raw is None:
+        raise ValueError(
+            "template.max_pixels must be set for Stage-2 preflight (we treat it as a hard input constraint)."
+        )
+    try:
+        template_max_pixels = int(max_pixels_raw)
+    except Exception as exc:
+        raise TypeError("template.max_pixels must be an int") from exc
+    if template_max_pixels <= 0:
+        raise ValueError("template.max_pixels must be > 0")
+
     vllm_cfg = _extract_required_mapping(rollout_cfg, "rollout_matching.vllm")
     max_model_len_raw = vllm_cfg.get("max_model_len")
     if max_model_len_raw is None:
@@ -201,6 +218,9 @@ def build_stage2_launcher_preflight(
         "vllm_mode": rollout_contract["vllm_mode"],
         "server_base_urls": server_base_urls,
         "server_model": model_path,
+        "train_jsonl_resolved": str(train_jsonl_path),
+        "val_jsonl_resolved": "" if val_jsonl_path is None else str(val_jsonl_path),
+        "template_max_pixels": template_max_pixels,
         "root_image_dir_resolved": str(root_image_dir),
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
