@@ -41,7 +41,7 @@ def build_batch_extras_collator(
         instab_enabled = bool(instability_monitor_cfg.get("enabled", False))
         try:
             max_meta_samples = int(instability_monitor_cfg.get("max_meta_samples", 16))
-        except Exception:
+        except (TypeError, ValueError):
             max_meta_samples = 16
         max_meta_samples = max(0, max_meta_samples)
 
@@ -61,21 +61,15 @@ def build_batch_extras_collator(
         meta = meta_enricher(batch=batch, collated=collated)
 
         if instab_enricher is not None:
-            try:
-                instab_enricher(batch=batch, collated=collated, packed=meta.packed)
-            except Exception:
-                raise
+            instab_enricher(batch=batch, collated=collated, packed=meta.packed)
 
         if token_type_enricher is not None:
-            try:
-                token_type_enricher(
-                    collated=collated,
-                    raw_batch=batch,
-                    dataset_labels=meta.dataset_labels,
-                    packed=meta.packed,
-                )
-            except Exception:
-                raise
+            token_type_enricher(
+                collated=collated,
+                raw_batch=batch,
+                dataset_labels=meta.dataset_labels,
+                packed=meta.packed,
+            )
 
         return collated
 

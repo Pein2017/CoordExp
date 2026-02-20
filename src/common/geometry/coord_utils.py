@@ -45,7 +45,7 @@ def decode_coord(value: Any) -> int | None:
         return v if value_in_coord_range(v) else None
     try:
         v = int(round(float(value)))
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
     return v if 0 <= v <= MAX_BIN else None
 
@@ -166,7 +166,7 @@ def coerce_point_list(pts_raw: Iterable[Any]) -> Tuple[List[float] | None, bool]
             continue
         try:
             numeric.append(float(p))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None, had_tokens
     return numeric, had_tokens
 

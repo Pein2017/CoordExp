@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 def _load_yaml(path: Path) -> Dict[str, Any]:
     try:
         import yaml
-    except Exception as exc:  # noqa: BLE001
+    except ImportError as exc:
         raise RuntimeError(
             "YAML config requires PyYAML (import yaml). Install it in the ms env."
         ) from exc
@@ -93,7 +93,7 @@ def _get_int(cfg: Mapping[str, Any], key: str, default: int) -> int:
     val = cfg.get(key, default)
     try:
         return int(val)
-    except Exception as exc:  # noqa: BLE001
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"{key} must be an int") from exc
 
 
@@ -571,7 +571,7 @@ def _run_infer_stage(
             return float(default)
         try:
             return float(val)
-        except Exception as exc:  # noqa: BLE001
+        except (TypeError, ValueError) as exc:
             raise ValueError(f"infer.generation.{key} must be a float") from exc
 
     def _i(key: str, default: int) -> int:
@@ -580,7 +580,7 @@ def _run_infer_stage(
             return int(default)
         try:
             return int(val)
-        except Exception as exc:  # noqa: BLE001
+        except (TypeError, ValueError) as exc:
             raise ValueError(f"infer.generation.{key} must be an int") from exc
 
     seed_val = gen_cfg_map.get("seed", None)

@@ -13,8 +13,7 @@ logger = get_logger(__name__)
 
 
 def detect_aligner_modules(model: nn.Module) -> List[str]:
-    """
-    Auto-detect aligner module names from a Qwen3-VL model.
+    """Auto-detect aligner module names from a Qwen3-VL model.
 
     Works for any model size (2B, 4B, 8B, etc.) by introspecting the model structure.
 
@@ -31,28 +30,19 @@ def detect_aligner_modules(model: nn.Module) -> List[str]:
         >>> print(aligners)
         ['model.visual.merger', 'model.visual.deepstack_merger_list.0', ...]
     """
-    aligner_modules = []
+    if not hasattr(model, "model") or not hasattr(model.model, "visual"):
+        return []
 
-    try:
-        # Check if model has visual component
-        if not hasattr(model, "model") or not hasattr(model.model, "visual"):
-            return []
+    visual = model.model.visual
+    aligner_modules: List[str] = []
 
-        visual = model.model.visual
+    if hasattr(visual, "merger"):
+        aligner_modules.append("model.visual.merger")
 
-        # Detect merger (single module)
-        if hasattr(visual, "merger"):
-            aligner_modules.append("model.visual.merger")
-
-        # Detect deepstack_merger_list (ModuleList)
-        if hasattr(visual, "deepstack_merger_list"):
-            merger_list = visual.deepstack_merger_list
-            if isinstance(merger_list, nn.ModuleList):
-                for i in range(len(merger_list)):
-                    aligner_modules.append(f"model.visual.deepstack_merger_list.{i}")
-
-    except Exception as e:
-        logger.warning(f"Could not auto-detect aligners: {e}")
+    merger_list = getattr(visual, "deepstack_merger_list", None)
+    if isinstance(merger_list, nn.ModuleList):
+        for i in range(len(merger_list)):
+            aligner_modules.append(f"model.visual.deepstack_merger_list.{i}")
 
     return aligner_modules
 
@@ -172,7 +162,7 @@ if __name__ == "__main__":
             logger.info("\n")
             print_model_structure(model, max_depth=2)
 
-    except Exception as e:
+    except (ImportError, OSError, RuntimeError, ValueError) as e:
         logger.error(f"Error loading model: {e}")
         import traceback
 

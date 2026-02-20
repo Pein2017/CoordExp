@@ -21,7 +21,7 @@ _EMPTY_PREFIX_TEXT = '{"objects": ['
 def coerce_int(value: Any) -> Optional[int]:
     try:
         v = int(round(float(value)))
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
     if not value_in_coord_range(v):
         return None
@@ -323,7 +323,7 @@ def serialize_append_fragment(
             mode="strict",
             object_field_order=resolved_field_order,
         )
-    except Exception:
+    except ValueError:
         pass
     else:
         raise ValueError("rollout prefix is already a closed CoordJSON container")

@@ -89,17 +89,14 @@ def _mask_iou_norm1000(
     if len(p_poly) < 6 or len(g_poly) < 6:
         return 0.0
 
-    try:
-        rle_p = maskUtils.frPyObjects([p_poly], r, r)
-        rle_g = maskUtils.frPyObjects([g_poly], r, r)
-        if isinstance(rle_p, list):
-            rle_p = maskUtils.merge(rle_p)
-        if isinstance(rle_g, list):
-            rle_g = maskUtils.merge(rle_g)
-        ious = maskUtils.iou([rle_p], [rle_g], [0])
-        return float(ious[0][0]) if getattr(ious, "size", 0) else 0.0
-    except Exception:
-        return 0.0
+    rle_p = maskUtils.frPyObjects([p_poly], r, r)
+    rle_g = maskUtils.frPyObjects([g_poly], r, r)
+    if isinstance(rle_p, list):
+        rle_p = maskUtils.merge(rle_p)
+    if isinstance(rle_g, list):
+        rle_g = maskUtils.merge(rle_g)
+    ious = maskUtils.iou([rle_p], [rle_g], [0])
+    return float(ious[0][0]) if getattr(ious, "size", 0) else 0.0
 
 
 def hungarian_match_maskiou(

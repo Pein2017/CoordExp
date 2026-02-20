@@ -29,12 +29,9 @@ class GradAccumLossScaleMixin:
     ):
         # Pop known batch-extras once (Stage-1 / standard SFT). They are diagnostics-only
         # fields and MUST NOT be forwarded into model(**inputs).
-        try:
-            from src.trainers.batch_extras import pop_and_stash_batch_extras
+        from src.trainers.batch_extras import pop_and_stash_batch_extras
 
-            pop_and_stash_batch_extras(self, inputs)
-        except Exception:
-            raise
+        pop_and_stash_batch_extras(self, inputs)
 
         loss, outputs = super().compute_loss(  # type: ignore[misc]
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
@@ -42,28 +39,25 @@ class GradAccumLossScaleMixin:
 
         # Log a few optimizer/runtime scalars as *metrics* so eval logs include them
         # (ms-swift only injects learning_rate/grad_norm into train logs by default).
-        try:
-            from src.metrics.reporter import SwiftMetricReporter, best_effort
+        from src.metrics.reporter import SwiftMetricReporter, best_effort
 
-            reporter = SwiftMetricReporter(self)
+        reporter = SwiftMetricReporter(self)
 
-            def _log_runtime_metrics() -> None:
-                lr_fn = getattr(self, "_get_learning_rate", None)
-                if callable(lr_fn):
-                    reporter.update("learning_rate", float(lr_fn()))
+        def _log_runtime_metrics() -> None:
+            lr_fn = getattr(self, "_get_learning_rate", None)
+            if callable(lr_fn):
+                reporter.update("learning_rate", float(lr_fn()))
 
-                args = getattr(self, "args", None)
-                gas = getattr(args, "gradient_accumulation_steps", None)
-                if gas is not None:
-                    reporter.update("accum/grad_steps", float(gas))
+            args = getattr(self, "args", None)
+            gas = getattr(args, "gradient_accumulation_steps", None)
+            if gas is not None:
+                reporter.update("accum/grad_steps", float(gas))
 
-                cur_gas = getattr(self, "current_gradient_accumulation_steps", None)
-                if cur_gas is not None:
-                    reporter.update("accum/current_grad_steps", float(cur_gas))
+            cur_gas = getattr(self, "current_gradient_accumulation_steps", None)
+            if cur_gas is not None:
+                reporter.update("accum/current_grad_steps", float(cur_gas))
 
-            best_effort(self, name="runtime_metrics", fn=_log_runtime_metrics)
-        except Exception:
-            raise
+        best_effort(self, name="runtime_metrics", fn=_log_runtime_metrics)
 
         return (loss, outputs) if return_outputs else loss
 
@@ -86,15 +80,10 @@ class AggregateTokenTypeMetricsMixin:
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         # Ensure batch-extras are stripped before model forward (Stage-1).
-        token_types = None
-        try:
-            from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
+        from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
-            extras = maybe_pop_and_stash_batch_extras(self, inputs)
-            token_types = extras.token_types
-        except Exception:
-            # Best-effort only; never block training.
-            token_types = None
+        extras = maybe_pop_and_stash_batch_extras(self, inputs)
+        token_types = getattr(extras, "token_types", None)
 
         # Snapshot labels before downstream mixins mutate them (e.g., coord loss masking).
         labels_for_metrics = inputs.get("labels") if isinstance(inputs, dict) else None
@@ -103,17 +92,14 @@ class AggregateTokenTypeMetricsMixin:
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
         )
 
-        try:
-            from src.metrics.reporter import best_effort
+        from src.metrics.reporter import best_effort
 
-            best_effort(
-                self,
-                name="aggregate_token_metrics",
-                fn=lambda: self._log_aggregate_metrics(outputs, labels_for_metrics, token_types),
-            )
-            best_effort(self, name="dataset_metric_key_sync", fn=self._sync_dataset_metrics)
-        except Exception:
-            raise
+        best_effort(
+            self,
+            name="aggregate_token_metrics",
+            fn=lambda: self._log_aggregate_metrics(outputs, labels_for_metrics, token_types),
+        )
+        best_effort(self, name="dataset_metric_key_sync", fn=self._sync_dataset_metrics)
 
         return (loss, outputs) if return_outputs else loss
 
@@ -135,18 +121,13 @@ class AggregateTokenTypeMetricsMixin:
         log_top5 = True
         coord_monitor_mass = True
         coord_monitor_mass_max_tokens = 0
-        try:
-            if cfg is not None:
-                log_top5 = bool(getattr(cfg, "log_top5", True))
-                coord_monitor_mass = bool(getattr(cfg, "coord_monitor_mass", True))
-                coord_monitor_mass_max_tokens = int(
-                    getattr(cfg, "coord_monitor_mass_max_tokens", 0) or 0
-                )
-                coord_monitor_mass_max_tokens = max(0, coord_monitor_mass_max_tokens)
-        except Exception:
-            log_top5 = True
-            coord_monitor_mass = True
-            coord_monitor_mass_max_tokens = 0
+        if cfg is not None:
+            log_top5 = bool(getattr(cfg, "log_top5", True))
+            coord_monitor_mass = bool(getattr(cfg, "coord_monitor_mass", True))
+            coord_monitor_mass_max_tokens = int(
+                getattr(cfg, "coord_monitor_mass_max_tokens", 0) or 0
+            )
+            coord_monitor_mass_max_tokens = max(0, coord_monitor_mass_max_tokens)
 
         from src.metrics.aggregate_token_metrics import (
             build_next_token_batch,
@@ -206,12 +187,9 @@ class AggregateTokenTypeMetricsMixin:
 
             # Use the same temperature as coord_soft_ce_w1 if available for comparability.
             temperature = 1.0
-            try:
-                coord_cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
-                if coord_cfg is not None:
-                    temperature = float(getattr(coord_cfg, "temperature", 1.0))
-            except Exception:
-                temperature = 1.0
+            coord_cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+            if coord_cfg is not None:
+                temperature = float(getattr(coord_cfg, "temperature", 1.0))
 
             from src.metrics.coord_monitors import (
                 compute_coord_flip_and_mass_metrics,
@@ -325,12 +303,9 @@ class CoordSoftCEW1LossMixin:
         self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
     ):
         # Ensure batch-extras are stripped before model forward.
-        try:
-            from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
+        from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
-            maybe_pop_and_stash_batch_extras(self, inputs)
-        except Exception:
-            raise
+        maybe_pop_and_stash_batch_extras(self, inputs)
 
         cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
         if cfg is None or not getattr(cfg, "enabled", False):
@@ -364,20 +339,17 @@ class CoordSoftCEW1LossMixin:
         inputs["labels"] = masked_labels
 
         passed_num_items = num_items_in_batch
-        try:
-            # Swift/Transformers may call `compute_loss(..., num_items_in_batch=...)` where
-            # `num_items_in_batch` is the *number of sequences* in the micro-batch (e.g. 1),
-            # not the number of supervised tokens. In that case, upstream may rescale the
-            # model's per-token mean loss by (token_count / num_items_in_batch), effectively
-            # turning it into a token-sum and making the logged loss depend on packing length.
-            #
-            # For Stage-1 (Scheme A), we want all loss terms to be mean-normalized:
-            #   - base CE: mean over *non-coord* supervised tokens (coord targets are masked)
-            #   - coord loss: mean over coord-token positions (handled below)
-            if num_items_in_batch is not None:
-                passed_num_items = self._count_supervised_tokens(masked_labels)
-        except Exception:
-            passed_num_items = num_items_in_batch
+        # Swift/Transformers may call `compute_loss(..., num_items_in_batch=...)` where
+        # `num_items_in_batch` is the *number of sequences* in the micro-batch (e.g. 1),
+        # not the number of supervised tokens. In that case, upstream may rescale the
+        # model's per-token mean loss by (token_count / num_items_in_batch), effectively
+        # turning it into a token-sum and making the logged loss depend on packing length.
+        #
+        # For Stage-1 (Scheme A), we want all loss terms to be mean-normalized:
+        #   - base CE: mean over *non-coord* supervised tokens (coord targets are masked)
+        #   - coord loss: mean over coord-token positions (handled below)
+        if num_items_in_batch is not None:
+            passed_num_items = self._count_supervised_tokens(masked_labels)
 
         loss, outputs = super().compute_loss(  # type: ignore[misc]
             model, inputs, return_outputs=True, num_items_in_batch=passed_num_items
@@ -420,32 +392,19 @@ class CoordSoftCEW1LossMixin:
             #
             # NOTE: we only do this in TRAIN mode, and only when the outer trainer did pass
             # a non-None `num_items_in_batch` (i.e. we're in the 4.57+ scaling path).
-            try:
-                if getattr(self, "model", None) is not None and bool(self.model.training):
-                    if (
-                        bool(getattr(self, "model_accepts_loss_kwargs", False))
-                        and num_items_in_batch is not None
-                        and getattr(self, "compute_loss_func", None) is None
-                    ):
-                        gas = getattr(self, "current_gradient_accumulation_steps", None)
-                        if gas is None:
-                            args = getattr(self, "args", None)
-                            gas = getattr(args, "gradient_accumulation_steps", None)
-                        gas_int = int(gas or 1)
-                        if gas_int > 1:
-                            loss = loss / float(gas_int)
-            except Exception:
-                raise
-        except Exception:
-            # Fail-fast: never silently train without coord supervision.
-            if not getattr(self, "_coord_softce_w1_error_warned", False):
-                logger.warning(
-                    "coord_soft_ce_w1 loss computation failed; aborting to avoid silently "
-                    "training without coord supervision.",
-                    exc_info=True,
-                )
-                setattr(self, "_coord_softce_w1_error_warned", True)
-            raise
+            if getattr(self, "model", None) is not None and bool(self.model.training):
+                if (
+                    bool(getattr(self, "model_accepts_loss_kwargs", False))
+                    and num_items_in_batch is not None
+                    and getattr(self, "compute_loss_func", None) is None
+                ):
+                    gas = getattr(self, "current_gradient_accumulation_steps", None)
+                    if gas is None:
+                        args = getattr(self, "args", None)
+                        gas = getattr(args, "gradient_accumulation_steps", None)
+                    gas_int = int(gas or 1)
+                    if gas_int > 1:
+                        loss = loss / float(gas_int)
         finally:
             inputs["labels"] = labels_orig
             setattr(self, "_coordexp_labels_for_acc", None)
@@ -478,44 +437,41 @@ class CoordSoftCEW1LossMixin:
 
         reporter.update("base_ce/loss", float(loss_base.detach().cpu().item()))
 
-        try:
-            noncoord_tokens = int((masked_labels[:, 1:] != -100).sum().detach().item())
-            reporter.update("base_ce/noncoord_tokens", float(noncoord_tokens))
+        noncoord_tokens = int((masked_labels[:, 1:] != -100).sum().detach().item())
+        reporter.update("base_ce/noncoord_tokens", float(noncoord_tokens))
 
-            # Per-sample normalization for packed runs: interpret a "unit" as a pack of N samples.
-            # This is a logging-only helper (does not affect optimization).
-            total_samples = None
-            pack_n = getattr(self, "_coordexp_pack_num_samples", None)
-            if isinstance(pack_n, torch.Tensor):
-                total_samples = float(pack_n.detach().sum().cpu().item())
-            elif isinstance(pack_n, (list, tuple)):
-                try:
-                    total_samples = float(sum(int(v) for v in pack_n))
-                except Exception:
-                    total_samples = None
-            elif isinstance(pack_n, (int, float)):
-                total_samples = float(pack_n)
-            if total_samples is None:
-                total_samples = float(masked_labels.shape[0])
-            total_samples = max(1.0, float(total_samples))
+        # Per-sample normalization for packed runs: interpret a "unit" as a pack of N samples.
+        # This is a logging-only helper (does not affect optimization).
+        total_samples = None
+        pack_n = getattr(self, "_coordexp_pack_num_samples", None)
+        if isinstance(pack_n, torch.Tensor):
+            total_samples = float(pack_n.detach().sum().cpu().item())
+        elif isinstance(pack_n, (list, tuple)):
+            try:
+                total_samples = float(sum(int(v) for v in pack_n))
+            except (TypeError, ValueError):
+                total_samples = None
+        elif isinstance(pack_n, (int, float)):
+            total_samples = float(pack_n)
+        if total_samples is None:
+            total_samples = float(masked_labels.shape[0])
+        total_samples = max(1.0, float(total_samples))
 
-            reporter.update("pack/num_samples", float(total_samples))
-            reporter.update(
-                "base_ce/noncoord_tokens_per_sample",
-                float(noncoord_tokens) / float(total_samples),
-            )
+        reporter.update("pack/num_samples", float(total_samples))
+        reporter.update(
+            "base_ce/noncoord_tokens_per_sample",
+            float(noncoord_tokens) / float(total_samples),
+        )
 
-            loss_per_sample = (
-                float(loss_base.detach().cpu().item())
-                * float(noncoord_tokens)
-                / float(total_samples)
-            )
-            reporter.update("base_ce/loss_per_sample", float(loss_per_sample))
+        loss_per_sample = (
+            float(loss_base.detach().cpu().item())
+            * float(noncoord_tokens)
+            / float(total_samples)
+        )
+        reporter.update("base_ce/loss_per_sample", float(loss_per_sample))
 
-            # Stash for the stage1 total-per-sample estimate (logged from coord loss block).
-            setattr(self, "_coordexp_last_base_loss_per_sample", float(loss_per_sample))
-        except Exception:
-            raise
+        # Stash for the stage1 total-per-sample estimate (logged from coord loss block).
+        setattr(self, "_coordexp_last_base_loss_per_sample", float(loss_per_sample))
 
     def _maybe_add_coord_softce_w1_loss(
         self,
@@ -553,7 +509,7 @@ class CoordSoftCEW1LossMixin:
         try:
             acc = getattr(self, "accelerator", None)
             acc_num_proc = int(getattr(acc, "num_processes", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             acc_num_proc = None
 
         from src.trainers.losses.coord_soft_ce_w1 import compute_coord_soft_ce_w1_loss
@@ -573,15 +529,11 @@ class CoordSoftCEW1LossMixin:
         if result is None:
             return loss
 
-        # Diagnostics-only: never block training.
-        try:
-            self._log_coord_softce_w1_metrics(
-                reporter=reporter,
-                result=result,
-                batch_size=int(labels.shape[0]),
-            )
-        except Exception:
-            raise
+        self._log_coord_softce_w1_metrics(
+            reporter=reporter,
+            result=result,
+            batch_size=int(labels.shape[0]),
+        )
 
         return loss + result.coord_loss.to(dtype=loss.dtype)
 
@@ -605,7 +557,9 @@ class CoordSoftCEW1LossMixin:
 
         reporter.update("coord_softce_w1/loss", float(loss_total.detach().cpu().item()))
         if isinstance(loss_softce, torch.Tensor):
-            reporter.update("coord_softce_w1/soft_ce", float(loss_softce.detach().cpu().item()))
+            reporter.update(
+                "coord_softce_w1/soft_ce", float(loss_softce.detach().cpu().item())
+            )
         if isinstance(loss_w1, torch.Tensor):
             reporter.update("coord_softce_w1/w1", float(loss_w1.detach().cpu().item()))
         if isinstance(loss_ce, torch.Tensor):
@@ -630,7 +584,9 @@ class CoordSoftCEW1LossMixin:
 
         gate_mass_mean = getattr(result, "gate_mass_mean", None)
         if isinstance(gate_mass_mean, torch.Tensor):
-            reporter.update("coord_diag/coord_vocab_mass", float(gate_mass_mean.detach().cpu().item()))
+            reporter.update(
+                "coord_diag/coord_vocab_mass", float(gate_mass_mean.detach().cpu().item())
+            )
 
         coord_acc_top5 = getattr(result, "coord_acc_top5", None)
         if isinstance(coord_acc_top5, torch.Tensor):
@@ -642,11 +598,15 @@ class CoordSoftCEW1LossMixin:
 
         coord_margin_mean = getattr(result, "coord_margin_mean", None)
         if isinstance(coord_margin_mean, torch.Tensor):
-            reporter.update("coord_diag/margin_mean", float(coord_margin_mean.detach().cpu().item()))
+            reporter.update(
+                "coord_diag/margin_mean", float(coord_margin_mean.detach().cpu().item())
+            )
 
         coord_expected_bin_mae = getattr(result, "coord_expected_bin_mae", None)
         if isinstance(coord_expected_bin_mae, torch.Tensor):
-            reporter.update("coord_diag/expected_bin_mae", float(coord_expected_bin_mae.detach().cpu().item()))
+            reporter.update(
+                "coord_diag/expected_bin_mae", float(coord_expected_bin_mae.detach().cpu().item())
+            )
 
         coord_expected_bin_abs_err_p90 = getattr(result, "coord_expected_bin_abs_err_p90", None)
         if isinstance(coord_expected_bin_abs_err_p90, torch.Tensor):
@@ -660,38 +620,33 @@ class CoordSoftCEW1LossMixin:
             reporter.update("coord_diag/w1_to_delta", float(coord_w1_to_delta.detach().cpu().item()))
 
         # Per-sample normalization (packed units).
-        try:
-            total_samples = None
-            pack_n = getattr(self, "_coordexp_pack_num_samples", None)
-            if isinstance(pack_n, torch.Tensor):
-                total_samples = float(pack_n.detach().sum().cpu().item())
-            elif isinstance(pack_n, (list, tuple)):
-                total_samples = float(sum(int(v) for v in pack_n))
-            elif isinstance(pack_n, (int, float)):
-                total_samples = float(pack_n)
-            if total_samples is None:
-                total_samples = float(batch_size)
-            total_samples = max(1.0, float(total_samples))
+        total_samples = None
+        pack_n = getattr(self, "_coordexp_pack_num_samples", None)
+        if isinstance(pack_n, torch.Tensor):
+            total_samples = float(pack_n.detach().sum().cpu().item())
+        elif isinstance(pack_n, (list, tuple)):
+            total_samples = float(sum(int(v) for v in pack_n))
+        elif isinstance(pack_n, (int, float)):
+            total_samples = float(pack_n)
+        if total_samples is None:
+            total_samples = float(batch_size)
+        total_samples = max(1.0, float(total_samples))
 
+        reporter.update(
+            "coord_diag/coord_tokens_per_sample",
+            float(coord_tokens) / float(total_samples),
+        )
+        coord_loss_per_sample = (
+            float(loss_total.detach().cpu().item()) * float(coord_tokens) / float(total_samples)
+        )
+        reporter.update("coord_diag/loss_per_sample", float(coord_loss_per_sample))
+
+        base_loss_per_sample = getattr(self, "_coordexp_last_base_loss_per_sample", None)
+        if isinstance(base_loss_per_sample, (int, float)):
             reporter.update(
-                "coord_diag/coord_tokens_per_sample",
-                float(coord_tokens) / float(total_samples),
+                "stage1/total_loss_per_sample_est",
+                float(base_loss_per_sample) + float(coord_loss_per_sample),
             )
-            coord_loss_per_sample = (
-                float(loss_total.detach().cpu().item())
-                * float(coord_tokens)
-                / float(total_samples)
-            )
-            reporter.update("coord_diag/loss_per_sample", float(coord_loss_per_sample))
-
-            base_loss_per_sample = getattr(self, "_coordexp_last_base_loss_per_sample", None)
-            if isinstance(base_loss_per_sample, (int, float)):
-                reporter.update(
-                    "stage1/total_loss_per_sample_est",
-                    float(base_loss_per_sample) + float(coord_loss_per_sample),
-                )
-        except Exception:
-            raise
 
     def _coord_vocab_gate_loss(
         self,

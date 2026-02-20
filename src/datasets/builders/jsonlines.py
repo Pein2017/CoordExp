@@ -24,7 +24,7 @@ def _assert_norm_range(points: Iterable[Any], geom_type: str) -> None:
     for v in points:
         try:
             fv = float(v)
-        except Exception:
+        except (TypeError, ValueError):
             raise ValueError(
                 f"{geom_type} contains a non-numeric value: {v!r}; expected pre-normalized coords in [0, 999]."
             ) from None

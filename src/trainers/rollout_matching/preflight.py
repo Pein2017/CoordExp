@@ -166,7 +166,7 @@ def build_stage2_launcher_preflight(
         )
     try:
         max_model_len = int(max_model_len_raw)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise TypeError("rollout_matching.vllm.max_model_len must be an int") from exc
     if max_model_len <= 0:
         raise ValueError("rollout_matching.vllm.max_model_len must be > 0")

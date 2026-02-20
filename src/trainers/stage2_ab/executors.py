@@ -152,11 +152,7 @@ class Stage2ABChannelExecutorsMixin:
         # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
         model.train()
 
-        packing_enabled = False
-        try:
-            packing_enabled = bool(self._packing_enabled())
-        except Exception:
-            packing_enabled = False
+        packing_enabled = bool(self._packing_enabled())
         if not packing_enabled:
             raise ValueError(
                 "stage2-ab Channel-A step mode requires training.packing=true "
@@ -292,11 +288,7 @@ class Stage2ABChannelExecutorsMixin:
         # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
         model.train()
 
-        packing_enabled = False
-        try:
-            packing_enabled = bool(self._packing_enabled())
-        except Exception:
-            packing_enabled = False
+        packing_enabled = bool(self._packing_enabled())
         if not packing_enabled:
             raise ValueError(
                 "stage2-ab Channel-B step mode currently requires training.packing=true "
@@ -320,7 +312,7 @@ class Stage2ABChannelExecutorsMixin:
                 ks = str(k)
                 try:
                     fv = float(v)  # type: ignore[arg-type]
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if ks.startswith("rollout/"):
                     rollout_static[ks] = float(fv)
@@ -454,7 +446,7 @@ class Stage2ABChannelExecutorsMixin:
             sync_fn()
 
         q: queue.Queue = queue.Queue(maxsize=1)
-        producer_exc: List[BaseException] = []
+        producer_exc: List[Exception] = []
 
         def _producer() -> None:
             prev_skip = bool(getattr(self, "_stage2_skip_vllm_server_sync", False))
@@ -466,7 +458,15 @@ class Stage2ABChannelExecutorsMixin:
                         continue
                     segs, m = self._prepare_batch_inputs_b(chunk, _segments_only=True)
                     q.put((segs, dict(m) if isinstance(m, Mapping) else {}))
-            except BaseException as exc:
+            except (
+                AttributeError,
+                IndexError,
+                KeyError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 producer_exc.append(exc)
             finally:
                 setattr(self, "_stage2_skip_vllm_server_sync", prev_skip)
@@ -592,7 +592,7 @@ class Stage2ABChannelExecutorsMixin:
 
         try:
             gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             gas = 1
         gas = max(1, int(gas))
 
@@ -633,7 +633,7 @@ class Stage2ABChannelExecutorsMixin:
 
         try:
             gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             gas = 1
         gas = max(1, int(gas))
 
@@ -653,7 +653,7 @@ class Stage2ABChannelExecutorsMixin:
             target_local = (
                 int(self._stage2_b_rollouts_per_rank()) if target_global > 0 else 0
             )
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             target_global = 0
             target_local = 0
 

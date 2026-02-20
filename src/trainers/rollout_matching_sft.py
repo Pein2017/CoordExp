@@ -120,7 +120,7 @@ def _contiguous_weighted_chunk_slices(
     for i, w_raw in enumerate(weights):
         try:
             w = int(w_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError(f"weights[{int(i)}] must be an int") from exc
         if w < 0:
             raise ValueError(f"weights[{int(i)}] must be >= 0")
@@ -238,7 +238,7 @@ def _allocate_weighted_counts_with_caps(n: int, caps: Sequence[int]) -> List[int
     for idx, raw in enumerate(caps):
         try:
             c = int(raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError(f"caps[{int(idx)}] must be an int") from exc
         if c < 0:
             raise ValueError(f"caps[{int(idx)}] must be >= 0")
@@ -431,7 +431,7 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
             if isinstance(v, str) and v.startswith("<|coord_"):
                 try:
                     pts.append(int(token_to_int(v)))
-                except Exception:
+                except (TypeError, ValueError):
                     ok = False
                     break
             else:
@@ -835,7 +835,7 @@ class _AdaptiveRawMicroBatchStacker:
         # fall back to 0 (PyTorch IterableDataset semantics).
         try:
             n_micro = int(len(self.dataloader))
-        except Exception:
+        except TypeError:
             return 0
 
         # Identity collator yields raw samples; base microbatch size defaults to 1.
@@ -849,7 +849,7 @@ class _AdaptiveRawMicroBatchStacker:
                 )
                 or 1
             )
-        except Exception:
+        except (TypeError, ValueError):
             base_raw_batch_size = 1
 
         n_raw = int(n_micro) * int(base_raw_batch_size)
@@ -927,13 +927,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     # ------------------------ config helpers ------------------------ #
     def _cfg(self, key: str, default: Any) -> Any:
-        try:
-            cfg = self.rollout_matching_cfg
-            if isinstance(cfg, Mapping) and key in cfg:
-                return cfg[key]
-        except Exception:
-            raise
-        return default
+        cfg = getattr(self, "rollout_matching_cfg", None)
+        if not isinstance(cfg, Mapping):
+            return default
+        return cfg.get(str(key), default)
 
     def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:
         raw = getattr(self, "object_field_order", None)
@@ -991,7 +988,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         decode_bs_raw = cfg.get("decode_batch_size", 1)
         try:
             decode_bs = int(decode_bs_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decode_batch_size must be an int"
             ) from exc
@@ -1011,7 +1008,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Validate decoding ranges (robust defaults).
         try:
             temperature = float(dec.get("temperature", 0.0) or 0.0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.temperature must be a float"
             ) from exc
@@ -1024,7 +1021,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             top_p = float(
                 dec.get("top_p", 1.0) if dec.get("top_p", None) is not None else 1.0
             )
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.top_p must be a float"
             ) from exc
@@ -1036,7 +1033,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         top_k_raw = dec.get("top_k", -1)
         try:
             top_k = int(top_k_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.top_k must be an int"
             ) from exc
@@ -1062,7 +1059,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         temperature_raw = dec.get("temperature", 0.0)
         try:
             temperature = float(temperature_raw or 0.0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.temperature must be a float"
             ) from exc
@@ -1074,7 +1071,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         top_p_raw = dec.get("top_p", 1.0)
         try:
             top_p = float(top_p_raw if top_p_raw is not None else 1.0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.top_p must be a float"
             ) from exc
@@ -1086,7 +1083,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         top_k_raw = dec.get("top_k", -1)
         try:
             top_k = int(top_k_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "rollout_matching.decoding.top_k must be an int"
             ) from exc
@@ -1150,7 +1147,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from src.metrics.semantic_desc import SemanticDescEncoder
-        except Exception:
+        except ImportError:
             return None
 
         model_name = str(
@@ -1181,7 +1178,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if acc is not None and hasattr(acc, "is_main_process"):
             try:
                 return bool(acc.is_main_process)
-            except Exception:
+            except (TypeError, ValueError):
                 raise
         return bool(getattr(self, "is_world_process_zero", False))
 
@@ -1224,10 +1221,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @staticmethod
     def _clip_text(text: Any, *, max_chars: int) -> str:
+        s = ""
         try:
             s = str(text)
-        except Exception:
-            return ""
+        except (TypeError, ValueError):
+            s = ""
         if max_chars <= 0:
             return s
         if len(s) <= max_chars:
@@ -1267,7 +1265,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 md = self._format_monitor_dump_markdown(payload)
                 with open(md_path, "w", encoding="utf-8") as f:
                     f.write(md)
-            except Exception:
+            except (TypeError, ValueError):
                 raise
 
     def _format_monitor_dump_markdown(self, payload: Mapping[str, Any]) -> str:
@@ -1277,7 +1275,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         def _j(obj: Any) -> str:
             try:
                 return json.dumps(obj, ensure_ascii=True, indent=2)
-            except Exception:
+            except (TypeError, ValueError):
                 return "{}"
 
         lines: List[str] = []
@@ -1517,7 +1515,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             group_port_entry_raw = s.get("group_port")
             try:
                 group_port_entry = int(group_port_entry_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.server.servers[%d].group_port must be an int"
                     % int(i)
@@ -1546,7 +1544,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         else:
             try:
                 timeout_s = float(timeout_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.server.timeout_s must be a float/int"
                 ) from exc
@@ -1565,7 +1563,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
@@ -1611,13 +1609,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
             try:
                 data = _json.loads(body.decode("utf-8"))
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     f"vLLM rollout server /get_world_size/ returned non-JSON payload: {url}"
                 ) from exc
             try:
                 ws = int(data.get("world_size", 1)) if isinstance(data, dict) else 1
-            except Exception:
+            except (TypeError, ValueError):
                 ws = 1
             out.append(max(1, int(ws)))
 
@@ -1661,7 +1659,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             if dist.is_available() and dist.is_initialized():
                 learner_world = int(dist.get_world_size())
-        except Exception:
+        except (TypeError, ValueError):
             learner_world = 1
 
         if learner_world <= 0:
@@ -1732,7 +1730,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         raw = self._cfg("decode_batch_size", 1)
         try:
             v = int(raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError(
                 "rollout_matching.decode_batch_size must be an int"
             ) from exc
@@ -1748,7 +1746,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _packing_length(self) -> int:
         try:
             return int(self._cfg("packing_length", 0) or 0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError("packing_length must be an int") from exc
 
     def _assert_single_packed_forward(
@@ -1769,7 +1767,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         max_len = 0
         try:
             max_len = int(self._packing_length() or 0)
-        except Exception:
+        except (TypeError, ValueError):
             max_len = 0
         if int(max_len) > 0 and int(seq_len) > int(max_len):
             raise ValueError(
@@ -1779,13 +1777,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _packing_buffer_cap(self) -> int:
         try:
             return int(self._cfg("packing_buffer", 0) or 0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError("packing_buffer must be an int") from exc
 
     def _packing_min_fill_ratio(self) -> float:
         try:
             v = float(self._cfg("packing_min_fill_ratio", 0.65))
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError("packing_min_fill_ratio must be a float") from exc
         if not (0 < v <= 1):
             raise ValueError("packing_min_fill_ratio must be in (0, 1]")
@@ -1806,7 +1804,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 n = int(len(input_ids))
                 if n > 0:
                     return n
-            except Exception:
+            except (TypeError, ValueError):
                 raise
         raise ValueError("encoded sample is missing a valid length/input_ids")
 
@@ -1852,12 +1850,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if packing is not None:
                 try:
                     template.packing = bool(packing)
-                except Exception:
+                except (TypeError, ValueError):
                     raise
             if padding_free is not None:
                 try:
                     template.padding_free = bool(padding_free)
-                except Exception:
+                except (TypeError, ValueError):
                     raise
             if (
                 mode is not None
@@ -1867,40 +1865,40 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     if str(old_mode) != str(mode):
                         template.set_mode(str(mode))
-                except Exception:
+                except (TypeError, ValueError):
                     raise
 
             yield
         finally:
             try:
                 old_padding_free, old_packing, old_mode = stack.pop()
-            except Exception:
+            except (TypeError, ValueError):
                 old_padding_free, old_packing, old_mode = False, False, None
 
             if old_mode is not None and hasattr(template, "set_mode"):
                 try:
                     template.set_mode(old_mode)
-                except Exception:
+                except (TypeError, ValueError):
                     raise
             try:
                 template.padding_free = old_padding_free
-            except Exception:
+            except (TypeError, ValueError):
                 raise
             try:
                 template.packing = old_packing
-            except Exception:
+            except (TypeError, ValueError):
                 raise
 
             try:
                 tls.depth = int(getattr(tls, "depth", 1) or 1) - 1
-            except Exception:
+            except (TypeError, ValueError):
                 tls.depth = 0
 
             if int(getattr(tls, "depth", 0) or 0) <= 0:
                 tls.depth = 0
                 try:
                     tls.stack = []
-                except Exception:
+                except (TypeError, ValueError):
                     raise
                 if acquired:
                     lock.release()
@@ -2002,7 +2000,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             import torch.distributed as dist
-        except Exception:
+        except (TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
         world_size = 1
@@ -2059,7 +2057,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if max_num_seqs_raw is not None:
             try:
                 max_num_seqs = int(max_num_seqs_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.max_num_seqs must be an int"
                 ) from exc
@@ -2076,7 +2074,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if max_num_batched_tokens_raw is not None:
             try:
                 max_num_batched_tokens = int(max_num_batched_tokens_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.max_num_batched_tokens must be an int"
                 ) from exc
@@ -2109,7 +2107,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if "cpu_offload_gb" in vcfg and vcfg.get("cpu_offload_gb") is not None:
             try:
                 cpu_offload_gb = float(vcfg.get("cpu_offload_gb"))
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.cpu_offload_gb must be a float"
                 ) from exc
@@ -2121,7 +2119,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if "swap_space" in vcfg and vcfg.get("swap_space") is not None:
             try:
                 swap_space = float(vcfg.get("swap_space"))
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "rollout_matching.vllm.swap_space must be a float"
                 ) from exc
@@ -2147,7 +2145,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
                 try:
                     limit_parsed[k] = int(v)
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     raise ValueError(
                         "rollout_matching.vllm.limit_mm_per_prompt values must be ints"
                     ) from exc
@@ -2185,7 +2183,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 from swift.trainers.rlhf_trainer.utils import patch_vllm_load_adapter
 
                 patch_vllm_load_adapter()
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "vLLM rollout backend is enabled but vLLM is unavailable or incompatible. "
                     "Install/upgrade vLLM in the ms env, or set rollout_matching.rollout_backend: hf."
@@ -2212,7 +2210,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
                 try:
                     max_lora_rank = int(getattr(cfg0, "r", max_lora_rank))
-                except Exception:
+                except (TypeError, ValueError):
                     raise
 
         # Build TP subgroup (colocate only; server mode unsupported here).
@@ -2235,7 +2233,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             vllm_template.packing = False
             vllm_template.padding_free = False
             vllm_template.set_mode("vllm")
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         logger.info(
@@ -2282,7 +2280,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 engine_kwargs=vllm_engine_kwargs or None,
                 distributed_executor_backend=dist_backend,
             )
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             logger.exception(
                 "vLLM engine init failed (backend=%s): %s", dist_backend, exc
             )
@@ -2294,7 +2292,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if sleep_level > 0:
             try:
                 engine.engine.sleep(sleep_level)
-            except Exception:
+            except (TypeError, ValueError):
                 raise
 
         self._vllm_engine = engine
@@ -2330,7 +2328,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from accelerate.utils import is_peft_model
-        except Exception:
+        except (TypeError, ValueError):
             is_peft_model = None  # type: ignore[assignment]
 
         is_peft = (
@@ -2348,7 +2346,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                 merge_cm = patch_lora_merge(self.model)
                 unmerge_cm = patch_lora_unmerge(self.model)
-            except Exception:
+            except (TypeError, ValueError):
                 merge_cm = nullcontext()
                 unmerge_cm = nullcontext()
 
@@ -2363,7 +2361,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         # Merge adapter weights into base weights for extraction.
                         self.model.merge_adapter()
                         merged = True
-                    except Exception as exc:
+                    except (TypeError, ValueError) as exc:
                         raise RuntimeError(
                             "vLLM LoRA is disabled, but we failed to merge the adapter weights from the training "
                             "model. Mitigations: set rollout_matching.vllm.enable_lora=true "
@@ -2406,7 +2404,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             engine.engine.reset_prefix_cache()
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         self._vllm_last_loaded_step = step
@@ -2430,7 +2428,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
-        except Exception:
+        except (TypeError, ValueError):
             if hasattr(cfg0, "to_dict"):
                 peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
             else:
@@ -2438,7 +2436,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from peft.utils.save_and_load import get_peft_model_state_dict
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError("peft is required for vLLM LoRA sync") from exc
 
         named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
@@ -2463,7 +2461,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.trainers.rlhf_trainer.utils import TensorLoRARequest
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Unable to import TensorLoRARequest for vLLM LoRA sync"
             ) from exc
@@ -2482,9 +2480,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             engine.engine.add_lora(lora_request)
             try:
                 engine.engine.reset_prefix_cache()
-            except Exception:
+            except (TypeError, ValueError):
                 raise
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to load LoRA adapter into vLLM. "
                 "If this is due to multimodal/Vision LoRA incompatibility, freeze ViT or set rollout_backend: hf."
@@ -2537,14 +2535,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             world_size = 1
             try:
                 import torch.distributed as dist
-            except Exception:
+            except (TypeError, ValueError):
                 dist = None  # type: ignore[assignment]
 
             if dist is not None and dist.is_available() and dist.is_initialized():
                 try:
                     rank = int(dist.get_rank())
                     world_size = int(dist.get_world_size())
-                except Exception:
+                except (TypeError, ValueError):
                     rank = 0
                     world_size = 1
 
@@ -2553,7 +2551,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             try:
                 from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
                     "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
@@ -2568,7 +2566,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     group_ports=group_ports,
                     connection_timeout=float(timeout_s),
                 )
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "Failed to connect to vLLM rollout server(s). "
                     "Check rollout_matching.vllm.server (base_url/group_port) and ensure /health/ is reachable."
@@ -2585,7 +2583,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 info = client.get_engine_type()
                 logger.info("vLLM rollout server engine_type: %s", info)
-            except Exception:
+            except (TypeError, ValueError):
                 raise
 
             self._vllm_server_client = client
@@ -2599,7 +2597,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         rank = 0
         try:
             import torch.distributed as dist
-        except Exception:
+        except (TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
         if dist is not None and dist.is_available() and dist.is_initialized():
@@ -2613,7 +2611,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             client.init_communicator(device=0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to initialize NCCL communicator with vLLM rollout server(s). "
                 "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
@@ -2644,14 +2642,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             world_size = 1
             try:
                 import torch.distributed as dist
-            except Exception:
+            except (TypeError, ValueError):
                 dist = None  # type: ignore[assignment]
 
             if dist is not None and dist.is_available() and dist.is_initialized():
                 try:
                     rank = int(dist.get_rank())
                     world_size = int(dist.get_world_size())
-                except Exception:
+                except (TypeError, ValueError):
                     rank = 0
                     world_size = 1
 
@@ -2662,7 +2660,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         close_fn = getattr(client, "close_communicator", None)
                         if callable(close_fn):
                             close_fn()
-                    except Exception as exc:
+                    except (TypeError, ValueError) as exc:
                         logger.warning(
                             "Failed to close vLLM server communicator during shutdown: %r",
                             exc,
@@ -2677,9 +2675,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 close_fn = getattr(sess, "close", None)
                                 if callable(close_fn):
                                     close_fn()
-                            except Exception:
+                            except (TypeError, ValueError):
                                 raise
-                except Exception:
+                except (TypeError, ValueError):
                     raise
 
             self._vllm_server_client = None
@@ -2723,7 +2721,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             scfg_raw = self._vllm_server_cfg()
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
 
         debug_raw = (
@@ -2780,7 +2778,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if dist.is_available() and dist.is_initialized():
                 rank = int(dist.get_rank())
                 world_size = int(dist.get_world_size())
-        except Exception:
+        except (TypeError, ValueError):
             rank = 0
             world_size = 1
 
@@ -2798,7 +2796,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         max_chars_raw = debug_raw.get("max_chars", 4000)
         try:
             max_chars = int(max_chars_raw) if max_chars_raw is not None else 0
-        except Exception:
+        except (TypeError, ValueError):
             max_chars = 4000
 
         def _content_to_text(content: Any) -> str:
@@ -2818,10 +2816,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 return "\n".join(parts)
             if content is None:
                 return ""
+            text = ""
             try:
-                return str(content)
-            except Exception:
-                return ""
+                text = str(content)
+            except (TypeError, ValueError):
+                text = ""
+            return text
 
         def _extract_gt_text(sample_obj: Any) -> str:
             if not isinstance(sample_obj, Mapping):
@@ -2883,7 +2883,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             logger.warning(
                 "vLLM server debug dump wrote %s (samples=%s)", path, len(samples_dump)
             )
-        except Exception:
+        except (OSError, TypeError, ValueError):
             return
 
     def _sync_vllm_server_rollout_model_if_needed(self) -> None:
@@ -2904,7 +2904,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         world_size = 1
         try:
             import torch.distributed as dist
-        except Exception:
+        except (TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
         if dist is not None and dist.is_available() and dist.is_initialized():
@@ -2924,7 +2924,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 try:
                     backend = str(dist.get_backend()).lower()
-                except Exception:
+                except (TypeError, ValueError):
                     backend = ""
 
                 reduce_device = torch.device("cpu")
@@ -2936,7 +2936,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
                 dist.broadcast(flag, src=0)
                 need_sync = int(flag.item())
-            except Exception:
+            except (TypeError, ValueError):
                 need_sync = int(step != last)
 
         if need_sync == 0:
@@ -2976,7 +2976,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 try:
                     client.init_communicator(device=0)
                     setattr(self, "_vllm_server_comm_inited", True)
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     raise RuntimeError(
                         "Failed to initialize NCCL communicator with vLLM rollout server(s). "
                         "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
@@ -2994,7 +2994,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
                             "or set vllm.sync.mode=full."
                         )
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     # If the check itself fails, continue; sync will fail with a clearer error.
                     logger.warning(
                         "Unable to verify rollout server LoRA capability: %s", exc
@@ -3002,7 +3002,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                 try:
                     self._sync_vllm_server_adapter(client)
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     if bool(fallback_to_full):
                         logger.warning(
                             "Adapter-only vLLM server sync failed; falling back to full sync for the remainder of the run. "
@@ -3042,7 +3042,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from accelerate.utils import is_peft_model
-        except Exception:
+        except (TypeError, ValueError):
             is_peft_model = None  # type: ignore[assignment]
 
         is_peft = (
@@ -3060,7 +3060,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                 merge_cm = patch_lora_merge(self.model)
                 unmerge_cm = patch_lora_unmerge(self.model)
-            except Exception:
+            except (TypeError, ValueError):
                 merge_cm = nullcontext()
                 unmerge_cm = nullcontext()
 
@@ -3074,7 +3074,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     try:
                         self.model.merge_adapter()
                         merged = True
-                    except Exception as exc:
+                    except (TypeError, ValueError) as exc:
                         raise RuntimeError(
                             "vLLM server full sync requires merging adapter weights from the training model. "
                             "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter, or use sync.mode=adapter."
@@ -3114,7 +3114,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Reset server prefix cache to avoid stale cached states.
         try:
             client.reset_prefix_cache()
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             logger.warning(
                 "Failed to reset vLLM server prefix cache after full sync: %s", exc
             )
@@ -3125,7 +3125,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         """Bucket + broadcast a state_dict into the vLLM server via NCCL."""
         try:
             from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "FlattenedTensorBucket is required for vLLM server sync"
             ) from exc
@@ -3175,7 +3175,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
-        except Exception:
+        except (TypeError, ValueError):
             if hasattr(cfg0, "to_dict"):
                 peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
             else:
@@ -3183,7 +3183,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from peft.utils.save_and_load import get_peft_model_state_dict
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError("peft is required for vLLM server adapter sync") from exc
 
         named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
@@ -3209,7 +3209,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "FlattenedTensorBucket is required for vLLM server adapter sync"
             ) from exc
@@ -3223,7 +3223,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             client.reset_prefix_cache()
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             logger.warning(
                 "Failed to reset vLLM server prefix cache after adapter sync: %s", exc
             )
@@ -3242,7 +3242,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if raw is not None:
                 try:
                     infer_batch_size = int(raw)
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     raise ValueError(
                         "rollout_matching.vllm.infer_batch_size must be an int"
                     ) from exc
@@ -3489,7 +3489,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.llm import RequestConfig
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "swift.llm.RequestConfig is required for vLLM rollouts"
             ) from exc
@@ -3508,7 +3508,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # NOTE: Do not pass dataset-level GT "objects" into vLLM infer; it may be interpreted as multimodal payload.
         try:
             from swift.llm import InferRequest
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "swift.llm.InferRequest is required for vLLM rollouts"
             ) from exc
@@ -3544,7 +3544,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 prompt_ids = [
                     int(t) for t in (getattr(out, "prompt_token_ids", None) or [])
                 ]
-            except Exception:
+            except (TypeError, ValueError):
                 text = ""
                 token_ids = []
                 prompt_ids = []
@@ -3589,7 +3589,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.llm import RequestConfig
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "swift.llm.RequestConfig is required for vLLM server rollouts"
             ) from exc
@@ -3621,7 +3621,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
             try:
                 msgs_json = json.loads(json.dumps(msgs))
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "vLLM server mode requires JSON-serializable messages. "
                     "Ensure images are passed as strings (path/url/base64), not PIL objects."
@@ -3675,7 +3675,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if dist.is_available() and dist.is_initialized():
                 learner_world = int(dist.get_world_size())
                 learner_rank = int(dist.get_rank())
-        except Exception:
+        except (TypeError, ValueError):
             learner_world = 1
             learner_rank = 0
         learner_world = max(1, int(learner_world))
@@ -3827,7 +3827,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 with self._vllm_server_infer_guard():
                     resp = session.post(url, json=payload, timeout=req_timeout)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 # Retry once with a fresh session. This helps when the server was idle for A steps
                 # (AAB schedules) and the underlying keep-alive connection was dropped.
                 try:
@@ -3837,7 +3837,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     session = client.sessions[server_idx]
                     with self._vllm_server_infer_guard():
                         resp = session.post(url, json=payload, timeout=req_timeout)
-                except Exception as exc2:
+                except (TypeError, ValueError) as exc2:
                     # If this was a batched request, fall back to smaller batches. This is a
                     # common failure mode when a few samples hit max_new_tokens and the read
                     # timeout is exceeded.
@@ -3955,7 +3955,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     from src.config.prompts import SYSTEM_PROMPT_SORTED_TOKENS
 
                     system_prompt = str(SYSTEM_PROMPT_SORTED_TOKENS)
-                except Exception:
+                except (TypeError, ValueError):
                     system_prompt = None
 
         # IMPORTANT: generate from a prompt that ends with a user turn.
@@ -4192,7 +4192,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self._rm_last_pack_fill = float(fill)
             self._rm_last_pack_segments = int(len(selected))
             self._rm_last_pack_buffer_after = int(len(self._post_rollout_segments))
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         if fill < target:
@@ -4239,7 +4239,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 self._rm_avg_segment_len = float(ema)
                 pack_metrics["packing/avg_segment_len_last"] = float(avg)
                 pack_metrics["packing/avg_segment_len_ema"] = float(ema)
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         return selected, pack_metrics
@@ -4401,7 +4401,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
                     try:
                         from src.metrics.semantic_desc import normalize_desc
-                    except Exception:
+                    except (TypeError, ValueError):
                         normalize_desc = None  # type: ignore[assignment]
 
                     pairs = list(match.matched_pairs)
@@ -4439,14 +4439,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         enc = None
                         try:
                             enc = self._get_desc_semantic_encoder(desc_cfg)
-                        except Exception:
+                        except (TypeError, ValueError):
                             enc = None
 
                         if enc is not None:
                             # Best-effort: if model load fails (missing cache/network), skip semantics.
                             try:
                                 emb = enc.encode_norm_texts(sorted(uniq))
-                            except Exception:
+                            except (TypeError, ValueError):
                                 emb = {}
                                 enc = None
 
@@ -4491,7 +4491,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         ot_iters=ot_iters,
                         ot_cost=ot_cost_kind,
                     )
-                except Exception:
+                except (TypeError, ValueError):
                     targets = None
                 if targets is None or len(targets) != len(pobj.coord_token_indices):
                     excluded += 1
@@ -4533,7 +4533,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if isinstance(m, dict) and m.get("role") == "assistant":
                         has_assistant = True
                         break
-            except Exception:
+            except (TypeError, ValueError):
                 has_assistant = False
 
             if has_assistant:
@@ -4682,7 +4682,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             },
                         }
                     )
-                except Exception:
+                except (TypeError, ValueError):
                     raise
 
             meta_entry = {
@@ -4773,7 +4773,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 }
                 self._write_monitor_dump(global_step=int(gs), payload=payload)
                 self._monitor_dump_count += 1
-            except Exception:
+            except (TypeError, ValueError):
                 raise
 
         if packing_enabled:
@@ -4811,7 +4811,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for k, v in payload.items():
             try:
                 reduced[str(k)] = float(v)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
         trunc_num_key = "rollout/_parse_truncated_num"
@@ -4867,7 +4867,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             import torch.distributed as dist
-        except Exception:
+        except (TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
         rank = 0
@@ -4875,11 +4875,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if dist is not None and dist.is_available() and dist.is_initialized():
             try:
                 world_size = int(dist.get_world_size())
-            except Exception:
+            except (TypeError, ValueError):
                 world_size = 1
             try:
                 rank = int(dist.get_rank())
-            except Exception:
+            except (TypeError, ValueError):
                 rank = 0
 
         metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
@@ -4902,7 +4902,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         merged_keys[key] = None
                         reduced.setdefault(key, 0.0)
                 metric_keys = sorted(merged_keys.keys())
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 if int(rank) == 0:
                     logger.warning(
                         "rollout metric key sync failed; proceeding without key union: %r",
@@ -4982,7 +4982,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         device = model.device
                     elif model is not None:
                         device = next(model.parameters()).device
-                except Exception:
+                except (TypeError, ValueError):
                     device = torch.device("cpu")
 
                 def _all_reduce(keys: List[str], op: Any) -> None:
@@ -5004,7 +5004,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced.get(key, 0.0) / scale)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 if int(rank) == 0:
                     logger.warning(
                         "rollout metric all-reduce failed; falling back to local metrics: %r",
@@ -5179,14 +5179,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             int(getattr(self, "_rm_train_samples_seen", 0) or 0)
                             + sample_step
                         )
-                    except Exception:
+                    except (TypeError, ValueError):
                         self._rm_train_samples_seen = sample_step
 
                     logs.update(payload)
                     logs["train/samples_seen"] = float(
                         getattr(self, "_rm_train_samples_seen", 0) or 0
                     )
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         return super().log(logs)
@@ -5298,7 +5298,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             for m in meta:
                 try:
                     xs.append(int(m.get(key, 0)))
-                except Exception:
+                except (TypeError, ValueError):
                     continue
             return xs
 
@@ -5313,7 +5313,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 append_lens.append(
                     int(m.get("train_len", 0)) - int(m.get("prefix_len", 0))
                 )
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
         def _mean(xs: List[int]) -> float:
@@ -5393,7 +5393,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             payload["rollout/temperature"] = float(temperature)
             payload["rollout/top_p"] = float(top_p)
             payload["rollout/top_k"] = float(top_k)
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         # Desc monitor outputs (matched pairs only).
@@ -5433,7 +5433,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             sim_sum_total / sim_count_total
                         )
                         payload["rollout/desc_sem_sim_count"] = float(sim_count_total)
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         return payload
@@ -5554,7 +5554,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             model_type = str(
                 getattr(getattr(model, "config", None), "model_type", "") or ""
             )
-        except Exception:
+        except (TypeError, ValueError):
             model_type = ""
         text_position_ids = inputs.get("text_position_ids")
         position_ids = inputs_for_model.get("position_ids")
@@ -5720,7 +5720,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if isinstance(batch_metrics, Mapping)
                 else None,
             )
-        except Exception:
+        except (TypeError, ValueError):
             raise
 
         return (total, outputs) if return_outputs else total
@@ -5730,7 +5730,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             per_dev = int(getattr(self.args, "per_device_train_batch_size", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             per_dev = 1
 
         # Optional fixed raw batching for post-rollout packing.
@@ -5746,7 +5746,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if trainer_variant == "rollout_matching_sft":
             try:
                 decode_bs = int(self._decode_batch_size())
-            except Exception:
+            except (TypeError, ValueError):
                 decode_bs = 1
             decode_bs = max(1, int(decode_bs))
 
@@ -5765,7 +5765,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # (fixed samples per step) and avoids a trailing underfull/no-op step.
         try:
             drop_last = bool(getattr(self.args, "dataloader_drop_last", False))
-        except Exception:
+        except (TypeError, ValueError):
             drop_last = False
         if self._packing_enabled() and drop_last and int(gas) > 1:
             dl = _DropRemainderAccumulationWindow(dl, gas=gas)
@@ -5810,7 +5810,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from src.metrics.semantic_desc import normalize_desc
-        except Exception:
+        except (TypeError, ValueError):
             normalize_desc = None  # type: ignore[assignment]
 
         sem_loaded_local = 0.0
@@ -5818,14 +5818,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if desc_enabled and desc_mode in {"semantic", "both"}:
             try:
                 sem_encoder = self._get_desc_semantic_encoder(desc_cfg)
-            except Exception:
+            except (TypeError, ValueError):
                 sem_encoder = None
             if sem_encoder is not None:
                 # Probe once so failures are detected consistently across ranks.
                 try:
                     _ = sem_encoder.encode_norm_texts(["__probe__"])
                     sem_loaded_local = 1.0
-                except Exception:
+                except (TypeError, ValueError):
                     sem_encoder = None
                     sem_loaded_local = 0.0
 
@@ -5973,7 +5973,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         ):
                             try:
                                 emb = sem_encoder.encode_norm_texts(sorted(uniq))
-                            except Exception:
+                            except (TypeError, ValueError):
                                 emb = {}
                                 sem_encoder = None
                                 sem_loaded_local = 0.0
@@ -5998,7 +5998,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             import torch.distributed as dist
-        except Exception:
+        except (TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
         world_size = 1

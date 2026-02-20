@@ -187,10 +187,8 @@ def compute_coord_diag_metrics_for_pure_ce(
             tokenizer = getattr(getattr(trainer, "template", None), "tokenizer", None)
             if tokenizer is not None:
                 coord_token_ids = get_coord_token_ids(tokenizer)
-        try:
-            setattr(trainer, "_coordexp_coord_token_ids", list(coord_token_ids))
-        except Exception:
-            raise
+        if getattr(trainer, "__dict__", None) is not None:
+            trainer._coordexp_coord_token_ids = list(coord_token_ids)
 
     if not coord_token_ids:
         return out
@@ -199,10 +197,8 @@ def compute_coord_diag_metrics_for_pure_ce(
     cache = getattr(trainer, "_coordexp_coord_vocab_cache", None)
     if not isinstance(cache, dict):
         cache = {}
-        try:
-            setattr(trainer, "_coordexp_coord_vocab_cache", cache)
-        except Exception:
-            cache = {}
+        if getattr(trainer, "__dict__", None) is not None:
+            trainer._coordexp_coord_vocab_cache = cache
 
     cache_key = (str(logits_next.device), int(vocab_size))
     entry = cache.get(cache_key)
@@ -214,7 +210,7 @@ def compute_coord_diag_metrics_for_pure_ce(
         for bin_idx, tok_id in enumerate(coord_token_ids):
             try:
                 tok_id_i = int(tok_id)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if 0 <= tok_id_i < vocab_size:
                 valid_pairs.append((bin_idx, tok_id_i))
@@ -321,47 +317,37 @@ def compute_coord_diag_metrics_for_pure_ce(
         coord_expected_bin_mae = None
         coord_expected_bin_abs_err_p90 = None
         coord_w1_to_delta = None
-        try:
-            k5 = min(5, int(flat_logits_coord.shape[-1]))
-            topk = flat_logits_coord.topk(k=k5, dim=-1).indices
-            coord_acc_top5 = (
-                (topk == flat_target_bins.unsqueeze(-1)).any(dim=-1).float().mean()
+
+        k5 = min(5, int(flat_logits_coord.shape[-1]))
+        topk = flat_logits_coord.topk(k=k5, dim=-1).indices
+        coord_acc_top5 = (
+            (topk == flat_target_bins.unsqueeze(-1)).any(dim=-1).float().mean()
+        )
+        coord_p_gt_mean = dist_out.pred_probs.gather(1, flat_target_bins.view(-1, 1)).mean()
+        bins = torch.arange(
+            int(dist_out.pred_probs.shape[-1]),
+            device=dist_out.pred_probs.device,
+            dtype=dist_out.pred_probs.dtype,
+        )
+        pred_expected = (dist_out.pred_probs * bins.view(1, -1)).sum(dim=-1)
+        abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
+        coord_expected_bin_mae = abs_err.mean()
+        # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
+        probs = dist_out.pred_probs.to(dtype=torch.float32)
+        bins_f = bins.to(dtype=torch.float32)
+        dist_bins = (
+            bins_f.view(1, -1) - flat_target_bins.to(torch.float32).view(-1, 1)
+        ).abs()
+        coord_w1_to_delta = (probs * dist_bins).sum(dim=-1).mean()
+        if abs_err.numel() > 0:
+            coord_expected_bin_abs_err_p90 = torch.quantile(
+                abs_err.to(dtype=torch.float32), 0.9
             )
-            coord_p_gt_mean = dist_out.pred_probs.gather(
-                1, flat_target_bins.view(-1, 1)
-            ).mean()
-            bins = torch.arange(
-                int(dist_out.pred_probs.shape[-1]),
-                device=dist_out.pred_probs.device,
-                dtype=dist_out.pred_probs.dtype,
-            )
-            pred_expected = (dist_out.pred_probs * bins.view(1, -1)).sum(dim=-1)
-            abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
-            coord_expected_bin_mae = abs_err.mean()
-            # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
-            probs = dist_out.pred_probs.to(dtype=torch.float32)
-            bins_f = bins.to(dtype=torch.float32)
-            dist_bins = (
-                bins_f.view(1, -1)
-                - flat_target_bins.to(torch.float32).view(-1, 1)
-            ).abs()
-            coord_w1_to_delta = (probs * dist_bins).sum(dim=-1).mean()
-            if abs_err.numel() > 0:
-                coord_expected_bin_abs_err_p90 = torch.quantile(
-                    abs_err.to(dtype=torch.float32), 0.9
-                )
-            temp = float(temperature) if float(temperature) > 0 else 1.0
-            logits_scaled = flat_logits_coord.float() / temp
-            gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
-            max_logit = logits_scaled.max(dim=-1).values
-            coord_margin_mean = (max_logit - gt_logit).mean()
-        except Exception:
-            coord_acc_top5 = None
-            coord_p_gt_mean = None
-            coord_margin_mean = None
-            coord_expected_bin_mae = None
-            coord_expected_bin_abs_err_p90 = None
-            coord_w1_to_delta = None
+        temp = float(temperature) if float(temperature) > 0 else 1.0
+        logits_scaled = flat_logits_coord.float() / temp
+        gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
+        max_logit = logits_scaled.max(dim=-1).values
+        coord_margin_mean = (max_logit - gt_logit).mean()
 
         softce_sum = dist_out.soft_ce_per_token.sum()
         w1_sum = dist_out.w1_per_token.sum()
@@ -404,13 +390,11 @@ def compute_coord_diag_metrics_for_pure_ce(
             getattr(getattr(trainer, "args", None), "average_tokens_across_devices", False)
             and getattr(trainer, "model_accepts_loss_kwargs", False)
         ):
-            try:
-                if dist.is_available() and dist.is_initialized():
-                    scale = float(dist.get_world_size())
-                else:
-                    scale = float(trainer.accelerator.num_processes)
-            except Exception:
-                scale = 1.0
+            if dist.is_available() and dist.is_initialized():
+                scale = float(dist.get_world_size())
+            else:
+                accel = getattr(trainer, "accelerator", None)
+                scale = float(getattr(accel, "num_processes", 1.0))
             coord_loss = coord_loss * scale
             softce_contrib = softce_contrib * scale
             w1_contrib = w1_contrib * scale
@@ -444,23 +428,24 @@ def compute_coord_diag_metrics_for_pure_ce(
             out["coord_diag/w1_to_delta"] = float(coord_w1_to_delta.detach().cpu().item())
 
         # Per-sample helpers (packed runs).
-        try:
-            total_samples = None
-            pack_n = getattr(trainer, "_coordexp_pack_num_samples", None)
-            if isinstance(pack_n, torch.Tensor):
-                total_samples = float(pack_n.detach().sum().cpu().item())
-            elif isinstance(pack_n, (list, tuple)):
-                total_samples = float(sum(int(v) for v in pack_n))
-            elif isinstance(pack_n, (int, float)):
-                total_samples = float(pack_n)
-            if total_samples is None:
-                total_samples = float(labels_next.shape[0])
-            total_samples = max(1.0, float(total_samples))
+        total_samples = None
+        pack_n = getattr(trainer, "_coordexp_pack_num_samples", None)
+        if isinstance(pack_n, torch.Tensor):
+            total_samples = float(pack_n.detach().sum().cpu().item())
+        elif isinstance(pack_n, (list, tuple)):
+            total_samples = float(sum(int(v) for v in pack_n))
+        elif isinstance(pack_n, (int, float)):
+            total_samples = float(pack_n)
+        if total_samples is None:
+            total_samples = float(labels_next.shape[0])
+        total_samples = max(1.0, float(total_samples))
 
-            out["coord_diag/coord_tokens_per_sample"] = float(coord_tokens) / float(total_samples)
-            coord_loss_per_sample = float(coord_loss.detach().cpu().item()) * float(coord_tokens) / float(total_samples)
-            out["coord_diag/loss_per_sample"] = float(coord_loss_per_sample)
-        except Exception:
-            raise
+        out["coord_diag/coord_tokens_per_sample"] = float(coord_tokens) / float(total_samples)
+        coord_loss_per_sample = (
+            float(coord_loss.detach().cpu().item())
+            * float(coord_tokens)
+            / float(total_samples)
+        )
+        out["coord_diag/loss_per_sample"] = float(coord_loss_per_sample)
 
     return out

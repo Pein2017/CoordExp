@@ -73,7 +73,7 @@ from src.config.prompts import (
     resolve_dense_prompt_variant_key,
 )
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
-from src.common.paths import resolve_image_path_best_effort
+from src.common.paths import resolve_image_path_strict
 from src.utils import get_logger
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -147,10 +147,12 @@ def detect_mode_from_gt(
 ) -> Tuple[Literal["coord", "text"], str]:
     """Deterministically resolve coord vs text from GT JSONL (OpenSpec).
 
-    Scan the first N *valid* records:
-    - ignore invalid JSON
-    - ignore records with no objects
-    - ignore records without valid int width/height
+    Scan up to the first N non-empty-object records.
+
+    Strictness:
+    - Blank lines and records with empty GT objects are skipped.
+    - Operator-controlled input violations (malformed JSON, missing/invalid size,
+      wrong schema) fail fast with actionable diagnostics (path + line).
 
     Resolution:
     - coord if any coord tokens are found in any geometry
@@ -162,37 +164,57 @@ def detect_mode_from_gt(
     path = Path(gt_jsonl)
 
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for line_no, raw_line in enumerate(f, start=1):
             if checked >= sample_size:
                 break
-            line = line.strip()
+            line = raw_line.strip()
             if not line:
                 continue
+
             try:
                 rec = json.loads(line)
-            except Exception:
-                continue
+            except json.JSONDecodeError as exc:
+                snippet = line if len(line) <= 200 else (line[:200] + "...")
+                raise ValueError(f"Malformed JSONL at {path}:{line_no}: {snippet}") from exc
+
             if not isinstance(rec, dict):
-                continue
+                raise ValueError(f"Non-object JSONL record at {path}:{line_no}: {line[:200]}")
+
+            if "width" not in rec or "height" not in rec:
+                raise ValueError(f"Missing width/height at {path}:{line_no}")
 
             width = rec.get("width")
             height = rec.get("height")
             try:
                 width_i = int(width)
                 height_i = int(height)
-            except Exception:
-                continue
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid width/height at {path}:{line_no}: width={width!r} height={height!r}"
+                ) from exc
+
             if width_i <= 0 or height_i <= 0:
-                continue
+                raise ValueError(
+                    f"Invalid width/height at {path}:{line_no}: width={width_i} height={height_i}"
+                )
 
             objs = rec.get("objects") or rec.get("gt") or []
-            if not isinstance(objs, list) or len(objs) == 0:
+            if objs is None:
+                objs = []
+            if not isinstance(objs, list):
+                raise ValueError(
+                    f"GT record objects/gt must be a list at {path}:{line_no}; got {type(objs).__name__}"
+                )
+            if len(objs) == 0:
                 continue
 
             max_dim = max(width_i, height_i)
             for obj in objs:
                 if not isinstance(obj, dict):
-                    continue
+                    raise ValueError(
+                        f"GT objects must be mappings at {path}:{line_no}; got {type(obj).__name__}"
+                    )
+
                 pts_raw = flatten_points(
                     obj.get("bbox_2d") or obj.get("poly") or obj.get("points") or []
                 )
@@ -202,7 +224,6 @@ def detect_mode_from_gt(
                 if has_coord_tokens(pts_raw):
                     return "coord", "coord_tokens_found"
 
-                # Only consider numeric coordinates for bounds check.
                 numeric = [v for v in pts_raw if isinstance(v, (int, float))]
                 if numeric and max(numeric) > max_dim:
                     return "coord", "points_exceed_image"
@@ -229,8 +250,13 @@ class RunCounters:
         self.error_codes.add(code)
 
     def to_summary(self) -> Dict[str, Any]:
+        errors_by_code = dict(self.counts)
+        errors_total = int(sum(int(v) for v in errors_by_code.values()))
         return {
-            "counters": self.counts,
+            "errors_total": errors_total,
+            "errors_by_code": errors_by_code,
+            # Back-compat: historical name used by older tooling.
+            "counters": errors_by_code,
             "error_codes": sorted(self.error_codes),
             "total_read": self.total_read,
             "total_emitted": self.total_emitted,
@@ -292,7 +318,7 @@ class InferenceEngine:
 
         try:
             from vllm import LLM
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:
             raise RuntimeError(
                 "vLLM local backend requires the 'vllm' package. Install it in the ms env, or set infer.backend.type=hf."
             ) from exc
@@ -354,7 +380,7 @@ class InferenceEngine:
     def _vllm_sampling_params(self):
         try:
             from vllm import SamplingParams
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:
             raise RuntimeError(
                 "vLLM backend requires the 'vllm' package. Install it in the ms env, or set infer.backend.type=hf."
             ) from exc
@@ -404,7 +430,7 @@ class InferenceEngine:
 
         try:
             import requests
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:
             raise RuntimeError(
                 "vLLM backend requires the 'requests' package. Install it in the ms env, or set infer.backend.type=hf."
             ) from exc
@@ -418,7 +444,7 @@ class InferenceEngine:
         )
         try:
             resp = requests.get(models_url, timeout=timeout_s)
-        except Exception as exc:  # noqa: BLE001
+        except (requests.exceptions.RequestException, OSError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to reach vLLM server for infer.backend.type=vllm. "
                 f"Tried GET {models_url}. To disable vLLM, set infer.backend.type=hf."
@@ -479,7 +505,7 @@ class InferenceEngine:
                 self.model.eval()
                 self.attn_implementation_selected = cand
                 break
-            except Exception as exc:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError, ImportError) as exc:
                 last_exc = exc
                 errors.append(f"{cand}: {type(exc).__name__}: {exc}")
                 if idx == 0 and len(candidates) > 1:
@@ -525,7 +551,7 @@ class InferenceEngine:
                             "tokenizer.eos_token_id is required when tokenizer.pad_token_id is unset"
                         )
                     setattr(tokenizer, "pad_token_id", eos_token_id)
-            except Exception as exc:  # noqa: BLE001
+            except (AttributeError, TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "Failed to configure tokenizer left-padding for inference."
                 ) from exc
@@ -535,11 +561,18 @@ class InferenceEngine:
         root_raw = str(self.cfg.root_image_dir or "").strip()
         if root_raw:
             root_image_dir = Path(root_raw).resolve()
-        return resolve_image_path_best_effort(
-            image_rel,
+
+        resolved = resolve_image_path_strict(
+            str(image_rel),
             jsonl_dir=jsonl_path.parent,
             root_image_dir=root_image_dir,
         )
+        if resolved is None:
+            raise FileNotFoundError(
+                "Image path does not exist after strict resolution: "
+                f"image={image_rel!r} jsonl_dir={str(jsonl_path.parent)!r} root_image_dir={str(root_image_dir) if root_image_dir is not None else None!r}"
+            )
+        return resolved
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
         system_prompt, user_prompt = get_template_prompts(
@@ -589,66 +622,50 @@ class InferenceEngine:
         if not images:
             return []
 
-        # Best-effort batched generate; fall back to per-sample generation on error.
-        try:
-            messages = [self._build_messages(img) for img in images]
-            prompt_texts = [
-                self.processor.apply_chat_template(
-                    m, add_generation_prompt=True, tokenize=False
-                )
-                for m in messages
-            ]
+        messages = [self._build_messages(img) for img in images]
+        prompt_texts = [
+            self.processor.apply_chat_template(m, add_generation_prompt=True, tokenize=False)
+            for m in messages
+        ]
 
-            model_inputs = self.processor(
-                text=prompt_texts,
-                images=images,
-                return_tensors="pt",
-                padding=True,
+        model_inputs = self.processor(
+            text=prompt_texts,
+            images=images,
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
+
+        if "attention_mask" in model_inputs:
+            prompt_lens = model_inputs["attention_mask"].sum(dim=1).tolist()
+        else:
+            # Fallback: assume no padding.
+            prompt_lens = [int(model_inputs["input_ids"].shape[1])] * int(len(images))
+
+        gen_kwargs = dict(
+            max_new_tokens=self.gen_cfg.max_new_tokens,
+            do_sample=self.gen_cfg.temperature > 0,
+            temperature=max(1e-4, self.gen_cfg.temperature),
+            top_p=self.gen_cfg.top_p,
+            use_cache=True,
+        )
+        if self.gen_cfg.repetition_penalty is not None:
+            gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+
+        with torch.inference_mode():
+            gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
+
+        out: List[GenerationResult] = []
+        for i in range(len(images)):
+            prompt_len = int(prompt_lens[i])
+            gen_only = gen_ids[i, prompt_len:]
+            raw_text = self.processor.tokenizer.decode(
+                gen_only,
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
             )
-            model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
-
-            if "attention_mask" in model_inputs:
-                prompt_lens = model_inputs["attention_mask"].sum(dim=1).tolist()
-            else:
-                # Fallback: assume no padding.
-                prompt_lens = [int(model_inputs["input_ids"].shape[1])] * int(
-                    len(images)
-                )
-
-            gen_kwargs = dict(
-                max_new_tokens=self.gen_cfg.max_new_tokens,
-                do_sample=self.gen_cfg.temperature > 0,
-                temperature=max(1e-4, self.gen_cfg.temperature),
-                top_p=self.gen_cfg.top_p,
-                use_cache=True,
-            )
-            if self.gen_cfg.repetition_penalty is not None:
-                gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
-
-            with torch.inference_mode():
-                gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
-
-            out: List[GenerationResult] = []
-            for i in range(len(images)):
-                prompt_len = int(prompt_lens[i])
-                gen_only = gen_ids[i, prompt_len:]
-                raw_text = self.processor.tokenizer.decode(
-                    gen_only,
-                    skip_special_tokens=False,
-                    clean_up_tokenization_spaces=False,
-                )
-                out.append(GenerationResult(text=raw_text, error=None))
-            return out
-        except Exception:
-            out: List[GenerationResult] = []
-            for img in images:
-                try:
-                    out.append(
-                        GenerationResult(text=self._generate_hf(img), error=None)
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    out.append(GenerationResult(text="", error=exc))
-            return out
+            out.append(GenerationResult(text=raw_text, error=None))
+        return out
 
     def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
         if not images:
@@ -666,11 +683,11 @@ class InferenceEngine:
                 if max_workers_raw is not None
                 else int(len(images))
             )
-        except Exception:
+        except (TypeError, ValueError):
             max_workers = int(len(images))
         max_workers = max(1, min(int(max_workers), int(len(images))))
 
-        out = [GenerationResult() for _ in images]
+        texts: List[str | None] = [None for _ in images]
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             fut_to_idx = {
                 ex.submit(self._generate_vllm_server, img): i
@@ -678,13 +695,12 @@ class InferenceEngine:
             }
             for fut in as_completed(fut_to_idx):
                 i = fut_to_idx[fut]
-                try:
-                    out[i].text = fut.result()
-                    out[i].error = None
-                except Exception as exc:  # noqa: BLE001
-                    out[i].text = ""
-                    out[i].error = exc
-        return out
+                texts[i] = fut.result()
+
+        if any(t is None for t in texts):
+            raise RuntimeError("vLLM generation returned missing outputs")
+
+        return [GenerationResult(text=str(t), error=None) for t in texts]
 
     def _generate_hf(self, image: Image.Image) -> str:
         assert self.model is not None and self.processor is not None
@@ -760,7 +776,7 @@ class InferenceEngine:
             import io
 
             import requests
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:
             raise RuntimeError(
                 "vLLM backend requires the 'requests' package. Install it in the ms env, or set infer.backend.type=hf."
             ) from exc
@@ -861,11 +877,8 @@ class InferenceEngine:
         self._load_vllm_local()
         assert self.vllm_llm is not None
 
-        try:
-            import base64
-            import io
-        except Exception as exc:  # noqa: BLE001
-            return [GenerationResult(text="", error=exc) for _ in images]
+        import base64
+        import io
 
         system_prompt, user_prompt = get_template_prompts(
             ordering="sorted",
@@ -897,37 +910,19 @@ class InferenceEngine:
             )
 
         sp = self._vllm_sampling_params()
-        try:
-            outs = self.vllm_llm.chat(msg_batch, sampling_params=sp, use_tqdm=False)
-        except Exception as exc:  # noqa: BLE001
-            return [GenerationResult(text="", error=exc) for _ in images]
+        outs = self.vllm_llm.chat(msg_batch, sampling_params=sp, use_tqdm=False)
 
         results: List[GenerationResult] = []
         for o in outs:
-            try:
-                seqs = getattr(o, "outputs", None) or []
-                text = seqs[0].text if seqs else ""
-                results.append(GenerationResult(text=text, error=None))
-            except Exception as exc:  # noqa: BLE001
-                results.append(GenerationResult(text="", error=exc))
+            seqs = getattr(o, "outputs", None) or []
+            text = seqs[0].text if seqs else ""
+            results.append(GenerationResult(text=text, error=None))
 
         # vLLM should return one output per request; enforce alignment.
         if len(results) != len(images):
-            missing = len(images) - len(results)
-            if missing > 0:
-                results.extend(
-                    [
-                        GenerationResult(
-                            text="",
-                            error=RuntimeError(
-                                "vLLM returned fewer outputs than requests"
-                            ),
-                        )
-                        for _ in range(missing)
-                    ]
-                )
-            else:
-                results = results[: len(images)]
+            raise RuntimeError(
+                f"vLLM returned {len(results)} outputs for {len(images)} requests"
+            )
 
         return results
 
@@ -981,35 +976,184 @@ class InferenceEngine:
 
     def _prepare_image(
         self, jsonl_path: Path, record: Dict[str, Any]
-    ) -> Tuple[Optional[Path], Optional[Image.Image]]:
-        images = record.get("images") or []
-        if len(images) != 1:
-            return None, None
-        img_path = self._resolve_image_path(jsonl_path, images[0])
+    ) -> Tuple[Path, Image.Image]:
+        images = record.get("images")
+        if not isinstance(images, list) or len(images) != 1:
+            raise ValueError(
+                "infer input record must contain exactly one image in `images`: "
+                f"got images={images!r}"
+            )
+        image_field = images[0]
+        if not isinstance(image_field, str) or not image_field.strip():
+            raise ValueError(
+                "infer input record has invalid image field in `images[0]`: "
+                f"got {image_field!r}"
+            )
+
+        img_path = self._resolve_image_path(jsonl_path, image_field)
         try:
-            image = Image.open(img_path).convert("RGB")
-        except Exception:
-            return img_path, None
+            with Image.open(img_path) as im:
+                image = im.convert("RGB")
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"Failed to open image: {img_path}") from exc
         return img_path, image
+
+
+    def _preflight_inputs(self, jsonl_path: Path) -> None:
+        """Validate operator-controlled inputs before any generation/eval work.
+
+        This enforces strict fail-fast behavior for resolvable errors:
+        - JSONL must be well-formed objects
+        - width/height must be positive ints
+        - images must resolve strictly and be readable
+        - GT geometry must be valid for the resolved mode
+        """
+
+        limit = int(self.cfg.limit or 0)
+        max_errors = 5
+        errors: List[str] = []
+
+        checked = 0
+        with jsonl_path.open("r", encoding="utf-8") as fin:
+            for line_no, raw_line in enumerate(fin, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+
+                checked += 1
+                if limit and checked > limit:
+                    break
+
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    snippet = line if len(line) <= 200 else (line[:200] + "...")
+                    errors.append(
+                        f"Malformed JSONL at {jsonl_path}:{line_no}: {snippet}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                if not isinstance(record, dict):
+                    errors.append(f"Non-object JSONL record at {jsonl_path}:{line_no}")
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                width_raw = record.get("width")
+                height_raw = record.get("height")
+                try:
+                    width = int(width_raw)
+                    height = int(height_raw)
+                except (TypeError, ValueError) as exc:
+                    errors.append(
+                        f"Invalid width/height at {jsonl_path}:{line_no}: width={width_raw!r} height={height_raw!r} ({exc.__class__.__name__})"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                if width <= 0 or height <= 0:
+                    errors.append(
+                        f"Invalid width/height at {jsonl_path}:{line_no}: width={width} height={height}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                images = record.get("images")
+                if not isinstance(images, list) or len(images) != 1:
+                    errors.append(
+                        f"Input record must contain exactly one image in `images` at {jsonl_path}:{line_no}: images={images!r}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                image_field = images[0]
+                if not isinstance(image_field, str) or not image_field.strip():
+                    errors.append(
+                        f"Invalid image field in `images[0]` at {jsonl_path}:{line_no}: {image_field!r}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                try:
+                    img_path = self._resolve_image_path(jsonl_path, image_field)
+                except FileNotFoundError as exc:
+                    errors.append(str(exc))
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                try:
+                    with Image.open(img_path) as im:
+                        im.convert("RGB")
+                except (OSError, ValueError) as exc:
+                    errors.append(
+                        f"Failed to open image at {img_path} (from {jsonl_path}:{line_no}): {exc.__class__.__name__}: {exc}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                objs_raw = record.get("objects")
+                gt_raw = record.get("gt")
+                if objs_raw is not None and not isinstance(objs_raw, list):
+                    errors.append(
+                        f"GT record 'objects' must be a list at {jsonl_path}:{line_no}; got {type(objs_raw).__name__}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+                if objs_raw is None and gt_raw is not None and not isinstance(gt_raw, list):
+                    errors.append(
+                        f"GT record 'gt' must be a list at {jsonl_path}:{line_no}; got {type(gt_raw).__name__}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+                    continue
+
+                gt_errors: List[str] = []
+                _ = self._process_gt(record, width=width, height=height, errors=gt_errors)
+                if gt_errors:
+                    errors.append(
+                        f"Invalid GT geometry at {jsonl_path}:{line_no} (mode={self.resolved_mode}): {gt_errors}"
+                    )
+                    if len(errors) >= max_errors:
+                        break
+
+        if errors:
+            msg = "Inference preflight failed (operator-controlled input violations):\n" + "\n".join(
+                f"- {e}" for e in errors
+            )
+            raise ValueError(msg)
 
     def infer(self) -> Tuple[Path, Path]:
         jsonl_path = Path(self.cfg.gt_jsonl)
         out_path = Path(self.cfg.out_path)
         summary_path = Path(self.cfg.summary_path or (out_path.parent / "summary.json"))
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
 
         backend = str(self.cfg.backend_type).strip().lower()
         determinism = "strict" if backend == "hf" else "best_effort"
 
         try:
             batch_size = int(getattr(self.gen_cfg, "batch_size", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             batch_size = 1
         batch_size = max(1, int(batch_size))
 
+        # Fail fast on operator-controlled input violations before loading the model or
+        # emitting any partial artifacts.
+        self._preflight_inputs(jsonl_path)
+
         counters = RunCounters()
         self.load_model()
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
 
         resolved_meta = {
             "mode": self.resolved_mode,
@@ -1037,17 +1181,47 @@ class InferenceEngine:
         }
         if backend == "vllm":
             # Persist only non-sensitive backend fields.
-            public_fields = {"mode", "base_url", "model", "timeout_s", "client_concurrency"}
+            public_fields = {
+                "mode",
+                "base_url",
+                "model",
+                "timeout_s",
+                "client_concurrency",
+            }
             resolved_meta["backend_cfg"] = {
-                k: v for k, v in (self.cfg.backend or {}).items() if str(k) in public_fields
+                k: v
+                for k, v in (self.cfg.backend or {}).items()
+                if str(k) in public_fields
             }
 
         self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
 
-        def _emit(output: Dict[str, Any], errors: List[str]) -> None:
+        stage_by_code: Dict[str, str] = {
+            "empty_pred": "infer.parse_pred",
+            "invalid_coord": "infer.validate_pred",
+            "invalid_geometry": "infer.validate_pred",
+        }
+        message_by_code: Dict[str, str] = {
+            "empty_pred": "Prediction parsing produced no valid objects.",
+            "invalid_coord": "Prediction contains invalid coordinate values.",
+            "invalid_geometry": "Prediction contains invalid geometry.",
+        }
+
+        def _canonical(code: str) -> str:
+            return ERROR_CANONICAL.get(str(code), str(code))
+
+        def _error_entry(code: str) -> Dict[str, str]:
+            c = _canonical(code)
+            return {
+                "code": c,
+                "message": message_by_code.get(c, c),
+                "stage": stage_by_code.get(c, "infer"),
+            }
+
+        def _emit(output: Dict[str, Any], error_codes: List[str]) -> None:
             fout.write(json.dumps(output, ensure_ascii=False) + "\n")
-            for code in errors:
-                counters.add(ERROR_CANONICAL.get(code, code))
+            for code in error_codes:
+                counters.add(str(code))
             counters.total_emitted += 1
 
         def _flush_pending(pending: List[Dict[str, Any]]) -> None:
@@ -1064,34 +1238,34 @@ class InferenceEngine:
 
             images = [p["image_obj"] for p in pending]
             results = self._generate_batch(images)
+            if len(results) != len(pending):
+                raise RuntimeError(
+                    f"generation returned {len(results)} outputs for {len(pending)} inputs"
+                )
 
             for p, res in zip(pending, results):
-                errors = list(p["errors"])
-                raw_output_json: Dict[str, Any] | None = None
-                raw_special_tokens: List[str] = []
-                raw_ends_with_im_end = False
-                pred: List[Dict[str, Any]] = []
-
                 if res.error is not None:
-                    errors.append("generation_failed")
-                else:
-                    raw_text = res.text
-                    raw_special_tokens = extract_special_tokens(raw_text)
-                    raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
-                    raw_output_json = load_prediction_dict(raw_text)
-                    try:
-                        pred_errors: List[str] = []
-                        pred = self._process_pred(
-                            raw_text,
-                            width=int(p["width"]),
-                            height=int(p["height"]),
-                            errors=pred_errors,
-                        )
-                        pred = self._compact_objects(pred)
-                        errors.extend(pred_errors)
-                    except Exception:
-                        errors.append("generation_failed")
-                        pred = []
+                    raise RuntimeError(
+                        f"Generation failed for sample image={p['image']}"
+                    ) from res.error
+
+            for p, res in zip(pending, results):
+                raw_text = res.text
+                raw_special_tokens = extract_special_tokens(raw_text)
+                raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
+                raw_output_json = load_prediction_dict(raw_text)
+
+                pred_errors: List[str] = []
+                pred = self._process_pred(
+                    raw_text,
+                    width=int(p["width"]),
+                    height=int(p["height"]),
+                    errors=pred_errors,
+                )
+                pred = self._compact_objects(pred)
+
+                error_codes = [_canonical(c) for c in pred_errors]
+                error_entries = [_error_entry(c) for c in pred_errors]
 
                 output = {
                     "image": p["image"],
@@ -1105,9 +1279,12 @@ class InferenceEngine:
                     "raw_output_json": raw_output_json,
                     "raw_special_tokens": raw_special_tokens,
                     "raw_ends_with_im_end": raw_ends_with_im_end,
-                    "errors": errors,
+                    # Back-compat: list of canonical error codes.
+                    "errors": error_codes,
+                    # Structured per-sample errors (minimal contract).
+                    "error_entries": error_entries,
                 }
-                _emit(output, errors)
+                _emit(output, error_codes)
 
         pbar_total = self.cfg.limit if self.cfg.limit > 0 else None
         pending: List[Dict[str, Any]] = []
@@ -1125,101 +1302,72 @@ class InferenceEngine:
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
             ) as pbar,
         ):
-            for line in fin:
+            for line_no, raw_line in enumerate(fin, start=1):
                 if self.cfg.limit and counters.total_emitted >= self.cfg.limit:
                     break
 
-                line = line.strip()
+                line = raw_line.strip()
                 if not line:
                     continue
 
                 # We update on non-empty lines for a smoother display.
                 pbar.update(1)
-
                 counters.total_read += 1
+
                 try:
                     record = json.loads(line)
-                except Exception:
-                    counters.add("invalid_json")
-                    continue
+                except json.JSONDecodeError as exc:
+                    snippet = line if len(line) <= 200 else (line[:200] + "...")
+                    raise ValueError(
+                        f"Malformed JSONL at {jsonl_path}:{line_no}: {snippet}"
+                    ) from exc
 
-                errors: List[str] = []
-                width = record.get("width")
-                height = record.get("height")
+                if not isinstance(record, dict):
+                    raise ValueError(f"Non-object JSONL record at {jsonl_path}:{line_no}")
+
+                width_raw = record.get("width")
+                height_raw = record.get("height")
                 try:
-                    width = int(width)
-                    height = int(height)
-                except Exception:
-                    width = None
-                    height = None
+                    width = int(width_raw)
+                    height = int(height_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Invalid width/height at {jsonl_path}:{line_no}: width={width_raw!r} height={height_raw!r}"
+                    ) from exc
 
-                image_key = (record.get("images") or [None])[0]
+                if width <= 0 or height <= 0:
+                    raise ValueError(
+                        f"Invalid width/height at {jsonl_path}:{line_no}: width={width} height={height}"
+                    )
 
-                if not width or not height:
-                    errors.append("size_mismatch")
-                    output = {
-                        "image": image_key,
-                        "width": width,
-                        "height": height,
-                        "mode": self.resolved_mode,
-                        "coord_mode": None,
-                        "gt": [],
-                        "pred": [],
-                        "raw_output_json": None,
-                        "raw_special_tokens": [],
-                        "raw_ends_with_im_end": False,
-                        "errors": errors,
-                    }
-                    _emit(output, errors)
-                    continue
+                images = record.get("images")
+                if not isinstance(images, list) or len(images) != 1:
+                    raise ValueError(
+                        f"Input record must contain exactly one image in `images` at {jsonl_path}:{line_no}: images={images!r}"
+                    )
 
-                # Process GT first to catch mode mismatches early.
+                image_key = images[0]
+                if not isinstance(image_key, str) or not image_key.strip():
+                    raise ValueError(
+                        f"Invalid image field in `images[0]` at {jsonl_path}:{line_no}: {image_key!r}"
+                    )
+
                 gt_errors: List[str] = []
-                gt = self._process_gt(
-                    record, width=width, height=height, errors=gt_errors
-                )
+                gt = self._process_gt(record, width=width, height=height, errors=gt_errors)
+                if gt_errors:
+                    raise ValueError(
+                        f"Invalid GT geometry at {jsonl_path}:{line_no} (mode={self.resolved_mode}): {gt_errors}"
+                    )
                 gt = self._compact_objects(gt)
-                errors.extend(gt_errors)
 
-                # Mode/GT mismatch detected by processor -> skip generation but still emit record.
-                run_generation = "mode_gt_mismatch" not in errors
+                _img_path, image_obj = self._prepare_image(jsonl_path, record)
 
-                images = record.get("images") or []
-                image_obj: Optional[Image.Image] = None
-                if len(images) != 1:
-                    errors.append("multi_image_not_supported")
-                    run_generation = False
-                else:
-                    _, image_obj = self._prepare_image(jsonl_path, record)
-                    if image_obj is None:
-                        errors.append("image_load_failed")
-                        run_generation = False
-
-                if not run_generation:
-                    output = {
-                        "image": image_key,
-                        "width": width,
-                        "height": height,
-                        "mode": self.resolved_mode,
-                        "coord_mode": "pixel",
-                        "gt": gt,
-                        "pred": [],
-                        "raw_output_json": None,
-                        "raw_special_tokens": [],
-                        "raw_ends_with_im_end": False,
-                        "errors": errors,
-                    }
-                    _emit(output, errors)
-                    continue
-
-                assert image_obj is not None
                 pending.append(
                     {
                         "image": image_key,
                         "width": width,
                         "height": height,
                         "gt": gt,
-                        "errors": errors,
                         "image_obj": image_obj,
                     }
                 )

@@ -39,7 +39,7 @@ def _resolve_device(device: str) -> str:
             import torch
 
             return "cuda:0" if torch.cuda.is_available() else "cpu"
-        except Exception:
+        except ImportError:
             return "cpu"
     return d
 

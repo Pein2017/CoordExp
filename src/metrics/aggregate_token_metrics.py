@@ -91,11 +91,10 @@ def build_next_token_batch(
 
     types_masked = None
     if token_types_next is not None:
-        try:
-            types_masked = token_types_next[supervised_mask]
-        except Exception:
+        if token_types_next.shape != supervised_mask.shape:
             token_types_next = None
-            types_masked = None
+        else:
+            types_masked = token_types_next[supervised_mask]
 
     return NextTokenBatch(
         logits_next=logits_next,

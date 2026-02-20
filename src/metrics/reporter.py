@@ -24,7 +24,7 @@ def warn_once(trainer: Any, *, key: str, message: str, exc_info: bool = False) -
         warned = set()
         try:
             setattr(trainer, _WARNED_ONCE_ATTR, warned)
-        except Exception:
+        except (AttributeError, TypeError):
             # If we can't stash state, fall back to always warning.
             logger.warning(message, exc_info=exc_info)
             return
@@ -46,7 +46,7 @@ def _disable(trainer: Any, name: str) -> None:
         disabled = set()
         try:
             setattr(trainer, _DISABLED_DIAGNOSTICS_ATTR, disabled)
-        except Exception:
+        except (AttributeError, TypeError):
             return
     disabled.add(name)
 
@@ -109,8 +109,9 @@ def best_effort_value(
     if _is_disabled(trainer, name):
         return default
 
+    value = default
     try:
-        return fn()
+        value = fn()
     except Exception:
         warn_once(
             trainer,
@@ -123,7 +124,8 @@ def best_effort_value(
         )
         if disable_on_error:
             _disable(trainer, name)
-        return default
+
+    return value
 
 
 class SwiftMetricReporter:
@@ -152,7 +154,7 @@ class SwiftMetricReporter:
     def emit_payload(self, payload: Mapping[str, Any]) -> None:
         try:
             normalized = validate_trainer_metrics_payload(payload)
-        except Exception:
+        except ValueError:
             warn_once(
                 self._trainer,
                 key="metric_payload_invalid",
@@ -189,7 +191,7 @@ class SwiftMetricReporter:
                 global_step=_resolve_global_step(self._trainer),
                 metrics=updates,
             )
-        except Exception:
+        except ValueError:
             warn_once(
                 self._trainer,
                 key="metric_payload_build_failed",

@@ -49,26 +49,26 @@ class PackedCaptionDataset(IterableDataset):
         # Cached base length for telemetry only (do not expose __len__)
         try:
             self.length_hint = len(dataset)
-        except Exception:
+        except TypeError:
             self.length_hint = None
 
         # Enable packing flags on template for padding_free collator
         try:
             self.template.packing = True
             self.template.padding_free = True
-        except Exception:
-            logger.warning("Unable to set template packing flags; packing may misbehave")
+        except (AttributeError, TypeError) as exc:
+            raise RuntimeError(
+                "PackedCaptionDataset requires template to expose 'packing' and 'padding_free' flags."
+            ) from exc
 
         self._epoch: int | None = None
 
     # ---- Dataset plumbing -------------------------------------------------
     def set_epoch(self, epoch: int) -> None:
         self._epoch = int(epoch)
-        if hasattr(self.dataset, "set_epoch"):
-            try:
-                self.dataset.set_epoch(epoch)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning(f"Failed to forward set_epoch to base dataset: {exc}")
+        set_epoch_fn = getattr(self.dataset, "set_epoch", None)
+        if callable(set_epoch_fn):
+            set_epoch_fn(epoch)
 
     # Intentionally no __len__: treat as pure IterableDataset to avoid
     # ms-swift attaching BatchSamplerShard (PyTorch forbids batch_sampler with
@@ -78,11 +78,10 @@ class PackedCaptionDataset(IterableDataset):
     # ---- Core iterator ----------------------------------------------------
     def __iter__(self) -> Iterable[List[dict]]:
         # Ensure base dataset sees current epoch each iterator build
-        if self._epoch is not None and hasattr(self.dataset, "set_epoch"):
-            try:
-                self.dataset.set_epoch(self._epoch)
-            except Exception:
-                raise
+        if self._epoch is not None:
+            set_epoch_fn = getattr(self.dataset, "set_epoch", None)
+            if callable(set_epoch_fn):
+                set_epoch_fn(self._epoch)
 
         iterator = self._iter_base_dataset()
         buffer: list[Tuple[dict, int]] = []
@@ -164,7 +163,7 @@ class PackedCaptionDataset(IterableDataset):
             return None
         try:
             return len(input_ids)
-        except Exception:
+        except TypeError:
             return None
 
     def _pack_buffer(

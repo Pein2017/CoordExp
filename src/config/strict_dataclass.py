@@ -63,7 +63,7 @@ def dataclass_asdict_no_none(obj: Any) -> dict[str, Any]:
 def _resolved_type_hints(schema_type: type) -> dict[str, Any]:
     try:
         return get_type_hints(schema_type, include_extras=True)
-    except Exception:
+    except (NameError, TypeError, ValueError, AttributeError):
         # Fall back to dataclass field.type when annotations cannot be resolved.
         return {}
 
