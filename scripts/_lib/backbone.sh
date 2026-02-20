@@ -21,11 +21,10 @@ ensure_required() {
 
 # Use an array so callers can safely append args without eval/quoting issues.
 COORDEXP_PYTHON=()
-if [[ -n "${PYTHON_BIN:-}" ]]; then
-  COORDEXP_PYTHON=("${PYTHON_BIN}")
+if [[ -n "${python_bin:-${PYTHON_BIN:-}}" ]]; then
+  COORDEXP_PYTHON=("${python_bin:-${PYTHON_BIN:-}}")
 elif command -v conda >/dev/null 2>&1; then
-  COORDEXP_PYTHON=(conda run -n "${CONDA_ENV:-ms}" python)
+  COORDEXP_PYTHON=(conda run -n "${conda_env:-${CONDA_ENV:-ms}}" python)
 else
   COORDEXP_PYTHON=(python)
 fi
-

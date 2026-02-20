@@ -11,13 +11,10 @@ set -euo pipefail
 #   to preserve distinct embedding vs head updates.
 #
 # Preferred usage (env vars):
-#   ADAPTERS=output/.../checkpoint-XXX \
-#   OUTPUT_DIR=output/.../merged_ckXXX \
-#   GPU_DEVICES=0 \
+#   adapters=output/.../checkpoint-XXX \
+#   output_dir=output/.../merged_ckXXX \
+#   gpu_devices=0 \
 #   bash scripts/merge_coord.sh
-#
-# Positional args are also supported for convenience:
-#   bash scripts/merge_coord.sh <adapter_dir> <output_dir> [gpu_devices]
 #
 # Safety:
 #   This script will NOT delete an existing OUTPUT_DIR unless ALLOW_OVERWRITE=1.
@@ -28,39 +25,34 @@ source "${SCRIPT_DIR}/_lib/backbone.sh"
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  ADAPTERS=<adapter_dir> OUTPUT_DIR=<output_dir> [GPU_DEVICES=0] bash scripts/merge_coord.sh
-  bash scripts/merge_coord.sh <adapter_dir> <output_dir> [gpu_devices]
+  adapters=<adapter_dir> output_dir=<output_dir> [gpu_devices=0] bash scripts/merge_coord.sh
 
 Env vars:
-  ADAPTERS           Adapter checkpoint directory (must contain adapter_config.json)
-  OUTPUT_DIR         Output directory for the merged checkpoint
-  GPU_DEVICES        CUDA_VISIBLE_DEVICES for swift (default: 0)
-  ALLOW_OVERWRITE    Set to 1 to delete an existing OUTPUT_DIR (default: 0)
-  MAX_SHARD_SIZE     Passed to swift export (default: 5GB)
-  PYTHON_BIN         Optional override for python
-  SWIFT_BIN          Optional override for swift
-  CONDA_ENV          Conda env name if using conda run (default: ms)
+  adapters           Adapter checkpoint directory (must contain adapter_config.json)
+  output_dir         Output directory for the merged checkpoint
+  gpu_devices        CUDA_VISIBLE_DEVICES for swift (default: 0)
+  allow_overwrite    Set to 1 to delete an existing output_dir (default: 0)
+  max_shard_size     Passed to swift export (default: 5GB)
+  python_bin         Optional override for python
+  swift_bin          Optional override for swift
+  conda_env          Conda env name if using conda run (default: ms)
 EOF
   exit 1
 }
 
-ADAPTERS="${ADAPTERS:-}"
-OUTPUT_DIR="${OUTPUT_DIR:-}"
-GPU_DEVICES="${GPU_DEVICES:-0}"
-ALLOW_OVERWRITE="${ALLOW_OVERWRITE:-0}"
-MAX_SHARD_SIZE="${MAX_SHARD_SIZE:-5GB}"
-
 if [[ $# -gt 0 ]]; then
-  if [[ $# -lt 2 || $# -gt 3 ]]; then
-    usage
-  fi
-  ADAPTERS="$1"
-  OUTPUT_DIR="$2"
-  GPU_DEVICES="${3:-$GPU_DEVICES}"
+  echo "[ERROR] scripts/merge_coord.sh accepts environment variables only (no positional args)." >&2
+  usage
 fi
 
-ensure_required "ADAPTERS" "$ADAPTERS"
-ensure_required "OUTPUT_DIR" "$OUTPUT_DIR"
+ADAPTERS="${adapters:-${ADAPTERS:-}}"
+OUTPUT_DIR="${output_dir:-${OUTPUT_DIR:-}}"
+GPU_DEVICES="${gpu_devices:-${GPU_DEVICES:-0}}"
+ALLOW_OVERWRITE="${allow_overwrite:-${ALLOW_OVERWRITE:-0}}"
+MAX_SHARD_SIZE="${max_shard_size:-${MAX_SHARD_SIZE:-5GB}}"
+
+ensure_required "adapters" "$ADAPTERS"
+ensure_required "output_dir" "$OUTPUT_DIR"
 
 if [[ ! -f "$ADAPTERS/adapter_config.json" ]]; then
   echo "adapter_config.json not found under $ADAPTERS" >&2
@@ -69,10 +61,10 @@ fi
 
 # Prefer conda run for swift, but allow overrides.
 COORDEXP_SWIFT=()
-if [[ -n "${SWIFT_BIN:-}" ]]; then
-  COORDEXP_SWIFT=("${SWIFT_BIN}")
+if [[ -n "${swift_bin:-${SWIFT_BIN:-}}" ]]; then
+  COORDEXP_SWIFT=("${swift_bin:-${SWIFT_BIN:-}}")
 elif command -v conda >/dev/null 2>&1; then
-  COORDEXP_SWIFT=(conda run -n "${CONDA_ENV:-ms}" swift)
+  COORDEXP_SWIFT=(conda run -n "${conda_env:-${CONDA_ENV:-ms}}" swift)
 else
   COORDEXP_SWIFT=(swift)
 fi

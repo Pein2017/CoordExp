@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+if [[ $# -gt 0 ]]; then
+  echo "[ERROR] scripts/train.sh accepts environment variables only (no positional args)." >&2
+  echo "[ERROR] Example: config=configs/stage2_ab/prod/a_only.yaml gpus=0,1 bash scripts/train.sh" >&2
+  exit 2
+fi
+
 # CUDA / NCCL runtime defaults (can be overridden by caller)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -15,7 +21,7 @@ export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
 # Proxy hygiene: local vLLM server-mode uses localhost HTTP endpoints (health + infer).
 # A global http(s)_proxy can route localhost traffic and break training.
-DISABLE_PROXY="${disable_proxy:-true}"
+DISABLE_PROXY="${disable_proxy:-${DISABLE_PROXY:-true}}"
 if [[ "${DISABLE_PROXY}" == "true" || "${DISABLE_PROXY}" == "1" ]]; then
   # Merge existing NO_PROXY/no_proxy and ensure localhost entries are present.
   _np_raw="${NO_PROXY:-${no_proxy:-}}"
@@ -45,20 +51,21 @@ fi
 # Resolve repository root from this script's location and set PYTHONPATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONDA_ENV="${CONDA_ENV:-ms}"
-PYTHON_BIN=(conda run -n "${CONDA_ENV}" python)
-TORCHRUN_BIN=(conda run -n "${CONDA_ENV}" torchrun)
+# Use the currently active environment's Python binaries.
+PYTHON_BIN=(python)
+TORCHRUN_BIN=(torchrun)
 export PYTHONPATH="${REPO_DIR}${PYTHONPATH:+:$PYTHONPATH}"
 
 # ============================================================================
 # Runtime Settings (NOT training hyperparameters)
 # ============================================================================
 
-CONFIG_RAW="${config:-debug}"
-DEBUG="${debug:-false}"
+CONFIG_RAW="${config:-${CONFIG:-debug}}"
+DEBUG="${debug:-${DEBUG:-false}}"
 
 # GPU configuration
-CUDA_VISIBLE_DEVICES="${gpus:-0}"
+GPU_DEVICES="${gpus:-${GPU_DEVICES:-0}}"
+CUDA_VISIBLE_DEVICES="${GPU_DEVICES}"
 
 # Derive number of GPUs (ignore empty/whitespace tokens)
 IFS=',' read -r -a _raw_gpu_array <<< "${CUDA_VISIBLE_DEVICES}"
@@ -216,7 +223,7 @@ echo "========================================================================"
 echo "[INFO] Config file: ${CONFIG_PATH}"
 echo "[INFO] GPUs: ${CUDA_VISIBLE_DEVICES} (num=${NUM_GPUS})"
 echo "[INFO] Master port: ${MASTER_PORT}"
-echo "[INFO] Python: conda run -n ${CONDA_ENV} python"
+echo "[INFO] Python: python (active environment)"
 echo "[INFO] Debug mode: ${DEBUG}"
 echo "[INFO] disable_proxy: ${DISABLE_PROXY}"
 echo "========================================================================"

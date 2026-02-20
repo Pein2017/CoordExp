@@ -1,37 +1,35 @@
 #!/usr/bin/env bash
 # Launch vLLM rollout server (swift rollout) + Stage-2 AB learner training in one entrypoint.
+# Assumes the target environment is already activated.
 #
-# Example (single node, 8 GPUs; default 6 actors / 2 learners split):
-#   bash scripts/train_stage2.sh \
-#     server_gpus=0,1,2,3,4,5 train_gpus=6,7 \
-#     config=configs/stage2_ab/smoke/ab_mixed.yaml
+# Example (single node, 8 GPUs; default 7 actors / 1 learner split):
+#   server_gpus=0,1,2,3,4,5,6 \
+#   train_gpus=7 \
+#   config=configs/stage2_ab/smoke/ab_mixed.yaml \
+#   bash scripts/train_stage2.sh
 
 set -euo pipefail
 
-# Allow passing key=value pairs as positional args (common launcher convention).
-for arg in "$@"; do
-  if [[ "${arg}" != *=* ]]; then
-    echo "[ERROR] Unknown argument: ${arg} (expected key=value)" >&2
-    exit 2
-  fi
-  key="${arg%%=*}"
-  if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-    echo "[ERROR] Invalid argument name in: ${arg}" >&2
-    exit 2
-  fi
-  export "${arg}"
-done
+if [[ $# -gt 0 ]]; then
+  echo "[ERROR] scripts/train_stage2.sh accepts environment variables only (no positional args)." >&2
+  echo "[ERROR] Example: server_gpus=0,1,2,3,4,5,6 train_gpus=7 config=configs/stage2_ab/prod/a_only.yaml bash scripts/train_stage2.sh" >&2
+  exit 2
+fi
 
 # Defaults (override via env vars)
-CONDA_ENV="${CONDA_ENV:-ms}"
-SERVER_GPUS="${server_gpus:-0,1,2,3,4,5,6}"
-TRAIN_GPUS="${train_gpus:-7}"
-WAIT_TIMEOUT="${wait_timeout:-900}"
-WAIT_INTERVAL="${wait_interval:-2}"
-CONFIG_RAW="${config:-configs/stage2_ab/smoke/ab_mixed.yaml}"
-DEBUG="${debug:-false}"
-TRAIN_ENV="${train_env:-}"
-DISABLE_PROXY="${disable_proxy:-true}"
+SERVER_GPUS="${server_gpus:-${SERVER_GPUS:-0,1,2,3,4,5,6}}"
+TRAIN_GPUS="${train_gpus:-${TRAIN_GPUS:-7}}"
+WAIT_TIMEOUT="${wait_timeout:-${WAIT_TIMEOUT:-900}}"
+WAIT_INTERVAL="${wait_interval:-${WAIT_INTERVAL:-2}}"
+CONFIG_RAW="${config:-${CONFIG:-configs/stage2_ab/smoke/ab_mixed.yaml}}"
+DEBUG="${debug:-${DEBUG:-false}}"
+TRAIN_ENV="${train_env:-${TRAIN_ENV:-}}"
+DISABLE_PROXY="${disable_proxy:-${DISABLE_PROXY:-true}}"
+SERVER_DP="${server_dp:-${SERVER_DP:-}}"
+SERVER_TP="${server_tp:-${SERVER_TP:-1}}"
+SERVER_TORCH_DTYPE="${server_torch_dtype:-${SERVER_TORCH_DTYPE:-}}"
+SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-${SERVER_VLLM_ENFORCE_EAGER:-true}}"
+VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-${VLLM_GPU_MEMORY_UTILIZATION:-}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -142,7 +140,7 @@ PY
 )
 
 CONFIG_VARS="$(
-  CONFIG_PATH="${CONFIG_PATH}" conda run -n "${CONDA_ENV}" python -c "${PY_CODE}"
+  CONFIG_PATH="${CONFIG_PATH}" python -c "${PY_CODE}"
 )" || {
   echo "[ERROR] Failed to resolve vLLM server settings from ${CONFIG_PATH}" >&2
   exit 1
@@ -240,7 +238,7 @@ echo "[PRECHECK] max_pixels: ${TEMPLATE_MAX_PIXELS} (expect 768*32*32=786432)"
 echo "[PRECHECK] multiple_of: 32"
 echo "========================================================================"
 
-conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
   --jsonl "${TRAIN_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
@@ -248,7 +246,7 @@ conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max
   --image-check-n 0
 
 # Spot-check open+size alignment on train to catch any meta/image mismatch.
-conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
   --jsonl "${TRAIN_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
@@ -256,7 +254,7 @@ conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max
   --image-check-n 256
 
 # Validate val with full open+size checks (usually small enough).
-conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
   --jsonl "${VAL_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
@@ -296,12 +294,12 @@ for _dev in "${train_gpu_array[@]}"; do
   _gpu_seen[$_dev]="train"
 done
 
-SERVER_DP="${server_dp:-${#server_gpu_array[@]}}"
-SERVER_TP="${server_tp:-1}"
+SERVER_DP_RAW="${SERVER_DP}"
 
 # Server runtime knobs (kept config-free; affects only server launch)
-SERVER_TORCH_DTYPE="${server_torch_dtype:-${SERVER_TORCH_DTYPE_CFG:-bfloat16}}"
-SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-true}"
+if [[ -z "${SERVER_TORCH_DTYPE}" ]]; then
+  SERVER_TORCH_DTYPE="${SERVER_TORCH_DTYPE_CFG:-bfloat16}"
+fi
 
 # Default server parallelism: **data-parallel first** (tp=1, dp=#gpus).
 # Rationale: on nodes where a single GPU can fit the full model, DP maximizes
@@ -310,7 +308,7 @@ SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-true}"
 # If caller sets `server_tp>1` (and leaves `server_dp` unset), we derive
 # `server_dp = n_gpus / server_tp` so TP+DP combinations still work without
 # extra knobs.
-if [[ -z "${server_dp:-}" ]]; then
+if [[ -z "${SERVER_DP_RAW}" ]]; then
   if [[ "${SERVER_TP}" -le 0 ]]; then
     echo "[ERROR] server_tp must be >= 1. Got server_tp=${SERVER_TP}" >&2
     exit 2
@@ -321,10 +319,14 @@ if [[ -z "${server_dp:-}" ]]; then
     exit 2
   fi
   SERVER_DP=$(( ${#server_gpu_array[@]} / SERVER_TP ))
+else
+  SERVER_DP="${SERVER_DP_RAW}"
 fi
 
 # Default lower utilization for stability (avoid borderline OOM on busy nodes).
-VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}}"
+if [[ -z "${VLLM_GPU_MEMORY_UTILIZATION}" ]]; then
+  VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}"
+fi
 
 echo "========================================================================"
 echo "  Stage-2 AB vLLM Server + Learner Launcher"
@@ -348,7 +350,7 @@ if [[ -n "${NO_PROXY:-}" ]]; then
 fi
 SERVER_ENV+=(ROOT_IMAGE_DIR="${ROOT_IMAGE_DIR_RESOLVED}")
 
-SERVER_CMD=(conda run -n "${CONDA_ENV}" swift rollout \
+SERVER_CMD=(swift rollout \
   --model "${SERVER_MODEL}" \
   --host "${SERVER_HOST}" \
   --port "${SERVER_PORT}" \

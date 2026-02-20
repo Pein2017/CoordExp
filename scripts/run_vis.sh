@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -gt 0 ]]; then
+  echo "[ERROR] scripts/run_vis.sh accepts environment variables only (no positional args)." >&2
+  echo "[ERROR] Example: pred_jsonl=output/.../gt_vs_pred.jsonl save_dir=vis_out root_image_dir=public_data/... bash scripts/run_vis.sh" >&2
+  exit 2
+fi
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_lib/backbone.sh"
 
 # ----------- Declare runtime configuration -----------
-PRED_JSONL="${PRED_JSONL:-}"
-SAVE_DIR="${SAVE_DIR:-}"
-ROOT_IMAGE_DIR="${ROOT_IMAGE_DIR:-}"
-LIMIT="${LIMIT:-20}"
+PRED_JSONL="${pred_jsonl:-${PRED_JSONL:-}}"
+SAVE_DIR="${save_dir:-${SAVE_DIR:-}}"
+ROOT_IMAGE_DIR="${root_image_dir:-${ROOT_IMAGE_DIR:-}}"
+LIMIT="${limit:-${LIMIT:-20}}"
 
 ensure_required "PRED_JSONL" "$PRED_JSONL"
 ensure_required "SAVE_DIR" "$SAVE_DIR"
