@@ -7,7 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from data_conversion.utils.exif_utils import apply_exif_orientation
+try:
+    from data_conversion.utils.exif_utils import apply_exif_orientation
+except ModuleNotFoundError:  # data_conversion is optional for some users
+    def apply_exif_orientation(img: Image.Image) -> Image.Image:
+        return img
 
 from ..utils.logger import get_logger
 from .augmentation.base import AugmentationPipeline
