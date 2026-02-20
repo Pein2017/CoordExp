@@ -114,6 +114,31 @@ def test_detect_mode_from_gt_rejects_malformed_jsonl(tmp_path: Path) -> None:
         detect_mode_from_gt(str(gt), sample_size=128)
 
 
+@pytest.mark.parametrize(
+    ("record", "error_pattern"),
+    [
+        (
+            {"height": 32, "objects": [{"bbox_2d": [0, 0, 10, 10]}]},
+            "Missing width/height",
+        ),
+        (
+            {"width": "abc", "height": 32, "objects": [{"bbox_2d": [0, 0, 10, 10]}]},
+            "Invalid width/height",
+        ),
+    ],
+)
+def test_detect_mode_from_gt_rejects_invalid_size_records(
+    tmp_path: Path,
+    record: dict[str, object],
+    error_pattern: str,
+) -> None:
+    gt = tmp_path / "gt.jsonl"
+    _write_jsonl(gt, [record])
+
+    with pytest.raises(ValueError, match=error_pattern):
+        detect_mode_from_gt(str(gt), sample_size=128)
+
+
 def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:
     cfg = {
         "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
@@ -128,6 +153,7 @@ def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:
     assert stages.infer and stages.eval and stages.vis
     assert artifacts.run_dir == tmp_path / "out" / "demo"
     assert artifacts.gt_vs_pred_jsonl == artifacts.run_dir / "gt_vs_pred.jsonl"
+    assert artifacts.gt_vs_pred_scored_jsonl is None
     assert artifacts.summary_json == artifacts.run_dir / "summary.json"
     assert artifacts.eval_dir == artifacts.run_dir / "eval"
     assert artifacts.vis_dir == artifacts.run_dir / "vis"
@@ -314,6 +340,107 @@ def test_pipeline_eval_stage_rejects_deprecated_eval_keys(
 
     with pytest.raises(ValueError, match=fr"eval\.{deprecated_key}"):
         run_pipeline(config_path=config_path)
+
+
+def test_pipeline_eval_stage_rejects_legacy_use_pred_score_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    base_jsonl = tmp_path / "external" / "gt_vs_pred.jsonl"
+    base_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    base_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "artifacts": {"gt_vs_pred_jsonl": str(base_jsonl)},
+        "stages": {"infer": False, "eval": True, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+        "eval": {"metrics": "f1ish", "use_pred_score": True},
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="eval.use_pred_score"):
+        run_pipeline(config_path=config_path)
+
+
+def test_pipeline_eval_stage_requires_scored_artifact_for_coco(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    base_jsonl = tmp_path / "external" / "gt_vs_pred.jsonl"
+    base_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    base_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "artifacts": {"gt_vs_pred_jsonl": str(base_jsonl)},
+        "stages": {"infer": False, "eval": True, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+        "eval": {"metrics": "coco"},
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifacts.gt_vs_pred_scored_jsonl"):
+        run_pipeline(config_path=config_path)
+
+
+def test_pipeline_eval_stage_f1ish_uses_base_artifact_without_scored_jsonl(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    base_jsonl = tmp_path / "external" / "gt_vs_pred.jsonl"
+    base_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    base_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "artifacts": {"gt_vs_pred_jsonl": str(base_jsonl)},
+        "stages": {"infer": False, "eval": True, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+        "eval": {"metrics": "f1ish"},
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    import src.eval.detection as detection
+
+    captured: dict[str, Path] = {}
+
+    def _fake_eval(pred_path: Path, *, options):  # type: ignore[no-untyped-def]
+        captured["pred_path"] = Path(pred_path)
+        return {"metrics": {}, "per_class": {}, "counters": {}, "categories": {}}
+
+    monkeypatch.setattr(detection, "evaluate_and_save", _fake_eval)
+
+    run_pipeline(config_path=config_path)
+    assert captured["pred_path"] == base_jsonl
+
 
 def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
     tmp_path: Path, monkeypatch

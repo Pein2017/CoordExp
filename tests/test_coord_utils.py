@@ -132,6 +132,8 @@ def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):
         "width": 64,
         "height": 48,
         "coord_mode": "norm1000",
+        "pred_score_source": "confidence_postop",
+        "pred_score_version": 1,
         "predictions": [
             {"type": "bbox_2d", "points": [0, 0, 999, 999], "desc": "box", "score": 1.0}
         ],

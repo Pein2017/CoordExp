@@ -3,11 +3,15 @@
 # Unified pipeline contract: evaluation consumes the inference artifact JSONL
 # that embeds both GT and predictions per sample.
 
-pred_jsonl: path/to/gt_vs_pred.jsonl
+# For COCO/mAP, this should point to a scored artifact (gt_vs_pred_scored.jsonl)
+# produced by `scripts/postop_confidence.py`.
+# For f1ish-only evaluation, base gt_vs_pred.jsonl is allowed.
+pred_jsonl: path/to/gt_vs_pred_scored.jsonl
 out_dir: eval_out
 
 # Metrics
 metrics: f1ish                 # coco | f1ish | both
+# Fixed-score toggle is intentionally removed: do not add `use_pred_score`.
 use_segm: true                 # include segmentation metrics when polygons exist
 strict_parse: false            # warn+skip malformed rows (bounded diagnostics)
 

@@ -4,7 +4,8 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 
 ## Inputs
 - `pred_jsonl`: Pixel-space predictions produced by `scripts/run_infer.py` (unified engine); **must include inline `gt`** per line.
-- Geometry objects live under `gt` / `pred` arrays with fields `{type, points, desc, score}`; legacy `predictions`/raw-text parsing is no longer used.
+- Geometry objects live under `gt` / `pred` arrays with canonical fields `{type, points, desc}` in base artifacts.  
+  For COCO/mAP, use the scored artifact (`gt_vs_pred_scored.jsonl`) where kept predictions also include `score` plus per-record score provenance keys (`pred_score_source`, `pred_score_version`).
 - Width/height are taken from the inline GT; size mismatches are counted but do not abort.
 - JSONL parse strictness is config-driven:
   - `eval.strict_parse=true`: fail fast on the first malformed/non-object record.
@@ -16,8 +17,10 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - Categories use exact GT desc strings. Predicted `desc` values that are not in the GT category set are **semantically mapped** to the closest GT desc (excluding synthetic `unknown`) using a sentence-transformer encoder; if the best match is below threshold, the prediction is **dropped** (map-or-drop; no bucket/drop fallbacks).
   - `--unknown-policy` and `--semantic-fallback` are **deprecated/ignored** (retained only for back-compat; the evaluator will warn once).
   - When semantic mapping runs, the evaluator writes `semantic_desc_report.json` to the output directory for inspection.
-- Scores are fixed at 1.0 (greedy decoding outputs have no reliable confidence); any provided `score` fields are ignored.
+- COCO scoring always honors each kept prediction’s `pred[*].score`; missing/non-numeric/non-finite/out-of-range scores are contract violations and fail fast with record/object indices.
+- For COCO runs, unscored legacy artifacts are rejected: each record must include non-empty `pred_score_source` and integer `pred_score_version`.
 - COCOeval runs for bbox and segm (when polygons exist). TODO: polygon GIoU hook.
+  - Milestone note: `confidence-postop` v1 scores `bbox_2d` only and drops unscorable predictions in the scored artifact. For scored COCO runs, prefer bbox-only evaluation (`use_segm: false`) until polygon confidence is added.
 - Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
   - By default (`--f1ish-pred-scope annotated`), predictions whose `desc` is **not semantically close to any GT `desc` in the image** are **ignored** (not counted as FP). This makes F1-ish behave like “how well do we recover annotated objects” on partially-annotated / open-vocab settings.
   - Use `--f1ish-pred-scope all` for strict counting that penalizes any extra predictions as FP.
@@ -52,7 +55,7 @@ Artifacts (when F1-ish is enabled via `--metrics f1ish|both`):
 
 ## Staged workflow
 
-The unified artifact is `gt_vs_pred.jsonl` (pixel-space, with inline GT).
+The base unified artifact is `gt_vs_pred.jsonl` (pixel-space, with inline GT).
 
 1) Run inference to produce `gt_vs_pred.jsonl`:
 
@@ -65,16 +68,28 @@ PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
   --summary output/infer/<run_name>/summary.json
 ```
 
-2) Evaluate (consumes inline GT from the artifact; no separate GT path):
+2) Run confidence post-op (CPU-only) to produce:
+- `pred_confidence.jsonl`,
+- `gt_vs_pred_scored.jsonl`,
+- `confidence_postop_summary.json`.
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
+  --config configs/postop/confidence.yaml
+```
+
+3) Evaluate:
+- COCO (`metrics: coco|both`): use `gt_vs_pred_scored.jsonl`.
+- f1ish-only (`metrics: f1ish`): base `gt_vs_pred.jsonl` is allowed.
 
 ```bash
 PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
-  --pred_jsonl output/infer/<run_name>/gt_vs_pred.jsonl \
+  --pred_jsonl output/infer/<run_name>/gt_vs_pred_scored.jsonl \
   --out_dir output/infer/<run_name>/eval \
-  --metrics both
+  --metrics coco
 ```
 
-3) Visualize (consumes inline GT from the artifact):
+4) Visualize (consumes inline GT from the base artifact):
 
 ```bash
 PYTHONPATH=. conda run -n ms python vis_tools/vis_coordexp.py \
@@ -89,6 +104,9 @@ Tip: you can also run infer+eval+vis from a single YAML pipeline config:
 ```bash
 PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/infer/pipeline.yaml
 ```
+
+When pipeline eval requests COCO metrics, configure `artifacts.gt_vs_pred_scored_jsonl`
+and run confidence post-op first; otherwise pipeline eval fails fast by design.
 
 Tip: for benchmarkable runs (like the ones driven by `scripts/run_infer_eval.sh`), prefer the dedicated configs under `configs/bench/` instead of re-typing long env/flag lists. For example:
 
@@ -106,6 +124,8 @@ silent contract drift between infer/eval/vis stages.
 
 1) Artifact layout (deterministic)
 - Confirm `<run_dir>/gt_vs_pred.jsonl` and `<run_dir>/summary.json` exist.
+- For score-aware COCO runs, confirm `<run_dir>/gt_vs_pred_scored.jsonl`,
+  `<run_dir>/pred_confidence.jsonl`, and `<run_dir>/confidence_postop_summary.json` exist.
 - If you ran the YAML pipeline, confirm `<run_dir>/resolved_config.json` exists
   (this records the effective config/stages/artifacts for reproducibility).
 - Treat `resolved_config.json` compatibility as:

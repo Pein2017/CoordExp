@@ -1,0 +1,18 @@
+# Offline confidence post-op (CPU-only, YAML-first).
+#
+# Run:
+#   PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
+#     --config configs/postop/confidence.yaml
+
+artifacts:
+  # Optional base directory. Any path below can be omitted to use `<run_dir>/<default_name>`.
+  run_dir: output/infer/example_run
+
+  # Required inputs
+  gt_vs_pred_jsonl: null         # defaults to <run_dir>/gt_vs_pred.jsonl
+  pred_token_trace_jsonl: null   # defaults to <run_dir>/pred_token_trace.jsonl
+
+  # Outputs
+  pred_confidence_jsonl: null            # defaults to <run_dir>/pred_confidence.jsonl
+  gt_vs_pred_scored_jsonl: null          # defaults to <run_dir>/gt_vs_pred_scored.jsonl
+  confidence_postop_summary_json: null   # defaults to <run_dir>/confidence_postop_summary.json
