@@ -337,13 +337,13 @@ def _stage2_ab_tail_closure_positions(
 
     try:
         prefix_len_i = int(prefix_len)
-    except Exception:
+    except (TypeError, ValueError):
         prefix_len_i = 0
     prefix_len_i = max(0, prefix_len_i)
 
     try:
         span_ids = [int(t) for t in assistant_span_ids]
-    except Exception:
+    except (TypeError, ValueError):
         span_ids = [int(t) for t in list(assistant_span_ids)]
 
     tail_cap = max(0, int(len(span_ids)) - int(prefix_len_i))
@@ -483,7 +483,7 @@ def _matched_prefix_structure_positions(
 
     try:
         token_ids = [int(t) for t in prefix_token_ids]
-    except Exception:
+    except (TypeError, ValueError):
         token_ids = [int(t) for t in list(prefix_token_ids)]
 
     if not token_ids or not matched_pred_objects:
@@ -526,7 +526,7 @@ def _matched_prefix_structure_positions(
         try:
             value_start = int(value_span[0])
             value_end = int(value_span[1])
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError(
                 f"matched object has non-integer value_span: {value_span!r}"
             ) from exc
@@ -625,8 +625,8 @@ class Stage2ABTrainingTrainer(
                     close_communicator=True,
                     close_sessions=True,
                 )
-            except Exception:
-                raise
+            except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning("Failed to shutdown vLLM server client: %s", exc)
 
     @contextlib.contextmanager
     def _hf_sampling_seed_context(
@@ -647,91 +647,44 @@ class Stage2ABTrainingTrainer(
 
         sb = int(seed_base)
 
-        # Save RNG states.
-        py_state = None
+        import random
+
+        py_state = random.getstate()
+
         np_state = None
-        torch_state = None
-        cuda_state = None
-
-        try:
-            import random
-
-            py_state = random.getstate()
-        except Exception:
-            py_state = None
-
+        np_module = None
         try:
             import numpy as np
-
+        except ImportError:
+            np = None  # type: ignore[assignment]
+        else:
+            np_module = np
             np_state = np.random.get_state()
-        except Exception:
-            np_state = None
 
-        try:
-            torch_state = torch.get_rng_state()
-        except Exception:
-            torch_state = None
+        torch_state = torch.get_rng_state()
+        cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
 
-        try:
-            if torch.cuda.is_available():
-                cuda_state = torch.cuda.get_rng_state_all()
-        except Exception:
-            cuda_state = None
-
-        # Seed (prefer Transformers helper; fall back to best-effort seeding).
         try:
             from transformers.trainer_utils import set_seed
-
+        except ImportError:
+            random.seed(sb)
+            if np_state is not None and np_module is not None:
+                np_module.random.seed(sb)
+            torch.manual_seed(sb)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(sb)
+        else:
             set_seed(sb)
-        except Exception:
-            try:
-                import random
-
-                random.seed(sb)
-            except Exception:
-                raise
-            try:
-                import numpy as np
-
-                np.random.seed(sb)
-            except Exception:
-                raise
-            try:
-                torch.manual_seed(sb)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(sb)
-            except Exception:
-                raise
 
         try:
             yield True
         finally:
-            # Restore RNG states.
-            if py_state is not None:
-                try:
-                    import random
-
-                    random.setstate(py_state)
-                except Exception:
-                    raise
-            if np_state is not None:
-                try:
-                    import numpy as np
-
-                    np.random.set_state(np_state)
-                except Exception:
-                    raise
-            if torch_state is not None:
-                try:
-                    torch.set_rng_state(torch_state)
-                except Exception:
-                    raise
-            if cuda_state is not None:
-                try:
-                    if torch.cuda.is_available():
-                        torch.cuda.set_rng_state_all(cuda_state)
-                except Exception:
-                    raise
+            random.setstate(py_state)
+            if np_state is not None and np_module is not None:
+                np_module.random.set_state(np_state)
+            torch.set_rng_state(torch_state)
+            if cuda_state is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(cuda_state)
 
     # Stage-2 AB scheduler helpers live in `src/trainers/stage2_ab/scheduler.py`.
 
@@ -740,17 +693,17 @@ class Stage2ABTrainingTrainer(
         world_size = 1
         try:
             import torch.distributed as dist
-        except Exception:
+        except ImportError:
             dist = None  # type: ignore[assignment]
 
         if dist is not None and dist.is_available() and dist.is_initialized():
             try:
                 world_size = int(dist.get_world_size())
-            except Exception:
+            except RuntimeError:
                 world_size = 1
             try:
                 rank = int(dist.get_rank())
-            except Exception:
+            except RuntimeError:
                 rank = 0
 
         return int(rank), int(world_size), dist
@@ -796,7 +749,7 @@ class Stage2ABTrainingTrainer(
                         reduced.setdefault(key, 0.0)
 
                 metric_keys = sorted(merged_keys.keys())
-            except Exception as exc:
+            except (AttributeError, RuntimeError) as exc:
                 if int(rank) == 0:
                     logger.warning(
                         "stage2-ab metric key sync failed; proceeding without key union: %r",
@@ -870,7 +823,7 @@ class Stage2ABTrainingTrainer(
                         device = model.device
                     elif model is not None:
                         device = next(model.parameters()).device
-                except Exception:
+                except (AttributeError, RuntimeError, StopIteration, TypeError):
                     device = torch.device("cpu")
 
                 def _all_reduce(keys: List[str], op: Any) -> None:
@@ -892,7 +845,7 @@ class Stage2ABTrainingTrainer(
                 if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced[key] / scale)
-            except Exception as exc:
+            except (AttributeError, RuntimeError) as exc:
                 if int(rank) == 0:
                     logger.warning(
                         "stage2-ab metric all-reduce failed; falling back to local metrics: %r",
@@ -922,23 +875,20 @@ class Stage2ABTrainingTrainer(
     # Stage-2 AB channel executors live in `src/trainers/stage2_ab/executors.py`.
 
     def log(self, logs: Dict[str, float]) -> None:
-        try:
-            if (
-                isinstance(logs, dict)
-                and "loss" in logs
-                and not any(str(k).startswith("eval_") for k in logs.keys())
-            ):
-                step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-                pending = self._stage2_pending_train_logs.pop(step, None)
-                if pending is not None:
-                    reduced = self._reduce_stage2_pending_metrics_global(
-                        pending.finalize(drop_internal=False)
-                    )
-                    reduced.pop("rollout/_parse_truncated_num", None)
-                    reduced.pop("rollout/_parse_truncated_den", None)
-                    logs.update(reduced)
-        except Exception:
-            raise
+        if (
+            isinstance(logs, dict)
+            and "loss" in logs
+            and not any(str(k).startswith("eval_") for k in logs.keys())
+        ):
+            step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+            pending = self._stage2_pending_train_logs.pop(step, None)
+            if pending is not None:
+                reduced = self._reduce_stage2_pending_metrics_global(
+                    pending.finalize(drop_internal=False)
+                )
+                reduced.pop("rollout/_parse_truncated_num", None)
+                reduced.pop("rollout/_parse_truncated_den", None)
+                logs.update(reduced)
         return super().log(logs)
 
     def training_step(self, model, inputs, *args, **kwargs):
@@ -1031,7 +981,7 @@ class Stage2ABTrainingTrainer(
                 window_segments=segs,
                 gas=gas,
             )
-        except Exception as exc:
+        except (RuntimeError, ValueError) as exc:
             # Fallback: greedy carry packing using the channel-local buffer. This is
             # less strict than window scheduling (it can borrow segments across micro-steps)
             # and avoids a hard failure when a window produces too few/infeasible segments.
@@ -1103,7 +1053,7 @@ class Stage2ABTrainingTrainer(
             if fallback_used and pack_metrics_list is not None and i < len(pack_metrics_list):
                 try:
                     buf_size = float(pack_metrics_list[i].get("packing/post_rollout_buffer", 0.0))
-                except Exception:
+                except (TypeError, ValueError):
                     buf_size = 0.0
 
             bm.update(
@@ -1188,14 +1138,9 @@ class Stage2ABTrainingTrainer(
             t_enc0 = time.perf_counter()
             data_for_encode = dict(sample)
             messages = json.loads(json.dumps(sample["messages"]))
-            has_assistant = False
-            try:
-                for m in messages:
-                    if isinstance(m, dict) and m.get("role") == "assistant":
-                        has_assistant = True
-                        break
-            except Exception:
-                has_assistant = False
+            has_assistant = any(
+                isinstance(m, dict) and m.get("role") == "assistant" for m in messages
+            )
 
             if has_assistant:
                 data_for_encode["messages"] = replace_assistant_response_with_ids(
@@ -1235,7 +1180,7 @@ class Stage2ABTrainingTrainer(
                         last = max(i for i, x in enumerate(lbl) if int(x) != -100)
                         prompt_len = int(first)
                         train_len_eff = int(last - first + 1)
-                except Exception:
+                except (TypeError, ValueError):
                     prompt_len = None
                     train_len_eff = None
 
@@ -1482,7 +1427,7 @@ class Stage2ABTrainingTrainer(
             if int(max_new_tokens) > 0 and int(len(resp_ids_local)) >= int(max_new_tokens):
                 try:
                     eos = int(eos_id) if eos_id is not None else -1
-                except Exception:
+                except (TypeError, ValueError):
                     eos = -1
                 if eos >= 0 and (not resp_ids_local or int(resp_ids_local[-1]) != eos):
                     resp_ids_local.append(int(eos))
@@ -1694,14 +1639,9 @@ class Stage2ABTrainingTrainer(
             t_enc0 = time.perf_counter()
             data_for_encode = dict(sample)
             messages = json.loads(json.dumps(sample["messages"]))
-            has_assistant = False
-            try:
-                for m in messages:
-                    if isinstance(m, dict) and m.get("role") == "assistant":
-                        has_assistant = True
-                        break
-            except Exception:
-                has_assistant = False
+            has_assistant = any(
+                isinstance(m, dict) and m.get("role") == "assistant" for m in messages
+            )
 
             if has_assistant:
                 data_for_encode["messages"] = replace_assistant_response_with_ids(
@@ -1741,7 +1681,7 @@ class Stage2ABTrainingTrainer(
                         last = max(i for i, x in enumerate(lbl) if int(x) != -100)
                         prompt_len = int(first)
                         train_len_eff = int(last - first + 1)
-                except Exception:
+                except (TypeError, ValueError):
                     prompt_len = None
                     train_len_eff = None
 
@@ -2067,12 +2007,9 @@ class Stage2ABTrainingTrainer(
         core_model = getattr(model, "module", model)
 
         # Qwen-VL (mRoPE) + padding_free packing: build 4-row position_ids.
-        try:
-            model_type = str(
-                getattr(getattr(core_model, "config", None), "model_type", "") or ""
-            )
-        except Exception:
-            model_type = ""
+        model_type = str(
+            getattr(getattr(core_model, "config", None), "model_type", "") or ""
+        )
 
         text_position_ids = inputs.get("text_position_ids")
         position_ids = inputs_for_model.get("position_ids")
@@ -2090,11 +2027,7 @@ class Stage2ABTrainingTrainer(
             )
 
         # Fail fast: padding-free packing needs the Qwen 4-row position_ids contract.
-        packing_enabled = False
-        try:
-            packing_enabled = bool(self._packing_enabled())
-        except Exception:
-            packing_enabled = False
+        packing_enabled = bool(self._packing_enabled())
         if packing_enabled and model_type.startswith("qwen"):
             pos4 = inputs_for_model.get("position_ids")
             if not (
@@ -2245,10 +2178,7 @@ class Stage2ABTrainingTrainer(
             fwd_inputs["use_cache"] = False
             fwd_inputs.pop("past_key_values", None)
             outputs = model(**fwd_inputs)
-            try:
-                logits_a1 = outputs.logits if outputs is not None else None
-            except Exception:
-                logits_a1 = None
+            logits_a1 = getattr(outputs, "logits", None) if outputs is not None else None
 
         t_fwd_s = time.perf_counter() - t_fwd0
 
@@ -2294,7 +2224,7 @@ class Stage2ABTrainingTrainer(
                 drop_invalid_struct_ce_multiplier = float(
                     m.get("drop_invalid_struct_ce_multiplier", 1.0) or 1.0
                 )
-            except Exception:
+            except (TypeError, ValueError):
                 drop_invalid_struct_ce_multiplier = 1.0
 
             tail_start = int(prompt_len + prefix_len)
@@ -2370,7 +2300,7 @@ class Stage2ABTrainingTrainer(
             ):
                 try:
                     mult = float(drop_invalid_struct_ce_multiplier)
-                except Exception:
+                except (TypeError, ValueError):
                     mult = 1.0
                 if mult > 0.0 and mult != 1.0:
                     base = int(seg_start + prompt_len + prefix_len)
@@ -2677,14 +2607,14 @@ class Stage2ABTrainingTrainer(
                     if k in batch_metrics:
                         try:
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
-                        except Exception:
+                        except (TypeError, ValueError):
                             raise
             if isinstance(batch_metrics, Mapping):
                 for k, v in batch_metrics.items():
                     if str(k).startswith("stage2_ab/"):
                         try:
                             stage2_logs[str(k)] = float(v or 0.0)
-                        except Exception:
+                        except (TypeError, ValueError):
                             raise
 
             if isinstance(batch_metrics, Mapping):
@@ -2696,7 +2626,7 @@ class Stage2ABTrainingTrainer(
                             raise
 
             pending2.add(stage2_logs)
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             raise
 
         # Also feed the base rollout-matching pending log so its timing/packing/buffer plots stay intact.
@@ -2732,7 +2662,7 @@ class Stage2ABTrainingTrainer(
                 if isinstance(batch_metrics, Mapping)
                 else None,
             )
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             raise
 
         return (total, outputs) if return_outputs else total

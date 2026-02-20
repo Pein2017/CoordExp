@@ -61,10 +61,7 @@ class DatasetMetaEnricher:
                     else (labels_in_pack.pop() if labels_in_pack else "default")
                 )
                 dataset_labels.append(pack_label)
-                try:
-                    pack_num_samples.append(int(len(pack_seq)))
-                except Exception:
-                    pack_num_samples.append(1)
+                pack_num_samples.append(int(len(pack_seq)))
         else:
             for row in batch:
                 if isinstance(row, Mapping):
@@ -94,14 +91,11 @@ class DatasetMetaEnricher:
         collated[self.segment_field] = segments
 
         # Number of original samples concatenated into each training "unit" (pack-aware).
-        try:
-            labels_t = collated.get("labels")
-            device = labels_t.device if isinstance(labels_t, torch.Tensor) else None
-            collated[self.pack_num_samples_field] = torch.tensor(
-                pack_num_samples, dtype=torch.long, device=device
-            )
-        except Exception:
-            raise
+        labels_t = collated.get("labels")
+        device = labels_t.device if isinstance(labels_t, torch.Tensor) else None
+        collated[self.pack_num_samples_field] = torch.tensor(
+            pack_num_samples, dtype=torch.long, device=device
+        )
 
         return DatasetMeta(
             dataset_labels=dataset_labels,
@@ -129,7 +123,7 @@ class InstabilityMetaEnricher:
             input_ids = sample.get("input_ids")
             try:
                 length = int(len(input_ids)) if input_ids is not None else None
-            except Exception:
+            except TypeError:
                 length = None
         return {
             "dataset": sample.get("dataset") or sample.get("dataset_name"),

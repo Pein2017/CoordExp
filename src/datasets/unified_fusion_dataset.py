@@ -425,7 +425,7 @@ class FusionCaptionDataset(BaseCaptionDataset):
             encoded["sample_id"] = sample_id
             encoded["dataset"] = dataset_name
             encoded["base_idx"] = base_idx
-        except Exception as exc:  # noqa: BLE001
+        except (TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to attach fusion metadata keys ('sample_id', 'dataset', 'base_idx') "
                 f"for dataset={dataset_name!r}, base_idx={base_idx}."

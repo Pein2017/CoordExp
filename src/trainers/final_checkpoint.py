@@ -48,11 +48,8 @@ class FinalCheckpointMixin:
         if not hasattr(self, self._final_checkpoint_callback_attr):
             callback = _FinalCheckpointCallback(self)
             setattr(self, self._final_checkpoint_callback_attr, callback)
-            try:
-                trainer = cast("_TrainerBase", self)
-                trainer.add_callback(callback)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to register final-checkpoint callback: %s", exc)
+            trainer = cast("_TrainerBase", self)
+            trainer.add_callback(callback)
 
     # ------------------------------------------------------------------
     # Final checkpoint helpers
@@ -113,14 +110,11 @@ class FinalCheckpointMixin:
             and original_limit > 0
         )
         if limit_suspended:
-            try:
-                setattr(args, "save_total_limit", None)
-                logger.info(
-                    "Temporarily disabling save_total_limit=%s while writing the final checkpoint.",
-                    original_limit,
-                )
-            except Exception:  # pragma: no cover - defensive, log + continue
-                limit_suspended = False
+            setattr(args, "save_total_limit", None)
+            logger.info(
+                "Temporarily disabling save_total_limit=%s while writing the final checkpoint.",
+                original_limit,
+            )
 
         try:
             try:
@@ -130,20 +124,10 @@ class FinalCheckpointMixin:
                 trainer._save_checkpoint(trainer.model, None, metrics=None)  # type: ignore[misc,call-arg]
         finally:
             if limit_suspended:
-                try:
-                    setattr(args, "save_total_limit", original_limit)
-                except Exception:  # pragma: no cover - defensive
-                    logger.warning(
-                        "Unable to restore save_total_limit after final checkpoint save; current value may remain unset."
-                    )
+                setattr(args, "save_total_limit", original_limit)
 
         # Mirror Trainer.train() behaviour so callbacks observe the save event.
-        try:
-            trainer.callback_handler.on_save(args, state, control)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Final checkpoint save completed but on_save callbacks failed: %s", exc
-            )
+        trainer.callback_handler.on_save(args, state, control)
 
     def _final_checkpoint_exists(self, output_dir: str, step: int) -> bool:
         """Return True if the checkpoint directory (or flash record) already exists."""
@@ -153,10 +137,7 @@ class FinalCheckpointMixin:
         if getattr(trainer.args, "use_flash_ckpt", False) and hasattr(
             trainer, "_get_last_checkpoint_step"
         ):
-            try:
-                last_step = trainer._get_last_checkpoint_step()  # type: ignore[attr-defined]
-            except Exception:  # pragma: no cover - defensive
-                last_step = None
+            last_step = trainer._get_last_checkpoint_step()  # type: ignore[attr-defined]
             if isinstance(last_step, int) and last_step >= step:
                 return True
 

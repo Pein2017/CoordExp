@@ -43,7 +43,7 @@ class Stage2ABSchedulerMixin:
         raw = sched.get("b_ratio")
         try:
             b_ratio = float(raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "stage2_ab.schedule.b_ratio must be a float in [0,1]"
             ) from exc
@@ -77,15 +77,15 @@ class Stage2ABSchedulerMixin:
         # global effective batch equals the user-requested effective_batch_size.
         try:
             per_device = int(getattr(self.args, "per_device_train_batch_size", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             per_device = 1
         try:
             world_size = int(getattr(self.args, "world_size", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             world_size = 1
         try:
             gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             gas = 1
 
         per_device = max(1, int(per_device))
@@ -103,13 +103,13 @@ class Stage2ABSchedulerMixin:
         total = int(self._stage2_b_rollouts_per_step())
         try:
             world_size = int(getattr(self.args, "world_size", 1) or 1)
-        except Exception:
+        except (TypeError, ValueError):
             world_size = 1
         world_size = max(1, int(world_size))
 
         try:
             rank = int(getattr(self.args, "process_index", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             rank = 0
         rank = max(0, int(rank))
 

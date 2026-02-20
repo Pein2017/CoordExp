@@ -350,7 +350,11 @@ class Resizer:
                         else:
                             # Fallback: use just the filename under images/
                             rel_paths.append(f"images/{path_obj.name}")
-                except Exception:
+                except (OSError, RuntimeError, ValueError, TypeError) as exc:
+                    logger.warning(
+                        f"Failed to normalize relative image path {p!r}: {type(exc).__name__}: {exc}. "
+                        "Falling back to images/<filename>."
+                    )
                     # Last resort: use just the filename under images/
                     rel_paths.append(f"images/{path_obj.name}")
             else:
@@ -383,19 +387,18 @@ class Resizer:
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
         if out_path.exists():
-            try:
-                with Image.open(out_path) as existing:
-                    if existing.size == (width, height):
-                        return out_path
-            except Exception:
-                raise
+            with Image.open(out_path) as existing:
+                if existing.size == (width, height):
+                    return out_path
 
         with Image.open(image_path) as img:
             if self.exif_fn:
                 try:
                     img = self.exif_fn(img)
-                except Exception:
-                    img = img
+                except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
+                    logger.warning(
+                        f"EXIF transpose failed for {image_path}: {type(exc).__name__}: {exc}; continuing without EXIF."
+                    )
             rgb = img.convert("RGB")
             resized = rgb.resize((width, height), Image.Resampling.LANCZOS)
             resized.save(out_path)

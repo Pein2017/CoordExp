@@ -208,29 +208,46 @@ class FileLoggingConfig:
 
 
 class _TeeStream:
-    def __init__(self, stream, file_obj):
+    def __init__(self, stream, file_obj, *, name: str):
         self._stream = stream
         self._file = file_obj
+        self._name = str(name)
+        self._warned = False
+
+    def _warn_once(self, message: str) -> None:
+        if self._warned:
+            return
+        self._warned = True
+        try:
+            sys.__stderr__.write(str(message) + "\n")
+            sys.__stderr__.flush()
+        except (OSError, ValueError):
+            # Best-effort: do not let logging diagnostics crash the run.
+            return
 
     def write(self, data):
-        try:
-            self._stream.write(data)
-        except Exception:
-            raise
+        self._stream.write(data)
+        if self._file is None:
+            return
         try:
             self._file.write(data)
-        except Exception:
-            raise
+        except (OSError, ValueError) as exc:
+            self._warn_once(
+                f"Log tee ({self._name}) disabled: {exc.__class__.__name__}: {exc}"
+            )
+            self._file = None
 
     def flush(self):
-        try:
-            self._stream.flush()
-        except Exception:
-            raise
+        self._stream.flush()
+        if self._file is None:
+            return
         try:
             self._file.flush()
-        except Exception:
-            raise
+        except (OSError, ValueError) as exc:
+            self._warn_once(
+                f"Log tee ({self._name}) disabled: {exc.__class__.__name__}: {exc}"
+            )
+            self._file = None
 
     def isatty(self):
         try:
@@ -296,14 +313,14 @@ def enable_output_dir_file_logging(
     if file_obj is not None:
         if cfg.capture_stdout:
             try:
-                sys.stdout = _TeeStream(sys.stdout, file_obj)
-            except Exception:
-                raise
+                sys.stdout = _TeeStream(sys.stdout, file_obj, name="stdout")
+            except (AttributeError, TypeError) as exc:
+                logger.warning("Failed to tee stdout to %s (%s)", log_path, exc)
         if cfg.capture_stderr:
             try:
-                sys.stderr = _TeeStream(sys.stderr, file_obj)
-            except Exception:
-                raise
+                sys.stderr = _TeeStream(sys.stderr, file_obj, name="stderr")
+            except (AttributeError, TypeError) as exc:
+                logger.warning("Failed to tee stderr to %s (%s)", log_path, exc)
 
     return log_path
 

@@ -6,6 +6,20 @@ from typing import Iterable, Iterator, NamedTuple, Optional
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POLICY_GLOB = "src/**/*.py"
 
+# Option A (strict): blanket catch-alls are forbidden everywhere in src/ except
+# an explicit allowlist for best-effort sinks / diagnostic wrappers.
+ALLOWLIST_BLANKET_EXCEPT = {
+    "src/metrics/reporter.py",
+    "src/utils/logger.py",
+}
+
+
+class Violation(NamedTuple):
+    rel_path: str
+    lineno: int
+    label: str
+    action: str
+
 
 class Violation(NamedTuple):
     rel_path: str

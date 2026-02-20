@@ -46,7 +46,13 @@ class AugmentationPreprocessor(BasePreprocessor):
         super().__init__(**kwargs)
         self.augmenter = augmenter
         self.rng = rng if rng is not None else random.Random()
+        if isinstance(bypass_prob, bool):
+            raise TypeError("bypass_prob must be a float in [0, 1], not bool")
         self.bypass_prob = float(bypass_prob)
+        if not 0.0 <= self.bypass_prob <= 1.0:
+            raise ValueError(
+                f"bypass_prob must be between 0 and 1; got {self.bypass_prob!r}"
+            )
         self.curriculum_state = curriculum_state
         self._curriculum_last_step: int | None = None
         self.coord_tokens_enabled = bool(coord_tokens_enabled)
@@ -86,15 +92,9 @@ class AugmentationPreprocessor(BasePreprocessor):
         from ..augment import apply_augmentations
 
         # Only plugin registry path is supported
-        try:
-            from ..augmentation.base import Compose
-            from ..augmentation import (
-                ops as _builtin_ops,
-            )  # ensure registration side-effects
-            from ..augmentation.registry import get as _get
-        except Exception:
-            Compose = None  # type: ignore
-            _get = None  # type: ignore
+        from ..augmentation.base import Compose
+        from ..augmentation import ops as _builtin_ops  # ensure registration side-effects
+        from ..augmentation.registry import get as _get
 
         images = rec.get("images") or []
         objs = rec.get("objects") or []
@@ -257,22 +257,65 @@ class AugmentationPreprocessor(BasePreprocessor):
         state = self.curriculum_state
         if state is None:
             return
-        step = state.get("step")
-        try:
-            step = int(step) if step is not None else 0
-        except (TypeError, ValueError):
+
+        step_raw = state.get("step")
+        if step_raw is None:
             step = 0
+        else:
+            if isinstance(step_raw, bool):
+                raise TypeError("curriculum_state.step must be an integer, not bool")
+            if isinstance(step_raw, float):
+                if not step_raw.is_integer():
+                    raise ValueError(
+                        f"curriculum_state.step must be an integer; got {step_raw!r}"
+                    )
+                step = int(step_raw)
+            else:
+                try:
+                    step = int(step_raw)
+                except (TypeError, ValueError) as e:
+                    raise ValueError(
+                        f"curriculum_state.step must be an integer; got {step_raw!r}"
+                    ) from e
+
+        if step < 0:
+            raise ValueError(f"curriculum_state.step must be >= 0; got {step!r}")
+
         if self._curriculum_last_step == step:
             return
-        bypass = state.get("bypass_prob")
-        if bypass is not None:
+
+        bypass_raw = state.get("bypass_prob")
+        if bypass_raw is not None:
+            if isinstance(bypass_raw, bool):
+                raise TypeError(
+                    "curriculum_state.bypass_prob must be a float in [0, 1], not bool"
+                )
             try:
-                self.bypass_prob = float(bypass)
-            except (TypeError, ValueError):
-                pass
-        ops = state.get("ops") or {}
-        if isinstance(ops, Mapping):
+                bypass_prob = float(bypass_raw)
+            except (TypeError, ValueError) as e:
+                raise ValueError(
+                    "curriculum_state.bypass_prob must be a float in [0, 1]; "
+                    f"got {bypass_raw!r}"
+                ) from e
+            if not 0.0 <= bypass_prob <= 1.0:
+                raise ValueError(
+                    f"curriculum_state.bypass_prob must be between 0 and 1; got {bypass_prob!r}"
+                )
+            self.bypass_prob = bypass_prob
+
+        ops_raw = state.get("ops")
+        if ops_raw is None:
+            ops = {}
+        elif not isinstance(ops_raw, Mapping):
+            raise TypeError(
+                f"curriculum_state.ops must be a mapping; got {type(ops_raw).__name__}"
+            )
+        else:
+            ops = ops_raw
+
+        if ops:
             self._apply_curriculum_overrides(ops)
+
         self._curriculum_last_step = step
 
     def _apply_curriculum_overrides(
@@ -298,32 +341,75 @@ class AugmentationPreprocessor(BasePreprocessor):
                 except (TypeError, ValueError):
                     return current
             if isinstance(current, tuple):
-                if isinstance(new_value, (list, tuple)):
-                    coerced = []
-                    for i, item in enumerate(new_value):
-                        base = current[i] if i < len(current) else (current[-1] if current else None)
-                        coerced.append(_coerce_value(base, item) if base is not None else item)
-                    return tuple(coerced)
-                return current
+                if not isinstance(new_value, (list, tuple)):
+                    raise TypeError(
+                        f"override must be a list/tuple for tuple-typed params; got {type(new_value).__name__}"
+                    )
+                coerced = []
+                for i, item in enumerate(new_value):
+                    base = (
+                        current[i]
+                        if i < len(current)
+                        else (current[-1] if current else None)
+                    )
+                    coerced.append(_coerce_value(base, item) if base is not None else item)
+                return tuple(coerced)
             if isinstance(current, list):
-                if isinstance(new_value, (list, tuple)):
-                    coerced = []
-                    for i, item in enumerate(new_value):
-                        base = current[i] if i < len(current) else None
-                        coerced.append(_coerce_value(base, item) if base is not None else item)
-                    return coerced
+                if not isinstance(new_value, (list, tuple)):
+                    raise TypeError(
+                        f"override must be a list/tuple for list-typed params; got {type(new_value).__name__}"
+                    )
+                coerced = []
+                for i, item in enumerate(new_value):
+                    base = current[i] if i < len(current) else None
+                    coerced.append(_coerce_value(base, item) if base is not None else item)
+                return coerced
             return new_value
 
+        ops_by_name: Dict[str, List[Any]] = {}
         for op in getattr(self.augmenter, "ops", []):
             name = getattr(op, "_aug_name", None)
+            if name is None:
+                continue
+            if not isinstance(name, str):
+                raise TypeError(
+                    f"Augmentation op _aug_name must be a str; got {type(name).__name__}"
+                )
             if not name:
                 continue
-            params = overrides.get(name)
+            ops_by_name.setdefault(name, []).append(op)
+
+        for name in overrides.keys():
+            if not isinstance(name, str):
+                raise TypeError(
+                    f"curriculum_state.ops keys must be strings; got {type(name).__name__}"
+                )
+
+        unknown_ops = set(overrides.keys()) - set(ops_by_name.keys())
+        if unknown_ops:
+            available = sorted(ops_by_name.keys())
+            raise KeyError(
+                "Unknown augmentation op override(s) in curriculum_state.ops: "
+                f"{sorted(unknown_ops)}. Available ops: {available}"
+            )
+
+        for name, params in overrides.items():
             if not isinstance(params, Mapping):
-                continue
-            for param_name, value in params.items():
-                try:
-                    current = getattr(op, param_name, None)
+                raise TypeError(
+                    f"curriculum_state.ops.{name} must be a mapping of param->value; got {type(params).__name__}"
+                )
+            for op in ops_by_name.get(name, []):
+                for param_name, value in params.items():
+                    if not isinstance(param_name, str):
+                        raise TypeError(
+                            f"curriculum_state.ops.{name} param names must be strings; got {type(param_name).__name__}"
+                        )
+                    if not hasattr(op, param_name):
+                        raise AttributeError(
+                            f"Augmentation op '{name}' has no parameter '{param_name}' "
+                            f"(curriculum_state.ops.{name}.{param_name})"
+                        )
+                    current = getattr(op, param_name)
                     coerced = _coerce_value(current, value)
                     setattr(op, param_name, coerced)
                 except (AttributeError, TypeError, ValueError):
@@ -348,16 +434,13 @@ class AugmentationPreprocessor(BasePreprocessor):
                 geom_key_local = next(iter(geom.keys()))
                 cached_vals = cached.get(geom_key_local)
                 if isinstance(cached_vals, list):
-                    try:
-                        ints = [int(v) for v in cached_vals]
-                        return ints, True
-                    except Exception:
-                        raise
+                    ints = [int(v) for v in cached_vals]
+                    return ints, True
             # Otherwise attempt numeric cast
             try:
                 ints = [int(round(float(v))) for v in values]
                 return ints, False
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(f"Failed to coerce geometry values to ints: {exc}") from exc
 
         geom_key, values = next(iter(geom.items()))

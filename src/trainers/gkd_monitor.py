@@ -90,7 +90,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
         if self._visual_kd_enabled:
             try:
                 self._register_visual_hooks()
-            except Exception as exc:
+            except (AttributeError, KeyError, ValueError, TypeError, RuntimeError) as exc:
                 self._remove_visual_hooks()
                 raise RuntimeError(
                     "visual_kd failed to register visual feature hooks. Ensure student and teacher expose the requested visual modules."
@@ -547,11 +547,8 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
             else:
                 get_base_model = getattr(current, "get_base_model", None)
                 if callable(get_base_model):
-                    try:
-                        current = get_base_model()
-                        continue
-                    except Exception:
-                        raise
+                    current = get_base_model()
+                    continue
                 current = None
         return None
 
@@ -587,10 +584,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
         if not hooks:
             return
         for handle in hooks:
-            try:
-                handle.remove()
-            except Exception:
-                raise
+            handle.remove()
         hooks.clear()
 
     def _compute_visual_kd_loss(self) -> Optional[torch.Tensor]:
@@ -711,10 +705,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
         return total_loss
 
     def __del__(self):
-        try:
-            self._remove_visual_hooks()
-        except Exception:
-            raise
+        self._remove_visual_hooks()
 
     def _ensure_visual_kd_state(self) -> None:
         if not hasattr(self, "_visual_kd_enabled"):
@@ -870,7 +861,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
 
         try:
             device = next(self.model.parameters()).device
-        except Exception:
+        except StopIteration:
             device = torch.device("cpu")
 
         world_size = dist.get_world_size()

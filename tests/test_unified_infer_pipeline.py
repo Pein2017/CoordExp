@@ -93,11 +93,25 @@ def test_detect_mode_from_gt_within_bounds(tmp_path: Path) -> None:
 
 def test_detect_mode_from_gt_no_valid_records(tmp_path: Path) -> None:
     gt = tmp_path / "gt.jsonl"
-    _write_jsonl(gt, ["not json", {"width": None, "height": None, "objects": []}])
+    _write_jsonl(
+        gt,
+        [
+            {"width": 32, "height": 32, "objects": []},
+            {"width": 32, "height": 32, "gt": []},
+        ],
+    )
 
     mode, reason = detect_mode_from_gt(str(gt), sample_size=128)
     assert mode == "text"
     assert reason == "no_valid_records"
+
+
+def test_detect_mode_from_gt_rejects_malformed_jsonl(tmp_path: Path) -> None:
+    gt = tmp_path / "gt.jsonl"
+    _write_jsonl(gt, ["not json"])
+
+    with pytest.raises(ValueError, match="Malformed JSONL"):
+        detect_mode_from_gt(str(gt), sample_size=128)
 
 
 def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:

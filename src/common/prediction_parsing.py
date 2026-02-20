@@ -70,28 +70,69 @@ def extract_json_block(text: str) -> str | None:
 def load_prediction_dict(text: str) -> Dict[str, Any] | None:
     """Load model output into strict JSON dict ``{"objects": [...]}``.
 
-    The model-facing output is CoordJSON, so this helper first runs the
-    CoordJSON -> strict-JSON transpiler (salvage mode) and then loads JSON via
-    ``json.loads``.
+    Accepts 3 common shapes:
+
+    1) Strict JSON: ``{"objects": [...]}``.
+    2) Legacy JSON: an index-keyed dict like ``{"0": {...}, "1": {...}}``.
+       This is normalized to strict JSON by sorting keys and mapping values to
+       ``objects``.
+    3) CoordJSON: model-facing format that is transpiled into strict JSON in
+       salvage mode.
 
     Eval/infer is intentionally order-salvage oriented: it tries both
     ``geometry_first`` and ``desc_first`` parsing policies and keeps the payload
     with the largest retained ``objects`` list. This intentionally does not
     enforce ``custom.object_field_order``.
+
+    This helper is best-effort: model-output parse failures are represented as
+    ``None`` so inference can continue-but-observable at the sample level.
     """
+
+    json_block = extract_json_block(text)
+    if json_block is not None:
+        try:
+            parsed = json.loads(json_block)
+        except json.JSONDecodeError:
+            parsed = None
+
+        if isinstance(parsed, dict):
+            objects = parsed.get("objects")
+            if isinstance(objects, list):
+                return parsed
+
+            # Common legacy shape: {"0": {..obj..}, "1": {..obj..}}
+            if parsed and all(isinstance(k, str) and k.isdigit() for k in parsed.keys()):
+                keyed: list[tuple[int, Any]] = []
+                for k, v in parsed.items():
+                    if isinstance(k, str) and k.isdigit():
+                        keyed.append((int(k), v))
+                keyed.sort(key=lambda kv: kv[0])
+                legacy_objects = [v for _idx, v in keyed if isinstance(v, dict)]
+                if legacy_objects:
+                    return {"objects": legacy_objects}
+
+            # Legacy object-map shape: {"obj": {...}, "obj2": {...}}
+            if parsed and all(isinstance(v, dict) for v in parsed.values()):
+                legacy_objects = [v for v in parsed.values() if isinstance(v, dict)]
+                if legacy_objects:
+                    return {"objects": legacy_objects}
+
+            # Single-object dict at top-level: {"bbox_2d": ..., "desc": ...}
+            if any(k in parsed for k in GEOM_KEYS) or "line" in parsed or "line_points" in parsed:
+                return {"objects": [parsed]}
 
     best_payload: Dict[str, Any] | None = None
     best_count = -1
 
     for order in ("geometry_first", "desc_first"):
+        strict_text, meta = coordjson_to_strict_json_with_meta(
+            text,
+            mode="salvage",
+            object_field_order=order,
+        )
+        if bool(meta.parse_failed):
+            continue
         try:
-            strict_text, meta = coordjson_to_strict_json_with_meta(
-                text,
-                mode="salvage",
-                object_field_order=order,
-            )
-            if bool(meta.parse_failed):
-                continue
             parsed = json.loads(strict_text)
         except (ValueError, TypeError):
             continue

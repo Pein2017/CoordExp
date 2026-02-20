@@ -36,8 +36,8 @@ def _resolve_image_path(
 
 def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+        for line_no, raw_line in enumerate(f, start=1):
+            line = raw_line.strip()
             if not line:
                 continue
             try:
@@ -106,8 +106,9 @@ def render_vis_from_jsonl(
             root_image_dir=root_image_dir,
         )
         if img_path is None:
-            logger.warning("vis: missing image for record %d (%r)", idx, image_field)
-            continue
+            raise FileNotFoundError(
+                f"vis: missing image for record {idx} (image={image_field!r})"
+            )
 
         try:
             img = Image.open(img_path).convert("RGBA")

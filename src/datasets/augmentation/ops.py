@@ -611,7 +611,7 @@ class CLAHE(ImageAugmenter):
             return images, geoms
         try:
             import cv2  # type: ignore
-        except Exception as e:
+        except ImportError as e:
             raise RuntimeError(
                 "CLAHE requires opencv-python-headless installed in the 'ms' environment"
             ) from e
@@ -746,7 +746,7 @@ class AlbumentationsColor(ImageAugmenter):
     def _build_pipeline(self):
         try:
             import albumentations as A  # type: ignore
-        except Exception as e:
+        except ImportError as e:
             raise RuntimeError(
                 "AlbumentationsColor requires 'albumentations'. Install it with 'opencv-python-headless' in the 'ms' env."
             ) from e
@@ -842,7 +842,7 @@ class AlbumentationsColor(ImageAugmenter):
             import cv2  # type: ignore
             import albumentations as A  # type: ignore
             import random as _random
-        except Exception as e:
+        except ImportError as e:
             raise RuntimeError(
                 "AlbumentationsColor requires 'albumentations' and 'opencv-python-headless' in the 'ms' env."
             ) from e

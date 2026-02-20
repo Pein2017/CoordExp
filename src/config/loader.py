@@ -528,7 +528,7 @@ class ConfigLoader:
 
         try:
             setattr(train_args, "save_last_epoch", save_last_epoch)
-        except Exception as exc:  # pragma: no cover - defensive
+        except (AttributeError, TypeError) as exc:  # pragma: no cover - defensive
             raise RuntimeError(
                 "Unable to attach save_last_epoch to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
@@ -536,7 +536,7 @@ class ConfigLoader:
         if config.custom.trainer_variant:
             try:
                 setattr(train_args, "trainer_variant", config.custom.trainer_variant)
-            except Exception as exc:  # pragma: no cover - explicit failure
+            except (AttributeError, TypeError) as exc:  # pragma: no cover - explicit failure
                 raise RuntimeError(
                     "Unable to attach trainer_variant to TrainArguments; update ms-swift if interface changed."
                 ) from exc
@@ -549,21 +549,21 @@ class ConfigLoader:
 
         try:
             setattr(train_args, "visual_kd_config", config.custom.visual_kd)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach visual_kd_config to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
         try:
             setattr(train_args, "llm_kd_weight", llm_kd_weight)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach llm_kd_weight to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
         try:
             setattr(train_args, "coord_offset_config", config.custom.coord_offset)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach coord_offset_config to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
@@ -576,28 +576,28 @@ class ConfigLoader:
 
         try:
             setattr(inner_args, "save_last_epoch", save_last_epoch)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach save_last_epoch to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
 
         try:
             setattr(inner_args, "visual_kd_config", config.custom.visual_kd)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach visual_kd_config to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
 
         try:
             setattr(inner_args, "llm_kd_weight", llm_kd_weight)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach llm_kd_weight to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
 
         try:
             setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
-        except Exception as exc:  # pragma: no cover
+        except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
                 "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc

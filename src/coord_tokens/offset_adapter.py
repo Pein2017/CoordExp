@@ -212,7 +212,7 @@ def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
     """
     try:
         from peft.utils.other import ModulesToSaveWrapper
-    except Exception:
+    except ImportError:
         ModulesToSaveWrapper = None  # type: ignore
 
     # Find adapter instance (unwrap ModulesToSaveWrapper when present)

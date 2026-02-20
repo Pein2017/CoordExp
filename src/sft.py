@@ -200,7 +200,7 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
 
     try:
         seed = int(seed_raw)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise TypeError(
             f"training.seed must be an int (or int-like); got {seed_raw!r}"
         ) from exc
@@ -343,7 +343,7 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
     decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
     try:
         rollout_decode_bs = int(decode_bs_raw)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
     if rollout_decode_bs <= 0:
         raise ValueError("rollout_matching.decode_batch_size must be > 0")
@@ -356,7 +356,7 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
         )
         try:
             current_eval_bs = int(current_eval_bs_raw)
-        except Exception:
+        except (TypeError, ValueError):
             current_eval_bs = int(rollout_decode_bs)
         if int(current_eval_bs) != int(rollout_decode_bs):
             logger.warning(
@@ -507,7 +507,7 @@ def main():
         )
         if log_path:
             logger.info(f"File logging enabled: {log_path}")
-    except Exception:
+    except (OSError, RuntimeError, TypeError, ValueError):
         raise
 
     # Debug mode: print full configuration
@@ -577,12 +577,7 @@ def main():
         )
         if adapter.module_name not in modules_to_save:
             modules_to_save.append(adapter.module_name)
-            try:
-                setattr(train_args, "modules_to_save", modules_to_save)
-            except Exception:
-                logger.warning(
-                    "Failed to attach coord_offset module to modules_to_save on train_args"
-                )
+            setattr(train_args, "modules_to_save", modules_to_save)
         # Sanity check against vocab size when available
         vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
         max_id = int(adapter.coord_ids.max().item())
@@ -646,7 +641,7 @@ def main():
             logger.info(
                 f"Augmentation pipeline built (bypass_prob={bypass_prob:.2f}, training only)"
             )
-        except Exception as e:
+        except (ImportError, KeyError, TypeError, ValueError) as e:
             raise ValueError(f"Failed to build augmentation pipeline from YAML: {e}")
 
     curriculum_state = None
@@ -664,7 +659,7 @@ def main():
                 op_meta=getattr(augmenter, "_augmentation_meta", []),
                 curriculum_raw=curriculum_cfg,
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Failed to build augmentation curriculum: {exc}") from exc
         curriculum_scheduler = scheduler
         # Note: initial_state will be computed after dataset is loaded and total_steps is calculated
@@ -835,7 +830,7 @@ def main():
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
-    except Exception:
+    except TypeError:
         base_dataset_len = None
     # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
     # Do not apply dataset-level packing wrappers for this trainer variant.
@@ -849,14 +844,9 @@ def main():
                 "packing enabled: forcing per_device_train_batch_size=1 (was %s)",
                 orig_bs,
             )
-            try:
-                train_args.per_device_train_batch_size = 1
-                if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.per_device_train_batch_size = 1
-            except Exception:
-                logger.warning(
-                    "Failed to set per_device_train_batch_size on train_args"
-                )
+            train_args.per_device_train_batch_size = 1
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.per_device_train_batch_size = 1
 
         # Ensure max_steps is finite when using iterable packed dataset
         max_steps = getattr(train_args, "max_steps", None)
@@ -867,13 +857,19 @@ def main():
                 world_size = max(world_size, 1)
                 # Heuristic: estimate average samples per emitted pack to align optimizer steps with requested epochs.
                 # Defaults to ~8 samples/pack (observed in packing guide); override via training.packing_avg_samples.
+                training_map = getattr(training_config, "training", {}) or {}
+                avg_pack_samples_raw = (
+                    training_map.get("packing_avg_samples", 8.0)
+                    if isinstance(training_map, Mapping)
+                    else 8.0
+                )
                 try:
-                    training_map = getattr(training_config, "training", {}) or {}
-                    avg_pack_samples = float(
-                        training_map.get("packing_avg_samples", 8.0)
-                    )
-                except Exception:
-                    avg_pack_samples = 8.0
+                    avg_pack_samples = float(avg_pack_samples_raw)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        "training.packing_avg_samples must be a float; "
+                        f"got {avg_pack_samples_raw!r}"
+                    ) from exc
                 avg_pack_samples = max(avg_pack_samples, 1e-6)
                 packs_per_rank_est = math.ceil(
                     base_dataset_len / (avg_pack_samples * world_size)
@@ -945,16 +941,13 @@ def main():
                 "eval_packing enabled: forcing per_device_eval_batch_size=1 (was %s)",
                 eval_bs,
             )
-            try:
-                train_args.per_device_eval_batch_size = 1
-                if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.per_device_eval_batch_size = 1
-            except Exception:
-                logger.warning("Failed to set per_device_eval_batch_size on train_args")
+            train_args.per_device_eval_batch_size = 1
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.per_device_eval_batch_size = 1
 
     try:
         train_len = len(dataset)
-    except Exception:
+    except TypeError:
         train_len = base_dataset_len
     logger.info(f"Training dataset size (reported/approx): {train_len}")
 
@@ -1029,14 +1022,14 @@ def main():
                     "Encoded sample missing image_grid_thw/pixel_values. Check image paths and template preprocessing."
                 )
             # Print basic shapes
-            try:
-                grid_shape = tuple(getattr(img_grid, "shape", []))
-            except Exception:
-                grid_shape = None
-            try:
-                pv_shape = tuple(getattr(pv, "shape", []))
-            except Exception:
-                pv_shape = None
+            grid_shape_raw = getattr(img_grid, "shape", None)
+            grid_shape = (
+                tuple(grid_shape_raw)
+                if isinstance(grid_shape_raw, (list, tuple))
+                else None
+            )
+            pv_shape_raw = getattr(pv, "shape", None)
+            pv_shape = tuple(pv_shape_raw) if isinstance(pv_shape_raw, (list, tuple)) else None
             logger.debug(
                 f"image_grid_thw shape: {grid_shape}; pixel_values shape: {pv_shape}"
             )
@@ -1053,7 +1046,7 @@ def main():
                     expected = int(
                         img_grid.prod(dim=-1).sum().item() // (merge_size**2)
                     )
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     expected = None
             if (
                 isinstance(image_token_id, int)
@@ -1066,14 +1059,14 @@ def main():
                     logger.warning(
                         "Image token mismatch. Investigate chat_template and image processing."
                     )
-        except Exception as e:
+        except (AttributeError, IndexError, KeyError, RuntimeError, TypeError, ValueError) as e:
             logger.warning(f"HealthCheck failed: {e}")
 
     # Optional: dump conversation text-only (no tokens, no images) and full tokens
     dump_conv = bool(custom_config.dump_conversation_text or args.debug)
     try:
         dataset_nonempty = len(dataset) > 0
-    except Exception:
+    except TypeError:
         dataset_nonempty = (base_dataset_len or 0) > 0
 
     if dump_conv and dataset_nonempty:
@@ -1141,7 +1134,7 @@ def main():
                         if isinstance(item, dict) and item.get("type") == "text":
                             assistant_gt = item.get("text")
                             break
-            except Exception as inner_e:
+            except (AttributeError, IndexError, KeyError, TypeError, ValueError) as inner_e:
                 logger.warning(f"Failed to extract assistant GT: {inner_e}")
 
             logger.debug("Conversation (raw):\n" + raw_text)
@@ -1169,7 +1162,7 @@ def main():
                     if not assistant_gt.endswith("\n"):
                         f.write("\n")
             logger.info(f"Conversation text saved to: {dump_path}")
-        except Exception as e:
+        except (AttributeError, IndexError, KeyError, OSError, TypeError, ValueError) as e:
             logger.warning(f"Failed to dump conversation text: {e}")
 
     # Build validation dataset (single JSONL or fusion config).
@@ -1294,18 +1287,13 @@ def main():
     )
     # After PEFT wrapping, reattach coord-offset hooks to active modules so offsets train/save correctly
     if coord_offset_cfg and coord_offset_cfg.enabled:
-        try:
-            reattached = reattach_coord_offset_hooks(sft.model)
-            if reattached is None:
-                logger.warning(
-                    "coord_offset_adapter not found after prepare_model; hooks not reattached"
-                )
-            else:
-                logger.info("Reattached coord_offset hooks on wrapped model")
-        except Exception as exc:
+        reattached = reattach_coord_offset_hooks(sft.model)
+        if reattached is None:
             logger.warning(
-                f"Failed to reattach coord_offset hooks after prepare_model: {exc}"
+                "coord_offset_adapter not found after prepare_model; hooks not reattached"
             )
+        else:
+            logger.info("Reattached coord_offset hooks on wrapped model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
@@ -1313,11 +1301,8 @@ def main():
     trainer_variant = getattr(train_args, "trainer_variant", None)
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
-        try:
-            if getattr(train_args, "training_args", None) is not None:
-                train_args.training_args.remove_unused_columns = False
-        except Exception:
-            raise
+        if getattr(train_args, "training_args", None) is not None:
+            train_args.training_args.remove_unused_columns = False
 
         # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
@@ -1330,7 +1315,7 @@ def main():
             from swift.trainers.rlhf_trainer.utils import identity_data_collator
 
             base_collator = identity_data_collator
-        except Exception as exc:
+        except ImportError as exc:
             raise RuntimeError(
                 "rollout-matching trainer requires ms-swift identity_data_collator"
             ) from exc
@@ -1339,12 +1324,11 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
-    try:
-        raw_instab = getattr(custom_config, "extra", {}).get("instability_monitor")
+    extra_cfg = getattr(custom_config, "extra", None)
+    if isinstance(extra_cfg, Mapping):
+        raw_instab = extra_cfg.get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
-    except Exception:
-        instability_monitor_cfg = None
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
@@ -1550,81 +1534,43 @@ def main():
                 rollout_cfg.get("rollout_backend", "vllm"),
                 rollout_cfg.get("packing_enabled", False),
             )
-        except Exception as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to inject rollout_matching_cfg into trainer. "
                 "This is required for rollout-matching/stage2-ab trainer variants."
             ) from exc
 
     if trainer_variant == "stage2_ab_training":
-        try:
-            stage2_ab_typed = getattr(training_config, "stage2_ab", None)
-            if stage2_ab_typed is None:
-                raise ValueError(
-                    "training_config.stage2_ab is required for stage2_ab_training; "
-                    "check config parsing (top-level stage2_ab section)."
-                )
-            stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
-
-
-            setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
-
-            try:
-                sched = stage2_ab_cfg.get("schedule")
-                b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
-            except Exception:
-                b_ratio = None
-
-            logger.info(
-                "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
-                b_ratio,
-                stage2_ab_cfg.get("n_softctx_iter"),
-                stage2_ab_cfg.get("softctx_grad_mode"),
+        stage2_ab_typed = getattr(training_config, "stage2_ab", None)
+        if stage2_ab_typed is None:
+            raise ValueError(
+                "training_config.stage2_ab is required for stage2_ab_training; "
+                "check config parsing (top-level stage2_ab section)."
             )
-        except Exception as exc:
-            logger.warning("Failed to inject stage2_ab_cfg into trainer: %s", exc)
+        stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
+
+        setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
+
+        sched = stage2_ab_cfg.get("schedule")
+        b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
+
+        logger.info(
+            "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
+            b_ratio,
+            stage2_ab_cfg.get("n_softctx_iter"),
+            stage2_ab_cfg.get("softctx_grad_mode"),
+        )
     if coord_soft_ce_w1_cfg is not None:
-        try:
-            setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
     if token_type_cfg is not None:
-        try:
-            setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
     if instability_monitor_cfg is not None:
-        try:
-            setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
         # Provide JSONL paths so the monitor can dump offending records by base_idx.
-        try:
-            setattr(trainer, "instability_train_jsonl", str(train_jsonl))
-        except Exception:
-            raise
-        try:
-            if val_jsonl:
-                setattr(trainer, "instability_val_jsonl", str(val_jsonl))
-        except Exception:
-            raise
+        setattr(trainer, "instability_train_jsonl", str(train_jsonl))
+        if val_jsonl:
+            setattr(trainer, "instability_val_jsonl", str(val_jsonl))
 
-    # Patch DeepSpeed __del__ to avoid noisy cleanup errors (safe no-op)
-    try:
-        import deepspeed  # type: ignore
-
-        if hasattr(deepspeed.runtime.engine.DeepSpeedEngine, "__del__"):
-            _orig_ds_del = deepspeed.runtime.engine.DeepSpeedEngine.__del__
-
-            def _safe_ds_del(self):  # type: ignore[override]
-                try:
-                    _orig_ds_del(self)
-                except Exception:
-                    raise
-
-            deepspeed.runtime.engine.DeepSpeedEngine.__del__ = _safe_ds_del  # type: ignore[assignment]
-    except Exception:
-        raise
 
     # Start training
     logger.info("=" * 70)
@@ -1646,7 +1592,7 @@ def main():
     try:
         rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
         is_rank0 = True if rank_raw is None else (int(rank_raw) == 0)
-    except Exception:
+    except (TypeError, ValueError):
         is_rank0 = True
 
     if is_rank0:
@@ -1785,13 +1731,13 @@ def main():
                         if hasattr(model_wrapped, "destroy"):
                             model_wrapped.destroy()
                         logger.debug("DeepSpeed engine cleaned up successfully")
-                    except Exception as cleanup_error:
+                    except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as cleanup_error:
                         # Ignore cleanup errors - they're harmless at this point
                         # Training already completed successfully
                         logger.debug(
                             f"DeepSpeed cleanup warning (non-fatal): {cleanup_error}"
                         )
-        except Exception as e:
+        except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as e:
             # Non-fatal: training already completed successfully
             logger.debug(f"Cleanup warning (non-fatal): {e}")
 
