@@ -5199,14 +5199,28 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         sample_total_key = "train/samples_total"
 
         reduced.pop("rollout/parse_truncated_rate", None)
-        reduced.setdefault(
-            trunc_num_key,
-            float(reduced.get("rollout/parse_truncated", 0.0)),
+        has_parse_inputs = any(
+            key in reduced
+            for key in {
+                trunc_num_key,
+                trunc_den_key,
+                "rollout/parse_truncated",
+                sample_total_key,
+            }
+        ) and (
+            trunc_num_key in reduced
+            or trunc_den_key in reduced
+            or "rollout/parse_truncated" in reduced
         )
-        reduced.setdefault(
-            trunc_den_key,
-            float(reduced.get(sample_total_key, 0.0)),
-        )
+        if has_parse_inputs:
+            reduced.setdefault(
+                trunc_num_key,
+                float(reduced.get("rollout/parse_truncated", 0.0)),
+            )
+            reduced.setdefault(
+                trunc_den_key,
+                float(reduced.get(sample_total_key, 0.0)),
+            )
 
         sample_total_local = float(reduced.get(sample_total_key, 0.0))
         if (
@@ -5392,11 +5406,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
-        trunc_num = float(reduced.get(trunc_num_key, 0.0))
-        trunc_den = float(reduced.get(trunc_den_key, sample_total))
-        reduced["rollout/parse_truncated_rate"] = (
-            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
-        )
+        if has_parse_inputs:
+            trunc_num = float(reduced.get(trunc_num_key, 0.0))
+            trunc_den = float(reduced.get(trunc_den_key, sample_total))
+            reduced["rollout/parse_truncated_rate"] = (
+                float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
+            )
 
         new_tok_total = float(reduced.get("rollout/gen_new_tokens_total", 0.0))
         if "rollout/gen_new_tokens_mean" in reduced:
@@ -5577,6 +5592,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         """Compute step-level rollout metrics from slim meta dicts."""
 
         n_samples = float(len(meta))
+
+        rollout_active = any(
+            int(m.get("rollout_len", 0)) > 0
+            or str(m.get("decode_mode", "none") or "none").strip().lower()
+            != "none"
+            for m in meta
+        )
+        if not rollout_active:
+            return {}
+
         gt_total = float(sum(int(m.get("gt_objects", 0)) for m in meta))
         matched_total = float(
             sum(int(m.get("matched_for_supervision", 0)) for m in meta)
@@ -5830,10 +5855,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
         )
 
-        payload["rollout/_parse_truncated_num"] = float(
-            payload.get("rollout/parse_truncated", 0.0)
-        )
-        payload["rollout/_parse_truncated_den"] = float(sample_total)
+        if "rollout/parse_truncated" in payload:
+            payload["rollout/_parse_truncated_num"] = float(
+                payload.get("rollout/parse_truncated", 0.0)
+            )
+            payload["rollout/_parse_truncated_den"] = float(sample_total)
 
         if pending.n_micro > 0:
             payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))

@@ -61,7 +61,7 @@ class _PendingStage2Log:
         n_micro = float(self.n_micro)
         for k, v in self.sums.items():
             if k == "rollout/parse_truncated_rate":
-                # Always derived from numerator/denominator.
+                # Always derived from numerator/denominator when rollout counters exist.
                 continue
 
             if k in {
@@ -76,6 +76,7 @@ class _PendingStage2Log:
                 k.startswith("loss/")
                 or k.startswith("stage2/channel_")
                 or k.startswith("rollout/")
+                or k.startswith("coord_diag/")
                 or k == "stage2_ab/b_ratio_realized"
                 or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
@@ -83,25 +84,37 @@ class _PendingStage2Log:
             else:
                 out[k] = float(v)
 
-        trunc_num = float(
-            out.get(
-                "rollout/_parse_truncated_num",
-                out.get("rollout/parse_truncated", 0.0),
+        trunc_num_key = "rollout/_parse_truncated_num"
+        trunc_den_key = "rollout/_parse_truncated_den"
+        has_trunc_inputs = any(
+            k in out
+            for k in {
+                trunc_num_key,
+                trunc_den_key,
+                "rollout/parse_truncated",
+                "stage2/raw_rollouts",
+            }
+        )
+        if has_trunc_inputs:
+            trunc_num = float(
+                out.get(
+                    trunc_num_key,
+                    out.get("rollout/parse_truncated", 0.0),
+                )
             )
-        )
-        trunc_den = float(
-            out.get(
-                "rollout/_parse_truncated_den",
-                out.get("stage2/raw_rollouts", 0.0),
+            trunc_den = float(
+                out.get(
+                    trunc_den_key,
+                    out.get("stage2/raw_rollouts", 0.0),
+                )
             )
-        )
-        out["rollout/parse_truncated_rate"] = (
-            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
-        )
+            out["rollout/parse_truncated_rate"] = (
+                float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
+            )
 
         if drop_internal:
-            out.pop("rollout/_parse_truncated_num", None)
-            out.pop("rollout/_parse_truncated_den", None)
+            out.pop(trunc_num_key, None)
+            out.pop(trunc_den_key, None)
 
         return out
 
@@ -722,14 +735,24 @@ class Stage2ABTrainingTrainer(
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
-        reduced.setdefault(
-            trunc_num_key,
-            float(reduced.get("rollout/parse_truncated", 0.0)),
+        has_rollout_parse_inputs = any(
+            key in reduced
+            for key in {
+                trunc_num_key,
+                trunc_den_key,
+                "rollout/parse_truncated",
+                "stage2/raw_rollouts",
+            }
         )
-        reduced.setdefault(
-            trunc_den_key,
-            float(reduced.get("stage2/raw_rollouts", 0.0)),
-        )
+        if has_rollout_parse_inputs:
+            reduced.setdefault(
+                trunc_num_key,
+                float(reduced.get("rollout/parse_truncated", 0.0)),
+            )
+            reduced.setdefault(
+                trunc_den_key,
+                float(reduced.get("stage2/raw_rollouts", 0.0)),
+            )
 
         rank, world_size, dist = self._dist_info()
         metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
@@ -852,21 +875,22 @@ class Stage2ABTrainingTrainer(
                         exc,
                     )
 
-        trunc_num = float(
-            reduced.get(
-                trunc_num_key,
-                reduced.get("rollout/parse_truncated", 0.0),
+        if has_rollout_parse_inputs:
+            trunc_num = float(
+                reduced.get(
+                    trunc_num_key,
+                    reduced.get("rollout/parse_truncated", 0.0),
+                )
             )
-        )
-        trunc_den = float(
-            reduced.get(
-                trunc_den_key,
-                reduced.get("stage2/raw_rollouts", 0.0),
+            trunc_den = float(
+                reduced.get(
+                    trunc_den_key,
+                    reduced.get("stage2/raw_rollouts", 0.0),
+                )
             )
-        )
-        reduced["rollout/parse_truncated_rate"] = (
-            float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
-        )
+            reduced["rollout/parse_truncated_rate"] = (
+                float(trunc_num / trunc_den) if trunc_den > 0.0 else 0.0
+            )
         reduced.pop(trunc_num_key, None)
         reduced.pop(trunc_den_key, None)
 
@@ -2408,11 +2432,12 @@ class Stage2ABTrainingTrainer(
             torch.Tensor,
             int,
             int,
+            Dict[str, Any],
         ]:
             b_list, pos_list, bins_list = _flatten_groups(key)
             if not pos_list:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, 0, 0
+                return z, z, z, z, z, z, 0, 0, {}
             if len(pos_list) % 4 != 0:
                 raise ValueError(f"{key} coord slots must be a multiple of 4 (bbox_2d)")
 
@@ -2440,7 +2465,7 @@ class Stage2ABTrainingTrainer(
             n_groups = int(pos_g.shape[0])
             if n_groups == 0:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, 0, 0
+                return z, z, z, z, z, z, 0, 0, {}
 
             b_t = b_g.reshape(-1)
             pos_t = pos_g.reshape(-1)
@@ -2502,7 +2527,36 @@ class Stage2ABTrainingTrainer(
                         ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=smoothl1.dtype)
 
             n_slots = int(pos_t.numel())
-            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, n_groups, n_slots
+
+            diag: Dict[str, Any] = {}
+            with torch.no_grad():
+                temp_safe = float(max(float(temperature), 1e-6))
+                logits_diag = coord_logits.float()
+                probs_diag = torch.softmax(logits_diag / temp_safe, dim=-1)
+
+                topk_k = max(1, min(5, int(probs_diag.shape[-1])))
+                topk = probs_diag.topk(k=topk_k, dim=-1).indices
+                diag["acc_top5"] = (
+                    (topk == bin_t.unsqueeze(-1)).any(dim=-1).float().mean()
+                )
+                diag["p_gt_mean"] = probs_diag.gather(1, bin_t.view(-1, 1)).mean()
+
+                bins_diag = torch.arange(
+                    int(probs_diag.shape[-1]),
+                    device=probs_diag.device,
+                    dtype=probs_diag.dtype,
+                )
+                pred_expected = (probs_diag * bins_diag.view(1, -1)).sum(dim=-1)
+                abs_err = (pred_expected.float() - bin_t.float()).abs()
+                diag["expected_bin_mae"] = abs_err.mean()
+                diag["expected_bin_abs_err"] = abs_err
+
+                logits_scaled = logits_diag / temp_safe
+                gt_logit = logits_scaled.gather(1, bin_t.view(-1, 1)).squeeze(1)
+                max_logit = logits_scaled.max(dim=-1).values
+                diag["margin_mean"] = (max_logit - gt_logit).mean()
+
+            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, n_groups, n_slots, diag
 
         (
             smoothl1_p,
@@ -2513,6 +2567,7 @@ class Stage2ABTrainingTrainer(
             ent_p,
             n_p,
             s_p,
+            diag_p,
         ) = _decode_groups("bbox_groups_prefix")
 
         # Channel-B is FP-neutral (no FP geometry), but FN-injected objects are supervised.
@@ -2525,6 +2580,7 @@ class Stage2ABTrainingTrainer(
             ent_t,
             n_t,
             s_t,
+            diag_t,
         ) = _decode_groups("bbox_groups_fn")
 
         n_all = int(n_p + n_t)
@@ -2553,6 +2609,47 @@ class Stage2ABTrainingTrainer(
             coord_ce = logits.new_tensor(0.0)
             coord_entropy = logits.new_tensor(0.0)
 
+        coord_diag_metrics: Dict[str, float] = {}
+        if channel == "A" and s_all > 0:
+            coord_diag_metrics["coord_diag/coord_tokens"] = float(s_all)
+
+            def _weighted_diag_mean(metric_key: str) -> Optional[float]:
+                weighted = 0.0
+                denom = 0.0
+                for diag, slots in ((diag_p, s_p), (diag_t, s_t)):
+                    if int(slots) <= 0 or not isinstance(diag, Mapping):
+                        continue
+                    value = diag.get(metric_key)
+                    if isinstance(value, torch.Tensor):
+                        weighted += float(value.detach().cpu().item()) * float(slots)
+                        denom += float(slots)
+                if denom <= 0.0:
+                    return None
+                return float(weighted / denom)
+
+            for metric_key, log_key in (
+                ("acc_top5", "coord_diag/acc_top5"),
+                ("p_gt_mean", "coord_diag/p_gt_mean"),
+                ("margin_mean", "coord_diag/margin_mean"),
+                ("expected_bin_mae", "coord_diag/expected_bin_mae"),
+            ):
+                value = _weighted_diag_mean(metric_key)
+                if value is not None:
+                    coord_diag_metrics[log_key] = float(value)
+
+            abs_err_chunks: List[torch.Tensor] = []
+            for diag in (diag_p, diag_t):
+                if not isinstance(diag, Mapping):
+                    continue
+                abs_err = diag.get("expected_bin_abs_err")
+                if isinstance(abs_err, torch.Tensor) and int(abs_err.numel()) > 0:
+                    abs_err_chunks.append(abs_err.detach().to(dtype=torch.float32).cpu())
+            if abs_err_chunks:
+                abs_err_all = torch.cat(abs_err_chunks, dim=0)
+                coord_diag_metrics["coord_diag/expected_bin_abs_err_p90"] = float(
+                    torch.quantile(abs_err_all, 0.9).item()
+                )
+
         bbox_loss = bbox_smoothl1_w * smoothl1 + bbox_ciou_w * ciou
         coord_reg_loss = (
             coord_ce_w * coord_ce
@@ -2573,15 +2670,6 @@ class Stage2ABTrainingTrainer(
                 self._stage2_pending_train_logs[target_step] = pending2
             # Counters should be summed across micro-batches; losses averaged.
             stage2_logs = {
-                "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
-                "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
-                "stage2_ab/b_ratio_realized": float(self._stage2_b_ratio_realized()),
-                # Keep Channel-B diagnostics dense on Channel-A steps so dashboards
-                # and alerts can rely on stable metric keys every optimizer step.
-                "stage2_ab/channel_b/invalid_rollout": float(0.0),
-                "stage2_ab/channel_b/strict_drop/N_valid_pred": float(0.0),
-                "stage2_ab/channel_b/strict_drop/N_drop_invalid": float(0.0),
-                "stage2_ab/channel_b/closure_supervision/N_drop": float(0.0),
                 "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
                 "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
@@ -2590,7 +2678,19 @@ class Stage2ABTrainingTrainer(
                 "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
                 "loss/coord_reg": float(coord_reg_loss.detach().cpu().item()),
             }
-            if isinstance(batch_metrics, Mapping):
+
+            if coord_diag_metrics:
+                stage2_logs.update(coord_diag_metrics)
+
+            b_ratio_cfg = float(self._ab_schedule_b_ratio())
+            if 0.0 < b_ratio_cfg < 1.0:
+                stage2_logs["stage2/channel_a"] = float(1.0 if channel == "A" else 0.0)
+                stage2_logs["stage2/channel_b"] = float(1.0 if channel == "B" else 0.0)
+                stage2_logs["stage2_ab/b_ratio_realized"] = float(
+                    self._stage2_b_ratio_realized()
+                )
+
+            if channel == "B" and isinstance(batch_metrics, Mapping):
                 for k in (
                     "stage2/raw_rollouts",
                     "stage2/invalid_rollout",
@@ -2609,7 +2709,7 @@ class Stage2ABTrainingTrainer(
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
                         except (TypeError, ValueError):
                             raise
-            if isinstance(batch_metrics, Mapping):
+
                 for k, v in batch_metrics.items():
                     if str(k).startswith("stage2_ab/"):
                         try:

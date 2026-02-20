@@ -446,6 +446,38 @@ def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatc
     assert "rollout/_parse_truncated_den" not in out
 
 
+def test_build_rollout_metrics_from_meta_skips_inactive_rollout_steps() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    out = trainer._build_rollout_metrics_from_meta(
+        [
+            {
+                "decode_mode": "none",
+                "rollout_len": 0,
+                "gt_objects": 2,
+                "valid_pred_objects": 2,
+            }
+        ]
+    )
+
+    assert out == {}
+
+
+def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    out = trainer._reduce_train_rollout_log_payload_global(
+        {
+            "train/samples_total": 4.0,
+            "loss/ce": 1.5,
+        }
+    )
+
+    assert out["train/samples_total"] == pytest.approx(4.0)
+    assert out["loss/ce"] == pytest.approx(1.5)
+    assert "rollout/parse_truncated_rate" not in out
+
+
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 

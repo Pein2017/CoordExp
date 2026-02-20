@@ -1290,26 +1290,23 @@ def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None
     assert out["stage2_ab/channel_b/strict_drop/reason/missing_desc"] == pytest.approx(1.0)
 
 
-def test_pending_stage2_log_keeps_required_channel_b_keys_on_channel_a_steps() -> None:
+def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
             "stage2/channel_a": 1.0,
-            "stage2/channel_b": 0.0,
-            "stage2_ab/b_ratio_realized": 0.5,
-            "stage2_ab/channel_b/invalid_rollout": 0.0,
-            "stage2_ab/channel_b/strict_drop/N_valid_pred": 0.0,
-            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 0.0,
+            "loss/bbox_smoothl1": 0.25,
         }
     )
 
     out = pending.finalize()
 
     assert out["stage2/channel_a"] == pytest.approx(1.0)
-    assert out["stage2/channel_b"] == pytest.approx(0.0)
-    assert out["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
-    assert out["stage2_ab/channel_b/strict_drop/N_valid_pred"] == pytest.approx(0.0)
-    assert out["stage2_ab/channel_b/strict_drop/N_drop_invalid"] == pytest.approx(0.0)
+    assert out["loss/bbox_smoothl1"] == pytest.approx(0.25)
+    assert "stage2/channel_b" not in out
+    assert "stage2_ab/channel_b/invalid_rollout" not in out
+    assert "stage2_ab/channel_b/strict_drop/N_valid_pred" not in out
+    assert "stage2_ab/channel_b/strict_drop/N_drop_invalid" not in out
 
 
 def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> None:
