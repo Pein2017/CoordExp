@@ -13,7 +13,7 @@ Build a reproducible, CPU-only, offline confidence pipeline that estimates one s
 - No training/inference execution in this task.
 - Config-first (YAML), avoid new CLI flags.
 - Preserve geometry semantics (never reorder/drop bbox coordinates inside a matched bbox slot).
-- Keep backward compatibility by default (existing fixed-score behavior remains unless enabled).
+- **No backward compatibility or legacy support**: fixed-score evaluation is unsupported; evaluation MUST honor per-object prediction scores.
 
 ## 2) Current Infrastructure Snapshot (Relevant to This Design)
 
@@ -55,12 +55,12 @@ Build a reproducible, CPU-only, offline confidence pipeline that estimates one s
 2. **Post Operation (offline CPU)**:
    Resolve each bbox object's 4 coord-token span and compute object confidence.
 3. **Evaluation Integration (mAP)**:
-   Use computed confidence as `score` for COCO sorting when YAML enables it.
+   Use computed confidence as `score` for COCO sorting (mandatory; fixed-score mode unsupported).
 
 ### Why sidecar (not bloating `gt_vs_pred.jsonl`)
 - Keep primary artifact stable and lightweight.
 - Allow confidence methods to evolve without rerunning generation.
-- Preserve compatibility with existing eval/vis pipelines.
+- Keep base artifact immutable while enabling a scored artifact for evaluation (no fixed-score evaluator path).
 
 ## 4) Data Contracts (Proposed)
 
@@ -102,6 +102,7 @@ Path (proposed): `artifacts.pred_confidence_jsonl`
       "points": [34, 50, 120, 180],
       "confidence": 0.8732,
       "score": 0.8732,
+      "kept": true,
       "confidence_details": {
         "method": "bbox_coord_mean_logprob_exp",
         "coord_token_count": 4,
@@ -116,10 +117,14 @@ Path (proposed): `artifacts.pred_confidence_jsonl`
 }
 ```
 
-## 4.3 Optional scored artifact for evaluator convenience
+## 4.3 Mandatory scored artifact for evaluator consumption
 Path (proposed): `artifacts.gt_vs_pred_scored_jsonl`
-- Derived by merging confidence sidecar into `pred[*].score`.
+- Derived by merging confidence sidecar into `pred[*].score` **and dropping any prediction object that lacks a valid confidence-derived score**.
+- Adds `pred_score_source` and `pred_score_version` per record so the evaluator can reject unscored legacy artifacts deterministically.
 - Keeps base artifact immutable; makes evaluation reproducible and auditable.
+
+Additional artifact:
+- `confidence_postop_summary.json`: run-level counts dropped by `failure_reason` and a kept fraction, so instrumentation failures (e.g., `missing_trace`) are visible without scanning JSONL.
 
 ## 5) Confidence Definition
 
@@ -198,18 +203,12 @@ custom:
 ### Evaluation knobs
 ```yaml
 eval:
-  use_pred_score: false
-  confidence:
-    enabled: false
-    source: pred_confidence_jsonl
-    reducer: mean_logprob
-    mapping: exp
-    min_coord_tokens: 4
-    tie_break: earliest
+  # Fixed-score mode is unsupported; evaluator always honors pred[*].score.
+  # COCO/mAP evaluation MUST consume gt_vs_pred_scored_jsonl (scored artifact) and MUST fail fast otherwise.
 ```
 
-Backward compatibility:
-- Default remains current behavior (`score=1.0`) unless explicitly enabled.
+Breaking change:
+- Any eval workflow that overwrites/ignores scores (e.g., forcing `score=1.0`) is unsupported.
 
 ## 9) File-Level Patch Plan (Foundation Buildout)
 
@@ -217,16 +216,16 @@ Backward compatibility:
 - New: `src/eval/bbox_confidence.py`
   - Pure confidence math + span resolution API
 - New: `src/eval/confidence_postop.py`
-  - Load `gt_vs_pred.jsonl` + trace sidecar, emit confidence sidecar (+ optional scored artifact)
+  - Load `gt_vs_pred.jsonl` + trace sidecar, emit confidence sidecar + `gt_vs_pred_scored.jsonl`
 - New script: `scripts/postop_confidence.py`
   - YAML entrypoint for offline post operation
 
 ## Phase 2: Evaluator score honoring (mAP enablement)
 - Update `src/eval/detection.py`
-  - Add `EvalOptions.use_pred_score` and confidence config surface
-  - Replace unconditional `score=1.0` with gated policy
+  - Remove unconditional `score=1.0` clobbering and always export COCO `score` from `pred[*].score`
+  - Fail fast when `score` is missing/non-numeric/NaN/inf
 - Update `src/infer/pipeline.py` and `scripts/evaluate_detection.py`
-  - Thread new YAML options into `EvalOptions`
+  - Reject legacy toggles that disable score honoring (e.g., `eval.use_pred_score`)
 
 ## Phase 3: Infer trace emission hooks
 - Update `src/infer/engine.py`
@@ -253,8 +252,8 @@ Backward compatibility:
   - Synthetic `gt_vs_pred` + trace sidecar -> confidence sidecar output contract
   - Scored artifact merge correctness
 - Extend `tests/test_detection_eval_output_parity.py`
-  - `eval.use_pred_score=false` preserves old metrics path
-  - `eval.use_pred_score=true` consumes confidence-derived ranking scores
+  - Missing/non-numeric scores fail fast
+  - COCO export honors score ordering deterministically
 
 ### Reproducibility checks
 - Fixed fixture token/logprob arrays.
@@ -269,25 +268,26 @@ Backward compatibility:
 - **Risk: unsupported backend logprob surfaces differ (HF vs vLLM)**
   - Mitigation: trace contract at sidecar boundary; backend-specific adapters feed same schema.
 - **Risk: accidental behavior regression in eval**
-  - Mitigation: default-off `use_pred_score`, strict parity tests.
+  - Mitigation: treat as breaking; update fixtures/configs and assert strict contract in tests (fail fast on missing scores).
 
 ## 12) Proposed OpenSpec Change Folder (for implementation)
 
 Recommended change id:
-- `openspec/changes/2026-02-20-map-confidence-foundation/`
+- `openspec/changes/map-confidence-foundation-2026-02-20/`
 
 Suggested artifacts:
-- `openspec/changes/2026-02-20-map-confidence-foundation/proposal.md`
-- `openspec/changes/2026-02-20-map-confidence-foundation/tasks.md`
-- `openspec/changes/2026-02-20-map-confidence-foundation/specs/eval/spec.md`
-- `openspec/changes/2026-02-20-map-confidence-foundation/specs/infer/spec.md`
-- `openspec/changes/2026-02-20-map-confidence-foundation/specs/rollout/spec.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/proposal.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/design.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/specs/confidence-postop/spec.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/specs/detection-evaluator/spec.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/specs/inference-pipeline/spec.md`
+- `openspec/changes/map-confidence-foundation-2026-02-20/tasks.md`
 
 ## 13) Immediate Next Milestone
 
 Build Phase 1 + Phase 2 first:
 1. offline confidence extraction from trace sidecar,
-2. evaluator gating to honor confidence-derived score,
-3. parity tests confirming default behavior is unchanged.
+2. evaluator always honors per-object score (fail fast on missing/non-numeric scores),
+3. tests assert the new strict contract + deterministic score ordering.
 
-This gives mAP ranking capability with minimal disruption and a clean foundation for later infer/rollout trace enrichment.
+This gives score-aware mAP ranking capability and a clean foundation for later infer/rollout trace enrichment.
