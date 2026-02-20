@@ -44,11 +44,20 @@ EOF
   exit 1
 }
 
-ADAPTERS="output/stage2_ab/prod/ab_mixed/v8-20260214-194010/prod_ab_mixed_bbox_max60_ckpt1516_ep2/checkpoint-400"
-OUTPUT_DIR="output/stage2_ab/experimental/ab_mixed_ckpt_400"
-GPU_DEVICES="2"
+ADAPTERS="${ADAPTERS:-}"
+OUTPUT_DIR="${OUTPUT_DIR:-}"
+GPU_DEVICES="${GPU_DEVICES:-0}"
 ALLOW_OVERWRITE="${ALLOW_OVERWRITE:-0}"
 MAX_SHARD_SIZE="${MAX_SHARD_SIZE:-5GB}"
+
+if [[ $# -gt 0 ]]; then
+  if [[ $# -lt 2 || $# -gt 3 ]]; then
+    usage
+  fi
+  ADAPTERS="$1"
+  OUTPUT_DIR="$2"
+  GPU_DEVICES="${3:-$GPU_DEVICES}"
+fi
 
 ensure_required "ADAPTERS" "$ADAPTERS"
 ensure_required "OUTPUT_DIR" "$OUTPUT_DIR"
