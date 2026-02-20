@@ -136,7 +136,7 @@ def _parse_json_string(text: str, idx: int, end: int) -> Tuple[str, int]:
             raw = text[i : j + 1]
             try:
                 value = json.loads(raw)
-            except Exception as exc:
+            except json.JSONDecodeError as exc:
                 raise _RecordValidationError(
                     "other",
                     f"Invalid JSON string literal at chars [{i}, {j + 1})",
@@ -400,7 +400,7 @@ def _parse_record(
     desc_raw = text[desc_start:desc_end]
     try:
         desc_value = json.loads(desc_raw)
-    except Exception as exc:
+    except json.JSONDecodeError as exc:
         raise _RecordValidationError("missing_desc", "desc must be a valid JSON string") from exc
     if not isinstance(desc_value, str) or not str(desc_value).strip():
         raise _RecordValidationError("missing_desc", "desc must be a non-empty string")

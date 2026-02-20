@@ -98,7 +98,7 @@ def _mask_iou_norm1000(
             rle_g = maskUtils.merge(rle_g)
         ious = maskUtils.iou([rle_p], [rle_g], [0])
         return float(ious[0][0]) if getattr(ious, "size", 0) else 0.0
-    except Exception:
+    except (IndexError, TypeError, ValueError, RuntimeError):
         return 0.0
 
 

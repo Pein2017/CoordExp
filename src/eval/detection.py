@@ -105,7 +105,7 @@ def _segm_iou(
             rle_b = maskUtils.merge(rle_b)
         ious = maskUtils.iou([rle_a], [rle_b], [0])
         return float(ious[0][0]) if ious.size else 0.0
-    except Exception:
+    except (IndexError, TypeError, ValueError, RuntimeError):
         return 0.0
 
 
@@ -192,7 +192,7 @@ def _build_semantic_desc_mapping(
     try:
         pred_map = encoder.encode_norm_texts(pred_norm)
         cand_map = encoder.encode_norm_texts(cand_norm)
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
         raise RuntimeError(
             "Description matching requires the semantic encoder "
             f"'{model_name}', but loading failed. Ensure the model exists "
@@ -258,7 +258,7 @@ def _build_semantic_desc_mapping(
         (options.output_dir / "semantic_desc_report.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, TypeError, ValueError) as exc:
         counters.semantic_report_failed += 1
         logger.warning("Failed to write semantic report: %s", exc)
 
@@ -357,7 +357,7 @@ class EvalCounters:
 @dataclass
 class EvalOptions:
     metrics: str = "f1ish"  # coco | f1ish | both
-    strict_parse: bool = False
+    strict_parse: bool = True
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")
     iou_thrs: Optional[List[float]] = None  # None -> COCO defaults
@@ -790,7 +790,7 @@ def _draw_overlays(
         import matplotlib.patches as patches
         import matplotlib.pyplot as plt
         from PIL import Image
-    except Exception as exc:
+    except (ImportError, OSError) as exc:
         logger.warning("Overlay rendering skipped (missing matplotlib/PIL): %s", exc)
         return
 
@@ -803,7 +803,7 @@ def _draw_overlays(
             continue
         try:
             img = Image.open(img_path).convert("RGB")
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("Overlay skipped: failed to load %s (%s)", img_path, exc)
             continue
 
@@ -1239,7 +1239,7 @@ def _try_build_semantic_embeddings(
 
     try:
         embs = encoder.encode_norm_texts(unique_norm_texts)
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
         raise RuntimeError(
             "F1-ish semantic filtering requires the semantic encoder "
             f"'{model_name}', but loading/encoding failed. Ensure the model is "

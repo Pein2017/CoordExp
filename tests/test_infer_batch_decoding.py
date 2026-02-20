@@ -246,25 +246,33 @@ def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeyp
         ok = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
         return [
             GenerationResult(text=ok, error=None),
-            GenerationResult(text="", error=RuntimeError("boom")),
+            GenerationResult(text=bad, error=None),
         ]
 
     monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
 
     engine.infer()
 
-    rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in out_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert len(rows) == 2
 
     assert rows[0]["errors"] == []
     assert rows[0]["pred"]
 
-    assert "generation_failed" in rows[1]["errors"]
+    assert "empty_pred" in rows[1]["errors"]
     assert rows[1]["pred"] == []
     assert rows[1]["raw_output_json"] is None
+    assert rows[1]["error_entries"]
+    assert rows[1]["error_entries"][0]["code"] == "empty_pred"
+    assert rows[1]["error_entries"][0]["stage"] == "infer.parse_pred"
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert summary["counters"]["generation_failed"] == 1
+    assert summary["errors_by_code"]["empty_pred"] == 1
+    assert summary["errors_total"] == 1
 
 
 def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):

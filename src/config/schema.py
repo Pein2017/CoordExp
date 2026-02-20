@@ -148,7 +148,7 @@ class TokenTypeMetricsConfig:
         )
         try:
             coord_monitor_mass_max_tokens = int(coord_monitor_mass_max_tokens_raw or 0)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "custom.token_type_metrics.coord_monitor_mass_max_tokens must be an int"
             ) from exc
@@ -319,7 +319,7 @@ class CoordOffsetConfig:
         elif isinstance(ids_raw, (list, tuple, set)):
             try:
                 ids = tuple(int(v) for v in ids_raw)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError("coord_offset.ids must be a list of integers") from exc
         elif isinstance(ids_raw, Mapping):
             start = ids_raw.get("start")
@@ -327,7 +327,7 @@ class CoordOffsetConfig:
             try:
                 start_i = int(start)
                 end_i = int(end)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "coord_offset.ids mapping must provide integer start/end"
                 ) from exc
@@ -943,7 +943,7 @@ class Stage2ABScheduleConfig:
         b_ratio_raw = data.pop("b_ratio", None)
         try:
             b_ratio = float(b_ratio_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.schedule.b_ratio must be a float in [0,1]") from exc
 
         if not (0.0 <= b_ratio <= 1.0):
@@ -1021,7 +1021,7 @@ class Stage2ABChannelBConfig:
         )
         try:
             drop_invalid_struct_ce_multiplier = float(drop_invalid_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError(
                 "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be a float"
             ) from exc
@@ -1077,7 +1077,7 @@ class Stage2ABConfig:
         n_softctx_iter_raw = data.pop("n_softctx_iter", cls.n_softctx_iter)
         try:
             n_softctx_iter = int(n_softctx_iter_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.n_softctx_iter must be an int") from exc
         if n_softctx_iter < 1:
             raise ValueError("stage2_ab.n_softctx_iter must be >= 1")
@@ -1092,7 +1092,7 @@ class Stage2ABConfig:
         temp_raw = data.pop("softctx_temperature", cls.softctx_temperature)
         try:
             softctx_temperature = float(temp_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.softctx_temperature must be a float") from exc
         if softctx_temperature <= 0:
             raise ValueError("stage2_ab.softctx_temperature must be > 0")
@@ -1100,7 +1100,7 @@ class Stage2ABConfig:
         desc_ce_raw = data.pop("desc_ce_weight", cls.desc_ce_weight)
         try:
             desc_ce_weight = float(desc_ce_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.desc_ce_weight must be a float") from exc
         if desc_ce_weight < 0:
             raise ValueError("stage2_ab.desc_ce_weight must be >= 0")
@@ -1108,7 +1108,7 @@ class Stage2ABConfig:
         bbox_smoothl1_raw = data.pop("bbox_smoothl1_weight", cls.bbox_smoothl1_weight)
         try:
             bbox_smoothl1_weight = float(bbox_smoothl1_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.bbox_smoothl1_weight must be a float") from exc
         if bbox_smoothl1_weight < 0:
             raise ValueError("stage2_ab.bbox_smoothl1_weight must be >= 0")
@@ -1116,7 +1116,7 @@ class Stage2ABConfig:
         bbox_ciou_raw = data.pop("bbox_ciou_weight", cls.bbox_ciou_weight)
         try:
             bbox_ciou_weight = float(bbox_ciou_raw)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("stage2_ab.bbox_ciou_weight must be a float") from exc
         if bbox_ciou_weight < 0:
             raise ValueError("stage2_ab.bbox_ciou_weight must be >= 0")
@@ -1138,8 +1138,12 @@ class Stage2ABConfig:
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
+            unknown = [f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
             raise ValueError(
-                f"Unknown stage2_ab keys: {sorted(str(k) for k in data.keys())}"
+                "Unknown stage2_ab keys: "
+                f"{unknown}. "
+                "Migration guidance: remove unsupported keys or move them into "
+                "the current stage2_ab schema (for Channel-B options use stage2_ab.channel_b.*)."
             )
 
         return cls(
@@ -1248,7 +1252,12 @@ class TrainingConfig:
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
-            raise ValueError(f"Unknown top-level config keys: {unknown}")
+            raise ValueError(
+                "Unknown top-level config keys: "
+                f"{unknown}. "
+                "Migration guidance: keep only documented top-level sections; "
+                "move residual experiment knobs under custom.extra."
+            )
 
         if global_max_length is not None:
             if not isinstance(global_max_length, int) or global_max_length <= 0:

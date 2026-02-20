@@ -1,0 +1,7 @@
+extends: geometry_first_coco80_ddp_cycle.yaml
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/geometry_first_coco80_ddp_cycle_v2
+  train_sample_limit: 160
+  val_sample_limit: 64

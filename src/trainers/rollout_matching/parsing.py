@@ -21,7 +21,7 @@ _EMPTY_PREFIX_TEXT = '{"objects": ['
 def coerce_int(value: Any) -> Optional[int]:
     try:
         v = int(round(float(value)))
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
     if not value_in_coord_range(v):
         return None

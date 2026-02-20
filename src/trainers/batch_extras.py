@@ -57,15 +57,15 @@ def stash_batch_extras(trainer: Any, extras: BatchExtras) -> None:
 
     try:
         setattr(trainer, _STASH_ATTR, extras)
-    except Exception:
+    except (AttributeError, TypeError):
         # Best-effort only; never block training.
         return
 
     # Back-compat: historically, pack_num_samples was stashed under this name.
     try:
         setattr(trainer, "_coordexp_pack_num_samples", extras.pack_num_samples)
-    except Exception:
-        raise
+    except (AttributeError, TypeError):
+        return
 
 
 def pop_and_stash_batch_extras(trainer: Any, inputs: Any) -> BatchExtras:

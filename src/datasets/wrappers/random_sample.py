@@ -7,9 +7,6 @@ from typing import Any
 
 from torch.utils.data import Dataset, get_worker_info
 
-from ...utils.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class RandomSampleDataset(Dataset):
@@ -27,10 +24,7 @@ class RandomSampleDataset(Dataset):
         self.seed = int(seed)
         self._epoch = 0
         self._rng = random.Random(self._seed_for_epoch(self._epoch))
-        try:
-            self.base_length = len(dataset)
-        except Exception:
-            self.base_length = None
+        self.base_length = len(dataset)
 
     def _seed_for_epoch(self, epoch: int) -> int:
         base_seed = self.seed & 0xFFFFFFFF
@@ -41,10 +35,7 @@ class RandomSampleDataset(Dataset):
         self._epoch = int(epoch)
         self._rng = random.Random(self._seed_for_epoch(self._epoch))
         if hasattr(self.dataset, "set_epoch"):
-            try:
-                self.dataset.set_epoch(epoch)
-            except Exception as exc:
-                logger.debug("Failed to forward set_epoch to base dataset: %s", exc)
+            self.dataset.set_epoch(epoch)
 
     def __len__(self) -> int:
         return self.sample_size
@@ -52,7 +43,7 @@ class RandomSampleDataset(Dataset):
     def __getitem__(self, index: int) -> Any:
         try:
             base_len = len(self.dataset)
-        except Exception as exc:
+        except TypeError as exc:
             raise TypeError("RandomSampleDataset requires a sized base dataset") from exc
         if base_len <= 0:
             raise IndexError("RandomSampleDataset base dataset is empty")

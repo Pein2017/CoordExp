@@ -1,0 +1,29 @@
+extends: ../ablation/geometry_first_coco80.yaml
+
+# GPU-required smoke config (kept in-repo so the command is deterministic).
+# This config should differ from the audited stage-1 config only by runtime-ish
+# knobs: sample limits, max_steps, and output locations.
+
+training:
+  run_name: smoke_stage1_geometry_first_coco80
+  # Keep this short; intended only to validate end-to-end wiring.
+  max_steps: 20
+  save_strategy: steps
+  save_steps: 10
+  save_delay_steps: 0
+  eval_strategy: steps
+  eval_steps: 10
+  logging_steps: 1
+
+data:
+  # Reduce CPU overhead for a smoke (full runs can restore base defaults).
+  dataloader_num_workers: 2
+  dataloader_prefetch_factor: 2
+  dataloader_persistent_workers: false
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/geometry_first_coco80
+  train_sample_limit: 256
+  val_sample_limit: 64
+

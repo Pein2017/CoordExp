@@ -204,7 +204,7 @@ class CoordinateStandardizer:
                 score = obj.get("score", 1.0)
                 try:
                     score = float(score)
-                except Exception:
+                except (TypeError, ValueError):
                     score = 1.0
 
                 out_obj: Dict[str, Any] = {

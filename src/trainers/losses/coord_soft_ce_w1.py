@@ -198,49 +198,39 @@ def compute_coord_soft_ce_w1_loss(
     coord_expected_bin_mae = None
     coord_expected_bin_abs_err_p90 = None
     coord_w1_to_delta = None
-    try:
-        with torch.no_grad():
-            k5 = min(5, int(flat_logits.shape[-1]))
-            topk = flat_logits.topk(k=k5, dim=-1).indices
-            coord_acc_top5 = (
-                (topk == flat_target_bins.unsqueeze(-1)).any(dim=-1).float().mean()
+    with torch.no_grad():
+        k5 = min(5, int(flat_logits.shape[-1]))
+        topk = flat_logits.topk(k=k5, dim=-1).indices
+        coord_acc_top5 = (topk == flat_target_bins.unsqueeze(-1)).any(dim=-1).float().mean()
+        coord_p_gt_mean = out.pred_probs.gather(1, flat_target_bins.view(-1, 1)).mean()
+
+        bins = torch.arange(
+            int(out.pred_probs.shape[-1]),
+            device=out.pred_probs.device,
+            dtype=out.pred_probs.dtype,
+        )
+        pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
+        abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
+        coord_expected_bin_mae = abs_err.mean()
+
+        # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
+        probs = out.pred_probs.to(dtype=torch.float32)
+        bins_f = bins.to(dtype=torch.float32)
+        dist_bins = (
+            bins_f.view(1, -1) - flat_target_bins.to(torch.float32).view(-1, 1)
+        ).abs()
+        coord_w1_to_delta = (probs * dist_bins).sum(dim=-1).mean()
+
+        if abs_err.numel() > 0:
+            coord_expected_bin_abs_err_p90 = torch.quantile(
+                abs_err.to(dtype=torch.float32), 0.9
             )
-            coord_p_gt_mean = out.pred_probs.gather(1, flat_target_bins.view(-1, 1)).mean()
 
-            bins = torch.arange(
-                int(out.pred_probs.shape[-1]),
-                device=out.pred_probs.device,
-                dtype=out.pred_probs.dtype,
-            )
-            pred_expected = (out.pred_probs * bins.view(1, -1)).sum(dim=-1)
-            abs_err = (pred_expected.float() - flat_target_bins.float()).abs()
-            coord_expected_bin_mae = abs_err.mean()
-
-            # W1(p, delta_t) in 1D bins, equivalently E_p[|k - t|].
-            probs = out.pred_probs.to(dtype=torch.float32)
-            bins_f = bins.to(dtype=torch.float32)
-            dist_bins = (
-                bins_f.view(1, -1) - flat_target_bins.to(torch.float32).view(-1, 1)
-            ).abs()
-            coord_w1_to_delta = (probs * dist_bins).sum(dim=-1).mean()
-
-            if abs_err.numel() > 0:
-                coord_expected_bin_abs_err_p90 = torch.quantile(
-                    abs_err.to(dtype=torch.float32), 0.9
-                )
-
-            temp = float(temperature) if float(temperature) > 0 else 1.0
-            logits_scaled = flat_logits.float() / temp
-            gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
-            max_logit = logits_scaled.max(dim=-1).values
-            coord_margin_mean = (max_logit - gt_logit).mean()
-    except Exception:
-        coord_acc_top5 = None
-        coord_p_gt_mean = None
-        coord_margin_mean = None
-        coord_expected_bin_mae = None
-        coord_expected_bin_abs_err_p90 = None
-        coord_w1_to_delta = None
+        temp = float(temperature) if float(temperature) > 0 else 1.0
+        logits_scaled = flat_logits.float() / temp
+        gt_logit = logits_scaled.gather(1, flat_target_bins.view(-1, 1)).squeeze(1)
+        max_logit = logits_scaled.max(dim=-1).values
+        coord_margin_mean = (max_logit - gt_logit).mean()
 
     # Loss terms (token-summed before normalization).
     softce_sum = out.soft_ce_per_token.sum()
@@ -278,13 +268,10 @@ def compute_coord_soft_ce_w1_loss(
     coord_loss = ce_contrib + softce_contrib + w1_contrib + gate_contrib
 
     if average_tokens_across_devices and model_accepts_loss_kwargs:
-        try:
-            if dist.is_available() and dist.is_initialized():
-                scale = float(dist.get_world_size())
-            else:
-                scale = float(accelerator_num_processes or 1)
-        except Exception:
-            scale = 1.0
+        if dist.is_available() and dist.is_initialized():
+            scale = float(dist.get_world_size())
+        else:
+            scale = float(accelerator_num_processes or 1)
         coord_loss = coord_loss * scale
         softce_contrib = softce_contrib * scale
         w1_contrib = w1_contrib * scale

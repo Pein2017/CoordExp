@@ -153,6 +153,31 @@ build_split train 20
 build_split val 20
 
 echo ""
+echo "[images] materialize resized images (no symlinks)"
+SRC_POOL="public_data/coco/rescale_32_768_bbox_max60"
+if [ ! -d "${SRC_POOL}/images" ]; then
+  echo "[error] Missing rescaled COCO image pool under: ${SRC_POOL}/images"
+  echo "        This export expects a pre-built rescaled COCO pool (768*32*32 max_pixels, factor=32)."
+  exit 2
+fi
+
+conda run -n ms python scripts/tools/materialize_rescaled_images_from_jsonl.py \
+  --jsonl "${OUT}/train.mix_hull_semantic_cap10.max60.coord.jsonl" \
+  --jsonl "${OUT}/val.mix_hull_semantic_cap10.max60.coord.jsonl" \
+  --jsonl "${OUT}/train.mix_hull_semantic_cap20.max60.coord.jsonl" \
+  --jsonl "${OUT}/val.mix_hull_semantic_cap20.max60.coord.jsonl" \
+  --src-root "${SRC_POOL}" \
+  --dst-root "${OUT}" \
+  --write
+
+conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
+  --jsonl "${OUT}/val.mix_hull_semantic_cap20.max60.coord.jsonl" \
+  --max-pixels $((768*32*32)) \
+  --multiple-of 32 \
+  --image-check-mode open \
+  --image-check-n 64
+
+echo ""
 echo "[length] measuring GT assistant token lengths (coord jsonl)"
 PYTHONPATH=. conda run -n ms python scripts/measure_gt_max_new_tokens.py \
   --train_jsonl "${OUT}/train.mix_hull_semantic_cap20.max60.coord.jsonl" \

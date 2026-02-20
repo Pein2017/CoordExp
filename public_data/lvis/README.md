@@ -74,8 +74,8 @@ bash public_data/lvis/reproduce_max60_exports.sh
 ```
 
 Notes:
-- The export script creates `images -> ../raw/images` symlinks inside each output dataset directory,
-  so the JSONLs reference `images/train2017/...` and `images/val2017/...` and stay relocatable.
+- The export script materializes a real `images/` directory inside each output dataset directory
+  with pre-rescaled images matching JSONL `width/height` (no symlinks; runtime resizing is forbidden).
 - Token-length sanity is best-effort: it runs only if `model_cache/Qwen3-VL-8B-Instruct-coordexp` exists.
 
 ### Outputs

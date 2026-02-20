@@ -12,7 +12,7 @@ try:
         create_multimodal_optimizer,
         get_param_startswith,
     )
-except Exception as exc:  # pragma: no cover - defensive for environments without swift
+except ImportError as exc:  # pragma: no cover - defensive for environments without swift
     raise ImportError(
         "swift.plugin.optimizer is required for coord_offset optimizer."
     ) from exc

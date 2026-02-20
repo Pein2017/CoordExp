@@ -35,38 +35,33 @@ class InstabilityMonitorMixin:
         # Batch extras are stripped by the Stage-1 extras contract (usually in
         # GradAccumLossScaleMixin). Fetch the meta json from the stash.
         meta_json = None
-        if isinstance(inputs, dict):
-            labels_snapshot = inputs.get("labels")
-        else:
-            labels_snapshot = None
+        labels_snapshot = inputs.get("labels") if isinstance(inputs, dict) else None
 
         try:
             from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
+        except ImportError:
+            maybe_pop_and_stash_batch_extras = None
 
+        if maybe_pop_and_stash_batch_extras is not None:
             extras = maybe_pop_and_stash_batch_extras(self, inputs)
             meta_json = extras.instability_meta_json
-        except Exception:
-            # Back-compat fallback (should be rare): pop directly.
-            if isinstance(inputs, dict):
-                meta_json = inputs.pop(self.meta_field, None)
+        elif isinstance(inputs, dict):
+            meta_json = inputs.pop(self.meta_field, None)
 
         loss, outputs = super().compute_loss(  # type: ignore[misc]
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
         )
 
-        try:
-            from src.metrics.reporter import best_effort_value
+        from src.metrics.reporter import best_effort_value
 
-            loss = best_effort_value(
-                self,
-                name="instability_monitor",
-                fn=lambda: self._monitor_and_guard(
-                    loss=loss, outputs=outputs, labels=labels_snapshot, meta_json=meta_json
-                ),
-                default=loss,
-            )
-        except Exception:
-            raise
+        loss = best_effort_value(
+            self,
+            name="instability_monitor",
+            fn=lambda: self._monitor_and_guard(
+                loss=loss, outputs=outputs, labels=labels_snapshot, meta_json=meta_json
+            ),
+            default=loss,
+        )
 
         return (loss, outputs) if return_outputs else loss
 
@@ -77,7 +72,7 @@ class InstabilityMonitorMixin:
     def _as_float(value: Any, default: float) -> float:
         try:
             out = float(value)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return float(default)
         if not math.isfinite(out):
             return float(default)
@@ -87,7 +82,7 @@ class InstabilityMonitorMixin:
     def _as_int(value: Any, default: int) -> int:
         try:
             return int(value)
-        except Exception:
+        except (TypeError, ValueError):
             return int(default)
 
     def _get_cfg(self) -> Mapping[str, Any]:
@@ -99,7 +94,7 @@ class InstabilityMonitorMixin:
             return 0
         try:
             return int(dist.get_rank())
-        except Exception:
+        except RuntimeError:
             return 0
 
     def _is_main_process(self) -> bool:
@@ -143,14 +138,14 @@ class InstabilityMonitorMixin:
                         raw = line.strip("\n")
                         try:
                             out[current] = json.loads(raw)
-                        except Exception:
+                        except (json.JSONDecodeError, TypeError):
                             out[current] = {"_raw": raw, "_parse_error": True}
                         target_pos += 1
                         if target_pos >= len(wanted):
                             break
                         target = wanted[target_pos]
                     current += 1
-        except Exception as exc:
+        except (OSError, UnicodeError) as exc:
             return {"_error": str(exc)}  # type: ignore[return-value]
         return out
 
@@ -179,7 +174,7 @@ class InstabilityMonitorMixin:
 
         try:
             meta = json.loads(meta_json)
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             meta = None
         if not isinstance(meta, list):
             return
@@ -198,7 +193,7 @@ class InstabilityMonitorMixin:
                 bi = s.get("base_idx")
                 try:
                     bi_i = int(bi)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if bi_i >= 0:
                     base_idxs.append(bi_i)
@@ -240,25 +235,14 @@ class InstabilityMonitorMixin:
         setattr(self, "_instab_stop_requested", True)
 
         # Mark the control/state so Trainer breaks out cleanly at the next check.
-        try:
-            control = getattr(self, "control", None)
-            if control is not None:
-                try:
-                    control.should_training_stop = True
-                except Exception:
-                    raise
-                try:
-                    control.should_epoch_stop = True
-                except Exception:
-                    raise
-        except Exception:
-            raise
-        try:
-            state = getattr(self, "state", None)
-            if state is not None:
-                setattr(state, "should_training_stop", True)
-        except Exception:
-            raise
+        control = getattr(self, "control", None)
+        if control is not None:
+            control.should_training_stop = True
+            control.should_epoch_stop = True
+
+        state = getattr(self, "state", None)
+        if state is not None:
+            setattr(state, "should_training_stop", True)
 
         if self._is_main_process():
             logger.error(
@@ -405,21 +389,24 @@ class InstabilityMonitorMixin:
                         break
 
         lr = None
-        try:
-            opt = getattr(self, "optimizer", None)
-            if opt is not None and getattr(opt, "param_groups", None):
-                lr = opt.param_groups[0].get("lr", None)
-        except Exception:
-            lr = None
+        opt = getattr(self, "optimizer", None)
+        param_groups = getattr(opt, "param_groups", None) if opt is not None else None
+        if isinstance(param_groups, list) and param_groups:
+            first_group = param_groups[0]
+            if isinstance(first_group, Mapping):
+                lr = first_group.get("lr", None)
+
         if lr is None:
-            try:
-                sched = getattr(self, "lr_scheduler", None)
-                if sched is not None:
-                    last = sched.get_last_lr()
-                    if last:
-                        lr = last[0]
-            except Exception:
-                lr = None
+            sched = getattr(self, "lr_scheduler", None)
+            get_last_lr = getattr(sched, "get_last_lr", None) if sched is not None else None
+            if callable(get_last_lr):
+                try:
+                    last = get_last_lr()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    last = None
+                if isinstance(last, (list, tuple)) and last:
+                    lr = last[0]
+
         if lr is None:
             lr = getattr(getattr(self, "args", None), "learning_rate", None)
 
@@ -443,16 +430,13 @@ class InstabilityMonitorMixin:
             "meta_json": meta_str,
         }
         if dump_dir is not None:
-            try:
-                self._append_event(dump_dir, event)
-                self._maybe_dump_samples(
-                    dump_dir,
-                    mode=mode,
-                    step=step,
-                    meta_json=meta_str,
-                )
-            except Exception:
-                raise
+            self._append_event(dump_dir, event)
+            self._maybe_dump_samples(
+                dump_dir,
+                mode=mode,
+                step=step,
+                meta_json=meta_str,
+            )
 
         if self._is_main_process():
             ema_s = None if ema_loss is None else f"{float(ema_loss):.6f}"
@@ -473,10 +457,7 @@ class InstabilityMonitorMixin:
         if should_early_stop and stop_reason is not None:
             # Ensure we don't backprop through a bad step; stop ASAP after dumping.
             guard_enabled = True
-            try:
-                self._request_training_stop(reason=stop_reason, mode=mode, step=step)
-            except Exception:
-                raise
+            self._request_training_stop(reason=stop_reason, mode=mode, step=step)
 
         if not guard_enabled:
             return loss

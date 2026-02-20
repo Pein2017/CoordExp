@@ -200,7 +200,7 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
 
     try:
         seed = int(seed_raw)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise TypeError(
             f"training.seed must be an int (or int-like); got {seed_raw!r}"
         ) from exc
@@ -211,7 +211,7 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
 def _safe_module_info(module_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(module_name)
-    except Exception as exc:
+    except ImportError as exc:
         return {"error": f"{exc.__class__.__name__}: {exc}"}
 
     version = getattr(module, "__version__", None)
@@ -254,7 +254,7 @@ def _safe_git_state(repo_root: Path) -> dict[str, Any]:
         ).strip()
         dirty = bool(status.splitlines())
         return {"sha": sha, "branch": branch, "dirty": dirty}
-    except Exception as exc:
+    except (OSError, subprocess.CalledProcessError) as exc:
         return {"error": f"{exc.__class__.__name__}: {exc}"}
 
 
@@ -343,7 +343,7 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
     decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
     try:
         rollout_decode_bs = int(decode_bs_raw)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
     if rollout_decode_bs <= 0:
         raise ValueError("rollout_matching.decode_batch_size must be > 0")
@@ -356,7 +356,7 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
         )
         try:
             current_eval_bs = int(current_eval_bs_raw)
-        except Exception:
+        except (TypeError, ValueError):
             current_eval_bs = int(rollout_decode_bs)
         if int(current_eval_bs) != int(rollout_decode_bs):
             logger.warning(
@@ -507,7 +507,7 @@ def main():
         )
         if log_path:
             logger.info(f"File logging enabled: {log_path}")
-    except Exception:
+    except (OSError, RuntimeError, TypeError, ValueError):
         raise
 
     # Debug mode: print full configuration
@@ -540,11 +540,20 @@ def main():
         )
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_hint = train_jsonl or fusion_config_path
-        if root_hint:
-            root_dir = os.path.abspath(os.path.dirname(str(root_hint)))
+        if train_jsonl:
+            root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))
             os.environ["ROOT_IMAGE_DIR"] = root_dir
-            logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
+            logger.info(f"Set ROOT_IMAGE_DIR={root_dir} (from custom.train_jsonl)")
+        elif fusion_config_path:
+            # Fusion configs are legacy/experimental. Using the fusion-config file directory
+            # as a root is a heuristic; surface this explicitly to prevent silent path drift.
+            root_dir = os.path.abspath(os.path.dirname(str(fusion_config_path)))
+            os.environ["ROOT_IMAGE_DIR"] = root_dir
+            logger.warning(
+                "Set ROOT_IMAGE_DIR=%s (heuristic from custom.fusion_config path). "
+                "For fusion configs, set ROOT_IMAGE_DIR explicitly (preferred) or provide custom.train_jsonl.",
+                root_dir,
+            )
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")
@@ -568,12 +577,7 @@ def main():
         )
         if adapter.module_name not in modules_to_save:
             modules_to_save.append(adapter.module_name)
-            try:
-                setattr(train_args, "modules_to_save", modules_to_save)
-            except Exception:
-                logger.warning(
-                    "Failed to attach coord_offset module to modules_to_save on train_args"
-                )
+            setattr(train_args, "modules_to_save", modules_to_save)
         # Sanity check against vocab size when available
         vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
         max_id = int(adapter.coord_ids.max().item())
@@ -637,7 +641,7 @@ def main():
             logger.info(
                 f"Augmentation pipeline built (bypass_prob={bypass_prob:.2f}, training only)"
             )
-        except Exception as e:
+        except (ImportError, KeyError, TypeError, ValueError) as e:
             raise ValueError(f"Failed to build augmentation pipeline from YAML: {e}")
 
     curriculum_state = None
@@ -655,7 +659,7 @@ def main():
                 op_meta=getattr(augmenter, "_augmentation_meta", []),
                 curriculum_raw=curriculum_cfg,
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Failed to build augmentation curriculum: {exc}") from exc
         curriculum_scheduler = scheduler
         # Note: initial_state will be computed after dataset is loaded and total_steps is calculated
@@ -668,6 +672,29 @@ def main():
     debug_enabled = bool(
         debug_config is not None and getattr(debug_config, "enabled", False)
     )
+    heartbeat_env_raw = str(os.environ.get("COORDEXP_TRAIN_HEARTBEAT", "")).strip()
+    heartbeat_env = heartbeat_env_raw.lower()
+    heartbeat_enabled = debug_enabled or heartbeat_env in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if heartbeat_env and heartbeat_env not in {
+        "0",
+        "false",
+        "no",
+        "off",
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        logger.warning(
+            "Unrecognized COORDEXP_TRAIN_HEARTBEAT=%r; expected one of "
+            "{0,1,false,true,no,yes,off,on}. Treating as disabled unless debug.enabled=true.",
+            heartbeat_env_raw,
+        )
     if debug_enabled:
         train_sample_limit = getattr(debug_config, "train_sample_limit", None)
         val_sample_limit = getattr(debug_config, "val_sample_limit", None)
@@ -803,7 +830,7 @@ def main():
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
-    except Exception:
+    except TypeError:
         base_dataset_len = None
     # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
     # Do not apply dataset-level packing wrappers for this trainer variant.
@@ -817,14 +844,9 @@ def main():
                 "packing enabled: forcing per_device_train_batch_size=1 (was %s)",
                 orig_bs,
             )
-            try:
-                train_args.per_device_train_batch_size = 1
-                if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.per_device_train_batch_size = 1
-            except Exception:
-                logger.warning(
-                    "Failed to set per_device_train_batch_size on train_args"
-                )
+            train_args.per_device_train_batch_size = 1
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.per_device_train_batch_size = 1
 
         # Ensure max_steps is finite when using iterable packed dataset
         max_steps = getattr(train_args, "max_steps", None)
@@ -835,13 +857,19 @@ def main():
                 world_size = max(world_size, 1)
                 # Heuristic: estimate average samples per emitted pack to align optimizer steps with requested epochs.
                 # Defaults to ~8 samples/pack (observed in packing guide); override via training.packing_avg_samples.
+                training_map = getattr(training_config, "training", {}) or {}
+                avg_pack_samples_raw = (
+                    training_map.get("packing_avg_samples", 8.0)
+                    if isinstance(training_map, Mapping)
+                    else 8.0
+                )
                 try:
-                    training_map = getattr(training_config, "training", {}) or {}
-                    avg_pack_samples = float(
-                        training_map.get("packing_avg_samples", 8.0)
-                    )
-                except Exception:
-                    avg_pack_samples = 8.0
+                    avg_pack_samples = float(avg_pack_samples_raw)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        "training.packing_avg_samples must be a float; "
+                        f"got {avg_pack_samples_raw!r}"
+                    ) from exc
                 avg_pack_samples = max(avg_pack_samples, 1e-6)
                 packs_per_rank_est = math.ceil(
                     base_dataset_len / (avg_pack_samples * world_size)
@@ -913,16 +941,13 @@ def main():
                 "eval_packing enabled: forcing per_device_eval_batch_size=1 (was %s)",
                 eval_bs,
             )
-            try:
-                train_args.per_device_eval_batch_size = 1
-                if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.per_device_eval_batch_size = 1
-            except Exception:
-                logger.warning("Failed to set per_device_eval_batch_size on train_args")
+            train_args.per_device_eval_batch_size = 1
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.per_device_eval_batch_size = 1
 
     try:
         train_len = len(dataset)
-    except Exception:
+    except TypeError:
         train_len = base_dataset_len
     logger.info(f"Training dataset size (reported/approx): {train_len}")
 
@@ -997,14 +1022,14 @@ def main():
                     "Encoded sample missing image_grid_thw/pixel_values. Check image paths and template preprocessing."
                 )
             # Print basic shapes
-            try:
-                grid_shape = tuple(getattr(img_grid, "shape", []))
-            except Exception:
-                grid_shape = None
-            try:
-                pv_shape = tuple(getattr(pv, "shape", []))
-            except Exception:
-                pv_shape = None
+            grid_shape_raw = getattr(img_grid, "shape", None)
+            grid_shape = (
+                tuple(grid_shape_raw)
+                if isinstance(grid_shape_raw, (list, tuple))
+                else None
+            )
+            pv_shape_raw = getattr(pv, "shape", None)
+            pv_shape = tuple(pv_shape_raw) if isinstance(pv_shape_raw, (list, tuple)) else None
             logger.debug(
                 f"image_grid_thw shape: {grid_shape}; pixel_values shape: {pv_shape}"
             )
@@ -1021,7 +1046,7 @@ def main():
                     expected = int(
                         img_grid.prod(dim=-1).sum().item() // (merge_size**2)
                     )
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     expected = None
             if (
                 isinstance(image_token_id, int)
@@ -1034,14 +1059,14 @@ def main():
                     logger.warning(
                         "Image token mismatch. Investigate chat_template and image processing."
                     )
-        except Exception as e:
+        except (AttributeError, IndexError, KeyError, RuntimeError, TypeError, ValueError) as e:
             logger.warning(f"HealthCheck failed: {e}")
 
     # Optional: dump conversation text-only (no tokens, no images) and full tokens
     dump_conv = bool(custom_config.dump_conversation_text or args.debug)
     try:
         dataset_nonempty = len(dataset) > 0
-    except Exception:
+    except TypeError:
         dataset_nonempty = (base_dataset_len or 0) > 0
 
     if dump_conv and dataset_nonempty:
@@ -1109,7 +1134,7 @@ def main():
                         if isinstance(item, dict) and item.get("type") == "text":
                             assistant_gt = item.get("text")
                             break
-            except Exception as inner_e:
+            except (AttributeError, IndexError, KeyError, TypeError, ValueError) as inner_e:
                 logger.warning(f"Failed to extract assistant GT: {inner_e}")
 
             logger.debug("Conversation (raw):\n" + raw_text)
@@ -1137,7 +1162,7 @@ def main():
                     if not assistant_gt.endswith("\n"):
                         f.write("\n")
             logger.info(f"Conversation text saved to: {dump_path}")
-        except Exception as e:
+        except (AttributeError, IndexError, KeyError, OSError, TypeError, ValueError) as e:
             logger.warning(f"Failed to dump conversation text: {e}")
 
     # Build validation dataset (single JSONL or fusion config).
@@ -1262,18 +1287,13 @@ def main():
     )
     # After PEFT wrapping, reattach coord-offset hooks to active modules so offsets train/save correctly
     if coord_offset_cfg and coord_offset_cfg.enabled:
-        try:
-            reattached = reattach_coord_offset_hooks(sft.model)
-            if reattached is None:
-                logger.warning(
-                    "coord_offset_adapter not found after prepare_model; hooks not reattached"
-                )
-            else:
-                logger.info("Reattached coord_offset hooks on wrapped model")
-        except Exception as exc:
+        reattached = reattach_coord_offset_hooks(sft.model)
+        if reattached is None:
             logger.warning(
-                f"Failed to reattach coord_offset hooks after prepare_model: {exc}"
+                "coord_offset_adapter not found after prepare_model; hooks not reattached"
             )
+        else:
+            logger.info("Reattached coord_offset hooks on wrapped model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
@@ -1281,11 +1301,8 @@ def main():
     trainer_variant = getattr(train_args, "trainer_variant", None)
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
-        try:
-            if getattr(train_args, "training_args", None) is not None:
-                train_args.training_args.remove_unused_columns = False
-        except Exception:
-            raise
+        if getattr(train_args, "training_args", None) is not None:
+            train_args.training_args.remove_unused_columns = False
 
         # Single rollout batching knob: rollout_matching.decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size too.
@@ -1298,7 +1315,7 @@ def main():
             from swift.trainers.rlhf_trainer.utils import identity_data_collator
 
             base_collator = identity_data_collator
-        except Exception as exc:
+        except ImportError as exc:
             raise RuntimeError(
                 "rollout-matching trainer requires ms-swift identity_data_collator"
             ) from exc
@@ -1307,12 +1324,11 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
-    try:
-        raw_instab = getattr(custom_config, "extra", {}).get("instability_monitor")
+    extra_cfg = getattr(custom_config, "extra", None)
+    if isinstance(extra_cfg, Mapping):
+        raw_instab = extra_cfg.get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
-    except Exception:
-        instability_monitor_cfg = None
     if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
@@ -1323,6 +1339,25 @@ def main():
             token_type_cfg=token_type_cfg,
             instability_monitor_cfg=instability_monitor_cfg,
         )
+
+    heartbeat_writer = None
+    heartbeat_callback = None
+    if heartbeat_enabled:
+        from .callbacks.train_heartbeat import (
+            HeartbeatDataCollator,
+            TrainHeartbeatCallback,
+            TrainHeartbeatWriter,
+        )
+
+        rank_s = str(os.environ.get("RANK", "0") or "0")
+        output_dir_for_heartbeat = Path(str(getattr(train_args, "output_dir", ".") or "."))
+        heartbeat_path = output_dir_for_heartbeat / f"train_heartbeat.rank{rank_s}.jsonl"
+        heartbeat_writer = TrainHeartbeatWriter(path=heartbeat_path, enabled=True)
+        heartbeat_writer.emit("heartbeat_enabled", rank=rank_s)
+        data_collator = HeartbeatDataCollator(data_collator, writer=heartbeat_writer)
+        heartbeat_callback = TrainHeartbeatCallback(heartbeat_writer)
+        logger.info("Train heartbeat enabled: %s", str(heartbeat_path))
+
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
     if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
@@ -1344,8 +1379,10 @@ def main():
             {},
         )
 
-    # Add SaveDelayCallback if save_delay_steps is configured
+    # Add callbacks (including optional heartbeat instrumentation for debug/smokes).
     callbacks = sft.callbacks.copy() if sft.callbacks else []
+    if heartbeat_callback is not None:
+        callbacks.append(heartbeat_callback)
     if curriculum_scheduler is not None and curriculum_state is not None:
         from .callbacks.augmentation_curriculum import (
             AugmentationCurriculumCallback,
@@ -1389,6 +1426,8 @@ def main():
     trainer_kwargs = (
         sft._get_trainer_kwargs() if hasattr(sft, "_get_trainer_kwargs") else {}
     )
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("trainer_init_start")
     trainer = trainer_cls(
         model=sft.model,
         args=train_args.training_args,
@@ -1399,6 +1438,8 @@ def main():
         template=sft.template,
         **trainer_kwargs,
     )
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("trainer_init_done")
     # Rollout-matching evaluators emit rollout/* metrics only.
     # Guard against inherited defaults like eval_token_acc, which would crash
     # best-checkpoint selection at evaluation time.
@@ -1493,81 +1534,43 @@ def main():
                 rollout_cfg.get("rollout_backend", "vllm"),
                 rollout_cfg.get("packing_enabled", False),
             )
-        except Exception as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to inject rollout_matching_cfg into trainer. "
                 "This is required for rollout-matching/stage2-ab trainer variants."
             ) from exc
 
     if trainer_variant == "stage2_ab_training":
-        try:
-            stage2_ab_typed = getattr(training_config, "stage2_ab", None)
-            if stage2_ab_typed is None:
-                raise ValueError(
-                    "training_config.stage2_ab is required for stage2_ab_training; "
-                    "check config parsing (top-level stage2_ab section)."
-                )
-            stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
-
-
-            setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
-
-            try:
-                sched = stage2_ab_cfg.get("schedule")
-                b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
-            except Exception:
-                b_ratio = None
-
-            logger.info(
-                "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
-                b_ratio,
-                stage2_ab_cfg.get("n_softctx_iter"),
-                stage2_ab_cfg.get("softctx_grad_mode"),
+        stage2_ab_typed = getattr(training_config, "stage2_ab", None)
+        if stage2_ab_typed is None:
+            raise ValueError(
+                "training_config.stage2_ab is required for stage2_ab_training; "
+                "check config parsing (top-level stage2_ab section)."
             )
-        except Exception as exc:
-            logger.warning("Failed to inject stage2_ab_cfg into trainer: %s", exc)
+        stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
+
+        setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
+
+        sched = stage2_ab_cfg.get("schedule")
+        b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
+
+        logger.info(
+            "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
+            b_ratio,
+            stage2_ab_cfg.get("n_softctx_iter"),
+            stage2_ab_cfg.get("softctx_grad_mode"),
+        )
     if coord_soft_ce_w1_cfg is not None:
-        try:
-            setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
     if token_type_cfg is not None:
-        try:
-            setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
     if instability_monitor_cfg is not None:
-        try:
-            setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
-        except Exception:
-            raise
+        setattr(trainer, "instability_monitor_cfg", instability_monitor_cfg)
         # Provide JSONL paths so the monitor can dump offending records by base_idx.
-        try:
-            setattr(trainer, "instability_train_jsonl", str(train_jsonl))
-        except Exception:
-            raise
-        try:
-            if val_jsonl:
-                setattr(trainer, "instability_val_jsonl", str(val_jsonl))
-        except Exception:
-            raise
+        setattr(trainer, "instability_train_jsonl", str(train_jsonl))
+        if val_jsonl:
+            setattr(trainer, "instability_val_jsonl", str(val_jsonl))
 
-    # Patch DeepSpeed __del__ to avoid noisy cleanup errors (safe no-op)
-    try:
-        import deepspeed  # type: ignore
-
-        if hasattr(deepspeed.runtime.engine.DeepSpeedEngine, "__del__"):
-            _orig_ds_del = deepspeed.runtime.engine.DeepSpeedEngine.__del__
-
-            def _safe_ds_del(self):  # type: ignore[override]
-                try:
-                    _orig_ds_del(self)
-                except Exception:
-                    raise
-
-            deepspeed.runtime.engine.DeepSpeedEngine.__del__ = _safe_ds_del  # type: ignore[assignment]
-    except Exception:
-        raise
 
     # Start training
     logger.info("=" * 70)
@@ -1589,76 +1592,112 @@ def main():
     try:
         rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
         is_rank0 = True if rank_raw is None else (int(rank_raw) == 0)
-    except Exception:
+    except (TypeError, ValueError):
         is_rank0 = True
 
     if is_rank0:
+        out_dir = getattr(train_args, "output_dir", None)
+        written = None
+        if out_dir:
+            # ------------------------------------------------------------------
+            # Required run manifest files (fail-fast)
+            # ------------------------------------------------------------------
+            from src.utils.run_manifest import write_run_manifest_files
+
+            written = write_run_manifest_files(
+                output_dir=Path(str(out_dir)),
+                training_config=training_config,
+                config_path=str(getattr(args, "config", "") or ""),
+                base_config_path=str(getattr(args, "base_config", "") or "")
+                if getattr(args, "base_config", None)
+                else None,
+                dataset_seed=dataset_seed,
+            )
+            logger.info(
+                "Wrote run manifest files: %s",
+                ", ".join(f"{k}={v}" for k, v in sorted(written.items())),
+            )
+
+        # ------------------------------------------------------------------
+        # Required run metadata (fail-fast): git + upstream provenance
+        # ------------------------------------------------------------------
+        if not out_dir:
+            raise ValueError("train_args.output_dir is not set; cannot write run metadata")
+
+        repo_root = Path(__file__).resolve().parents[1]
+
+        def _git(*argv: str) -> str:
+            return subprocess.check_output(
+                ["git", *argv],
+                cwd=str(repo_root),
+                stderr=subprocess.STDOUT,
+                text=True,
+            ).strip()
+
+        git_sha = None
+        git_branch = None
+        git_dirty = None
+        status_lines = []
         try:
-            out_dir = getattr(train_args, "output_dir", None)
-            if out_dir:
-                repo_root = Path(__file__).resolve().parents[1]
+            git_sha = _git("rev-parse", "HEAD")
+            git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+            status = _git("status", "--porcelain")
+            status_lines = [line for line in status.splitlines() if line.strip()]
+            git_dirty = bool(status_lines)
+        except Exception:
+            git_sha = None
+            git_branch = None
+            git_dirty = None
+            status_lines = []
 
-                def _git(*argv: str) -> str:
-                    return subprocess.check_output(
-                        ["git", *argv],
-                        cwd=str(repo_root),
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                    ).strip()
+        meta = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "config": str(getattr(args, "config", "") or ""),
+            "base_config": str(getattr(args, "base_config", "") or ""),
+            "run_name": str(getattr(train_args, "run_name", "") or ""),
+            "output_dir": str(out_dir),
+            "git_sha": git_sha,
+            "git_branch": git_branch,
+            "git_dirty": git_dirty,
+            "git_status_porcelain": status_lines[:200],
+            "dataset_seed": dataset_seed,
+            "upstream": _collect_dependency_provenance(),
+        }
 
-                git_sha = None
-                git_branch = None
-                git_dirty = None
-                status_lines = []
-                try:
-                    git_sha = _git("rev-parse", "HEAD")
-                    git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-                    status = _git("status", "--porcelain")
-                    status_lines = [
-                        line for line in status.splitlines() if line.strip()
-                    ]
-                    git_dirty = bool(status_lines)
-                except Exception:
-                    git_sha = None
-                    git_branch = None
-                    git_dirty = None
-                    status_lines = []
+        if written is not None:
+            meta["run_manifest_files"] = dict(written)
 
-                meta = {
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "config": str(getattr(args, "config", "") or ""),
-                    "base_config": str(getattr(args, "base_config", "") or ""),
-                    "run_name": str(getattr(train_args, "run_name", "") or ""),
-                    "output_dir": str(out_dir),
-                    "git_sha": git_sha,
-                    "git_branch": git_branch,
-                    "git_dirty": git_dirty,
-                    "git_status_porcelain": status_lines[:200],
-                    "dataset_seed": dataset_seed,
-                    "upstream": _collect_dependency_provenance(),
-                }
+        launcher_meta = _collect_launcher_metadata_from_env()
+        if launcher_meta:
+            meta["launcher"] = launcher_meta
 
-                launcher_meta = _collect_launcher_metadata_from_env()
-                if launcher_meta:
-                    meta["launcher"] = launcher_meta
+        out_path = Path(str(out_dir)) / "run_metadata.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        logger.info("Wrote run metadata: %s", str(out_path))
 
-                out_path = Path(str(out_dir)) / "run_metadata.json"
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(
-                    json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-                logger.info("Wrote run metadata: %s", str(out_path))
-        except Exception as exc:
-            logger.warning("Failed to write run metadata: %s", exc)
-
+    if heartbeat_writer is not None:
+        heartbeat_writer.emit("train_call_enter")
     try:
         sft.train(trainer)
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_return")
     except torch.cuda.OutOfMemoryError:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_oom")
         debug_info = getattr(dataset, "last_sample_debug", None)
         logger.error(f"CUDA OOM encountered. Last sample debug: {debug_info}")
         raise
+    except Exception as exc:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_exception", exc_type=type(exc).__name__)
+        raise
     finally:
+        if heartbeat_writer is not None:
+            heartbeat_writer.emit("train_call_finally")
         # Explicit cleanup to prevent DeepSpeed cleanup errors during GC
         # This addresses a known DeepSpeed issue where __del__ can fail
         # when accessing bf16_groups that are already partially destroyed
@@ -1692,13 +1731,13 @@ def main():
                         if hasattr(model_wrapped, "destroy"):
                             model_wrapped.destroy()
                         logger.debug("DeepSpeed engine cleaned up successfully")
-                    except Exception as cleanup_error:
+                    except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as cleanup_error:
                         # Ignore cleanup errors - they're harmless at this point
                         # Training already completed successfully
                         logger.debug(
                             f"DeepSpeed cleanup warning (non-fatal): {cleanup_error}"
                         )
-        except Exception as e:
+        except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as e:
             # Non-fatal: training already completed successfully
             logger.debug(f"Cleanup warning (non-fatal): {e}")
 

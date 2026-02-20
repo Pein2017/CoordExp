@@ -4,7 +4,7 @@ import copy
 import random
 from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
-from torch.utils.data import Dataset, get_worker_info
+from torch.utils.data import Dataset
 
 from src.common.object_field_order import (
     ObjectFieldOrder,
@@ -80,7 +80,7 @@ class BaseCaptionDataset(Dataset):
                 )
             try:
                 setattr(self.template, "system", self.system_prompt_summary)
-            except Exception as exc:  # noqa: BLE001
+            except (AttributeError, TypeError) as exc:  # noqa: BLE001
                 raise RuntimeError(
                     "Failed to set template.system for summary-mode dataset initialization."
                 ) from exc
@@ -90,7 +90,7 @@ class BaseCaptionDataset(Dataset):
             if self.system_prompt_dense is not None:
                 try:
                     setattr(self.template, "system", self.system_prompt_dense)
-                except Exception as exc:  # noqa: BLE001
+                except (AttributeError, TypeError) as exc:  # noqa: BLE001
                     raise RuntimeError(
                         "Failed to set template.system for dense-mode dataset initialization."
                     ) from exc
@@ -360,7 +360,7 @@ class BaseCaptionDataset(Dataset):
         if system_prompt is not None:
             try:
                 setattr(self.template, "system", system_prompt)
-            except Exception as exc:  # noqa: BLE001
+            except (AttributeError, TypeError) as exc:  # noqa: BLE001
                 raise RuntimeError(
                     "Failed to apply temporary template.system override before encoding."
                 ) from exc
@@ -374,7 +374,7 @@ class BaseCaptionDataset(Dataset):
                         setattr(self.template, "system", original_system)
                     elif hasattr(self.template, "system"):
                         delattr(self.template, "system")
-                except Exception as exc:  # noqa: BLE001
+                except (AttributeError, TypeError) as exc:  # noqa: BLE001
                     raise RuntimeError(
                         "Failed to restore template.system after encoding."
                     ) from exc
@@ -399,11 +399,16 @@ class BaseCaptionDataset(Dataset):
         base_idx = self._index_perm[index % len(self._index_perm)]
         record = copy.deepcopy(self.base_records[base_idx])
 
-        worker = get_worker_info()
-        seed_local = self._rng.randrange(0, 2**32 - 1)
-        if worker is not None:
-            seed_local ^= ((worker.id + 1) * 0xC2B2AE35) & 0xFFFFFFFF
-        rng_local = random.Random(seed_local & 0xFFFFFFFF)
+        # Deterministic per-sample RNG:
+        # Avoid order-sensitive randomness under multi-worker prefetching by deriving the seed
+        # as a pure function of (epoch, dataset seed, base_idx, requested index).
+        epoch_seed = self._seed_for_epoch(self._epoch)
+        seed_local = (
+            int(epoch_seed)
+            ^ ((int(base_idx) + 1) * 0x9E3779B1)
+            ^ ((int(index) + 1) * 0xC2B2AE35)
+        ) & 0xFFFFFFFF
+        rng_local = random.Random(int(seed_local))
 
         if self.preprocessor is not None:
             if hasattr(self.preprocessor, "rng"):
@@ -464,7 +469,7 @@ class BaseCaptionDataset(Dataset):
             encoded["sample_id"] = sample_id
             encoded["dataset"] = self.dataset_name
             encoded["base_idx"] = base_idx
-        except Exception as exc:  # noqa: BLE001
+        except (AttributeError, TypeError) as exc:  # noqa: BLE001
             raise RuntimeError(
                 "Failed to attach sample metadata keys ('sample_id', 'dataset', 'base_idx') "
                 f"for dataset={self.dataset_name!r}, base_idx={base_idx}."

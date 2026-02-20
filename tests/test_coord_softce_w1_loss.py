@@ -129,3 +129,88 @@ def test_stage1_softce_w1_masks_coord_tokens_from_base_ce_and_applies_gate_penal
         num_items_in_batch=1,
     )
     assert float(loss_leak.detach().item()) > float(loss_no_leak.detach().item()) + 1.0
+
+
+def test_stage1_softce_w1_manual_grad_accum_scaling_matches_transformers_path():
+    """Regression: when num_items_in_batch is provided, transformers>=4.57 does not
+    apply its usual gradient-accumulation loss scaling.
+
+    CoordSoftCEW1LossMixin overrides num_items_in_batch (to be packing-safe), so
+    it must manually divide by grad-accum steps to keep loss/gradients on the
+    same scale as the num_items_in_batch=None path.
+    """
+
+    class _ScalingBaseTrainer:
+        def compute_loss(
+            self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
+        ):
+            logits = inputs["fake_logits"]
+            labels = inputs["labels"]
+
+            seq_len = min(logits.shape[1], max(labels.shape[1] - 1, 0))
+            logits_next = logits[:, :seq_len, :]
+            labels_next = labels[:, 1 : seq_len + 1]
+            vocab = int(logits_next.shape[-1])
+            loss = F.cross_entropy(
+                logits_next.reshape(-1, vocab),
+                labels_next.reshape(-1),
+                ignore_index=-100,
+                reduction="mean",
+            )
+
+            # Simulate transformers>=4.57: grad-accum scaling happens only when
+            # num_items_in_batch is None.
+            if (
+                bool(getattr(getattr(self, "model", None), "training", False))
+                and bool(getattr(self, "model_accepts_loss_kwargs", False))
+                and num_items_in_batch is None
+            ):
+                gas = int(
+                    getattr(getattr(self, "args", None), "gradient_accumulation_steps", 1)
+                    or 1
+                )
+                if gas > 1:
+                    loss = loss / float(gas)
+
+            outputs = SimpleNamespace(logits=logits)
+            return (loss, outputs) if return_outputs else loss
+
+    class _Trainer(CoordSoftCEW1LossMixin, _ScalingBaseTrainer):
+        def __init__(self, cfg):
+            super().__init__()
+            self.coord_soft_ce_w1_cfg = cfg
+            self.template = DummyTemplate()
+            self.args = SimpleNamespace(
+                average_tokens_across_devices=False,
+                gradient_accumulation_steps=4,
+            )
+            self.current_gradient_accumulation_steps = 4
+            self.model_accepts_loss_kwargs = True
+            self.model = SimpleNamespace(training=True)
+
+    vocab = 1200
+    labels = torch.tensor([[0, 5, 6, 7]], dtype=torch.long)
+    logits = torch.zeros((1, labels.shape[1], vocab), dtype=torch.float32)
+
+    cfg = CoordSoftCEW1Config.from_mapping({"enabled": True})
+    trainer = _Trainer(cfg)
+
+    # Baseline: the "transformers scaled" path (num_items_in_batch=None).
+    loss_scaled = _ScalingBaseTrainer.compute_loss(
+        trainer,
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits},
+        return_outputs=False,
+        num_items_in_batch=None,
+    )
+
+    # Mixin path: overrides num_items_in_batch (packing-safe), so base does NOT
+    # scale by grad-accum; the mixin must divide by grad-accum steps.
+    loss_mixin = trainer.compute_loss(
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits},
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+
+    assert torch.allclose(loss_mixin, loss_scaled, atol=1e-6)

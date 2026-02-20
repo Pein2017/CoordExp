@@ -39,6 +39,13 @@ class RolloutMonitorDumpConfig:
     max_events: int = 20
     max_samples: int = 1
     max_text_chars: int = 4000
+    # Safety rails: dumps are diagnostics only and should not destabilize training.
+    # - async_write avoids blocking the training step on slow filesystems.
+    # - min_free_gb skips dumps when disk is low (prevents "disk full" surprises).
+    # - max_pending_writes bounds in-flight async dump tasks to avoid memory growth.
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
     out_dir: Optional[str] = None
     write_markdown: bool = True
 
@@ -66,6 +73,9 @@ class VllmServerDebugDumpConfig:
     max_events: int = 3
     max_samples: int = 1
     max_chars: int = 4000
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
     out_dir: Optional[str] = None
 
 
@@ -171,7 +181,7 @@ class RolloutMatchingConfig:
         # Lightweight semantic checks that do not require runtime state.
         try:
             decode_bs = int(self.decode_batch_size)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
         if decode_bs <= 0:
             raise ValueError("rollout_matching.decode_batch_size must be > 0")
@@ -180,7 +190,7 @@ class RolloutMatchingConfig:
             dec = self.decoding
             try:
                 temperature = float(getattr(dec, "temperature", 0.0) or 0.0)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise TypeError(
                     "rollout_matching.decoding.temperature must be a float"
                 ) from exc
@@ -191,14 +201,14 @@ class RolloutMatchingConfig:
 
             try:
                 top_p = float(getattr(dec, "top_p", 1.0) if dec.top_p is not None else 1.0)
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise TypeError("rollout_matching.decoding.top_p must be a float") from exc
             if not (0.0 < top_p <= 1.0):
                 raise ValueError("rollout_matching.decoding.top_p must be in (0, 1]")
 
             try:
                 top_k = int(getattr(dec, "top_k", -1))
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 raise TypeError("rollout_matching.decoding.top_k must be an int") from exc
             if top_k != -1 and top_k < 1:
                 raise ValueError(

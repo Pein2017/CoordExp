@@ -107,7 +107,9 @@ def test_unknown_rollout_decoding_key_fails_fast():
     with pytest.raises(ValueError) as exc:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
-    assert "rollout_matching.decoding.unknown" in str(exc.value)
+    msg = str(exc.value)
+    assert "rollout_matching.decoding.unknown" in msg
+    assert "Migration guidance" in msg
 
 
 def test_unknown_rollout_monitor_dump_key_fails_fast():
@@ -156,8 +158,8 @@ def test_unknown_stage2_ab_key_fails_fast():
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
     msg = str(exc.value)
-    assert "stage2_ab" in msg
-    assert "unknown_top" in msg
+    assert "stage2_ab.unknown_top" in msg
+    assert "Migration guidance" in msg
 
 
 def test_legacy_rollout_server_paired_list_shape_fails_fast():
@@ -227,3 +229,16 @@ def test_top_level_extra_presence_fails_fast():
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
     assert "Top-level extra:" in str(exc.value)
+
+
+def test_unknown_top_level_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["bogus_top"] = 1
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "Unknown top-level config keys" in msg
+    assert "bogus_top" in msg
+    assert "Migration guidance" in msg

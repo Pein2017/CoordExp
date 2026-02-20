@@ -129,7 +129,12 @@ Key YAML:
 - `custom.*` (dataset + prompt + coord-token policies)
 
 Artifacts:
-- `run_metadata.json` (run manifest/provenance; see `src/sft.py`)
+- Required run manifest:
+  - `resolved_config.json` (resolved YAML snapshot; see `src/utils/run_manifest.py`)
+  - `runtime_env.json` (key env metadata; see `src/utils/run_manifest.py`)
+  - `config_source.yaml` / `base_config_source.yaml` (best-effort copies of the input YAML files)
+- Extended provenance:
+  - `run_metadata.json` (git + upstream provenance + launcher metadata; see `src/sft.py`)
 
 **2) Config Loading + Strictness**
 - YAML merge/materialization + strict schema: `src/config/loader.py`, `src/config/schema.py`
@@ -193,6 +198,12 @@ Key YAML:
 - `rollout_matching.*` (backend, max_new_tokens, decode batch sizing, debug/monitor dumps)
 
 **8) Evaluation + Metrics + Logging**
+- Stage-1 evaluation (teacher-forced):
+  - Uses upstream ms-swift/transformers evaluation loop over `eval_dataset` (optionally packed when `training.eval_packing=true`).
+- Stage-2 evaluation (rollout-style; no teacher-forced loss):
+  - `src/trainers/rollout_matching_sft.py:RolloutMatchingSFTTrainer.evaluate` runs: rollout -> parse -> Hungarian match.
+  - Eval batches are `list[dict]` (identity collator); batching is controlled by `rollout_matching.decode_batch_size`
+    via `src/sft.py:_apply_rollout_decode_batch_size_override`.
 - Trainer metric emission sites:
   - Stage-2 AB: `src/trainers/stage2_ab_training.py`
   - Rollout-matching: `src/trainers/rollout_matching_sft.py`
@@ -204,11 +215,13 @@ Key YAML:
 
 **9) Checkpointing + Artifacts**
 - Checkpoint policy and metadata persistence:
-  - `src/sft.py` (run metadata + config snapshot logic)
+  - `src/utils/run_manifest.py` (required: resolved config + runtime env snapshots)
+  - `src/sft.py` (extended: run metadata + upstream provenance)
   - trainer save hooks in `src/trainers/*` and upstream Trainer
 
 Key YAML:
 - `training.save_strategy`, `training.save_steps`
+- `training.save_only_model: true` (weight-only persistence; no optimizer/scheduler/rng state)
 
 **10) Stage-2 AB Rollout Server Integration (vLLM server-mode)**
 - Launcher preflight contract resolver: `src/trainers/rollout_matching/preflight.py`
@@ -221,6 +234,144 @@ Key YAML:
 - `rollout_matching.rollout_backend`
 - `rollout_matching.vllm.mode: server`
 - `rollout_matching.vllm.server.servers` (single-server enforced)
+
+## Prompt Construction Trace (Stage-1 / Stage-2 AB)
+
+This section documents *how* the system/user/assistant turns are materialized into the exact text and
+token sequences fed into Qwen3-VL, with emphasis on special tokens and prompt/target boundaries.
+
+### Stage-1 (SFT) Teacher-Forced Prompt
+
+Owner modules:
+- Prompt selection: `src/config/prompts.py:get_template_prompts` (dense system/user wording, prompt variants, object-field order wording)
+- Message materialization: `src/datasets/builders/jsonlines.py:JSONLinesBuilder.build_many`
+- Learner encoding: `src/datasets/dense_caption.py:__getitem__` (`self.template.encode(merged, return_length=True)`)
+
+Conversation shape:
+- The builder emits one round of messages:
+  - user: multimodal content list containing one or more `{"type": "image", "image": <url>}` entries followed by
+    a `{"type": "text", "text": <user_prompt>}` entry.
+  - assistant: `{"type": "text", "text": <CoordJSON>}` where CoordJSON is the *training target*.
+- The system prompt is injected at chat-template render time (by the upstream ms-swift/Qwen3-VL template), not by the builder.
+
+Special tokens + role boundaries:
+- Qwen3-VL chat template renders message roles using `<|im_start|>{role}` and closes each turn with `<|im_end|>`.
+- Image placeholders are rendered as `<|vision_start|><|image_pad|><|vision_end|>` within the user turn.
+- Evidence: `tests/test_chat_template_regression.py` asserts `<|im_start|>system`, `<|im_start|>user`, `<|im_start|>assistant`
+  and the vision placeholder are present in the final chat text.
+
+### Stage-2 AB Channel A (Teacher-Forced GT Payload)
+
+Owner modules:
+- Channel selection + batch prep: `src/trainers/stage2_ab_training.py:_prepare_batch_inputs_a`
+
+Conversation shape:
+- Dataset samples must include a `messages` list (same shape as Stage-1).
+- For Channel A, the trainer replaces the assistant response with a teacher-forced payload derived from GT objects:
+  - Build assistant CoordJSON payload: `_build_teacher_forced_payload(...)` + `dumps_coordjson(...)`
+  - Tokenize the assistant text into ids: `template.tokenizer.encode(..., add_special_tokens=False)`
+  - Inject token ids into the assistant message and run `template.encode(...)` to obtain full `input_ids` and `labels`.
+
+Boundary alignment:
+- Prompt/target boundary (`prompt_len`) is located by scanning `labels` for the first non-`-100` index.
+- This is packing-safe and does not assume fixed chat-template layout (it follows the upstream template’s masking).
+
+### Stage-2 AB Channel B (Rollout Prompt)
+
+Operationally, Channel B generation happens on the rollout server (ms-swift + vLLM). The learner relies on:
+- Prompt tokens are built from system + user turns, with a generation prompt that opens an assistant turn but does not close it.
+- Evidence: `tests/test_chat_template_regression.py` asserts that `apply_chat_template(..., add_generation_prompt=True)`
+  ends with an `<|im_start|>assistant` turn and that the tail contains no `<|im_end|>`.
+
+### Cross-Process Tokenization Alignment (Learner vs Server)
+
+Stage-2 AB must ensure the exact same tokenizer and chat-template boundary behavior between:
+- the rollout server (prompt_token_ids produced during generation), and
+- the learner (teacher-forced `template.encode(...)` used to compute loss masks/offsets).
+
+Evidence:
+- The stage-2 learner asserts prompt-token-id prefix equality and prompt_len equality when `prompt_token_ids` are available:
+  `src/trainers/stage2_ab_training.py` (prompt alignment checks inside batch prep).
+- Additional alignment guards exist for rollout-matching trainer flows:
+  `src/trainers/rollout_matching_sft.py` (prompt-token-id alignment and tokenizer consistency checks).
+
+## Stage-2 Performance Instrumentation (Channel A/B)
+
+Stage-2 AB has two execution regimes:
+- **Channel A**: teacher-forced (no rollouts).
+- **Channel B**: rollout-matching (external rollout server + parse/match + post-rollout packing).
+
+### Timing Metrics (`time/*`)
+
+Rollout-matching trainer emits:
+- `time/forward_s`: learner forward/backward wall time for an optimizer step.
+- `time/mask_build_s`: packed attention/label mask construction time.
+- `time/rollout_generate_s`: vLLM server generation wall time (**only when Channel B runs**).
+- `time/rollout_parse_match_s`: parse + match time (**only when Channel B runs**).
+- `time/rollout_teacher_encode_s`: teacher-encode time for the derived training target (**only when Channel B runs**).
+- `time/post_rollout_pack_s`: post-rollout repacking time (only when repacking occurred).
+
+Stage-2 AB Channel A batch path emits:
+- `time/channel_a_teacher_encode_s`
+- `time/channel_a_pack_s`
+
+Contract:
+- `time/rollout_*` keys must not be emitted as misleading `0.0` scalars on Channel A steps.
+
+Evidence:
+- `tests/test_rollout_time_metrics_gating.py`
+- `tests/test_stage2_ab_time_metrics_gating.py`
+
+### Debug/Monitor Dumps (`monitor_dump`, `vllm.server.debug_dump`)
+
+CoordExp uses two qualitative dump channels for diagnosing Stage-2 behavior:
+- `rollout_matching.monitor_dump`: per-step structured payload (JSON + optional Markdown) including messages, rollout text, prefix, derived training target, and parse/match stats.
+- `rollout_matching.vllm.server.debug_dump`: minimal GT text vs rollout text dumps to diagnose server-mode formatting without printing giant blobs to stdout.
+
+These dumps can be large (and are intentionally allowed to be unbounded via `max_text_chars<=0` / `max_chars<=0`).
+They must not destabilize training or silently “brick” runs via filesystem issues.
+
+Safety rails implemented:
+- **Best-effort I/O:** dump write failures do not crash training (warnings only).
+- **Async write by default:** dump I/O is offloaded to a single-thread executor.
+- **Bounded async queue:** `max_pending_writes` bounds in-flight dump tasks; new dumps are skipped if the queue is full.
+- **Low-disk guard:** `min_free_gb` skips dumps when free disk is below a threshold (prevents “disk full” surprises caused by diagnostics).
+- **Existing hard caps:** `max_events`, `max_samples` continue to bound total dump volume.
+
+Key YAML:
+- `rollout_matching.monitor_dump.{enabled,every_steps,dump_first_step,only_world_process_zero,max_events,max_samples,max_text_chars,async_write,max_pending_writes,min_free_gb,out_dir,write_markdown}`
+- `rollout_matching.vllm.server.debug_dump.{enabled,every_steps,dump_first_step,only_world_process_zero,max_events,max_samples,max_chars,async_write,max_pending_writes,min_free_gb,out_dir}`
+
+Evidence:
+- `tests/test_monitor_dump_io_best_effort.py`
+- `tests/test_dump_clip_text_safety.py`
+- `tests/test_vllm_server_debug_dump_io_best_effort.py`
+
+## Config-First Stage-2 Performance Optimization Knobs (When GPUs Are Available)
+
+This audit intentionally avoids adding new CLI hyperparameter flags. The primary optimization levers are YAML knobs.
+
+How to verify improvements once GPUs are available:
+- `rollout/gen_tokens_per_s` (higher is better; held against quality/eval).
+- `time/rollout_generate_s`, `time/rollout_parse_match_s`, `time/post_rollout_pack_s` (identify dominant bottleneck).
+- `stage2_ab/b_ratio_realized` (confirm schedule matches intended compute split).
+- GPU-side: vLLM server memory utilization, request queueing, and “prefill vs decode” balance (out-of-band profiling).
+
+High-leverage knobs (ordered by typical impact):
+- Reduce rollout work:
+  - `rollout_matching.max_new_tokens` (hard cap on decode cost).
+  - `stage2_ab.schedule.b_ratio` (rollout frequency vs teacher-forced frequency).
+  - `rollout_matching.decode_batch_size` (too small underutilizes server; too large increases latency/OOM risk).
+- Improve vLLM server throughput (server-mode):
+  - `rollout_matching.vllm.tensor_parallel_size` and rollout-server `data_parallel_size` (via launcher flags).
+  - `rollout_matching.vllm.max_model_len` (must be coherent with `global_max_length`).
+  - vLLM engine knobs (when safe/needed): `enable_chunked_prefill`, `max_num_seqs`, `max_num_batched_tokens`.
+- Improve learner packing efficiency:
+  - `training.packing: true` (already required).
+  - Packing wrapper knobs (stage_1 + stage_2): `custom.packing_length`, `custom.packing_buffer`, `custom.packing_min_fill_ratio`, `custom.packing_drop_last`, `custom.packing_allow_single_long`.
+  - Post-rollout packing telemetry: `packing/post_rollout_fill`, `packing/post_rollout_segments`, `time/post_rollout_pack_s`.
+- Reduce diagnostics overhead in production runs:
+  - Disable or downsample `monitor_dump` / `debug_dump` once a run is stable.
 
 ## Existing CPU-Runnable Contract Tests (Inventory)
 
@@ -238,14 +389,27 @@ High-signal CPU-only tests already covering critical boundaries:
   - `tests/test_stage2_ab_channel_local_packing_buffer.py`
 - Stage-2 AB + server-mode contracts:
   - `tests/test_stage2_preflight_path_resolution.py`
+  - `tests/test_stage2_launcher_preflight_contract.py`
   - `tests/test_stage2_ab_prompt_alignment_contract.py`
+  - `tests/test_ddp_vllm_sync_failure_propagation.py`
+  - `tests/test_stage2_ab_bresenham_schedule_long_horizon.py`
+  - `tests/test_rollout_seed_nonzero_contract.py`
 - Runtime rescale prohibition / max_pixels:
   - `tests/test_max_pixels_enforcement.py`
 - Upstream integration contracts:
   - `tests/test_transformers_trainer_contract.py`
   - `tests/test_swift_rollout_cli_flags.py`
+  - `tests/test_rollout_hf_length_coherence_gate.py`
+  - `tests/test_vllm_server_rollout_contract.py`
+  - `tests/test_vllm_server_multimodal_payload_contract.py`
+  - `tests/test_swift_rollout_endpoints_contract.py`
+- Training infrastructure contracts:
+  - `tests/test_run_manifest_files.py`
+  - `tests/test_checkpoint_weight_only_policy.py`
+  - `tests/test_stage2_pending_metrics_aggregation.py`
+  - `tests/test_trainer_metrics_payload_contract.py`
+  - `tests/test_batch_extras_failure_not_silent.py`
 
 Known gaps (to be covered by pending tasks):
-- Stage-1/Stage-2 objective masking and loss-weight correctness (Section 6).
-- Stage-2 AB DDP failure propagation semantics for rollout-server weight sync (8.9).
-- ms-swift rollout request/response schema pinning (12.4) + endpoint surface contracts (12.7).
+- Broad silent-failure scan + audit report (Section 10).
+- Deferred GPU smokes (Section 11).

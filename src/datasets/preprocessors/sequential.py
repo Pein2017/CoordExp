@@ -25,10 +25,7 @@ class SequentialPreprocessor(BasePreprocessor):
         self._curriculum_state = state
         for pre in self.preprocessors:
             if hasattr(pre, "curriculum_state"):
-                try:
-                    pre.curriculum_state = state
-                except Exception:
-                    raise
+                pre.curriculum_state = state
 
     @property
     def rng(self) -> Any:
@@ -39,10 +36,7 @@ class SequentialPreprocessor(BasePreprocessor):
         self._rng = rng_obj
         for pre in self.preprocessors:
             if hasattr(pre, "rng"):
-                try:
-                    pre.rng = rng_obj
-                except Exception:
-                    raise
+                pre.rng = rng_obj
 
     def preprocess(self, row: Any) -> Optional[Any]:
         current = row

@@ -56,7 +56,7 @@ class HardSampleTracker:
         for sid, loss, ds, bidx in zip(sample_ids, losses, datasets, base_idxs):
             try:
                 sid_int = int(sid)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             stat = self.stats.get(sid_int)
             if stat is None:
@@ -114,10 +114,7 @@ def attach_hsm_compute_loss(trainer, tracker: HardSampleTracker, hsm_cfg: Any):
             datasets = inputs.get("dataset")
             base_idxs = inputs.get("base_idx")
             if labels is not None and sample_ids is not None and datasets is not None and base_idxs is not None:
-                try:
-                    logits = outputs.logits if hasattr(outputs, "logits") else None
-                except Exception:
-                    logits = None
+                logits = getattr(outputs, "logits", None)
                 if logits is not None:
                     with torch.no_grad():
                         per_sample = _per_sample_loss(logits, labels)

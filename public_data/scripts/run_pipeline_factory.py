@@ -33,7 +33,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--assume-normalized", action="store_true")
     parser.add_argument("--compact", action="store_true")
 
-    parser.add_argument("--run-validation-stage", action="store_true")
+    parser.add_argument(
+        "--run-validation-stage",
+        dest="run_validation_stage",
+        action="store_true",
+        default=True,
+        help="Run validation stage (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-run-validation-stage",
+        dest="run_validation_stage",
+        action="store_false",
+        help="Disable validation stage for debugging only.",
+    )
     parser.add_argument("--skip-image-check", action="store_true")
     parser.add_argument("--validate-raw", action="store_true")
     parser.add_argument("--validate-preset", action="store_true")
@@ -97,7 +109,7 @@ def main() -> None:
         assume_normalized=args.assume_normalized,
         compact_json=args.compact,
         skip_image_check=args.skip_image_check,
-        run_validation_stage=args.run_validation_stage,
+        run_validation_stage=bool(args.run_validation_stage),
     )
 
     planner = PipelinePlanner()

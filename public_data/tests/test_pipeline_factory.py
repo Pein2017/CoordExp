@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -439,6 +440,59 @@ def test_max_objects_filter_drops_records_and_preserves_outputs(tmp_path: Path) 
         assert stats["objects_written"] == 1
 
 
+def test_normalize_stage_surfaces_object_drop_counters(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """NormalizeStage may drop objects in rare safety-net cases.
+
+    This test forces that path by monkeypatching bbox normalization to emit an
+    invalid bbox once, and asserts that object-level counters are surfaced into
+    the pipeline manifest stage_stats.
+    """
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    import public_data.scripts.convert_to_coord_tokens as ctt
+
+    orig = ctt._normalize_bbox_2d_to_norm1000
+    calls = {"n": 0}
+
+    def _patched_bbox(values, *, width: float, height: float, assume_normalized: bool):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [0, 0, 0, 0]
+        return orig(values, width=width, height=height, assume_normalized=assume_normalized)
+
+    monkeypatch.setattr(ctt, "_normalize_bbox_2d_to_norm1000", _patched_bbox)
+
+    planner = PipelinePlanner()
+    cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    result = planner.run(config=cfg, mode="full")
+
+    normalize_stats = result.stage_stats["normalize_norm1000"]
+    assert "objects" in normalize_stats
+
+    train_obj = normalize_stats["objects"]["train"]
+    assert train_obj["objects_seen"] == 3
+    assert train_obj["objects_written"] == 2
+    assert train_obj["objects_dropped_invalid_bbox"] == 1
+    assert train_obj["objects_dropped_non_dict"] == 0
+
+    val_obj = normalize_stats["objects"]["val"]
+    assert val_obj["objects_seen"] == 3
+    assert val_obj["objects_written"] == 3
+    assert val_obj["objects_dropped_invalid_bbox"] == 0
+    assert val_obj["objects_dropped_non_dict"] == 0
+
+
 def test_full_pipeline_emits_raw_norm_coord_and_alias(tmp_path: Path) -> None:
     dataset_dir = tmp_path / "public_data" / "coco"
     raw_dir = _setup_dataset(dataset_dir)
@@ -530,3 +584,211 @@ def test_optional_validation_stage_wiring(tmp_path: Path, mode: str) -> None:
         raise AssertionError(mode)
 
     assert files == expected
+
+
+def test_validation_stage_catches_preset_image_size_mismatch(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    planner = PipelinePlanner()
+    preset = "rescale_32_768_bbox_smoke"
+
+    # First, build a valid preset.
+    build_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset=preset,
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    result = planner.run(config=build_cfg, mode="full")
+
+    # Corrupt one preset image on disk (but keep JSONL meta unchanged).
+    bad = result.preset_dir / "images/train2017/000000000001.jpg"
+    _write_image(bad, width=64, height=64)
+
+    validate_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset=preset,
+        num_workers=1,
+        run_validation_stage=False,
+        skip_image_check=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Validation stage failed"):
+        planner.run(config=validate_cfg, mode="validate", validate_raw=False, validate_preset=True)
+
+
+def test_rescale_stage_materializes_images_dir_if_symlink(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = dataset_dir / "raw"
+
+    # Create a tiny raw dataset with a non-factor-aligned image so rescale actually changes
+    # the size, making it easy to detect whether a symlink could overwrite raw images.
+    train_rows = [
+        {
+            "images": ["images/train2017/000000000001.jpg"],
+            "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
+            "width": 130,
+            "height": 97,
+        }
+    ]
+    val_rows = [
+        {
+            "images": ["images/val2017/000000000001.jpg"],
+            "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
+            "width": 130,
+            "height": 97,
+        }
+    ]
+
+    _write_jsonl(raw_dir / "train.jsonl", train_rows)
+    _write_jsonl(raw_dir / "val.jsonl", val_rows)
+    _write_image(raw_dir / train_rows[0]["images"][0], width=130, height=97)
+    _write_image(raw_dir / val_rows[0]["images"][0], width=130, height=97)
+
+    preset = "rescale_32_768_bbox_smoke"
+    preset_dir = dataset_dir / preset
+    preset_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create the problematic setup: a preset images/ symlink pointing at raw images.
+    os.symlink(raw_dir / "images", preset_dir / "images")
+
+    raw_train_img = raw_dir / train_rows[0]["images"][0]
+    with Image.open(raw_train_img) as img:
+        assert img.size == (130, 97)
+
+    planner = PipelinePlanner()
+    cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset=preset,
+        num_workers=1,
+        run_validation_stage=True,
+        skip_image_check=False,
+    )
+
+    result = planner.run(config=cfg, mode="rescale")
+
+    # Rescale must not leave a symlink behind.
+    assert (result.preset_dir / "images").is_dir()
+    assert not (result.preset_dir / "images").is_symlink()
+
+    # Most importantly, raw images must not be overwritten.
+    with Image.open(raw_train_img) as img:
+        assert img.size == (130, 97)
+
+    # And the preset image must match the output JSONL meta.
+    with (result.preset_dir / "train.raw.jsonl").open("r", encoding="utf-8") as f:
+        rec = json.loads(f.readline())
+
+    out_img = result.preset_dir / rec["images"][0]
+    with Image.open(out_img) as img:
+        assert img.size == (rec["width"], rec["height"])
+
+    assert rec["width"] % 32 == 0
+    assert rec["height"] % 32 == 0
+    assert rec["width"] * rec["height"] <= 32 * 32 * 768
+
+
+def test_copy_images_if_needed_rematerializes_hardlinked_tree(tmp_path: Path) -> None:
+    src_dir = tmp_path / "src_preset"
+    dst_dir = tmp_path / "dst_preset"
+
+    src_img = src_dir / "images/train2017/000000000001.jpg"
+    _write_image(src_img, width=128, height=96)
+
+    dst_img = dst_dir / "images/train2017/000000000001.jpg"
+    dst_img.parent.mkdir(parents=True, exist_ok=True)
+    os.link(src_img, dst_img)
+
+    src_stat_before = src_img.stat()
+    dst_stat_before = dst_img.stat()
+    assert src_stat_before.st_ino == dst_stat_before.st_ino
+    assert dst_stat_before.st_nlink >= 2
+
+    PipelinePlanner._copy_images_if_needed(src_dir=src_dir, dst_dir=dst_dir)
+
+    src_stat_after = src_img.stat()
+    dst_stat_after = dst_img.stat()
+    assert src_stat_after.st_ino != dst_stat_after.st_ino
+    assert dst_stat_after.st_nlink == 1
+
+    with Image.open(dst_img) as img:
+        assert img.size == (128, 96)
+
+
+def test_run_pipeline_factory_cli_wires_run_validation_stage_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.scripts import run_pipeline_factory
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = dataset_dir / "raw"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    captured_run_validation: list[bool] = []
+
+    class _Result:
+        def __init__(self, *, dataset_id: str, preset: str, preset_dir: Path) -> None:
+            self.dataset_id = dataset_id
+            self.preset = preset
+            self.preset_dir = preset_dir
+            self.split_artifacts: dict[str, object] = {}
+
+    def _fake_run(self, *, config, mode, validate_raw=True, validate_preset=True):
+        captured_run_validation.append(bool(config.run_validation_stage))
+        return _Result(
+            dataset_id=config.dataset_id,
+            preset=config.preset,
+            preset_dir=config.dataset_dir / config.preset,
+        )
+
+    monkeypatch.setattr(PipelinePlanner, "run", _fake_run)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_pipeline_factory.py",
+            "--mode",
+            "full",
+            "--dataset-id",
+            "coco",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--raw-dir",
+            str(raw_dir),
+            "--preset",
+            "rescale_32_768_bbox_smoke",
+        ],
+    )
+    run_pipeline_factory.main()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_pipeline_factory.py",
+            "--mode",
+            "full",
+            "--dataset-id",
+            "coco",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--raw-dir",
+            str(raw_dir),
+            "--preset",
+            "rescale_32_768_bbox_smoke",
+            "--no-run-validation-stage",
+        ],
+    )
+    run_pipeline_factory.main()
+
+    assert captured_run_validation == [True, False]

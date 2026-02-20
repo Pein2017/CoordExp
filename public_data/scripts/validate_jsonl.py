@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from PIL import Image
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -63,8 +65,19 @@ class ValidationError:
 class JSONLValidator:
     """Validator for Qwen3-VL JSONL format."""
     
-    def __init__(self, check_images: bool = True, verbose: bool = False):
+    def __init__(
+        self,
+        check_images: bool = True,
+        verbose: bool = False,
+        *,
+        expected_max_pixels: Optional[int] = None,
+        expected_multiple_of: Optional[int] = None,
+        check_image_sizes: bool = False,
+    ) -> None:
         self.check_images = check_images
+        self.check_image_sizes = bool(check_image_sizes) and bool(check_images)
+        self.expected_max_pixels = expected_max_pixels
+        self.expected_multiple_of = expected_multiple_of
         self.verbose = verbose
         self.errors: List[ValidationError] = []
         self.warnings: List[str] = []
@@ -73,10 +86,14 @@ class JSONLValidator:
             "valid_samples": 0,
             "total_objects": 0,
             "missing_images": 0,
+            "image_open_failed": 0,
+            "image_size_mismatch": 0,
+            "oversize_images": 0,
+            "non_multiple_dims": 0,
             "invalid_bboxes": 0,
             "invalid_polys": 0,
             "invalid_geometries": 0,
-            "categories": set()
+            "categories": set(),
         }
     
     def validate_file(self, jsonl_path: str) -> bool:
@@ -115,14 +132,14 @@ class JSONLValidator:
         return self.print_results()
     
     def validate_sample(
-        self, 
-        sample: Dict[str, Any], 
+        self,
+        sample: Dict[str, Any],
         line_num: int,
-        base_dir: str
+        base_dir: str,
     ) -> bool:
         """
         Validate one sample.
-        
+
         Expected format:
         {
           "images": [str],
@@ -135,41 +152,43 @@ class JSONLValidator:
         Notes:
         - Objects may use either `bbox_2d` or `poly` geometry (exactly one).
         - Geometry coordinates may be pixel-space numbers or coord tokens (<|coord_k|>).
-        
+
         Returns:
             True if sample is valid
         """
         sample_valid = True
-        
+
         # Check required fields
         required_fields = ["images", "objects", "width", "height"]
         for field in required_fields:
             if field not in sample:
-                self.errors.append(ValidationError(
-                    line_num, field, "Required field missing"
-                ))
+                self.errors.append(ValidationError(line_num, field, "Required field missing"))
                 sample_valid = False
-        
+
         if not sample_valid:
             return False
-        
+
+        image_abs: Optional[str] = None
+
         # Validate 'images' field
         images = sample["images"]
         if not isinstance(images, list):
-            self.errors.append(ValidationError(
-                line_num, "images", f"Must be list, got {type(images).__name__}"
-            ))
+            self.errors.append(
+                ValidationError(line_num, "images", f"Must be list, got {type(images).__name__}")
+            )
             sample_valid = False
         elif len(images) != 1:
-            self.warnings.append(
-                f"Line {line_num}: Expected 1 image, got {len(images)}"
-            )
+            self.warnings.append(f"Line {line_num}: Expected 1 image, got {len(images)}")
         elif images:
             image_path = images[0]
             if not isinstance(image_path, str):
-                self.errors.append(ValidationError(
-                    line_num, "images[0]", f"Must be string, got {type(image_path).__name__}"
-                ))
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        "images[0]",
+                        f"Must be string, got {type(image_path).__name__}",
+                    )
+                )
                 sample_valid = False
             else:
                 # Enforce the global contract: images MUST be relative to the JSONL directory.
@@ -182,52 +201,114 @@ class JSONLValidator:
                         )
                     )
                     sample_valid = False
-                elif self.check_images:
-                    # Resolve relative path and ensure the file exists.
+                else:
                     image_abs = os.path.join(base_dir, image_path)
-                    if not os.path.exists(image_abs):
-                        self.errors.append(
-                            ValidationError(
-                                line_num, "images[0]", f"Image not found: {image_abs}"
+                    if self.check_images:
+                        # Resolve relative path and ensure the file exists.
+                        if not os.path.exists(image_abs):
+                            self.errors.append(
+                                ValidationError(
+                                    line_num,
+                                    "images[0]",
+                                    f"Image not found: {image_abs}",
+                                )
                             )
-                        )
-                        self.stats["missing_images"] += 1
-                        sample_valid = False
-        
+                            self.stats["missing_images"] += 1
+                            sample_valid = False
+
         # Validate 'width' and 'height'
         width = sample["width"]
         height = sample["height"]
-        if not isinstance(width, int) or width <= 0:
-            self.errors.append(ValidationError(
-                line_num, "width", f"Must be positive int, got {width}"
-            ))
+        width_ok = isinstance(width, int) and width > 0
+        height_ok = isinstance(height, int) and height > 0
+        if not width_ok:
+            self.errors.append(
+                ValidationError(line_num, "width", f"Must be positive int, got {width}")
+            )
             sample_valid = False
-        if not isinstance(height, int) or height <= 0:
-            self.errors.append(ValidationError(
-                line_num, "height", f"Must be positive int, got {height}"
-            ))
+        if not height_ok:
+            self.errors.append(
+                ValidationError(line_num, "height", f"Must be positive int, got {height}")
+            )
             sample_valid = False
-        
+
+        if width_ok and height_ok:
+            if self.expected_max_pixels is not None:
+                max_pixels = int(self.expected_max_pixels)
+                pixels = int(width) * int(height)
+                if pixels > max_pixels:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "width,height",
+                            f"Image pixels exceed max_pixels: {pixels} > {max_pixels}",
+                        )
+                    )
+                    self.stats["oversize_images"] += 1
+                    sample_valid = False
+
+            if self.expected_multiple_of is not None:
+                factor = int(self.expected_multiple_of)
+                if factor > 0 and (width % factor != 0 or height % factor != 0):
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "width,height",
+                            f"Image dims must be multiples of {factor}, got {(width, height)}",
+                        )
+                    )
+                    self.stats["non_multiple_dims"] += 1
+                    sample_valid = False
+
+            if self.check_image_sizes and image_abs is not None and os.path.exists(image_abs):
+                try:
+                    with Image.open(image_abs) as img:
+                        actual_w, actual_h = img.size
+                    if (actual_w, actual_h) != (width, height):
+                        self.errors.append(
+                            ValidationError(
+                                line_num,
+                                "images[0]",
+                                f"Image size mismatch vs JSONL meta: file={(actual_w, actual_h)} meta={(width, height)}",
+                            )
+                        )
+                        self.stats["image_size_mismatch"] += 1
+                        sample_valid = False
+                except Exception as e:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "images[0]",
+                            f"Failed to open image for size check: {image_abs} ({type(e).__name__}: {e})",
+                        )
+                    )
+                    self.stats["image_open_failed"] += 1
+                    sample_valid = False
+
         # Validate 'objects' field
         objects = sample["objects"]
         if not isinstance(objects, list):
-            self.errors.append(ValidationError(
-                line_num, "objects", f"Must be list, got {type(objects).__name__}"
-            ))
+            self.errors.append(
+                ValidationError(line_num, "objects", f"Must be list, got {type(objects).__name__}")
+            )
             sample_valid = False
         else:
             self.stats["total_objects"] += len(objects)
-            for obj_idx, obj in enumerate(objects):
-                if not self.validate_object(obj, line_num, obj_idx, width, height):
-                    sample_valid = False
-        
+            if width_ok and height_ok:
+                for obj_idx, obj in enumerate(objects):
+                    if not self.validate_object(obj, line_num, obj_idx, width, height):
+                        sample_valid = False
+            else:
+                # If width/height are invalid, object-bound checks are meaningless.
+                sample_valid = False
+
         # Validate optional 'summary'
         if "summary" in sample:
             if not isinstance(sample["summary"], str):
                 self.warnings.append(
                     f"Line {line_num}: 'summary' should be string, got {type(sample['summary']).__name__}"
                 )
-        
+
         return sample_valid
     
     def validate_object(
