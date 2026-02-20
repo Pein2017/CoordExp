@@ -337,7 +337,8 @@ def _maybe_launch_vllm_server(config_path: Path, overrides: Dict[str, Any]):
         if resp.status_code < 400:
             yield None
             return
-    except Exception:
+    except requests.RequestException:
+        # Server unavailable/unreachable during probe; continue to auto-launch path.
         pass
 
     host, port = _base_url_to_host_port(base_url)
