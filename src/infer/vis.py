@@ -42,7 +42,7 @@ def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
                 continue
             try:
                 rec = json.loads(line)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 continue
             if isinstance(rec, dict):
                 yield rec
@@ -111,7 +111,7 @@ def render_vis_from_jsonl(
 
         try:
             img = Image.open(img_path).convert("RGBA")
-        except Exception:  # noqa: BLE001
+        except OSError:
             logger.warning("vis: failed to open image %s", img_path)
             continue
 

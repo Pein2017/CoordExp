@@ -135,7 +135,7 @@ class PipelinePlanner:
     def _prepare_preset_sources_for_coord_or_validate(self, *, state: PipelineState, base_preset: str) -> None:
         preset_dir = state.preset_dir
         base_preset_dir = state.config.dataset_dir / base_preset
-        if not preset_dir.exists() and base_preset_dir.exists() and base_preset != state.effective_preset:
+        if base_preset != state.effective_preset and base_preset_dir.exists():
             preset_dir.mkdir(parents=True, exist_ok=True)
             self._copy_images_if_needed(src_dir=base_preset_dir, dst_dir=preset_dir)
 
@@ -172,12 +172,44 @@ class PipelinePlanner:
             state.split_raw_sources[split] = paths.raw
 
     @staticmethod
-    def _copy_images_if_needed(*, src_dir: Path, dst_dir: Path) -> None:
+    def _images_tree_needs_materialization(images_dir: Path) -> bool:
+        if images_dir.is_symlink() or images_dir.is_file():
+            return True
+        if not images_dir.exists():
+            return False
+
+        for path in images_dir.rglob("*"):
+            if path.is_symlink():
+                return True
+            if path.is_file():
+                try:
+                    if path.stat().st_nlink > 1:
+                        return True
+                except FileNotFoundError:
+                    # Fail-safe: concurrent filesystem changes should trigger a clean rematerialization.
+                    return True
+        return False
+
+    @classmethod
+    def _copy_images_if_needed(cls, *, src_dir: Path, dst_dir: Path) -> None:
         src_images = src_dir / "images"
         dst_images = dst_dir / "images"
-        if not src_images.exists() or dst_images.exists():
+        if not src_images.exists():
             return
-        shutil.copytree(src_images, dst_images)
+
+        needs_copy = not dst_images.exists()
+        if not needs_copy:
+            needs_copy = cls._images_tree_needs_materialization(dst_images)
+        if not needs_copy:
+            return
+
+        if dst_images.exists() or dst_images.is_symlink():
+            if dst_images.is_symlink() or dst_images.is_file():
+                dst_images.unlink()
+            else:
+                shutil.rmtree(dst_images)
+
+        shutil.copytree(src_images, dst_images, copy_function=shutil.copy2)
 
     def _build_stages(
         self,

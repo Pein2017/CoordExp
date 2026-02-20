@@ -104,6 +104,19 @@ def test_chat_template_renders_coordjson_and_tokenizes(
     assert "<|im_start|>assistant" in chat_text
     assert "<|vision_start|><|image_pad|><|vision_end|>" in chat_text
 
+    # Stage-2 rollout style prompt: system + user, then a generation prompt that
+    # opens an assistant turn without closing it via <|im_end|>.
+    messages_gen = [
+        {"role": "system", "content": system_prompt},
+        merged["messages"][0],
+    ]
+    chat_text_gen = _qwen3vl_processor.apply_chat_template(
+        messages_gen, tokenize=False, add_generation_prompt=True
+    )
+    last_assistant = chat_text_gen.rfind("<|im_start|>assistant")
+    assert last_assistant >= 0
+    assert "<|im_end|>" not in chat_text_gen[last_assistant:]
+
     tokenized = _qwen3vl_processor.tokenizer(chat_text, add_special_tokens=False)
     input_ids = tokenized["input_ids"]
     assert isinstance(input_ids, list)

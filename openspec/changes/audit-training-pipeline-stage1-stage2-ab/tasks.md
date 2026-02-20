@@ -19,15 +19,16 @@
 - [x] 3.1 Trace the code path from `custom.train_jsonl` / `custom.val_jsonl` to dataset construction, including any caching/cooking layers, and document the intermediate artifacts (if any) and their schemas.
 - [x] 3.2 Verify JSONL contract validation is strict and fail-fast for cooked GT (no silent object drops) and enumerate the explicit edge-case policies (empty objects, invalid arity, missing width/height).
 - [x] 3.3 Verify geometry invariants in preprocessing/augmentation: coordinate order is preserved, no coord dropping/reordering, and training-side `do_resize=false` is respected end-to-end.
-- [ ] 3.4 Audit sampling and determinism: `train_sample_limit`, `val_sample_limit`, with/without replacement, multi-worker shuffling/seed handling, and packing-buffer determinism under DDP.
-- [ ] 3.5 Verify image path resolution and `ROOT_IMAGE_DIR` handling is consistent across learner and rollout server (server-mode), including relative-path behavior.
-- [ ] 3.6 Audit offline public-data pipeline drop policies (object drops, record drops, max-object filtering) and ensure every drop mode is surfaced as explicit counters in manifests and carried into run artifacts for audit signoff.
+- [x] 3.4 Audit sampling and determinism: `train_sample_limit`, `val_sample_limit`, with/without replacement, multi-worker shuffling/seed handling, and packing-buffer determinism under DDP.
+- [x] 3.5 Verify image path resolution and `ROOT_IMAGE_DIR` handling is consistent across learner and rollout server (server-mode), including relative-path behavior.
+- [x] 3.6 Audit offline public-data pipeline drop policies (object drops, record drops, max-object filtering) and ensure every drop mode is surfaced as explicit counters in manifests and carried into run artifacts for audit signoff.
 - [x] 3.7 Verify dataset seeding is derived from `training.seed` (or is explicitly recorded in run artifacts) rather than hardcoded constants; add a regression test that detects seed drift across entrypoints.
-- [ ] 3.8 Add a CPU-only determinism probe for a tiny dataset slice with `data.dataloader_num_workers>0` to detect order-sensitive RNG behavior (sample_id sequence + packed lengths stable across two runs, or explicitly documented nondeterminism with rationale).
+- [x] 3.8 Add a CPU-only determinism probe for a tiny dataset slice with `data.dataloader_num_workers>0` to detect order-sensitive RNG behavior (sample_id sequence + packed lengths stable across two runs, or explicitly documented nondeterminism with rationale).
+- [x] 3.9 Enforce “no meta-only rescale” for offline datasets: public-data validation must check that on-disk images match JSONL `width/height` for rescale presets and that `images/` is not a symlink; add regression tests for both size-mismatch detection and symlink materialization safety.
 
 ## 4. Chat Template Construction (Qwen3-VL, Causal AR)
 
-- [ ] 4.1 Trace prompt building for stage_1 and stage_2 AB: system/user/assistant message construction, role boundaries, and special tokens (`<|im_start|>`, `<|im_end|>`) under the Qwen3-VL chat template.
+- [x] 4.1 Trace prompt building for stage_1 and stage_2 AB: system/user/assistant message construction, role boundaries, and special tokens (`<|im_start|>`, `<|im_end|>`) under the Qwen3-VL chat template.
 - [x] 4.2 Validate assistant rendering format: CoordJSON container `{\"objects\": [...]}` with bare coord-token literals in geometry, plus key-order handling for `custom.object_field_order` (desc-first vs geometry-first).
 - [x] 4.3 Verify the parse boundary contract: assistant CoordJSON must be transpiled to strict JSON before `json.loads` for downstream matching/eval; add an inventory gate to prevent reintroducing direct `json.loads` on CoordJSON.
 - [x] 4.4 Verify tokenizer consistency across learner and rollout server in vLLM server mode: identical vocab/special tokens/coord-token IDs, and prompt-token-id alignment checks are enforced with actionable errors.
@@ -44,58 +45,59 @@
 
 ## 6. Model Forward + Loss Composition (Correctness)
 
-- [ ] 6.1 Stage-1 objective audit: base full-vocab CE applies only to non-coord targets; coord-soft losses (softCE/W1/gate) apply only at coord labels; reduction/normalization is packing-safe and does not dilute under grad-accum.
-- [ ] 6.2 Coord-offset adapter audit: `tie_head` semantics are correct, optimizer parameter groups match config LRs, and merged-export behavior is consistent with `docs/training/COORD_OBJECTIVE_AND_ADAPTER.md`.
-- [ ] 6.3 Channel-A audit (Stage-2 AB): verify the A1 CE anchor split vs final-iteration geometry loss, `n_softctx_iter` semantics, and `softctx_grad_mode` behavior (unroll vs em_detach) match `progress/full_idea.md`.
-- [ ] 6.4 Channel-B audit (Stage-2 AB): verify rollout prefix + strict parse + match + FN injection builds a single teacher-forced target; verify FP-neutral and closure-supervision masking semantics match the runbook.
-- [ ] 6.5 Add targeted unit tests that validate shape consistency, masking correctness, and gradient propagation for the coord-logit pathways (without requiring full model weights).
+- [x] 6.1 Stage-1 objective audit: base full-vocab CE applies only to non-coord targets; coord-soft losses (softCE/W1/gate) apply only at coord labels; reduction/normalization is packing-safe and does not dilute under grad-accum.
+- [x] 6.2 Coord-offset adapter audit: `tie_head` semantics are correct, optimizer parameter groups match config LRs, and merged-export behavior is consistent with `docs/training/COORD_OBJECTIVE_AND_ADAPTER.md`.
+- [x] 6.3 Channel-A audit (Stage-2 AB): verify the A1 CE anchor split vs final-iteration geometry loss, `n_softctx_iter` semantics, and `softctx_grad_mode` behavior (unroll vs em_detach) match `progress/full_idea.md`.
+- [x] 6.4 Channel-B audit (Stage-2 AB): verify rollout prefix + strict parse + match + FN injection builds a single teacher-forced target; verify FP-neutral and closure-supervision masking semantics match the runbook.
+- [x] 6.5 Add targeted unit tests that validate shape consistency, masking correctness, and gradient propagation for the coord-logit pathways (without requiring full model weights).
 
 ## 7. Training Infrastructure (Logging, Eval, Checkpoints)
 
-- [ ] 7.1 Audit logging/metrics flow: payload contract versioning, aggregation semantics under grad-accum/DDP, and “best-effort diagnostics vs fail-fast objective” boundaries.
-- [ ] 7.2 Audit evaluation triggers and behavior for stage_1 and stage_2 AB (eval_strategy, eval_steps, eval_packing) and confirm eval does not silently change semantics under packing.
-- [ ] 7.3 Verify checkpoint saving policy matches project intent (weight-only persistence; no full trainer state). If behavior differs between stage_1 and stage_2 trainers, make it explicit and test it.
-- [ ] 7.4 Add a reproducibility “run manifest” requirement: persist resolved config, key environment metadata, and seed information under `training.output_dir` for every run.
+- [x] 7.1 Audit logging/metrics flow: payload contract versioning, aggregation semantics under grad-accum/DDP, and “best-effort diagnostics vs fail-fast objective” boundaries.
+- [x] 7.2 Audit evaluation triggers and behavior for stage_1 and stage_2 AB (eval_strategy, eval_steps, eval_packing) and confirm eval does not silently change semantics under packing.
+- [x] 7.3 Verify checkpoint saving policy matches project intent (weight-only persistence; no full trainer state). If behavior differs between stage_1 and stage_2 trainers, make it explicit and test it.
+- [x] 7.4 Add a reproducibility “run manifest” requirement: persist resolved config, key environment metadata, and seed information under `training.output_dir` for every run.
 - [x] 7.5 Extend the run manifest to include upstream provenance (transformers/torch/vllm/swift versions, ms-swift git SHA + dirty status, and rollout-server launch flags actually used) so results remain paper-auditable across upstream drift.
 
 ## 8. Stage-2 AB Stability (vLLM Server + Learner Interaction)
 
-- [ ] 8.1 Audit Stage-2 launcher preflight contract resolution and validation (backend/mode/server URLs/model path, `ROOT_IMAGE_DIR`, and vLLM `max_model_len`); ensure failures are early and actionable.
-- [ ] 8.2 Audit server/learner topology safeguards in the launcher: disjoint GPU sets, derived DP/TP behavior, readiness polling, and cleanup/termination behavior.
-- [ ] 8.3 Audit vLLM server-mode weight sync control-flow under DDP: rank0-only sync, strict barriers, and “all ranks take identical control-flow” invariants to prevent deadlocks.
-- [ ] 8.4 Verify Channel A/B deterministic scheduler correctness (Bresenham schedule) and confirm `stage2_ab/b_ratio_realized` matches expectation over long horizons.
-- [ ] 8.5 Enumerate abnormal behaviors (invalid rollouts, truncation at max_new_tokens, closure-marker alignment failures, server timeouts) and ensure each has a deterministic fallback and diagnosis metric.
-- [ ] 8.6 Verify launcher config resolution is self-consistent: the YAML used by the learner and the arguments passed to the rollout server do not drift in ways that change effective behavior silently (tokenizer/model path, max_model_len, LoRA enablement, sampling knobs).
-- [ ] 8.7 Audit any Stage-2 rollout queue / staleness controls (versioning, windowing, queue limits, drop/backpressure behavior) and ensure off-policy gap is bounded and observable when async pathways are enabled.
+- [x] 8.1 Audit Stage-2 launcher preflight contract resolution and validation (backend/mode/server URLs/model path, `ROOT_IMAGE_DIR`, and vLLM `max_model_len`); ensure failures are early and actionable.
+- [x] 8.2 Audit server/learner topology safeguards in the launcher: disjoint GPU sets, derived DP/TP behavior, readiness polling, and cleanup/termination behavior.
+- [x] 8.3 Audit vLLM server-mode weight sync control-flow under DDP: rank0-only sync, strict barriers, and “all ranks take identical control-flow” invariants to prevent deadlocks.
+- [x] 8.4 Verify Channel A/B deterministic scheduler correctness (Bresenham schedule) and confirm `stage2_ab/b_ratio_realized` matches expectation over long horizons.
+- [x] 8.5 Enumerate abnormal behaviors (invalid rollouts, truncation at max_new_tokens, closure-marker alignment failures, server timeouts) and ensure each has a deterministic fallback and diagnosis metric.
+- [x] 8.6 Verify launcher config resolution is self-consistent: the YAML used by the learner and the arguments passed to the rollout server do not drift in ways that change effective behavior silently (tokenizer/model path, max_model_len, LoRA enablement, sampling knobs).
+- [x] 8.7 Audit any Stage-2 rollout queue / staleness controls (versioning, windowing, queue limits, drop/backpressure behavior) and ensure off-policy gap is bounded and observable when async pathways are enabled.
 - [x] 8.8 Verify the combined stage-2 launcher behaves intentionally for multi-server configs: if `rollout_matching.vllm.server.servers` has length > 1, either fail fast with actionable guidance or document the required external orchestration (do not silently ignore additional servers).
-- [ ] 8.9 Expand DDP-safe weight sync audit to include failure propagation: any rank0 sync failure must trigger a synchronized global abort (or equivalent) so non-rank0 learners do not hang or continue with partially updated rollout state.
-- [ ] 8.10 Audit rollout seeding semantics end-to-end (including seed=0 edge cases) across learner, vLLM server, and ms-swift RequestConfig handling to prevent hidden nondeterminism/diversity drift.
+- [x] 8.9 Expand DDP-safe weight sync audit to include failure propagation: any rank0 sync failure must trigger a synchronized global abort (or equivalent) so non-rank0 learners do not hang or continue with partially updated rollout state.
+- [x] 8.10 Audit rollout seeding semantics end-to-end (including seed=0 edge cases) across learner, vLLM server, and ms-swift RequestConfig handling to prevent hidden nondeterminism/diversity drift.
 - [x] 8.11 Add a “run from non-repo cwd” validation for the stage-2 launcher preflight: relative paths in configs (JSONL paths, model paths, root image dir) must resolve relative to the config or repo root, not `Path.cwd()`.
+- [x] 8.12 Add launcher-level CPU JSONL guards (train/val max_pixels + multi-of-32 + image existence, plus open+size spot-check) for stage_1 (`scripts/train.sh`) and stage_2 (`scripts/train_stage2.sh`) before allocating GPUs.
 
 ## 9. Stage-2 Training Performance (Bottlenecks)
 
-- [ ] 9.1 Identify throughput bottlenecks on the Channel-B path using existing `time/*` metrics (generate/parse/match/encode/pack) and confirm timings are emitted only when Channel-B executes.
-- [ ] 9.2 Audit debug/monitor dumps (`monitor_dump`, `debug_dump`) for bounded overhead and safety; ensure large dumps cannot stall training or exhaust disk unexpectedly.
-- [ ] 9.3 Propose config-first optimizations (no new CLI flags): decode microbatching, server DP/TP choice, packing fill ratio knobs, and schedule `b_ratio` trade-offs; define how to verify improvements when GPUs are available.
+- [x] 9.1 Identify throughput bottlenecks on the Channel-B path using existing `time/*` metrics (generate/parse/match/encode/pack) and confirm timings are emitted only when Channel-B executes.
+- [x] 9.2 Audit debug/monitor dumps (`monitor_dump`, `debug_dump`) for bounded overhead and safety; ensure large dumps cannot stall training or exhaust disk unexpectedly.
+- [x] 9.3 Propose config-first optimizations (no new CLI flags): decode microbatching, server DP/TP choice, packing fill ratio knobs, and schedule `b_ratio` trade-offs; define how to verify improvements when GPUs are available.
 
 ## 10. Hidden Risks Inventory (Broad Scan)
 
-- [ ] 10.1 Run/extend silent-failure policy scans for core training/eval paths (no blanket exception suppression) and confirm best-effort behavior is limited to I/O-only sinks.
-- [ ] 10.2 Audit docs/README drift that could cause operator error (entrypoint naming, required env vars like `ROOT_IMAGE_DIR`, and “server vs colocate” backend selection).
-- [ ] 10.3 Verify no new behavior is introduced via ad-hoc flags; all new knobs must be YAML-specified and strict-parsed.
-- [ ] 10.4 Create an “audit report” (P0/P1/P2) with file:line evidence and explicit verification commands for each finding; store it alongside this change for review.
+- [x] 10.1 Run/extend silent-failure policy scans for core training/eval paths (no blanket exception suppression) and confirm best-effort behavior is limited to I/O-only sinks.
+- [x] 10.2 Audit docs/README drift that could cause operator error (entrypoint naming, required env vars like `ROOT_IMAGE_DIR`, and “server vs colocate” backend selection).
+- [x] 10.3 Verify no new behavior is introduced via ad-hoc flags; all new knobs must be YAML-specified and strict-parsed.
+- [x] 10.4 Create an “audit report” (P0/P1/P2) with file:line evidence and explicit verification commands for each finding; store it alongside this change for review.
 
 ## 11. Deferred GPU Smokes (Run Later)
 
-- [ ] 11.1 (Deferred; GPU required) Run a short stage_1 smoke using `scripts/train.sh` with the audited stage_1 config and a debug/sample limit; verify metrics keys, packing behavior, and checkpoint artifacts.
-- [ ] 11.2 (Deferred; GPU required) Run a stage_2 AB server-mode smoke using `scripts/train_stage2.sh` with `configs/stage2_ab/smoke/ab_mixed.yaml`; verify readiness gates, weight sync, A/B schedule telemetry, and Channel-B rollout metrics.
+- [x] 11.1 (GPU rerun on 2026-02-20) Stage-1 full-cycle smoke via `scripts/train.sh` succeeded for both distributed and single-GPU cycle configs, including `eval_steps` + `save_steps` triggers and checkpoint writes (`checkpoint-2`, `checkpoint-3`).
+- [x] 11.2 Run a stage_2 AB server-mode smoke using `scripts/train_stage2.sh`; verified readiness gates, DDP learner launch, A/B schedule telemetry, eval triggers, and checkpoint saves (`checkpoint-2`, `checkpoint-3`) on `configs/stage2_ab/smoke/ab_mixed_ddp_cycle.yaml`.
 
 ## 12. Upstream Integration Contracts (Transformers / ms-swift / vLLM / Torch)
 
 - [x] 12.1 Record upstream dependency provenance for this audit: ms-swift source path + git SHA, and `transformers`, `torch`, `vllm`, `swift` versions from env `ms`; ensure they are also captured in the run manifest task (7.5).
 - [x] 12.2 Add an upstream API contract test for transformers `Trainer` helper methods used by CoordExp optimizer wiring (signature/behavior drift should fail fast against the pinned transformers version).
-- [ ] 12.3 For `rollout_backend=hf`, add a length-coherence gate: validate `prompt_len + max_new_tokens` against model `max_position_embeddings` and fail fast (or warn loudly) in truncation-risk regimes.
-- [ ] 12.4 Pin ms-swift rollout request/response schema assumptions: server-mode rollouts must use `return_details=True` and responses must include `prompt_token_ids` and per-choice `token_ids`; add CPU-only contract tests around request construction and response validation.
+- [x] 12.3 For `rollout_backend=hf`, add a length-coherence gate: validate `prompt_len + max_new_tokens` against model `max_position_embeddings` and fail fast (or warn loudly) in truncation-risk regimes.
+- [x] 12.4 Pin ms-swift rollout request/response schema assumptions: server-mode rollouts must use `return_details=True` and responses must include `prompt_token_ids` and per-choice `token_ids`; add CPU-only contract tests around request construction and response validation.
 - [x] 12.5 Add a compatibility gate for `swift rollout` CLI flag surface used by `scripts/train_stage2.sh` (flags must exist and remain semantically compatible across ms-swift upgrades).
-- [ ] 12.6 Add a lightweight compatibility test for Qwen3-VL multimodal payload shape construction through the same code path used in Stage-2 rollouts (detect tuple/list serialization edge cases early, without a live server).
-- [ ] 12.7 Pin the swift rollout HTTP endpoint surface the launcher depends on (`/health/`, `/infer/`, `/get_world_size/`, communicator init endpoints) and add a contract test that fails fast if endpoints drift or are disabled.
+- [x] 12.6 Add a lightweight compatibility test for Qwen3-VL multimodal payload shape construction through the same code path used in Stage-2 rollouts (detect tuple/list serialization edge cases early, without a live server).
+- [x] 12.7 Pin the swift rollout HTTP endpoint surface the launcher depends on (`/health/`, `/infer/`, `/get_world_size/`, communicator init endpoints) and add a contract test that fails fast if endpoints drift or are disabled.

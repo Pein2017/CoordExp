@@ -63,7 +63,7 @@ def dataclass_asdict_no_none(obj: Any) -> dict[str, Any]:
 def _resolved_type_hints(schema_type: type) -> dict[str, Any]:
     try:
         return get_type_hints(schema_type, include_extras=True)
-    except Exception:
+    except (TypeError, NameError, AttributeError):
         # Fall back to dataclass field.type when annotations cannot be resolved.
         return {}
 
@@ -172,7 +172,12 @@ def parse_dataclass_strict(schema_type: type[T], payload: Any, *, path: str) -> 
     ]
     if unknown:
         rendered = [_join_path(path, str(k)) for k in sorted(unknown, key=lambda x: str(x))]
-        raise ValueError(f"Unknown keys: {rendered}")
+        raise ValueError(
+            "Unknown keys: "
+            f"{rendered}. "
+            "Migration guidance: remove unsupported keys or migrate them to "
+            "currently supported config paths before rerunning."
+        )
 
     hints = _resolved_type_hints(schema_type)
 

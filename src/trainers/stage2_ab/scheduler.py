@@ -141,7 +141,7 @@ class Stage2ABSchedulerMixin:
             return 0.0
         try:
             return float(sum(int(x) for x in hist)) / float(len(hist))
-        except Exception:
+        except (TypeError, ValueError, ZeroDivisionError):
             return 0.0
 
     def _stage2_channel_for_step(self, global_step: int) -> Literal["A", "B"]:

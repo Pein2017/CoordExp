@@ -1,0 +1,25 @@
+extends: geometry_first_coco80.yaml
+
+deepspeed:
+  enabled: false
+
+training:
+  effective_batch_size: 2
+  max_steps: 3
+  eval_strategy: steps
+  eval_steps: 2
+  save_strategy: steps
+  save_steps: 2
+  save_delay_steps: 0
+  logging_steps: 1
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/geometry_first_coco80_ddp_cycle
+  train_sample_limit: 160
+  val_sample_limit: 64

@@ -339,6 +339,49 @@ if ! _wait_all; then
 fi
 
 echo ""
+echo "== Materialize resized images (no symlinks) =="
+# CoordExp forbids runtime ms-swift resizing; therefore the dataset directory must
+# contain real resized images matching JSONL width/height (no `images -> ../raw/images`).
+SRC_POOL="public_data/coco/rescale_32_768_bbox_max60"
+if [ ! -d "${SRC_POOL}/images" ]; then
+  echo "[error] Missing rescaled COCO image pool under: ${SRC_POOL}/images"
+  echo "        This export expects a pre-built rescaled COCO pool (768*32*32 max_pixels, factor=32)."
+  echo "        Please build it first, then re-run this script."
+  exit 2
+fi
+
+conda run -n ms python scripts/tools/materialize_rescaled_images_from_jsonl.py \
+  --jsonl public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl \
+  --jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
+  --src-root "${SRC_POOL}" \
+  --dst-root public_data/lvis/rescale_32_768_bbox_max60 \
+  --write
+
+conda run -n ms python scripts/tools/materialize_rescaled_images_from_jsonl.py \
+  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap10.max60.coord.jsonl \
+  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap10.max60.coord.jsonl \
+  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/train.poly_prefer_semantic_cap20.max60.coord.jsonl \
+  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
+  --src-root "${SRC_POOL}" \
+  --dst-root public_data/lvis/rescale_32_768_poly_prefer_semantic_max60 \
+  --write
+
+# Quick spot-check: open+size alignment (full JSONL scan for width/height constraints).
+conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
+  --jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
+  --max-pixels $((768*32*32)) \
+  --multiple-of 32 \
+  --image-check-mode open \
+  --image-check-n 64
+
+conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
+  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
+  --max-pixels $((768*32*32)) \
+  --multiple-of 32 \
+  --image-check-mode open \
+  --image-check-n 64
+
+echo ""
 echo "== Token length sanity (GT assistant, coord jsonl) =="
 if [ -d "${MODEL_CKPT}" ]; then
   PYTHONPATH=. conda run -n ms python scripts/analysis/measure_gt_max_new_tokens.py \

@@ -164,7 +164,7 @@ class PackedCaptionDataset(IterableDataset):
             return None
         try:
             return len(input_ids)
-        except Exception:
+        except TypeError:
             return None
 
     def _pack_buffer(

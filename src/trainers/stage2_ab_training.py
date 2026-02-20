@@ -50,7 +50,7 @@ class _PendingStage2Log:
         for k, v in metrics.items():
             try:
                 self.sums[str(k)] = float(self.sums.get(str(k), 0.0)) + float(v)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
     def finalize(self, *, drop_internal: bool = True) -> Dict[str, float]:
@@ -762,7 +762,7 @@ class Stage2ABTrainingTrainer(
         for k, v in metrics.items():
             try:
                 reduced[str(k)] = float(v)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
         reduced.pop("rollout/parse_truncated_rate", None)
@@ -1264,7 +1264,7 @@ class Stage2ABTrainingTrainer(
             for rel in tail_desc_pos:
                 try:
                     rel_i = int(rel)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if 0 <= rel_i < train_len_eff:
                     tail_desc_pos_eff.append(rel_i)
@@ -1273,7 +1273,7 @@ class Stage2ABTrainingTrainer(
             for obj, rel_pos in zip(gts, rel_groups):
                 try:
                     rel_pos_int = [int(p) for p in rel_pos]
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if len(rel_pos_int) != 4:
                     continue
@@ -1333,9 +1333,7 @@ class Stage2ABTrainingTrainer(
         batch_metrics: Dict[str, float] = {
             "stage2/channel_a": float(1.0),
             "stage2/channel_b": float(0.0),
-            "time/rollout_generate_s": float(0.0),
-            "time/rollout_parse_match_s": float(0.0),
-            "time/rollout_teacher_encode_s": float(t_encode_s),
+            "time/channel_a_teacher_encode_s": float(t_encode_s),
         }
 
         if bool(_segments_only):
@@ -1353,7 +1351,7 @@ class Stage2ABTrainingTrainer(
             batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
 
             batch_metrics.update(pack_metrics)
-            batch_metrics["time/post_rollout_pack_s"] = float(
+            batch_metrics["time/channel_a_pack_s"] = float(
                 time.perf_counter() - t_pack0
             )
             self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
@@ -1511,7 +1509,7 @@ class Stage2ABTrainingTrainer(
                     for k, v in raw.items():
                         try:
                             drop_reasons[str(k)] = int(v)
-                        except Exception:
+                        except (TypeError, ValueError):
                             continue
             except Exception:
                 raise
@@ -1540,7 +1538,7 @@ class Stage2ABTrainingTrainer(
                     continue
                 try:
                     x1, y1, x2, y2 = [int(x) for x in pts]
-                except Exception:
+                except (TypeError, ValueError):
                     drop_bbox_invalid += 1
                     continue
                 if x2 < x1 or y2 < y1:
@@ -1588,7 +1586,7 @@ class Stage2ABTrainingTrainer(
             for rk, rv in drop_reasons.items():
                 try:
                     rvi = int(rv)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if rvi <= 0:
                     continue
@@ -1801,7 +1799,7 @@ class Stage2ABTrainingTrainer(
                     try:
                         pos_i = [int(p) for p in pos]
                         gb_i = [int(x) for x in gb]
-                    except Exception:
+                    except (TypeError, ValueError):
                         continue
                     pos_i = [int(p + delta_prompt) for p in pos_i]
                     if any(p < int(lower) or p >= int(upper) for p in pos_i):
@@ -1852,7 +1850,7 @@ class Stage2ABTrainingTrainer(
             for rel in tail_desc_pos:
                 try:
                     rel_i = int(rel)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if 0 <= rel_i < tail_cap:
                     tail_desc_pos_eff.append(rel_i)
@@ -1950,7 +1948,7 @@ class Stage2ABTrainingTrainer(
         for rk, rv in strict_drop_by_reason_total.items():
             try:
                 rvi = int(rv)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if rvi <= 0:
                 continue
@@ -2315,7 +2313,7 @@ class Stage2ABTrainingTrainer(
             for rel in prefix_struct_pos:
                 try:
                     rel_i = int(rel)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 p = int(seg_start + prompt_len + rel_i)
                 if p < prefix_start or p >= prefix_end:
@@ -2338,7 +2336,7 @@ class Stage2ABTrainingTrainer(
             for rel in tail_ignore_pos:
                 try:
                     ignore_rel.add(int(rel))
-                except Exception:
+                except (TypeError, ValueError):
                     continue
             for rel_i in sorted(ignore_rel):
                 p = int(seg_start + prompt_len + prefix_len + rel_i)
@@ -2353,7 +2351,7 @@ class Stage2ABTrainingTrainer(
             for rel in tail_desc_pos:
                 try:
                     rel_i = int(rel)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 p = int(seg_start + prompt_len + prefix_len + rel_i)
                 if p < tail_start or p >= tail_end:
@@ -2380,7 +2378,7 @@ class Stage2ABTrainingTrainer(
                     for rel in tail_desc_pos:
                         try:
                             desc_rel_set.add(int(rel))
-                        except Exception:
+                        except (TypeError, ValueError):
                             continue
 
                     for p in range(tail_start, tail_end):
@@ -2648,6 +2646,12 @@ class Stage2ABTrainingTrainer(
                 "stage2/channel_a": float(1.0 if channel == "A" else 0.0),
                 "stage2/channel_b": float(1.0 if channel == "B" else 0.0),
                 "stage2_ab/b_ratio_realized": float(self._stage2_b_ratio_realized()),
+                # Keep Channel-B diagnostics dense on Channel-A steps so dashboards
+                # and alerts can rely on stable metric keys every optimizer step.
+                "stage2_ab/channel_b/invalid_rollout": float(0.0),
+                "stage2_ab/channel_b/strict_drop/N_valid_pred": float(0.0),
+                "stage2_ab/channel_b/strict_drop/N_drop_invalid": float(0.0),
+                "stage2_ab/channel_b/closure_supervision/N_drop": float(0.0),
                 "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
                 "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
@@ -2678,6 +2682,14 @@ class Stage2ABTrainingTrainer(
             if isinstance(batch_metrics, Mapping):
                 for k, v in batch_metrics.items():
                     if str(k).startswith("stage2_ab/"):
+                        try:
+                            stage2_logs[str(k)] = float(v or 0.0)
+                        except Exception:
+                            raise
+
+            if isinstance(batch_metrics, Mapping):
+                for k, v in batch_metrics.items():
+                    if str(k).startswith("time/"):
                         try:
                             stage2_logs[str(k)] = float(v or 0.0)
                         except Exception:

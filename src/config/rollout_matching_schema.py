@@ -39,6 +39,13 @@ class RolloutMonitorDumpConfig:
     max_events: int = 20
     max_samples: int = 1
     max_text_chars: int = 4000
+    # Safety rails: dumps are diagnostics only and should not destabilize training.
+    # - async_write avoids blocking the training step on slow filesystems.
+    # - min_free_gb skips dumps when disk is low (prevents "disk full" surprises).
+    # - max_pending_writes bounds in-flight async dump tasks to avoid memory growth.
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
     out_dir: Optional[str] = None
     write_markdown: bool = True
 
@@ -66,6 +73,9 @@ class VllmServerDebugDumpConfig:
     max_events: int = 3
     max_samples: int = 1
     max_chars: int = 4000
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
     out_dir: Optional[str] = None
 
 

@@ -57,7 +57,7 @@ def stash_batch_extras(trainer: Any, extras: BatchExtras) -> None:
 
     try:
         setattr(trainer, _STASH_ATTR, extras)
-    except Exception:
+    except (AttributeError, TypeError):
         # Best-effort only; never block training.
         return
 

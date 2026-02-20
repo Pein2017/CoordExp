@@ -19,6 +19,7 @@ class _FakeTemplate:
         self.tokenizer = _FakeTokenizer()
         self.packing = False
         self.padding_free = False
+        self.max_pixels = 768 * 32 * 32
 
     def encode(self, merged: dict[str, Any], return_length: bool = False) -> dict[str, Any]:
         messages = merged.get("messages", []) if isinstance(merged, dict) else []

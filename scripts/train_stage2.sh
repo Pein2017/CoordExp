@@ -35,6 +35,7 @@ DISABLE_PROXY="${disable_proxy:-true}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export PYTHONPATH="${REPO_DIR}${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ "${CONFIG_RAW}" = /* ]]; then
   CONFIG_PATH="${CONFIG_RAW}"
@@ -128,6 +129,9 @@ emit(
 )
 
 emit("SERVER_MODEL", preflight["server_model"])
+emit("TRAIN_JSONL_RESOLVED", preflight["train_jsonl_resolved"])
+emit("VAL_JSONL_RESOLVED", preflight.get("val_jsonl_resolved") or "")
+emit("TEMPLATE_MAX_PIXELS", int(preflight["template_max_pixels"]))
 emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
@@ -209,6 +213,55 @@ if [[ ! -d "${SERVER_MODEL}" ]]; then
   echo "[ERROR] Server model directory not found: ${SERVER_MODEL}" >&2
   exit 1
 fi
+
+# ============================================================================
+# CPU-Only Data Guards (Hard Errors)
+# ============================================================================
+
+if [[ -z "${TRAIN_JSONL_RESOLVED:-}" ]]; then
+  echo "[ERROR] custom.train_jsonl is required (resolved empty). Check ${CONFIG_PATH}" >&2
+  exit 1
+fi
+if [[ -z "${VAL_JSONL_RESOLVED:-}" ]]; then
+  echo "[ERROR] custom.val_jsonl is required (resolved empty). Check ${CONFIG_PATH}" >&2
+  exit 1
+fi
+if [[ -z "${TEMPLATE_MAX_PIXELS:-}" ]]; then
+  echo "[ERROR] template.max_pixels is required (resolved empty). Check ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
+echo "========================================================================"
+echo "[PRECHECK] Validating JSONL contracts + max_pixels before launching GPUs"
+echo "========================================================================"
+echo "[PRECHECK] train_jsonl: ${TRAIN_JSONL_RESOLVED}"
+echo "[PRECHECK] val_jsonl: ${VAL_JSONL_RESOLVED}"
+echo "[PRECHECK] max_pixels: ${TEMPLATE_MAX_PIXELS} (expect 768*32*32=786432)"
+echo "[PRECHECK] multiple_of: 32"
+echo "========================================================================"
+
+conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+  --jsonl "${TRAIN_JSONL_RESOLVED}" \
+  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --multiple-of 32 \
+  --image-check-mode exists \
+  --image-check-n 0
+
+# Spot-check open+size alignment on train to catch any meta/image mismatch.
+conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+  --jsonl "${TRAIN_JSONL_RESOLVED}" \
+  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --multiple-of 32 \
+  --image-check-mode open \
+  --image-check-n 256
+
+# Validate val with full open+size checks (usually small enough).
+conda run -n "${CONDA_ENV}" python "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
+  --jsonl "${VAL_JSONL_RESOLVED}" \
+  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --multiple-of 32 \
+  --image-check-mode open \
+  --image-check-n 0
 
 # Derive data-parallel size from SERVER_GPUS unless explicitly overridden.
 IFS=',' read -r -a _server_gpu_array <<< "${SERVER_GPUS}"

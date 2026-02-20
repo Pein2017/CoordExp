@@ -56,7 +56,7 @@ class HardSampleTracker:
         for sid, loss, ds, bidx in zip(sample_ids, losses, datasets, base_idxs):
             try:
                 sid_int = int(sid)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             stat = self.stats.get(sid_int)
             if stat is None:

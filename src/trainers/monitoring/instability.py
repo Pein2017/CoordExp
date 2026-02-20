@@ -77,7 +77,7 @@ class InstabilityMonitorMixin:
     def _as_float(value: Any, default: float) -> float:
         try:
             out = float(value)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return float(default)
         if not math.isfinite(out):
             return float(default)
@@ -87,7 +87,7 @@ class InstabilityMonitorMixin:
     def _as_int(value: Any, default: int) -> int:
         try:
             return int(value)
-        except Exception:
+        except (TypeError, ValueError):
             return int(default)
 
     def _get_cfg(self) -> Mapping[str, Any]:
@@ -99,7 +99,7 @@ class InstabilityMonitorMixin:
             return 0
         try:
             return int(dist.get_rank())
-        except Exception:
+        except RuntimeError:
             return 0
 
     def _is_main_process(self) -> bool:
@@ -143,14 +143,14 @@ class InstabilityMonitorMixin:
                         raw = line.strip("\n")
                         try:
                             out[current] = json.loads(raw)
-                        except Exception:
+                        except (json.JSONDecodeError, TypeError):
                             out[current] = {"_raw": raw, "_parse_error": True}
                         target_pos += 1
                         if target_pos >= len(wanted):
                             break
                         target = wanted[target_pos]
                     current += 1
-        except Exception as exc:
+        except (OSError, UnicodeError) as exc:
             return {"_error": str(exc)}  # type: ignore[return-value]
         return out
 
@@ -179,7 +179,7 @@ class InstabilityMonitorMixin:
 
         try:
             meta = json.loads(meta_json)
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             meta = None
         if not isinstance(meta, list):
             return
@@ -198,7 +198,7 @@ class InstabilityMonitorMixin:
                 bi = s.get("base_idx")
                 try:
                     bi_i = int(bi)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
                 if bi_i >= 0:
                     base_idxs.append(bi_i)
