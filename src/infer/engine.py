@@ -617,16 +617,13 @@ class InferenceEngine:
         if not images:
             return []
 
-        # Best-effort batched generate; fall back to per-sample generation on error.
-        out: List[GenerationResult] = []
-        try:
-            messages = [self._build_messages(img) for img in images]
-            prompt_texts = [
-                self.processor.apply_chat_template(
-                    m, add_generation_prompt=True, tokenize=False
-                )
-                for m in messages
-            ]
+        messages = [self._build_messages(img) for img in images]
+        prompt_texts = [
+            self.processor.apply_chat_template(
+                m, add_generation_prompt=True, tokenize=False
+            )
+            for m in messages
+        ]
 
         model_inputs = self.processor(
             text=prompt_texts,
@@ -664,50 +661,7 @@ class InferenceEngine:
                 skip_special_tokens=False,
                 clean_up_tokenization_spaces=False,
             )
-            model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
-
-            if "attention_mask" in model_inputs:
-                prompt_lens = model_inputs["attention_mask"].sum(dim=1).tolist()
-            else:
-                # Fallback: assume no padding.
-                prompt_lens = [int(model_inputs["input_ids"].shape[1])] * int(
-                    len(images)
-                )
-
-            gen_kwargs = dict(
-                max_new_tokens=self.gen_cfg.max_new_tokens,
-                do_sample=self.gen_cfg.temperature > 0,
-                temperature=max(1e-4, self.gen_cfg.temperature),
-                top_p=self.gen_cfg.top_p,
-                use_cache=True,
-            )
-            if self.gen_cfg.repetition_penalty is not None:
-                gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
-
-            with torch.inference_mode():
-                gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
-
-            out = []
-            for i in range(len(images)):
-                prompt_len = int(prompt_lens[i])
-                gen_only = gen_ids[i, prompt_len:]
-                raw_text = self.processor.tokenizer.decode(
-                    gen_only,
-                    skip_special_tokens=False,
-                    clean_up_tokenization_spaces=False,
-                )
-                out.append(GenerationResult(text=raw_text, error=None))
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "HF batched generate failed; falling back to per-sample generation: %r",
-                exc,
-            )
-            out = []
-            for img in images:
-                try:
-                    out.append(GenerationResult(text=self._generate_hf(img), error=None))
-                except Exception as per_exc:  # noqa: BLE001
-                    out.append(GenerationResult(text="", error=per_exc))
+            out.append(GenerationResult(text=raw_text, error=None))
         return out
 
     def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:

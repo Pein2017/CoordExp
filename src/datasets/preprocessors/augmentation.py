@@ -412,8 +412,6 @@ class AugmentationPreprocessor(BasePreprocessor):
                     current = getattr(op, param_name)
                     coerced = _coerce_value(current, value)
                     setattr(op, param_name, coerced)
-                except (AttributeError, TypeError, ValueError):
-                    continue
 
     # -------------------- coord-token helpers --------------------
 

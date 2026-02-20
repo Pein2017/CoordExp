@@ -5,9 +5,6 @@ import torch.distributed as dist
 
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType
-from src.utils.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class GradAccumLossScaleMixin:
@@ -82,28 +79,8 @@ class AggregateTokenTypeMetricsMixin:
         # Ensure batch-extras are stripped before model forward (Stage-1).
         from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
-            extras = maybe_pop_and_stash_batch_extras(self, inputs)
-            token_types = extras.token_types
-        except Exception:
-            # Best-effort only, but never silent: surface contract drift.
-            try:
-                from src.metrics.reporter import warn_once
-
-                warn_once(
-                    self,
-                    key="batch_extras_failed",
-                    message=(
-                        "Failed to pop batch_extras for aggregate token-type metrics; "
-                        "token_types diagnostics will be skipped."
-                    ),
-                    exc_info=True,
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to pop batch_extras for aggregate token-type metrics; skipping.",
-                    exc_info=True,
-                )
-            token_types = None
+        extras = maybe_pop_and_stash_batch_extras(self, inputs)
+        token_types = extras.token_types
 
         # Snapshot labels before downstream mixins mutate them (e.g., coord loss masking).
         labels_for_metrics = inputs.get("labels") if isinstance(inputs, dict) else None
