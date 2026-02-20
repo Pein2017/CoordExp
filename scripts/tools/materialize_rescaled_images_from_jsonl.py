@@ -30,6 +30,7 @@ Notes
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as cf
 import json
 import shutil
 from dataclasses import dataclass
@@ -92,6 +93,65 @@ def _resolve_under(root: Path, rel: str) -> Path:
     return root / p
 
 
+def _verify_existing_size_worker(task: Tuple[str, int, int]) -> Tuple[str, Dict[str, Any]]:
+    from PIL import Image
+
+    dst_s, w, h = task
+    expected = (int(w), int(h))
+    dst = Path(dst_s)
+    try:
+        with Image.open(dst) as im:
+            got = (int(im.size[0]), int(im.size[1]))
+        if got != expected:
+            return (
+                "mismatch",
+                {
+                    "path": str(dst),
+                    "got": got,
+                    "expected": expected,
+                },
+            )
+        return ("ok", {"path": str(dst)})
+    except Exception as exc:  # noqa: BLE001
+        return (
+            "error",
+            {
+                "path": str(dst),
+                "error": repr(exc),
+            },
+        )
+
+
+def _materialize_missing_worker(task: Tuple[str, str, int, int]) -> Tuple[str, str]:
+    from PIL import Image
+
+    src_s, dst_s, w, h = task
+    src = Path(src_s)
+    dst = Path(dst_s)
+    try:
+        if dst.exists():
+            return ("exists", str(dst))
+
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        with Image.open(src) as im:
+            src_size = (int(im.size[0]), int(im.size[1]))
+
+        if src_size == (int(w), int(h)):
+            shutil.copy2(src, dst)
+        else:
+            with Image.open(src) as im:
+                rgb = im.convert("RGB")
+                resized = rgb.resize(
+                    (int(w), int(h)),
+                    Image.Resampling.LANCZOS,
+                )
+                resized.save(dst)
+        return ("created", str(dst))
+    except Exception as exc:  # noqa: BLE001
+        return ("failed", f"{dst}: {exc!r}")
+
+
 def materialize(
     *,
     jsonl_paths: Iterable[Path],
@@ -100,15 +160,19 @@ def materialize(
     write: bool,
     verify_existing_size: bool,
     limit_missing: int,
+    workers: int,
 ) -> int:
     try:
-        from PIL import Image
+        __import__("PIL.Image")
     except Exception as exc:  # noqa: BLE001
         print(f"FAIL: PIL import failed: {exc!r}")
         return 2
 
+    workers = max(1, int(workers))
+
     counters = Counters()
     seen: Set[str] = set()
+    unique_specs: Dict[str, Tuple[int, int]] = {}
 
     # Safety: avoid silently writing into symlinked images/ trees.
     # If dst_root/images is a symlink, replace it with a real directory so we
@@ -143,11 +207,13 @@ def materialize(
                 for line in f:
                     yield jp, line
 
-    iterator = _iter_lines()
-    if tqdm is not None:
-        iterator = tqdm(iterator, desc="Materialize", unit="line")
+    def _with_progress(iterable, *, total: Optional[int], desc: str, unit: str):
+        if tqdm is None:
+            return iterable
+        return tqdm(iterable, total=total, desc=desc, unit=unit)
 
-    for _jp, line in iterator:
+    scan_iter = _with_progress(_iter_lines(), total=None, desc="Scan JSONL", unit="line")
+    for _jp, line in scan_iter:
         counters.total_lines += 1
         line = line.strip()
         if not line:
@@ -176,9 +242,15 @@ def materialize(
 
         if rel_img in seen:
             continue
+
         seen.add(rel_img)
+        unique_specs[rel_img] = (int(w), int(h))
         counters.unique_images = len(seen)
 
+    verify_tasks: list[Tuple[str, int, int]] = []
+    create_tasks: list[Tuple[str, str, int, int]] = []
+
+    for rel_img, (w, h) in unique_specs.items():
         src = _resolve_under(src_root, rel_img)
         dst = _resolve_under(dst_root, rel_img)
 
@@ -191,54 +263,110 @@ def materialize(
         if dst.exists():
             counters.dst_already_present += 1
             if verify_existing_size:
-                try:
-                    with Image.open(dst) as im:
-                        if im.size != (int(w), int(h)):
-                            counters.dst_size_mismatch_existing += 1
-                            if counters.dst_size_mismatch_existing <= 5:
-                                print(
-                                    "DST SIZE MISMATCH:",
-                                    {"path": str(dst), "got": im.size, "expected": (int(w), int(h))},
-                                )
-                except Exception as exc:  # noqa: BLE001
+                verify_tasks.append((str(dst), int(w), int(h)))
+            continue
+
+        if write:
+            create_tasks.append((str(src), str(dst), int(w), int(h)))
+
+    if limit_missing > 0 and len(create_tasks) > limit_missing:
+        create_tasks = create_tasks[:limit_missing]
+
+    if verify_tasks:
+        verify_total = len(verify_tasks)
+        if workers > 1:
+            verify_chunksize = max(1, verify_total // (workers * 8))
+            with cf.ProcessPoolExecutor(max_workers=workers) as executor:
+                verify_iter = executor.map(
+                    _verify_existing_size_worker,
+                    verify_tasks,
+                    chunksize=verify_chunksize,
+                )
+                verify_iter = _with_progress(
+                    verify_iter,
+                    total=verify_total,
+                    desc="Verify existing",
+                    unit="img",
+                )
+                for status, payload in verify_iter:
+                    if status == "ok":
+                        continue
                     counters.dst_size_mismatch_existing += 1
                     if counters.dst_size_mismatch_existing <= 5:
-                        print(f"DST UNREADABLE (counted as mismatch): {dst}: {exc!r}")
-            continue
+                        if status == "mismatch":
+                            print("DST SIZE MISMATCH:", payload)
+                        else:
+                            print(
+                                f"DST UNREADABLE (counted as mismatch): "
+                                f"{payload['path']}: {payload['error']}"
+                            )
+        else:
+            verify_iter = (_verify_existing_size_worker(task) for task in verify_tasks)
+            verify_iter = _with_progress(
+                verify_iter,
+                total=verify_total,
+                desc="Verify existing",
+                unit="img",
+            )
+            for status, payload in verify_iter:
+                if status == "ok":
+                    continue
+                counters.dst_size_mismatch_existing += 1
+                if counters.dst_size_mismatch_existing <= 5:
+                    if status == "mismatch":
+                        print("DST SIZE MISMATCH:", payload)
+                    else:
+                        print(
+                            f"DST UNREADABLE (counted as mismatch): "
+                            f"{payload['path']}: {payload['error']}"
+                        )
 
-        # dst missing
-        if not write:
-            continue
-
-        if limit_missing > 0 and counters.dst_created >= limit_missing:
-            continue
-
-        try:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-
-            # Fast path: if the source image already matches the JSONL meta size, copy
-            # the file bytes instead of re-encoding via PIL.
-            with Image.open(src) as im:
-                src_size = im.size
-
-            if src_size == (int(w), int(h)):
-                shutil.copy2(src, dst)
-            else:
-                with Image.open(src) as im:
-                    rgb = im.convert("RGB")
-                    resized = rgb.resize(
-                        (int(w), int(h)),
-                        Image.Resampling.LANCZOS,
-                    )
-                    resized.save(dst)
-
-            counters.dst_created += 1
-            if counters.dst_created <= 3:
-                print(f"WROTE: {dst}")
-        except Exception as exc:  # noqa: BLE001
-            counters.dst_write_failed += 1
-            if counters.dst_write_failed <= 5:
-                print(f"WRITE FAILED: {dst}: {exc!r}")
+    if create_tasks:
+        create_total = len(create_tasks)
+        if workers > 1:
+            create_chunksize = max(1, create_total // (workers * 8))
+            with cf.ProcessPoolExecutor(max_workers=workers) as executor:
+                create_iter = executor.map(
+                    _materialize_missing_worker,
+                    create_tasks,
+                    chunksize=create_chunksize,
+                )
+                create_iter = _with_progress(
+                    create_iter,
+                    total=create_total,
+                    desc="Materialize",
+                    unit="img",
+                )
+                for status, payload in create_iter:
+                    if status == "created":
+                        counters.dst_created += 1
+                        if counters.dst_created <= 3:
+                            print(f"WROTE: {payload}")
+                    elif status == "exists":
+                        counters.dst_already_present += 1
+                    else:
+                        counters.dst_write_failed += 1
+                        if counters.dst_write_failed <= 5:
+                            print(f"WRITE FAILED: {payload}")
+        else:
+            create_iter = (_materialize_missing_worker(task) for task in create_tasks)
+            create_iter = _with_progress(
+                create_iter,
+                total=create_total,
+                desc="Materialize",
+                unit="img",
+            )
+            for status, payload in create_iter:
+                if status == "created":
+                    counters.dst_created += 1
+                    if counters.dst_created <= 3:
+                        print(f"WROTE: {payload}")
+                elif status == "exists":
+                    counters.dst_already_present += 1
+                else:
+                    counters.dst_write_failed += 1
+                    if counters.dst_write_failed <= 5:
+                        print(f"WRITE FAILED: {payload}")
 
     ok = True
     if counters.invalid_json or counters.invalid_record:
@@ -257,6 +385,7 @@ def materialize(
     print("write:", bool(write))
     print("verify_existing_size:", bool(verify_existing_size))
     print("limit_missing:", int(limit_missing))
+    print("workers:", int(workers))
     print("total_lines:", int(counters.total_lines))
     print("invalid_json:", int(counters.invalid_json))
     print("invalid_record:", int(counters.invalid_record))
@@ -288,6 +417,12 @@ def main() -> int:
         default=0,
         help="Max number of missing images to create (0 means unlimited).",
     )
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of worker processes for verification/materialization.",
+    )
     args = ap.parse_args()
 
     jsonl_paths = list(_iter_jsonl_paths(args.jsonl))
@@ -298,6 +433,7 @@ def main() -> int:
         write=bool(args.write),
         verify_existing_size=bool(args.verify_existing_size),
         limit_missing=int(args.limit_missing),
+        workers=max(1, int(args.workers)),
     )
 
 

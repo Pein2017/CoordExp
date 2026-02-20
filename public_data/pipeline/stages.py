@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from public_data.scripts.convert_to_coord_tokens import (
     _canonicalize_and_sort_objects_in_place,
@@ -113,12 +114,13 @@ class MaxObjectsFilterStage(PipelineStage):
             src = state.split_raw_sources.get(split) or state.split_artifacts[split].raw
             dst = state.split_artifacts[split].raw
 
+            workers = max(1, int(state.config.num_workers))
             if src == dst:
                 tmp = dst.with_name(dst.name + ".tmp")
-                stats = _filter_records_drop_only(src, tmp, n_max)
+                stats = _filter_records_drop_only(src, tmp, n_max, num_workers=workers)
                 tmp.replace(dst)
             else:
-                stats = _filter_records_drop_only(src, dst, n_max)
+                stats = _filter_records_drop_only(src, dst, n_max, num_workers=workers)
 
             state.split_raw_sources[split] = dst
             state.split_artifacts[split].filter_stats.write_text(
@@ -129,6 +131,7 @@ class MaxObjectsFilterStage(PipelineStage):
         state.stage_stats[self.name] = {
             "enabled": True,
             "max_objects": n_max,
+            "num_workers": int(state.config.num_workers),
             "splits": per_split,
         }
 
@@ -149,12 +152,14 @@ class NormalizeStage(PipelineStage):
                 assume_normalized=bool(state.config.assume_normalized),
                 compact=bool(state.config.compact_json),
                 stats=per_split_objects,
+                num_workers=max(1, int(state.config.num_workers)),
             )
             record_counts[split] = n
             object_counts[split] = per_split_objects
 
         state.stage_stats[self.name] = {
             "assume_normalized": bool(state.config.assume_normalized),
+            "num_workers": int(state.config.num_workers),
             "records": record_counts,
             "objects": object_counts,
         }
@@ -172,10 +177,14 @@ class CoordTokenStage(PipelineStage):
                 input_path=src,
                 output_path=outp,
                 compact=bool(state.config.compact_json),
+                num_workers=max(1, int(state.config.num_workers)),
             )
             stats[split] = n
 
-        state.stage_stats[self.name] = {"records": stats}
+        state.stage_stats[self.name] = {
+            "num_workers": int(state.config.num_workers),
+            "records": stats,
+        }
 
 
 class LegacyAliasStage(PipelineStage):
@@ -316,11 +325,113 @@ def _count_lines(path: Path) -> int:
     return n
 
 
-def _filter_records_drop_only(input_path: Path, output_path: Path, max_objects: int) -> dict:
+def _normalize_worker_count(num_workers: int) -> int:
+    return max(1, min(int(num_workers), cpu_count()))
+
+
+def _iter_nonempty_lines(path: Path) -> Iterable[str]:
+    with path.open("r", encoding="utf-8") as fin:
+        for raw in fin:
+            line = raw.strip()
+            if line:
+                yield line
+
+
+def _parallel_imap(
+    *,
+    payloads: Iterable[Any],
+    worker_fn,
+    num_workers: int,
+    chunksize: int = 64,
+) -> Iterable[Any]:
+    workers = _normalize_worker_count(num_workers)
+    if workers == 1:
+        for payload in payloads:
+            yield worker_fn(payload)
+        return
+
+    with Pool(processes=workers) as pool:
+        yield from pool.imap(worker_fn, payloads, chunksize=max(1, int(chunksize)))
+
+
+def _merge_int_stats(dst: dict[str, int], src: dict[str, int]) -> None:
+    for k, v in src.items():
+        dst[k] = int(dst.get(k, 0)) + int(v)
+
+
+def _filter_record_drop_worker(payload: Tuple[str, int]) -> Tuple[bool, str, dict[str, int]]:
+    line, max_objects = payload
+    rec = json.loads(line)
+
+    stats: dict[str, int] = {
+        "images_seen": 1,
+        "images_written": 0,
+        "images_dropped": 0,
+        "objects_seen": 0,
+        "objects_written": 0,
+        "objects_poly": 0,
+        "objects_bbox": 0,
+    }
+
+    objects = rec.get("objects") or []
+    n = len(objects) if isinstance(objects, list) else 0
+    stats["objects_seen"] = int(n)
+    if n > int(max_objects):
+        stats["images_dropped"] = 1
+        return (False, "", stats)
+
+    stats["images_written"] = 1
+    stats["objects_written"] = int(n)
+    if isinstance(objects, list):
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("poly") is not None:
+                stats["objects_poly"] += 1
+            elif obj.get("bbox_2d") is not None:
+                stats["objects_bbox"] += 1
+
+    return (True, json.dumps(rec, ensure_ascii=False), stats)
+
+
+def _norm_record_worker(payload: Tuple[str, bool, bool]) -> Tuple[str, dict[str, int]]:
+    line, assume_normalized, compact = payload
+    record_raw = json.loads(line)
+    local_stats: dict[str, int] = {}
+    record_ints = convert_record_to_ints(
+        json.loads(json.dumps(record_raw)),
+        ["bbox_2d", "poly"],
+        assume_normalized=bool(assume_normalized),
+        stats=local_stats,
+    )
+    record_ints = _canonicalize_and_sort_objects_in_place(record_ints)
+    compact_separators = (",", ":") if compact else None
+    out_line = json.dumps(record_ints, ensure_ascii=False, separators=compact_separators)
+    return (out_line, local_stats)
+
+
+def _coord_record_worker(payload: Tuple[str, bool]) -> str:
+    line, compact = payload
+    record_norm = json.loads(line)
+    record_tokens = convert_record_to_tokens(
+        json.loads(json.dumps(record_norm)),
+        ["bbox_2d", "poly"],
+    )
+    compact_separators = (",", ":") if compact else None
+    return json.dumps(record_tokens, ensure_ascii=False, separators=compact_separators)
+
+
+def _filter_records_drop_only(
+    input_path: Path,
+    output_path: Path,
+    max_objects: int,
+    *,
+    num_workers: int = 1,
+) -> dict:
     if input_path.resolve() == output_path.resolve():
         raise ValueError("max-object filter cannot read/write in-place; use a temp output path")
 
-    stats = {
+    stats: dict[str, int] = {
         "images_seen": 0,
         "images_written": 0,
         "images_dropped": 0,
@@ -331,30 +442,18 @@ def _filter_records_drop_only(input_path: Path, output_path: Path, max_objects: 
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with input_path.open("r", encoding="utf-8") as fin, output_path.open("w", encoding="utf-8") as fout:
-        for line in fin:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            stats["images_seen"] += 1
-            objects = rec.get("objects") or []
-            n = len(objects) if isinstance(objects, list) else 0
-            stats["objects_seen"] += int(n)
-            if n > max_objects:
-                stats["images_dropped"] += 1
-                continue
-            stats["images_written"] += 1
-            stats["objects_written"] += int(n)
-            if isinstance(objects, list):
-                for obj in objects:
-                    if not isinstance(obj, dict):
-                        continue
-                    if obj.get("poly") is not None:
-                        stats["objects_poly"] += 1
-                    elif obj.get("bbox_2d") is not None:
-                        stats["objects_bbox"] += 1
-            fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    payloads = ((line, int(max_objects)) for line in _iter_nonempty_lines(input_path))
+
+    with output_path.open("w", encoding="utf-8") as fout:
+        for keep, out_line, record_stats in _parallel_imap(
+            payloads=payloads,
+            worker_fn=_filter_record_drop_worker,
+            num_workers=num_workers,
+            chunksize=128,
+        ):
+            _merge_int_stats(stats, record_stats)
+            if keep:
+                fout.write(out_line + "\n")
     return stats
 
 
@@ -365,44 +464,48 @@ def _write_norm_jsonl(
     assume_normalized: bool,
     compact: bool,
     stats: Optional[dict] = None,
+    num_workers: int = 1,
 ) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    compact_separators = (",", ":") if compact else None
     n = 0
-    with input_path.open("r", encoding="utf-8") as fin, output_path.open("w", encoding="utf-8") as fout:
-        for line in fin:
-            line = line.strip()
-            if not line:
-                continue
-            record_raw = json.loads(line)
-            record_ints = convert_record_to_ints(
-                json.loads(json.dumps(record_raw)),
-                ["bbox_2d", "poly"],
-                assume_normalized=assume_normalized,
-                stats=stats,
-            )
-            record_ints = _canonicalize_and_sort_objects_in_place(record_ints)
-            json.dump(record_ints, fout, ensure_ascii=False, separators=compact_separators)
-            fout.write("\n")
+
+    payloads = (
+        (line, bool(assume_normalized), bool(compact))
+        for line in _iter_nonempty_lines(input_path)
+    )
+
+    with output_path.open("w", encoding="utf-8") as fout:
+        for out_line, local_stats in _parallel_imap(
+            payloads=payloads,
+            worker_fn=_norm_record_worker,
+            num_workers=num_workers,
+            chunksize=64,
+        ):
+            fout.write(out_line + "\n")
             n += 1
+            if stats is not None:
+                _merge_int_stats(stats, local_stats)
     return n
 
 
-def _write_coord_jsonl(*, input_path: Path, output_path: Path, compact: bool) -> int:
+def _write_coord_jsonl(
+    *,
+    input_path: Path,
+    output_path: Path,
+    compact: bool,
+    num_workers: int = 1,
+) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    compact_separators = (",", ":") if compact else None
     n = 0
-    with input_path.open("r", encoding="utf-8") as fin, output_path.open("w", encoding="utf-8") as fout:
-        for line in fin:
-            line = line.strip()
-            if not line:
-                continue
-            record_norm = json.loads(line)
-            record_tokens = convert_record_to_tokens(
-                json.loads(json.dumps(record_norm)),
-                ["bbox_2d", "poly"],
-            )
-            json.dump(record_tokens, fout, ensure_ascii=False, separators=compact_separators)
-            fout.write("\n")
+
+    payloads = ((line, bool(compact)) for line in _iter_nonempty_lines(input_path))
+    with output_path.open("w", encoding="utf-8") as fout:
+        for out_line in _parallel_imap(
+            payloads=payloads,
+            worker_fn=_coord_record_worker,
+            num_workers=num_workers,
+            chunksize=64,
+        ):
+            fout.write(out_line + "\n")
             n += 1
     return n
