@@ -23,6 +23,8 @@ stage2_ab:
 
 custom:
   val_sample_limit: 504
+  extra:
+    prompt_variant: coco_80
 
 rollout_matching:
   max_new_tokens: 3084

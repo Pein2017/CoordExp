@@ -22,6 +22,10 @@ stage2_ab:
     b_ratio: 1.0
   n_softctx_iter: 2
 
+custom:
+  extra:
+    prompt_variant: coco_80
+
 rollout_matching:
   rollout_backend: vllm
   vllm:
