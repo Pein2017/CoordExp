@@ -1,0 +1,34 @@
+extends: ../base.yaml
+
+model:
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-4B/v0-20260219-054308/checkpoint-1832_merged
+
+training:
+  run_name: desc_first_merged_ckpt1832_ep4
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
+  num_train_epochs: 4
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  effective_batch_size: 64
+  eval_strategy: steps
+  eval_steps: 300
+  save_strategy: steps
+  save_steps: 300
+  do_eval: true
+  metric_for_best_model: rollout/f1
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.0
+  n_softctx_iter: 2
+
+rollout_matching:
+  # Override rollout backend inherited from configs/stage2_ab/base.yaml.
+  rollout_backend: hf
+  decode_batch_size: 4
+  max_new_tokens: 3084
+
+custom:
+  val_sample_limit: 512
