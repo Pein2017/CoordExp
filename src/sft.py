@@ -31,7 +31,6 @@ from .coord_tokens.offset_adapter import (
 from .config import ConfigLoader, SaveDelayConfig
 from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
-from .datasets.augmentation.curriculum import AugmentationCurriculumScheduler
 from .trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     CoordSoftCEW1LossMixin,
@@ -624,45 +623,22 @@ def main():
     # NOTE: Do NOT override processor normalization/rescale.
     # Qwen3-VL expects its native image preprocessing. We already pass do_resize=False at encode time.
 
-    # Configure augmentation via YAML builder (applies only to training)
+    # Augmentation is deprecated in this repo: keep it disabled unconditionally.
+    # This avoids optional external dependency failures in data loading.
     augmenter = None
     bypass_prob = float(custom_config.bypass_prob)
-    aug_cfg = custom_config.augmentation
     curriculum_cfg = None
-    if isinstance(aug_cfg, dict) and aug_cfg.get("enabled", True):
-        try:
-            # Ensure ops are registered by importing ops module
-            from .datasets.augmentation import ops as _register_ops  # noqa: F401
-            from .datasets.augmentation.builder import build_compose_from_config
-
-            augmenter = build_compose_from_config(aug_cfg)
-            bypass_prob = float(aug_cfg.get("bypass_prob", custom_config.bypass_prob))
-            curriculum_cfg = aug_cfg.get("curriculum")
-            logger.info(
-                f"Augmentation pipeline built (bypass_prob={bypass_prob:.2f}, training only)"
-            )
-        except (ImportError, KeyError, TypeError, ValueError) as e:
-            raise ValueError(f"Failed to build augmentation pipeline from YAML: {e}")
+    if custom_config.augmentation:
+        logger.warning(
+            "custom.augmentation is configured but ignored because augmentation is disabled in this repo."
+        )
 
     curriculum_state = None
     curriculum_scheduler = None
-    if curriculum_cfg is None:
-        curriculum_cfg = custom_config.augmentation_curriculum
-    if curriculum_cfg:
-        if augmenter is None:
-            raise ValueError(
-                "augmentation curriculum requires a built augmentation pipeline"
-            )
-        try:
-            scheduler = AugmentationCurriculumScheduler.from_config(
-                base_bypass=bypass_prob,
-                op_meta=getattr(augmenter, "_augmentation_meta", []),
-                curriculum_raw=curriculum_cfg,
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"Failed to build augmentation curriculum: {exc}") from exc
-        curriculum_scheduler = scheduler
-        # Note: initial_state will be computed after dataset is loaded and total_steps is calculated
+    if custom_config.augmentation_curriculum:
+        logger.warning(
+            "custom.augmentation_curriculum is configured but ignored because augmentation is disabled."
+        )
 
     # Sample limits for quick smoke tests.
     #

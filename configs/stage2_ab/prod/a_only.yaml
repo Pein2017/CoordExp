@@ -1,21 +1,23 @@
 extends: ../base.yaml
 
 model:
-  model: output/1-26/checkpoint-1516-merged
+  model: output/stage1/coco_bbox_max60-coco80-geometry_first_merged/checkpoint-1832
 
 training:
-  run_name: prod_a_only_bbox_max60_ckpt1516_ep2
-  output_dir: output/stage2_ab/prod/a_only
-  logging_dir: tb/stage2_ab/prod/a_only
+  run_name: geometry_first_merged_ckpt1832_ep4
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
+  num_train_epochs: 4
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
   effective_batch_size: 64
   eval_strategy: steps
-  eval_steps: 80
+  eval_steps: 300
   save_strategy: steps
-  save_steps: 200
+  save_steps: 300
   do_eval: true
+  metric_for_best_model: rollout/f1
 
 stage2_ab:
   schedule:
@@ -23,6 +25,10 @@ stage2_ab:
   n_softctx_iter: 2
 
 rollout_matching:
-  rollout_backend: vllm
-  vllm:
-    mode: server
+  # Override rollout backend inherited from configs/stage2_ab/base.yaml.
+  rollout_backend: hf
+  decode_batch_size: 4
+  max_new_tokens: 3084
+
+custom:
+  val_sample_limit: 512

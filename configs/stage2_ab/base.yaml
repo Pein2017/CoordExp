@@ -1,21 +1,18 @@
-extends: ../base.yaml
+# Stage-2 AB canonical profile base (standalone).
+# This file intentionally does not extend configs/base.yaml.
 
-# Stage-2 AB canonical profile base.
-#
-# Migration notes (no backward compatibility):
-# - Author rollout knobs under top-level `rollout_matching.*` (NOT `custom.extra.rollout_matching.*`).
-# - `rollout_matching.decode_batch_size` is the single source of truth for rollout decode/eval microbatching;
-#   rollout-aware trainer variants override `training.per_device_eval_batch_size` to match it.
-# - Removed keys fail fast (examples): `rollout_matching.rollout_buffer`, `stage2_ab.schedule.pattern`,
-#   `stage2_ab.channel_b.reordered_gt_sft`, `stage2_ab.channel_b.desc_ce_weight_matched`,
-#   `stage2_ab.channel_b.semantic_desc_gate`.
-#
-# Iterative variants:
-# - Keep them as one-hop leaves extending this file and pinning high-signal leaf keys; avoid multi-hop or
-#   dual-parent inheritance so each run remains auditable from a single YAML.
+global_max_length: 12000
 
 model:
+  torch_dtype: bfloat16
+  attn_impl: flash_attention_2
   model: output/1-26/checkpoint-1516-merged
+
+template:
+  template: qwen3_vl
+  truncation_strategy: raise
+  # CoordExp forbids runtime image resizing; keep max_pixels fixed.
+  max_pixels: 786432
 
 tuner:
   train_type: lora
@@ -35,11 +32,24 @@ tuner:
 deepspeed:
   enabled: false
 
-template:
-  truncation_strategy: raise
-
 training:
-  num_train_epochs: 2
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine_warmup_with_min_lr
+  bf16: true
+  report_to: [tensorboard]
+  seed: 17
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  add_version: true
+  save_safetensors: true
+  save_total_limit: 2
+  save_last_epoch: true
+  save_only_model: true
+  logging_steps: 10
+  logging_first_step: true
+  lr_scheduler_kwargs:
+    min_lr: 1.0e-6
+  num_train_epochs: 4
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 4
   effective_batch_size: 64
@@ -61,6 +71,16 @@ training:
   save_strategy: steps
   save_steps: 200
 
+data:
+  # Required by ms-swift TrainArguments validation.
+  dataset: [dummy]
+  val_dataset: [dummy]
+  dataset_num_proc: 8
+  dataloader_num_workers: 16
+  dataloader_pin_memory: true
+  dataloader_prefetch_factor: 4
+  dataloader_persistent_workers: true
+
 stage2_ab:
   schedule:
     b_ratio: 0.05
@@ -69,9 +89,11 @@ stage2_ab:
   channel_b: {}
 
 custom:
+  json_format: standard
+  emit_norm: none
   trainer_variant: stage2_ab_training
-  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
   train_sample_limit: null
   val_sample_limit: null
   coord_tokens:
@@ -79,6 +101,9 @@ custom:
     skip_bbox_norm: true
   coord_soft_ce_w1:
     enabled: true
+
+debug:
+  enabled: false
 
 rollout_matching:
   offload:
