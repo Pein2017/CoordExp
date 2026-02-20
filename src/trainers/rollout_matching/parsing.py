@@ -10,7 +10,7 @@ from src.common.object_field_order import (
 )
 from src.coord_tokens.codec import get_coord_token_ids, value_in_coord_range
 from src.utils.assistant_json import dumps_coordjson
-from src.utils.coordjson_transpiler import parse_coordjson
+from src.utils.coordjson_transpiler import CoordJSONValidationError, parse_coordjson
 
 from .contracts import GTObject, ParsedPredObject, RolloutParseResult
 
@@ -323,7 +323,8 @@ def serialize_append_fragment(
             mode="strict",
             object_field_order=resolved_field_order,
         )
-    except Exception:
+    except CoordJSONValidationError:
+        # Expected for append-ready partial prefixes; keep fail-fast for unexpected errors.
         pass
     else:
         raise ValueError("rollout prefix is already a closed CoordJSON container")
