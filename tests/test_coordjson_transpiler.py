@@ -112,6 +112,22 @@ def test_coordjson_salvage_parse_fail_returns_empty_objects() -> None:
     assert meta.parse_failed is True
 
 
+def test_coordjson_salvage_reason_bucket_is_deterministic_for_multi_violation() -> None:
+    text = (
+        '{"objects": [{"bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>], '
+        '"desc": "   "}]}'
+    )
+    strict, meta = coordjson_to_strict_json_with_meta(
+        text,
+        mode="salvage",
+        object_field_order="desc_first",
+    )
+
+    assert strict == '{"objects": []}'
+    assert meta.dropped_invalid_records == 1
+    assert meta.dropped_invalid_by_reason == {"order_violation": 1}
+
+
 def test_dumps_coordjson_golden_strings_for_orders_and_poly() -> None:
     desc_first_payload = {
         "objects": [
