@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -28,7 +29,6 @@ from src.common.geometry import (
     bbox_to_quadrilateral,
     coerce_point_list,
     denorm_and_clamp,
-    flatten_points,
     is_degenerate_bbox,
 )
 from src.common.geometry.object_geometry import extract_single_geometry
@@ -49,6 +49,58 @@ def _normalize_desc(desc: str) -> str:
 
 def _fmt_iou_thr(iou_thr: float) -> str:
     return f"{float(iou_thr):.2f}"
+
+
+def _validate_score_provenance_for_coco(record: Dict[str, Any], record_idx: int) -> None:
+    source = record.get("pred_score_source")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError(
+            "COCO evaluation requires scored artifacts with score provenance. "
+            f"Record index {record_idx} is missing non-empty `pred_score_source`. "
+            "Run confidence post-op first and evaluate `gt_vs_pred_scored.jsonl`."
+        )
+
+    version = record.get("pred_score_version")
+    if not isinstance(version, int):
+        raise ValueError(
+            "COCO evaluation requires scored artifacts with score provenance. "
+            f"Record index {record_idx} is missing integer `pred_score_version`. "
+            "Run confidence post-op first and evaluate `gt_vs_pred_scored.jsonl`."
+        )
+
+
+def _parse_coco_score(
+    *,
+    score_value: Any,
+    record_idx: int,
+    object_idx: int,
+) -> float:
+    if score_value is None:
+        raise ValueError(
+            "COCO score contract violation: missing `pred[*].score` at "
+            f"record index {record_idx}, object index {object_idx}."
+        )
+
+    try:
+        score = float(score_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "COCO score contract violation: non-numeric `pred[*].score` at "
+            f"record index {record_idx}, object index {object_idx}: {score_value!r}"
+        ) from exc
+
+    if not math.isfinite(score):
+        raise ValueError(
+            "COCO score contract violation: non-finite `pred[*].score` at "
+            f"record index {record_idx}, object index {object_idx}: {score_value!r}"
+        )
+    if score < 0.0 or score > 1.0:
+        raise ValueError(
+            "COCO score contract violation: out-of-range `pred[*].score` at "
+            f"record index {record_idx}, object index {object_idx}: {score!r} "
+            "(expected 0.0 <= score <= 1.0)."
+        )
+    return score
 
 
 def _bbox_iou(a: List[float], b: List[float]) -> float:
@@ -583,9 +635,10 @@ def _prepare_pred_objects(
                 "bbox": [x1, y1, x2, y2],
                 "segmentation": segm,
                 "desc": desc,
-                "score": 1.0,  # greedy decoding; confidence not available
             }
         )
+        if "score" in obj:
+            preds[-1]["score"] = obj.get("score")
     return preds, invalid
 
 
@@ -680,7 +733,7 @@ def _to_coco_preds(
     sem_thr = float(options.semantic_threshold)
 
     for image_id, preds in pred_samples:
-        for pred in preds:
+        for object_idx, pred in enumerate(preds):
             desc = (pred.get("desc") or "").strip()
             cat_id = categories.get(desc)
             if cat_id is None:
@@ -697,11 +750,16 @@ def _to_coco_preds(
             x1, y1, x2, y2 = pred["bbox"]
             w = x2 - x1
             h = y2 - y1
+            score = _parse_coco_score(
+                score_value=pred.get("score"),
+                record_idx=int(image_id),
+                object_idx=int(object_idx),
+            )
             res = {
                 "image_id": image_id,
                 "category_id": cat_id,
                 "bbox": [x1, y1, w, h],
-                "score": float(pred.get("score", 1.0)),
+                "score": score,
             }
             if pred.get("segmentation") and options.use_segm:
                 res["segmentation"] = pred["segmentation"]
@@ -870,6 +928,10 @@ def _prepare_all_from_records(
     bool,
     List[Dict[str, Any]],
 ]:
+    if prepare_coco:
+        for record_idx, rec in enumerate(pred_records):
+            _validate_score_provenance_for_coco(rec, record_idx)
+
     gt_samples: List[Sample] = []
     for idx, rec in enumerate(
         tqdm(gt_records, desc="GT", unit="img", disable=len(gt_records) < 10)

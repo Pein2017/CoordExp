@@ -142,6 +142,7 @@ def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
 class ResolvedArtifacts:
     run_dir: Path
     gt_vs_pred_jsonl: Path
+    gt_vs_pred_scored_jsonl: Path | None
     summary_json: Path
     eval_dir: Path
     vis_dir: Path
@@ -187,6 +188,11 @@ def resolve_artifacts(
     else:
         gt_vs_pred_jsonl = run_dir / "gt_vs_pred.jsonl"
 
+    gt_vs_pred_scored = _get_str(art_cfg, "gt_vs_pred_scored_jsonl")
+    gt_vs_pred_scored_jsonl = (
+        Path(gt_vs_pred_scored) if gt_vs_pred_scored else None
+    )
+
     summary_json = Path(_get_str(art_cfg, "summary_json") or (run_dir / "summary.json"))
 
     eval_cfg = _get_map(cfg, "eval")
@@ -199,6 +205,7 @@ def resolve_artifacts(
         ResolvedArtifacts(
             run_dir=run_dir,
             gt_vs_pred_jsonl=gt_vs_pred_jsonl,
+            gt_vs_pred_scored_jsonl=gt_vs_pred_scored_jsonl,
             summary_json=summary_json,
             eval_dir=eval_dir,
             vis_dir=vis_dir,
@@ -467,6 +474,11 @@ def run_pipeline(
         "artifacts": {
             "run_dir": str(artifacts.run_dir),
             "gt_vs_pred_jsonl": str(artifacts.gt_vs_pred_jsonl),
+            "gt_vs_pred_scored_jsonl": (
+                str(artifacts.gt_vs_pred_scored_jsonl)
+                if artifacts.gt_vs_pred_scored_jsonl is not None
+                else None
+            ),
             "summary_json": str(artifacts.summary_json),
             "eval_dir": str(artifacts.eval_dir),
             "vis_dir": str(artifacts.vis_dir),
@@ -631,8 +643,28 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
             "Remove these keys to continue."
         )
 
-    # Unified pipeline contract: evaluator consumes artifact with embedded GT.
-    pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
+    if "use_pred_score" in eval_cfg:
+        raise ValueError(
+            "eval.use_pred_score is unsupported. Fixed-score evaluation has been removed; "
+            "remove eval.use_pred_score and run score-aware evaluation."
+        )
+
+    metrics_mode = str(eval_cfg.get("metrics", "both")).strip().lower()
+    want_coco = metrics_mode in {"coco", "both"}
+
+    # Unified pipeline contract:
+    # - COCO metrics require scored artifacts.
+    # - f1ish-only runs can use the base artifact.
+    if want_coco:
+        scored_path = artifacts.gt_vs_pred_scored_jsonl
+        if scored_path is None:
+            raise ValueError(
+                "COCO evaluation requires artifacts.gt_vs_pred_scored_jsonl. "
+                "Run the confidence post-op first and configure this path."
+            )
+        pred_path = _load_or_raise_artifact(scored_path)
+    else:
+        pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
     options = EvalOptions(
         metrics=str(eval_cfg.get("metrics", "both")),

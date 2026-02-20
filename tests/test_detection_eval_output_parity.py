@@ -45,9 +45,11 @@ def _one_record(*, image: str, gt_desc: str = "box", pred_desc: str = "box") -> 
                 "type": "bbox_2d",
                 "points": [0, 0, 63, 47],
                 "desc": pred_desc,
-                "score": 1.0,
+                "score": 0.9,
             }
         ],
+        "pred_score_source": "confidence_postop",
+        "pred_score_version": 1,
         "raw_output_json": {},
         "raw_special_tokens": [],
         "raw_ends_with_im_end": True,
@@ -230,6 +232,98 @@ def test_eval_options_rejects_empty_semantic_model() -> None:
             output_dir=Path("eval_out"),
             semantic_model="",
         )
+
+
+def test_evaluate_and_save_rejects_missing_score_provenance_for_coco(
+    tmp_path: Path,
+) -> None:
+    record = _one_record(image="img.png")
+    record.pop("pred_score_source", None)
+    record.pop("pred_score_version", None)
+
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(pred_path, [record])
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+    )
+
+    with pytest.raises(ValueError, match="pred_score_source"):
+        evaluate_and_save(pred_path, options=options)
+
+
+def test_evaluate_and_save_rejects_missing_pred_score_for_coco(tmp_path: Path) -> None:
+    record = _one_record(image="img.png")
+    record["pred"][0].pop("score", None)
+
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(pred_path, [record])
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+    )
+
+    with pytest.raises(ValueError, match="missing `pred\\[\\*\\]\\.score`"):
+        evaluate_and_save(pred_path, options=options)
+
+
+def test_evaluate_and_save_rejects_out_of_range_pred_score_for_coco(
+    tmp_path: Path,
+) -> None:
+    record = _one_record(image="img.png")
+    record["pred"][0]["score"] = 1.2
+
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(pred_path, [record])
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+    )
+
+    with pytest.raises(ValueError, match="out-of-range"):
+        evaluate_and_save(pred_path, options=options)
+
+
+def test_coco_export_preserves_input_order_on_score_ties(tmp_path: Path) -> None:
+    record = _one_record(image="img.png")
+    record["pred"] = [
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 20, 20],
+            "desc": "box",
+            "score": 0.5,
+        },
+        {
+            "type": "bbox_2d",
+            "points": [10, 10, 30, 30],
+            "desc": "box",
+            "score": 0.5,
+        },
+    ]
+
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(pred_path, [record])
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+    )
+    evaluate_and_save(pred_path, options=options)
+
+    coco_preds = json.loads((options.output_dir / "coco_preds.json").read_text(encoding="utf-8"))
+    assert [entry["bbox"] for entry in coco_preds] == [[0, 0, 20, 20], [10, 10, 20, 20]]
+
 
 def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
     counters = EvalCounters()

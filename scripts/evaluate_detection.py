@@ -161,6 +161,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tuple[Path, EvalOptions]:
+    if "use_pred_score" in ycfg:
+        raise ValueError(
+            "use_pred_score is unsupported. Fixed-score evaluation has been removed; "
+            "remove use_pred_score and provide scored artifacts for COCO evaluation."
+        )
+
     pred_jsonl = args.pred_jsonl or Path(str(_get(ycfg, "pred_jsonl", "")))
     out_dir = args.out_dir or Path(str(_get(ycfg, "out_dir", "eval_out")))
 

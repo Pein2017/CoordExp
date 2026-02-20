@@ -84,12 +84,17 @@ infer:
 artifacts:
   # run_dir: output/infer/lvis_val_ckpt1632
   # gt_vs_pred_jsonl: output/infer/lvis_val_ckpt1632/gt_vs_pred.jsonl
+  # Required when eval.metrics is coco|both:
+  # gt_vs_pred_scored_jsonl: output/infer/lvis_val_ckpt1632/gt_vs_pred_scored.jsonl
   # summary_json: output/infer/lvis_val_ckpt1632/summary.json
 
-# Evaluation stage (consumes gt_vs_pred.jsonl; does not load the model)
+# Evaluation stage (does not load the model)
 eval:
   output_dir: null  # defaults to <run_dir>/eval
   metrics: f1ish    # coco | f1ish | both
+  # - coco|both: pipeline requires artifacts.gt_vs_pred_scored_jsonl and uses that artifact.
+  # - f1ish-only: pipeline can evaluate the base gt_vs_pred.jsonl.
+  # Legacy toggle eval.use_pred_score is unsupported.
   use_segm: true
   overlay: false
   overlay_k: 12

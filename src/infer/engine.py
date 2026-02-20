@@ -18,8 +18,8 @@ Schema (per line of ``gt_vs_pred.jsonl``)
   "height": int,
   "mode": "coord" | "text",
   "coord_mode": "norm1000" | "pixel" | null,  # optional trace/debug
-  "gt": [ {"type","points","desc","score"} ],
-  "pred": [ {"type","points","desc","score"} ],
+  "gt": [ {"type","points","desc"} ],
+  "pred": [ {"type","points","desc"} ],
   "raw_output_json": dict | null,  # parsed prediction dict (best-effort)
   "raw_special_tokens": [str],     # e.g. <|im_end|>, <|coord_123|>, ...
   "raw_ends_with_im_end": bool,
@@ -173,8 +173,11 @@ def detect_mode_from_gt(
 
             try:
                 rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            except json.JSONDecodeError as exc:
+                snippet = line if len(line) <= 200 else (line[:200] + "...")
+                raise ValueError(
+                    f"Malformed JSONL at {path}:{line_no}: {snippet}"
+                ) from exc
             if not isinstance(rec, dict):
                 raise ValueError(f"Non-object JSONL record at {path}:{line_no}: {line[:200]}")
 
@@ -186,8 +189,10 @@ def detect_mode_from_gt(
             try:
                 width_i = int(width)
                 height_i = int(height)
-            except (TypeError, ValueError):
-                continue
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid width/height at {path}:{line_no}: width={width!r} height={height!r}"
+                ) from exc
             if width_i <= 0 or height_i <= 0:
                 raise ValueError(
                     f"Invalid width/height at {path}:{line_no}: width={width_i} height={height_i}"
@@ -980,7 +985,6 @@ class InferenceEngine:
                     "type": kind,
                     "points": points,
                     "desc": desc,
-                    "score": 1.0,
                 }
             )
         return compact
@@ -1036,7 +1040,7 @@ class InferenceEngine:
 
                 try:
                     record = json.loads(line)
-                except json.JSONDecodeError as exc:
+                except json.JSONDecodeError:
                     snippet = line if len(line) <= 200 else (line[:200] + "...")
                     errors.append(
                         f"Malformed JSONL at {jsonl_path}:{line_no}: {snippet}"
