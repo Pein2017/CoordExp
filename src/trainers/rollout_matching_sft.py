@@ -6008,6 +6008,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
                 pending = self._rm_pending_train_logs.get(step)
+
+                # IMPORTANT (DDP contract): this log() override performs distributed
+                # collectives to merge buffered per-step metrics.
+                #
+                # It must be invoked on *every* rank when torch.distributed is
+                # initialized. Do not make Trainer.log() rank-0-only, and do not gate
+                # this path on is_main_process()/rank==0, otherwise rank 0 will enter
+                # all_reduce() while other ranks skip it and the job will deadlock.
                 self._ddp_assert_all_ranks_true_or_raise(
                     where="rollout-matching train log",
                     local_true=pending is not None,
