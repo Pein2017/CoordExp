@@ -1,30 +1,22 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_MAX_SUFFIX_RE = re.compile(r"(?:_max_?(\d+))+$")
+_CANONICAL_MAX_SUFFIX_RE = re.compile(r"(?:_max(\d+))+$")
+_LEGACY_MAX_SUFFIX_RE = re.compile(r"(?:_max_(\d+))+$")
 
 
 def max_token(max_objects: int) -> str:
-    return f"max_{int(max_objects)}"
+    return f"max{int(max_objects)}"
 
 
 def canonical_suffix(max_objects: int) -> str:
-    return f"_max_{int(max_objects)}"
-
-
-def legacy_suffix(max_objects: int) -> str:
     return f"_max{int(max_objects)}"
 
 
-def strip_trailing_max_suffix(name: str) -> str:
-    return _MAX_SUFFIX_RE.sub("", name)
-
-
 def _extract_trailing_max_value(name: str) -> int | None:
-    match = _MAX_SUFFIX_RE.search(name)
-    if not match:
+    match = _CANONICAL_MAX_SUFFIX_RE.search(name)
+    if match is None:
         return None
     try:
         return int(match.group(1))
@@ -32,11 +24,32 @@ def _extract_trailing_max_value(name: str) -> int | None:
         return None
 
 
-def apply_max_suffix(base_preset: str, max_objects: int | None) -> str:
-    """Apply canonical `_max_<N>` suffix if max filtering is configured.
+def _strip_trailing_canonical_suffix(name: str) -> str:
+    return _CANONICAL_MAX_SUFFIX_RE.sub("", name)
 
-    Existing equivalent suffixes (`_max<N>` or `_max_<N>`) are deduplicated.
-    """
+
+def _require_no_legacy_suffix(name: str) -> None:
+    legacy_match = _LEGACY_MAX_SUFFIX_RE.search(name)
+    if legacy_match is None:
+        return
+
+    legacy_suffix = legacy_match.group(0)
+    canonical_name = _LEGACY_MAX_SUFFIX_RE.sub(
+        canonical_suffix(int(legacy_match.group(1))),
+        name,
+        count=1,
+    )
+    raise ValueError(
+        "Legacy max-object suffix is not supported: "
+        f"'{legacy_suffix}' in preset '{name}'. "
+        f"Use canonical preset naming (for example '{canonical_name}')."
+    )
+
+
+def apply_max_suffix(base_preset: str, max_objects: int | None) -> str:
+    """Apply canonical `_max{N}` suffix if max filtering is configured."""
+    _require_no_legacy_suffix(base_preset)
+
     if max_objects is None:
         return base_preset
 
@@ -45,28 +58,18 @@ def apply_max_suffix(base_preset: str, max_objects: int | None) -> str:
         raise ValueError("max_objects must be > 0 when provided")
 
     existing = _extract_trailing_max_value(base_preset)
-    root = strip_trailing_max_suffix(base_preset)
+    if existing is not None and existing != max_n:
+        raise ValueError(
+            "Conflicting max_objects sources: "
+            f"preset '{base_preset}' encodes {existing}, but max_objects={max_n}."
+        )
+
+    root = _strip_trailing_canonical_suffix(base_preset)
     if existing == max_n:
         return f"{root}{canonical_suffix(max_n)}"
     return f"{root}{canonical_suffix(max_n)}"
 
 
-def equivalent_legacy_name(canonical_name: str, max_objects: int) -> str:
-    root = strip_trailing_max_suffix(canonical_name)
-    return f"{root}{legacy_suffix(max_objects)}"
-
-
-def resolve_effective_preset(dataset_dir: Path, base_preset: str, max_objects: int | None) -> str:
-    """Resolve emitted preset while preserving legacy `max<N>` reuse semantics."""
-    if max_objects is None:
-        return base_preset
-
-    canonical = apply_max_suffix(base_preset, max_objects)
-    legacy = equivalent_legacy_name(canonical, int(max_objects))
-    canonical_path = dataset_dir / canonical
-    legacy_path = dataset_dir / legacy
-
-    # Reuse legacy artifacts when they already exist and canonical does not.
-    if legacy_path.exists() and not canonical_path.exists():
-        return legacy
-    return canonical
+def resolve_effective_preset(base_preset: str, max_objects: int | None) -> str:
+    """Resolve emitted preset using canonical naming only."""
+    return apply_max_suffix(base_preset, max_objects)

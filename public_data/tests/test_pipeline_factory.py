@@ -10,6 +10,7 @@ from PIL import Image
 
 from public_data.pipeline import PipelineConfig, PipelinePlanner
 from public_data.pipeline.naming import apply_max_suffix, resolve_effective_preset
+from public_data.pipeline.types import SplitArtifactPaths
 
 
 def _write_image(path: Path, width: int = 128, height: int = 96) -> None:
@@ -293,21 +294,18 @@ def test_coco_adapter_passthrough_skips_fast_path(
 
 
 def test_suffix_policy_and_legacy_equivalence(tmp_path: Path) -> None:
-    dataset_dir = tmp_path / "public_data" / "coco"
-    dataset_dir.mkdir(parents=True, exist_ok=True)
+    _ = tmp_path
 
     assert apply_max_suffix("rescale_32_768_bbox", None) == "rescale_32_768_bbox"
-    assert apply_max_suffix("rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max_60"
-    assert apply_max_suffix("rescale_32_768_bbox_max_60", 60) == "rescale_32_768_bbox_max_60"
-    assert apply_max_suffix("rescale_32_768_bbox_max60", 60) == "rescale_32_768_bbox_max_60"
+    assert apply_max_suffix("rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max60"
+    assert apply_max_suffix("rescale_32_768_bbox_max60", 60) == "rescale_32_768_bbox_max60"
+    assert resolve_effective_preset("rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max60"
 
-    legacy = dataset_dir / "rescale_32_768_bbox_max60"
-    legacy.mkdir(parents=True, exist_ok=True)
-    assert resolve_effective_preset(dataset_dir, "rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max60"
+    with pytest.raises(ValueError, match="Legacy max-object suffix"):
+        apply_max_suffix("rescale_32_768_bbox_max_60", 60)
 
-    canonical = dataset_dir / "rescale_32_768_bbox_max_60"
-    canonical.mkdir(parents=True, exist_ok=True)
-    assert resolve_effective_preset(dataset_dir, "rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max_60"
+    with pytest.raises(ValueError, match="Conflicting max_objects sources"):
+        resolve_effective_preset("rescale_32_768_bbox_max60", 50)
 
 
 def test_validate_raw_only_does_not_require_preset_artifacts(tmp_path: Path) -> None:
@@ -328,7 +326,7 @@ def test_validate_raw_only_does_not_require_preset_artifacts(tmp_path: Path) -> 
     assert "structural_preflight" in result.stage_stats
     assert "validation" in result.stage_stats
     assert not (dataset_dir / "pipeline_manifest.json").exists()
-    assert not (dataset_dir / "train.raw.jsonl").exists()
+    assert not (dataset_dir / "train.jsonl").exists()
 
 
 def test_structural_preflight_runs_without_optional_validation(tmp_path: Path) -> None:
@@ -348,7 +346,6 @@ def test_structural_preflight_runs_without_optional_validation(tmp_path: Path) -
 
     train_paths = result.split_artifacts["train"]
     assert train_paths.raw.is_file()
-    assert train_paths.legacy_raw_alias.is_file()
 
     assert "validation" not in result.stage_stats
     assert "structural_preflight" in result.stage_stats
@@ -389,10 +386,73 @@ def test_structural_preflight_fails_fast_before_downstream_stages(tmp_path: Path
         planner.run(config=cfg, mode="rescale")
 
     preset_dir = dataset_dir / "rescale_32_768_bbox_smoke"
-    assert not (preset_dir / "train.raw.jsonl").exists()
+    assert not (preset_dir / "train.jsonl").exists()
 
 
 def test_max_objects_filter_drops_records_and_preserves_outputs(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    planner = PipelinePlanner()
+    base_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    base_result = planner.run(config=base_cfg, mode="rescale")
+
+    derived_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        max_objects=1,
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    result = planner.run(config=derived_cfg, mode="coord")
+
+    def read_rows(path: Path) -> list[dict]:
+        rows: list[dict] = []
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(json.loads(line))
+        return rows
+
+    assert base_result.preset == "rescale_32_768_bbox_smoke"
+    assert result.preset.endswith("_max1")
+
+    for split in ("train", "val"):
+        base_rows = read_rows(base_result.split_artifacts[split].raw)
+        assert len(base_rows) == 2
+
+        paths = result.split_artifacts[split]
+        raw_rows = read_rows(paths.raw)
+        norm_rows = read_rows(paths.norm)
+        coord_rows = read_rows(paths.coord)
+
+        assert len(raw_rows) == 1
+        assert len(norm_rows) == 1
+        assert len(coord_rows) == 1
+
+        for rec in raw_rows:
+            assert len(rec["objects"]) <= 1
+
+        stats = json.loads(paths.filter_stats.read_text(encoding="utf-8"))
+        assert stats["images_seen"] == 2
+        assert stats["images_written"] == 1
+        assert stats["images_dropped"] == 1
+        assert stats["objects_seen"] == 3
+        assert stats["objects_written"] == 1
+
+
+def test_max_objects_requires_coord_mode(tmp_path: Path) -> None:
     dataset_dir = tmp_path / "public_data" / "coco"
     raw_dir = _setup_dataset(dataset_dir)
 
@@ -406,38 +466,10 @@ def test_max_objects_filter_drops_records_and_preserves_outputs(tmp_path: Path) 
         num_workers=1,
         run_validation_stage=False,
     )
-    result = planner.run(config=cfg, mode="full")
 
-    def read_rows(path: Path) -> list[dict]:
-        rows: list[dict] = []
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                rows.append(json.loads(line))
-        return rows
-
-    for split in ("train", "val"):
-        paths = result.split_artifacts[split]
-        raw_rows = read_rows(paths.raw)
-        norm_rows = read_rows(paths.norm)
-        coord_rows = read_rows(paths.coord)
-
-        assert len(raw_rows) == 1
-        assert len(norm_rows) == 1
-        assert len(coord_rows) == 1
-        assert paths.legacy_raw_alias.is_file()
-
-        for rec in raw_rows:
-            assert len(rec["objects"]) <= 1
-
-        stats = json.loads(paths.filter_stats.read_text(encoding="utf-8"))
-        assert stats["images_seen"] == 2
-        assert stats["images_written"] == 1
-        assert stats["images_dropped"] == 1
-        assert stats["objects_seen"] == 3
-        assert stats["objects_written"] == 1
+    for mode in ("rescale", "full", "validate"):
+        with pytest.raises(ValueError, match="only supported for mode 'coord'"):
+            planner.run(config=cfg, mode=mode)
 
 
 def test_normalize_stage_surfaces_object_drop_counters(
@@ -493,7 +525,7 @@ def test_normalize_stage_surfaces_object_drop_counters(
     assert val_obj["objects_dropped_non_dict"] == 0
 
 
-def test_full_pipeline_emits_raw_norm_coord_and_alias(tmp_path: Path) -> None:
+def test_full_pipeline_emits_jsonl_norm_coord(tmp_path: Path) -> None:
     dataset_dir = tmp_path / "public_data" / "coco"
     raw_dir = _setup_dataset(dataset_dir)
 
@@ -514,7 +546,6 @@ def test_full_pipeline_emits_raw_norm_coord_and_alias(tmp_path: Path) -> None:
         assert paths.raw.is_file()
         assert paths.norm.is_file()
         assert paths.coord.is_file()
-        assert paths.legacy_raw_alias.is_file()
 
     manifest = result.preset_dir / "pipeline_manifest.json"
     assert manifest.is_file()
@@ -557,13 +588,13 @@ def test_optional_validation_stage_wiring(tmp_path: Path, mode: str) -> None:
     files = set(stats["files"])
     if mode == "rescale":
         expected = {
-            str(result.preset_dir / "train.raw.jsonl"),
-            str(result.preset_dir / "val.raw.jsonl"),
+            str(result.preset_dir / "train.jsonl"),
+            str(result.preset_dir / "val.jsonl"),
         }
     elif mode == "coord":
         expected = {
-            str(result.preset_dir / "train.raw.jsonl"),
-            str(result.preset_dir / "val.raw.jsonl"),
+            str(result.preset_dir / "train.jsonl"),
+            str(result.preset_dir / "val.jsonl"),
             str(result.preset_dir / "train.norm.jsonl"),
             str(result.preset_dir / "val.norm.jsonl"),
             str(result.preset_dir / "train.coord.jsonl"),
@@ -573,8 +604,8 @@ def test_optional_validation_stage_wiring(tmp_path: Path, mode: str) -> None:
         expected = {
             str(raw_dir / "train.jsonl"),
             str(raw_dir / "val.jsonl"),
-            str(result.preset_dir / "train.raw.jsonl"),
-            str(result.preset_dir / "val.raw.jsonl"),
+            str(result.preset_dir / "train.jsonl"),
+            str(result.preset_dir / "val.jsonl"),
             str(result.preset_dir / "train.norm.jsonl"),
             str(result.preset_dir / "val.norm.jsonl"),
             str(result.preset_dir / "train.coord.jsonl"),
@@ -584,6 +615,50 @@ def test_optional_validation_stage_wiring(tmp_path: Path, mode: str) -> None:
         raise AssertionError(mode)
 
     assert files == expected
+
+
+def test_validation_stage_bounds_raw_image_open_checks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.scripts.validate_jsonl import JSONLValidator
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    captured: list[tuple[str, str, int]] = []
+
+    def _fake_validate_file(self, path: str) -> bool:
+        captured.append((str(path), str(self.image_check_mode), int(self.image_check_n)))
+        return True
+
+    monkeypatch.setattr(JSONLValidator, "validate_file", _fake_validate_file)
+
+    planner = PipelinePlanner()
+    cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        num_workers=1,
+        run_validation_stage=True,
+        skip_image_check=False,
+    )
+    result = planner.run(config=cfg, mode="full")
+
+    stats = result.stage_stats["validation"]
+    assert int(stats["raw_image_open_check_n"]) == 64
+    assert int(stats["preset_image_open_check_n"]) == 64
+
+    raw_paths = {
+        str(raw_dir / "train.jsonl"),
+        str(raw_dir / "val.jsonl"),
+    }
+    raw_checks = [(mode, n) for path, mode, n in captured if path in raw_paths]
+    assert raw_checks
+    for mode, n in raw_checks:
+        assert mode == "open"
+        assert n == 64
 
 
 def test_validation_stage_catches_preset_image_size_mismatch(tmp_path: Path) -> None:
@@ -622,44 +697,15 @@ def test_validation_stage_catches_preset_image_size_mismatch(tmp_path: Path) -> 
         planner.run(config=validate_cfg, mode="validate", validate_raw=False, validate_preset=True)
 
 
-def test_rescale_stage_materializes_images_dir_if_symlink(tmp_path: Path) -> None:
+def test_rescale_stage_fails_fast_if_preset_images_path_exists(tmp_path: Path) -> None:
     dataset_dir = tmp_path / "public_data" / "coco"
-    raw_dir = dataset_dir / "raw"
-
-    # Create a tiny raw dataset with a non-factor-aligned image so rescale actually changes
-    # the size, making it easy to detect whether a symlink could overwrite raw images.
-    train_rows = [
-        {
-            "images": ["images/train2017/000000000001.jpg"],
-            "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
-            "width": 130,
-            "height": 97,
-        }
-    ]
-    val_rows = [
-        {
-            "images": ["images/val2017/000000000001.jpg"],
-            "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
-            "width": 130,
-            "height": 97,
-        }
-    ]
-
-    _write_jsonl(raw_dir / "train.jsonl", train_rows)
-    _write_jsonl(raw_dir / "val.jsonl", val_rows)
-    _write_image(raw_dir / train_rows[0]["images"][0], width=130, height=97)
-    _write_image(raw_dir / val_rows[0]["images"][0], width=130, height=97)
+    raw_dir = _setup_dataset(dataset_dir)
 
     preset = "rescale_32_768_bbox_smoke"
     preset_dir = dataset_dir / preset
     preset_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create the problematic setup: a preset images/ symlink pointing at raw images.
     os.symlink(raw_dir / "images", preset_dir / "images")
-
-    raw_train_img = raw_dir / train_rows[0]["images"][0]
-    with Image.open(raw_train_img) as img:
-        assert img.size == (130, 97)
 
     planner = PipelinePlanner()
     cfg = PipelineConfig(
@@ -668,58 +714,178 @@ def test_rescale_stage_materializes_images_dir_if_symlink(tmp_path: Path) -> Non
         raw_dir=raw_dir,
         preset=preset,
         num_workers=1,
-        run_validation_stage=True,
+        run_validation_stage=False,
         skip_image_check=False,
     )
 
-    result = planner.run(config=cfg, mode="rescale")
+    with pytest.raises(RuntimeError, match="not fresh"):
+        planner.run(config=cfg, mode="rescale")
 
-    # Rescale must not leave a symlink behind.
-    assert (result.preset_dir / "images").is_dir()
-    assert not (result.preset_dir / "images").is_symlink()
-
-    # Most importantly, raw images must not be overwritten.
-    with Image.open(raw_train_img) as img:
-        assert img.size == (130, 97)
-
-    # And the preset image must match the output JSONL meta.
-    with (result.preset_dir / "train.raw.jsonl").open("r", encoding="utf-8") as f:
-        rec = json.loads(f.readline())
-
-    out_img = result.preset_dir / rec["images"][0]
-    with Image.open(out_img) as img:
-        assert img.size == (rec["width"], rec["height"])
-
-    assert rec["width"] % 32 == 0
-    assert rec["height"] % 32 == 0
-    assert rec["width"] * rec["height"] <= 32 * 32 * 768
+    assert (preset_dir / "images").is_symlink()
+    assert not (preset_dir / "train.jsonl").exists()
 
 
-def test_copy_images_if_needed_rematerializes_hardlinked_tree(tmp_path: Path) -> None:
-    src_dir = tmp_path / "src_preset"
-    dst_dir = tmp_path / "dst_preset"
+def test_rescale_stage_fails_fast_on_existing_preset_outputs(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
 
-    src_img = src_dir / "images/train2017/000000000001.jpg"
+    planner = PipelinePlanner()
+    cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        num_workers=1,
+        run_validation_stage=False,
+    )
+
+    first = planner.run(config=cfg, mode="rescale")
+    assert (first.preset_dir / "train.jsonl").is_file()
+    assert (first.preset_dir / "images").is_dir()
+
+    with pytest.raises(RuntimeError, match="not fresh"):
+        planner.run(config=cfg, mode="rescale")
+
+
+def test_materialize_derived_images_hardlinks_is_idempotent(tmp_path: Path) -> None:
+    base_dir = tmp_path / "base_preset"
+    derived_dir = tmp_path / "derived_preset"
+
+    src_img = base_dir / "images/train2017/000000000001.jpg"
     _write_image(src_img, width=128, height=96)
 
-    dst_img = dst_dir / "images/train2017/000000000001.jpg"
-    dst_img.parent.mkdir(parents=True, exist_ok=True)
-    os.link(src_img, dst_img)
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
+        "width": 128,
+        "height": 96,
+    }
+    _write_jsonl(derived_dir / "train.jsonl", [row])
 
-    src_stat_before = src_img.stat()
-    dst_stat_before = dst_img.stat()
-    assert src_stat_before.st_ino == dst_stat_before.st_ino
-    assert dst_stat_before.st_nlink >= 2
+    split_paths = {
+        "train": SplitArtifactPaths(
+            split="train",
+            raw=derived_dir / "train.jsonl",
+            norm=derived_dir / "train.norm.jsonl",
+            coord=derived_dir / "train.coord.jsonl",
+            filter_stats=derived_dir / "train.filter_stats.json",
+        )
+    }
 
-    PipelinePlanner._copy_images_if_needed(src_dir=src_dir, dst_dir=dst_dir)
+    PipelinePlanner._materialize_derived_images_hardlinks(
+        base_preset_dir=base_dir,
+        derived_preset_dir=derived_dir,
+        split_paths=split_paths,
+    )
 
+    dst_img = derived_dir / "images/train2017/000000000001.jpg"
+    src_stat = src_img.stat()
+    dst_stat = dst_img.stat()
+    assert src_stat.st_ino == dst_stat.st_ino
+    assert src_stat.st_dev == dst_stat.st_dev
+
+    # Idempotent: rerun should keep the same hardlink and succeed.
+    PipelinePlanner._materialize_derived_images_hardlinks(
+        base_preset_dir=base_dir,
+        derived_preset_dir=derived_dir,
+        split_paths=split_paths,
+    )
     src_stat_after = src_img.stat()
     dst_stat_after = dst_img.stat()
-    assert src_stat_after.st_ino != dst_stat_after.st_ino
-    assert dst_stat_after.st_nlink == 1
+    assert src_stat_after.st_ino == dst_stat_after.st_ino
+    assert src_stat_after.st_dev == dst_stat_after.st_dev
 
-    with Image.open(dst_img) as img:
-        assert img.size == (128, 96)
+
+def test_materialize_derived_images_hardlinks_fails_on_link_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    base_dir = tmp_path / "base_preset"
+    derived_dir = tmp_path / "derived_preset"
+
+    src_img = base_dir / "images/train2017/000000000001.jpg"
+    _write_image(src_img, width=128, height=96)
+
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
+        "width": 128,
+        "height": 96,
+    }
+    _write_jsonl(derived_dir / "train.jsonl", [row])
+
+    split_paths = {
+        "train": SplitArtifactPaths(
+            split="train",
+            raw=derived_dir / "train.jsonl",
+            norm=derived_dir / "train.norm.jsonl",
+            coord=derived_dir / "train.coord.jsonl",
+            filter_stats=derived_dir / "train.filter_stats.json",
+        )
+    }
+
+    def _fail_link(src: Path, dst: Path) -> None:
+        raise OSError("cross-device link")
+
+    monkeypatch.setattr(os, "link", _fail_link)
+
+    with pytest.raises(RuntimeError, match="no byte-copy fallback"):
+        PipelinePlanner._materialize_derived_images_hardlinks(
+            base_preset_dir=base_dir,
+            derived_preset_dir=derived_dir,
+            split_paths=split_paths,
+        )
+
+
+def test_coord_mode_materializes_derived_images_as_hardlinks(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    planner = PipelinePlanner()
+    base_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    base_result = planner.run(config=base_cfg, mode="rescale")
+
+    derived_cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_768_bbox_smoke",
+        max_objects=1,
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    derived_result = planner.run(config=derived_cfg, mode="coord")
+
+    assert derived_result.preset.endswith("_max1")
+    assert derived_result.preset_dir != base_result.preset_dir
+
+    images_dir = derived_result.preset_dir / "images"
+    assert images_dir.is_dir()
+    assert not images_dir.is_symlink()
+
+    with (derived_result.preset_dir / "train.jsonl").open("r", encoding="utf-8") as f:
+        first_row = json.loads(f.readline())
+    rel_img = Path(first_row["images"][0])
+
+    base_img = base_result.preset_dir / rel_img
+    derived_img = derived_result.preset_dir / rel_img
+    assert base_img.exists()
+    assert derived_img.exists()
+
+    dropped_img = derived_result.preset_dir / "images/train2017/000000000001.jpg"
+    assert not dropped_img.exists()
+
+    base_stat = base_img.stat()
+    derived_stat = derived_img.stat()
+    assert base_stat.st_ino == derived_stat.st_ino
+    assert base_stat.st_dev == derived_stat.st_dev
 
 
 def test_run_pipeline_factory_cli_wires_run_validation_stage_flag(
@@ -792,3 +958,36 @@ def test_run_pipeline_factory_cli_wires_run_validation_stage_flag(
     run_pipeline_factory.main()
 
     assert captured_run_validation == [True, False]
+
+
+def test_run_pipeline_factory_cli_rejects_max_objects_outside_coord(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.scripts import run_pipeline_factory
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = dataset_dir / "raw"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    base_argv = [
+        "run_pipeline_factory.py",
+        "--dataset-id",
+        "coco",
+        "--dataset-dir",
+        str(dataset_dir),
+        "--raw-dir",
+        str(raw_dir),
+        "--preset",
+        "rescale_32_768_bbox_smoke",
+        "--max-objects",
+        "1",
+    ]
+
+    for mode in ("rescale", "full", "validate"):
+        argv = [base_argv[0], "--mode", mode, *base_argv[1:]]
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(SystemExit) as exc_info:
+            run_pipeline_factory.parse_args()
+        assert int(exc_info.value.code) == 2

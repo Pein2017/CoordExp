@@ -100,6 +100,28 @@ run_py_best_effort() {
   return $rc
 }
 
+PIPELINE_LAST_OUTPUT_DIR=""
+
+run_pipeline_factory_capture_output_dir() {
+  local conda_exe
+  conda_exe="$(_resolve_conda_exe)"
+  local tmp_log
+  tmp_log="$(mktemp)"
+
+  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python public_data/scripts/run_pipeline_factory.py $*" >&2
+  set +e
+  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python public_data/scripts/run_pipeline_factory.py "$@" 2>&1 | tee "${tmp_log}"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  if [[ ${rc} -ne 0 ]]; then
+    rm -f "${tmp_log}"
+    return "${rc}"
+  fi
+
+  PIPELINE_LAST_OUTPUT_DIR="$(sed -n 's/^\[pipeline\] output_dir=//p' "${tmp_log}" | tail -n 1)"
+  rm -f "${tmp_log}"
+}
+
 choose_inspect_model() {
   # Prefer smaller processors when available; fall back to 8B; otherwise skip.
   local candidates=(
@@ -154,28 +176,12 @@ set_paths_for_preset() {
   # Requires PRESET to already be set (may be empty).
   PRESET_DIR="${DATASET_DIR}/${PRESET}"
   PRESET_IMAGE_DIR="${PRESET_DIR}/images"
-  PRESET_TRAIN_RAW_JSONL="${PRESET_DIR}/train.raw.jsonl"
-  PRESET_VAL_RAW_JSONL="${PRESET_DIR}/val.raw.jsonl"
-  PRESET_TRAIN_NORM_JSONL="${PRESET_DIR}/train.norm.jsonl"
-  PRESET_VAL_NORM_JSONL="${PRESET_DIR}/val.norm.jsonl"
   PRESET_TRAIN_JSONL="${PRESET_DIR}/train.jsonl"
   PRESET_VAL_JSONL="${PRESET_DIR}/val.jsonl"
+  PRESET_TRAIN_NORM_JSONL="${PRESET_DIR}/train.norm.jsonl"
+  PRESET_VAL_NORM_JSONL="${PRESET_DIR}/val.norm.jsonl"
   PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
   PRESET_VAL_COORD_JSONL="${PRESET_DIR}/val.coord.jsonl"
-}
-
-resolve_effective_preset_name() {
-  local base_preset="$1"
-  local max_objects="${2:-}"
-  if [[ -z "${max_objects}" ]]; then
-    echo "${base_preset}"
-    return 0
-  fi
-  [[ "${max_objects}" =~ ^[0-9]+$ ]] || die "PUBLIC_DATA_MAX_OBJECTS must be an integer if set"
-  run_py public_data/scripts/resolve_effective_preset.py \
-    --dataset-dir "${DATASET_DIR}" \
-    --base-preset "${base_preset}" \
-    --max-objects "${max_objects}"
 }
 
 require_repo_root
@@ -290,10 +296,12 @@ case "${COMMAND}" in
     ;;
   rescale)
     [[ -n "${PRESET}" ]] || die "rescale requires --preset <name>"
-    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
     banner "[${DATASET}] rescale -> ${PRESET_DIR}"
     require_file "${RAW_TRAIN_JSONL}"
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      die "PUBLIC_DATA_MAX_OBJECTS is only supported for 'coord'. Run rescale first, then coord with PUBLIC_DATA_MAX_OBJECTS."
+    fi
     PIPELINE_ARGS=(
       --mode rescale
       --dataset-id "${DATASET}"
@@ -301,9 +309,6 @@ case "${COMMAND}" in
       --raw-dir "${RAW_DIR}"
       --preset "${PRESET}"
     )
-    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
-      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
-    fi
     run_py public_data/scripts/run_pipeline_factory.py \
       "${PIPELINE_ARGS[@]}" \
       "${PASSTHROUGH_ARGS[@]}"
@@ -311,7 +316,6 @@ case "${COMMAND}" in
     ;;
   coord)
     [[ -n "${PRESET}" ]] || die "coord requires --preset <name>"
-    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
     banner "[${DATASET}] coord -> ${PRESET_DIR}"
     PIPELINE_ARGS=(
@@ -351,9 +355,6 @@ case "${COMMAND}" in
         die "validate requires --preset <name> (or a dataset plugin default preset) unless --raw-only is set"
       fi
     fi
-    if [[ "${DO_PRESET}" == "true" ]]; then
-      PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
-    fi
     set_paths_for_preset
 
     banner "[${DATASET}] validate"
@@ -365,7 +366,7 @@ case "${COMMAND}" in
       --preset "${PRESET}"
     )
     if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
-      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
+      die "PUBLIC_DATA_MAX_OBJECTS is only supported for 'coord'. Validate derived outputs by passing the derived preset name directly."
     fi
     if [[ "${DO_RAW}" == "true" ]]; then
       PIPELINE_ARGS+=(--validate-raw)
@@ -376,9 +377,13 @@ case "${COMMAND}" in
     if [[ "${SKIP_IMAGE_CHECK}" == "true" ]]; then
       PIPELINE_ARGS+=(--skip-image-check)
     fi
-    run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+    run_pipeline_factory_capture_output_dir "${PIPELINE_ARGS[@]}"
 
     if [[ "${DO_PRESET}" == "true" ]]; then
+      if [[ -n "${PIPELINE_LAST_OUTPUT_DIR}" ]]; then
+        PRESET_DIR="${PIPELINE_LAST_OUTPUT_DIR}"
+        PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
+      fi
       # Prompt/template sanity check on coord-token JSONL.
       if INSPECT_MODEL="$(choose_inspect_model)"; then
         if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
@@ -401,7 +406,6 @@ case "${COMMAND}" in
         die "all requires --preset <name> (or a dataset plugin default preset)"
       fi
     fi
-    PRESET="$(resolve_effective_preset_name "${PRESET}" "${PIPELINE_MAX_OBJECTS}")"
     set_paths_for_preset
 
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
@@ -448,15 +452,19 @@ case "${COMMAND}" in
       --run-validation-stage
     )
     if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
-      PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
+      die "PUBLIC_DATA_MAX_OBJECTS is only supported for 'coord'. For two-step flow: run 'all' without max_objects, then run 'coord' with PUBLIC_DATA_MAX_OBJECTS."
     fi
     if [[ "${SKIP_IMAGE_CHECK}" == "true" ]]; then
       PIPELINE_ARGS+=(--skip-image-check)
     fi
-    run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+    run_pipeline_factory_capture_output_dir "${PIPELINE_ARGS[@]}"
     set_paths_for_preset
 
     # Prompt/template sanity check on coord-token JSONL.
+    if [[ -n "${PIPELINE_LAST_OUTPUT_DIR}" ]]; then
+      PRESET_DIR="${PIPELINE_LAST_OUTPUT_DIR}"
+      PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
+    fi
     if INSPECT_MODEL="$(choose_inspect_model)"; then
       if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
         --jsonl "${PRESET_TRAIN_COORD_JSONL}" \

@@ -116,12 +116,12 @@ The unified pipeline MUST preserve deterministic geometry behavior currently use
 The output formatter/writer used by the unified pipeline MUST preserve `docs/data/JSONL_CONTRACT.md` invariants and MUST produce image paths relative to the output JSONL directory.
 
 It MUST support generation of:
-- pixel-space train/val raw outputs,
+- pixel-space train/val outputs,
 - norm1000 numeric train/val outputs,
 - coordinate-token expanded train/val JSONL outputs as first-class artifacts.
 
 Per split (`train` or `val`), artifact naming MUST be:
-- `<split>.raw.jsonl` for pixel-space records,
+- `<split>.jsonl` for pixel-space records,
 - `<split>.norm.jsonl` for norm1000 integer records,
 - `<split>.coord.jsonl` for coord-token records.
 
@@ -137,16 +137,15 @@ Per split (`train` or `val`), artifact naming MUST be:
 - **WHEN** a split is processed through full pipeline stages
 - **THEN** persisted outputs clearly separate pixel-space, norm1000 numeric, and coord-token variants using the required filenames.
 
-### Requirement: Legacy Runner Mapping Is Explicit During Migration
-When unified internals are invoked through legacy runner surfaces, artifact mapping MUST be explicit to avoid ambiguity:
-- legacy rescale view `<split>.jsonl` (pixel-space) maps to canonical `<split>.raw.jsonl`,
-- normalized numeric artifact remains explicit as `<split>.norm.jsonl`,
-- coord-token artifact remains `<split>.coord.jsonl`.
+### Requirement: No Legacy Pixel-Space Alias Duplication
+Unified internals invoked through runner/factory surfaces MUST use a single canonical pixel-space artifact name.
 
-#### Scenario: Legacy runner compatibility mapping for rescale output
-- **WHEN** users interact through legacy `run.sh` rescale-compatible flows
-- **THEN** pixel-space compatibility output corresponds to canonical `<split>.raw.jsonl`
-- **AND** parity gates compare legacy pixel outputs against canonical raw outputs.
+The writer MUST NOT emit duplicate alias copies for pixel-space outputs.
+
+#### Scenario: Unified writer avoids duplicate alias outputs
+- **WHEN** users run rescale/full flows through `public_data/run.sh` or `run_pipeline_factory.py`
+- **THEN** the pipeline emits canonical `<split>.jsonl`, `<split>.norm.jsonl`, and `<split>.coord.jsonl`
+- **AND** no legacy duplicate pixel-space alias file is produced.
 
 ### Requirement: Validation Hook Stage is a First-Class Pipeline Stage
 If validation is enabled in pipeline plan configuration, validation MUST run as an explicit stage in the stage planner rather than only as an out-of-band manual check.
@@ -155,4 +154,3 @@ If validation is enabled in pipeline plan configuration, validation MUST run as 
 - **WHEN** pipeline plan includes validation stage
 - **THEN** validator executes as a stage in the same deterministic stage sequence
 - **AND** validation failure causes pipeline failure for that run.
-

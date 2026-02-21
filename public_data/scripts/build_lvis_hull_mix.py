@@ -45,7 +45,7 @@ Example (val, cap=20; COCO2017 layout):
     public_data/scripts/build_lvis_hull_mix.py \\
     --lvis-json public_data/lvis/raw/annotations/lvis_v1_val.json \\
     --images-dir public_data/lvis/raw/images \\
-    --output-jsonl tmp/val.mix_hull_cap20.raw.jsonl \\
+    --output-jsonl tmp/val.mix_hull_cap20.jsonl \\
     --poly-cap 20 \\
     --lambda-iou-per-extra-point 0.01 \\
     --drop-min-objects 50 --drop-max-unique 3 --drop-min-top1-ratio 0.95
@@ -53,7 +53,7 @@ Example (val, cap=20; COCO2017 layout):
 Then convert to coord tokens:
   PYTHONPATH=. conda run -n ms python \\
     public_data/scripts/convert_to_coord_tokens.py \\
-    --input public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.raw.jsonl \\
+    --input public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.jsonl \\
     --output-tokens public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.coord.jsonl
 """
 
@@ -66,7 +66,7 @@ import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, DefaultDict, Dict, List, Optional, Sequence, Tuple
 
 import orjson
 

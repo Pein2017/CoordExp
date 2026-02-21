@@ -20,16 +20,13 @@ For a dataset id `<ds>`:
   - `public_data/<ds>/raw/images/...` (typical; dataset-specific)
 
 - Preset outputs (shared stages write these):
-  - `public_data/<ds>/<preset>/train.raw.jsonl` (pixel-space canonical artifact)
-  - `public_data/<ds>/<preset>/val.raw.jsonl` (optional)
+  - `public_data/<ds>/<preset>/train.jsonl` (pixel-space canonical artifact)
+  - `public_data/<ds>/<preset>/val.jsonl` (optional)
   - `public_data/<ds>/<preset>/train.norm.jsonl` (norm1000 integer artifact)
   - `public_data/<ds>/<preset>/val.norm.jsonl` (optional)
   - `public_data/<ds>/<preset>/train.coord.jsonl` (coord-token artifact)
   - `public_data/<ds>/<preset>/val.coord.jsonl` (optional)
   - `public_data/<ds>/<preset>/images/...`
-  - Legacy compatibility alias:
-    - `public_data/<ds>/<preset>/train.jsonl` maps to `train.raw.jsonl`
-    - `public_data/<ds>/<preset>/val.jsonl` maps to `val.raw.jsonl`
 
 Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
 (`docs/data/JSONL_CONTRACT.md`).
@@ -84,24 +81,28 @@ Notes:
   - writer + manifest emission
   - optional in-plan validation stage
 - Output layer:
-  - standardized `*.raw.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`
+  - standardized `*.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`
   - relative image-path preservation
   - reproducibility manifest: `pipeline_manifest.json`
 
-## Max-Object Filtering (`max_{N}`)
+## Max-Object Filtering (`max{N}`)
 Max-object filtering is **off by default**.
 
-Enable it by setting:
+Enable it during the **coord step** by setting:
 ```bash
-PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh <dataset> <command> --preset <preset>
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh <dataset> coord --preset <preset>
 ```
 
 Behavior:
 - Filtering policy is drop-only: samples with `len(objects) > N` are removed (never truncated).
-- Effective preset naming appends token `max_{N}` (rendered path suffix `_max_<N>`, for example `rescale_32_768_bbox_max_60`).
-- Legacy naming compatibility is preserved:
-  - existing `_max<N>` directories (for example `_max60`) are treated as equivalent
-  - when only legacy naming exists, runner/pipeline reuses it instead of forking paths.
+- Effective preset naming appends canonical suffix `_max{N}` (for example `rescale_32_768_bbox_max60`).
+- Legacy `_max_<N>` naming is rejected with an actionable rename/rebuild hint.
+- Strict fail-fast: using `PUBLIC_DATA_MAX_OBJECTS` with `rescale`, `validate`, or `all` is rejected. Use two-step flow (`all`/`rescale` first, then `coord` with max filtering).
+
+## Rescale Safety (Fail-Fast)
+- `rescale`/`full` require a **fresh preset target**.
+- If target preset already contains prior artifacts (for example `images/`, `train.jsonl`, `pipeline_manifest.json`), execution fails fast.
+- To rebuild, use a new preset name or deliberately delete the entire preset directory first.
 
 ## Dataset Plugins (Download/Convert)
 Datasets implement a small executable plugin contract:
@@ -149,7 +150,7 @@ Produced records look like:
   "height": 480
 }
 ```
-- `*.raw.jsonl` uses pixel coordinates.
+- `*.jsonl` uses pixel coordinates.
 - `*.norm.jsonl` uses normalized integers in [0,999].
 - `*.coord.jsonl` uses `<|coord_k|>` tokens.
 - Exactly one geometry per object (`bbox_2d` OR `poly`).
@@ -167,6 +168,7 @@ Behavior:
 - Validates geometry values are numeric OR coord tokens (`<|coord_k|>` with k in 0..999).
 - Malformed/out-of-range coord tokens are reported as validation errors (the validator must not crash).
 - Rejects legacy/unsupported geometry keys (`bbox`, `polygon`, `line`, `line_points`).
+- Bounds image-open checks with deterministic first-N sampling per file (default `N=64`) instead of opening every image.
 
 ### Runner Validation
 `./public_data/run.sh <ds> validate ...` runs the validator for raw and/or preset artifacts and (best-effort) runs `scripts/tools/inspect_chat_template.py` on a coord-token JSONL sample.

@@ -79,8 +79,8 @@ Use `--strategy stratified` for long-tail datasets like LVIS.
 
 ```bash
 PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
-  --input path/to/out/train.raw.jsonl \
-  --output-norm path/to/out/train.jsonl \
+  --input path/to/out/train.jsonl \
+  --output-norm path/to/out/train.norm.jsonl \
   --output-tokens path/to/out/train.coord.jsonl
 ```
 - Converts pixel coords into **norm1000 integer coords** (0..999) and/or `<|coord_k|>` tokens.
@@ -111,8 +111,8 @@ Tip: add `--stats_json output/<name>.json` to record filter statistics for repro
 If you want simple, transparent control over sequence length, cap objects per image:
 ```bash
 PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
-  --input  train.raw.jsonl \
-  --output train.max60.raw.jsonl \
+  --input  train.jsonl \
+  --output train.max60.jsonl \
   --max-objects 60
 ```
 

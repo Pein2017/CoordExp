@@ -23,7 +23,7 @@ Examples:
 
   # Quick smoke (process only first 200 lines, no writes)
   PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/sort_temp.py \\
-    --dry-run --limit 200 public_data/lvis/rescale_32_768_poly_20/val.raw.jsonl
+    --dry-run --limit 200 public_data/lvis/rescale_32_768_poly_20/val.jsonl
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, MutableMapping, Optional, Sequence
 
 from public_data.converters.sorting import canonicalize_poly
 from src.coord_tokens.codec import int_to_token, is_coord_token, token_to_int
@@ -63,11 +63,12 @@ def _flatten_points(value: Any) -> Optional[List[Any]]:
 def _detect_domain(path: Path) -> str:
     """Best-effort domain based on filename conventions used in this repo."""
     name = path.name.lower()
-    if ".raw." in name or name.endswith(".raw.jsonl"):
-        return "pixel"
     if ".coord." in name or name.endswith(".coord.jsonl"):
         return "coord_tokens"
-    return "norm1000"
+    if ".norm." in name or name.endswith(".norm.jsonl"):
+        return "norm1000"
+    # Canonical pixel-space artifact naming is `<split>.jsonl`.
+    return "pixel"
 
 
 @dataclass

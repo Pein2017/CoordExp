@@ -52,16 +52,15 @@ Optional: run the shared pipeline to generate training-ready preset artifacts
 ```
 
 Canonical preset artifacts:
-- `train.raw.jsonl` / `val.raw.jsonl` (pixel-space)
+- `train.jsonl` / `val.jsonl` (pixel-space)
 - `train.norm.jsonl` / `val.norm.jsonl` (norm1000 integers)
 - `train.coord.jsonl` / `val.coord.jsonl` (coord tokens)
-- Legacy alias compatibility: `train.jsonl` and `val.jsonl` map to `*.raw.jsonl`
 
 Optional max-object filter (off by default):
 ```bash
 PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco all --preset rescale_32_768_bbox
 ```
-When enabled, output preset naming auto-resolves to `..._max_60` (or reuses existing legacy `..._max60` directory when present).
+When enabled, output preset naming uses canonical suffix `..._max60`.
 
 ## Prompt Variant for COCO-80
 

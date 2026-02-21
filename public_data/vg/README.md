@@ -57,20 +57,19 @@ in `public_data/README.md`:
   - `public_data/<ds>/raw/annotations/...`
 
 - Preset (shared output):
-  - `public_data/<ds>/<preset>/train.raw.jsonl`
-  - `public_data/<ds>/<preset>/val.raw.jsonl`
+  - `public_data/<ds>/<preset>/train.jsonl`
+  - `public_data/<ds>/<preset>/val.jsonl`
   - `public_data/<ds>/<preset>/train.norm.jsonl`
   - `public_data/<ds>/<preset>/val.norm.jsonl`
   - `public_data/<ds>/<preset>/train.coord.jsonl`
   - `public_data/<ds>/<preset>/val.coord.jsonl`
   - `public_data/<ds>/<preset>/images/...`
-  - legacy alias compatibility: `train.jsonl` / `val.jsonl` map to `*.raw.jsonl`
 
 Optional max-object filter is off by default. Enable per run:
 ```bash
 PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
 ```
-This appends suffix token `max_60` (rendered as `_max_60`) unless an equivalent legacy `_max60` artifact directory already exists, in which case that path is reused.
+This appends canonical suffix `_max60`.
 
 ## Config-first defaults
 

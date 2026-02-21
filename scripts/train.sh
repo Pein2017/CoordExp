@@ -165,27 +165,30 @@ echo "[PRECHECK] max_pixels: ${TEMPLATE_MAX_PIXELS} (expect 768*32*32=786432)"
 echo "[PRECHECK] multiple_of: 32"
 echo "========================================================================"
 
-"${PYTHON_BIN[@]}" "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
-  --jsonl "${TRAIN_JSONL_RESOLVED}" \
+"${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
+  "${TRAIN_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode exists \
+  --enforce-rescale-images-real-dir \
   --image-check-n 0
 
 # Spot-check open+size alignment on train to catch any meta/image mismatch.
-"${PYTHON_BIN[@]}" "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
-  --jsonl "${TRAIN_JSONL_RESOLVED}" \
+"${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
+  "${TRAIN_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \
+  --enforce-rescale-images-real-dir \
   --image-check-n 256
 
 # Validate val with full open+size checks (usually small enough).
-"${PYTHON_BIN[@]}" "${REPO_DIR}/scripts/tools/validate_jsonl_max_pixels.py" \
-  --jsonl "${VAL_JSONL_RESOLVED}" \
+"${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
+  "${VAL_JSONL_RESOLVED}" \
   --max-pixels "${TEMPLATE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \
+  --enforce-rescale-images-real-dir \
   --image-check-n 0
 
 declare -a RUN_CMD=()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 SPLITS: tuple[str, ...] = ("train", "val")
 
@@ -31,7 +31,6 @@ class SplitArtifactPaths:
     raw: Path
     norm: Path
     coord: Path
-    legacy_raw_alias: Path
     filter_stats: Path
 
 
@@ -39,6 +38,9 @@ class SplitArtifactPaths:
 class PipelineState:
     config: PipelineConfig
     effective_preset: str
+    base_preset: str
+    base_preset_dir: Path
+    is_derived_preset: bool
     preset_dir: Path
     split_inputs: Dict[str, Path]
     split_artifacts: Dict[str, SplitArtifactPaths]

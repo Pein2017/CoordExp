@@ -91,7 +91,7 @@ def _run_legacy_flow(raw_dir: Path, output_dir: Path) -> None:
                 "--input-jsonl",
                 str(raw_dir / f"{split}.jsonl"),
                 "--output-jsonl",
-                str(output_dir / f"{split}.raw.jsonl"),
+                str(output_dir / f"{split}.jsonl"),
                 "--output-images",
                 str(output_dir),
                 "--image-factor",
@@ -110,7 +110,7 @@ def _run_legacy_flow(raw_dir: Path, output_dir: Path) -> None:
                 sys.executable,
                 "public_data/scripts/convert_to_coord_tokens.py",
                 "--input",
-                str(output_dir / f"{split}.raw.jsonl"),
+                str(output_dir / f"{split}.jsonl"),
                 "--output-norm",
                 str(output_dir / f"{split}.norm.jsonl"),
                 "--output-tokens",
@@ -143,7 +143,11 @@ def test_unified_pipeline_matches_legacy_on_synthetic_slices(tmp_path: Path, dat
 
     for split in ("train", "val"):
         unified_paths = unified.split_artifacts[split]
-        for suffix in ("raw", "norm", "coord"):
-            legacy_path = legacy_dir / f"{split}.{suffix}.jsonl"
-            unified_path = getattr(unified_paths, suffix)
+        expected_files = {
+            "raw": legacy_dir / f"{split}.jsonl",
+            "norm": legacy_dir / f"{split}.norm.jsonl",
+            "coord": legacy_dir / f"{split}.coord.jsonl",
+        }
+        for key, legacy_path in expected_files.items():
+            unified_path = getattr(unified_paths, key)
             assert _read_jsonl(unified_path) == _read_jsonl(legacy_path)

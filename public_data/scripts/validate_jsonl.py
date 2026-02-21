@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.coord_tokens.codec import is_coord_token, token_to_int
+from src.coord_tokens.codec import is_coord_token, token_to_int  # noqa: E402
 
 
 DISALLOWED_GEOMETRY_KEYS = {"bbox", "polygon", "line", "line_points"}
@@ -73,9 +73,27 @@ class JSONLValidator:
         expected_max_pixels: Optional[int] = None,
         expected_multiple_of: Optional[int] = None,
         check_image_sizes: bool = False,
+        image_check_mode: Optional[str] = None,
+        image_check_n: int = 0,
+        enforce_rescale_images_real_dir: bool = False,
     ) -> None:
-        self.check_images = check_images
-        self.check_image_sizes = bool(check_image_sizes) and bool(check_images)
+        if image_check_mode is None:
+            image_check_mode = "open" if bool(check_image_sizes) else "exists"
+
+        mode = str(image_check_mode).strip().lower()
+        if not check_images:
+            mode = "none"
+        if mode not in {"none", "exists", "open"}:
+            raise ValueError(
+                "image_check_mode must be one of: none|exists|open; "
+                f"got {image_check_mode!r}"
+            )
+
+        self.check_images = bool(check_images)
+        self.image_check_mode = mode
+        self.image_check_n = int(image_check_n)
+        self.enforce_rescale_images_real_dir = bool(enforce_rescale_images_real_dir)
+        self.check_image_sizes = bool(check_image_sizes) or mode == "open"
         self.expected_max_pixels = expected_max_pixels
         self.expected_multiple_of = expected_multiple_of
         self.verbose = verbose
@@ -84,6 +102,8 @@ class JSONLValidator:
         self.stats = {
             "total_lines": 0,
             "valid_samples": 0,
+            "structural_valid_samples": 0,
+            "image_spotcheck_n": 0,
             "total_objects": 0,
             "missing_images": 0,
             "image_open_failed": 0,
@@ -99,36 +119,65 @@ class JSONLValidator:
     def validate_file(self, jsonl_path: str) -> bool:
         """
         Validate entire JSONL file.
-        
+
         Returns:
             True if all samples valid
         """
         if not os.path.exists(jsonl_path):
             print(f"✗ File not found: {jsonl_path}")
             return False
-        
+
         print(f"Validating: {jsonl_path}")
-        print("="*60)
-        
+        print("=" * 60)
+
+        jsonl_path_obj = Path(jsonl_path)
         jsonl_dir = os.path.dirname(os.path.abspath(jsonl_path))
-        
+
+        if not self._enforce_images_dir_policy(jsonl_path_obj):
+            return self.print_results()
+
+        check_all_samples = self.image_check_n <= 0
+        sampled_structural_records = 0
+
         with open(jsonl_path, "r", encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 self.stats["total_lines"] += 1
-                
-                # Parse JSON
+
                 try:
                     sample = json.loads(line)
                 except json.JSONDecodeError as e:
-                    self.errors.append(ValidationError(
-                        line_num, "json", f"Invalid JSON: {e}"
-                    ))
+                    self.errors.append(ValidationError(line_num, "json", f"Invalid JSON: {e}"))
                     continue
-                
-                # Validate sample
-                if self.validate_sample(sample, line_num, jsonl_dir):
+
+                if not isinstance(sample, dict):
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "json",
+                            f"Top-level JSON value must be object/dict, got {type(sample).__name__}",
+                        )
+                    )
+                    continue
+
+                structural_valid = self.validate_sample(sample, line_num, jsonl_dir)
+                if not structural_valid:
+                    continue
+                self.stats["structural_valid_samples"] += 1
+
+                should_check_image = self.image_check_mode != "none" and (
+                    check_all_samples or sampled_structural_records < self.image_check_n
+                )
+
+                sample_valid = structural_valid
+                if should_check_image:
+                    sampled_structural_records += 1
+                    self.stats["image_spotcheck_n"] += 1
+                    if not self.validate_sample_image(sample, line_num, jsonl_dir):
+                        sample_valid = False
+
+                if sample_valid:
                     self.stats["valid_samples"] += 1
-        
+
         return self.print_results()
     
     def validate_sample(
@@ -168,8 +217,6 @@ class JSONLValidator:
         if not sample_valid:
             return False
 
-        image_abs: Optional[str] = None
-
         # Validate 'images' field
         images = sample["images"]
         if not isinstance(images, list):
@@ -201,20 +248,6 @@ class JSONLValidator:
                         )
                     )
                     sample_valid = False
-                else:
-                    image_abs = os.path.join(base_dir, image_path)
-                    if self.check_images:
-                        # Resolve relative path and ensure the file exists.
-                        if not os.path.exists(image_abs):
-                            self.errors.append(
-                                ValidationError(
-                                    line_num,
-                                    "images[0]",
-                                    f"Image not found: {image_abs}",
-                                )
-                            )
-                            self.stats["missing_images"] += 1
-                            sample_valid = False
 
         # Validate 'width' and 'height'
         width = sample["width"]
@@ -260,31 +293,6 @@ class JSONLValidator:
                     self.stats["non_multiple_dims"] += 1
                     sample_valid = False
 
-            if self.check_image_sizes and image_abs is not None and os.path.exists(image_abs):
-                try:
-                    with Image.open(image_abs) as img:
-                        actual_w, actual_h = img.size
-                    if (actual_w, actual_h) != (width, height):
-                        self.errors.append(
-                            ValidationError(
-                                line_num,
-                                "images[0]",
-                                f"Image size mismatch vs JSONL meta: file={(actual_w, actual_h)} meta={(width, height)}",
-                            )
-                        )
-                        self.stats["image_size_mismatch"] += 1
-                        sample_valid = False
-                except Exception as e:
-                    self.errors.append(
-                        ValidationError(
-                            line_num,
-                            "images[0]",
-                            f"Failed to open image for size check: {image_abs} ({type(e).__name__}: {e})",
-                        )
-                    )
-                    self.stats["image_open_failed"] += 1
-                    sample_valid = False
-
         # Validate 'objects' field
         objects = sample["objects"]
         if not isinstance(objects, list):
@@ -310,6 +318,105 @@ class JSONLValidator:
                 )
 
         return sample_valid
+
+    def _enforce_images_dir_policy(self, jsonl_path: Path) -> bool:
+        if not self.enforce_rescale_images_real_dir:
+            return True
+
+        images_dir = jsonl_path.parent / "images"
+        if not images_dir.exists():
+            return True
+
+        if images_dir.is_symlink() and "rescale" in jsonl_path.parent.name.lower():
+            self.errors.append(
+                ValidationError(
+                    0,
+                    "images",
+                    "images/ must not be a symlink for rescale presets: "
+                    f"{images_dir}",
+                )
+            )
+            return False
+
+        if images_dir.is_file():
+            self.errors.append(
+                ValidationError(
+                    0,
+                    "images",
+                    f"images path must be a directory, got file: {images_dir}",
+                )
+            )
+            return False
+
+        return True
+
+    def validate_sample_image(
+        self,
+        sample: Dict[str, Any],
+        line_num: int,
+        base_dir: str,
+    ) -> bool:
+        mode = self.image_check_mode
+        if mode == "none":
+            return True
+
+        images = sample.get("images")
+        if not isinstance(images, list) or not images or not isinstance(images[0], str):
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "images[0]",
+                    "Cannot run image IO checks: invalid images field",
+                )
+            )
+            return False
+
+        image_abs = os.path.join(base_dir, images[0])
+        if not os.path.exists(image_abs):
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "images[0]",
+                    f"Image not found: {image_abs}",
+                )
+            )
+            self.stats["missing_images"] += 1
+            return False
+
+        if mode == "exists":
+            return True
+
+        try:
+            with Image.open(image_abs) as img:
+                actual_w, actual_h = img.size
+        except Exception as e:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "images[0]",
+                    f"Failed to open image: {image_abs} ({type(e).__name__}: {e})",
+                )
+            )
+            self.stats["image_open_failed"] += 1
+            return False
+
+        if self.check_image_sizes:
+            width = sample.get("width")
+            height = sample.get("height")
+            if isinstance(width, int) and isinstance(height, int):
+                if (actual_w, actual_h) != (width, height):
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            "images[0]",
+                            "Image size mismatch vs JSONL meta: "
+                            f"file={(actual_w, actual_h)} meta={(width, height)}",
+                        )
+                    )
+                    self.stats["image_size_mismatch"] += 1
+                    return False
+
+        return True
     
     def validate_object(
         self,
@@ -606,122 +713,118 @@ class JSONLValidator:
     
     def print_results(self) -> bool:
         """Print validation results."""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("Validation Results")
-        print("="*60)
-        
-        # Statistics
-        print(f"\n✓ Statistics:")
+        print("=" * 60)
+
+        print("\n✓ Statistics:")
         print(f"  Total lines: {self.stats['total_lines']}")
+        print(f"  Structurally valid samples: {self.stats['structural_valid_samples']}")
         print(f"  Valid samples: {self.stats['valid_samples']}")
         print(f"  Total objects: {self.stats['total_objects']}")
+        print(f"  max_pixels violations: {self.stats['oversize_images']}")
+        print(f"  multiple_of violations: {self.stats['non_multiple_dims']}")
+        print(f"  Image check mode: {self.image_check_mode}")
+        print(f"  Image spot-check count: {self.stats['image_spotcheck_n']}")
         print(f"  Missing images: {self.stats['missing_images']}")
+        print(f"  Image open failures: {self.stats['image_open_failed']}")
+        print(f"  Image size mismatches: {self.stats['image_size_mismatch']}")
         print(f"  Invalid bboxes: {self.stats['invalid_bboxes']}")
         print(f"  Invalid polys: {self.stats['invalid_polys']}")
         print(f"  Unique categories: {len(self.stats['categories'])}")
-        
-        if self.stats['valid_samples'] > 0:
-            avg_obj = self.stats['total_objects'] / self.stats['valid_samples']
+
+        if self.stats["valid_samples"] > 0:
+            avg_obj = self.stats["total_objects"] / self.stats["valid_samples"]
             print(f"  Avg objects/sample: {avg_obj:.2f}")
-        
-        # Errors
+
         if self.errors:
             print(f"\n✗ Errors ({len(self.errors)}):")
-            for error in self.errors[:20]:  # Show first 20
+            for error in self.errors[:20]:
                 print(f"  • {error}")
             if len(self.errors) > 20:
                 print(f"  ... and {len(self.errors) - 20} more errors")
         else:
             print("\n✓ No errors found")
-        
-        # Warnings
+
         if self.warnings:
             print(f"\n⚠ Warnings ({len(self.warnings)}):")
-            for warning in self.warnings[:10]:  # Show first 10
+            for warning in self.warnings[:10]:
                 print(f"  • {warning}")
             if len(self.warnings) > 10:
                 print(f"  ... and {len(self.warnings) - 10} more warnings")
-        
-        # Summary
-        print("\n" + "="*60)
+
+        print("\n" + "=" * 60)
         if not self.errors:
             print("✓ VALIDATION PASSED")
-            print("="*60 + "\n")
+            print("=" * 60 + "\n")
             return True
-        else:
-            print("✗ VALIDATION FAILED")
-            print("="*60 + "\n")
-            return False
+
+        print("✗ VALIDATION FAILED")
+        print("=" * 60 + "\n")
+        return False
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Validate JSONL files for Qwen3-VL training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Expected JSONL format:
-
-{
-  "images": ["path/to/image.jpg"],
-  "objects": [
-    {"bbox_2d": [x1, y1, x2, y2], "desc": "person"},
-    {"poly": [x1, y1, x2, y2, x3, y3], "poly_points": 3, "desc": "car"}
-  ],
-  "width": 640,
-  "height": 480,
-  "summary": "A person standing next to a car"  # optional
-}
-
-Validation checks:
-- JSON format correctness
-- Required fields: images, objects, width, height
-- Images list has exactly 1 element
-- bbox_2d format: [x1, y1, x2, y2] with x2 > x1, y2 > y1
-- poly format: flat [x1, y1, x2, y2, ...] with even length >= 6
-- Coord-token values (<|coord_k|>, k in 0..999) are accepted for geometry coords
-- Bboxes within image bounds (warning if outside)
-- Category names are non-empty strings
-- Image files exist (optional, use --skip-image-check to disable)
-- Reject legacy geometry keys: bbox, polygon, line, line_points
-
-Examples:
-
-  # Full validation
-  python validate_jsonl.py lvis/processed/train.jsonl
-  
-  # Skip image existence check (faster)
-  python validate_jsonl.py lvis/processed/train.jsonl --skip-image-check
-  
-  # Verbose output
-  python validate_jsonl.py lvis/processed/train.jsonl --verbose
-        """
     )
-    
+
+    parser.add_argument("jsonl_file", type=str, help="JSONL file to validate")
     parser.add_argument(
-        "jsonl_file",
-        type=str,
-        help="JSONL file to validate"
+        "--max-pixels",
+        type=int,
+        default=None,
+        help="Optional max_pixels contract expectation (fail if width*height exceeds this).",
     )
-    
+    parser.add_argument(
+        "--multiple-of",
+        type=int,
+        default=None,
+        help="Optional multiple-of contract for width/height.",
+    )
+    parser.add_argument(
+        "--image-check-mode",
+        type=str,
+        choices=["none", "exists", "open"],
+        default="open",
+        help="Image check mode: none (skip), exists (existence only), open (open+size spot-check).",
+    )
+    parser.add_argument(
+        "--image-check-n",
+        type=int,
+        default=64,
+        help="How many structurally-valid records to image-check in line order (<=0 means all).",
+    )
     parser.add_argument(
         "--skip-image-check",
         action="store_true",
-        help="Skip checking if image files exist (faster)"
+        help="Backward-compatible alias for --image-check-mode none.",
     )
-    
     parser.add_argument(
-        "--verbose",
+        "--enforce-rescale-images-real-dir",
         action="store_true",
-        help="Print verbose output"
+        help="Fail if preset images/ is a symlink for rescale presets.",
     )
-    
+    parser.add_argument("--verbose", action="store_true", help="Print verbose output")
+
     args = parser.parse_args()
-    
+
+    image_check_mode = args.image_check_mode
+    if args.skip_image_check:
+        image_check_mode = "none"
+
     validator = JSONLValidator(
-        check_images=not args.skip_image_check,
-        verbose=args.verbose
+        check_images=image_check_mode != "none",
+        verbose=args.verbose,
+        expected_max_pixels=args.max_pixels,
+        expected_multiple_of=args.multiple_of,
+        check_image_sizes=image_check_mode == "open",
+        image_check_mode=image_check_mode,
+        image_check_n=int(args.image_check_n),
+        enforce_rescale_images_real_dir=bool(args.enforce_rescale_images_real_dir),
     )
-    
+
     success = validator.validate_file(args.jsonl_file)
     sys.exit(0 if success else 1)
 
