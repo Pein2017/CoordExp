@@ -1,0 +1,48 @@
+extends: ../base.yaml
+
+model:
+  model: output/stage1/coco_bbox_max60-coco80-geometry_first_merged/checkpoint-1832
+
+training:
+  run_name: smoke_geo_first_a_only_em_detach
+  output_dir: output/stage2_ab/smoke/geo_first_a_only_em_detach
+  logging_dir: tb/stage2_ab/smoke/geo_first_a_only_em_detach
+  num_train_epochs: 1
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  effective_batch_size: 8
+  eval_strategy: steps
+  eval_steps: 1
+  save_strategy: steps
+  save_steps: 1
+  save_delay_steps: 0
+  max_steps: 2
+  logging_steps: 1
+  do_eval: true
+  metric_for_best_model: rollout/f1
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.0
+  n_softctx_iter: 2
+  softctx_grad_mode: em_detach
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+rollout_matching:
+  # Keep smoke aligned with prod behavior while reducing runtime.
+  rollout_backend: hf
+  decode_batch_size: 2
+  max_new_tokens: 256
+  monitor_dump:
+    enabled: false
+
+custom:
+  train_sample_limit: 64
+  val_sample_limit: 16
+  extra:
+    prompt_variant: coco_80
