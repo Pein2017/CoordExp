@@ -2,7 +2,7 @@
 
 CoordExp’s detection evaluator computes COCO-style metrics from the unified inference artifact `gt_vs_pred.jsonl`. COCO AP/mAP requires ranking predictions by confidence. Today, both inference and evaluation force prediction scores to a constant `1.0`, so ranking is arbitrary and mAP is not confidence-sensitive.
 
-Separately, the proposed confidence definition relies on coord-token log-probabilities for bbox coordinate tokens (`<|coord_*|>`), but inference/rollout artifacts currently do not persist a per-token trace. This design therefore treats confidence extraction as a CPU-only **offline post-operation** over artifacts and makes scored evaluation mandatory (no fixed-score mode).
+Separately, the proposed confidence definition relies on coord-token log-probabilities for bbox coordinate tokens (`<|coord_*|>`), and the trace sidecar contract now requires full generated-token coverage (`generated_token_text` + `token_logprobs`) keyed by `line_idx` at `artifacts.pred_token_trace_jsonl`. This design therefore treats confidence extraction as a CPU-only **offline post-operation** over artifacts and makes scored evaluation mandatory (no fixed-score mode).
 
 Constraints:
 - Config-first (YAML), avoid new CLI flags.
@@ -32,22 +32,29 @@ Constraints:
 - Confidence is produced as a new sidecar JSONL keyed by a deterministic join key (line index + object index).
 - Rationale: keeps the unified inference artifact stable, avoids retroactive schema expansion, and makes confidence methods auditable/iterable without re-running inference.
 
-2) **Confidence definition: geometric mean probability from bbox coord-token logprobs**
+2) **Confidence definition: unified fused confidence**
 
 For each valid `bbox_2d` object with 4 coord tokens matched in-order:
 - reduce token logprobs with `mean_logprob`,
 - map to score with `exp(mean_logprob)` to get a bounded `(0, 1]` value suitable for COCO sorting.
 
+The production method is the unified fused formulation (`confidence_details.method="bbox_desc_fused_logprob_exp"`):
+- geometry score comes from bbox coord-token logprobs,
+- descriptor score comes from desc-span logprobs when available,
+- final score is weighted fusion via `fusion.w_geom` and `fusion.w_desc`,
+- descriptor-span fallbacks are controlled by `desc_span_policy` and `empty_desc_policy`.
+
 Rationale: monotonic, bounded, comparable across objects, and directly linked to coordinate-token likelihood.
 
 3) **Span resolution strategy (first milestone): deterministic subsequence matching**
 
-Given an object’s raw model-output bbox bin values `[v1, v2, v3, v4]` (from the inference artifact’s raw payload, e.g. `raw_output_json`), reconstruct the expected coord token sequence:
-`["<|coord_v1|>", "<|coord_v2|>", "<|coord_v3|>", "<|coord_v4|>"]`.
+Given an object’s raw model-output bbox bin values `[b1, b2, b3, b4]` (from the inference artifact’s raw payload, e.g. `raw_output_json`), reconstruct the expected coord token sequence:
+`["<|coord_b1|>", "<|coord_b2|>", "<|coord_b3|>", "<|coord_b4|>"]`.
 
 Search for this subsequence in the token trace’s `generated_token_text`:
 - match left-to-right in object order,
 - prefer the earliest unused exact match,
+- allow separator tokens between expected coord tokens (ordered exact subsequence semantics),
 - record ambiguity metadata when multiple matches exist.
 
 Do not attempt to invert pixel-space `pred[*].points` back into bins; clamp/round/denorm makes this lossy.
@@ -59,6 +66,7 @@ Rationale: requires no offsets, is CPU-only, and is deterministic. Parser-assist
 - The evaluator uses the numeric `pred[*].score` for COCO export/scoring unconditionally.
 - Missing/non-numeric scores are treated as contract violations (fail fast) rather than being replaced with a constant.
 - The confidence post-op materializes `score` deterministically for each *kept* prediction in the scored artifact. Predictions that cannot be assigned a valid confidence-derived score are dropped from the scored artifact (treated as malformed/invalid rollout output).
+- If no scored predictions remain for a COCO run, evaluator metrics are emitted explicitly as zeros for the active IoU families (e.g., `bbox_AP`, `bbox_AP50`, ...), preserving stable metric keys for automation.
 
 Rationale: COCO AP/mAP is defined over ranked detections; fixed-score outputs are not confidence-evaluable and must not be treated as supported behavior.
 

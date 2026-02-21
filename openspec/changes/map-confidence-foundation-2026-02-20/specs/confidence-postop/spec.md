@@ -55,7 +55,11 @@ The confidence post-operation SHALL emit `pred_confidence.jsonl` with one record
     - `coord_token_count` (int),
     - `matched_token_indices` (list[int]),
     - `ambiguous_matches` (int),
-    - `failure_reason` (string or null).
+    - `failure_reason` (string or null),
+    - `desc_span_token_indices` (list[int], optional),
+    - `fusion_weights` (object with `w_geom`, `w_desc`, optional).
+
+Object-level diagnostics MAY additionally include `score_geom`, `score_desc`, and `score_fusion` for auditability of fused scoring.
 
 The post-op SHALL emit `objects` in increasing `object_idx` order, and SHALL NOT reorder objects.
 
@@ -69,11 +73,14 @@ Unsupported geometry types (including `poly`) SHALL produce `confidence=null`, `
 - **WHEN** a predicted object has `type != "bbox_2d"`
 - **THEN** the output object has `confidence=null`, `score=null`, `kept=false`, and `confidence_details.failure_reason=\"unsupported_geometry_type\"`.
 
-### Requirement: Default bbox confidence definition
+### Requirement: Unified confidence definition
 For each `bbox_2d` prediction where exactly 4 bbox coord tokens can be aligned to token log-probabilities:
 - Let aligned coord-token logprobs be `lp1..lp4` in bbox coordinate order `(x1, y1, x2, y2)`.
 - The reducer SHALL be `mean_logprob = (lp1 + lp2 + lp3 + lp4) / 4`.
-- The mapping SHALL be `score = exp(mean_logprob)` (a value in `(0, 1]`).
+- The geometry score mapping SHALL be `score_geom = exp(mean_logprob)` (a value in `(0, 1]`).
+- The post-op SHALL optionally derive `score_desc` from descriptor token spans using the same reducer/map family.
+- The final score SHALL be `score = w_geom * score_geom + w_desc * score_desc` when descriptor score is available.
+- If descriptor score is unavailable, fallback behavior SHALL follow configuration (`desc_span_policy`, `empty_desc_policy`) and remain auditable via `failure_reason`.
 
 Confidence computation SHALL preserve bbox coordinate order and SHALL NOT reorder/drop coordinates inside a matched bbox slot.
 
@@ -81,11 +88,11 @@ If the computed `score` is not finite or does not satisfy `0.0 < score <= 1.0`, 
 
 #### Scenario: Bbox confidence computed from 4 coord tokens
 - **WHEN** a predicted bbox is aligned to 4 coord tokens with logprobs `[-0.1, -0.2, -0.3, -0.4]`
-- **THEN** the emitted `confidence` equals `exp(mean([-0.1,-0.2,-0.3,-0.4]))` and `score` equals `confidence`.
+- **THEN** the emitted geometry component equals `exp(mean([-0.1,-0.2,-0.3,-0.4]))` and contributes to final `score` per configured fusion weights.
 
 ### Requirement: Span resolution is deterministic under repeated coord patterns
 Span resolution (object → token indices) SHALL be deterministic:
-- Reconstruct the expected coord-token sequence for the object and search it as an exact subsequence in `generated_token_text`.
+- Reconstruct the expected coord-token sequence for the object and search it as an exact ordered subsequence in `generated_token_text` (separator tokens between coords are allowed).
 - Assign matches left-to-right in predicted-object order.
 - If multiple candidate matches exist for an object, choose the earliest unused match and record ambiguity via `confidence_details.ambiguous_matches` (zero when unambiguous).
 
@@ -131,6 +138,7 @@ When `confidence` is null, `confidence_details.failure_reason` MUST be one of th
 - `missing_span`: coord-token sequence cannot be matched to the token trace.
 - `nonfinite_logprob`: one or more matched token logprobs are non-finite.
 - `pred_alignment_mismatch`: raw-object ↔ emitted-pred alignment could not be validated deterministically.
+- `missing_desc_span`: descriptor span could not be extracted under the configured descriptor policy.
 - `object_idx_oob`: confidence object_idx does not index into the input `pred` list (implementation bug; MUST be observable).
 
 #### Scenario: Missing trace yields `missing_trace`
@@ -147,7 +155,7 @@ The post-op SHALL write a derived scored artifact `gt_vs_pred_scored.jsonl` by:
 
 The scored artifact MUST include per-record metadata keys:
 - `pred_score_source` (string, non-empty; set to `confidence_postop` for this post-op), and
-- `pred_score_version` (int; initial version `1`).
+- `pred_score_version` (int; fixed to `2` for the unified fused method).
 
 The base `gt_vs_pred.jsonl` artifact SHALL NOT be modified in-place.
 
@@ -171,7 +179,8 @@ The summary MUST include at least:
 - `kept_fraction` (number in `[0.0, 1.0]`; defined as `kept_pred_objects / total_pred_objects` when `total_pred_objects>0`, else `1.0`),
 - `dropped_by_reason` (object mapping `failure_reason` → int count; only reasons from this spec are permitted as keys),
 - `pred_score_source` (string; MUST be `confidence_postop`),
-- `pred_score_version` (int; MUST be `1`).
+- `pred_score_version` (int; MUST be `2`),
+- `confidence_method` (string; MUST be `bbox_desc_fused_logprob_exp`).
 
 The summary MUST be deterministic for the same inputs.
 

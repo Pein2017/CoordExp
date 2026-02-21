@@ -1,8 +1,9 @@
 ## 1. Config + Contract Plumbing
 
 - [x] 1.1 Update evaluator + pipeline YAML plumbing to remove any fixed-score mode: evaluator always honors `pred[*].score` and fails fast if missing/non-numeric.
-- [x] 1.2 Remove `eval.use_pred_score` from configs/templates/docs and add fail-fast rejection if present (no legacy toggles).
+- [x] 1.2 Remove `eval.use_pred_score` from configs/templates/docs and add fail-fast rejection if present (no fixed-score toggles).
 - [x] 1.3 Add/verify artifact path conventions for confidence outputs in the offline post-op config (no new CLI flags; `--config` only).
+- [x] 1.4 Document and enforce the `pred_token_trace.jsonl` artifact contract (`line_idx` join key, full generated tokens/logprobs, no filtering).
 
 ## 2. Confidence Core (Pure, CPU-only)
 
@@ -20,16 +21,19 @@
 - [x] 3.3 Emit `confidence_postop_summary.json` (counts dropped by reason + kept fraction) to make dropping auditable without inspecting JSONL.
 - [x] 3.4 Add YAML-first entrypoint `scripts/postop_confidence.py` (CPU-only) and a small example config under `configs/` (or document in `docs/` if config placement is ambiguous).
 - [x] 3.5 Add integration test with synthetic JSONL fixtures (`tests/test_confidence_postop.py`) asserting deterministic outputs and failure_reason codes.
+- [x] 3.6 Unify confidence scoring to a single fused method (geometry + descriptor) and remove version-switching terms from configs/contracts.
 
 ## 4. Evaluator: Always Honor Scores (mAP)
 
 - [x] 4.1 Update `src/eval/detection.py` to always export COCO `score=float(pred['score'])` and fail fast on missing/non-numeric/NaN/inf scores.
 - [x] 4.2 Update tests to assert the new contract:
   - missing/out-of-range scores raise,
-  - unscored legacy artifacts (missing `pred_score_source` / `pred_score_version`) are rejected,
+  - unscored artifacts (missing `pred_score_source` / `pred_score_version`) are rejected,
   - score ordering is deterministic and stable under ties.
+- [x] 4.3 Emit explicit zero-valued COCO aggregate metrics when `coco_preds` is empty, and add parity tests for that output shape.
 
 ## 5. Docs + Verification
 
 - [x] 5.1 Update `docs/eval/README.md` to document the confidence workflow: run inference → run confidence post-op → evaluate the scored JSONL (evaluator is score-aware by default).
 - [x] 5.2 Run targeted tests (CPU): `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_bbox_confidence.py tests/test_confidence_postop.py tests/test_detection_eval_output_parity.py`.
+- [x] 5.3 Update OpenSpec deltas to document separator-tolerant subsequence matching, unified fused confidence metadata, and empty-prediction COCO zero metrics contract.
