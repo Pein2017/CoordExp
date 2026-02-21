@@ -7,7 +7,7 @@ This is meant for quick sanity checks on crowded LVIS samples:
 
 Example:
   python public_data/scripts/visualize_jsonl_bbox_poly.py \\
-    --jsonl public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.raw.jsonl \\
+    --jsonl public_data/lvis/rescale_32_768_poly_20/val.mix_hull_cap20.jsonl \\
     --line 311 \\
     --out output/vis_lvis/008691_cap20.png
 """

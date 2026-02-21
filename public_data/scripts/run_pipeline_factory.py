@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
         if requires_preset and not args.preset:
             parser.error("--preset is required for mode 'validate' unless validating raw artifacts only")
 
+    if args.max_objects is not None and args.mode != "coord":
+        parser.error(
+            "--max-objects is only supported for mode 'coord'. "
+            "Run rescale/full first, then coord with --max-objects."
+        )
+
     if args.mode in PIPELINE_MODES and unknown:
         print(f"[pipeline][warn] Ignoring unsupported passthrough args: {' '.join(unknown)}")
 
@@ -125,7 +131,7 @@ def main() -> None:
     print(f"[pipeline] output_dir={result.preset_dir}")
     for split in sorted(result.split_artifacts.keys()):
         paths = result.split_artifacts[split]
-        print(f"[pipeline] {split}.raw={paths.raw}")
+        print(f"[pipeline] {split}.jsonl={paths.raw}")
         print(f"[pipeline] {split}.norm={paths.norm}")
         print(f"[pipeline] {split}.coord={paths.coord}")
 

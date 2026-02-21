@@ -9,9 +9,8 @@ Key constraint (CoordExp JSONL contract):
 
 Unified runner note:
 - `./public_data/run.sh lvis ...` now routes shared internals through the modular pipeline/factory.
-- Canonical preset artifacts are `*.raw.jsonl`, `*.norm.jsonl`, and `*.coord.jsonl`.
-- Legacy alias `*.jsonl` is preserved as a compatibility view of `*.raw.jsonl`.
-- Optional max-object filtering stays off by default; enable with `PUBLIC_DATA_MAX_OBJECTS=<N>` and the preset name auto-resolves to suffix token `max_<N>` (rendered as `_max_<N>`, with legacy `_max<N>` reuse when present).
+- Canonical preset artifacts are `*.jsonl`, `*.norm.jsonl`, and `*.coord.jsonl`.
+- Optional max-object filtering stays off by default; enable with `PUBLIC_DATA_MAX_OBJECTS=<N>` and preset naming uses canonical suffix `_max{N}`.
 
 ## Background: why LVIS `poly` can be tricky
 
@@ -87,15 +86,15 @@ Outputs:
 
 - BBox-only (max60):
   - `public_data/lvis/rescale_32_768_bbox_max60/`
-  - `train.bbox_only.max60.{raw.jsonl,jsonl,coord.jsonl}`
-  - `val.bbox_only.max60.{raw.jsonl,jsonl,coord.jsonl}`
+  - `train.bbox_only.max60.{jsonl,norm.jsonl,coord.jsonl}`
+  - `val.bbox_only.max60.{jsonl,norm.jsonl,coord.jsonl}`
 
 - Poly-prefer semantic (max60):
   - `public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/`
-  - `train.poly_prefer_semantic_cap10.max60.{raw.jsonl,jsonl,coord.jsonl}`
-  - `train.poly_prefer_semantic_cap20.max60.{raw.jsonl,jsonl,coord.jsonl}`
-  - `val.poly_prefer_semantic_cap10.max60.{raw.jsonl,jsonl,coord.jsonl}`
-  - `val.poly_prefer_semantic_cap20.max60.{raw.jsonl,jsonl,coord.jsonl}`
+  - `train.poly_prefer_semantic_cap10.max60.{jsonl,norm.jsonl,coord.jsonl}`
+  - `train.poly_prefer_semantic_cap20.max60.{jsonl,norm.jsonl,coord.jsonl}`
+  - `val.poly_prefer_semantic_cap10.max60.{jsonl,norm.jsonl,coord.jsonl}`
+  - `val.poly_prefer_semantic_cap20.max60.{jsonl,norm.jsonl,coord.jsonl}`
 
 Per-split stats are saved alongside the JSONLs:
 - `*.build_stats.json`: geometry policy decisions and semantic-guard counters
@@ -105,8 +104,8 @@ Per-split stats are saved alongside the JSONLs:
 ## Coordinate formats (raw digits vs coord tokens)
 
 Each export produces 3 JSONLs:
-- `*.raw.jsonl`: pixel-space coords (intermediate; useful for debugging/vis)
-- `*.jsonl`: normalized ints in [0,999] ("raw digits")
+- `*.jsonl`: pixel-space coords
+- `*.norm.jsonl`: normalized ints in [0,999] ("raw digits")
 - `*.coord.jsonl`: `<|coord_k|>` tokens with k in [0,999]
 
 These are **offline-normalized** to avoid runtime scaling. See

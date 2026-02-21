@@ -4,7 +4,7 @@ import json
 from abc import ABC, abstractmethod
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 from public_data.scripts.convert_to_coord_tokens import (
     _canonicalize_and_sort_objects_in_place,
@@ -17,7 +17,6 @@ from src.datasets.preprocessors.resize import SmartResizeParams
 
 from .structural import run_structural_preflight
 from .types import PipelineState
-from .writer import ensure_legacy_raw_alias
 
 
 class PipelineStage(ABC):
@@ -59,10 +58,47 @@ class StructuralPreflightStage(PipelineStage):
         }
 
 
+def _assert_rescale_target_is_fresh(state: PipelineState) -> None:
+    preset_dir = state.preset_dir
+    if not preset_dir.exists():
+        return
+
+    blocking_paths: list[Path] = []
+    images_dir = preset_dir / "images"
+    manifest_path = preset_dir / "pipeline_manifest.json"
+
+    if images_dir.exists():
+        blocking_paths.append(images_dir)
+    if manifest_path.exists():
+        blocking_paths.append(manifest_path)
+
+    for split in sorted(state.split_artifacts.keys()):
+        paths = state.split_artifacts[split]
+        for artifact_path in (paths.raw, paths.norm, paths.coord, paths.filter_stats):
+            if artifact_path.exists():
+                blocking_paths.append(artifact_path)
+
+    if not blocking_paths:
+        return
+
+    preview = ", ".join(str(path) for path in blocking_paths[:4])
+    remainder = len(blocking_paths) - 4
+    if remainder > 0:
+        preview = f"{preview}, ... (+{remainder} more)"
+
+    raise RuntimeError(
+        "Rescale target preset is not fresh; refusing in-place overwrite. "
+        "Use a new preset name or delete the entire preset directory before rerunning. "
+        f"Found existing artifacts: {preview}"
+    )
+
+
 class RescaleStage(PipelineStage):
     name = "rescale"
 
     def run(self, state: PipelineState) -> None:
+        _assert_rescale_target_is_fresh(state)
+
         cfg = state.config
         params = SmartResizeParams(
             max_pixels=int(cfg.max_pixels),
@@ -136,6 +172,29 @@ class MaxObjectsFilterStage(PipelineStage):
         }
 
 
+class DerivedImagesHardlinkStage(PipelineStage):
+    name = "derived_image_hardlinks"
+
+    def __init__(self, *, materialize_fn: Callable[..., None]) -> None:
+        self._materialize_fn = materialize_fn
+
+    def run(self, state: PipelineState) -> None:
+        if not state.is_derived_preset:
+            state.stage_stats[self.name] = {"enabled": False}
+            return
+
+        self._materialize_fn(
+            base_preset_dir=state.base_preset_dir,
+            derived_preset_dir=state.preset_dir,
+            split_paths=state.split_artifacts,
+        )
+        state.stage_stats[self.name] = {
+            "enabled": True,
+            "base_preset_dir": str(state.base_preset_dir),
+            "derived_preset_dir": str(state.preset_dir),
+        }
+
+
 class NormalizeStage(PipelineStage):
     name = "normalize_norm1000"
 
@@ -186,14 +245,6 @@ class CoordTokenStage(PipelineStage):
             "records": stats,
         }
 
-
-class LegacyAliasStage(PipelineStage):
-    name = "legacy_alias"
-
-    def run(self, state: PipelineState) -> None:
-        for split in sorted(state.split_artifacts.keys()):
-            ensure_legacy_raw_alias(state.split_artifacts[split])
-        state.stage_stats[self.name] = {"enabled": True}
 
 
 class ValidationStage(PipelineStage):
@@ -266,15 +317,24 @@ class ValidationStage(PipelineStage):
             elif self.include_preset:
                 preset_size_check_targets.add(paths.raw)
 
-        # Rescale presets must materialize a real images/ directory. A symlink can cause
-        # meta/image misalignment and can also lead to accidentally overwriting raw images.
-        if (self.include_preset or self.include_norm or self.include_coord) and "rescale" in state.effective_preset:
+        # Preset image roots must always be real directories. This is required for
+        # derived presets that reuse images via hardlinks and prevents symlink hazards.
+        if self.include_preset or self.include_norm or self.include_coord:
             images_dir = state.preset_dir / "images"
-            if images_dir.exists() and images_dir.is_symlink():
+            if images_dir.exists():
+                if images_dir.is_symlink() or images_dir.is_file() or not images_dir.is_dir():
+                    raise RuntimeError(
+                        "Preset images dir must be a real directory (not symlink/file): "
+                        f"{images_dir} (preset={state.effective_preset})"
+                    )
+            elif state.config.max_objects is not None:
                 raise RuntimeError(
-                    "Preset images dir must not be a symlink for rescale presets: "
+                    "Derived preset is missing images/ directory required for hardlink materialization: "
                     f"{images_dir} (preset={state.effective_preset})"
                 )
+
+        raw_image_open_check_n = 64
+        preset_image_open_check_n = 64
 
         failed: list[str] = []
         for path in target_paths:
@@ -292,12 +352,29 @@ class ValidationStage(PipelineStage):
                 elif path in preset_size_check_targets:
                     check_image_sizes = True
 
+            image_check_mode = "none"
+            if check_images:
+                image_check_mode = "open" if check_image_sizes else "exists"
+
+            image_check_n = 0
+            if check_image_sizes:
+                image_check_n = (
+                    raw_image_open_check_n
+                    if is_raw_input
+                    else preset_image_open_check_n
+                )
+
             validator = JSONLValidator(
                 check_images=check_images,
                 verbose=False,
                 expected_max_pixels=expected_max_pixels,
                 expected_multiple_of=expected_multiple_of,
                 check_image_sizes=check_image_sizes,
+                image_check_mode=image_check_mode,
+                image_check_n=image_check_n,
+                enforce_rescale_images_real_dir=(
+                    self.include_preset or self.include_norm or self.include_coord
+                ),
             )
             if not validator.validate_file(str(path)):
                 failed.append(str(path))
@@ -311,6 +388,8 @@ class ValidationStage(PipelineStage):
             "max_pixels": int(cfg.max_pixels),
             "image_factor": int(cfg.image_factor),
             "size_check_files": sorted(str(p) for p in preset_size_check_targets),
+            "raw_image_open_check_n": raw_image_open_check_n,
+            "preset_image_open_check_n": preset_image_open_check_n,
         }
 
 

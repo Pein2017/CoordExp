@@ -219,50 +219,50 @@ build_bbox_only_split() {
   ensure_images_link "${out_dir}"
 
   local lvis_json="${RAW_LVIS_JSON_DIR}/lvis_v1_${split}.json"
-  local raw_out="${out_dir}/${split}.bbox_only.raw.jsonl"
+  local pixel_out="${out_dir}/${split}.bbox_only.jsonl"
   local build_stats="${out_dir}/${split}.bbox_only.build_stats.json"
-  local max60_raw="${out_dir}/${split}.bbox_only.max60.raw.jsonl"
+  local max60_pixel="${out_dir}/${split}.bbox_only.max60.jsonl"
   local max60_stats="${out_dir}/${split}.bbox_only.max60.filter_stats.json"
-  local norm_out="${out_dir}/${split}.bbox_only.max60.jsonl"
+  local norm_out="${out_dir}/${split}.bbox_only.max60.norm.jsonl"
   local coord_out="${out_dir}/${split}.bbox_only.max60.coord.jsonl"
 
   if [ "${FORCE_REBUILD}" -eq 1 ]; then
-    rm -f \
-      "${raw_out}" \
+      rm -f \
+      "${pixel_out}" \
       "${build_stats}" \
-      "${max60_raw}" \
+      "${max60_pixel}" \
       "${max60_stats}" \
       "${norm_out}" \
       "${coord_out}"
   fi
 
-  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${pixel_out}" ]; then
     echo ""
     echo "[build:bbox_only] ${split}"
     PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
-      --output-jsonl "${raw_out}" \
+      --output-jsonl "${pixel_out}" \
       --geometry-policy bbox_only \
       --poly-cap 20 \
       "${DROP_ARGS[@]}" \
       --stats-json "${build_stats}"
   else
-    echo "[build:bbox_only] skip existing: ${raw_out}"
+    echo "[build:bbox_only] skip existing: ${pixel_out}"
   fi
 
-  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_pixel}" ]; then
     echo "[filter] ${split} bbox_only max_objects=60"
     PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
-      --input "${raw_out}" \
-      --output "${max60_raw}" \
+      --input "${pixel_out}" \
+      --output "${max60_pixel}" \
       --max-objects 60 \
       --stats-json "${max60_stats}"
   else
-    echo "[filter] skip existing: ${max60_raw}"
+    echo "[filter] skip existing: ${max60_pixel}"
   fi
 
-  convert_if_needed "${max60_raw}" "${norm_out}" "${coord_out}"
+  convert_if_needed "${max60_pixel}" "${norm_out}" "${coord_out}"
 }
 
 build_poly_prefer_split() {
@@ -272,51 +272,51 @@ build_poly_prefer_split() {
   ensure_images_link "${out_dir}"
 
   local lvis_json="${RAW_LVIS_JSON_DIR}/lvis_v1_${split}.json"
-  local raw_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.raw.jsonl"
+  local pixel_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.jsonl"
   local build_stats="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.build_stats.json"
-  local max60_raw="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.raw.jsonl"
+  local max60_pixel="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.jsonl"
   local max60_stats="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.filter_stats.json"
-  local norm_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.jsonl"
+  local norm_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.norm.jsonl"
   local coord_out="${out_dir}/${split}.poly_prefer_semantic_cap${cap}.max60.coord.jsonl"
 
   if [ "${FORCE_REBUILD}" -eq 1 ]; then
-    rm -f \
-      "${raw_out}" \
+      rm -f \
+      "${pixel_out}" \
       "${build_stats}" \
-      "${max60_raw}" \
+      "${max60_pixel}" \
       "${max60_stats}" \
       "${norm_out}" \
       "${coord_out}"
   fi
 
-  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${raw_out}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${pixel_out}" ]; then
     echo ""
     echo "[build:poly_prefer] ${split} cap=${cap}"
     PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
       --images-dir "${out_dir}/images" \
-      --output-jsonl "${raw_out}" \
+      --output-jsonl "${pixel_out}" \
       --geometry-policy poly_prefer_semantic \
       --poly-cap "${cap}" \
       "${DROP_ARGS[@]}" \
       "${GUARD_ARGS[@]}" \
       --stats-json "${build_stats}"
   else
-    echo "[build:poly_prefer] skip existing: ${raw_out}"
+    echo "[build:poly_prefer] skip existing: ${pixel_out}"
   fi
 
-  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_raw}" ]; then
+  if [ "${FORCE_REBUILD}" -eq 1 ] || [ ! -s "${max60_pixel}" ]; then
     echo "[filter] ${split} cap=${cap} max_objects=60"
     PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
-      --input "${raw_out}" \
-      --output "${max60_raw}" \
+      --input "${pixel_out}" \
+      --output "${max60_pixel}" \
       --max-objects 60 \
       --stats-json "${max60_stats}"
   else
-    echo "[filter] skip existing: ${max60_raw}"
+    echo "[filter] skip existing: ${max60_pixel}"
   fi
 
-  convert_if_needed "${max60_raw}" "${norm_out}" "${coord_out}"
+  convert_if_needed "${max60_pixel}" "${norm_out}" "${coord_out}"
 }
 
 echo ""
@@ -367,18 +367,20 @@ conda run -n ms python scripts/tools/materialize_rescaled_images_from_jsonl.py \
   --write
 
 # Quick spot-check: open+size alignment (full JSONL scan for width/height constraints).
-conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
-  --jsonl public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
+conda run -n ms python public_data/scripts/validate_jsonl.py \
+  public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl \
   --max-pixels $((768*32*32)) \
   --multiple-of 32 \
   --image-check-mode open \
+  --enforce-rescale-images-real-dir \
   --image-check-n 64
 
-conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
-  --jsonl public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
+conda run -n ms python public_data/scripts/validate_jsonl.py \
+  public_data/lvis/rescale_32_768_poly_prefer_semantic_max60/val.poly_prefer_semantic_cap20.max60.coord.jsonl \
   --max-pixels $((768*32*32)) \
   --multiple-of 32 \
   --image-check-mode open \
+  --enforce-rescale-images-real-dir \
   --image-check-n 64
 
 echo ""

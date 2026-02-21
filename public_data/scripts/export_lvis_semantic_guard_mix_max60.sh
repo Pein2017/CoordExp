@@ -68,36 +68,36 @@ build_split() {
   local split="$1"  # train|val
   local cap="$2"    # 10|20
   local lvis_json="${RAW_ANN_DIR}/lvis_v1_${split}.json"
-  local raw_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.raw.jsonl"
+  local pixel_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.jsonl"
   local build_stats="${OUT}/${split}.mix_hull_semantic_cap${cap}.build_stats.json"
-  local max60_raw="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.raw.jsonl"
+  local max60_pixel="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.jsonl"
   local max60_stats="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.filter_stats.json"
-  local norm_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.jsonl"
+  local norm_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.norm.jsonl"
   local coord_out="${OUT}/${split}.mix_hull_semantic_cap${cap}.max60.coord.jsonl"
 
-  if [ ! -s "${raw_out}" ]; then
+  if [ ! -s "${pixel_out}" ]; then
     echo ""
     echo "[build] ${split} cap=${cap}"
     PYTHONPATH=. conda run -n ms python public_data/scripts/build_lvis_hull_mix.py \
       --lvis-json "${lvis_json}" \
-      --output-jsonl "${raw_out}" \
+      --output-jsonl "${pixel_out}" \
       --poly-cap "${cap}" \
       --stats-json "${build_stats}" \
       "${COMMON_ARGS[@]}"
   else
-    echo "[build] skip existing: ${raw_out}"
+    echo "[build] skip existing: ${pixel_out}"
   fi
 
-  if [ ! -s "${max60_raw}" ]; then
+  if [ ! -s "${max60_pixel}" ]; then
     echo ""
     echo "[filter] ${split} cap=${cap} max_objects=60"
     PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
-      --input "${raw_out}" \
-      --output "${max60_raw}" \
+      --input "${pixel_out}" \
+      --output "${max60_pixel}" \
       --max-objects 60 \
       --stats-json "${max60_stats}"
   else
-    echo "[filter] skip existing: ${max60_raw}"
+    echo "[filter] skip existing: ${max60_pixel}"
   fi
 
   # The convert step can be interrupted (partial last line -> invalid JSON).
@@ -138,7 +138,7 @@ PY
     echo ""
     echo "[convert] ${split} cap=${cap} -> norm + coord"
     PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
-      --input "${max60_raw}" \
+      --input "${max60_pixel}" \
       --output-norm "${norm_out}" \
       --output-tokens "${coord_out}"
   else
@@ -170,11 +170,12 @@ conda run -n ms python scripts/tools/materialize_rescaled_images_from_jsonl.py \
   --dst-root "${OUT}" \
   --write
 
-conda run -n ms python scripts/tools/validate_jsonl_max_pixels.py \
-  --jsonl "${OUT}/val.mix_hull_semantic_cap20.max60.coord.jsonl" \
+conda run -n ms python public_data/scripts/validate_jsonl.py \
+  "${OUT}/val.mix_hull_semantic_cap20.max60.coord.jsonl" \
   --max-pixels $((768*32*32)) \
   --multiple-of 32 \
   --image-check-mode open \
+  --enforce-rescale-images-real-dir \
   --image-check-n 64
 
 echo ""

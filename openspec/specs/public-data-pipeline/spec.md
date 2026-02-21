@@ -42,6 +42,12 @@ Supported runner flags:
 - `--raw-only`: for `validate`, validate only raw artifacts
 - `--preset-only`: for `validate`, validate only preset artifacts
 
+Supported environment interfaces:
+- `PUBLIC_DATA_MAX_OBJECTS=<N>` enables optional max-object filtering for the `coord` command only.
+- The runner MUST fail fast when `PUBLIC_DATA_MAX_OBJECTS` is set for `rescale`, `validate`, or `all`, with guidance to run a two-step flow (`rescale/all` first, then `coord` with max-object filtering).
+- The runner forwards `max_objects` into the pipeline planner only for `coord`; naming and effective preset resolution are owned by the planner.
+- If `max_objects` is provided by multiple input surfaces and values disagree, execution MUST fail fast with an actionable error (no silent override).
+
 Preset resolution rules:
 - For commands that require a preset (`rescale`, `coord`) the user SHALL provide `--preset <name>`.
 - For `all`, the runner SHALL:
@@ -238,6 +244,7 @@ The validate step:
 - SHALL enforce that `images[0]` is a relative path resolved against the JSONL directory (error on absolute paths). If `--skip-image-check` is set, file-existence checks are skipped but the relative-path requirement still applies.
 - SHALL accept geometry coordinates as pixel-space numbers or coord tokens (`<|coord_k|>`) and SHALL report malformed/out-of-range coord tokens as validation errors (must not crash).
 - SHALL reject legacy/unsupported geometry keys in emitted JSONLs (e.g., `bbox`, `polygon`, `line`, `line_points`).
+- SHALL bound expensive image-open checks using deterministic first-N sampling for both raw and preset validation targets (default `N=64` per target file) instead of unbounded full-file opens.
 - SHOULD run `scripts/tools/inspect_chat_template.py --index 0` on at least one coord-token JSONL sample to confirm prompt/template compatibility.
 - SHALL validate both raw and preset artifacts by default, unless `--raw-only` or `--preset-only` is specified.
 - SHALL validate `train.jsonl` and SHOULD also validate `val.jsonl` when present, for both raw and preset artifacts.
@@ -259,6 +266,11 @@ The validate step:
 - **GIVEN** the user has a JSONL but does not have the corresponding images on disk yet
 - **WHEN** the user runs `public_data/run.sh <dataset> validate --raw-only --skip-image-check`
 - **THEN** the runner validates JSON structure and geometry requirements without failing due to missing image files.
+
+#### Scenario: Raw image-open validation is bounded by deterministic sampling
+- **GIVEN** raw `train.jsonl` contains many records
+- **WHEN** validation runs with image checks enabled
+- **THEN** image-open checks use deterministic first-N sampling (default `N=64`) per target file rather than opening every image.
 
 #### Scenario: Template sanity check is best-effort
 - **GIVEN** the system cannot run `scripts/tools/inspect_chat_template.py` (no cached model or missing deps)
@@ -322,40 +334,97 @@ Boundary definition:
 - **AND** core stage orchestration remains dataset-agnostic.
 
 
-### Requirement: Optional Max-Object Filtering and Suffix Naming
+### Requirement: Optional Max-Object Filtering and Canonical Suffix Naming
 Max-object filtering MUST be optional and disabled by default in unified pipeline execution.
 
-When max-object filtering is enabled with value `N`, the effective preset/output naming MUST include suffix token `max_{N}` (rendered in path naming as `_max_<N>`), so filtered artifacts are self-describing.
-For example, token `max_60` corresponds to rendered path segment `_max_60`.
+When max-object filtering is enabled with value `N`, the effective preset/output naming MUST use canonical suffix `_max{N}` (for example `_max60`), so filtered artifacts are self-describing.
 
-If the effective preset/output name already contains the same suffix token, the system MUST NOT append it again.
+The planner MUST be the single source of truth for effective preset naming and output directory selection.
+- `public_data/run.sh` MUST pass `--preset <base>` without pre-resolving an effective preset path.
+- `max_objects` MUST be accepted only for `coord`; non-`coord` uses MUST fail fast with actionable two-step guidance.
+- Legacy `_max_<N>` suffixes are invalid for this contract and MUST fail fast with an actionable rename hint.
 
-Legacy naming compatibility:
-- Existing `max{N}` artifact naming (for example `max60`) MUST be treated as equivalent to `max_{N}` for resolver compatibility.
-- When an equivalent legacy-named artifact directory already exists, implementation MUST reuse it rather than creating a second forked directory that differs only by underscore style.
-- Fresh-run emission policy is explicit:
-  - if no equivalent legacy `max{N}` artifact exists, writer emits canonical `_max_<N>` naming,
-  - if equivalent legacy `max{N}` artifact exists, resolver reuses legacy path instead of creating a parallel canonical path.
+If the effective preset/output name already contains the same canonical suffix, the system MUST NOT append it again.
 
 #### Scenario: Default run has no max-object filter and no suffix
 - **WHEN** pipeline execution runs without max-object filtering configured
 - **THEN** no object-count filtering stage is applied
 - **AND** output preset naming remains unchanged.
 
-#### Scenario: Enabled max-object filter appends deterministic suffix
+#### Scenario: Enabled max-object filter appends deterministic canonical suffix
 - **WHEN** max-object filtering is enabled with `N=60`
-- **THEN** effective output preset naming includes suffix token `max_60`
+- **THEN** effective output preset naming includes suffix `_max60`
 - **AND** generated artifacts are written under the suffixed preset directory.
 
-#### Scenario: Existing suffix is not duplicated
-- **WHEN** effective preset naming already ends with token `max_60`
-- **THEN** enabling max-object filtering with `N=60` does not append a second `max_60` token.
+#### Scenario: Max-object filter outside coord fails fast
+- **WHEN** max-object filtering is requested for `rescale`, `validate`, or `all`
+- **THEN** execution fails fast with actionable guidance to run a two-step flow (`rescale/all` first, then `coord` with max filtering).
 
-#### Scenario: Legacy max60 artifacts are recognized
-- **WHEN** equivalent legacy artifact naming exists as `max60`
-- **THEN** preset resolution treats it as equivalent to `max_60`
-- **AND** does not create a forked parallel artifact path solely due to suffix-token formatting.
+#### Scenario: Existing canonical suffix is not duplicated
+- **WHEN** effective preset naming already ends with `_max60`
+- **THEN** enabling max-object filtering with `N=60` does not append a second suffix token.
 
-#### Scenario: Fresh run emits canonical suffix when no legacy artifact exists
-- **WHEN** max-object filtering is enabled and no equivalent legacy `max<N>` artifact path exists
-- **THEN** writer emits canonical `_max_<N>` naming for new artifacts.
+#### Scenario: Legacy underscore suffix is rejected
+- **WHEN** preset naming includes legacy `_max_60`
+- **THEN** planner resolution fails fast with an actionable migration hint to rename/rebuild as `_max60`.
+
+### Requirement: Canonical Preset Artifact Layout
+The unified pipeline MUST emit pixel-space preset outputs as canonical `<split>.jsonl` files.
+
+Per split (`train` or `val`), artifact naming MUST be:
+- `<split>.jsonl` for pixel-space records,
+- `<split>.norm.jsonl` for norm1000 integer records,
+- `<split>.coord.jsonl` for coord-token records.
+
+The pipeline MUST NOT duplicate pixel-space outputs into additional alias files.
+
+#### Scenario: Rescale writes canonical pixel-space artifact
+- **WHEN** rescale/pipeline execution writes preset artifacts
+- **THEN** the pixel-space artifact path is `<split>.jsonl`
+- **AND** no `<split>.raw.jsonl` compatibility copy is emitted.
+
+### Requirement: Derived Preset Image Reuse Uses Hardlinks
+When max-object filtering creates a derived preset (`effective_preset != base_preset`), derived preset images MUST be materialized as hardlinks to the base preset resized images.
+
+Hardlink materialization contract:
+- Derived preset `images/` MUST be a real directory (never a symlink).
+- For each referenced `images/...` path in derived preset JSONL, destination file MUST exist and be the same inode as the corresponding base preset image.
+- In `coord` mode, hardlink materialization MUST execute after max-object filtering writes the derived `<split>.jsonl`, so only retained records drive hardlink creation.
+- Materialization is append-only and idempotent:
+  - create link when destination is missing,
+  - no-op when destination already links to the same inode,
+  - fail fast when destination exists but is a different inode.
+- The planner MUST precheck same-filesystem compatibility and fail fast on hardlink errors.
+- The planner MUST NOT fall back to byte-copy for derived presets.
+
+#### Scenario: Derived preset links base images
+- **WHEN** max-object filtering produces derived preset `..._max60`
+- **THEN** derived `images/` is a real directory containing hardlinks to base preset images at matching relative paths.
+
+#### Scenario: Dropped records do not materialize derived hardlinks
+- **WHEN** max-object filtering drops a sample during derived `coord` processing
+- **THEN** the dropped sample's `images/...` path is absent from the derived preset `images/` tree.
+
+#### Scenario: Cross-device hardlink attempt fails fast
+- **WHEN** base and derived preset roots are on different filesystems
+- **THEN** hardlink materialization fails fast with actionable guidance to co-locate outputs on one filesystem.
+
+### Requirement: Preset Image Immutability and Fresh Rescale Targets
+Preset `images/` are immutable once written by the rescale stage.
+
+Rescale/full execution MUST require a fresh preset target and MUST NOT overwrite existing preset artifacts in place.
+
+Fail-fast gating for rescale target freshness:
+- If target preset already contains any existing preset artifacts (`images/`, `<split>.jsonl`, `<split>.norm.jsonl`, `<split>.coord.jsonl`, `pipeline_manifest.json`, or filter-stats files), execution MUST fail fast.
+- This includes symlink/file hazards at `images/`; the system MUST fail rather than attempting in-place repair/rematerialization.
+
+`pipeline_manifest.json` still records rescale parameters (`max_pixels`, `min_pixels`, `image_factor`) for provenance and auditability, but strict freshness gating is authoritative for write safety.
+
+Rebuild behavior:
+- Rebuild is manual (fresh preset name or deliberate full deletion of existing preset directory).
+- Rebuild MUST NOT be in-place overwrite of existing preset `images/`.
+
+#### Scenario: Existing preset artifacts fail fast regardless of params
+- **GIVEN** preset directory already contains previous artifacts
+- **WHEN** user reruns rescale/full targeting that preset
+- **THEN** execution fails fast and instructs the user to rebuild safely.

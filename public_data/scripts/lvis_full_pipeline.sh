@@ -43,9 +43,9 @@ mkdir -p "${OUT_ROOT}/images"
 for SPLIT in ${SPLITS}; do
   ANNO="${RAW_ROOT}/annotations/lvis_v1_${SPLIT}.json"
   IMG_ROOT="${RAW_ROOT}/images"
-  RAW_JSONL="${OUT_ROOT}/${SPLIT}.raw.jsonl"          # pixel-space intermediate
-  OUT_JSONL="${OUT_ROOT}/${SPLIT}.jsonl"               # norm1000 ints (final)
-  TINY_JSONL="${OUT_ROOT}/${SPLIT}_tiny.jsonl"         # norm1000 ints (final)
+  PIXEL_JSONL="${OUT_ROOT}/${SPLIT}.jsonl"             # pixel-space
+  OUT_NORM_JSONL="${OUT_ROOT}/${SPLIT}.norm.jsonl"     # norm1000 ints (final)
+  TINY_NORM_JSONL="${OUT_ROOT}/${SPLIT}_tiny.norm.jsonl" # norm1000 ints (final)
   OUT_COORD="${OUT_ROOT}/${SPLIT}.coord.jsonl"         # coord tokens (final)
   TINY_COORD="${OUT_ROOT}/${SPLIT}_tiny.coord.jsonl"   # coord tokens (final)
 
@@ -70,25 +70,25 @@ for SPLIT in ${SPLITS}; do
     --max_pixels "${MAX_PIXELS}" \
     --min_pixels "${MIN_PIXELS}" \
     --resize_output_root "${OUT_ROOT}" \
-    --output "${RAW_JSONL}" \
+    --output "${PIXEL_JSONL}" \
     --num_workers "${NUM_WORKERS}"
 
   echo "---- ${SPLIT}: normalize (pixel -> norm ints + tokens) ----"
   PYTHONPATH=. ${PYTHON_BIN} public_data/scripts/convert_to_coord_tokens.py \
-    --input "${RAW_JSONL}" \
-    --output-norm "${OUT_JSONL}" \
+    --input "${PIXEL_JSONL}" \
+    --output-norm "${OUT_NORM_JSONL}" \
     --output-tokens "${OUT_COORD}"
 
   echo "---- ${SPLIT}: tiny subset (${TINY}) from norm ints ----"
   PYTHONPATH=. ${PYTHON_BIN} public_data/scripts/sample_dataset.py \
-    --input "${OUT_JSONL}" \
-    --output "${TINY_JSONL}" \
+    --input "${OUT_NORM_JSONL}" \
+    --output "${TINY_NORM_JSONL}" \
     --num_samples "${TINY}" \
     --strategy random
 
   echo "---- ${SPLIT}: coord tokens (tiny, already normalized) ----"
   PYTHONPATH=. ${PYTHON_BIN} public_data/scripts/convert_to_coord_tokens.py \
-    --input "${TINY_JSONL}" \
+    --input "${TINY_NORM_JSONL}" \
     --assume-normalized \
     --output "${TINY_COORD}"
 
@@ -96,7 +96,8 @@ for SPLIT in ${SPLITS}; do
 done
 
 echo "All outputs under: ${OUT_ROOT}"
-echo "  - {train,val}.jsonl (norm1000 ints)"
+echo "  - {train,val}.jsonl (pixel-space)"
+echo "  - {train,val}.norm.jsonl (norm1000 ints)"
 echo "  - {train,val}.coord.jsonl (coord tokens)"
-echo "  - {train,val}_tiny.jsonl (norm1000 ints)"
+echo "  - {train,val}_tiny.norm.jsonl (norm1000 ints)"
 echo "  - {train,val}_tiny.coord.jsonl (coord tokens)"
