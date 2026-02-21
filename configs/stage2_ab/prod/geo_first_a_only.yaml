@@ -29,6 +29,13 @@ rollout_matching:
   rollout_backend: hf
   decode_batch_size: 4
   max_new_tokens: 3084
+  monitor_dump:
+    enabled: true
+    every_steps: 300
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
 
 custom:
   val_sample_limit: 512

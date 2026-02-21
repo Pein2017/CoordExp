@@ -28,5 +28,12 @@ custom:
 
 rollout_matching:
   rollout_backend: vllm
+  monitor_dump:
+    enabled: true
+    every_steps: 80
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
   vllm:
     mode: server

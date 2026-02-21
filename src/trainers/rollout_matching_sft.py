@@ -6266,6 +6266,28 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         n_steps = 0.0
 
+        # Optional qualitative monitor dumps during eval (rank0 only).
+        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        do_dump = False
+        dump_cfg = self._monitor_dump_cfg()
+        dump_max_samples = 0
+        dump_max_chars = 0
+        dump_fail_samples: List[Dict[str, Any]] = []
+        dump_other_samples: List[Dict[str, Any]] = []
+        if self._should_monitor_dump(global_step=gs):
+            do_dump = True
+            dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
+            dump_max_chars_raw = dump_cfg.get("max_text_chars", 4000)
+            try:
+                dump_max_chars = (
+                    int(dump_max_chars_raw) if dump_max_chars_raw is not None else 4000
+                )
+            except Exception:
+                dump_max_chars = 4000
+            dump_max_chars = max(0, int(dump_max_chars))
+            # Mark early to avoid duplicate dumps in the same global_step.
+            self._monitor_dump_last_step = int(gs)
+
         with torch.no_grad():
             for batch in dl:
                 # For rollout-matching, we expect identity_data_collator to yield a
@@ -6303,6 +6325,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     coord_id_to_bin = self._coord_id_map()
                     pred_meta = list(parse.valid_objects)
                     preds: List[GTObject] = []
+                    pred_objs_dump: List[Dict[str, Any]] = []
                     for pobj in pred_meta:
                         pts = _points_from_coord_tokens(
                             response_token_ids=parse.response_token_ids,
@@ -6318,6 +6341,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                 points_norm1000=pts,
                                 desc="",
                             )
+                        )
+                        pred_objs_dump.append(
+                            {
+                                "key": str(getattr(pobj, "key", "") or ""),
+                                "index": int(pobj.index),
+                                "geom_type": str(pobj.geom_type),
+                                "points_norm1000": list(pts),
+                                "desc": str(getattr(pobj, "desc", "") or ""),
+                            }
                         )
 
                     gts = _extract_gt_objects(sample)
@@ -6345,6 +6377,100 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     matched_iou_count += float(match.matched_maskiou_count)
                     if matched > 0:
                         n_samples_any_match += 1.0
+
+                    if do_dump and (
+                        len(dump_fail_samples) < dump_max_samples
+                        or len(dump_other_samples) < dump_max_samples
+                    ):
+                        is_failure = (
+                            bool(getattr(parse, "invalid_rollout", False))
+                            or int(getattr(parse, "dropped_invalid", 0) or 0) > 0
+                            or int(getattr(parse, "dropped_ambiguous", 0) or 0) > 0
+                            or bool(getattr(parse, "truncated", False))
+                            or len(preds) == 0
+                        )
+                        target = dump_fail_samples if is_failure else dump_other_samples
+                        if len(target) < dump_max_samples:
+                            gt_objs_dump = [
+                                {
+                                    "index": int(o.index),
+                                    "geom_type": str(o.geom_type),
+                                    "points_norm1000": list(o.points_norm1000),
+                                    "desc": str(o.desc),
+                                }
+                                for o in gts
+                            ]
+
+                            pred_n = float(len(preds))
+                            gt_n = float(len(gts))
+                            matched_n = float(len(match.matched_pairs))
+                            prec_local = (matched_n / pred_n) if pred_n > 0 else 0.0
+                            rec_local = (matched_n / gt_n) if gt_n > 0 else 0.0
+                            f1_local = (
+                                (2.0 * prec_local * rec_local / (prec_local + rec_local))
+                                if (prec_local + rec_local) > 0.0
+                                else 0.0
+                            )
+
+                            drop_by_reason: Dict[str, int] = {}
+                            try:
+                                raw = getattr(parse, "dropped_invalid_by_reason", None)
+                                if isinstance(raw, Mapping):
+                                    for k, v in raw.items():
+                                        try:
+                                            drop_by_reason[str(k)] = int(v)
+                                        except (TypeError, ValueError):
+                                            continue
+                            except Exception:
+                                drop_by_reason = {}
+
+                            target.append(
+                                {
+                                    "sample_id": sample.get("sample_id"),
+                                    "base_idx": sample.get("base_idx"),
+                                    "image": sample.get("image"),
+                                    "images": sample.get("images"),
+                                    "width": sample.get("width"),
+                                    "height": sample.get("height"),
+                                    "messages": sample.get("messages"),
+                                    "rollout_text": self._clip_text(
+                                        parse.response_text, max_chars=dump_max_chars
+                                    ),
+                                    "prefix_text": self._clip_text(
+                                        parse.prefix_text, max_chars=dump_max_chars
+                                    ),
+                                    "gt_objects": gt_objs_dump,
+                                    "pred_objects": pred_objs_dump,
+                                    "match": {
+                                        "matched_pairs": list(match.matched_pairs),
+                                        "fn_gt_indices": list(match.fn_gt_indices),
+                                        "fp_pred_indices": list(match.fp_pred_indices),
+                                        "gating_rejections": int(match.gating_rejections),
+                                    },
+                                    "stats": {
+                                        "decode_mode": str(_decode_mode),
+                                        "parse_invalid_rollout": bool(
+                                            getattr(parse, "invalid_rollout", False)
+                                        ),
+                                        "parse_dropped_invalid": int(
+                                            getattr(parse, "dropped_invalid", 0) or 0
+                                        ),
+                                        "parse_dropped_ambiguous": int(
+                                            getattr(parse, "dropped_ambiguous", 0) or 0
+                                        ),
+                                        "parse_truncated": bool(
+                                            getattr(parse, "truncated", False)
+                                        ),
+                                        "parse_dropped_invalid_by_reason": drop_by_reason,
+                                        "valid_pred_objects": int(len(preds)),
+                                        "gt_objects": int(len(gts)),
+                                        "matched": int(len(match.matched_pairs)),
+                                        "precision": float(prec_local),
+                                        "recall": float(rec_local),
+                                        "f1": float(f1_local),
+                                    },
+                                }
+                            )
 
                     # Optional desc semantic monitor on matched pairs.
                     if desc_enabled and match.matched_pairs:
@@ -6551,6 +6677,45 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     metrics[_k("rollout/desc_sem_sim_count")] = float(
                         desc_sem_sim_count_total
                     )
+
+        # Optional eval-time monitor dump (qualitative samples).
+        if do_dump:
+            try:
+                samples_out: List[Dict[str, Any]] = list(dump_fail_samples)
+                if len(samples_out) < dump_max_samples:
+                    need = int(dump_max_samples) - int(len(samples_out))
+                    samples_out.extend(list(dump_other_samples)[:need])
+
+                payload = {
+                    "kind": "eval_monitor_dump",
+                    "global_step": int(gs),
+                    "epoch": float(
+                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                    ),
+                    "time": float(time.time()),
+                    "meta": {
+                        "phase": "eval",
+                        "metric_key_prefix": str(metric_key_prefix),
+                        "rollout_backend": str(self._rollout_backend()),
+                        "decode_mode": str(self._cfg("decode_mode", "greedy")),
+                        "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
+                        "candidate_top_k": int(top_k),
+                        "maskiou_gate": float(gate_thr),
+                        "maskiou_resolution": int(mask_res),
+                        "fp_cost": float(fp_cost),
+                        "fn_cost": float(fn_cost),
+                    },
+                    "metrics": metrics,
+                    "samples": samples_out,
+                }
+                self._write_monitor_dump(global_step=int(gs), payload=payload)
+                self._monitor_dump_count += 1
+            except Exception as exc:
+                logger.warning(
+                    "Failed to write eval monitor dump at global_step=%s: %r",
+                    int(gs),
+                    exc,
+                )
 
         # Mirror HF Trainer.evaluate(): log metrics and trigger callbacks.
         self.log(metrics)

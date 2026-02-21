@@ -31,10 +31,11 @@ rollout_matching:
   decode_batch_size: 4
   monitor_dump:
     enabled: true
-    every_steps: 40
-    max_events: 200
+    every_steps: 100
+    max_events: 0
     max_samples: 10
     max_text_chars: 0
+    write_markdown: false
   rollout_backend: vllm
   vllm:
     mode: server
