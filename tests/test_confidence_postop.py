@@ -7,8 +7,11 @@ from pathlib import Path
 import pytest
 
 from src.eval.confidence_postop import (
+    CONFIDENCE_METHOD,
+    ConfidencePostOpOptions,
     PRED_SCORE_SOURCE,
     PRED_SCORE_VERSION,
+    options_from_config,
     paths_from_config,
     run_confidence_postop,
 )
@@ -300,6 +303,182 @@ def test_confidence_postop_end_to_end_with_deterministic_failure_reasons(
         assert record["pred"] == []
 
 
+def test_confidence_postop_fuses_geom_and_desc_scores(tmp_path: Path) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_latest.png",
+        x1=100,
+        y1=200,
+        x2=300,
+        y2=400,
+        raw_output_json=_bbox_raw(100, 200, 300, 400, desc="wine glass"),
+    )
+    record["pred"][0]["desc"] = "wine glass"
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    generated_token_text = [
+        "{\"",
+        "objects",
+        "\":",
+        " [{\"",
+        "desc",
+        "\":",
+        " \"",
+        "wine",
+        " glass",
+        "\",",
+        " \"",
+        "bbox",
+        "_",
+        "2",
+        "d",
+        "\":",
+        " [",
+        "<|coord_100|>",
+        ",",
+        " ",
+        "<|coord_200|>",
+        ",",
+        " ",
+        "<|coord_300|>",
+        ",",
+        " ",
+        "<|coord_400|>",
+        "]}",
+        "]}",
+    ]
+    token_logprobs = [0.0] * len(generated_token_text)
+    token_logprobs[7] = math.log(0.5)
+    token_logprobs[8] = math.log(0.25)
+    token_logprobs[17] = math.log(0.2)
+    token_logprobs[20] = math.log(0.2)
+    token_logprobs[23] = math.log(0.2)
+    token_logprobs[26] = math.log(0.2)
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": generated_token_text,
+                "token_logprobs": token_logprobs,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            fusion_w_geom=0.6,
+            fusion_w_desc=0.4,
+        ),
+    )
+    assert summary["pred_score_version"] == PRED_SCORE_VERSION
+    assert summary["kept_pred_objects"] == 1
+
+    confidence_records = [json.loads(line) for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()]
+    obj = confidence_records[0]["objects"][0]
+    expected_geom = 0.2
+    expected_desc = math.exp((math.log(0.5) + math.log(0.25)) / 2.0)
+    expected_fusion = 0.6 * expected_geom + 0.4 * expected_desc
+
+    assert obj["kept"] is True
+    assert obj["score_geom"] == pytest.approx(expected_geom)
+    assert obj["score_desc"] == pytest.approx(expected_desc)
+    assert obj["score_fusion"] == pytest.approx(expected_fusion)
+    assert obj["score"] == pytest.approx(expected_fusion)
+    assert obj["confidence"] == pytest.approx(expected_fusion)
+    assert obj["confidence_details"]["method"] == CONFIDENCE_METHOD
+    assert obj["confidence_details"]["desc_span_token_indices"] == [7, 8]
+    assert obj["confidence_details"]["fusion_weights"]["w_geom"] == pytest.approx(0.6)
+    assert obj["confidence_details"]["fusion_weights"]["w_desc"] == pytest.approx(0.4)
+
+    scored_records = [json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()]
+    assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
+    assert scored_records[0]["pred"][0]["score"] == pytest.approx(expected_fusion)
+
+
+def test_confidence_postop_strict_desc_policy_drops_on_missing_desc_span(
+    tmp_path: Path,
+) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_latest_strict.png",
+        x1=100,
+        y1=200,
+        x2=300,
+        y2=400,
+        raw_output_json=_bbox_raw(100, 200, 300, 400, desc="cat"),
+    )
+    record["pred"][0]["desc"] = "cat"
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": [
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_300|>",
+                    "<|coord_400|>",
+                ],
+                "token_logprobs": [math.log(0.3)] * 4,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            desc_span_policy="strict",
+        ),
+    )
+    assert summary["pred_score_version"] == PRED_SCORE_VERSION
+    assert summary["kept_pred_objects"] == 0
+    assert summary["dropped_by_reason"] == {"missing_desc_span": 1}
+
+    confidence_records = [json.loads(line) for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()]
+    obj = confidence_records[0]["objects"][0]
+    assert obj["kept"] is False
+    assert obj["score"] is None
+    assert obj["confidence_details"]["failure_reason"] == "missing_desc_span"
+
+    scored_records = [json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()]
+    assert scored_records[0]["pred"] == []
+    assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
+
+
 def test_paths_from_config_uses_run_dir_defaults(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     paths = paths_from_config({"artifacts": {"run_dir": str(run_dir)}})
@@ -309,6 +488,11 @@ def test_paths_from_config_uses_run_dir_defaults(tmp_path: Path) -> None:
     assert paths.pred_confidence_jsonl == run_dir / "pred_confidence.jsonl"
     assert paths.gt_vs_pred_scored_jsonl == run_dir / "gt_vs_pred_scored.jsonl"
     assert paths.confidence_postop_summary_json == run_dir / "confidence_postop_summary.json"
+
+
+def test_options_from_config_rejects_removed_version_key() -> None:
+    with pytest.raises(ValueError, match="no longer supported"):
+        options_from_config({"confidence": {"version": "legacy"}})
 
 
 @pytest.mark.parametrize(

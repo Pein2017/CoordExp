@@ -16,3 +16,12 @@ artifacts:
   pred_confidence_jsonl: null            # defaults to <run_dir>/pred_confidence.jsonl
   gt_vs_pred_scored_jsonl: null          # defaults to <run_dir>/gt_vs_pred_scored.jsonl
   confidence_postop_summary_json: null   # defaults to <run_dir>/confidence_postop_summary.json
+
+# Optional scoring controls.
+confidence:
+  # Unified fused confidence scoring (latest contract).
+  fusion:
+    w_geom: 0.7
+    w_desc: 0.3
+  desc_span_policy: best_effort   # best_effort | strict
+  empty_desc_policy: geom_only    # geom_only | drop

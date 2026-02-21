@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -110,6 +111,8 @@ class GenerationConfig:
 @dataclass
 class GenerationResult:
     text: str = ""
+    generated_token_text: Optional[List[str]] = None
+    token_logprobs: Optional[List[float]] = None
     error: Optional[Exception] = None
 
 
@@ -124,6 +127,7 @@ class InferenceConfig:
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
     out_path: str = "gt_vs_pred.jsonl"
+    pred_token_trace_path: Optional[str] = None
     summary_path: Optional[str] = None
 
     # Optional pipeline-resolved root image dir used by infer/eval/vis for a
@@ -638,12 +642,6 @@ class InferenceEngine:
         )
         model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
 
-        if "attention_mask" in model_inputs:
-            prompt_lens = model_inputs["attention_mask"].sum(dim=1).tolist()
-        else:
-            # Fallback: assume no padding.
-            prompt_lens = [int(model_inputs["input_ids"].shape[1])] * int(len(images))
-
         gen_kwargs = dict(
             max_new_tokens=self.gen_cfg.max_new_tokens,
             do_sample=self.gen_cfg.temperature > 0,
@@ -655,18 +653,82 @@ class InferenceEngine:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
 
         with torch.inference_mode():
-            gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
+            # Keep score traces for offline confidence post-op.
+            #
+            # Some remote-code checkpoints may reject trace kwargs. Fall back to
+            # plain generation (text-only) rather than aborting inference.
+            try:
+                gen_outputs = self.model.generate(
+                    **model_inputs,
+                    **gen_kwargs,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                )
+            except (TypeError, ValueError) as exc:
+                self.logger.warning(
+                    "HF trace capture unavailable; falling back to text-only generation: %s",
+                    exc,
+                )
+                gen_outputs = self.model.generate(**model_inputs, **gen_kwargs)
+
+        if isinstance(gen_outputs, torch.Tensor):
+            gen_ids = gen_outputs
+            scores = []
+        else:
+            gen_ids = gen_outputs.sequences
+            scores = list(getattr(gen_outputs, "scores", ()) or ())
+        prompt_padded_len = int(model_inputs["input_ids"].shape[1])
+        gen_token_ids = gen_ids[:, prompt_padded_len:]
+
+        trace_len = min(int(gen_token_ids.shape[1]), int(len(scores)))
+        token_logprobs_by_sample: List[List[float]] = [
+            [] for _ in range(int(len(images)))
+        ]
+        if trace_len > 0:
+            for step_idx in range(trace_len):
+                step_scores = scores[step_idx]
+                if not isinstance(step_scores, torch.Tensor):
+                    continue
+                step_token_ids = gen_token_ids[:, step_idx].long()
+                step_scores_f = step_scores.float()
+                step_selected_logits = step_scores_f.gather(
+                    dim=1, index=step_token_ids.unsqueeze(1)
+                ).squeeze(1)
+                step_log_norm = torch.logsumexp(step_scores_f, dim=-1)
+                step_selected = step_selected_logits - step_log_norm
+                selected_vals = step_selected.detach().cpu().tolist()
+                for sample_idx, val in enumerate(selected_vals):
+                    token_logprobs_by_sample[sample_idx].append(float(val))
 
         out: List[GenerationResult] = []
         for i in range(len(images)):
-            prompt_len = int(prompt_lens[i])
-            gen_only = gen_ids[i, prompt_len:]
+            gen_only = gen_token_ids[i]
             raw_text = self.processor.tokenizer.decode(
                 gen_only,
                 skip_special_tokens=False,
                 clean_up_tokenization_spaces=False,
             )
-            out.append(GenerationResult(text=raw_text, error=None))
+
+            trace_token_ids = gen_token_ids[i, :trace_len].detach().cpu().tolist()
+            generated_token_text = (
+                self.processor.tokenizer.batch_decode(
+                    [[int(tok)] for tok in trace_token_ids],
+                    skip_special_tokens=False,
+                    clean_up_tokenization_spaces=False,
+                )
+                if trace_token_ids
+                else []
+            )
+            token_logprobs = token_logprobs_by_sample[i][: len(generated_token_text)]
+
+            out.append(
+                GenerationResult(
+                    text=raw_text,
+                    generated_token_text=generated_token_text,
+                    token_logprobs=token_logprobs,
+                    error=None,
+                )
+            )
         return out
 
     def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
@@ -1151,6 +1213,15 @@ class InferenceEngine:
         summary_path = Path(self.cfg.summary_path or (out_path.parent / "summary.json"))
 
         backend = str(self.cfg.backend_type).strip().lower()
+        trace_path_raw = str(self.cfg.pred_token_trace_path or "").strip()
+        if trace_path_raw:
+            trace_path: Optional[Path] = Path(trace_path_raw)
+        elif backend == "hf":
+            # HF path defaults on so confidence post-op has deterministic inputs.
+            trace_path = out_path.parent / "pred_token_trace.jsonl"
+        else:
+            trace_path = None
+
         determinism = "strict" if backend == "hf" else "best_effort"
 
         try:
@@ -1168,6 +1239,8 @@ class InferenceEngine:
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.parent.mkdir(parents=True, exist_ok=True)
+        if trace_path is not None:
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
 
         resolved_meta = {
             "mode": self.resolved_mode,
@@ -1190,6 +1263,7 @@ class InferenceEngine:
             },
             "artifacts": {
                 "gt_vs_pred_jsonl": str(out_path),
+                "pred_token_trace_jsonl": str(trace_path) if trace_path is not None else None,
                 "summary_json": str(summary_path),
             },
         }
@@ -1265,7 +1339,9 @@ class InferenceEngine:
 
             for p, res in zip(pending, results):
                 raw_text = res.text
-                raw_special_tokens = extract_special_tokens(raw_text)
+                raw_special_tokens = extract_special_tokens(
+                    raw_text, preserve_duplicates=True
+                )
                 raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
                 raw_output_json = load_prediction_dict(raw_text)
 
@@ -1280,6 +1356,7 @@ class InferenceEngine:
 
                 error_codes = [_canonical(c) for c in pred_errors]
                 error_entries = [_error_entry(c) for c in pred_errors]
+                line_idx = int(counters.total_emitted)
 
                 output = {
                     "image": p["image"],
@@ -1298,14 +1375,31 @@ class InferenceEngine:
                     # Structured per-sample errors (minimal contract).
                     "error_entries": error_entries,
                 }
+                if (
+                    ftrace is not None
+                    and res.generated_token_text is not None
+                    and res.token_logprobs is not None
+                ):
+                    trace_record = {
+                        "line_idx": line_idx,
+                        "generated_token_text": list(res.generated_token_text),
+                        "token_logprobs": list(res.token_logprobs),
+                    }
+                    ftrace.write(json.dumps(trace_record, ensure_ascii=False) + "\n")
                 _emit(output, error_codes)
 
         pbar_total = self.cfg.limit if self.cfg.limit > 0 else None
         pending: List[Dict[str, Any]] = []
 
+        trace_cm = (
+            trace_path.open("w", encoding="utf-8")
+            if trace_path is not None
+            else nullcontext(None)
+        )
         with (
             jsonl_path.open("r", encoding="utf-8") as fin,
             out_path.open("w", encoding="utf-8") as fout,
+            trace_cm as ftrace,
             tqdm(
                 total=pbar_total,
                 desc="Infer",

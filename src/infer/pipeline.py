@@ -142,6 +142,7 @@ def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
 class ResolvedArtifacts:
     run_dir: Path
     gt_vs_pred_jsonl: Path
+    pred_token_trace_jsonl: Path
     gt_vs_pred_scored_jsonl: Path | None
     summary_json: Path
     eval_dir: Path
@@ -188,6 +189,13 @@ def resolve_artifacts(
     else:
         gt_vs_pred_jsonl = run_dir / "gt_vs_pred.jsonl"
 
+    pred_token_trace = _get_str(art_cfg, "pred_token_trace_jsonl")
+    pred_token_trace_jsonl = (
+        Path(pred_token_trace)
+        if pred_token_trace
+        else run_dir / "pred_token_trace.jsonl"
+    )
+
     gt_vs_pred_scored = _get_str(art_cfg, "gt_vs_pred_scored_jsonl")
     gt_vs_pred_scored_jsonl = (
         Path(gt_vs_pred_scored) if gt_vs_pred_scored else None
@@ -205,6 +213,7 @@ def resolve_artifacts(
         ResolvedArtifacts(
             run_dir=run_dir,
             gt_vs_pred_jsonl=gt_vs_pred_jsonl,
+            pred_token_trace_jsonl=pred_token_trace_jsonl,
             gt_vs_pred_scored_jsonl=gt_vs_pred_scored_jsonl,
             summary_json=summary_json,
             eval_dir=eval_dir,
@@ -474,6 +483,7 @@ def run_pipeline(
         "artifacts": {
             "run_dir": str(artifacts.run_dir),
             "gt_vs_pred_jsonl": str(artifacts.gt_vs_pred_jsonl),
+            "pred_token_trace_jsonl": str(artifacts.pred_token_trace_jsonl),
             "gt_vs_pred_scored_jsonl": (
                 str(artifacts.gt_vs_pred_scored_jsonl)
                 if artifacts.gt_vs_pred_scored_jsonl is not None
@@ -615,6 +625,7 @@ def _run_infer_stage(
         object_field_order=object_field_order,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
+        pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),
         summary_path=str(artifacts.summary_json),
         root_image_dir=str(root_image_dir) if root_image_dir else None,
         device=str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0"),

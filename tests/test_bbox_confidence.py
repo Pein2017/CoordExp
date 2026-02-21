@@ -79,3 +79,33 @@ def test_missing_span_returns_none_assignment() -> None:
     assert assignments[0] is not None
     assert assignments[1] is None
     assert EXPECTED_BBOX_COORD_TOKEN_COUNT == 4
+
+
+def test_subsequence_matching_allows_separator_tokens_between_coords() -> None:
+    seq = coord_bins_to_tokens([704, 284, 724, 338])
+    generated_token_text = [
+        '{"',
+        "objects",
+        '":',
+        "[",
+        seq[0],
+        ",",
+        " ",
+        seq[1],
+        ",",
+        " ",
+        seq[2],
+        ",",
+        " ",
+        seq[3],
+        "]",
+    ]
+
+    assignments = assign_spans_left_to_right(
+        generated_token_text=generated_token_text,
+        expected_sequences=[seq],
+    )
+
+    assert len(assignments) == 1
+    assert assignments[0] is not None
+    assert assignments[0].matched_token_indices == (4, 7, 10, 13)

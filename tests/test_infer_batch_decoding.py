@@ -95,6 +95,102 @@ def test_infer_hf_batch_size_microbatches(tmp_path, monkeypatch):
         assert len(rec["pred"]) == 1
 
 
+def test_infer_writes_pred_token_trace_sidecar(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    _write_img(tmp_path / "img_0.png")
+    gt_path = tmp_path / "gt.jsonl"
+    gt_path.write_text(
+        json.dumps(
+            {
+                "images": ["img_0.png"],
+                "width": 32,
+                "height": 32,
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "obj"}],
+            },
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint="dummy",
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        pred_token_trace_path=str(trace_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    monkeypatch.setattr(engine, "load_model", lambda: None)
+
+    def _fake_generate_batch(images):
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
+        return [
+            GenerationResult(
+                text=text,
+                generated_token_text=[
+                    "<|coord_0|>",
+                    "<|coord_0|>",
+                    "<|coord_10|>",
+                    "<|coord_10|>",
+                    "<|im_end|>",
+                ],
+                token_logprobs=[-0.1, -0.1, -0.2, -0.2, -0.05],
+                error=None,
+            )
+            for _ in images
+        ]
+
+    monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+    engine.infer()
+
+    trace_rows = [
+        json.loads(line)
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(trace_rows) == 1
+    assert trace_rows[0]["line_idx"] == 0
+    assert trace_rows[0]["generated_token_text"] == [
+        "<|coord_0|>",
+        "<|coord_0|>",
+        "<|coord_10|>",
+        "<|coord_10|>",
+        "<|im_end|>",
+    ]
+    assert trace_rows[0]["token_logprobs"] == [-0.1, -0.1, -0.2, -0.2, -0.05]
+
+    rec = json.loads(out_path.read_text(encoding="utf-8").strip())
+    assert rec["raw_special_tokens"] == [
+        "<|coord_0|>",
+        "<|coord_0|>",
+        "<|coord_10|>",
+        "<|coord_10|>",
+        "<|im_end|>",
+    ]
+
+
 def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypatch):
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
@@ -240,6 +336,7 @@ def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeyp
 
     # Avoid loading a real HF model.
     monkeypatch.setattr(engine, "load_model", lambda: None)
+    bad = "not-json-output"
 
     def _fake_generate_batch(images):
         assert len(images) == 2

@@ -49,7 +49,15 @@ def find_exact_subsequence_candidates(
     min_start: int = 0,
     used_indices: Set[int] | None = None,
 ) -> list[Tuple[int, ...]]:
-    """Return all unused exact-match candidate index tuples (stable order)."""
+    """Return all unused ordered-subsequence candidate index tuples (stable order).
+
+    NOTE:
+    - "subsequence" follows the requirement wording and allows gaps between
+      expected tokens in the generated stream.
+    - Candidate enumeration is deterministic: we iterate possible starts for the
+      first expected token from left to right and greedily choose the earliest
+      possible subsequent matches.
+    """
 
     if not expected_subsequence:
         return []
@@ -59,17 +67,34 @@ def find_exact_subsequence_candidates(
         return []
 
     used = used_indices or set()
-    max_start = len(tokens) - n
     candidates: list[Tuple[int, ...]] = []
 
-    for start in range(max(0, int(min_start)), max_start + 1):
-        end = start + n
-        if list(tokens[start:end]) != list(expected_subsequence):
+    first_token = str(expected_subsequence[0])
+    for start in range(max(0, int(min_start)), len(tokens)):
+        if str(tokens[start]) != first_token:
             continue
-        indices = tuple(range(start, end))
-        if any(index in used for index in indices):
+        if start in used:
             continue
-        candidates.append(indices)
+
+        matched = [start]
+        cursor = start + 1
+        ok = True
+        for expected_token in expected_subsequence[1:]:
+            found = None
+            for idx in range(cursor, len(tokens)):
+                if idx in used:
+                    continue
+                if str(tokens[idx]) == str(expected_token):
+                    found = idx
+                    break
+            if found is None:
+                ok = False
+                break
+            matched.append(found)
+            cursor = found + 1
+
+        if ok and len(matched) == n:
+            candidates.append(tuple(matched))
 
     return candidates
 

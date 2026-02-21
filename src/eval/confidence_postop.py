@@ -16,7 +16,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import decode_coord, flatten_points
@@ -30,8 +30,8 @@ from src.eval.bbox_confidence import (
 )
 
 PRED_SCORE_SOURCE = "confidence_postop"
-PRED_SCORE_VERSION = 1
-CONFIDENCE_METHOD = "bbox_coord_mean_logprob_exp"
+PRED_SCORE_VERSION = 2
+CONFIDENCE_METHOD = "bbox_desc_fused_logprob_exp"
 
 MISSING_TRACE = "missing_trace"
 TRACE_LEN_MISMATCH = "trace_len_mismatch"
@@ -41,6 +41,7 @@ MISSING_SPAN = "missing_span"
 NONFINITE_LOGPROB = "nonfinite_logprob"
 PRED_ALIGNMENT_MISMATCH = "pred_alignment_mismatch"
 OBJECT_IDX_OOB = "object_idx_oob"
+MISSING_DESC_SPAN = "missing_desc_span"
 
 FAILURE_REASONS = {
     MISSING_TRACE,
@@ -51,6 +52,7 @@ FAILURE_REASONS = {
     NONFINITE_LOGPROB,
     PRED_ALIGNMENT_MISMATCH,
     OBJECT_IDX_OOB,
+    MISSING_DESC_SPAN,
 }
 
 
@@ -68,6 +70,84 @@ class TraceRecord:
     line_idx: int
     generated_token_text: list[str]
     token_logprobs: list[float]
+
+
+@dataclass(frozen=True)
+class ConfidencePostOpOptions:
+    fusion_w_geom: float = 0.7
+    fusion_w_desc: float = 0.3
+    desc_span_policy: Literal["best_effort", "strict"] = "best_effort"
+    empty_desc_policy: Literal["geom_only", "drop"] = "geom_only"
+
+    def normalized_weights(self) -> tuple[float, float]:
+        wg = float(self.fusion_w_geom)
+        wd = float(self.fusion_w_desc)
+        if not math.isfinite(wg) or not math.isfinite(wd):
+            raise ValueError("confidence.fusion weights must be finite numbers")
+        if wg < 0.0 or wd < 0.0:
+            raise ValueError("confidence.fusion weights must be >= 0")
+        total = wg + wd
+        if total <= 0.0:
+            raise ValueError("confidence.fusion weights must sum to > 0")
+        return wg / total, wd / total
+
+
+def options_from_config(cfg: Mapping[str, Any]) -> ConfidencePostOpOptions:
+    confidence_raw = cfg.get("confidence", {})
+    if confidence_raw is None:
+        confidence_raw = {}
+    if not isinstance(confidence_raw, Mapping):
+        raise ValueError("confidence must be a mapping when provided")
+    confidence_cfg: Mapping[str, Any] = confidence_raw
+
+    if "version" in confidence_cfg:
+        raise ValueError(
+            "confidence.version is no longer supported. "
+            "Unified fused confidence is always enabled."
+        )
+
+    desc_span_policy_raw = confidence_cfg.get("desc_span_policy", "best_effort")
+    desc_span_policy = str(desc_span_policy_raw).strip().lower()
+    if desc_span_policy not in {"best_effort", "strict"}:
+        raise ValueError(
+            "confidence.desc_span_policy must be one of ['best_effort', 'strict']"
+        )
+    desc_span_policy_t: Literal["best_effort", "strict"]
+    if desc_span_policy == "strict":
+        desc_span_policy_t = "strict"
+    else:
+        desc_span_policy_t = "best_effort"
+
+    empty_desc_policy_raw = confidence_cfg.get("empty_desc_policy", "geom_only")
+    empty_desc_policy = str(empty_desc_policy_raw).strip().lower()
+    if empty_desc_policy not in {"geom_only", "drop"}:
+        raise ValueError(
+            "confidence.empty_desc_policy must be one of ['geom_only', 'drop']"
+        )
+    empty_desc_policy_t: Literal["geom_only", "drop"]
+    if empty_desc_policy == "drop":
+        empty_desc_policy_t = "drop"
+    else:
+        empty_desc_policy_t = "geom_only"
+
+    fusion_raw = confidence_cfg.get("fusion", {})
+    if fusion_raw is None:
+        fusion_raw = {}
+    if not isinstance(fusion_raw, Mapping):
+        raise ValueError("confidence.fusion must be a mapping when provided")
+    fusion_cfg: Mapping[str, Any] = fusion_raw
+
+    w_geom_raw = confidence_cfg.get("fusion_w_geom", fusion_cfg.get("w_geom", 0.7))
+    w_desc_raw = confidence_cfg.get("fusion_w_desc", fusion_cfg.get("w_desc", 0.3))
+    options = ConfidencePostOpOptions(
+        fusion_w_geom=_require_float(w_geom_raw, name="confidence.fusion_w_geom"),
+        fusion_w_desc=_require_float(w_desc_raw, name="confidence.fusion_w_desc"),
+        desc_span_policy=desc_span_policy_t,
+        empty_desc_policy=empty_desc_policy_t,
+    )
+    # Validate early so config errors fail before processing artifacts.
+    options.normalized_weights()
+    return options
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -92,6 +172,13 @@ def _require_int(value: Any, *, name: str) -> int:
         return int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be int-compatible, got {value!r}") from exc
+
+
+def _require_float(value: Any, *, name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be float-compatible, got {value!r}") from exc
 
 
 def _as_mode(value: Any) -> str:
@@ -231,14 +318,24 @@ def _confidence_details(
     matched_token_indices: Sequence[int],
     ambiguous_matches: int,
     failure_reason: str | None,
+    desc_span_token_indices: Sequence[int] | None = None,
+    fusion_weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "method": CONFIDENCE_METHOD,
         "coord_token_count": int(coord_token_count),
         "matched_token_indices": [int(i) for i in matched_token_indices],
         "ambiguous_matches": int(ambiguous_matches),
         "failure_reason": failure_reason,
     }
+    if desc_span_token_indices is not None:
+        out["desc_span_token_indices"] = [int(i) for i in desc_span_token_indices]
+    if fusion_weights is not None:
+        out["fusion_weights"] = {
+            "w_geom": float(fusion_weights.get("w_geom", 0.0)),
+            "w_desc": float(fusion_weights.get("w_desc", 0.0)),
+        }
+    return out
 
 
 def _build_object_result(
@@ -252,6 +349,11 @@ def _build_object_result(
     coord_token_count: int,
     matched_token_indices: Sequence[int],
     ambiguous_matches: int,
+    score_geom: float | None = None,
+    score_desc: float | None = None,
+    score_fusion: float | None = None,
+    desc_span_token_indices: Sequence[int] | None = None,
+    fusion_weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     return {
         "object_idx": int(object_idx),
@@ -260,12 +362,17 @@ def _build_object_result(
         "points": list(pred_obj.get("points") or []),
         "confidence": confidence,
         "score": score,
+        "score_geom": score_geom,
+        "score_desc": score_desc,
+        "score_fusion": score_fusion,
         "kept": bool(kept),
         "confidence_details": _confidence_details(
             coord_token_count=coord_token_count,
             matched_token_indices=matched_token_indices,
             ambiguous_matches=ambiguous_matches,
             failure_reason=failure_reason,
+            desc_span_token_indices=desc_span_token_indices,
+            fusion_weights=fusion_weights,
         ),
     }
 
@@ -332,21 +439,105 @@ def _load_trace_index(path: Path) -> dict[int, TraceRecord]:
     return traces
 
 
+def _extract_desc_span_indices(
+    *,
+    generated_token_text: Sequence[str],
+    coord_start_idx: int,
+    window_start_idx: int,
+) -> list[int] | None:
+    """Extract token indices that correspond to the desc string for one object.
+
+    This parser is intentionally conservative and relies on the serialized object
+    structure around each bbox:
+      ... "desc": "<desc tokens>", "bbox_2d": [<coords>]
+    """
+
+    n_tokens = len(generated_token_text)
+    coord_start = int(coord_start_idx)
+    if coord_start < 0 or coord_start > n_tokens:
+        return None
+    window_start = max(0, int(window_start_idx))
+    if window_start >= coord_start:
+        return None
+
+    desc_key_idx = None
+    for idx in range(coord_start - 1, window_start - 1, -1):
+        if str(generated_token_text[idx]) == "desc":
+            desc_key_idx = idx
+            break
+    if desc_key_idx is None:
+        return None
+
+    quote_open_idx = None
+    for idx in range(desc_key_idx + 1, coord_start):
+        token = str(generated_token_text[idx])
+        if "\"" in token and ":" not in token:
+            quote_open_idx = idx
+            break
+    if quote_open_idx is None:
+        return None
+    open_token = str(generated_token_text[quote_open_idx])
+    if open_token.endswith("\",") or open_token == "\",":
+        return []
+
+    quote_close_idx = None
+    for idx in range(quote_open_idx + 1, coord_start):
+        token = str(generated_token_text[idx])
+        if token.endswith("\",") or token == "\",":
+            quote_close_idx = idx
+            break
+    if quote_close_idx is None:
+        return None
+
+    if quote_close_idx < quote_open_idx + 1:
+        return []
+    return list(range(quote_open_idx + 1, quote_close_idx))
+
+
+def _coerce_desc_score(
+    *,
+    desc_token_indices: Sequence[int],
+    trace: TraceRecord,
+) -> float | None:
+    if not desc_token_indices:
+        return None
+    desc_logprobs = [trace.token_logprobs[idx] for idx in desc_token_indices]
+    if not all(math.isfinite(lp) for lp in desc_logprobs):
+        return None
+    score_desc = compute_bbox_confidence_from_logprobs(desc_logprobs)
+    if not is_valid_confidence_score(score_desc):
+        return None
+    return float(score_desc)
+
+
 def _compute_sample_confidence_objects(
     *,
     line_idx: int,
     record: Mapping[str, Any],
     trace: TraceRecord | None,
+    options: ConfidencePostOpOptions,
 ) -> list[dict[str, Any]]:
+    w_geom, w_desc = options.normalized_weights()
+    fusion_weights = {
+        "w_geom": float(w_geom),
+        "w_desc": float(w_desc),
+    }
+
     emitted_pred = record.get("pred")
     pred_objs = list(emitted_pred) if isinstance(emitted_pred, list) else []
     if not pred_objs:
         return []
 
     if trace is None:
-        return _build_sample_failure_objects(pred_objs, failure_reason=MISSING_TRACE)
+        return _build_sample_failure_objects(
+            pred_objs,
+            failure_reason=MISSING_TRACE,
+        )
     if len(trace.generated_token_text) != len(trace.token_logprobs):
-        return _build_sample_failure_objects(pred_objs, failure_reason=TRACE_LEN_MISMATCH)
+        return _build_sample_failure_objects(
+            pred_objs,
+            failure_reason=TRACE_LEN_MISMATCH,
+        )
 
     raw_output_json = record.get("raw_output_json")
     if raw_output_json is None:
@@ -403,6 +594,7 @@ def _compute_sample_confidence_objects(
             span_matches_by_idx[object_idx] = match
 
     results: list[dict[str, Any]] = []
+    desc_window_cursor = 0
     for object_idx, pred_obj in enumerate(pred_objs):
         gtype = str(pred_obj.get("type", ""))
         if gtype != "bbox_2d":
@@ -458,6 +650,9 @@ def _compute_sample_confidence_objects(
         matched_indices = list(span_match.matched_token_indices)
         ambiguous_matches = int(span_match.ambiguous_matches)
         matched_logprobs = [trace.token_logprobs[idx] for idx in matched_indices]
+        desc_window_start = desc_window_cursor
+        if matched_indices:
+            desc_window_cursor = max(desc_window_cursor, matched_indices[-1] + 1)
         if not all(math.isfinite(lp) for lp in matched_logprobs):
             results.append(
                 _build_object_result(
@@ -491,17 +686,128 @@ def _compute_sample_confidence_objects(
             )
             continue
 
+        score_geom = float(score)
+        score_desc: float | None = None
+        score_fusion: float | None = None
+        desc_span_token_indices: list[int] | None = None
+        final_score = score_geom
+
+        desc_value = _normalize_desc(pred_obj.get("desc", ""))
+        desc_span_token_indices = _extract_desc_span_indices(
+            generated_token_text=trace.generated_token_text,
+            coord_start_idx=matched_indices[0],
+            window_start_idx=desc_window_start,
+        )
+        desc_missing = desc_span_token_indices is None
+        desc_empty = not desc_missing and len(desc_span_token_indices) == 0
+
+        if desc_missing:
+            if options.desc_span_policy == "strict":
+                results.append(
+                    _build_object_result(
+                        object_idx=object_idx,
+                        pred_obj=pred_obj,
+                        confidence=None,
+                        score=None,
+                        kept=False,
+                        failure_reason=MISSING_DESC_SPAN,
+                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                        matched_token_indices=matched_indices,
+                        ambiguous_matches=ambiguous_matches,
+                        score_geom=score_geom,
+                        desc_span_token_indices=None,
+                        fusion_weights=fusion_weights,
+                    )
+                )
+                continue
+        elif desc_empty or not desc_value:
+            if options.empty_desc_policy == "drop":
+                results.append(
+                    _build_object_result(
+                        object_idx=object_idx,
+                        pred_obj=pred_obj,
+                        confidence=None,
+                        score=None,
+                        kept=False,
+                        failure_reason=MISSING_DESC_SPAN,
+                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                        matched_token_indices=matched_indices,
+                        ambiguous_matches=ambiguous_matches,
+                        score_geom=score_geom,
+                        desc_span_token_indices=desc_span_token_indices,
+                        fusion_weights=fusion_weights,
+                    )
+                )
+                continue
+        else:
+            score_desc = _coerce_desc_score(
+                desc_token_indices=desc_span_token_indices,
+                trace=trace,
+            )
+            if score_desc is None:
+                results.append(
+                    _build_object_result(
+                        object_idx=object_idx,
+                        pred_obj=pred_obj,
+                        confidence=None,
+                        score=None,
+                        kept=False,
+                        failure_reason=NONFINITE_LOGPROB,
+                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                        matched_token_indices=matched_indices,
+                        ambiguous_matches=ambiguous_matches,
+                        score_geom=score_geom,
+                        desc_span_token_indices=desc_span_token_indices,
+                        fusion_weights=fusion_weights,
+                    )
+                )
+                continue
+
+        if score_desc is None:
+            score_fusion = score_geom
+        else:
+            score_fusion = (
+                float(fusion_weights["w_geom"]) * score_geom
+                + float(fusion_weights["w_desc"]) * float(score_desc)
+            )
+        if not is_valid_confidence_score(score_fusion):
+            results.append(
+                _build_object_result(
+                    object_idx=object_idx,
+                    pred_obj=pred_obj,
+                    confidence=None,
+                    score=None,
+                    kept=False,
+                    failure_reason=NONFINITE_LOGPROB,
+                    coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                    matched_token_indices=matched_indices,
+                    ambiguous_matches=ambiguous_matches,
+                    score_geom=score_geom,
+                    score_desc=score_desc,
+                    score_fusion=score_fusion,
+                    desc_span_token_indices=desc_span_token_indices,
+                    fusion_weights=fusion_weights,
+                )
+            )
+            continue
+        final_score = float(score_fusion)
+
         results.append(
             _build_object_result(
                 object_idx=object_idx,
                 pred_obj=pred_obj,
-                confidence=float(score),
-                score=float(score),
+                confidence=float(final_score),
+                score=float(final_score),
                 kept=True,
                 failure_reason=None,
                 coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
                 matched_token_indices=matched_indices,
                 ambiguous_matches=ambiguous_matches,
+                score_geom=score_geom,
+                score_desc=score_desc,
+                score_fusion=final_score,
+                desc_span_token_indices=desc_span_token_indices,
+                fusion_weights=fusion_weights,
             )
         )
 
@@ -513,14 +819,20 @@ def _enforce_object_idx_contract(
     confidence_objects: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     if len(pred_objs) != len(confidence_objects):
-        return _build_sample_failure_objects(pred_objs, failure_reason=OBJECT_IDX_OOB)
+        return _build_sample_failure_objects(
+            pred_objs,
+            failure_reason=OBJECT_IDX_OOB,
+        )
 
     out: list[dict[str, Any]] = []
-    for expected_idx, (pred_obj, conf_obj_any) in enumerate(zip(pred_objs, confidence_objects)):
+    for expected_idx, conf_obj_any in enumerate(confidence_objects):
         conf_obj = dict(conf_obj_any)
         object_idx = conf_obj.get("object_idx")
         if not isinstance(object_idx, int) or object_idx != expected_idx:
-            return _build_sample_failure_objects(pred_objs, failure_reason=OBJECT_IDX_OOB)
+            return _build_sample_failure_objects(
+                pred_objs,
+                failure_reason=OBJECT_IDX_OOB,
+            )
 
         kept = bool(conf_obj.get("kept", False))
         score = conf_obj.get("score")
@@ -536,14 +848,20 @@ def _enforce_object_idx_contract(
             except (TypeError, ValueError):
                 score_f = float("nan")
             if not is_valid_confidence_score(score_f):
-                return _build_sample_failure_objects(pred_objs, failure_reason=OBJECT_IDX_OOB)
+                return _build_sample_failure_objects(
+                    pred_objs,
+                    failure_reason=OBJECT_IDX_OOB,
+                )
             conf_obj["score"] = score_f
             conf_obj["confidence"] = float(confidence)
             if isinstance(conf_obj.get("confidence_details"), dict):
                 conf_obj["confidence_details"]["failure_reason"] = None
         else:
             if failure_reason not in FAILURE_REASONS:
-                return _build_sample_failure_objects(pred_objs, failure_reason=OBJECT_IDX_OOB)
+                return _build_sample_failure_objects(
+                    pred_objs,
+                    failure_reason=OBJECT_IDX_OOB,
+                )
             conf_obj["confidence"] = None
             conf_obj["score"] = None
         out.append(conf_obj)
@@ -575,7 +893,13 @@ def _build_scored_record(
     return out
 
 
-def run_confidence_postop(paths: ConfidencePostOpPaths) -> dict[str, Any]:
+def run_confidence_postop(
+    paths: ConfidencePostOpPaths,
+    *,
+    options: ConfidencePostOpOptions | None = None,
+) -> dict[str, Any]:
+    opts = options or ConfidencePostOpOptions()
+
     gt_records = _read_jsonl(paths.gt_vs_pred_jsonl)
     traces = _load_trace_index(paths.pred_token_trace_jsonl)
 
@@ -598,6 +922,7 @@ def run_confidence_postop(paths: ConfidencePostOpPaths) -> dict[str, Any]:
                 line_idx=line_idx,
                 record=record,
                 trace=trace,
+                options=opts,
             )
             pred_objs = list(record.get("pred")) if isinstance(record.get("pred"), list) else []
             confidence_objects = _enforce_object_idx_contract(pred_objs, confidence_objects)
@@ -644,6 +969,7 @@ def run_confidence_postop(paths: ConfidencePostOpPaths) -> dict[str, Any]:
         "dropped_by_reason": dropped_by_reason,
         "pred_score_source": PRED_SCORE_SOURCE,
         "pred_score_version": PRED_SCORE_VERSION,
+        "confidence_method": CONFIDENCE_METHOD,
     }
     paths.confidence_postop_summary_json.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
@@ -723,15 +1049,20 @@ def paths_from_config(cfg: Mapping[str, Any]) -> ConfidencePostOpPaths:
 
 
 def run_confidence_postop_from_config(cfg: Mapping[str, Any]) -> dict[str, Any]:
-    return run_confidence_postop(paths_from_config(cfg))
+    return run_confidence_postop(
+        paths_from_config(cfg),
+        options=options_from_config(cfg),
+    )
 
 
 __all__ = [
     "CONFIDENCE_METHOD",
+    "ConfidencePostOpOptions",
     "ConfidencePostOpPaths",
     "FAILURE_REASONS",
     "PRED_SCORE_SOURCE",
     "PRED_SCORE_VERSION",
+    "options_from_config",
     "paths_from_config",
     "run_confidence_postop",
     "run_confidence_postop_from_config",

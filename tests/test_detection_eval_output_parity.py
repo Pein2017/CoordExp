@@ -85,6 +85,48 @@ def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
     assert (out_dir / "per_image.json").exists()
 
 
+def test_evaluate_and_save_reports_zero_coco_metrics_when_no_predictions(
+    tmp_path: Path,
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    record = _one_record(image="img_empty.png")
+    record["pred"] = []
+    _write_jsonl(pred_path, [record])
+
+    out_dir = tmp_path / "eval_empty"
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=out_dir,
+        overlay=False,
+        num_workers=0,
+    )
+    summary = evaluate_and_save(pred_path, options=options)
+
+    expected_keys = [
+        "bbox_AP",
+        "bbox_AP50",
+        "bbox_AP75",
+        "bbox_APs",
+        "bbox_APm",
+        "bbox_APl",
+        "bbox_AR1",
+        "bbox_AR10",
+        "bbox_AR100",
+        "bbox_ARs",
+        "bbox_ARm",
+        "bbox_ARl",
+    ]
+    for key in expected_keys:
+        assert key in summary["metrics"]
+        assert summary["metrics"][key] == 0.0
+
+    metrics_payload = json.loads((out_dir / "metrics.json").read_text(encoding="utf-8"))
+    for key in expected_keys:
+        assert metrics_payload["metrics"][key] == 0.0
+
+
 def test_evaluate_and_save_both_includes_f1ish_metrics(
     tmp_path: Path, monkeypatch
 ) -> None:

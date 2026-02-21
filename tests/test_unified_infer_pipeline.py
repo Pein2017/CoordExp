@@ -153,6 +153,7 @@ def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:
     assert stages.infer and stages.eval and stages.vis
     assert artifacts.run_dir == tmp_path / "out" / "demo"
     assert artifacts.gt_vs_pred_jsonl == artifacts.run_dir / "gt_vs_pred.jsonl"
+    assert artifacts.pred_token_trace_jsonl == artifacts.run_dir / "pred_token_trace.jsonl"
     assert artifacts.gt_vs_pred_scored_jsonl is None
     assert artifacts.summary_json == artifacts.run_dir / "summary.json"
     assert artifacts.eval_dir == artifacts.run_dir / "eval"
@@ -221,6 +222,10 @@ def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
     assert resolved["schema_version"] == 1
     assert resolved["root_image_dir_source"] == "gt_parent"
     assert resolved["root_image_dir"] == str(gt_jsonl.parent.resolve())
+    assert (
+        resolved["artifacts"]["pred_token_trace_jsonl"]
+        == str(artifacts.run_dir / "pred_token_trace.jsonl")
+    )
 
 
 def test_run_pipeline_writes_manifest_pointer_for_non_default_artifact_layout(
@@ -489,6 +494,7 @@ def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
 
     def _fake_infer(self):
         captured["root_image_dir"] = self.cfg.root_image_dir
+        captured["pred_token_trace_path"] = self.cfg.pred_token_trace_path
         Path(self.cfg.out_path).write_text("", encoding="utf-8")
         Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
         return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
@@ -499,6 +505,9 @@ def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
 
     assert "ROOT_IMAGE_DIR" not in os.environ
     assert captured["root_image_dir"] == str(config_root.resolve())
+    assert captured["pred_token_trace_path"] == str(
+        (tmp_path / "out" / "demo" / "pred_token_trace.jsonl").resolve()
+    )
 
 
 def test_run_pipeline_wires_and_records_prompt_variant(

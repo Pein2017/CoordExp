@@ -84,6 +84,7 @@ infer:
 artifacts:
   # run_dir: output/infer/lvis_val_ckpt1632
   # gt_vs_pred_jsonl: output/infer/lvis_val_ckpt1632/gt_vs_pred.jsonl
+  # pred_token_trace_jsonl: output/infer/lvis_val_ckpt1632/pred_token_trace.jsonl
   # Required when eval.metrics is coco|both:
   # gt_vs_pred_scored_jsonl: output/infer/lvis_val_ckpt1632/gt_vs_pred_scored.jsonl
   # summary_json: output/infer/lvis_val_ckpt1632/summary.json
