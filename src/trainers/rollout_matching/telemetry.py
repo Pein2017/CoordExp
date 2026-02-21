@@ -75,6 +75,14 @@ class PendingTrainRolloutLog:
     coord_loss_sum: float = 0.0
     coord_prefix_sum: float = 0.0
     coord_tail_sum: float = 0.0
+
+    # Segment-weighted loss sums (weight = number of meta entries in the micro-pack).
+    ce_loss_weighted_sum: float = 0.0
+    coord_loss_weighted_sum: float = 0.0
+    coord_prefix_weighted_sum: float = 0.0
+    coord_tail_weighted_sum: float = 0.0
+    loss_weight_sum: float = 0.0
+
     n_micro: int = 0
 
     time_forward_s: float = 0.0
@@ -115,9 +123,18 @@ class PendingTrainRolloutLog:
         self.time_forward_s += float(time_forward_s)
         self.time_mask_build_s += float(time_mask_build_s)
 
+        micro_weight = 0.0
         for m in meta:
             if isinstance(m, Mapping):
                 self.meta.append(slim_rollout_meta_for_logging(m))
+                micro_weight += 1.0
+
+        if micro_weight > 0.0:
+            self.loss_weight_sum += float(micro_weight)
+            self.ce_loss_weighted_sum += float(ce_loss) * float(micro_weight)
+            self.coord_loss_weighted_sum += float(coord_loss) * float(micro_weight)
+            self.coord_prefix_weighted_sum += float(coord_prefix) * float(micro_weight)
+            self.coord_tail_weighted_sum += float(coord_tail) * float(micro_weight)
 
         if not isinstance(batch_metrics, Mapping):
             return
@@ -142,15 +159,14 @@ class PendingTrainRolloutLog:
                 batch_metrics.get("packing/post_rollout_fill", 0.0) or 0.0
             )
             self.packing_selected_total_len_sum += float(
-                batch_metrics.get("packing/post_rollout_selected_total_len", 0.0) or 0.0
+                batch_metrics.get("packing/post_rollout_selected_total_len", 0.0)
+                or 0.0
             )
             self.packing_segments_sum += float(
                 batch_metrics.get("packing/post_rollout_segments", 0.0) or 0.0
             )
             self.packing_buffer_last = float(
-                batch_metrics.get(
-                    "packing/post_rollout_buffer", self.packing_buffer_last
-                )
+                batch_metrics.get("packing/post_rollout_buffer", self.packing_buffer_last)
                 or self.packing_buffer_last
             )
             self.packing_count += 1

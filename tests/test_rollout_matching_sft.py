@@ -14,6 +14,7 @@ from src.config.prompts import build_dense_user_prompt
 from src.trainers.rollout_matching_sft import (
     GTObject,
     RolloutMatchingSFTTrainer,
+    _PendingTrainRolloutLog,
     _build_labels_and_coord_targets_for_batch,
     _build_labels_and_coord_targets_for_sample,
     _per_server_rank_request_caps,
@@ -477,6 +478,96 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
     assert out["train/samples_total"] == pytest.approx(4.0)
     assert out["loss/ce"] == pytest.approx(1.5)
     assert "rollout/parse_truncated_rate" not in out
+
+
+def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    pending = _PendingTrainRolloutLog()
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0}],
+        ce_loss=10.0,
+        coord_loss=0.0,
+        coord_prefix=0.0,
+        coord_tail=0.0,
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
+        ce_loss=20.0,
+        coord_loss=0.0,
+        coord_prefix=0.0,
+        coord_tail=0.0,
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+
+    out = trainer._build_train_rollout_log_payload(pending)
+
+    assert out["train/samples_total"] == pytest.approx(4.0)
+    assert out["train/micro_steps"] == pytest.approx(2.0)
+    assert out["loss/ce"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+
+
+def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 0, raising=False)
+
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+
+    def _fake_all_gather_object(out, obj):
+        for i in range(len(out)):
+            out[i] = list(obj)
+
+    monkeypatch.setattr(dist, "all_gather_object", _fake_all_gather_object)
+
+    def _fake_all_reduce(tensor: torch.Tensor, op: str) -> None:
+        if op == _FakeReduceOp.SUM:
+            assert int(tensor.numel()) == 2
+            a = float(tensor[0].item())
+            b = float(tensor[1].item())
+
+            # Local rank0 payload represents 1 segment with mean loss 10.
+            # Peer rank represents 3 segments with mean loss 20.
+            # Expected global mean = (10*1 + 20*3) / 4 = 17.5.
+            if abs(a - 10.0) < 1e-6 and abs(b - 1.0) < 1e-6:
+                tensor[0] = torch.tensor(70.0, dtype=tensor.dtype, device=tensor.device)
+                tensor[1] = torch.tensor(4.0, dtype=tensor.dtype, device=tensor.device)
+            elif abs(a - 1.0) < 1e-6 and abs(b - 10.0) < 1e-6:
+                tensor[0] = torch.tensor(4.0, dtype=tensor.dtype, device=tensor.device)
+                tensor[1] = torch.tensor(70.0, dtype=tensor.dtype, device=tensor.device)
+            else:
+                raise AssertionError(f"unexpected SUM tensor values: {a}, {b}")
+        elif op == _FakeReduceOp.MAX:
+            return
+
+    monkeypatch.setattr(dist, "all_reduce", _fake_all_reduce)
+
+    out = trainer._reduce_train_rollout_log_payload_global(
+        {
+            "train/samples_total": 1.0,
+            "loss/ce": 10.0,
+        }
+    )
+
+    assert out["train/samples_total"] == pytest.approx(4.0)
+    assert out["loss/ce"] == pytest.approx(17.5)
+    assert "loss/ce_total" not in out
 
 
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:

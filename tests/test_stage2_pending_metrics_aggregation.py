@@ -50,3 +50,28 @@ def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None
     # Derived rate is always computed from numerator/denominator.
     assert out["rollout/parse_truncated_rate"] == pytest.approx(1.0 / 3.0)
 
+
+def test_stage2_pending_log_finalize_uses_segment_weight_when_provided() -> None:
+    pending = _PendingStage2Log()
+
+    pending.add(
+        {
+            "loss/bbox_smoothl1": 10.0,
+            "stage2/_log_weight": 1.0,
+            "stage2/raw_rollouts": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "loss/bbox_smoothl1": 20.0,
+            "stage2/_log_weight": 3.0,
+            "stage2/raw_rollouts": 2.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["loss/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["stage2/raw_rollouts"] == pytest.approx(3.0)
+    assert "stage2/_log_weight_total" not in out
+

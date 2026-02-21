@@ -5609,6 +5609,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 * float(reduced.get("rollout/desc_pairs_total", 0.0))
             )
 
+        # Loss scalars are mean-like per-segment metrics. Reduce them with sample weights
+        # so ranks with different numbers of packed segments (or zero) don't skew the
+        # global average under DDP.
+        loss_weight = float(sample_total_local)
+        for key in ("loss/ce", "loss/coord", "loss/coord_prefix", "loss/coord_tail"):
+            if key in reduced:
+                reduced[f"{key}_total"] = float(
+                    float(reduced.get(key, 0.0)) * loss_weight
+                )
+                reduced.pop(key, None)
+
         try:
             import torch.distributed as dist
         except (TypeError, ValueError):
@@ -5756,6 +5767,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
+
+        for key_total, key_out in (
+            ("loss/ce_total", "loss/ce"),
+            ("loss/coord_total", "loss/coord"),
+            ("loss/coord_prefix_total", "loss/coord_prefix"),
+            ("loss/coord_tail_total", "loss/coord_tail"),
+        ):
+            if key_total in reduced:
+                reduced[key_out] = (
+                    float(reduced.get(key_total, 0.0) / sample_total)
+                    if sample_total > 0.0
+                    else 0.0
+                )
+
         if has_parse_inputs:
             trunc_num = float(reduced.get(trunc_num_key, 0.0))
             trunc_den = float(reduced.get(trunc_den_key, sample_total))
@@ -5885,6 +5910,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for key in (
             trunc_num_key,
             trunc_den_key,
+            "loss/ce_total",
+            "loss/coord_total",
+            "loss/coord_prefix_total",
+            "loss/coord_tail_total",
             "rollout/_matched_maskiou_sum",
             "rollout/_sample_valid_pred_num",
             "rollout/_sample_any_match_num",
@@ -5893,6 +5922,72 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ):
             reduced.pop(key, None)
         return reduced
+
+    def _ddp_assert_all_ranks_true_or_raise(
+        self,
+        *,
+        where: str,
+        local_true: bool,
+        global_step: int,
+    ) -> None:
+        """Fail-fast guard: ensure every rank takes the same logging/reduction path.
+
+        If one rank enters distributed collectives while another skips them (e.g.
+        missing pending metrics for a step), the job will deadlock. We all-reduce
+        a 0/1 readiness flag to verify that *every* rank is ready.
+        """
+
+        try:
+            import torch.distributed as dist
+        except (ImportError, TypeError, ValueError):
+            return
+
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+
+        try:
+            world_size = int(dist.get_world_size())
+        except (TypeError, ValueError, RuntimeError):
+            world_size = 1
+        if int(world_size) <= 1:
+            return
+
+        try:
+            rank = int(dist.get_rank())
+        except (TypeError, ValueError, RuntimeError):
+            rank = 0
+
+        backend = ""
+        try:
+            backend = str(dist.get_backend()).lower()
+        except Exception:
+            backend = ""
+
+        reduce_device = torch.device("cpu")
+        if backend == "nccl" and torch.cuda.is_available():
+            try:
+                model = getattr(self, "model", None)
+                if model is not None and hasattr(model, "device"):
+                    reduce_device = model.device
+                elif model is not None:
+                    reduce_device = next(model.parameters()).device
+            except Exception:
+                reduce_device = torch.device("cpu")
+
+        flag = torch.tensor(
+            [1 if bool(local_true) else 0],
+            device=reduce_device,
+            dtype=torch.int32,
+        )
+        dist.all_reduce(flag, op=dist.ReduceOp.SUM)
+        ready_sum = int(flag.item())
+
+        if int(ready_sum) != int(world_size):
+            raise RuntimeError(
+                f"{where}: pending-metrics readiness mismatch under DDP "
+                f"(global_step={int(global_step)} rank={int(rank)}/{int(world_size)}, "
+                f"local_ready={int(bool(local_true))} ready_sum={int(ready_sum)})."
+            )
 
     def log(self, logs: Dict[str, float]) -> None:
         """Merge buffered rollout-matching metrics into the main train log record.
@@ -5912,6 +6007,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 and not any(str(k).startswith("eval_") for k in logs.keys())
             ):
                 step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+                pending = self._rm_pending_train_logs.get(step)
+                self._ddp_assert_all_ranks_true_or_raise(
+                    where="rollout-matching train log",
+                    local_true=pending is not None,
+                    global_step=step,
+                )
                 pending = self._rm_pending_train_logs.pop(step, None)
                 if pending is not None:
                     payload = self._build_train_rollout_log_payload(pending)
@@ -6211,17 +6312,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             payload["rollout/_parse_truncated_den"] = float(sample_total)
 
-        if pending.n_micro > 0:
-            payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
-            payload["loss/coord"] = float(
-                pending.coord_loss_sum / float(pending.n_micro)
+        if float(getattr(pending, "loss_weight_sum", 0.0)) > 0.0:
+            denom = float(pending.loss_weight_sum)
+            payload["loss/ce"] = float(pending.ce_loss_weighted_sum / denom)
+            payload["loss/coord"] = float(pending.coord_loss_weighted_sum / denom)
+            payload["loss/coord_prefix"] = float(
+                pending.coord_prefix_weighted_sum / denom
             )
+            payload["loss/coord_tail"] = float(pending.coord_tail_weighted_sum / denom)
+        elif pending.n_micro > 0:
+            payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
+            payload["loss/coord"] = float(pending.coord_loss_sum / float(pending.n_micro))
             payload["loss/coord_prefix"] = float(
                 pending.coord_prefix_sum / float(pending.n_micro)
             )
-            payload["loss/coord_tail"] = float(
-                pending.coord_tail_sum / float(pending.n_micro)
-            )
+            payload["loss/coord_tail"] = float(pending.coord_tail_sum / float(pending.n_micro))
 
         payload["time/forward_s"] = float(pending.time_forward_s)
         payload["time/mask_build_s"] = float(pending.time_mask_build_s)
@@ -6234,16 +6339,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
         if ran_rollout:
             payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
-            payload["time/rollout_parse_match_s"] = float(
-                pending.time_rollout_parse_match_s
-            )
+            payload["time/rollout_parse_match_s"] = float(pending.time_rollout_parse_match_s)
             payload["time/rollout_teacher_encode_s"] = float(
                 pending.time_rollout_teacher_encode_s
             )
         if pending.time_post_rollout_pack_s > 0:
-            payload["time/post_rollout_pack_s"] = float(
-                pending.time_post_rollout_pack_s
-            )
+            payload["time/post_rollout_pack_s"] = float(pending.time_post_rollout_pack_s)
 
         if pending.packing_count > 0:
             payload["packing/post_rollout_fill"] = float(
@@ -7260,6 +7361,32 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # When using identity collator, `inputs` is a list of raw samples.
         if not isinstance(inputs, list):
             return super().training_step(model, inputs, *args, **kwargs)
+
+        if not inputs:
+            rank = 0
+            world_size = 1
+            try:
+                import torch.distributed as dist
+            except (ImportError, TypeError, ValueError):
+                dist = None  # type: ignore[assignment]
+
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                try:
+                    world_size = int(dist.get_world_size())
+                except (TypeError, ValueError, RuntimeError):
+                    world_size = 1
+                try:
+                    rank = int(dist.get_rank())
+                except (TypeError, ValueError, RuntimeError):
+                    rank = 0
+
+            gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+            raise ValueError(
+                "rollout-matching training_step received an empty raw batch "
+                f"(global_step={int(gs)} rank={int(rank)}/{int(world_size)}). "
+                "This is unsafe under DDP because other ranks may execute forward/backward while this rank does not. "
+                "Mitigations: ensure dataset length >= world_size and verify your sampler/drop_last settings."
+            )
 
         self._validate_rollout_matching_cfg()
 

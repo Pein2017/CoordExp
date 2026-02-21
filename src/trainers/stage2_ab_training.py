@@ -40,25 +40,80 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class _PendingStage2Log:
-    """Accumulate Stage-2 AB logs across micro-batches for one optimizer step."""
+    """Accumulate Stage-2 AB logs across micro-batches for one optimizer step.
+
+    Stage2-AB step-budgeted packing can run multiple packed forwards/backwards per
+    optimizer step. To keep loss component telemetry interpretable, we support a
+    segment-weighted mean when callers provide `stage2/_log_weight` (typically the
+    number of segments/samples in the packed forward).
+    """
 
     n_micro: int = 0
+    weight_sum: float = 0.0
     sums: Dict[str, float] = field(default_factory=dict)
 
     def add(self, metrics: Mapping[str, float]) -> None:
         self.n_micro += 1
-        for k, v in metrics.items():
+
+        weight = 1.0
+        if isinstance(metrics, Mapping) and "stage2/_log_weight" in metrics:
             try:
-                self.sums[str(k)] = float(self.sums.get(str(k), 0.0)) + float(v)
+                weight = float(metrics.get("stage2/_log_weight") or 0.0)
+            except (TypeError, ValueError):
+                weight = 1.0
+
+        if not math.isfinite(weight) or weight <= 0.0:
+            raise ValueError(
+                "stage2/_log_weight must be a positive finite float; "
+                f"got {weight!r}"
+            )
+
+        self.weight_sum += float(weight)
+
+        for k, v in metrics.items():
+            ks = str(k)
+            if ks == "stage2/_log_weight":
+                continue
+
+            try:
+                fv = float(v)
             except (TypeError, ValueError):
                 continue
+
+            if ks == "rollout/parse_truncated_rate":
+                # Always derived from numerator/denominator when rollout counters exist.
+                continue
+
+            if ks in {
+                "rollout/parse_truncated",
+                "rollout/_parse_truncated_num",
+                "rollout/_parse_truncated_den",
+            }:
+                # Counters: sum across micro-packs.
+                self.sums[ks] = float(self.sums.get(ks, 0.0)) + float(fv)
+                continue
+
+            if (
+                ks.startswith("loss/")
+                or ks.startswith("stage2/channel_")
+                or ks.startswith("rollout/")
+                or ks.startswith("coord_diag/")
+                or ks == "stage2_ab/b_ratio_realized"
+                or (ks.startswith("stage2_ab/") and "/is_" in ks)
+            ):
+                # Means: segment-weighted when stage2/_log_weight is provided.
+                self.sums[ks] = float(self.sums.get(ks, 0.0)) + float(fv) * float(weight)
+            else:
+                # Step-level totals/counters: plain sum across micro-packs.
+                self.sums[ks] = float(self.sums.get(ks, 0.0)) + float(fv)
 
     def finalize(self, *, drop_internal: bool = True) -> Dict[str, float]:
         if self.n_micro <= 0:
             return {}
 
+        denom = float(self.weight_sum) if float(self.weight_sum) > 0.0 else float(self.n_micro)
+
         out: Dict[str, float] = {}
-        n_micro = float(self.n_micro)
         for k, v in self.sums.items():
             if k == "rollout/parse_truncated_rate":
                 # Always derived from numerator/denominator when rollout counters exist.
@@ -80,9 +135,12 @@ class _PendingStage2Log:
                 or k == "stage2_ab/b_ratio_realized"
                 or (k.startswith("stage2_ab/") and "/is_" in k)
             ):
-                out[k] = float(v) / n_micro
+                out[k] = float(v) / float(denom)
             else:
                 out[k] = float(v)
+
+        # Internal: used for DDP-weighted mean reduction.
+        out["stage2/_log_weight_total"] = float(denom)
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
@@ -115,6 +173,7 @@ class _PendingStage2Log:
         if drop_internal:
             out.pop(trunc_num_key, None)
             out.pop(trunc_den_key, None)
+            out.pop("stage2/_log_weight_total", None)
 
         return out
 
@@ -795,6 +854,10 @@ class Stage2ABTrainingTrainer(
                 max_key_set.add(key)
                 continue
 
+            if key == "stage2/_log_weight_total":
+                sum_key_set.add(key)
+                continue
+
             if key in {
                 "stage2/raw_rollouts",
                 "stage2/invalid_rollout",
@@ -861,13 +924,30 @@ class Stage2ABTrainingTrainer(
                     for idx, key in enumerate(keys):
                         reduced[key] = float(values[idx].item())
 
+                weight_key = "stage2/_log_weight_total"
+                local_weight_total = float(reduced.get(weight_key, 0.0))
+
+                if weight_key in reduced and mean_keys:
+                    # Convert local means into local numerators before reduction.
+                    for key in mean_keys:
+                        reduced[key] = float(reduced.get(key, 0.0)) * float(local_weight_total)
+
                 _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
                 _all_reduce(max_keys, dist.ReduceOp.MAX)
 
-                scale = float(world_size)
-                if scale > 0.0:
-                    for key in mean_keys:
-                        reduced[key] = float(reduced[key] / scale)
+                if weight_key in reduced and mean_keys:
+                    global_weight_total = float(reduced.get(weight_key, 0.0))
+                    if global_weight_total > 0.0:
+                        for key in mean_keys:
+                            reduced[key] = float(reduced.get(key, 0.0) / global_weight_total)
+                    else:
+                        for key in mean_keys:
+                            reduced[key] = 0.0
+                else:
+                    scale = float(world_size)
+                    if scale > 0.0:
+                        for key in mean_keys:
+                            reduced[key] = float(reduced[key] / scale)
             except (AttributeError, RuntimeError) as exc:
                 if int(rank) == 0:
                     logger.warning(
@@ -893,6 +973,7 @@ class Stage2ABTrainingTrainer(
             )
         reduced.pop(trunc_num_key, None)
         reduced.pop(trunc_den_key, None)
+        reduced.pop("stage2/_log_weight_total", None)
 
         return reduced
 
@@ -905,6 +986,12 @@ class Stage2ABTrainingTrainer(
             and not any(str(k).startswith("eval_") for k in logs.keys())
         ):
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+            pending = self._stage2_pending_train_logs.get(step)
+            self._ddp_assert_all_ranks_true_or_raise(
+                where="stage2-ab train log",
+                local_true=pending is not None,
+                global_step=step,
+            )
             pending = self._stage2_pending_train_logs.pop(step, None)
             if pending is not None:
                 reduced = self._reduce_stage2_pending_metrics_global(
@@ -920,6 +1007,16 @@ class Stage2ABTrainingTrainer(
         if not isinstance(inputs, list):
             return super(RolloutMatchingSFTTrainer, self).training_step(
                 model, inputs, *args, **kwargs
+            )
+
+        if not inputs:
+            rank, world_size, _dist = self._dist_info()
+            gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+            raise ValueError(
+                "stage2-ab training_step received an empty raw batch "
+                f"(global_step={int(gs)} rank={int(rank)}/{int(world_size)}). "
+                "This is unsafe under DDP because other ranks may execute forward/backward while this rank does not. "
+                "Mitigations: ensure dataset length >= world_size and verify your sampler/drop_last settings."
             )
 
         self._validate_rollout_matching_cfg()
@@ -2678,6 +2775,13 @@ class Stage2ABTrainingTrainer(
                 "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
                 "loss/coord_reg": float(coord_reg_loss.detach().cpu().item()),
             }
+
+            pack_segments = int(len(meta))
+            if pack_segments <= 0:
+                raise ValueError(
+                    "stage2-ab compute_loss requires non-empty _rollout_matching_meta per packed forward"
+                )
+            stage2_logs["stage2/_log_weight"] = float(pack_segments)
 
             if coord_diag_metrics:
                 stage2_logs.update(coord_diag_metrics)

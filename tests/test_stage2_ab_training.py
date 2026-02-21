@@ -1346,6 +1346,44 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_
     assert "rollout/_parse_truncated_den" not in out
 
 
+def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> None:
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    class _FakeDist:
+        ReduceOp = _FakeReduceOp
+
+        def all_gather_object(self, gathered: list[object], obj: object) -> None:
+            # Mirror the local keys across all ranks (key union should be stable).
+            for i in range(len(gathered)):
+                gathered[i] = list(obj) if isinstance(obj, list) else obj
+
+        def all_reduce(self, tensor: torch.Tensor, op: str) -> None:
+            if op == self.ReduceOp.SUM:
+                # Simulate rank1 having: weight_total=3, loss_mean=20 => numerator=60.
+                tensor.add_(
+                    torch.tensor(
+                        [3.0, 60.0],
+                        dtype=tensor.dtype,
+                        device=tensor.device,
+                    )
+                )
+
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer._dist_info = lambda: (0, 2, _FakeDist())
+
+    out = trainer._reduce_stage2_pending_metrics_global(
+        {
+            "stage2/_log_weight_total": 1.0,
+            "loss/bbox_smoothl1": 10.0,
+        }
+    )
+
+    assert out["loss/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert "stage2/_log_weight_total" not in out
+
+
 
 def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     # Stage2-AB standardizes Channel-B to a single step-budgeted pathway.
