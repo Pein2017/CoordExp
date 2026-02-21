@@ -40,3 +40,5 @@ rollout_matching:
 
 custom:
   val_sample_limit: 512
+  extra:
+    prompt_variant: coco_80
