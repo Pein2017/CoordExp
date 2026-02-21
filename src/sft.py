@@ -1487,6 +1487,20 @@ def main():
                 )
             rollout_cfg["decoding"] = decoding
 
+            custom_extra = getattr(custom_config, "extra", {}) or {}
+            prompt_variant_from_extra: str | None = None
+            if isinstance(custom_extra, Mapping):
+                raw_prompt_variant = custom_extra.get("prompt_variant")
+                if isinstance(raw_prompt_variant, str) and raw_prompt_variant.strip():
+                    prompt_variant_from_extra = str(raw_prompt_variant).strip()
+            if (
+                prompt_variant_from_extra is not None
+                and rollout_cfg.get("eval_prompt_variant", None) is None
+            ):
+                # Keep eval-step rollouts aligned with custom.extra.prompt_variant unless
+                # rollout_matching.eval_prompt_variant explicitly overrides it.
+                rollout_cfg["eval_prompt_variant"] = str(prompt_variant_from_extra)
+
             # Inject packing runtime knobs (stage_2 uses dynamic post-rollout packing; dataset packing is disabled).
             rollout_cfg.update(
                 {
@@ -1495,6 +1509,7 @@ def main():
                     "packing_buffer": int(packing_cfg.buffer_size),
                     "packing_min_fill_ratio": float(packing_cfg.min_fill_ratio),
                     "packing_drop_last": bool(packing_cfg.drop_last),
+                    "object_ordering": str(custom_config.object_ordering),
                     "object_field_order": str(custom_config.object_field_order),
                 }
             )

@@ -61,6 +61,29 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_buffer"] == 128
 
 
+def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "decode_batch_size": 2,
+        "eval_prompt_variant": "coco_80",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.eval_prompt_variant == "coco_80"
+    assert cfg.rollout_matching.eval_detection is not None
+    assert cfg.rollout_matching.eval_detection.enabled is True
+
+
 def test_training_packing_length_deprecated_fails_fast():
     payload = _base_training_payload()
     payload["training"] = {"packing": True, "packing_length": 128}

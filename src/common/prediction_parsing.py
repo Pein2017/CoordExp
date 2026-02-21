@@ -20,14 +20,20 @@ GEOM_KEYS = ("bbox_2d", "poly")
 _SPECIAL_TOKEN_RE = re.compile(r"<\|.*?\|>")
 
 
-def extract_special_tokens(text: str) -> List[str]:
-    """Extract special tokens like ``<|im_end|>`` / ``<|coord_123|>`` in order."""
+def extract_special_tokens(
+    text: str, *, preserve_duplicates: bool = False
+) -> List[str]:
+    """Extract special tokens like ``<|im_end|>`` / ``<|coord_123|>`` in order.
+
+    By default this keeps historical behavior (deduplicated in first-seen order).
+    Set ``preserve_duplicates=True`` to keep the full occurrence sequence.
+    """
 
     out: List[str] = []
     seen: set[str] = set()
     for match in _SPECIAL_TOKEN_RE.finditer(text):
         token = match.group(0)
-        if token in seen:
+        if not preserve_duplicates and token in seen:
             continue
         seen.add(token)
         out.append(token)
@@ -282,4 +288,3 @@ __all__ = [
     "ints_to_pixels",
     "pair_points",
 ]
-

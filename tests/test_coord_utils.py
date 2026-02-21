@@ -54,7 +54,7 @@ from src.common.geometry import (
     denorm_and_clamp,
     is_degenerate_bbox,
 )
-from src.eval.parsing import parse_prediction
+from src.eval.parsing import extract_special_tokens, parse_prediction
 from src.eval.detection import EvalOptions, evaluate_detection
 
 
@@ -98,6 +98,25 @@ def test_parse_prediction_drops_truncated_json_without_terminator():
     )
     parsed = parse_prediction(raw)
     assert parsed == []
+
+
+def test_extract_special_tokens_can_preserve_duplicate_sequence() -> None:
+    raw = (
+        "<|coord_10|><|coord_10|>{}"
+        "<|im_end|><|coord_11|><|im_end|>"
+    )
+    assert extract_special_tokens(raw) == [
+        "<|coord_10|>",
+        "<|im_end|>",
+        "<|coord_11|>",
+    ]
+    assert extract_special_tokens(raw, preserve_duplicates=True) == [
+        "<|coord_10|>",
+        "<|coord_10|>",
+        "<|im_end|>",
+        "<|coord_11|>",
+        "<|im_end|>",
+    ]
 
 
 def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):

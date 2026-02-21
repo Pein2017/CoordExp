@@ -774,16 +774,33 @@ def _run_coco_eval(
     options: EvalOptions,
     run_segm: bool,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
+    metric_suffixes = (
+        "AP",
+        "AP50",
+        "AP75",
+        "APs",
+        "APm",
+        "APl",
+        "AR1",
+        "AR10",
+        "AR100",
+        "ARs",
+        "ARm",
+        "ARl",
+    )
     metrics: Dict[str, float] = {}
     per_class: Dict[str, float] = {}
-
-    if not results:
-        return metrics, per_class
-
-    coco_dt = coco_gt.loadRes(copy.deepcopy(results))
     iou_types = ["bbox"]
     if run_segm:
         iou_types.append("segm")
+
+    if not results:
+        for iou_type in iou_types:
+            for suffix in metric_suffixes:
+                metrics[f"{iou_type}_{suffix}"] = 0.0
+        return metrics, per_class
+
+    coco_dt = coco_gt.loadRes(copy.deepcopy(results))
 
     for iou_type in iou_types:
         coco_eval = COCOeval(coco_gt, coco_dt, iouType=iou_type)

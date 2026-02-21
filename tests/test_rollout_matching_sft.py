@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import pytest
 import torch
 
+from src.config.prompts import build_dense_user_prompt
 from src.trainers.rollout_matching_sft import (
     GTObject,
     RolloutMatchingSFTTrainer,
@@ -615,6 +616,186 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     assert metrics["eval_rollout/matched_maskiou_mean"] == pytest.approx(0.8)
     assert "eval_loss" not in metrics
     assert "eval_time/runtime_s" in metrics
+
+
+def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "object_ordering": "sorted",
+    }
+    trainer.object_field_order = "geometry_first"
+
+    captured: dict[str, object] = {}
+
+    def _fake_rollout_many_hf(samples):
+        captured["samples"] = samples
+        return [([], "{}", "greedy", []) for _ in samples]
+
+    trainer._rollout_many_hf = _fake_rollout_many_hf
+
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ]
+    }
+
+    _ = trainer._rollout_many([sample], prompt_variant_override="coco_80")
+
+    used_samples = captured.get("samples")
+    assert isinstance(used_samples, list) and len(used_samples) == 1
+    used_messages = used_samples[0]["messages"]
+    assert isinstance(used_messages, list)
+    # Rollout prompt must end at user turn (assistant completion stripped).
+    assert len(used_messages) == 1
+    user_content = used_messages[0]["content"]
+    assert isinstance(user_content, list)
+    assert user_content[0]["type"] == "image"
+    expected_prompt = build_dense_user_prompt(
+        ordering="sorted",
+        coord_mode="coord_tokens",
+        prompt_variant="coco_80",
+        object_field_order="geometry_first",
+    )
+    assert user_content[-1]["text"] == expected_prompt
+
+
+def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.rollout_matching_sft.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.rollout_matching_sft._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.rollout_matching_sft._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.rollout_matching_sft.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.trainers.rollout_matching_sft._compute_eval_detection_coco_metrics",
+        lambda **_kwargs: (
+            {"bbox_AP": 0.123, "bbox_AP50": 0.456},
+            {"empty_pred": 0},
+        ),
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+
+    assert logged_metrics == metrics
+    assert metrics["eval_rollout/bbox_AP"] == pytest.approx(0.123)
+    assert metrics["eval_rollout/bbox_AP50"] == pytest.approx(0.456)
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
 def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):

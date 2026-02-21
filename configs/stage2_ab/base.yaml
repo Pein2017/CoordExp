@@ -141,6 +141,17 @@ rollout_matching:
   maskiou_resolution: 256
   fp_cost: 0.5
   fn_cost: 2
+  eval_detection:
+    # Run COCO mAP during trainer eval_step on the same eval cadence as rollout/f1.
+    enabled: true
+    metrics: coco
+    use_segm: false
+    strict_parse: true
+    # Eval-step score policy is intentionally lightweight; confidence post-op remains offline.
+    score_mode: constant
+    constant_score: 1.0
+    pred_score_source: eval_rollout_constant
+    pred_score_version: 2
   ot_cost: l2
   ot_epsilon: 10
   ot_iters: 1

@@ -67,6 +67,34 @@ def test_validate_rollout_matching_cfg_rejects_invalid_ranges():
         t2._validate_rollout_matching_cfg()
 
 
+def test_validate_rollout_matching_cfg_accepts_eval_detection_block():
+    t = _mk_uninit_trainer(
+        {
+            "eval_detection": {
+                "enabled": True,
+                "metrics": "coco",
+                "score_mode": "constant",
+                "constant_score": 1.0,
+                "pred_score_source": "eval_rollout_constant",
+                "pred_score_version": 2,
+            }
+        }
+    )
+    t._validate_rollout_matching_cfg()
+
+
+def test_validate_rollout_matching_cfg_rejects_eval_detection_bad_score_mode():
+    t = _mk_uninit_trainer({"eval_detection": {"score_mode": "unsupported"}})
+    with pytest.raises(ValueError, match=r"eval_detection\.score_mode must be 'constant'"):
+        t._validate_rollout_matching_cfg()
+
+
+def test_validate_rollout_matching_cfg_rejects_unknown_eval_prompt_variant():
+    t = _mk_uninit_trainer({"eval_prompt_variant": "not_a_variant"})
+    with pytest.raises(ValueError, match=r"Unknown prompt variant"):
+        t._validate_rollout_matching_cfg()
+
+
 def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
     gen_cfg = SimpleNamespace()
     RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(

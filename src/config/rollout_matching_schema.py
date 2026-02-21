@@ -65,6 +65,36 @@ class RolloutDescMonitorConfig:
 
 
 @dataclass(frozen=True)
+class RolloutEvalDetectionConfig:
+    # Enable COCO-style AP/mAP during trainer eval_step.
+    enabled: bool = False
+    metrics: str = "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
+
+    # COCO evaluator knobs.
+    use_segm: bool = False
+    strict_parse: bool = True
+    iou_thrs: Optional[list[float]] = None
+
+    # Semantic mapping for open-vocab desc -> dataset categories.
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    semantic_threshold: float = 0.6
+    semantic_device: str = "auto"
+    semantic_batch_size: int = 64
+
+    # Optional f1-ish knobs (used only when metrics=both).
+    f1ish_iou_thrs: list[float] = field(default_factory=lambda: [0.3, 0.5])
+    f1ish_pred_scope: str = "annotated"  # annotated | all
+
+    # Score provenance attached to eval-step prediction records for COCO contract.
+    pred_score_source: str = "eval_rollout_constant"
+    pred_score_version: int = 2
+
+    # Lightweight score policy used inside trainer eval-step (confidence post-op is offline).
+    score_mode: str = "constant"  # constant
+    constant_score: float = 1.0
+
+
+@dataclass(frozen=True)
 class VllmServerDebugDumpConfig:
     enabled: bool = False
     every_steps: Optional[int] = None
@@ -167,7 +197,10 @@ class RolloutMatchingConfig:
     offload: Optional[RolloutOffloadConfig] = None
     monitor_dump: Optional[RolloutMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
+    eval_detection: Optional[RolloutEvalDetectionConfig] = None
     vllm: Optional[VllmConfig] = None
+    # Optional override applied only to eval-step rollouts.
+    eval_prompt_variant: Optional[str] = None
 
     # Optional coord-loss override knobs (advanced; default to custom.coord_soft_ce_w1).
     target_sigma: Optional[float] = None
@@ -221,3 +254,49 @@ class RolloutMatchingConfig:
                 raise ValueError(
                     "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
                 )
+
+        if self.eval_prompt_variant is not None and not isinstance(
+            self.eval_prompt_variant, str
+        ):
+            raise TypeError(
+                "rollout_matching.eval_prompt_variant must be a string when provided"
+            )
+
+        if self.eval_detection is not None:
+            eval_det = self.eval_detection
+            metrics = str(getattr(eval_det, "metrics", "coco") or "coco").strip().lower()
+            if metrics not in {"coco", "both"}:
+                raise ValueError(
+                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
+                )
+
+            score_mode = str(getattr(eval_det, "score_mode", "constant") or "constant")
+            score_mode = score_mode.strip().lower()
+            if score_mode != "constant":
+                raise ValueError(
+                    "rollout_matching.eval_detection.score_mode must be 'constant'"
+                )
+
+            try:
+                const_score = float(getattr(eval_det, "constant_score", 1.0))
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "rollout_matching.eval_detection.constant_score must be numeric"
+                ) from exc
+            if const_score < 0.0 or const_score > 1.0:
+                raise ValueError(
+                    "rollout_matching.eval_detection.constant_score must satisfy 0.0 <= score <= 1.0"
+                )
+
+            source = str(getattr(eval_det, "pred_score_source", "") or "").strip()
+            if not source:
+                raise ValueError(
+                    "rollout_matching.eval_detection.pred_score_source must be non-empty"
+                )
+
+            try:
+                int(getattr(eval_det, "pred_score_version", 0))
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "rollout_matching.eval_detection.pred_score_version must be int-compatible"
+                ) from exc

@@ -13,12 +13,14 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 import threading
 import time
 from contextlib import contextmanager, nullcontext
 from copy import copy as shallow_copy
 from copy import deepcopy
 from dataclasses import asdict
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -41,8 +43,13 @@ from swift.trainers.rlhf_trainer.utils import (
 )
 from swift.utils import get_logger, unwrap_model_for_generation
 
-from src.common.object_field_order import normalize_object_field_order
+from src.common.object_field_order import build_object_payload, normalize_object_field_order
 from src.common.geometry import bbox_from_points, flatten_points
+from src.config.prompts import (
+    build_dense_system_prompt,
+    build_dense_user_prompt,
+    resolve_dense_prompt_variant_key,
+)
 from src.coord_tokens.codec import (
     get_coord_token_ids,
     token_to_int,
@@ -342,6 +349,235 @@ def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any
 
     sys_msg = {"role": "system", "content": str(system_prompt)}
     return [sys_msg, *messages_list]
+
+
+def _force_last_user_prompt_text(messages: Any, user_prompt: str) -> List[Any]:
+    """Replace the last user-turn text while preserving multimodal image items."""
+
+    if not isinstance(messages, list):
+        return [] if messages is None else [messages]
+    if not isinstance(user_prompt, str) or not user_prompt:
+        return list(messages)
+
+    out = deepcopy(list(messages))
+
+    last_user_idx: int | None = None
+    for i in range(len(out) - 1, -1, -1):
+        msg = out[i]
+        if isinstance(msg, Mapping) and str(msg.get("role", "")).lower() == "user":
+            last_user_idx = int(i)
+            break
+    if last_user_idx is None:
+        return out
+
+    msg_any = out[last_user_idx]
+    if not isinstance(msg_any, MutableMapping):
+        return out
+
+    content = msg_any.get("content")
+    if isinstance(content, str):
+        msg_any["content"] = str(user_prompt)
+        return out
+
+    if isinstance(content, list):
+        replaced = False
+        new_content: List[Any] = []
+        for item in content:
+            if isinstance(item, Mapping):
+                is_text_item = str(item.get("type", "")).lower() == "text" or (
+                    "text" in item
+                )
+                if is_text_item:
+                    if replaced:
+                        # Keep a single text segment to avoid duplicated prompt text.
+                        continue
+                    new_item = dict(item)
+                    new_item["type"] = "text"
+                    new_item["text"] = str(user_prompt)
+                    new_content.append(new_item)
+                    replaced = True
+                    continue
+            new_content.append(item)
+        if not replaced:
+            new_content.append({"type": "text", "text": str(user_prompt)})
+        msg_any["content"] = new_content
+        return out
+
+    # Fallback for unexpected message content types.
+    msg_any["content"] = str(user_prompt)
+    return out
+
+
+def _build_eval_detection_record(
+    *,
+    sample: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    preds: Sequence[GTObject],
+    pred_meta: Sequence[ParsedPredObject],
+    object_field_order: Literal["desc_first", "geometry_first"],
+    record_index: int,
+    pred_score_source: str,
+    pred_score_version: int,
+    score_mode: str,
+    constant_score: float,
+) -> Dict[str, Any]:
+    images_raw = sample.get("images")
+    images: List[str] = []
+    if isinstance(images_raw, list):
+        for v in images_raw:
+            if isinstance(v, str) and v.strip():
+                images = [str(v)]
+                break
+    if not images:
+        image_one = sample.get("image")
+        if isinstance(image_one, str) and image_one.strip():
+            images = [str(image_one)]
+
+    width = sample.get("width")
+    height = sample.get("height")
+    try:
+        width = int(width) if width is not None else None
+    except (TypeError, ValueError):
+        width = None
+    try:
+        height = int(height) if height is not None else None
+    except (TypeError, ValueError):
+        height = None
+
+    gt_payload: List[Dict[str, Any]] = []
+    for obj in gts:
+        gt_payload.append(
+            build_object_payload(
+                desc=str(getattr(obj, "desc", "") or ""),
+                geometry_key=str(obj.geom_type),
+                geometry_value=[int(x) for x in obj.points_norm1000],
+                object_field_order=object_field_order,
+            )
+        )
+
+    pred_payload: List[Dict[str, Any]] = []
+    score_mode_norm = str(score_mode or "constant").strip().lower()
+    score_const = float(constant_score)
+    for idx, pobj in enumerate(preds):
+        desc = ""
+        if idx < len(pred_meta):
+            desc = str(getattr(pred_meta[idx], "desc", "") or "").strip()
+        payload = build_object_payload(
+            desc=desc,
+            geometry_key=str(pobj.geom_type),
+            geometry_value=[int(x) for x in pobj.points_norm1000],
+            object_field_order=object_field_order,
+        )
+        if score_mode_norm == "constant":
+            payload["score"] = float(score_const)
+        pred_payload.append(payload)
+
+    out: Dict[str, Any] = {
+        "index": int(record_index),
+        "coord_mode": "norm1000",
+        "images": images,
+        "gt": gt_payload,
+        "pred": pred_payload,
+        "pred_score_source": str(pred_score_source),
+        "pred_score_version": int(pred_score_version),
+    }
+    if width is not None:
+        out["width"] = int(width)
+    if height is not None:
+        out["height"] = int(height)
+    return out
+
+
+def _coerce_optional_float_list(value: Any, *, path: str) -> Optional[List[float]]:
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"{path} must be a list[float] when provided")
+    out: List[float] = []
+    for idx, raw in enumerate(value):
+        try:
+            out.append(float(raw))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}[{int(idx)}] must be float-compatible") from exc
+    return out
+
+
+def _compute_eval_detection_coco_metrics(
+    *,
+    pred_records: Sequence[Mapping[str, Any]],
+    eval_cfg: Mapping[str, Any],
+) -> Tuple[Dict[str, float], Dict[str, int]]:
+    from pycocotools.coco import COCO
+
+    from src.eval.detection import EvalCounters, EvalOptions, _prepare_all, _run_coco_eval
+
+    use_segm = bool(eval_cfg.get("use_segm", False))
+    strict_parse = bool(eval_cfg.get("strict_parse", True))
+    semantic_model = str(
+        eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+        or "sentence-transformers/all-MiniLM-L6-v2"
+    ).strip()
+    semantic_threshold = float(eval_cfg.get("semantic_threshold", 0.6) or 0.6)
+    semantic_device = str(eval_cfg.get("semantic_device", "auto") or "auto").strip()
+    semantic_batch_size = int(eval_cfg.get("semantic_batch_size", 64) or 64)
+    iou_thrs = _coerce_optional_float_list(
+        eval_cfg.get("iou_thrs", None),
+        path="rollout_matching.eval_detection.iou_thrs",
+    )
+    f1ish_iou_thrs = _coerce_optional_float_list(
+        eval_cfg.get("f1ish_iou_thrs", [0.3, 0.5]),
+        path="rollout_matching.eval_detection.f1ish_iou_thrs",
+    )
+    if f1ish_iou_thrs is None:
+        f1ish_iou_thrs = [0.3, 0.5]
+    f1ish_pred_scope = str(
+        eval_cfg.get("f1ish_pred_scope", "annotated") or "annotated"
+    ).strip()
+
+    with tempfile.TemporaryDirectory(prefix="coordexp_evalstep_coco_") as tmp_dir:
+        options = EvalOptions(
+            metrics="coco",
+            strict_parse=bool(strict_parse),
+            use_segm=bool(use_segm),
+            iou_thrs=iou_thrs,
+            f1ish_iou_thrs=[float(x) for x in f1ish_iou_thrs],
+            f1ish_pred_scope=f1ish_pred_scope,
+            output_dir=Path(tmp_dir),
+            overlay=False,
+            overlay_k=0,
+            num_workers=0,
+            semantic_model=semantic_model,
+            semantic_threshold=float(semantic_threshold),
+            semantic_device=semantic_device,
+            semantic_batch_size=int(semantic_batch_size),
+        )
+        counters = EvalCounters()
+        pred_records_list = [dict(r) for r in pred_records]
+        (
+            _gt_samples,
+            _pred_samples,
+            _categories,
+            coco_gt_dict,
+            results,
+            run_segm,
+            _per_image,
+        ) = _prepare_all(
+            pred_records_list,
+            options,
+            counters,
+            prepare_coco=True,
+        )
+
+        coco_gt = COCO()
+        coco_gt.dataset = deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
+        metrics, _per_class = _run_coco_eval(
+            coco_gt,
+            results,
+            options=options,
+            run_segm=run_segm,
+        )
+        return metrics, counters.to_dict()
 
 
 _IM_END = "<|im_end|>"
@@ -938,6 +1174,31 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raw = self._cfg("object_field_order", "desc_first")
         return normalize_object_field_order(raw, path="custom.object_field_order")
 
+    def _object_ordering(self) -> Literal["sorted", "random"]:
+        raw = str(self._cfg("object_ordering", "sorted") or "sorted").strip().lower()
+        return "random" if raw == "random" else "sorted"
+
+    def _eval_prompt_variant(self) -> Optional[str]:
+        raw = self._cfg("eval_prompt_variant", None)
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise TypeError(
+                "rollout_matching.eval_prompt_variant must be a string when provided"
+            )
+        key = raw.strip()
+        if not key:
+            return None
+        return resolve_dense_prompt_variant_key(key)
+
+    def _eval_detection_cfg(self) -> Mapping[str, Any]:
+        raw = self._cfg("eval_detection", {})
+        if raw is None:
+            return {}
+        if not isinstance(raw, Mapping):
+            raise TypeError("rollout_matching.eval_detection must be a mapping")
+        return raw
+
     def _validate_rollout_matching_cfg(self) -> None:
         cfg = getattr(self, "rollout_matching_cfg", None)
         if cfg is None:
@@ -1041,6 +1302,57 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise ValueError(
                 "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
             )
+
+        eval_prompt_variant_raw = cfg.get("eval_prompt_variant", None)
+        if eval_prompt_variant_raw is not None:
+            if not isinstance(eval_prompt_variant_raw, str):
+                raise TypeError(
+                    "rollout_matching.eval_prompt_variant must be a string when provided"
+                )
+            if eval_prompt_variant_raw.strip():
+                resolve_dense_prompt_variant_key(eval_prompt_variant_raw.strip())
+
+        eval_det_raw = cfg.get("eval_detection", None)
+        if eval_det_raw is not None:
+            if not isinstance(eval_det_raw, Mapping):
+                raise TypeError("rollout_matching.eval_detection must be a mapping")
+            metrics_mode = str(
+                eval_det_raw.get("metrics", "coco") or "coco"
+            ).strip().lower()
+            if metrics_mode not in {"coco", "both"}:
+                raise ValueError(
+                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
+                )
+            score_mode = str(
+                eval_det_raw.get("score_mode", "constant") or "constant"
+            ).strip().lower()
+            if score_mode != "constant":
+                raise ValueError(
+                    "rollout_matching.eval_detection.score_mode must be 'constant'"
+                )
+            try:
+                score = float(eval_det_raw.get("constant_score", 1.0) or 1.0)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "rollout_matching.eval_detection.constant_score must be numeric"
+                ) from exc
+            if score < 0.0 or score > 1.0:
+                raise ValueError(
+                    "rollout_matching.eval_detection.constant_score must satisfy 0.0 <= score <= 1.0"
+                )
+            score_source = str(
+                eval_det_raw.get("pred_score_source", "") or ""
+            ).strip()
+            if not score_source:
+                raise ValueError(
+                    "rollout_matching.eval_detection.pred_score_source must be non-empty"
+                )
+            try:
+                int(eval_det_raw.get("pred_score_version", 2))
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "rollout_matching.eval_detection.pred_score_version must be int-compatible"
+                ) from exc
 
     def _decoding_cfg(self) -> Mapping[str, Any]:
         # `rollout_matching_cfg` is injected in src/sft.py. Use a nested dict for decoding.
@@ -2301,8 +2613,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             dist = None  # type: ignore[assignment]
 
         world_size = 1
+        rank = 0
         if dist is not None and dist.is_available() and dist.is_initialized():
             world_size = int(dist.get_world_size())
+            rank = int(dist.get_rank())
 
         # Defaults: TP=4 on 4-GPU runs; otherwise TP=1 unless explicitly set.
         default_tp = 4 if world_size == 4 else 1
@@ -4309,27 +4623,55 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @torch.no_grad()
     def _rollout_many(
-        self, samples: Sequence[Mapping[str, Any]]
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        prompt_variant_override: Optional[str] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         backend = self._rollout_backend()
+
+        user_prompt_override: str | None = None
+        system_prompt_override: str | None = None
+        if prompt_variant_override is not None:
+            variant_key = resolve_dense_prompt_variant_key(prompt_variant_override)
+            ordering = self._object_ordering()
+            object_field_order = self._object_field_order()
+            user_prompt_override = build_dense_user_prompt(
+                ordering=ordering,
+                coord_mode="coord_tokens",
+                prompt_variant=variant_key,
+                object_field_order=object_field_order,
+            )
+            system_prompt_override = build_dense_system_prompt(
+                ordering=ordering,
+                coord_mode="coord_tokens",
+                prompt_variant=variant_key,
+                object_field_order=object_field_order,
+            )
 
         # vLLM backends receive raw OpenAI-style messages; ensure the resolved
         # system prompt is present so output formatting is stable.
         system_prompt: str | None = None
         if backend == "vllm":
-            sp = getattr(self.template, "system", None)
-            if isinstance(sp, str) and sp.strip():
-                system_prompt = sp
+            if (
+                isinstance(system_prompt_override, str)
+                and system_prompt_override.strip()
+            ):
+                system_prompt = str(system_prompt_override)
             else:
-                # Fallback: ms-swift templates may not expose the resolved system prompt
-                # as `template.system` in all execution contexts. Use CoordExp's
-                # canonical dense system prompt to stabilize server-mode rollouts.
-                try:
-                    from src.config.prompts import SYSTEM_PROMPT_SORTED_TOKENS
+                sp = getattr(self.template, "system", None)
+                if isinstance(sp, str) and sp.strip():
+                    system_prompt = sp
+                else:
+                    # Fallback: ms-swift templates may not expose the resolved system prompt
+                    # as `template.system` in all execution contexts. Use CoordExp's
+                    # canonical dense system prompt to stabilize server-mode rollouts.
+                    try:
+                        from src.config.prompts import SYSTEM_PROMPT_SORTED_TOKENS
 
-                    system_prompt = str(SYSTEM_PROMPT_SORTED_TOKENS)
-                except (TypeError, ValueError):
-                    system_prompt = None
+                        system_prompt = str(SYSTEM_PROMPT_SORTED_TOKENS)
+                    except (TypeError, ValueError):
+                        system_prompt = None
 
         # IMPORTANT: generate from a prompt that ends with a user turn.
         # Many datasets include a teacher-forced assistant answer in `messages` for training.
@@ -4346,6 +4688,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     msgs_out: List[Any] = trimmed
                 else:
                     msgs_out = msgs
+
+                if user_prompt_override is not None:
+                    msgs_prompt = _force_last_user_prompt_text(
+                        msgs_out, str(user_prompt_override)
+                    )
+                    if msgs_prompt != msgs_out:
+                        modified = True
+                        msgs_out = msgs_prompt
 
                 if backend == "vllm" and system_prompt is not None:
                     msgs_sys = _ensure_system_prompt_message(msgs_out, system_prompt)
@@ -6211,6 +6561,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         mask_res = int(self._cfg("maskiou_resolution", 256))
         fp_cost = float(self._cfg("fp_cost", 1.0))
         fn_cost = float(self._cfg("fn_cost", 1.0))
+        object_field_order = self._object_field_order()
+
+        eval_prompt_variant = self._eval_prompt_variant()
+        eval_detection_cfg = self._eval_detection_cfg()
+        eval_detection_enabled = bool(eval_detection_cfg.get("enabled", False))
+        eval_detection_score_mode = str(
+            eval_detection_cfg.get("score_mode", "constant") or "constant"
+        ).strip().lower()
+        eval_detection_const_score = float(
+            eval_detection_cfg.get("constant_score", 1.0) or 1.0
+        )
+        eval_detection_score_source = str(
+            eval_detection_cfg.get("pred_score_source", "eval_rollout_constant")
+            or "eval_rollout_constant"
+        ).strip()
+        eval_detection_score_version = int(
+            eval_detection_cfg.get("pred_score_version", 2) or 2
+        )
 
         # Optional semantic desc monitoring (metrics only).
         desc_cfg = self._desc_monitor_cfg()
@@ -6265,6 +6633,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         desc_sem_sim_count_total = 0.0
 
         n_steps = 0.0
+        eval_detection_records_local: List[Dict[str, Any]] = []
+        eval_record_counter_local = 0
 
         # Optional qualitative monitor dumps during eval (rank0 only).
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -6301,7 +6671,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     continue
 
                 n_steps += 1.0
-                rollout_results = self._rollout_many(batch)
+                if eval_prompt_variant is None:
+                    rollout_results = self._rollout_many(batch)
+                else:
+                    rollout_results = self._rollout_many(
+                        batch,
+                        prompt_variant_override=eval_prompt_variant,
+                    )
                 if len(rollout_results) != len(batch):
                     raise RuntimeError(
                         "rollout backend returned unexpected number of results"
@@ -6315,7 +6691,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     parse = parse_rollout_for_matching(
                         tokenizer=tok,
                         response_token_ids=resp_ids,
-                        object_field_order=self._object_field_order(),
+                        object_field_order=object_field_order,
                     )
                     dropped_invalid_total += float(parse.dropped_invalid)
                     dropped_ambiguous_total += float(parse.dropped_ambiguous)
@@ -6377,6 +6753,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     matched_iou_count += float(match.matched_maskiou_count)
                     if matched > 0:
                         n_samples_any_match += 1.0
+
+                    if eval_detection_enabled:
+                        eval_record_index = int(eval_record_counter_local)
+                        eval_record_counter_local += 1
+                        eval_detection_records_local.append(
+                            _build_eval_detection_record(
+                                sample=sample,
+                                gts=gts,
+                                preds=preds,
+                                pred_meta=pred_meta,
+                                object_field_order=object_field_order,
+                                record_index=eval_record_index,
+                                pred_score_source=eval_detection_score_source,
+                                pred_score_version=eval_detection_score_version,
+                                score_mode=eval_detection_score_mode,
+                                constant_score=eval_detection_const_score,
+                            )
+                        )
 
                     if do_dump and (
                         len(dump_fail_samples) < dump_max_samples
@@ -6541,8 +6935,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             dist = None  # type: ignore[assignment]
 
         world_size = 1
+        rank = 0
         if dist is not None and dist.is_available() and dist.is_initialized():
             world_size = int(dist.get_world_size())
+            rank = int(dist.get_rank())
 
         # Reduce sums across ranks.
         sums_t = torch.tensor(
@@ -6677,6 +7073,118 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     metrics[_k("rollout/desc_sem_sim_count")] = float(
                         desc_sem_sim_count_total
                     )
+
+        if eval_prompt_variant is not None:
+            metrics[_k("rollout/prompt_variant_is_coco_80")] = (
+                1.0 if str(eval_prompt_variant).strip().lower() == "coco_80" else 0.0
+            )
+
+        if eval_detection_enabled:
+            eval_records_all: List[Dict[str, Any]] = [
+                dict(r) for r in eval_detection_records_local
+            ]
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                gathered_records: List[Any] = [None for _ in range(int(world_size))]
+                dist.all_gather_object(
+                    gathered_records, list(eval_detection_records_local)
+                )
+                eval_records_all = []
+                for part in gathered_records:
+                    if not isinstance(part, list):
+                        continue
+                    for rec in part:
+                        if isinstance(rec, Mapping):
+                            eval_records_all.append(dict(rec))
+
+            # Ensure unique per-line indices after cross-rank gather.
+            for ridx, rec in enumerate(eval_records_all):
+                rec["index"] = int(ridx)
+
+            eval_det_payload: Dict[str, Any] = {
+                "ok": 0.0,
+                "runtime_s": 0.0,
+                "metrics": {},
+                "counters": {},
+                "error": "",
+            }
+            if int(rank) == 0:
+                t_coco0 = time.perf_counter()
+                try:
+                    coco_metrics, coco_counters = _compute_eval_detection_coco_metrics(
+                        pred_records=eval_records_all,
+                        eval_cfg=eval_detection_cfg,
+                    )
+                    eval_det_payload["ok"] = 1.0
+                    eval_det_payload["metrics"] = {
+                        str(k): float(v) for k, v in coco_metrics.items()
+                    }
+                    eval_det_payload["counters"] = {
+                        str(k): int(v)
+                        for k, v in coco_counters.items()
+                        if isinstance(v, (int, float))
+                    }
+                except Exception as exc:
+                    eval_det_payload["error"] = repr(exc)
+                    logger.warning("Eval-step COCO/mAP failed: %r", exc)
+                finally:
+                    eval_det_payload["runtime_s"] = float(time.perf_counter() - t_coco0)
+
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                payload_list: List[Any] = [eval_det_payload]
+                dist.broadcast_object_list(payload_list, src=0)
+                recv_payload = (
+                    payload_list[0] if isinstance(payload_list[0], Mapping) else {}
+                )
+            else:
+                recv_payload = eval_det_payload
+
+            try:
+                metrics[_k("time/coco_eval_runtime_s")] = float(
+                    recv_payload.get("runtime_s", 0.0) or 0.0
+                )
+            except (AttributeError, TypeError, ValueError):
+                metrics[_k("time/coco_eval_runtime_s")] = 0.0
+            try:
+                metrics[_k("rollout/coco_eval_ok")] = float(
+                    recv_payload.get("ok", 0.0) or 0.0
+                )
+            except (AttributeError, TypeError, ValueError):
+                metrics[_k("rollout/coco_eval_ok")] = 0.0
+
+            coco_metrics_recv = recv_payload.get("metrics", {})
+            if isinstance(coco_metrics_recv, Mapping):
+                for name, value in coco_metrics_recv.items():
+                    try:
+                        metrics[_k(f"rollout/{str(name)}")] = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                if "bbox_AP" in coco_metrics_recv:
+                    try:
+                        metrics[_k("rollout/mAP")] = float(coco_metrics_recv["bbox_AP"])
+                    except (TypeError, ValueError):
+                        pass
+
+            coco_counters_recv = recv_payload.get("counters", {})
+            if isinstance(coco_counters_recv, Mapping):
+                for name in (
+                    "empty_pred",
+                    "invalid_geometry",
+                    "invalid_coord",
+                    "missing_size",
+                    "size_mismatch",
+                    "degenerate",
+                    "unknown_dropped",
+                    "semantic_mapped",
+                    "semantic_unmapped",
+                ):
+                    if name not in coco_counters_recv:
+                        continue
+                    try:
+                        metrics[_k(f"rollout/coco_counter_{name}")] = float(
+                            coco_counters_recv[name]
+                        )
+                    except (TypeError, ValueError):
+                        continue
 
         # Optional eval-time monitor dump (qualitative samples).
         if do_dump:
