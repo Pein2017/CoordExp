@@ -594,8 +594,8 @@ class CustomConfig:
     user_prompt: str
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
+    object_field_order: ObjectFieldOrder
     object_ordering: Literal["sorted", "random"] = "sorted"
-    object_field_order: ObjectFieldOrder = "desc_first"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
@@ -727,7 +727,9 @@ class CustomConfig:
         dump_conversation_text = bool(data.pop("dump_conversation_text", False))
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
-        object_field_order_raw = data.pop("object_field_order", "desc_first")
+        object_field_order_raw = data.pop("object_field_order", None)
+        if object_field_order_raw is None:
+            raise ValueError("custom.object_field_order must be provided")
         val_jsonl = data.pop("val_jsonl", None)
         fusion_config_raw = data.pop("fusion_config", None)
         fusion_config: Optional[str]

@@ -38,6 +38,7 @@ rollout_matching:
     write_markdown: false
 
 custom:
+  object_field_order: geometry_first
   val_sample_limit: 512
   extra:
     prompt_variant: coco_80

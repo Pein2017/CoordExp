@@ -90,6 +90,7 @@ stage2_ab:
 
 custom:
   json_format: standard
+  object_field_order: desc_first
   emit_norm: none
   trainer_variant: stage2_ab_training
   train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl

@@ -216,7 +216,7 @@ class ConfigLoader:
 
         use_summary = False
         ordering_hint: str = "sorted"
-        object_field_order: str = "desc_first"
+        object_field_order: str | None = None
         prompt_variant: Optional[str] = None
 
         custom_section = config.get("custom")
@@ -242,9 +242,9 @@ class ConfigLoader:
                         "custom.object_ordering must be 'sorted' or 'random' when provided"
                     )
 
-            object_field_order_raw = custom_section.get(
-                "object_field_order", "desc_first"
-            )
+            object_field_order_raw = custom_section.get("object_field_order", None)
+            if object_field_order_raw is None:
+                raise ValueError("custom.object_field_order must be provided")
             object_field_order = normalize_object_field_order(
                 object_field_order_raw, path="custom.object_field_order"
             )
@@ -286,6 +286,9 @@ class ConfigLoader:
                     "custom.extra.prompt_variant must be a string when provided"
                 )
             prompt_variant = prompt_variant_raw
+
+        if object_field_order is None:
+            raise ValueError("custom.object_field_order must be provided")
 
         if use_summary:
             default_system = SYSTEM_PROMPT_SUMMARY

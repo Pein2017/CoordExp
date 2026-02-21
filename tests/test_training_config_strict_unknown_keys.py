@@ -14,6 +14,7 @@ def _base_training_payload() -> dict:
             "user_prompt": "prompt",
             "emit_norm": "none",
             "json_format": "standard",
+            "object_field_order": "desc_first",
         },
     }
 
@@ -252,6 +253,14 @@ def test_top_level_extra_presence_fails_fast():
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
     assert "Top-level extra:" in str(exc.value)
+
+
+def test_custom_object_field_order_is_required():
+    payload = _base_training_payload()
+    payload["custom"].pop("object_field_order", None)
+
+    with pytest.raises(ValueError, match="custom.object_field_order must be provided"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_unknown_top_level_key_fails_fast() -> None:

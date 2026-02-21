@@ -26,7 +26,7 @@ _ORDER_RULE_RANDOM = (
 _SYSTEM_PREFIX_TOKENS = (
     'You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
     '- The top-level object must contain exactly one key "objects".\n'
-    "- Each objects[] record must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.\n"
+    "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
     '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
     "- Geometry formatting rules:\n"
     "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
@@ -50,11 +50,11 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
 USER_PROMPT_SORTED_TOKENS = (
     "Detect and list every object in the image, ordered by (minY, minX) "
     "(top-to-bottom then left-to-right). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc plus one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
 )
 USER_PROMPT_RANDOM_TOKENS = (
     "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc plus one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
 )
 
 # Coord-token-only contract: numeric dense prompt variants are intentionally unsupported.
@@ -70,14 +70,14 @@ USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 def _apply_geometry_first_system_wording(base_prompt: str) -> str:
     return base_prompt.replace(
-        "Each objects[] record must have a plain English desc and exactly one geometry key (bbox_2d OR poly), never multiple geometries.",
+        "Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.",
         "Each objects[] record must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
     )
 
 
 def _apply_geometry_first_user_wording(base_prompt: str) -> str:
     return base_prompt.replace(
-        "has desc plus one geometry (bbox_2d or poly)",
+        "has desc before one geometry (bbox_2d or poly)",
         "has one geometry (bbox_2d or poly) before desc",
     )
 

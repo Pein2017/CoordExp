@@ -44,6 +44,7 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference() ->
         {
             "custom": {
                 "object_ordering": "sorted",
+                "object_field_order": "desc_first",
                 "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "coco_80"},
             }
@@ -71,6 +72,7 @@ def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
         {
             "custom": {
                 "object_ordering": "sorted",
+                "object_field_order": "desc_first",
                 "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "coco_80"},
             }
@@ -80,6 +82,7 @@ def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
         {
             "custom": {
                 "object_ordering": "random",
+                "object_field_order": "desc_first",
                 "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "coco_80"},
             }
@@ -116,6 +119,7 @@ def test_training_prompt_resolution_rejects_coord_tokens_disabled() -> None:
         ConfigLoader.resolve_prompts(
             {
                 "custom": {
+                    "object_field_order": "desc_first",
                     "coord_tokens": {"enabled": False},
                     "extra": {"prompt_variant": "default"},
                 }
@@ -131,6 +135,7 @@ def test_training_prompt_resolution_rejects_skip_bbox_norm_false() -> None:
         ConfigLoader.resolve_prompts(
             {
                 "custom": {
+                    "object_field_order": "desc_first",
                     "coord_tokens": {"enabled": True, "skip_bbox_norm": False},
                     "extra": {"prompt_variant": "default"},
                 }
@@ -161,6 +166,7 @@ def test_summary_prompts_are_unaffected_by_prompt_variant() -> None:
         {
             "custom": {
                 "use_summary": True,
+                "object_field_order": "desc_first",
                 "extra": {"prompt_variant": "coco_80"},
             }
         }
@@ -182,5 +188,10 @@ def test_unknown_prompt_variant_error_lists_unknown_and_available_keys() -> None
 
     with pytest.raises(ValueError, match="Unknown prompt variant"):
         ConfigLoader.resolve_prompts(
-            {"custom": {"extra": {"prompt_variant": "unknown_variant"}}}
+            {
+                "custom": {
+                    "object_field_order": "desc_first",
+                    "extra": {"prompt_variant": "unknown_variant"},
+                }
+            }
         )

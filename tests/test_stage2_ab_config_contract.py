@@ -22,6 +22,7 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
+            "object_field_order": "desc_first",
             "trainer_variant": "stage2_ab_training",
         },
         "training": dict(training_section),
@@ -137,8 +138,10 @@ def test_resolve_prompts_desc_first_remains_baseline_wording():
     }
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    assert "desc plus one geometry" in prompts.user
+    assert "desc before one geometry" in prompts.user
+    assert "desc before exactly one geometry key" in str(prompts.system)
     assert "before desc" not in prompts.user
+    assert "before desc" not in str(prompts.system)
 
 
 def test_resolve_prompts_invalid_object_field_order_fails_fast():

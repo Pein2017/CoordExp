@@ -69,6 +69,7 @@ data:
 
 custom:
   json_format: standard
+  object_field_order: desc_first
   # Coord space: pre-normalized JSONLs; no runtime normalization
   emit_norm: none
   train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl

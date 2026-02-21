@@ -11,6 +11,7 @@ def _base_custom_payload() -> dict:
         "user_prompt": "prompt",
         "emit_norm": "none",
         "json_format": "standard",
+        "object_field_order": "desc_first",
     }
 
 
@@ -65,3 +66,10 @@ def test_custom_object_field_order_invalid_fails_fast():
             {**_base_custom_payload(), "object_field_order": "bbox_first"},
             prompts=PromptOverrides(),
         )
+
+
+def test_custom_object_field_order_required():
+    payload = _base_custom_payload()
+    payload.pop("object_field_order", None)
+    with pytest.raises(ValueError, match="custom.object_field_order must be provided"):
+        CustomConfig.from_mapping(payload, prompts=PromptOverrides())
