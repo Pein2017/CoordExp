@@ -927,6 +927,146 @@ def main():
         train_len = base_dataset_len
     logger.info(f"Training dataset size (reported/approx): {train_len}")
 
+    # ------------------------------------------------------------------
+    # DDP dispatch sanity (fail-soft): avoid degenerate empty shards.
+    #
+    # In vanilla DDP, every rank must execute the same number of forward/backward
+    # steps. Transformers' default DistributedSampler achieves this by either:
+    # - truncating to floor(N/world_size) when dataloader_drop_last=True, or
+    # - padding (repeating) to ceil(N/world_size) when dataloader_drop_last=False.
+    #
+    # A common footgun for debug/smoke runs is setting a tiny train_sample_limit
+    # with dataloader_drop_last=True: if N < world_size then floor(...) == 0 and
+    # training becomes a zero-step no-op.
+    # ------------------------------------------------------------------
+    try:
+        _, _, world_size_raw, _ = get_dist_setting()
+        world_size = int(world_size_raw)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        world_size = 1
+    world_size = max(int(world_size), 1)
+
+    base_len_i: int | None = None
+    if base_dataset_len is not None:
+        try:
+            base_len_i = int(base_dataset_len)
+        except (TypeError, ValueError):
+            base_len_i = None
+
+    try:
+        drop_last_flag = bool(getattr(train_args, "dataloader_drop_last", False))
+    except (AttributeError, TypeError, ValueError):
+        drop_last_flag = False
+
+    try:
+        per_device_train_bs = int(
+            getattr(train_args, "per_device_train_batch_size", 1) or 1
+        )
+    except (AttributeError, TypeError, ValueError):
+        per_device_train_bs = 1
+    per_device_train_bs = max(1, int(per_device_train_bs))
+
+    try:
+        gas = int(getattr(train_args, "gradient_accumulation_steps", 1) or 1)
+    except (AttributeError, TypeError, ValueError):
+        gas = 1
+    gas = max(1, int(gas))
+
+    if base_len_i is not None and base_len_i <= 0:
+        raise ValueError(
+            "Training dataset is empty (len==0). Fix custom.train_jsonl or sample limits."
+        )
+
+    if base_len_i is not None and world_size > 1:
+        per_rank_floor = int(base_len_i // world_size)
+        remainder = int(base_len_i % world_size)
+
+        # If drop_last would yield 0 samples per rank, handle it explicitly.
+        #
+        # For most trainer variants, switching drop_last off makes training feasible
+        # (DistributedSampler will pad by repeating indices). For stage2-ab step-budgeted
+        # trainers with gradient_accumulation_steps>1, this still cannot produce a full
+        # accumulation window, so we fail fast instead of silently doing zero-grad steps.
+        if drop_last_flag and base_len_i > 0 and per_rank_floor <= 0:
+            if str(trainer_variant or "") == "stage2_ab_training" and gas > 1:
+                raise ValueError(
+                    "stage2-ab requires at least one full gradient-accumulation window per rank. "
+                    f"Got dataset_len={int(base_len_i)} world_size={int(world_size)} -> per_rank_floor=0 with "
+                    f"dataloader_drop_last=true and gradient_accumulation_steps={int(gas)}. "
+                    "Mitigations: reduce gpus/world_size, increase custom.train_sample_limit, "
+                    "or reduce training.effective_batch_size so gradient_accumulation_steps becomes 1."
+                )
+
+            logger.warning(
+                (
+                    "DDP dispatch: dataloader_drop_last=true with dataset_len=%s and "
+                    "world_size=%s would yield 0 samples per rank. Forcing "
+                    "dataloader_drop_last=false so every rank receives data (with repetition)."
+                ),
+                base_len_i,
+                world_size,
+            )
+            train_args.dataloader_drop_last = False
+            if getattr(train_args, "training_args", None) is not None:
+                train_args.training_args.dataloader_drop_last = False
+            drop_last_flag = False
+
+        per_rank_samples_est = (
+            int(per_rank_floor)
+            if drop_last_flag
+            else int((base_len_i + world_size - 1) // world_size)
+        )
+        if drop_last_flag:
+            per_rank_batches_est = int(per_rank_samples_est // per_device_train_bs)
+        else:
+            per_rank_batches_est = int(
+                (per_rank_samples_est + per_device_train_bs - 1) // per_device_train_bs
+            )
+
+        if drop_last_flag:
+            logger.info(
+                "DDP dispatch: dataloader_drop_last=true -> per_rank=%s (dropped_remainder=%s)",
+                per_rank_floor,
+                remainder,
+            )
+        else:
+            padded = int(per_rank_samples_est * world_size - base_len_i)
+            logger.info(
+                "DDP dispatch: dataloader_drop_last=false -> per_rank=%s (padded_repeats=%s)",
+                per_rank_samples_est,
+                padded,
+            )
+
+        # Stage2-ab step-budgeted trainers execute the forward/backward only on the
+        # final micro-step of the accumulation window. If the train dataloader yields
+        # a partial window at the end of an epoch, the outer Trainer will still call
+        # optimizer.step(), but this trainer will not have produced gradients.
+        #
+        # We only support two safe modes today:
+        # - dataloader_drop_last=true: we drop the final partial window via a dataloader wrapper
+        # - dataloader_drop_last=false with per-rank batch count exactly divisible by GAS
+        if (
+            str(trainer_variant or "") == "stage2_ab_training"
+            and bool(packing_cfg.enabled)
+            and int(gas) > 1
+        ):
+            if int(per_rank_batches_est) < int(gas):
+                raise ValueError(
+                    "stage2-ab requires per-rank batches >= gradient_accumulation_steps. "
+                    f"Got dataset_len={int(base_len_i)} world_size={int(world_size)} -> per_rank_batches_est={int(per_rank_batches_est)} "
+                    f"but gradient_accumulation_steps={int(gas)}. "
+                    "Mitigations: reduce gpus/world_size, increase custom.train_sample_limit, "
+                    "or reduce training.effective_batch_size."
+                )
+            if (not drop_last_flag) and (int(per_rank_batches_est) % int(gas) != 0):
+                raise ValueError(
+                    "stage2-ab step-budgeted mode does not support a partial gradient-accumulation window. "
+                    f"Got dataloader_drop_last=false with per_rank_batches_est={int(per_rank_batches_est)} and "
+                    f"gradient_accumulation_steps={int(gas)} (remainder={int(per_rank_batches_est) % int(gas)}). "
+                    "Mitigations: set training.dataloader_drop_last=true (recommended), or adjust "
+                    "dataset size/world_size so per-rank batches is a multiple of gradient_accumulation_steps."
+                )
+
     # Calculate total_steps and initialize curriculum_state if needed
     if curriculum_scheduler is not None:
         if curriculum_scheduler._requires_total_steps:
