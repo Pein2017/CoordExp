@@ -27,6 +27,7 @@ stage2_ab:
     b_ratio: 0.0
   n_softctx_iter: 2
   softctx_grad_mode: em_detach
+  coord_gate_weight: 1.0
 
 data:
   dataloader_num_workers: 0

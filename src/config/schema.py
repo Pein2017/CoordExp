@@ -1055,6 +1055,7 @@ class Stage2ABConfig:
     coord_ehuber_weight: float = 0.0
     coord_huber_delta: float = 0.001
     coord_entropy_weight: float = 0.0
+    coord_gate_weight: float = 0.0
 
     channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
 
@@ -1137,6 +1138,11 @@ class Stage2ABConfig:
             data.pop("coord_entropy_weight", cls.coord_entropy_weight) or 0.0
         )
 
+        coord_gate_weight = float(
+            data.pop("coord_gate_weight", cls.coord_gate_weight) or 0.0
+        )
+        coord_gate_weight = max(0.0, coord_gate_weight)
+
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
@@ -1161,6 +1167,7 @@ class Stage2ABConfig:
             coord_ehuber_weight=coord_ehuber_weight,
             coord_huber_delta=coord_huber_delta,
             coord_entropy_weight=coord_entropy_weight,
+            coord_gate_weight=coord_gate_weight,
             channel_b=channel_b,
         )
 

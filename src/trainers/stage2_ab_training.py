@@ -2115,6 +2115,11 @@ class Stage2ABTrainingTrainer(
         # Entropy regularizer (sign controls direction): +w increases entropy, -w sharpens.
         coord_entropy_w = float(self._ab_get("coord_entropy_weight", 0.0) or 0.0)
 
+        # Coord-vocab gate: encourage coord slots to place probability mass on coord tokens
+        # rather than arbitrary text/number tokens (prevents "wrong_arity" rollouts).
+        coord_gate_w = float(self._ab_get("coord_gate_weight", 0.0) or 0.0)
+        coord_gate_w = max(0.0, coord_gate_w)
+
         temperature = float(self._ab_get("softctx_temperature", 1.0) or 1.0)
         if temperature <= 0:
             raise ValueError(f"softctx_temperature must be > 0; got {temperature}")
@@ -2535,6 +2540,7 @@ class Stage2ABTrainingTrainer(
             torch.Tensor,
             torch.Tensor,
             torch.Tensor,
+            torch.Tensor,
             int,
             int,
             Dict[str, Any],
@@ -2542,7 +2548,7 @@ class Stage2ABTrainingTrainer(
             b_list, pos_list, bins_list = _flatten_groups(key)
             if not pos_list:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, 0, 0, {}
+                return z, z, z, z, z, z, z, 0, 0, {}
             if len(pos_list) % 4 != 0:
                 raise ValueError(f"{key} coord slots must be a multiple of 4 (bbox_2d)")
 
@@ -2570,7 +2576,7 @@ class Stage2ABTrainingTrainer(
             n_groups = int(pos_g.shape[0])
             if n_groups == 0:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, 0, 0, {}
+                return z, z, z, z, z, z, z, 0, 0, {}
 
             b_t = b_g.reshape(-1)
             pos_t = pos_g.reshape(-1)
@@ -2594,11 +2600,22 @@ class Stage2ABTrainingTrainer(
             el1 = smoothl1.new_tensor(0.0)
             ehuber = smoothl1.new_tensor(0.0)
             entropy = smoothl1.new_tensor(0.0)
+            coord_gate = smoothl1.new_tensor(0.0)
 
             if coord_ce_w != 0.0:
                 coord_ce = F.cross_entropy(
                     coord_logits.float(), bin_t, reduction="mean"
                 ).to(dtype=smoothl1.dtype)
+
+            if coord_gate_w != 0.0:
+                from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
+
+                gate_per_token, _mass_mean = coord_vocab_gate_loss(
+                    logits_full=logits_prev,
+                    logits_coord=coord_logits,
+                    temperature=float(temperature),
+                )
+                coord_gate = gate_per_token.mean().to(dtype=smoothl1.dtype)
 
             if (
                 (coord_el1_w != 0.0)
@@ -2646,6 +2663,18 @@ class Stage2ABTrainingTrainer(
                 )
                 diag["p_gt_mean"] = probs_diag.gather(1, bin_t.view(-1, 1)).mean()
 
+                try:
+                    from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
+
+                    _gate_diag, mass_mean = coord_vocab_gate_loss(
+                        logits_full=logits_prev,
+                        logits_coord=coord_logits,
+                        temperature=float(temp_safe),
+                    )
+                    diag["coord_vocab_mass_mean"] = mass_mean
+                except Exception:
+                    pass
+
                 bins_diag = torch.arange(
                     int(probs_diag.shape[-1]),
                     device=probs_diag.device,
@@ -2661,7 +2690,7 @@ class Stage2ABTrainingTrainer(
                 max_logit = logits_scaled.max(dim=-1).values
                 diag["margin_mean"] = (max_logit - gt_logit).mean()
 
-            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, n_groups, n_slots, diag
+            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, coord_gate, n_groups, n_slots, diag
 
         (
             smoothl1_p,
@@ -2670,6 +2699,7 @@ class Stage2ABTrainingTrainer(
             ehuber_p,
             coord_ce_p,
             ent_p,
+            gate_p,
             n_p,
             s_p,
             diag_p,
@@ -2683,6 +2713,7 @@ class Stage2ABTrainingTrainer(
             ehuber_t,
             coord_ce_t,
             ent_t,
+            gate_t,
             n_t,
             s_t,
             diag_t,
@@ -2708,11 +2739,13 @@ class Stage2ABTrainingTrainer(
                 s_all
             )
             coord_entropy = (ent_p * float(s_p) + ent_t * float(s_t)) / float(s_all)
+            coord_gate = (gate_p * float(s_p) + gate_t * float(s_t)) / float(s_all)
         else:
             coord_el1 = logits.new_tensor(0.0)
             coord_ehuber = logits.new_tensor(0.0)
             coord_ce = logits.new_tensor(0.0)
             coord_entropy = logits.new_tensor(0.0)
+            coord_gate = logits.new_tensor(0.0)
 
         coord_diag_metrics: Dict[str, float] = {}
         if channel == "A" and s_all > 0:
@@ -2737,6 +2770,7 @@ class Stage2ABTrainingTrainer(
                 ("p_gt_mean", "coord_diag/p_gt_mean"),
                 ("margin_mean", "coord_diag/margin_mean"),
                 ("expected_bin_mae", "coord_diag/expected_bin_mae"),
+                ("coord_vocab_mass_mean", "coord_diag/coord_vocab_mass_mean"),
             ):
                 value = _weighted_diag_mean(metric_key)
                 if value is not None:
@@ -2761,6 +2795,7 @@ class Stage2ABTrainingTrainer(
             + coord_el1_w * coord_el1
             + coord_ehuber_w * coord_ehuber
             + coord_entropy_w * coord_entropy
+            + coord_gate_w * coord_gate
         )
         total = ce_loss + bbox_loss + coord_reg_loss
 
@@ -2781,6 +2816,7 @@ class Stage2ABTrainingTrainer(
                 "loss/coord_el1": float(coord_el1.detach().cpu().item()),
                 "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
                 "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
+                "loss/coord_gate": float(coord_gate.detach().cpu().item()),
                 "loss/coord_reg": float(coord_reg_loss.detach().cpu().item()),
             }
 

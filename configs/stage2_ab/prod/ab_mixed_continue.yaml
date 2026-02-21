@@ -20,6 +20,7 @@ training:
 stage2_ab:
   schedule: {b_ratio: 0.85}
   n_softctx_iter: 2
+  coord_gate_weight: 1.0
 
 custom:
   val_sample_limit: 504

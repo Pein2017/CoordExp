@@ -24,6 +24,9 @@ stage2_ab:
     b_ratio: 0.0
   n_softctx_iter: 2
   softctx_grad_mode: em_detach
+  # Prevent coord slots from drifting to non-<|coord|> tokens (digits/words/unicode),
+  # which causes rollout parsing to drop records as wrong-arity.
+  coord_gate_weight: 1.0
 
 rollout_matching:
   # Override rollout backend inherited from configs/stage2_ab/base.yaml.

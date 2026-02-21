@@ -23,6 +23,7 @@ stage2_ab:
   schedule:
     b_ratio: 0.0
   n_softctx_iter: 2
+  coord_gate_weight: 1.0
 
 rollout_matching:
   # Override rollout backend inherited from configs/stage2_ab/base.yaml.
