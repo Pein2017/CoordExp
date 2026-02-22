@@ -2273,7 +2273,11 @@ class Stage2ABTrainingTrainer(
                 if softctx_grad_mode == "unroll":
                     ctx = torch.enable_grad()
                 else:
-                    grad_on = bool(it == int(n_softctx_iter) - 1)
+                    last_it = int(n_softctx_iter) - 1
+                    # Channel-A anchors CE to the A1 (it==0) logits. If we run A1 under
+                    # torch.no_grad(), CE has no gradient and the model quickly drifts in
+                    # structure/format tokens (e.g., emitting bbox_3d/bbox_d keys).
+                    grad_on = bool(it == 0 or it == last_it)
                     ctx = torch.enable_grad() if grad_on else torch.no_grad()
 
                 with ctx:
