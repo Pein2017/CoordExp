@@ -25,6 +25,7 @@ stage2_ab:
   n_softctx_iter: 2
   softctx_grad_mode: em_detach
   coord_gate_weight: 1.0
+  bbox_ciou_weight: 0.2
 
 rollout_matching:
   # Override rollout backend inherited from configs/stage2_ab/base.yaml.
@@ -42,5 +43,8 @@ rollout_matching:
 custom:
   object_field_order: desc_first
   val_sample_limit: 512
+  coord_soft_ce_w1:
+    soft_ce_weight: 0.2
+    w1_weight: 0.2
   extra:
     prompt_variant: coco_80

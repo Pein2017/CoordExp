@@ -2124,6 +2124,44 @@ class Stage2ABTrainingTrainer(
         if temperature <= 0:
             raise ValueError(f"softctx_temperature must be > 0; got {temperature}")
 
+        # Optional Stage-1-style coord distribution losses applied on the same
+        # Stage-2-supervised coord slots (bbox_groups_prefix/fn only).
+        coord_soft_cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+        coord_soft_enabled = bool(getattr(coord_soft_cfg, "enabled", False))
+        coord_soft_ce_w = (
+            float(getattr(coord_soft_cfg, "soft_ce_weight", 0.0) or 0.0)
+            if coord_soft_enabled
+            else 0.0
+        )
+        coord_soft_ce_w = max(0.0, coord_soft_ce_w)
+        coord_w1_w = (
+            float(getattr(coord_soft_cfg, "w1_weight", 0.0) or 0.0)
+            if coord_soft_enabled
+            else 0.0
+        )
+        coord_w1_w = max(0.0, coord_w1_w)
+        coord_soft_sigma = float(getattr(coord_soft_cfg, "target_sigma", 2.0) or 2.0)
+        if coord_soft_sigma <= 0:
+            raise ValueError(
+                f"coord_soft_ce_w1.target_sigma must be > 0; got {coord_soft_sigma}"
+            )
+        coord_soft_truncate = getattr(coord_soft_cfg, "target_truncate", None)
+        if coord_soft_truncate is not None:
+            coord_soft_truncate = int(coord_soft_truncate)
+            if coord_soft_truncate < 0:
+                raise ValueError(
+                    "coord_soft_ce_w1.target_truncate must be >= 0 or null"
+                )
+        coord_soft_temperature = (
+            float(getattr(coord_soft_cfg, "temperature", 1.0) or 1.0)
+            if coord_soft_enabled
+            else float(temperature)
+        )
+        if coord_soft_temperature <= 0:
+            raise ValueError(
+                f"coord_soft_ce_w1.temperature must be > 0; got {coord_soft_temperature}"
+            )
+
         # Always compute logits; do not rely on model.loss.
         ignored_keys = {
             "labels",
@@ -2545,6 +2583,8 @@ class Stage2ABTrainingTrainer(
             torch.Tensor,
             torch.Tensor,
             torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
             int,
             int,
             Dict[str, Any],
@@ -2552,7 +2592,7 @@ class Stage2ABTrainingTrainer(
             b_list, pos_list, bins_list = _flatten_groups(key)
             if not pos_list:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, z, 0, 0, {}
+                return z, z, z, z, z, z, z, z, z, 0, 0, {}
             if len(pos_list) % 4 != 0:
                 raise ValueError(f"{key} coord slots must be a multiple of 4 (bbox_2d)")
 
@@ -2580,7 +2620,7 @@ class Stage2ABTrainingTrainer(
             n_groups = int(pos_g.shape[0])
             if n_groups == 0:
                 z = logits.new_tensor(0.0)
-                return z, z, z, z, z, z, z, 0, 0, {}
+                return z, z, z, z, z, z, z, z, z, 0, 0, {}
 
             b_t = b_g.reshape(-1)
             pos_t = pos_g.reshape(-1)
@@ -2601,6 +2641,8 @@ class Stage2ABTrainingTrainer(
 
             # Optional coord-distribution losses/regularizers.
             coord_ce = smoothl1.new_tensor(0.0)
+            coord_soft_ce = smoothl1.new_tensor(0.0)
+            coord_w1 = smoothl1.new_tensor(0.0)
             el1 = smoothl1.new_tensor(0.0)
             ehuber = smoothl1.new_tensor(0.0)
             entropy = smoothl1.new_tensor(0.0)
@@ -2610,6 +2652,24 @@ class Stage2ABTrainingTrainer(
                 coord_ce = F.cross_entropy(
                     coord_logits.float(), bin_t, reduction="mean"
                 ).to(dtype=smoothl1.dtype)
+
+            if (coord_soft_ce_w != 0.0) or (coord_w1_w != 0.0):
+                from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
+
+                coord_dist = coord_soft_ce_w1(
+                    coord_logits,
+                    bin_t,
+                    sigma=float(coord_soft_sigma),
+                    truncate=coord_soft_truncate,
+                    temperature=float(coord_soft_temperature),
+                    soft_ce_weight=1.0,
+                    w1_weight=1.0,
+                    normalize_w1=True,
+                )
+                coord_soft_ce = coord_dist.soft_ce_per_token.mean().to(
+                    dtype=smoothl1.dtype
+                )
+                coord_w1 = coord_dist.w1_per_token.mean().to(dtype=smoothl1.dtype)
 
             if coord_gate_w != 0.0:
                 from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
@@ -2694,7 +2754,20 @@ class Stage2ABTrainingTrainer(
                 max_logit = logits_scaled.max(dim=-1).values
                 diag["margin_mean"] = (max_logit - gt_logit).mean()
 
-            return smoothl1, ciou, el1, ehuber, coord_ce, entropy, coord_gate, n_groups, n_slots, diag
+            return (
+                smoothl1,
+                ciou,
+                el1,
+                ehuber,
+                coord_ce,
+                coord_soft_ce,
+                coord_w1,
+                entropy,
+                coord_gate,
+                n_groups,
+                n_slots,
+                diag,
+            )
 
         (
             smoothl1_p,
@@ -2702,6 +2775,8 @@ class Stage2ABTrainingTrainer(
             el1_p,
             ehuber_p,
             coord_ce_p,
+            coord_soft_ce_p,
+            coord_w1_p,
             ent_p,
             gate_p,
             n_p,
@@ -2716,6 +2791,8 @@ class Stage2ABTrainingTrainer(
             el1_t,
             ehuber_t,
             coord_ce_t,
+            coord_soft_ce_t,
+            coord_w1_t,
             ent_t,
             gate_t,
             n_t,
@@ -2742,12 +2819,20 @@ class Stage2ABTrainingTrainer(
             coord_ce = (coord_ce_p * float(s_p) + coord_ce_t * float(s_t)) / float(
                 s_all
             )
+            coord_soft_ce = (
+                coord_soft_ce_p * float(s_p) + coord_soft_ce_t * float(s_t)
+            ) / float(s_all)
+            coord_w1 = (coord_w1_p * float(s_p) + coord_w1_t * float(s_t)) / float(
+                s_all
+            )
             coord_entropy = (ent_p * float(s_p) + ent_t * float(s_t)) / float(s_all)
             coord_gate = (gate_p * float(s_p) + gate_t * float(s_t)) / float(s_all)
         else:
             coord_el1 = logits.new_tensor(0.0)
             coord_ehuber = logits.new_tensor(0.0)
             coord_ce = logits.new_tensor(0.0)
+            coord_soft_ce = logits.new_tensor(0.0)
+            coord_w1 = logits.new_tensor(0.0)
             coord_entropy = logits.new_tensor(0.0)
             coord_gate = logits.new_tensor(0.0)
 
@@ -2796,6 +2881,8 @@ class Stage2ABTrainingTrainer(
         bbox_loss = bbox_smoothl1_w * smoothl1 + bbox_ciou_w * ciou
         coord_reg_loss = (
             coord_ce_w * coord_ce
+            + coord_soft_ce_w * coord_soft_ce
+            + coord_w1_w * coord_w1
             + coord_el1_w * coord_el1
             + coord_ehuber_w * coord_ehuber
             + coord_entropy_w * coord_entropy
@@ -2817,6 +2904,8 @@ class Stage2ABTrainingTrainer(
                 "loss/bbox_smoothl1": float(smoothl1.detach().cpu().item()),
                 "loss/bbox_ciou": float(ciou.detach().cpu().item()),
                 "loss/coord_ce": float(coord_ce.detach().cpu().item()),
+                "loss/coord_soft_ce": float(coord_soft_ce.detach().cpu().item()),
+                "loss/coord_w1": float(coord_w1.detach().cpu().item()),
                 "loss/coord_el1": float(coord_el1.detach().cpu().item()),
                 "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
                 "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),

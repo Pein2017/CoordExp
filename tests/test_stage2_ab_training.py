@@ -903,6 +903,144 @@ def test_channel_b_includes_fn_geometry_loss():
     assert float(loss.detach().cpu().item()) > 0.0
 
 
+def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 0.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    soft_ce_weight = 0.25
+    w1_weight = 0.25
+
+    # Enable Stage-1-style coord distribution losses in Stage-2.
+    t.coord_soft_ce_w1_cfg = types.SimpleNamespace(
+        enabled=True,
+        soft_ce_weight=soft_ce_weight,
+        w1_weight=w1_weight,
+        target_sigma=2.0,
+        target_truncate=None,
+        temperature=1.0,
+    )
+
+    model = _DummyAlwaysTokenModel(pred_id=999)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": int(input_ids.shape[1]),
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_ignore_pos": [],
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0]}],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss.detach().cpu().item()) > 0.0
+
+    pending = t._stage2_pending_train_logs.get(1)
+    assert pending is not None
+    finalized = pending.finalize()
+    coord_soft_ce = float(finalized["loss/coord_soft_ce"])
+    coord_w1 = float(finalized["loss/coord_w1"])
+    coord_reg = float(finalized["loss/coord_reg"])
+
+    assert coord_soft_ce > 0.0
+    assert coord_w1 > 0.0
+    assert coord_reg == pytest.approx(
+        soft_ce_weight * coord_soft_ce + w1_weight * coord_w1
+    )
+
+
+def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 0.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    t.coord_soft_ce_w1_cfg = types.SimpleNamespace(
+        enabled=False,
+        soft_ce_weight=0.25,
+        w1_weight=0.25,
+        target_sigma=2.0,
+        target_truncate=None,
+        temperature=1.0,
+    )
+
+    model = _DummyAlwaysTokenModel(pred_id=999)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": int(input_ids.shape[1]),
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_ignore_pos": [],
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0]}],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
+
+    pending = t._stage2_pending_train_logs.get(1)
+    assert pending is not None
+    finalized = pending.finalize()
+    assert float(finalized["loss/coord_soft_ce"]) == pytest.approx(0.0)
+    assert float(finalized["loss/coord_w1"]) == pytest.approx(0.0)
+    assert float(finalized["loss/coord_reg"]) == pytest.approx(0.0)
+
+
 def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {

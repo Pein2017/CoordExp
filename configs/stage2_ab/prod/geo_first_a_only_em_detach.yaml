@@ -27,6 +27,7 @@ stage2_ab:
   # Prevent coord slots from drifting to non-<|coord|> tokens (digits/words/unicode),
   # which causes rollout parsing to drop records as wrong-arity.
   coord_gate_weight: 1.0
+  bbox_ciou_weight: 0.2
 
 rollout_matching:
   # Override rollout backend inherited from configs/stage2_ab/base.yaml.
@@ -44,5 +45,8 @@ rollout_matching:
 custom:
   object_field_order: geometry_first
   val_sample_limit: 512
+  coord_soft_ce_w1:
+    soft_ce_weight: 0.2
+    w1_weight: 0.2
   extra:
     prompt_variant: coco_80

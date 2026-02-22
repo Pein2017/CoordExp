@@ -22,8 +22,12 @@ stage2_ab:
     b_ratio: 1.0
   n_softctx_iter: 2
   coord_gate_weight: 1.0
+  bbox_ciou_weight: 0.2
 
 custom:
+  coord_soft_ce_w1:
+    soft_ce_weight: 0.2
+    w1_weight: 0.2
   extra:
     prompt_variant: coco_80
 

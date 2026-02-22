@@ -87,6 +87,7 @@ stage2_ab:
   n_softctx_iter: 2
   coord_gate_weight: 1.0
   bbox_smoothl1_weight: 2.0
+  bbox_ciou_weight: 0.5
   channel_b: {}
 
 custom:
@@ -103,6 +104,8 @@ custom:
     skip_bbox_norm: true
   coord_soft_ce_w1:
     enabled: true
+    soft_ce_weight: 0.02
+    w1_weight: 0.02
 
 debug:
   enabled: false
