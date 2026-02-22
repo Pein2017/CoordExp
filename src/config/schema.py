@@ -87,6 +87,7 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "save_last_epoch",
     # Packing-only knobs consumed by our runner (not ms-swift args).
     "packing",
+    "packing_mode",
     "packing_buffer",
     "packing_min_fill_ratio",
     "packing_drop_last",

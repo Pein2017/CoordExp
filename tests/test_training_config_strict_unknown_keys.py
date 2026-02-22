@@ -50,6 +50,7 @@ def test_training_internal_packing_keys_are_allowed():
     payload = _base_training_payload()
     payload["training"] = {
         "packing": True,
+        "packing_mode": "static",
         "packing_buffer": 128,
         "packing_min_fill_ratio": 0.5,
         "effective_batch_size": 8,
@@ -59,6 +60,7 @@ def test_training_internal_packing_keys_are_allowed():
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.training["packing"] is True
+    assert cfg.training["packing_mode"] == "static"
     assert cfg.training["packing_buffer"] == 128
 
 

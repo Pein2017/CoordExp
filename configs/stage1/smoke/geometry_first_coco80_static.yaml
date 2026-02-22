@@ -1,0 +1,19 @@
+extends: geometry_first_coco80_ddp_short.yaml
+
+model:
+  model: ../../output/stage1/coco_bbox_max60-coco80-geometry_first_merged/checkpoint-1832
+
+training:
+  output_dir: ./output/stage1/smoke/geometry_first_coco80_static
+  run_name: smoke_stage1_geometry_first_coco80_static
+  logging_dir: ./tb/stage1/smoke/geometry_first_coco80_static
+  packing_mode: static
+  dataloader_drop_last: false
+
+custom:
+  object_field_order: geometry_first
+  train_jsonl: ../../public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: ../../public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+
+debug:
+  output_dir: output/stage1/smoke/geometry_first_coco80_static

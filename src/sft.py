@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import torch
 from swift.llm.train.rlhf import SwiftRLHF
@@ -30,7 +30,12 @@ from .coord_tokens.offset_adapter import (
 )
 from .config import ConfigLoader, SaveDelayConfig
 from .config.strict_dataclass import dataclass_asdict_no_none
-from .datasets import BaseCaptionDataset, RandomSampleDataset, build_packed_dataset
+from .datasets import (
+    BaseCaptionDataset,
+    RandomSampleDataset,
+    build_packed_dataset,
+    build_static_packed_dataset,
+)
 from .trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     CoordSoftCEW1LossMixin,
@@ -82,6 +87,7 @@ logger = get_logger(__name__)
 @dataclass(frozen=True)
 class PackingRuntimeConfig:
     enabled: bool = False
+    mode: Literal["dynamic", "static"] = "dynamic"
     packing_length: int = 0
     buffer_size: int = 512
     min_fill_ratio: float = 0.65
@@ -98,11 +104,18 @@ def _parse_packing_config(
     if not enabled:
         return PackingRuntimeConfig(enabled=False)
 
+    mode_raw = cfg.get("packing_mode", "dynamic")
+    mode = str(mode_raw or "dynamic").strip().lower()
+    if mode not in {"dynamic", "static"}:
+        raise ValueError(
+            "training.packing_mode must be one of {'dynamic', 'static'}, "
+            f"got {mode_raw!r}"
+        )
+
     default_length = getattr(template, "max_length", None) or getattr(
         train_args, "max_model_len", None
     )
 
-    # Packing length is derived from the model/template max length.
     packing_length = int(default_length or 0)
     if packing_length <= 0:
         raise ValueError(
@@ -119,6 +132,7 @@ def _parse_packing_config(
 
     return PackingRuntimeConfig(
         enabled=True,
+        mode=mode,
         packing_length=packing_length,
         buffer_size=buffer_size,
         min_fill_ratio=min_fill_ratio,
@@ -126,6 +140,97 @@ def _parse_packing_config(
         allow_single_long=allow_single_long,
         eval_packing=eval_packing,
     )
+
+
+def _set_train_arg(train_args: Any, field: str, value: Any) -> None:
+    setattr(train_args, field, value)
+    nested = getattr(train_args, "training_args", None)
+    if nested is not None:
+        setattr(nested, field, value)
+
+
+def _recompute_gas_for_packing(
+    *,
+    train_args: Any,
+    training_cfg: Mapping[str, Any],
+    original_per_device_bs: int,
+    original_gas: int,
+    world_size: int,
+) -> int:
+    world_size = max(int(world_size), 1)
+    effective_batch_raw = training_cfg.get("effective_batch_size")
+
+    if effective_batch_raw is not None:
+        try:
+            effective_batch = int(effective_batch_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "training.effective_batch_size must be an integer when packing is enabled"
+            ) from exc
+        if effective_batch <= 0:
+            raise ValueError(
+                f"training.effective_batch_size must be > 0, got {effective_batch_raw!r}"
+            )
+        new_gas = max(1, math.ceil(effective_batch / world_size))
+        reason = f"effective_batch_size={effective_batch}"
+    else:
+        implied_global = max(
+            1,
+            int(original_per_device_bs) * int(original_gas) * int(world_size),
+        )
+        new_gas = max(1, math.ceil(implied_global / world_size))
+        reason = f"pre-adjust global_effective_batch={implied_global}"
+
+    current_gas = int(getattr(train_args, "gradient_accumulation_steps", 1) or 1)
+    if current_gas != new_gas:
+        _set_train_arg(train_args, "gradient_accumulation_steps", int(new_gas))
+        logger.warning(
+            "packing enabled: recomputed gradient_accumulation_steps=%s after forcing per_device_train_batch_size=1 (%s, world_size=%s, previous_gas=%s)",
+            new_gas,
+            reason,
+            world_size,
+            current_gas,
+        )
+    return int(new_gas)
+
+
+def _build_static_packing_fingerprint(
+    *,
+    training_config: Any,
+    custom_config: Any,
+    template: Any,
+    train_args: Any,
+    dataset_seed: int,
+    packing_cfg: PackingRuntimeConfig,
+) -> dict[str, Any]:
+    template_cfg = getattr(training_config, "template", {}) or {}
+    training_cfg = getattr(training_config, "training", {}) or {}
+
+    return {
+        "dataset_seed": int(dataset_seed),
+        "packing_mode": packing_cfg.mode,
+        "packing_length": int(packing_cfg.packing_length),
+        "global_max_length": getattr(training_config, "global_max_length", None),
+        "template_max_length": getattr(template, "max_length", None),
+        "train_args_max_model_len": getattr(train_args, "max_model_len", None),
+        "template_system": template_cfg.get("system")
+        if isinstance(template_cfg, Mapping)
+        else None,
+        "template_truncation_strategy": template_cfg.get("truncation_strategy")
+        if isinstance(template_cfg, Mapping)
+        else None,
+        "custom_user_prompt": getattr(custom_config, "user_prompt", None),
+        "custom_emit_norm": getattr(custom_config, "emit_norm", None),
+        "custom_json_format": getattr(custom_config, "json_format", None),
+        "custom_object_ordering": getattr(custom_config, "object_ordering", None),
+        "custom_object_field_order": getattr(custom_config, "object_field_order", None),
+        "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
+        "system_prompt_dense": getattr(custom_config, "system_prompt_dense", None),
+        "system_prompt_summary": getattr(custom_config, "system_prompt_summary", None),
+        "train_dataloader_shuffle": training_cfg.get("train_dataloader_shuffle")
+        if isinstance(training_cfg, Mapping)
+        else None,
+    }
 
 
 def _validate_attention_backend_for_packing(*, training_config: Any) -> None:
@@ -814,89 +919,168 @@ def main():
         "rollout_matching_sft",
         "stage2_ab_training",
     }:
-        orig_bs = getattr(train_args, "per_device_train_batch_size", None)
+        training_map = getattr(training_config, "training", {}) or {}
+        if not isinstance(training_map, Mapping):
+            training_map = {}
+
+        try:
+            orig_bs = int(getattr(train_args, "per_device_train_batch_size", 1) or 1)
+        except (TypeError, ValueError):
+            orig_bs = 1
+        try:
+            orig_gas = int(getattr(train_args, "gradient_accumulation_steps", 1) or 1)
+        except (TypeError, ValueError):
+            orig_gas = 1
+
+        _, _, packing_world_size, _ = get_dist_setting()
+        packing_world_size = max(int(packing_world_size), 1)
+
         if orig_bs != 1:
             logger.warning(
                 "packing enabled: forcing per_device_train_batch_size=1 (was %s)",
                 orig_bs,
             )
-            train_args.per_device_train_batch_size = 1
-            if getattr(train_args, "training_args", None) is not None:
-                train_args.training_args.per_device_train_batch_size = 1
+            _set_train_arg(train_args, "per_device_train_batch_size", 1)
+            _recompute_gas_for_packing(
+                train_args=train_args,
+                training_cfg=training_map,
+                original_per_device_bs=orig_bs,
+                original_gas=orig_gas,
+                world_size=packing_world_size,
+            )
 
-        # Ensure max_steps is finite when using iterable packed dataset
-        max_steps = getattr(train_args, "max_steps", None)
-        if max_steps is None or max_steps <= 0:
-            if base_dataset_len is not None:
-                grad_acc = getattr(train_args, "gradient_accumulation_steps", 1) or 1
-                _, _, world_size, _ = get_dist_setting()
-                world_size = max(world_size, 1)
-                # Heuristic: estimate average samples per emitted pack to align optimizer steps with requested epochs.
-                # Defaults to ~8 samples/pack (observed in packing guide); override via training.packing_avg_samples.
-                training_map = getattr(training_config, "training", {}) or {}
-                avg_pack_samples_raw = (
-                    training_map.get("packing_avg_samples", 8.0)
-                    if isinstance(training_map, Mapping)
-                    else 8.0
-                )
-                try:
-                    avg_pack_samples = float(avg_pack_samples_raw)
-                except (TypeError, ValueError) as exc:
-                    raise TypeError(
-                        "training.packing_avg_samples must be a float; "
-                        f"got {avg_pack_samples_raw!r}"
-                    ) from exc
-                avg_pack_samples = max(avg_pack_samples, 1e-6)
-                packs_per_rank_est = math.ceil(
-                    base_dataset_len / (avg_pack_samples * world_size)
-                )
-                steps_per_epoch_est = math.ceil(packs_per_rank_est / grad_acc)
-
-                epochs_target = getattr(train_args, "num_train_epochs", None)
-                if epochs_target is None or epochs_target <= 0:
-                    est_total = steps_per_epoch_est
-                else:
-                    est_total = math.ceil(steps_per_epoch_est * float(epochs_target))
-
-                train_args.max_steps = est_total
-                if getattr(train_args, "training_args", None) is not None:
-                    train_args.training_args.max_steps = est_total
-                logger.warning(
-                    (
-                        "packing enabled with iterable dataset: auto-setting max_steps=%s "
-                        "(base_len=%s, avg_pack_samples=%.3f, packs_per_rank_est=%s, "
-                        "grad_acc=%s, world_size=%s, target_epochs=%s)"
-                    ),
-                    est_total,
-                    base_dataset_len,
-                    avg_pack_samples,
-                    packs_per_rank_est,
-                    grad_acc,
-                    world_size,
-                    epochs_target,
-                )
-            else:
-                raise ValueError(
-                    "packing enabled: max_steps must be set to a positive value when dataset length is unknown"
-                )
-
-        dataset = build_packed_dataset(
-            dataset,
-            template=sft.template,
-            packing_length=packing_cfg.packing_length,
-            buffer_size=packing_cfg.buffer_size,
-            min_fill_ratio=packing_cfg.min_fill_ratio,
-            drop_last=packing_cfg.drop_last,
-            allow_single_long=packing_cfg.allow_single_long,
-        )
         logger.info(
-            "Packing enabled: length=%s buffer=%s min_fill=%.2f drop_last=%s allow_single_long=%s",
-            packing_cfg.packing_length,
-            packing_cfg.buffer_size,
-            packing_cfg.min_fill_ratio,
-            packing_cfg.drop_last,
-            packing_cfg.allow_single_long,
+            "Packing unit semantics: one per-device dataloader item equals one packed sequence; effective_batch_size is interpreted in packed-sequence units."
         )
+
+        if packing_cfg.mode == "static":
+            output_dir_raw = getattr(train_args, "output_dir", None)
+            if not output_dir_raw:
+                raise ValueError(
+                    "training.output_dir must be set when training.packing_mode=static"
+                )
+
+            train_dataloader_shuffle = bool(
+                getattr(train_args, "train_dataloader_shuffle", True)
+            )
+            static_cache_dir = Path(str(output_dir_raw)) / "static_packing"
+            static_fingerprint = _build_static_packing_fingerprint(
+                training_config=training_config,
+                custom_config=custom_config,
+                template=sft.template,
+                train_args=train_args,
+                dataset_seed=dataset_seed,
+                packing_cfg=packing_cfg,
+            )
+
+            dataset = build_static_packed_dataset(
+                dataset,
+                template=sft.template,
+                packing_length=packing_cfg.packing_length,
+                min_fill_ratio=packing_cfg.min_fill_ratio,
+                packing_drop_last=packing_cfg.drop_last,
+                dataloader_drop_last=bool(
+                    getattr(train_args, "dataloader_drop_last", False)
+                ),
+                allow_single_long=packing_cfg.allow_single_long,
+                cache_dir=static_cache_dir,
+                fingerprint=static_fingerprint,
+                world_size=packing_world_size,
+                train_dataloader_shuffle=train_dataloader_shuffle,
+            )
+            base_dataset_len = len(dataset)
+
+            logger.info(
+                "Packing enabled (static): length=%s min_fill=%.2f packing_drop_last=%s allow_single_long=%s",
+                packing_cfg.packing_length,
+                packing_cfg.min_fill_ratio,
+                packing_cfg.drop_last,
+                packing_cfg.allow_single_long,
+            )
+            logger.info(
+                "Static packing plan: train_dataloader_shuffle=%s N_raw_packs=%s N_aligned_packs=%s raw_checksum=%s aligned_checksum=%s",
+                train_dataloader_shuffle,
+                len(dataset.raw_plan),
+                len(dataset),
+                dataset.raw_plan_checksum,
+                dataset.aligned_plan_checksum,
+            )
+            logger.info(
+                "Static packing DDP alignment: world_size=%s dataloader_drop_last=%s pad_needed=%s repeated_pack_indices=%s",
+                dataset.world_size,
+                dataset.dataloader_drop_last,
+                dataset.pad_needed,
+                dataset.repeated_pack_indices,
+            )
+            logger.info(
+                "Static packing stats: packs=%s avg_fill=%.3f single_long=%s skipped_long=%s",
+                len(dataset),
+                dataset.avg_fill,
+                dataset.single_long,
+                dataset.skipped_long,
+            )
+        else:
+            max_steps = getattr(train_args, "max_steps", None)
+            if max_steps is None or max_steps <= 0:
+                if base_dataset_len is not None:
+                    grad_acc = getattr(train_args, "gradient_accumulation_steps", 1) or 1
+                    avg_pack_samples_raw = training_map.get("packing_avg_samples", 8.0)
+                    try:
+                        avg_pack_samples = float(avg_pack_samples_raw)
+                    except (TypeError, ValueError) as exc:
+                        raise TypeError(
+                            "training.packing_avg_samples must be a float; "
+                            f"got {avg_pack_samples_raw!r}"
+                        ) from exc
+                    avg_pack_samples = max(avg_pack_samples, 1e-6)
+                    packs_per_rank_est = math.ceil(
+                        base_dataset_len / (avg_pack_samples * packing_world_size)
+                    )
+                    steps_per_epoch_est = math.ceil(packs_per_rank_est / grad_acc)
+
+                    epochs_target = getattr(train_args, "num_train_epochs", None)
+                    if epochs_target is None or epochs_target <= 0:
+                        est_total = steps_per_epoch_est
+                    else:
+                        est_total = math.ceil(steps_per_epoch_est * float(epochs_target))
+
+                    _set_train_arg(train_args, "max_steps", est_total)
+                    logger.warning(
+                        (
+                            "packing enabled with iterable dataset: auto-setting max_steps=%s "
+                            "(base_len=%s, avg_pack_samples=%.3f, packs_per_rank_est=%s, "
+                            "grad_acc=%s, world_size=%s, target_epochs=%s)"
+                        ),
+                        est_total,
+                        base_dataset_len,
+                        avg_pack_samples,
+                        packs_per_rank_est,
+                        grad_acc,
+                        packing_world_size,
+                        epochs_target,
+                    )
+                else:
+                    raise ValueError(
+                        "packing enabled: max_steps must be set to a positive value when dataset length is unknown"
+                    )
+
+            dataset = build_packed_dataset(
+                dataset,
+                template=sft.template,
+                packing_length=packing_cfg.packing_length,
+                buffer_size=packing_cfg.buffer_size,
+                min_fill_ratio=packing_cfg.min_fill_ratio,
+                drop_last=packing_cfg.drop_last,
+                allow_single_long=packing_cfg.allow_single_long,
+            )
+            logger.info(
+                "Packing enabled (dynamic): length=%s buffer=%s min_fill=%.2f drop_last=%s allow_single_long=%s",
+                packing_cfg.packing_length,
+                packing_cfg.buffer_size,
+                packing_cfg.min_fill_ratio,
+                packing_cfg.drop_last,
+                packing_cfg.allow_single_long,
+            )
     elif packing_cfg.enabled and trainer_variant in {
         "rollout_matching_sft",
         "stage2_ab_training",

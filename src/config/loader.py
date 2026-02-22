@@ -372,6 +372,7 @@ class ConfigLoader:
         # Remove packing-only knobs before TrainArguments init; they are consumed in sft.py
         _packing_keys = {
             "packing",
+            "packing_mode",
             "packing_length",
             "packing_buffer",
             "packing_min_fill_ratio",
