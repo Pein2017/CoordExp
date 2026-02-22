@@ -137,7 +137,7 @@ rollout_matching:
     temperature: 0.0
     top_p: 1.0
     top_k: -1
-  repetition_penalty: 1.08
+  repetition_penalty: 1.1
   candidate_top_k: 5
   maskiou_gate: 0.3
   maskiou_resolution: 256
