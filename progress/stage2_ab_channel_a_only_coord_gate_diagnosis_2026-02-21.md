@@ -1,12 +1,35 @@
 # Stage-2 (AB) Channel-A Only — COCO Parseability Degradation Diagnosis + Coord-Vocab Gate (2026-02-21)
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 
 This note records an ongoing investigation into a serious **Stage-2 AB Channel-A only** failure mode on **COCO bbox-only** where rollout outputs become increasingly **unparseable / format-incorrect** as training proceeds (many invalid predictions dropped during eval).
 
 It also documents the most likely algorithmic mechanism discovered so far (coord-token "type" leakage), the mitigation implemented (`coord_gate_weight`), and the rerun plan to verify whether the degradation disappears.
 
-Status: **Fix implemented, awaiting rerun confirmation.**
+Status: **Coord gate implemented; em_detach CE-grad bug fixed; awaiting rerun confirmation.**
+
+---
+
+## Update (2026-02-22): `em_detach` was confounded by a CE-grad implementation bug
+
+We found a **P0 implementation bug** in Channel-A `softctx_grad_mode=em_detach` that explains why `em_detach` runs showed rapidly increasing parse drops and format/key corruption even after adding coord-vocab gating.
+
+Mechanism:
+
+- Channel-A CE is intentionally anchored to the **A1** forward logits (`logits_a1`).
+- However, in `em_detach` we were running the **A1 forward under `torch.no_grad()`** (to save memory on early iterations).
+- That makes `logits_a1` **non-differentiable**, so **`loss/ce` contributes no gradient** in `em_detach`.
+
+Observed symptoms (from COCO A-only `em_detach` runs):
+
+- `loss/ce` explodes over training while coord losses remain roughly stable.
+- Generated record keys drift from `"bbox_2d"` into invalid variants like `"bbox_0d"`, `"bbox_3d"`, `"bbox_4d"`, and `"bbox_d"`.
+- Strict parsing drops these as `unexpected_keys`, driving `eval_rollout/parse_dropped_invalid` up and depressing recall (FN skyrockets due to fewer valid objects).
+
+Fix:
+
+- `src/trainers/stage2_ab_training.py` now enables grad on `it==0` (A1) **and** the final iter in `em_detach`, while keeping middle iters `no_grad`.
+- Commit: `88a0873` (`stage2_ab: fix em_detach CE by enabling grad on A1`)
 
 ---
 
@@ -40,8 +63,8 @@ Artifacts:
 - `output/stage2_ab/coco_bbox_max60/a_only_em_detach/desc_first_merged_ckpt1832_ep2/v0-20260221-113516`
 - `output/stage2_ab/coco_bbox_max60/a_only_em_detach/geometry_first_merged_ckpt1832_ep2/v0-20260221-113950`
 
-Interpretation: this reduces the likelihood that the degradation is purely explained by
-`stage2_ab.softctx_grad_mode` (`unroll` vs `em_detach`).
+Interpretation (updated): these `em_detach` runs were later found to be **confounded by the CE-grad bug** (see Update section),
+so they do **not** provide a fair comparison between `unroll` vs `em_detach` until rerun with `88a0873` or later.
 
 ---
 
@@ -206,4 +229,3 @@ When reruns complete, update this note with:
 - run dirs (output + tb)
 - a small table of `eval_rollout/*` deltas across steps (300/600/1200)
 - a few minimal examples from monitor dumps demonstrating success/failure
-
