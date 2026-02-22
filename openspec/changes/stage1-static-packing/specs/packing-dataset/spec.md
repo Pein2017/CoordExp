@@ -129,6 +129,11 @@ When dataset-level packing wrappers are enabled (dynamic or static) and the syst
 - If `training.effective_batch_size` is not set, the system MUST still preserve the user’s implied global effective batch after forcing `per_device_train_batch_size=1` by recomputing `gradient_accumulation_steps` from the pre-adjust configuration.
 - The system MUST NOT silently change the realized effective batch because `gradient_accumulation_steps` was computed assuming a larger batch size that is later overridden by packing.
 
+Clarification (unit semantics):
+- When packing is enabled, `training.effective_batch_size` is defined in units of **packed sequences (“packs”) per `optimizer.step()`**, globally across all ranks.
+- Because packing forces `per_device_train_batch_size=1`, one per-device dataloader item corresponds to exactly one packed sequence.
+- Therefore, the realized global packs per optimizer step is `world_size * gradient_accumulation_steps` (in packs). For exact matching, users SHOULD choose `training.effective_batch_size` divisible by `world_size`, and the system SHOULD log requested vs realized packs/step.
+
 #### Scenario: effective_batch_size is honored after packing forces batch_size=1
 - **GIVEN** `training.packing=true` and `training.effective_batch_size` is set
 - **AND** the user config sets `training.per_device_train_batch_size` to a value other than 1
