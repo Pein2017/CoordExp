@@ -1,7 +1,7 @@
 extends: ../base.yaml
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-4B/v0-20260219-054308/checkpoint-1832_merged
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
   run_name: bug_fixed-desc_first_merged_ckpt1832_ep2
