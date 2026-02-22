@@ -32,6 +32,7 @@
 - Source of truth: `docs/` (do not duplicate docs into global instructions).
 - Use the `coordexp-codebase` skill for doc index, entrypoints, and config workflow pointers.
 - For any file matching `*.py`, **Serena MCP is mandatory** for exploration and editing (symbol-aware navigation and edits). Serena MCP is the authoritative and precise method for all Python code operations.
+- For Serena searches (`find_symbol`, `search_for_pattern`, `find_referencing_symbols`), **never** use `"relative_path": "."` or omit `relative_path` (repo-wide scan is extremely slow). First use CLI search (e.g. `rg`) to narrow candidate files/dirs, then re-run Serena with the smallest viable `relative_path` (single file or tight subdir).
 - Do **not** use Serena MCP for non-Python files (e.g., `*.md`, `*.sh`, `*.json`, `*.txt`). Use standard tools such as `rg`, `cat`, or appropriate editors for those.
 - Use Serena MCP’s `activate_project` when exploring Python code in external libraries or repositories outside the current working directory.
 

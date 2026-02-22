@@ -10,10 +10,11 @@ Navigate codebases with symbol-aware precision using Serena MCP tools. Superior 
 ## Core Workflows
 
 ### Locate Symbol Definition
-1. Use `search_for_pattern` with scoped `relative_path` if file location is unknown
-2. Run `get_symbols_overview` on candidate files for symbol inventory
-3. Use `find_symbol` with `depth=1` to list class methods
-4. Retrieve specific method body with `find_symbol(... include_body=True)`
+1. Use CLI `rg` to narrow candidate files/dirs first (avoid Serena repo-wide search)
+2. Use `search_for_pattern` only with tight, scoped `relative_path` (never `"."` / repo root, and don’t leave it unset) if file location is still unknown
+3. Run `get_symbols_overview` on candidate files for symbol inventory
+4. Use `find_symbol` with `depth=1` to list class methods
+5. Retrieve specific method body with `find_symbol(... include_body=True)`
 
 ### Find References and Dependencies
 1. Locate target symbol with `find_symbol` (no body needed)
@@ -64,7 +65,8 @@ Choose the minimal editing approach:
 
 ## Best Practices
 
-- Always specify `relative_path` to maintain efficiency
+- Never set `"relative_path": "."` (or leave `relative_path` unset for a repo-wide scan) in Serena tools; use CLI `rg` to narrow scope first
+- Always specify the smallest viable `relative_path` (single file or tight subdir)
 - Use scoped searches to avoid overwhelming results
 - Leverage `find_referencing_symbols` early for relationship mapping
 - Reserve CLI tools for documentation and bulk text scanning
