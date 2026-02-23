@@ -33,7 +33,6 @@ from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import (
     BaseCaptionDataset,
     RandomSampleDataset,
-    build_packed_dataset,
     build_static_packed_dataset,
 )
 from .trainers.metrics.mixins import (
@@ -93,9 +92,10 @@ class PackingRuntimeConfig:
     min_fill_ratio: float = 0.65
     drop_last: bool = True
     allow_single_long: bool = True
-    eval_packing: bool = False
+    eval_packing: bool = True
     wait_timeout_s: float = 7200.0
     length_cache_persist_every: int | None = None
+    length_precompute_workers: int = 8
 
 
 def _parse_packing_config(
@@ -135,7 +135,7 @@ def _parse_packing_config(
         raise ValueError("packing_min_fill_ratio must be in (0,1]")
     drop_last = bool(cfg.get("packing_drop_last", True))
     allow_single_long = bool(cfg.get("packing_allow_single_long", True))
-    eval_packing = bool(cfg.get("eval_packing", False))
+    eval_packing = bool(cfg.get("eval_packing", True))
 
     wait_timeout_raw = cfg.get("packing_wait_timeout_s", 7200.0)
     try:
@@ -167,6 +167,19 @@ def _parse_packing_config(
                 "training.packing_length_cache_persist_every must be > 0 when set"
             )
 
+    precompute_workers_raw = cfg.get("packing_length_precompute_workers", 8)
+    try:
+        length_precompute_workers = int(precompute_workers_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "training.packing_length_precompute_workers must be an integer when set"
+        ) from exc
+    if length_precompute_workers <= 0:
+        raise ValueError(
+            "training.packing_length_precompute_workers must be > 0 (default: 8). "
+            f"Got {precompute_workers_raw!r}."
+        )
+
     return PackingRuntimeConfig(
         enabled=True,
         mode=mode,
@@ -178,6 +191,7 @@ def _parse_packing_config(
         eval_packing=eval_packing,
         wait_timeout_s=wait_timeout_s,
         length_cache_persist_every=length_cache_persist_every,
+        length_precompute_workers=length_precompute_workers,
     )
 
 
@@ -337,12 +351,23 @@ def _build_static_packing_fingerprint(
     packing_cfg: PackingRuntimeConfig,
     train_jsonl: str | None,
     fusion_config_path: str | None,
+    dataset_split: str = "train",
+    eval_sample_limit: int | None = None,
+    eval_sample_with_replacement: bool | None = None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
     training_cfg = getattr(training_config, "training", {}) or {}
 
+    split = str(dataset_split or "train").strip().lower()
+    if split not in {"train", "eval"}:
+        raise ValueError(
+            "dataset_split must be one of {'train', 'eval'}, "
+            f"got {dataset_split!r}"
+        )
+
     return {
         "dataset_seed": int(dataset_seed),
+        "dataset_split": split,
         "packing_mode": packing_cfg.mode,
         "packing_length": int(packing_cfg.packing_length),
         "global_max_length": getattr(training_config, "global_max_length", None),
@@ -360,14 +385,22 @@ def _build_static_packing_fingerprint(
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
+        "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_fusion_config": str(fusion_config_path)
         if fusion_config_path
         else None,
+        "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_fusion_config": _build_source_path_identity(
             fusion_config_path
         ),
+        "eval_sample_limit": int(eval_sample_limit)
+        if split == "eval" and eval_sample_limit is not None
+        else None,
+        "eval_sample_with_replacement": bool(eval_sample_with_replacement)
+        if split == "eval" and eval_sample_with_replacement is not None
+        else None,
         "system_prompt_dense": getattr(custom_config, "system_prompt_dense", None),
         "system_prompt_summary": getattr(custom_config, "system_prompt_summary", None),
         "train_dataloader_shuffle": training_cfg.get("train_dataloader_shuffle")
@@ -394,12 +427,6 @@ def _validate_stage1_static_packing_policy(
         raise ValueError(
             "training.packing_mode=dynamic is deprecated and unsupported for Stage-1 dataset-level packing. "
             "Use training.packing_mode=static."
-        )
-
-    if packing_cfg.eval_packing:
-        raise ValueError(
-            "training.eval_packing is deprecated for Stage-1 static-only packing policy because eval packing uses dynamic iterable packing. "
-            "Disable training.eval_packing."
         )
 
 
@@ -1146,6 +1173,7 @@ def main():
             packing_cfg=packing_cfg,
             train_jsonl=str(train_jsonl) if train_jsonl else None,
             fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            dataset_split="train",
         )
 
         dataset = build_static_packed_dataset(
@@ -1162,17 +1190,19 @@ def main():
             train_dataloader_shuffle=train_dataloader_shuffle,
             wait_timeout_s=packing_cfg.wait_timeout_s,
             length_cache_persist_every=packing_cfg.length_cache_persist_every,
+            length_precompute_workers=packing_cfg.length_precompute_workers,
         )
         base_dataset_len = len(dataset)
 
         logger.info(
-            "Packing enabled (static): length=%s min_fill=%.2f packing_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s",
+            "Packing enabled (static): length=%s min_fill=%.2f packing_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
             packing_cfg.packing_length,
             packing_cfg.min_fill_ratio,
             packing_cfg.drop_last,
             packing_cfg.allow_single_long,
             packing_cfg.wait_timeout_s,
             packing_cfg.length_cache_persist_every,
+            packing_cfg.length_precompute_workers,
         )
         logger.info(
             "Static packing plan: train_dataloader_shuffle=%s N_raw_packs=%s N_aligned_packs=%s raw_checksum=%s aligned_checksum=%s",
@@ -1694,21 +1724,86 @@ def main():
         and eval_dataset is not None
         and not is_rollout_matching_variant
     ):
-        eval_dataset = build_packed_dataset(
+        if val_sample_with_replacement:
+            raise ValueError(
+                "Static eval packing requires a deterministic, index-stable eval dataset. "
+                "Set custom.val_sample_with_replacement=false or disable training.eval_packing."
+            )
+
+        eval_output_dir_raw = getattr(train_args, "output_dir", None)
+        if not eval_output_dir_raw:
+            raise ValueError(
+                "training.output_dir must be set when training.eval_packing=true"
+            )
+
+        eval_sample_limit_i: int | None = None
+        if isinstance(val_sample_limit, int):
+            eval_sample_limit_i = int(val_sample_limit)
+        elif isinstance(val_sample_limit, str) and val_sample_limit.isdigit():
+            eval_sample_limit_i = int(val_sample_limit)
+
+        eval_cache_dir = Path(str(eval_output_dir_raw)) / "static_packing_eval"
+        eval_fingerprint = _build_static_packing_fingerprint(
+            training_config=training_config,
+            custom_config=custom_config,
+            template=sft.template,
+            train_args=train_args,
+            dataset_seed=dataset_seed,
+            packing_cfg=packing_cfg,
+            train_jsonl=str(val_jsonl) if val_jsonl else None,
+            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            dataset_split="eval",
+            eval_sample_limit=eval_sample_limit_i,
+            eval_sample_with_replacement=bool(val_sample_with_replacement),
+        )
+
+        eval_dataset = build_static_packed_dataset(
             eval_dataset,
             template=sft.template,
             packing_length=packing_cfg.packing_length,
-            buffer_size=packing_cfg.buffer_size,
             min_fill_ratio=packing_cfg.min_fill_ratio,
-            drop_last=False,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
             allow_single_long=packing_cfg.allow_single_long,
+            cache_dir=eval_cache_dir,
+            fingerprint=eval_fingerprint,
+            world_size=packing_world_size,
+            train_dataloader_shuffle=False,
+            wait_timeout_s=packing_cfg.wait_timeout_s,
+            length_cache_persist_every=packing_cfg.length_cache_persist_every,
+            length_precompute_workers=packing_cfg.length_precompute_workers,
         )
         logger.info(
-            "Packing enabled for eval: length=%s buffer=%s min_fill=%.2f drop_last=False allow_single_long=%s",
+            "Packing enabled for eval (static): length=%s min_fill=%.2f packing_drop_last=%s dataloader_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
             packing_cfg.packing_length,
-            packing_cfg.buffer_size,
             packing_cfg.min_fill_ratio,
+            False,
+            False,
             packing_cfg.allow_single_long,
+            packing_cfg.wait_timeout_s,
+            packing_cfg.length_cache_persist_every,
+            packing_cfg.length_precompute_workers,
+        )
+        logger.info(
+            "Static eval packing plan: N_raw_packs=%s N_aligned_packs=%s raw_checksum=%s aligned_checksum=%s",
+            len(eval_dataset.raw_plan),
+            len(eval_dataset),
+            eval_dataset.raw_plan_checksum,
+            eval_dataset.aligned_plan_checksum,
+        )
+        logger.info(
+            "Static eval packing DDP alignment: world_size=%s dataloader_drop_last=%s pad_needed=%s repeated_pack_indices=%s",
+            eval_dataset.world_size,
+            eval_dataset.dataloader_drop_last,
+            eval_dataset.pad_needed,
+            eval_dataset.repeated_pack_indices,
+        )
+        logger.info(
+            "Static eval packing stats: packs=%s avg_fill=%.3f single_long=%s skipped_long=%s",
+            len(eval_dataset),
+            eval_dataset.avg_fill,
+            eval_dataset.single_long,
+            eval_dataset.skipped_long,
         )
 
     # Sample printing disabled to avoid dumping labels/ids

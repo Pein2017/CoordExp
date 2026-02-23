@@ -35,6 +35,7 @@ training:
     min_lr: 1.0e-6
   packing: true
   packing_mode: static
+  eval_packing: true
   weight_decay: 0.0
   warmup_ratio: 0.1
   add_version: true

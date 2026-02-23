@@ -13,15 +13,24 @@ This delta adds requirements for a map-style packing mode that yields a stable `
 For Stage-1 dataset-level packing (non-rollout trainer variants), the system SHALL enforce a static-only policy:
 - `training.packing_mode` defaults to `static` when omitted.
 - `training.packing_mode=dynamic` is deprecated/unsupported for Stage-1 dataset-level packing and MUST fail fast with actionable guidance.
-- `training.eval_packing` is deprecated/unsupported for Stage-1 static-only policy because eval packing uses dynamic iterable packing; this MUST fail fast when enabled for Stage-1.
+- `training.eval_packing` defaults to `true` for Stage-1 dataset-level packing and MUST use the same static map-style pack-plan pipeline as train packing.
+- `training.eval_packing=false` MAY be used to disable eval packing explicitly.
+- When `training.eval_packing=true`, eval static packing MUST preserve evaluation coverage by using non-dropping alignment semantics (`packing_drop_last=false`, `dataloader_drop_last=false`).
 - `training.packing_wait_timeout_s` SHALL control non-rank0 wait time for static cache artifacts; default is `7200` seconds, and `0` SHALL mean wait indefinitely.
 - `training.packing_length_cache_persist_every` MAY be provided as a positive integer to override periodic length-cache flush cadence; when omitted, runtime SHALL use an adaptive flush interval suitable for large datasets.
+- `training.packing_length_precompute_workers` MAY be provided as a positive integer to control rank0 multiprocessing worker count for static length precompute; default is `8` (`1` means serial, `>1` means multiprocessing).
 
 #### Scenario: Stage-1 dynamic packing mode fails fast
 - **GIVEN** Stage-1 dataset-level packing is enabled (`training.packing=true`)
 - **AND** `training.packing_mode=dynamic`
 - **WHEN** training initializes packing policy
 - **THEN** the system fails fast and instructs the user to set `training.packing_mode=static`.
+
+#### Scenario: Stage-1 eval packing defaults to static pack-plan behavior
+- **GIVEN** Stage-1 dataset-level packing is enabled (`training.packing=true`) and `training.eval_packing` is omitted
+- **WHEN** eval dataloader packing is initialized
+- **THEN** eval packing is enabled by default
+- **AND** eval uses the same static map-style pack-plan pipeline as train packing.
 
 ### Requirement: Static pack-plan mode yields a countable packed dataset
 When training packing is enabled and static pack-plan mode is selected, the system SHALL provide a map-style packed dataset wrapper that:
@@ -132,6 +141,8 @@ Normative behavior:
 - Any static length/plan cache fingerprint MUST include dataset source identity (for example, resolved `custom.train_jsonl` / `custom.fusion_config` identity) so stale cache reuse across different dataset sources fails fast.
 - The run-scoped static cache directory under `training.output_dir` is the primary safety boundary; changing uncaptured length-affecting factors SHOULD use a fresh output directory.
 - Static pack-plan mode MUST be restricted to datasets whose per-index encoding (and therefore per-index length) does not depend on call order or non-deterministic preprocessing. If this cannot be guaranteed, the system MUST fail fast with actionable guidance (e.g., disable static packing).
+- Static length precompute MAY use rank0 multiprocessing, but computed lengths MUST be written back by dataset index so results are deterministic and byte-identical to serial precompute for the same inputs.
+- Non-rank0 ranks MUST continue to use the same cache synchronization path (`training.packing_wait_timeout_s`) regardless of rank0 worker count.
 
 #### Scenario: Multimodal samples have deterministic planning lengths
 - **GIVEN** a vision-language dataset sample with an image input under the active template

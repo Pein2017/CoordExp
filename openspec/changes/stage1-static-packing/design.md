@@ -36,6 +36,10 @@ Constraints:
 - Decision: Keep `training.packing_mode ∈ {dynamic, static}`, but enforce Stage-1 dataset-level packing as static-only.
   - `static` (default): map-style static pack-plan behavior.
   - `dynamic`: deprecated/unsupported for Stage-1 dataset-level packing (fail-fast with guidance).
+- Decision: Stage-1 eval packing follows the same static map-style pipeline as train packing by default.
+  - `training.eval_packing` defaults to `true` and uses static pack-plan packing for eval datasets.
+  - `training.eval_packing=false` is supported as an explicit opt-out.
+  - Eval static packing uses non-dropping semantics (`packing_drop_last=false`, `dataloader_drop_last=false`) to preserve validation coverage.
 - Decision: keep no extra strictness knob; enforce exact global pack-step semantics directly when `training.effective_batch_size` is set.
   - If `training.effective_batch_size % world_size != 0`, fail fast under packing.
   - In static mode, retain warning telemetry for epoch-boundary partial accumulation windows.
@@ -74,7 +78,11 @@ Constraints:
 - Operational safeguards:
   - `training.packing_wait_timeout_s` controls how long non-rank0 workers wait for rank0-produced cache artifacts (`lengths.json`, `plan_ws*.json`). Default is `7200` seconds; `0` means wait indefinitely.
   - `training.packing_length_cache_persist_every` optionally sets periodic full-cache flush cadence while computing missing lengths.
+  - `training.packing_length_precompute_workers` optionally controls rank0 multiprocessing fanout for missing-length computation (default `8`; `1` serial, `>1` multiprocessing workers).
   - When `training.packing_length_cache_persist_every` is unset, runtime chooses an adaptive persist interval that bounds the number of full-cache rewrites for large datasets.
+- Multiprocessing determinism:
+  - Rank0 parallel workers compute `(index -> length)` pairs only; rank0 writes results back by index into the canonical `lengths` array.
+  - This preserves deterministic length arrays and pack plans while reducing wall-clock precompute time on CPU-bound datasets.
 - Determinism guardrail: before writing or trusting a cache, run a small order-sensitivity probe (compute planning lengths for the same index set in two different access orders and require identical results). If the probe fails, static packing MUST fail fast with actionable guidance (disable static packing; avoid fusion/order-sensitive datasets; set deterministic preprocessing).
 - Rationale: Planning must not require a full extra encoding pass every epoch, but must remain correct when prompts/templates change.
 - Alternatives considered:

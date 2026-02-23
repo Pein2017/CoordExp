@@ -31,8 +31,10 @@ def test_parse_packing_config_defaults_to_static_mode() -> None:
     assert cfg.enabled is True
     assert cfg.mode == "static"
     assert cfg.packing_length == 256
+    assert cfg.eval_packing is True
     assert cfg.wait_timeout_s == pytest.approx(7200.0)
     assert cfg.length_cache_persist_every is None
+    assert cfg.length_precompute_workers == 8
 
 
 def test_parse_packing_config_accepts_static_mode() -> None:
@@ -46,6 +48,16 @@ def test_parse_packing_config_accepts_static_mode() -> None:
     assert cfg.packing_length == 128
 
 
+def test_parse_packing_config_allows_disabling_eval_packing() -> None:
+    cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static", "eval_packing": False},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    assert cfg.eval_packing is False
+
+
 def test_parse_packing_config_accepts_static_cache_runtime_knobs() -> None:
     cfg = _parse_packing_config(
         training_cfg={
@@ -53,6 +65,7 @@ def test_parse_packing_config_accepts_static_cache_runtime_knobs() -> None:
             "packing_mode": "static",
             "packing_wait_timeout_s": 1234,
             "packing_length_cache_persist_every": 2048,
+            "packing_length_precompute_workers": 6,
         },
         template=_Template(max_length=128),
         train_args=SimpleNamespace(max_model_len=0),
@@ -60,6 +73,7 @@ def test_parse_packing_config_accepts_static_cache_runtime_knobs() -> None:
 
     assert cfg.wait_timeout_s == pytest.approx(1234.0)
     assert cfg.length_cache_persist_every == 2048
+    assert cfg.length_precompute_workers == 6
 
 
 def test_parse_packing_config_rejects_negative_wait_timeout() -> None:
@@ -82,6 +96,19 @@ def test_parse_packing_config_rejects_nonpositive_length_cache_persist_every() -
                 "packing": True,
                 "packing_mode": "static",
                 "packing_length_cache_persist_every": 0,
+            },
+            template=_Template(max_length=128),
+            train_args=SimpleNamespace(max_model_len=0),
+        )
+
+
+def test_parse_packing_config_rejects_nonpositive_length_precompute_workers() -> None:
+    with pytest.raises(ValueError, match="packing_length_precompute_workers"):
+        _parse_packing_config(
+            training_cfg={
+                "packing": True,
+                "packing_mode": "static",
+                "packing_length_precompute_workers": 0,
             },
             template=_Template(max_length=128),
             train_args=SimpleNamespace(max_model_len=0),
@@ -131,19 +158,15 @@ def test_validate_stage1_static_packing_policy_rejects_dynamic_mode() -> None:
         )
 
 
-def test_validate_stage1_static_packing_policy_rejects_eval_packing() -> None:
-    with pytest.raises(
-        ValueError,
-        match="eval_packing is deprecated",
-    ):
-        _validate_stage1_static_packing_policy(
-            packing_cfg=PackingRuntimeConfig(
-                enabled=True,
-                mode="static",
-                eval_packing=True,
-            ),
-            trainer_variant=None,
-        )
+def test_validate_stage1_static_packing_policy_allows_eval_packing() -> None:
+    _validate_stage1_static_packing_policy(
+        packing_cfg=PackingRuntimeConfig(
+            enabled=True,
+            mode="static",
+            eval_packing=True,
+        ),
+        trainer_variant=None,
+    )
 
 
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:
@@ -189,13 +212,59 @@ def test_static_packing_fingerprint_includes_dataset_source_identity(
         fusion_config_path=None,
     )
 
+    assert fingerprint["dataset_split"] == "train"
+    assert fingerprint["dataset_jsonl"] == str(train_jsonl)
     assert fingerprint["custom_train_jsonl"] == str(train_jsonl)
-    source = fingerprint["dataset_source_train_jsonl"]
+    source = fingerprint["dataset_source_jsonl"]
     assert isinstance(source, dict)
     assert source["raw_path"] == str(train_jsonl)
     assert source["resolved_path"] == str(train_jsonl.resolve())
     assert source["exists"] is True
     assert source["size_bytes"] == train_jsonl.stat().st_size
+
+
+def test_static_packing_fingerprint_tracks_eval_split_inputs(
+    tmp_path: Path,
+) -> None:
+    val_jsonl = tmp_path / "val.jsonl"
+    val_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    fingerprint = _build_static_packing_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+            training={"train_dataloader_shuffle": True},
+        ),
+        custom_config=SimpleNamespace(
+            user_prompt="prompt",
+            emit_norm="none",
+            json_format="standard",
+            object_ordering="none",
+            object_field_order="geometry_first",
+            use_summary=False,
+            system_prompt_dense=None,
+            system_prompt_summary=None,
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl=str(val_jsonl),
+        fusion_config_path=None,
+        dataset_split="eval",
+        eval_sample_limit=99,
+        eval_sample_with_replacement=False,
+    )
+
+    assert fingerprint["dataset_split"] == "eval"
+    assert fingerprint["eval_sample_limit"] == 99
+    assert fingerprint["eval_sample_with_replacement"] is False
 
 
 def test_recompute_gas_for_packing_uses_effective_batch_size() -> None:

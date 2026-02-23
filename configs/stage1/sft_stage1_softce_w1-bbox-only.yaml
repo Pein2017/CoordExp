@@ -27,7 +27,7 @@ training:
   packing_buffer: 512
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
-  # Stage-1 static-only policy: eval_packing (dynamic iterable path) is deprecated/unsupported.
+  eval_packing: true
   eval_steps: 40
   save_steps: 200
   save_total_limit: 2
