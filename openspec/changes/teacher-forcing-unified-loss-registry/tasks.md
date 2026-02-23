@@ -107,6 +107,7 @@
 - [ ] 6B.3 Add an eval-step regression test that asserts `rollout/mAP` is always present when COCO eval is enabled:
   - `rollout/mAP` is a float,
   - `rollout/mAP=0.0` on COCO eval failure (and training continues).
+  - No other COCO summary metric keys are emitted during eval-step (e.g., no `rollout/bbox_*` or `rollout/segm_*` keys).
 - [ ] 6B.4 Refactor eval-step COCO evaluation to reuse the offline detection evaluator implementation:
   - Prefer extracting a small, public helper in `src/eval/detection.py` that takes in-memory `gt_vs_pred` records and returns COCO metrics/counters,
   - Call that helper from both Stage-2 Two-Channel and Stage-2 Rollout-Aligned trainers (no duplicated COCO prep logic in trainer code).
