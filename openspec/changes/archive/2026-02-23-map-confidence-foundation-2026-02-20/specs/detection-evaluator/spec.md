@@ -10,6 +10,8 @@ This delta modifies only COCO scoring behavior; all other base `detection-evalua
 ## MODIFIED Requirements
 
 ### Requirement: COCO artifacts and scoring modes
+When COCO artifacts/metrics are requested, the evaluator SHALL export COCO artifacts and compute metrics in a score-aware manner as specified below.
+
 This requirement applies when COCO artifacts/metrics are requested. Runs that compute only non-COCO metrics (e.g., f1ish-only) MAY accept unscored artifacts.
 
 Milestone scope note:

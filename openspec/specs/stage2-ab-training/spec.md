@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the Stage-2 AB training contract (Channel-A supervised, Channel-B rollout-matching) including the configuration surface and reproducibility-critical invariants.
-
 ## Requirements
 ### Requirement: Stage-2 AB trainer variant is selectable via YAML
 When training config sets `custom.trainer_variant: stage2_ab_training`, the system SHALL use the Stage-2 AB trainer implementation.
@@ -30,7 +29,6 @@ Canonical config location (typed):
 - **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
 - **WHEN** training starts
 - **THEN** the Stage-2 AB trainer is constructed and used for training.
-
 
 ### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
 Stage-2 AB experiment profiles under `configs/stage2_ab/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
@@ -352,7 +350,6 @@ Legacy rollout namespace placement:
 - **WHEN** `global_step` is 0, 1, 2, 3, 4
 - **THEN** the selected channels are A, A, B, A, A respectively.
 
-
 #### Scenario: Rollout buffer reuse forces Channel-B
 - **GIVEN** `stage2_ab.schedule.b_ratio: 0.0` (Channel-A would be selected)
 - **AND** rollout buffering is enabled with `custom.extra.rollout_matching.rollout_buffer.m_steps > 1`
@@ -360,13 +357,11 @@ Legacy rollout namespace placement:
 - **WHEN** the trainer selects the channel for that optimizer step
 - **THEN** it selects Channel-B (buffer reuse override).
 
-
 #### Scenario: Multi-process learner uses rank0 broadcast for step kind
 - **GIVEN** Stage-2 AB training is enabled under `torchrun` with `world_size=2`
 - **WHEN** one optimizer step executes
 - **THEN** rank0 broadcasts the step kind (`A` or `B`) for that optimizer step
 - **AND** all ranks execute the same step kind for all micro-steps in the accumulation window.
-
 
 ### Requirement: Bbox-only v1 guardrails are enforced
 The Stage-2 AB trainer MUST enforce bbox-only v1 guardrails on both GT objects and predicted rollout objects.
@@ -400,7 +395,6 @@ Diagnostics (normative):
 - **GIVEN** a training sample whose GT `assistant_payload` contains an object with `poly`
 - **WHEN** the trainer prepares the sample for either channel
 - **THEN** it raises an error indicating bbox-only v1 requires filtering out polygons upstream.
-
 
 ### Requirement: Channel-A performs iterative soft self-context via N× full-forwards (no rollout)
 Channel-A MUST implement iterative soft self-context using `stage2_ab.n_softctx_iter` full forward passes:
@@ -437,7 +431,6 @@ Causal shift convention (normative):
 - **WHEN** Channel-A runs on a batch
 - **THEN** it executes two full forward passes
 - **AND** it computes geometry loss using logits from the second forward only.
-
 
 ### Requirement: Channel-A forward path is compatible with Qwen3-VL multimodal semantics
 For Qwen3-VL (dense) models, each forward MUST provide **exactly one** of `input_ids` or `inputs_embeds`.
@@ -644,13 +637,11 @@ Efficiency rule (normative):
 - **THEN** JSON structure tokens remain supervised by CE
 - **AND** desc value tokens do not contribute to CE.
 
-
 #### Scenario: Expectation decoding uses probability-weighted mean (not argmax)
 - **GIVEN** a coord-slot distribution with `p(k=0)=0.5` and `p(k=999)=0.5`
 - **WHEN** the trainer decodes the coordinate via expectation decoding
 - **THEN** the decoded value is approximately `0.5` (i.e., `(0*0.5 + 999*0.5)/999`)
 - **AND** it is not equal to an argmax decode of `0` or `1`.
-
 
 #### Scenario: Geometry losses operate on normalized coordinates
 - **GIVEN** a GT bbox coordinate bin value `k=999`
@@ -658,13 +649,11 @@ Efficiency rule (normative):
 - **THEN** the converted value is `999/999 = 1.0`
 - **AND** geometry losses are computed using normalized floats in `[0, 1]`.
 
-
 #### Scenario: Channel-B geometry includes matched and FN but excludes FP
 - **GIVEN** Channel-B where matching yields non-empty matched, FP, and FN sets
 - **WHEN** Channel-B losses are computed
 - **THEN** geometry loss is accumulated for matched and FN-injected objects
 - **AND** FP objects contribute zero geometry loss.
-
 
 #### Scenario: Start key avoids collision even when highest key object is invalid
 - **GIVEN** retained rollout prefix contains keys `object_2` (valid) and `object_7` (invalid and dropped by strict validation)
@@ -672,13 +661,11 @@ Efficiency rule (normative):
 - **THEN** `max_object_index_in_prefix` is `7`
 - **AND** FN key assignment starts at `object_8`.
 
-
 #### Scenario: Closure-supervision brace target is the same brace used for injection
 - **GIVEN** Channel-B injects FN entries before the outermost close brace resolved by brace-depth scan
 - **WHEN** CE masks are produced
 - **THEN** that same outermost close brace token position remains CE-supervised
 - **AND** `<|im_end|>` remains CE-supervised.
-
 
 #### Scenario: CE masking follows matched/FP/FN policy
 - **GIVEN** Channel-B contains one matched object, one FP object, and one FN-injected object
@@ -687,13 +674,11 @@ Efficiency rule (normative):
 - **AND** FP structure/desc/coord tokens are all masked
 - **AND** FN-injected structure and desc tokens are supervised.
 
-
 #### Scenario: Channel-B supervises top-level closure and `<|im_end|>`
 - **GIVEN** Channel-B builds a teacher-forced target that ends with a top-level `}` followed by `<|im_end|>`
 - **WHEN** the trainer builds CE labels/weights for Channel-B
 - **THEN** it keeps CE supervision on that top-level `}` token position
 - **AND** it keeps CE supervision on `<|im_end|>`.
-
 
 #### Scenario: Stop-neutral masking is not applied
 - **GIVEN** Stage-2 AB Channel-B configuration
@@ -701,13 +686,11 @@ Efficiency rule (normative):
 - **THEN** top-level `}` and `<|im_end|>` are not masked out by any stop-neutral branch
 - **AND** FP-neutral masking remains limited to unmatched predicted object spans.
 
-
 #### Scenario: Legacy stop-neutral config keys fail fast
 - **GIVEN** Stage-2 AB config includes legacy stop-neutral keys under Channel-B
 - **WHEN** trainer configuration is validated
 - **THEN** startup fails fast before training
 - **AND** the error indicates stop-neutral knobs are unsupported under the typed contract.
-
 
 #### Scenario: Closure marker resolution failure is dropped and counted
 - **GIVEN** a Channel-B sample where the trainer cannot deterministically locate the outermost `}` / `<|im_end|>` marker positions (e.g., truncation)
@@ -715,20 +698,17 @@ Efficiency rule (normative):
 - **THEN** it drops the sample from Channel-B supervision for that step
 - **AND** it increments `stage2_ab/channel_b/closure_supervision/N_drop`.
 
-
 #### Scenario: No valid predictions fall back to canonical GT order
 - **GIVEN** strict validation yields `N_valid_pred == 0`
 - **WHEN** Channel-B builds `y_GT_reordered` for B3
 - **THEN** it sets `y_GT_reordered := y_GT_canonical`
 - **AND** this is equivalent to appending all GT objects as FN-supervised targets.
 
-
 #### Scenario: Out-of-range struct CE multiplier is handled safely
 - **GIVEN** `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` is outside `[1.0, 4.0]`
 - **WHEN** trainer parses Channel-B config
 - **THEN** it clamps the value into `[1.0, 4.0]` or fails fast (implementation choice)
 - **AND** it MUST NOT run with an effective multiplier outside the safe range `[1.0, 4.0]`.
-
 
 #### Scenario: B2 forward is skipped when there are no valid matched pairs
 - **GIVEN** Channel-B sample/batch has zero valid matched pairs
@@ -809,7 +789,6 @@ Normative minimum:
 - **WHEN** configuration is parsed
 - **THEN** parsing succeeds and the legacy field is ignored.
 
-
 ### Requirement: Channel-B step mode is step-budgeted in raw rollouts and learns-to-completion under packing
 When Stage-2 AB training is enabled, Channel-B SHALL interpret the Channel-B batch size in terms of **raw rollouts per optimizer step**, not “packed sequences per optimizer step”.
 
@@ -848,7 +827,6 @@ Normative behavior:
 - **THEN** each rank buffers its raw rollouts across the first 7 micro-steps without running the Channel-B loop
 - **AND** the full Channel-B loop (rollout→pack→learn-to-completion) runs on the 8th (final) micro-step
 - **AND** the outer Trainer performs exactly one optimizer update for the step.
-
 
 ### Requirement: Channel-B supports semantic-tolerant matched desc supervision
 Channel-B desc supervision MUST support a semantic tolerance mode for matched objects:
@@ -895,7 +873,6 @@ Performance (non-normative guidance):
 - **AND** `stage2_ab.channel_b.semantic_desc_gate.revision` is not provided
 - **WHEN** training starts and Channel-B attempts to load the semantic gate model
 - **THEN** the trainer fails fast with guidance to provide `stage2_ab.channel_b.semantic_desc_gate.revision`.
-
 
 ### Requirement: Channel-B supports async actor-learner mode (versioned ready-pack queues)
 Stage-2 AB SHALL support an async actor-learner mode configured as:
@@ -954,7 +931,6 @@ Policy vs feasibility gate:
 - **THEN** the prefetcher does not combine old-version segments with new-version segments into a single ready pack
 - **AND** any old-version leftover segments are either flushed into old-version packs or dropped before building new-version packs.
 
-
 ### Requirement: DDP-safe Channel-B execution semantics for multi-GPU learners
 When `world_size > 1`, Channel-B MUST be executed in a DDP-safe way:
 - Each micro-step MUST perform exactly one packed forward/backward per rank.
@@ -968,7 +944,6 @@ Legacy guardrail (v1):
 - **AND** config sets `stage2_ab.channel_b.mode: step`
 - **WHEN** training starts
 - **THEN** the trainer fails fast with guidance to use `stage2_ab.channel_b.mode: async`.
-
 
 ### Requirement: Unified Channel-B is the default contract and reordered_gt_sft is legacy opt-in
 For Stage-2 AB, Unified Channel-B semantics SHALL be the normative default behavior.
@@ -989,7 +964,6 @@ Legacy `reordered_gt_sft` behavior SHALL be treated as experimental/ablation-onl
 - **WHEN** configuration is validated and training starts
 - **THEN** the mode is treated as explicit ablation/legacy behavior
 - **AND** the run does not claim unified-default Channel-B semantics.
-
 
 ### Requirement: Channel-B vLLM rollouts honor repeat-aware termination settings
 When Stage-2 AB Channel-B performs rollouts through vLLM rollout server backend, repeat-aware termination MUST be applied according to rollout-matching config.
@@ -1058,7 +1032,6 @@ Normative behavior:
 - **WHEN** a Channel-B rollout step executes
 - **THEN** logs include `rollout/gen_new_tokens_p99`, `rollout/parse_truncated_rate`, and `rollout/parse_dropped_invalid`.
 
-
 ### Requirement: Stage-2 AB consumes rollout helpers through public contracts only
 The Stage-2 AB capability SHALL consume rollout parsing/matching/packing helpers only through a public rollout-matching contract module.
 It MUST NOT import underscore-prefixed symbols from trainer implementation files.
@@ -1067,7 +1040,6 @@ It MUST NOT import underscore-prefixed symbols from trainer implementation files
 - **WHEN** private underscore-prefixed helpers are removed from the rollout trainer implementation file
 - **THEN** Stage-2 AB still imports successfully via public contract modules
 - **AND** training initialization does not fail due to missing private symbols.
-
 
 ### Requirement: No-private-import boundary is regression-guarded
 The Stage-2 AB capability SHALL include a regression guard that detects imports from underscore-prefixed rollout symbols and fails validation when such imports reappear.
@@ -1083,7 +1055,6 @@ The guard scope MUST cover the full Stage-2 AB capability surface:
 - **THEN** validation fails with a boundary-violation diagnostic
 - **AND** the regression is caught before merge.
 
-
 ### Requirement: Stage-2 AB trainer is decomposed into orchestrator plus owned components
 The Stage-2 AB trainer SHALL be structured as an orchestration surface that delegates scheduling, async queue management, and channel execution to dedicated components.
 The decomposition MUST preserve deterministic channel selection and existing Stage-2 contract semantics.
@@ -1093,7 +1064,6 @@ The decomposition MUST preserve deterministic channel selection and existing Sta
 - **WHEN** Stage-2 AB training is run with unchanged YAML semantics
 - **THEN** only scheduling component modules require modification
 - **AND** the top-level trainer orchestration entrypoint remains interface-compatible.
-
 
 ### Requirement: Stage-2 critical invariants fail fast with contextual diagnostics
 Stage-2 AB SHALL classify critical runtime invariants (queue feasibility, version-window gating, sync boundaries, required batch fields) as fail-fast conditions.
@@ -1105,3 +1075,54 @@ Best-effort diagnostics MAY continue under guarded warning paths.
 - **WHEN** Stage-2 attempts to execute that step
 - **THEN** training raises with contextual diagnostics including step kind and queue/version state
 - **AND** the failure is not silently suppressed.
+
+### Requirement: Stage-2 AB objective includes coord soft-CE and W1 terms on supervised bbox slots
+Stage-2 AB trainer MUST support Stage-1-style coord distribution penalties in Stage-2 training:
+
+- `soft_ce` and `w1` MUST be computed on coord distributions for Stage-2-supervised bbox coord slots only:
+  - matched-prefix groups (`bbox_groups_prefix`),
+  - and FN-injected groups (`bbox_groups_fn`).
+- The coord distribution for each supervised coord slot MUST follow the same causal shift contract as other Stage-2 coord losses (coord token at position `p` uses logits at `p-1`).
+- These terms MUST be aggregated into Stage-2 coord regularization (`loss/coord_reg`) and surfaced as train metrics:
+  - `loss/coord_soft_ce`,
+  - `loss/coord_w1`.
+- The trainer MUST NOT apply these terms to unsupervised FP-only coord slots.
+
+Weighting/config contract:
+- Stage-2 uses `custom.coord_soft_ce_w1` as the config source for `soft_ce_weight`, `w1_weight`, `target_sigma`, `target_truncate`, and `temperature` when enabled.
+- If `custom.coord_soft_ce_w1.enabled` is false, Stage-2 soft-CE/W1 contributions MUST be zero.
+
+#### Scenario: Enabled coord soft-CE/W1 increases Stage-2 coord regularization
+- **GIVEN** Stage-2 config has `custom.coord_soft_ce_w1.enabled: true` with non-zero `soft_ce_weight` and `w1_weight`
+- **AND** a batch has supervised bbox coord slots
+- **WHEN** Stage-2 computes loss
+- **THEN** `loss/coord_soft_ce` and `loss/coord_w1` are positive
+- **AND** both contribute to `loss/coord_reg`.
+
+### Requirement: Canonical Stage-2 base and prod leaves declare CIoU/soft-CE/W1 weights explicitly
+The canonical Stage-2 AB config surfaces MUST declare CIoU and coord-distribution weights explicitly to avoid ambiguity between inherited defaults and production-tuned overrides.
+
+Canonical base defaults:
+- `stage2_ab.bbox_smoothl1_weight: 2.0`
+- `stage2_ab.bbox_ciou_weight: 0.5`
+
+Canonical base MUST also set:
+- `custom.coord_soft_ce_w1.enabled: true`
+- `custom.coord_soft_ce_w1.soft_ce_weight: 0.02`
+- `custom.coord_soft_ce_w1.w1_weight: 0.02`
+
+Canonical prod overrides:
+- `stage2_ab.bbox_ciou_weight: 0.2`
+- `custom.coord_soft_ce_w1.soft_ce_weight: 0.2`
+- `custom.coord_soft_ce_w1.w1_weight: 0.2`
+
+#### Scenario: Canonical prod leaves pin explicit CIoU/soft-CE/W1 overrides
+- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_ab/prod/*.yaml`
+- **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
+- **THEN** the leaf explicitly overrides effective Stage-2 loss weights with the canonical prod values above.
+
+#### Scenario: Canonical smoke leaves inherit base CIoU/soft-CE/W1 defaults
+- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_ab/smoke/*.yaml`
+- **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
+- **THEN** effective Stage-2 loss defaults include canonical base CIoU downweight and non-zero soft-CE/W1 terms.
+

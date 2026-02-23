@@ -64,6 +64,12 @@ Normative behavior:
 
 This requirement applies to per-record validity only. Sample-level container invalidity cases are handled by the invalid-rollout fallback requirement below.
 
+#### Scenario: Invalid predicted record is dropped and measured
+- **GIVEN** Channel-B parses a rollout whose `"objects"` array contains at least one invalid record (e.g., wrong geometry arity or missing `desc`)
+- **WHEN** the trainer constructs the Channel-B training targets and masks
+- **THEN** the invalid record is dropped and does not participate in matching or supervision
+- **AND** `stage2_ab/channel_b/strict_drop/N_drop_invalid` increases accordingly.
+
 ### Requirement: Channel-B invalid rollouts fall back deterministically (no silent skips)
 When Channel-B is selected and a rollout response is sample-level invalid under the CoordJSON top-level container contract (e.g., there is no top-level `{`, the `"objects"` key is missing, `"objects"` is not an array, or extraneous top-level keys are present), the trainer MUST:
 - Mark the rollout as invalid for that sample and emit `stage2_ab/channel_b/invalid_rollout` as a deterministic counter/metric key.
@@ -86,4 +92,11 @@ Normative minimum: this requirement MUST at least cover the case where the rollo
 ### REMOVED Requirements
 
 ### Requirement: repeat-terminate / max-object hard stops exist
+This requirement is removed from the Stage-2 AB training spec; training SHALL NOT rely on repeat-terminate / max-object hard stops as a defined contract surface.
+
+#### Scenario: (removed) repeat-terminate is not part of the training loop
+- **GIVEN** a rollout response that contains repeated text patterns
+- **WHEN** Stage-2 AB training processes the rollout response
+- **THEN** training does not invoke any repeat-terminate logic and relies on max-length truncation and CoordJSON salvage/strict-drop behavior.
+
 **Reason**: This change deletes repeat-terminate and relies on max-length truncation + record-level salvage dropping for rollouts.

@@ -41,9 +41,9 @@ The system SHALL maintain CPU-only unit tests that fail fast when any of the fol
 - **AND** failures are reported with actionable diagnostics (what invariant failed and where).
 
 ### Requirement: Objective-changing failures are fail-fast
-When an invariant violation would change the training objective or invalidate evaluation (e.g.,
-tokenizer/template drift, misaligned packing masks, invalid rollout-prefix construction), training SHALL
-fail fast with actionable error messages rather than silently continuing.
+The training pipeline SHALL fail fast (with actionable error messages) when an invariant violation would
+change the training objective or invalidate evaluation (e.g., tokenizer/template drift, misaligned
+packing masks, invalid rollout-prefix construction), rather than silently continuing.
 
 #### Scenario: Unknown critical config key fails fast
 - **WHEN** a Stage-2 AB profile contains an unknown key under `stage2_ab` or `rollout_matching`

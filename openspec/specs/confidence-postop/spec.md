@@ -1,12 +1,8 @@
 # confidence-postop Specification
 
 ## Purpose
-Define a CPU-only, offline post-operation that estimates one sortable confidence score per predicted object (initially `bbox_2d` only) so COCO-style AP/mAP ranking is meaningful and reproducible.
-
+TBD - created by archiving change map-confidence-foundation-2026-02-20. Update Purpose after archive.
 ## Requirements
-
-## ADDED Requirements
-
 ### Requirement: Inputs and join keys
 The confidence post-operation SHALL consume:
 - a unified inference artifact JSONL (canonical: `gt_vs_pred.jsonl`), and
@@ -74,6 +70,8 @@ Unsupported geometry types (including `poly`) SHALL produce `confidence=null`, `
 - **THEN** the output object has `confidence=null`, `score=null`, `kept=false`, and `confidence_details.failure_reason=\"unsupported_geometry_type\"`.
 
 ### Requirement: Unified confidence definition
+The confidence post-op SHALL compute per-object confidence scores for `bbox_2d` predictions as follows.
+
 For each `bbox_2d` prediction where exactly 4 bbox coord tokens can be aligned to token log-probabilities:
 - Let aligned coord-token logprobs be `lp1..lp4` in bbox coordinate order `(x1, y1, x2, y2)`.
 - The reducer SHALL be `mean_logprob = (lp1 + lp2 + lp3 + lp4) / 4`.
@@ -188,3 +186,4 @@ The summary MUST be deterministic for the same inputs.
 - **GIVEN** a run where at least one sample lacks a trace record (`missing_trace`)
 - **WHEN** the post-op finishes
 - **THEN** `confidence_postop_summary.json` reports a non-zero `dropped_by_reason.missing_trace` and `kept_fraction < 1.0`.
+
