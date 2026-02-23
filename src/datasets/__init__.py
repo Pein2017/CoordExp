@@ -45,7 +45,12 @@ from .preprocessors import (
     DenseCaptionPreprocessor,
     AugmentationPreprocessor,
 )
-from .wrappers.packed_caption import PackedCaptionDataset, build_packed_dataset
+from .wrappers.packed_caption import (
+    PackedCaptionDataset,
+    StaticPackedCaptionDataset,
+    build_packed_dataset,
+    build_static_packed_dataset,
+)
 from .wrappers.random_sample import RandomSampleDataset
 
 __all__ = [
@@ -53,7 +58,9 @@ __all__ = [
     "BaseCaptionDataset",
     "DenseCaptionDataset",
     "PackedCaptionDataset",
+    "StaticPackedCaptionDataset",
     "build_packed_dataset",
+    "build_static_packed_dataset",
     "RandomSampleDataset",
     # Utilities
     "load_jsonl",

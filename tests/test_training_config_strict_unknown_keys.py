@@ -50,8 +50,11 @@ def test_training_internal_packing_keys_are_allowed():
     payload = _base_training_payload()
     payload["training"] = {
         "packing": True,
+        "packing_mode": "static",
         "packing_buffer": 128,
         "packing_min_fill_ratio": 0.5,
+        "packing_wait_timeout_s": 7200,
+        "packing_length_cache_persist_every": 2048,
         "effective_batch_size": 8,
         "save_delay_steps": 10,
         "save_last_epoch": True,
@@ -59,7 +62,24 @@ def test_training_internal_packing_keys_are_allowed():
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.training["packing"] is True
+    assert cfg.training["packing_mode"] == "static"
     assert cfg.training["packing_buffer"] == 128
+    assert cfg.training["packing_wait_timeout_s"] == 7200
+    assert cfg.training["packing_length_cache_persist_every"] == 2048
+
+
+def test_training_removed_packing_exact_key_fails_fast():
+    payload = _base_training_payload()
+    payload["training"] = {
+        "packing": True,
+        "packing_mode": "static",
+        "packing_require_exact_effective_batch": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.packing_require_exact_effective_batch" in str(exc.value)
 
 
 def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
