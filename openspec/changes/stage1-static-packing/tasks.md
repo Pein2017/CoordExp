@@ -1,7 +1,7 @@
 ## 1. Config Surface + Validation
 
 - [x] 1.1 Add `training.packing_mode` (`dynamic|static`) as a packing-only YAML knob (config schema + loader-side stripping so it is consumed in `src/sft.py`).
-- [x] 1.2 Update `src/sft.py` packing selection to default to current dynamic packing when `packing_mode` is unset.
+- [x] 1.2 Update `src/sft.py` packing selection to default to static packing when `packing_mode` is unset, and fail fast for Stage-1 `packing_mode=dynamic`.
 - [x] 1.3 In static mode, make epoch semantics explicit: pack plan is epoch-invariant; per-epoch ordering (if enabled) comes from the sampler shuffling pack indices. Always log `train_dataloader_shuffle`, `N_raw_packs`, `N_aligned_packs`, and stable checksums for `raw_plan` and `aligned_plan(world_size, dataloader_drop_last)`.
 
 ## 2. Length Cache (Planning Lengths)
@@ -10,6 +10,7 @@
 - [x] 2.2 Implement rank0 length precompute and deterministic distribution to other ranks (cache file or broadcast), so all ranks share the same planning lengths.
 - [x] 2.3 Add lazy “compute-missing-lengths” support so interrupted runs can resume without recomputing everything.
 - [x] 2.4 Add a guardrail for order-sensitive / non-deterministic datasets (e.g., fusion): static packing MUST fail fast with actionable guidance rather than silently caching unstable lengths (recommended detection: probe a small index set in two different access orders and require identical planning lengths).
+- [x] 2.5 Add static-cache operational safeguards for large datasets: configurable inter-rank wait timeout and bounded/adaptive length-cache persistence cadence.
 
 ## 3. Static Pack-Plan Dataset Wrapper
 
@@ -37,4 +38,4 @@
   - `dataloader_drop_last=false` pads by repeating the *prefix* packs (`aligned_plan = raw_plan + raw_plan[:pad_needed]`),
   - final plan length is divisible by `world_size`, and
   - all original packs appear at least once.
-- [ ] 5.3 Add a minimal Stage-1 smoke YAML config enabling `packing_mode: static` and run it twice with the same seed to assert identical `optimizer.step()` counts and identical “packs per epoch” logs.
+- [x] 5.3 Add a minimal Stage-1 smoke YAML config enabling `packing_mode: static` and run it twice with the same seed to assert identical `optimizer.step()` counts and identical “packs per epoch” logs.

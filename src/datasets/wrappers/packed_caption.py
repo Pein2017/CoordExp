@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -22,6 +23,8 @@ logger = get_logger(__name__)
 
 _LENGTH_CACHE_VERSION = 1
 _PLAN_CACHE_VERSION = 1
+_DEFAULT_LENGTH_CACHE_PERSIST_EVERY = 4096
+_DEFAULT_LENGTH_CACHE_MAX_FLUSHES = 64
 
 
 def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
@@ -105,11 +108,19 @@ def _resolve_rank_world(world_size_hint: int | None) -> tuple[int, int]:
 
 
 def _wait_for_file(path: Path, *, timeout_s: float) -> None:
-    deadline = time.monotonic() + max(float(timeout_s), 0.1)
+    timeout = float(timeout_s)
+    if not math.isfinite(timeout):
+        raise ValueError(f"wait_timeout_s must be finite, got {timeout_s!r}")
+
+    deadline = None
+    if timeout > 0:
+        deadline = time.monotonic() + timeout
+
     while not path.exists():
-        if time.monotonic() > deadline:
+        if deadline is not None and time.monotonic() > deadline:
             raise TimeoutError(
-                f"Timed out waiting for static packing cache artifact: {path}"
+                "Timed out waiting for static packing cache artifact: "
+                f"{path}. Increase training.packing_wait_timeout_s for large datasets."
             )
         time.sleep(0.2)
 
@@ -277,12 +288,31 @@ def _compute_missing_lengths(
     lengths: list[int | None],
     cache_path: Path,
     fingerprint: Mapping[str, Any],
-    persist_every: int = 256,
+    persist_every: int | None = None,
 ) -> list[int]:
     missing = [idx for idx, value in enumerate(lengths) if value is None]
     if not missing:
         return [int(v) for v in lengths if v is not None]
 
+    if persist_every is None:
+        persist_interval = max(
+            _DEFAULT_LENGTH_CACHE_PERSIST_EVERY,
+            int(
+                math.ceil(
+                    len(missing) / max(_DEFAULT_LENGTH_CACHE_MAX_FLUSHES, 1)
+                )
+            ),
+        )
+    else:
+        persist_interval = max(int(persist_every), 1)
+
+    logger.info(
+        "Static packing length precompute: missing=%s persist_every=%s",
+        len(missing),
+        persist_interval,
+    )
+
+    missing_count = len(missing)
     for offset, index in enumerate(missing, start=1):
         sample = dataset[int(index)]
         length = _extract_sample_length(sample)
@@ -292,7 +322,7 @@ def _compute_missing_lengths(
                 f"Index={index}. Ensure dataset encoding emits `length` or `input_ids`."
             )
         lengths[int(index)] = int(length)
-        if offset % max(int(persist_every), 1) == 0:
+        if (offset % persist_interval == 0) and (offset < missing_count):
             _persist_length_cache(
                 path=cache_path,
                 fingerprint=fingerprint,
@@ -772,7 +802,8 @@ def build_static_packed_dataset(
     world_size: int = 1,
     train_dataloader_shuffle: bool | None = None,
     order_probe_size: int = 16,
-    wait_timeout_s: float = 300.0,
+    wait_timeout_s: float = 7200.0,
+    length_cache_persist_every: int | None = None,
 ) -> StaticPackedCaptionDataset:
     """Construct deterministic static packed dataset with run-scoped cache.
 
@@ -782,6 +813,17 @@ def build_static_packed_dataset(
         raise ValueError("packing_length must be positive")
     if not (0 < float(min_fill_ratio) <= 1):
         raise ValueError("packing_min_fill_ratio must be in (0,1]")
+
+    wait_timeout_s = float(wait_timeout_s)
+    if not math.isfinite(wait_timeout_s):
+        raise ValueError(f"wait_timeout_s must be finite, got {wait_timeout_s!r}")
+
+    if length_cache_persist_every is not None:
+        length_cache_persist_every = int(length_cache_persist_every)
+        if length_cache_persist_every <= 0:
+            raise ValueError(
+                "length_cache_persist_every must be > 0 when provided"
+            )
 
     try:
         num_samples = int(len(dataset))
@@ -837,6 +879,7 @@ def build_static_packed_dataset(
             lengths=lengths_state,
             cache_path=lengths_cache_path,
             fingerprint=canonical_fingerprint,
+            persist_every=length_cache_persist_every,
         )
         raw_plan, single_long, skipped_long, avg_fill = _build_raw_pack_plan(
             lengths=lengths,
@@ -864,6 +907,13 @@ def build_static_packed_dataset(
             avg_fill=avg_fill,
         )
     else:
+        if wait_timeout_s <= 0:
+            logger.info(
+                "Static packing cache wait: rank=%s waiting without timeout for %s and %s",
+                rank,
+                lengths_cache_path,
+                plan_cache_path,
+            )
         _wait_for_file(lengths_cache_path, timeout_s=wait_timeout_s)
         _wait_for_file(plan_cache_path, timeout_s=wait_timeout_s)
 

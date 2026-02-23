@@ -33,9 +33,12 @@ Constraints:
 ## Decisions
 
 1) **Config gating via a single YAML knob (`training.packing_mode`)**
-- Decision: Introduce `training.packing_mode ∈ {dynamic, static}` with default `dynamic` to preserve existing behavior.
-  - `dynamic`: current iterable `PackedCaptionDataset` behavior.
-  - `static`: new map-style static pack-plan behavior.
+- Decision: Keep `training.packing_mode ∈ {dynamic, static}`, but enforce Stage-1 dataset-level packing as static-only.
+  - `static` (default): map-style static pack-plan behavior.
+  - `dynamic`: deprecated/unsupported for Stage-1 dataset-level packing (fail-fast with guidance).
+- Decision: keep no extra strictness knob; enforce exact global pack-step semantics directly when `training.effective_batch_size` is set.
+  - If `training.effective_batch_size % world_size != 0`, fail fast under packing.
+  - In static mode, retain warning telemetry for epoch-boundary partial accumulation windows.
 - Alternatives considered:
   - Add a second boolean like `training.packing_static: true`. Rejected as less extensible (future packing modes would multiply flags).
   - Implicitly switch based on `packing_avg_samples` presence. Rejected as ambiguous and non-obvious.
@@ -65,8 +68,13 @@ Constraints:
 4) **Length planning uses a persistent length cache keyed by a fingerprint**
 - Decision: Static mode uses per-sample planning lengths that are precomputed once and stored (or lazily extended) in a cache that is validated by a fingerprint.
   - Fingerprint MUST include at minimum: template identity (prompt variant/system prompt), `packing_length`/`global_max_length`, and any dataset-side switches that can affect tokenization (e.g., `custom.object_field_order`, summary/dense mode).
+  - Fingerprint MUST include dataset source identity (`custom.train_jsonl` / `custom.fusion_config`, resolved path identity) so stale caches cannot be reused across different source files in the same output directory.
   - Cache is used only for planning; the actual training sample is still produced by the normal dataset encoding path.
 - Cache scope: write caches under `training.output_dir` (run-scoped) to avoid accidental cross-run reuse with mismatched prompts/templates.
+- Operational safeguards:
+  - `training.packing_wait_timeout_s` controls how long non-rank0 workers wait for rank0-produced cache artifacts (`lengths.json`, `plan_ws*.json`). Default is `7200` seconds; `0` means wait indefinitely.
+  - `training.packing_length_cache_persist_every` optionally sets periodic full-cache flush cadence while computing missing lengths.
+  - When `training.packing_length_cache_persist_every` is unset, runtime chooses an adaptive persist interval that bounds the number of full-cache rewrites for large datasets.
 - Determinism guardrail: before writing or trusting a cache, run a small order-sensitivity probe (compute planning lengths for the same index set in two different access orders and require identical results). If the probe fails, static packing MUST fail fast with actionable guidance (disable static packing; avoid fusion/order-sensitive datasets; set deterministic preprocessing).
 - Rationale: Planning must not require a full extra encoding pass every epoch, but must remain correct when prompts/templates change.
 - Alternatives considered:
@@ -94,22 +102,27 @@ Constraints:
 - **[Risk] Length cache mismatch after prompt/template changes →** Mitigation: fingerprint validation and fail-fast guidance (“delete cache” or “use a different cache dir”) rather than silently using stale lengths.
 - **[Risk] Dataset preprocessing/augmentation changes token length across epochs →** Mitigation: constrain length computation to the same deterministic encode path as training (or document that static packing requires length-deterministic preprocessing); optionally compute planning lengths per epoch-index when hard sample plans introduce duplicates.
 - **[Risk] Large datasets make length precompute expensive →** Mitigation: allow lazy caching + resume; store progress and avoid redoing work across runs; keep the cache opt-in via `packing_mode=static`.
+- **[Risk] Non-rank0 workers can timeout while rank0 builds caches on large datasets →** Mitigation: configurable `training.packing_wait_timeout_s` with long default, plus `0` for explicit wait-forever behavior.
+- **[Risk] Repeated full-cache rewrites can become an I/O bottleneck →** Mitigation: adaptive/default larger persist interval with optional `training.packing_length_cache_persist_every` override.
 - **[Risk] DDP remainder requires explicit alignment under ms-swift sharding →** Mitigation: implement plan truncation/padding to an even multiple of `world_size` (drop vs pad/repeat) and log original vs aligned pack counts.
 - **[Risk] Padding repeats some packs when drop_last=false →** Mitigation: define deterministic pad policy and log how many repeated packs are introduced for DDP alignment.
-- **[Risk] Breaking comparability to old “epoch semantics” →** Mitigation: default remains `dynamic`; static mode is an explicit opt-in targeted at fair-comparison regimes.
+- **[Risk] Epoch-boundary partial accumulation windows can make packs/step inexact →** Mitigation: detect `per_rank_batches < GAS` or `per_rank_batches % GAS != 0` in static mode and warn with actionable guidance.
+- **[Tradeoff] Strict dataset-source fingerprinting can reduce cache reuse →** Mitigation: include resolved source identity + file stat metadata for safety (fail-fast correctness), accept that path aliasing or metadata-only updates may invalidate run-scoped caches.
+- **[Risk] Breaking comparability to old “epoch semantics” →** Mitigation: Stage-1 static-only is now explicit policy for reproducibility-focused runs; dynamic mode remains available only for rollout-matching trainer internals.
 
 ## Migration Plan
 
-1) Default behavior is unchanged:
-   - Existing Stage-1 configs with `training.packing=true` and no `training.packing_mode` continue to use dynamic iterable packing and the existing `packing_avg_samples`-based `max_steps` auto-fill.
-2) Opt into static packing for fair-comparison runs:
-   - Set `training.packing_mode: static`.
+1) Stage-1 default behavior is now static-only:
+   - Stage-1 configs with `training.packing=true` and no `training.packing_mode` now use `static`.
+   - Stage-1 configs setting `training.packing_mode: dynamic` fail fast and must migrate to `static`.
+2) Static packing for fair-comparison runs:
    - Keep `training.num_train_epochs` fixed to control total step count via true dataloader length.
+   - Ensure `training.effective_batch_size` (when set) is divisible by `world_size`; otherwise packing fails fast by design.
    - Choose `training.dataloader_drop_last`:
      - `true`: drop deterministic remainder packs,
      - `false`: deterministically pad/repeat to include all original packs.
-3) Rollback is trivial:
-   - Switch `training.packing_mode` back to `dynamic` (or disable packing entirely).
+3) Rollback for Stage-1:
+   - Disable packing (`training.packing=false`) if static mode is not desired.
 
 ## Open Questions
 

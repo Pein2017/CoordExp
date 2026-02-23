@@ -3,11 +3,25 @@
 ## Purpose
 Extend the packing dataset wrapper contract to support a deterministic, countable “static pack plan” mode for Stage-1 SFT.
 
-This delta adds requirements for a map-style packing mode that yields a stable `__len__` (packs per epoch are knowable) while preserving existing rank-local iterable packing behavior as the default when static mode is not enabled.
+This delta adds requirements for a map-style packing mode that yields a stable `__len__` (packs per epoch are knowable). For Stage-1 dataset-level packing, `dynamic` mode is deprecated/unsupported and the runtime MUST fail fast unless `training.packing_mode=static`.
 
 ## Requirements
 
 ## ADDED Requirements
+
+### Requirement: Stage-1 dataset-level packing is static-only
+For Stage-1 dataset-level packing (non-rollout trainer variants), the system SHALL enforce a static-only policy:
+- `training.packing_mode` defaults to `static` when omitted.
+- `training.packing_mode=dynamic` is deprecated/unsupported for Stage-1 dataset-level packing and MUST fail fast with actionable guidance.
+- `training.eval_packing` is deprecated/unsupported for Stage-1 static-only policy because eval packing uses dynamic iterable packing; this MUST fail fast when enabled for Stage-1.
+- `training.packing_wait_timeout_s` SHALL control non-rank0 wait time for static cache artifacts; default is `7200` seconds, and `0` SHALL mean wait indefinitely.
+- `training.packing_length_cache_persist_every` MAY be provided as a positive integer to override periodic length-cache flush cadence; when omitted, runtime SHALL use an adaptive flush interval suitable for large datasets.
+
+#### Scenario: Stage-1 dynamic packing mode fails fast
+- **GIVEN** Stage-1 dataset-level packing is enabled (`training.packing=true`)
+- **AND** `training.packing_mode=dynamic`
+- **WHEN** training initializes packing policy
+- **THEN** the system fails fast and instructs the user to set `training.packing_mode=static`.
 
 ### Requirement: Static pack-plan mode yields a countable packed dataset
 When training packing is enabled and static pack-plan mode is selected, the system SHALL provide a map-style packed dataset wrapper that:
@@ -115,6 +129,8 @@ Normative behavior:
 - The length used for planning MUST correspond to the encoded token length that will be consumed by the teacher-forced forward pass under the active template.
 - The system MUST support computing and storing lengths ahead of packing (e.g., via a cached length store) so the pack plan can be computed without repeatedly re-encoding the full dataset.
 - Length computation MUST be deterministic for a fixed dataset record, template, and configuration.
+- Any static length/plan cache fingerprint MUST include dataset source identity (for example, resolved `custom.train_jsonl` / `custom.fusion_config` identity) so stale cache reuse across different dataset sources fails fast.
+- The run-scoped static cache directory under `training.output_dir` is the primary safety boundary; changing uncaptured length-affecting factors SHOULD use a fresh output directory.
 - Static pack-plan mode MUST be restricted to datasets whose per-index encoding (and therefore per-index length) does not depend on call order or non-deterministic preprocessing. If this cannot be guaranteed, the system MUST fail fast with actionable guidance (e.g., disable static packing).
 
 #### Scenario: Multimodal samples have deterministic planning lengths
@@ -132,7 +148,8 @@ When dataset-level packing wrappers are enabled (dynamic or static) and the syst
 Clarification (unit semantics):
 - When packing is enabled, `training.effective_batch_size` is defined in units of **packed sequences (“packs”) per `optimizer.step()`**, globally across all ranks.
 - Because packing forces `per_device_train_batch_size=1`, one per-device dataloader item corresponds to exactly one packed sequence.
-- Therefore, the realized global packs per optimizer step is `world_size * gradient_accumulation_steps` (in packs). For exact matching, users SHOULD choose `training.effective_batch_size` divisible by `world_size`, and the system SHOULD log requested vs realized packs/step.
+- Therefore, the realized global packs per optimizer step is `world_size * gradient_accumulation_steps` (in packs). The system MUST fail fast when `training.effective_batch_size` is set but not divisible by `world_size`. The system SHOULD log requested vs realized packs/step.
+- In static mode, the system SHOULD warn when per-rank packed batches in an epoch produce a partial accumulation window (`per_rank_batches < gradient_accumulation_steps` or `per_rank_batches % gradient_accumulation_steps != 0`), because boundary-step packs/`optimizer.step()` become inexact.
 
 #### Scenario: effective_batch_size is honored after packing forces batch_size=1
 - **GIVEN** `training.packing=true` and `training.effective_batch_size` is set
@@ -145,3 +162,15 @@ Clarification (unit semantics):
 - **AND** the user config sets `training.per_device_train_batch_size` to a value other than 1
 - **WHEN** training starts and packing forces `per_device_train_batch_size=1`
 - **THEN** the system recomputes/overrides `gradient_accumulation_steps` so the realized global effective batch (in units of packed sequences) matches what the user configured before the packing adjustment.
+
+#### Scenario: fail fast when effective_batch_size is not world-size divisible
+- **GIVEN** `training.packing=true` and `training.effective_batch_size` is set
+- **AND** requested global packs per optimizer step are not exactly realizable by `world_size * gradient_accumulation_steps`
+- **WHEN** training initializes packing runtime config
+- **THEN** the system fails fast with actionable guidance to set `training.effective_batch_size` divisible by `world_size`.
+
+#### Scenario: static mode warns on partial epoch accumulation windows
+- **GIVEN** `training.packing=true` and `training.packing_mode=static`
+- **AND** per-rank packed batches in an epoch are smaller than `gradient_accumulation_steps` or leave a remainder
+- **WHEN** training validates dataloader/accumulation alignment
+- **THEN** the system logs a warning that boundary-step packs per `optimizer.step()` will be inexact for that epoch.

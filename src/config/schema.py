@@ -94,6 +94,8 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_allow_single_long",
     "eval_packing",
     "packing_avg_samples",
+    "packing_wait_timeout_s",
+    "packing_length_cache_persist_every",
 }
 
 

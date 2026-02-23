@@ -4,7 +4,9 @@ from pathlib import Path
 import torch
 import pytest
 
+from src.datasets.wrappers import packed_caption as packed_caption_module
 from src.datasets.wrappers.packed_caption import (
+    _compute_missing_lengths,
     build_packed_dataset,
     build_static_packed_dataset,
 )
@@ -334,6 +336,62 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
 
     payload_after = json.loads(length_cache_path.read_text(encoding="utf-8"))
     assert all(v is not None for v in payload_after["lengths"])
+
+
+def test_static_length_cache_default_persist_interval_reduces_flushes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    num_samples = 20000
+    lengths_state = [None] * num_samples
+    dataset = _FakeDataset([12] * num_samples)
+
+    persist_calls: list[int] = []
+
+    def _capture_persist(**_: object) -> None:
+        persist_calls.append(1)
+
+    monkeypatch.setattr(
+        packed_caption_module,
+        "_persist_length_cache",
+        _capture_persist,
+    )
+
+    computed = _compute_missing_lengths(
+        dataset=dataset,
+        lengths=lengths_state,
+        cache_path=tmp_path / "lengths.json",
+        fingerprint={"test": "persist"},
+        persist_every=None,
+    )
+
+    assert len(computed) == num_samples
+    assert all(value == 12 for value in computed)
+    assert len(persist_calls) <= 6
+
+
+def test_static_packing_rank_wait_timeout_is_configurable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+
+    with pytest.raises(TimeoutError, match="packing_wait_timeout_s"):
+        build_static_packed_dataset(
+            _FakeDataset([16, 20, 24, 28]),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=tmp_path / "wait_timeout",
+            fingerprint=_static_fingerprint("wait_timeout"),
+            world_size=2,
+            train_dataloader_shuffle=False,
+            wait_timeout_s=0.01,
+        )
 
 
 def test_static_packing_rejects_order_sensitive_dataset(tmp_path: Path):
