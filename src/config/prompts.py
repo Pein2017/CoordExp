@@ -14,9 +14,18 @@ from .prompt_variants import (
 # Shared prior rules (kept flat for easy embedding in system prompt)
 PRIOR_RULES = '- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return {"objects": []}.\n'
 
+_USER_EXAMPLE_DESC_FIRST = (
+    '{"desc": "black cat", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|]}'
+)
+_USER_EXAMPLE_GEOMETRY_FIRST = (
+    '{"bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>], "desc": "black cat near sofa"}'
+)
+
 # Ordering instructions (shared across coord modes)
 _ORDER_RULE_SORTED = (
-    "- Order objects by (minY, minX): top-to-bottom then left-to-right.\n"
+    "- Order objects by anchor (y, x): top-to-bottom then left-to-right.\n"
+    "  For bbox_2d, anchor is (y1, x1) from [x1, y1, x2, y2].\n"
+    "  For poly, anchor is (minY, minX) over polygon vertices.\n"
 )
 _ORDER_RULE_RANDOM = (
     "- Object order is unrestricted; any ordering is acceptable.\n"
@@ -49,12 +58,19 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
 )
 USER_PROMPT_SORTED_TOKENS = (
     "Detect and list every object in the image, ordered by (minY, minX) "
-    "(top-to-bottom then left-to-right). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
+    "(top-to-bottom then left-to-right). For bbox_2d anchors, use (y1, x1) from [x1, y1, x2, y2]. "
+    "For poly anchors, use (minY, minX) over all vertices. "
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999). "
+    "Use the exact per-object format: "
+    f"{_USER_EXAMPLE_DESC_FIRST}. "
+    "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 USER_PROMPT_RANDOM_TOKENS = (
     "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999)."
+    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999). "
+    "Use the exact per-object format: "
+    f"{_USER_EXAMPLE_DESC_FIRST}. "
+    "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 
 # Coord-token-only contract: numeric dense prompt variants are intentionally unsupported.
@@ -79,6 +95,9 @@ def _apply_geometry_first_user_wording(base_prompt: str) -> str:
     return base_prompt.replace(
         "has desc before one geometry (bbox_2d or poly)",
         "has one geometry (bbox_2d or poly) before desc",
+    ).replace(
+        f"Use the exact per-object format: {_USER_EXAMPLE_DESC_FIRST}.",
+        f"Use the exact per-object format: {_USER_EXAMPLE_GEOMETRY_FIRST}.",
     )
 
 
