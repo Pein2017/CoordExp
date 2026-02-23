@@ -220,6 +220,9 @@ Normative behavior:
 - When `rollout_matching.eval_detection.enabled=true`, the trainer MUST attempt to compute COCO bbox AP/mAP for the
   eval-step rollouts and MUST emit, at minimum:
   - `rollout/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
+- The trainer MUST NOT emit additional COCO summary metric keys during eval-step (e.g., `rollout/bbox_AP50`,
+  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `rollout/mAP`. Full metric reports remain available via the offline
+  evaluation pipeline.
 - If COCO eval fails unexpectedly (missing dependencies, invalid records, etc.), the trainer MUST:
   - emit `rollout/mAP=0.0` (so the key is always present when enabled), and
   - surface the failure as a warning (not silent).
