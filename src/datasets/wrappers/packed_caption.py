@@ -6,6 +6,7 @@ Static packing precomputes a deterministic, countable plan of pack indices.
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import math
@@ -55,6 +56,16 @@ def _resolve_length_precompute_workers(
     return min(workers, int(missing_count))
 
 
+def _precompute_length_from_dataset(
+    dataset: Any, index: int
+) -> tuple[int, int | None]:
+    index_i = int(index)
+    sample = dataset[index_i]
+    length = _extract_sample_length(sample)
+    if length is None:
+        return index_i, None
+    return index_i, int(length)
+
 def _precompute_length_worker(index: int) -> tuple[int, int | None]:
     dataset = _LENGTH_PRECOMPUTE_DATASET
     if dataset is None:
@@ -62,12 +73,7 @@ def _precompute_length_worker(index: int) -> tuple[int, int | None]:
             "Static packing multiprocessing worker has no dataset bound."
         )
 
-    index_i = int(index)
-    sample = dataset[index_i]
-    length = _extract_sample_length(sample)
-    if length is None:
-        return index_i, None
-    return index_i, int(length)
+    return _precompute_length_from_dataset(dataset, index)
 
 
 def _json_canonical_dumps(payload: Mapping[str, Any]) -> str:
@@ -352,8 +358,21 @@ def _compute_missing_lengths(
 
     missing_count = len(missing)
     completed = 0
+    use_thread_pool = False
 
     if worker_count > 1:
+        dist_initialized = (
+            torch.distributed.is_available() and torch.distributed.is_initialized()
+        )
+        cuda_initialized = torch.cuda.is_available() and torch.cuda.is_initialized()
+        if dist_initialized or cuda_initialized:
+            use_thread_pool = True
+            logger.info(
+                "Static packing length precompute: using thread pool workers=%s in distributed/CUDA-initialized runtime to avoid fork deadlocks.",
+                worker_count,
+            )
+
+    if worker_count > 1 and (not use_thread_pool):
         start_methods = set(multiprocessing.get_all_start_methods())
         if "fork" not in start_methods:
             logger.warning(
@@ -362,7 +381,30 @@ def _compute_missing_lengths(
             )
             worker_count = 1
 
-    if worker_count > 1:
+    if worker_count > 1 and use_thread_pool:
+
+        def _thread_worker(index: int) -> tuple[int, int | None]:
+            return _precompute_length_from_dataset(dataset, index)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=worker_count
+        ) as executor:
+            for index, length in executor.map(_thread_worker, missing):
+                if length is None:
+                    raise ValueError(
+                        "Static packing length precompute failed: sample has no token length. "
+                        f"Index={index}. Ensure dataset encoding emits `length` or `input_ids`."
+                    )
+                lengths[int(index)] = int(length)
+                completed += 1
+                if (completed % persist_interval == 0) and (completed < missing_count):
+                    _persist_length_cache(
+                        path=cache_path,
+                        fingerprint=fingerprint,
+                        lengths=lengths,
+                        num_samples=len(lengths),
+                    )
+    elif worker_count > 1:
         global _LENGTH_PRECOMPUTE_DATASET
         _LENGTH_PRECOMPUTE_DATASET = dataset
         try:

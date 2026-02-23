@@ -405,6 +405,75 @@ def test_static_length_cache_parallel_precompute_matches_serial(tmp_path: Path) 
     assert parallel == serial
 
 
+def test_static_length_cache_parallel_uses_thread_pool_when_cuda_initialized(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if "fork" not in set(multiprocessing.get_all_start_methods()):
+        pytest.skip("fork start method unavailable")
+
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_initialized",
+        lambda: False,
+    )
+    monkeypatch.setattr(packed_caption_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        packed_caption_module.torch.cuda,
+        "is_initialized",
+        lambda: True,
+    )
+
+    def _unexpected_get_context(_: str) -> multiprocessing.context.BaseContext:
+        raise AssertionError("multiprocessing precompute should not be used")
+
+    monkeypatch.setattr(
+        packed_caption_module.multiprocessing,
+        "get_context",
+        _unexpected_get_context,
+    )
+
+    thread_workers: list[int] = []
+
+    class _InlineThreadPoolExecutor:
+        def __init__(self, *, max_workers: int):
+            thread_workers.append(int(max_workers))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def map(self, fn, iterable):
+            for item in iterable:
+                yield fn(item)
+
+    monkeypatch.setattr(
+        packed_caption_module.concurrent.futures,
+        "ThreadPoolExecutor",
+        _InlineThreadPoolExecutor,
+    )
+
+    lengths = [13 + (idx % 5) for idx in range(48)]
+    result = _compute_missing_lengths(
+        dataset=_FakeDataset(lengths),
+        lengths=[None] * len(lengths),
+        cache_path=tmp_path / "cuda_lengths.json",
+        fingerprint={"test": "cuda_fallback"},
+        persist_every=64,
+        precompute_workers=4,
+    )
+
+    assert result == lengths
+    assert thread_workers == [4]
+
+
 def test_static_packing_rejects_nonpositive_length_precompute_workers(
     tmp_path: Path,
 ) -> None:
