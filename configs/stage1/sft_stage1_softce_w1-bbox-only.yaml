@@ -23,10 +23,11 @@ training:
   vit_lr: 1.0e-4
   aligner_lr: 4.0e-4
   packing: true
+  packing_mode: static
   packing_buffer: 512
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
-  eval_packing: true
+  # Stage-1 static-only policy: eval_packing (dynamic iterable path) is deprecated/unsupported.
   eval_steps: 40
   save_steps: 200
   save_total_limit: 2
