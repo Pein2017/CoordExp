@@ -11,6 +11,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Sequence,
     cast,
 )
 
@@ -1043,6 +1044,195 @@ class Stage2ABChannelBConfig:
         return cls(drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier)
 
 
+_ALLOWED_STAGE2_OBJECTIVE_MODULES: set[str] = {"token_ce", "bbox_geo", "coord_reg"}
+_ALLOWED_STAGE2_DIAGNOSTIC_MODULES: set[str] = {"coord_diag"}
+
+
+@dataclass(frozen=True)
+class Stage2PipelineModuleSpec:
+    name: str
+    enabled: bool = True
+    weight: float = 1.0
+    channels: tuple[str, ...] = ("A", "B")
+    config: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        path: str,
+        allowed_names: set[str],
+    ) -> "Stage2PipelineModuleSpec":
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+
+        name_raw = data.pop("name", None)
+        name = str(name_raw or "").strip()
+        if not name:
+            raise ValueError(f"{path}.name must be a non-empty string")
+        if name not in allowed_names:
+            raise ValueError(
+                f"{path}.name must be one of {sorted(allowed_names)}; got {name!r}"
+            )
+
+        enabled_raw = data.pop("enabled", True)
+        enabled = bool(enabled_raw)
+
+        weight_raw = data.pop("weight", 1.0)
+        try:
+            weight = float(weight_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.weight must be numeric") from exc
+        if weight < 0.0:
+            raise ValueError(f"{path}.weight must be >= 0")
+
+        channels_raw = data.pop("channels", ("A", "B"))
+        if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
+            raise TypeError(f"{path}.channels must be a sequence of 'A'/'B'")
+        channels_list: list[str] = []
+        for idx, ch in enumerate(channels_raw):
+            ch_s = str(ch).strip().upper()
+            if ch_s not in {"A", "B"}:
+                raise ValueError(f"{path}.channels[{idx}] must be 'A' or 'B'")
+            channels_list.append(ch_s)
+        if not channels_list:
+            raise ValueError(f"{path}.channels must not be empty")
+        channels = tuple(dict.fromkeys(channels_list).keys())
+
+        cfg_raw = data.pop("config", {})
+        if cfg_raw is None:
+            cfg_raw = {}
+        if not isinstance(cfg_raw, Mapping):
+            raise TypeError(f"{path}.config must be a mapping")
+        config = dict(cfg_raw)
+
+        if data:
+            unknown = [f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            raise ValueError(f"Unknown pipeline module keys: {unknown}")
+
+        return cls(
+            name=name,
+            enabled=enabled,
+            weight=weight,
+            channels=channels,
+            config=config,
+        )
+
+
+@dataclass(frozen=True)
+class Stage2PipelineConfig:
+    objective: tuple[Stage2PipelineModuleSpec, ...] = field(default_factory=tuple)
+    diagnostics: tuple[Stage2PipelineModuleSpec, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2PipelineConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.pipeline must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+
+        objective_raw = data.pop("objective", [])
+        diagnostics_raw = data.pop("diagnostics", [])
+
+        if not isinstance(objective_raw, Sequence) or isinstance(objective_raw, (str, bytes)):
+            raise TypeError("stage2_ab.pipeline.objective must be a list")
+        if not isinstance(diagnostics_raw, Sequence) or isinstance(diagnostics_raw, (str, bytes)):
+            raise TypeError("stage2_ab.pipeline.diagnostics must be a list")
+
+        objective_specs = [
+            Stage2PipelineModuleSpec.from_mapping(
+                item,
+                path=f"stage2_ab.pipeline.objective[{idx}]",
+                allowed_names=_ALLOWED_STAGE2_OBJECTIVE_MODULES,
+            )
+            for idx, item in enumerate(objective_raw)
+        ]
+        diagnostics_specs = [
+            Stage2PipelineModuleSpec.from_mapping(
+                item,
+                path=f"stage2_ab.pipeline.diagnostics[{idx}]",
+                allowed_names=_ALLOWED_STAGE2_DIAGNOSTIC_MODULES,
+            )
+            for idx, item in enumerate(diagnostics_raw)
+        ]
+
+        def _assert_no_duplicates(items: list[Stage2PipelineModuleSpec], *, path: str) -> None:
+            seen: set[str] = set()
+            for spec in items:
+                if spec.name in seen:
+                    raise ValueError(f"Duplicate module name in {path}: {spec.name}")
+                seen.add(spec.name)
+
+        _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
+        _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
+
+        for idx, spec in enumerate(objective_specs):
+            if spec.name == "token_ce":
+                allowed_cfg = {
+                    "desc_ce_weight",
+                    "rollout_fn_desc_weight",
+                    "rollout_matched_prefix_struct_weight",
+                    "rollout_drop_invalid_struct_ce_multiplier",
+                    # Backward-compat aliases.
+                    "fn_desc_ce_weight",
+                    "matched_prefix_struct_ce_weight",
+                }
+            elif spec.name == "bbox_geo":
+                allowed_cfg = {
+                    "smoothl1_weight",
+                    "ciou_weight",
+                    # Backward-compat aliases.
+                    "bbox_smoothl1_weight",
+                    "bbox_ciou_weight",
+                }
+            elif spec.name == "coord_reg":
+                allowed_cfg = {
+                    "coord_ce_weight",
+                    "coord_el1_weight",
+                    "coord_ehuber_weight",
+                    "coord_huber_delta",
+                    "coord_entropy_weight",
+                    "coord_gate_weight",
+                    "text_gate_weight",
+                    "soft_ce_weight",
+                    "w1_weight",
+                    "temperature",
+                    "target_sigma",
+                    "target_truncate",
+                    # Backward-compat aliases.
+                    "coord_soft_ce_weight",
+                    "coord_w1_weight",
+                }
+            else:
+                allowed_cfg = set()
+            unknown_cfg = set(spec.config.keys()) - allowed_cfg
+            if unknown_cfg:
+                raise ValueError(
+                    "Unknown stage2_ab.pipeline.objective"
+                    f"[{idx}].config keys for module {spec.name!r}: "
+                    f"{sorted(str(k) for k in unknown_cfg)}"
+                )
+
+        for idx, spec in enumerate(diagnostics_specs):
+            unknown_cfg = set(spec.config.keys())
+            if unknown_cfg:
+                raise ValueError(
+                    "Unknown stage2_ab.pipeline.diagnostics"
+                    f"[{idx}].config keys for module {spec.name!r}: "
+                    f"{sorted(str(k) for k in unknown_cfg)}"
+                )
+
+        if data:
+            unknown = [f"stage2_ab.pipeline.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
+
+        return cls(
+            objective=tuple(objective_specs),
+            diagnostics=tuple(diagnostics_specs),
+        )
+
+
 @dataclass(frozen=True)
 class Stage2ABConfig:
     schedule: Stage2ABScheduleConfig
@@ -1053,6 +1243,10 @@ class Stage2ABConfig:
     bbox_smoothl1_weight: float = 1.0
     bbox_ciou_weight: float = 1.0
 
+    coord_ctx_embed_mode: Literal["soft", "st", "hard"] = "soft"
+    coord_decode_mode: Literal["exp", "st"] = "exp"
+    text_gate_weight: float = 0.0
+
     coord_ce_weight: float = 0.0
     coord_el1_weight: float = 0.0
     coord_ehuber_weight: float = 0.0
@@ -1060,6 +1254,7 @@ class Stage2ABConfig:
     coord_entropy_weight: float = 0.0
     coord_gate_weight: float = 0.0
 
+    pipeline: Optional[Stage2PipelineConfig] = None
     channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
 
     @classmethod
@@ -1068,11 +1263,20 @@ class Stage2ABConfig:
             raise TypeError("stage2_ab section must be a mapping")
 
         data: MutableMapping[str, Any] = dict(payload)
+        raw_keys: set[str] = {str(k) for k in data.keys()}
+        channel_b_raw = data.get("channel_b")
 
         schedule_raw = data.pop("schedule", None)
         if schedule_raw is None:
             raise ValueError("stage2_ab.schedule must be provided")
         schedule = Stage2ABScheduleConfig.from_mapping(schedule_raw)
+
+        pipeline_raw = data.pop("pipeline", None)
+        pipeline = (
+            Stage2PipelineConfig.from_mapping(pipeline_raw)
+            if pipeline_raw is not None
+            else None
+        )
 
         if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
             raise ValueError(
@@ -1102,6 +1306,28 @@ class Stage2ABConfig:
             raise TypeError("stage2_ab.softctx_temperature must be a float") from exc
         if softctx_temperature <= 0:
             raise ValueError("stage2_ab.softctx_temperature must be > 0")
+
+        coord_ctx_embed_mode_raw = data.pop(
+            "coord_ctx_embed_mode", cls.coord_ctx_embed_mode
+        )
+        coord_ctx_embed_mode = str(coord_ctx_embed_mode_raw or "soft").strip().lower()
+        if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
+            raise ValueError(
+                "stage2_ab.coord_ctx_embed_mode must be one of {'soft','st','hard'}"
+            )
+
+        coord_decode_mode_raw = data.pop("coord_decode_mode", cls.coord_decode_mode)
+        coord_decode_mode = str(coord_decode_mode_raw or "exp").strip().lower()
+        if coord_decode_mode not in {"exp", "st"}:
+            raise ValueError("stage2_ab.coord_decode_mode must be one of {'exp','st'}")
+
+        text_gate_weight_raw = data.pop("text_gate_weight", cls.text_gate_weight)
+        try:
+            text_gate_weight = float(text_gate_weight_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("stage2_ab.text_gate_weight must be a float") from exc
+        if text_gate_weight < 0:
+            raise ValueError("stage2_ab.text_gate_weight must be >= 0")
 
         desc_ce_raw = data.pop("desc_ce_weight", cls.desc_ce_weight)
         try:
@@ -1146,6 +1372,37 @@ class Stage2ABConfig:
         )
         coord_gate_weight = max(0.0, coord_gate_weight)
 
+        if pipeline is not None:
+            disallowed_flat = [
+                k
+                for k in (
+                    "desc_ce_weight",
+                    "bbox_smoothl1_weight",
+                    "bbox_ciou_weight",
+                    "text_gate_weight",
+                    "coord_ce_weight",
+                    "coord_el1_weight",
+                    "coord_ehuber_weight",
+                    "coord_huber_delta",
+                    "coord_entropy_weight",
+                    "coord_gate_weight",
+                )
+                if k in raw_keys
+            ]
+            if disallowed_flat:
+                raise ValueError(
+                    "stage2_ab.pipeline is provided; flat objective knobs are disallowed and must be moved into "
+                    f"stage2_ab.pipeline.*.config: {sorted(disallowed_flat)}"
+                )
+            if isinstance(channel_b_raw, Mapping) and (
+                "drop_invalid_struct_ce_multiplier" in channel_b_raw
+            ):
+                raise ValueError(
+                    "stage2_ab.pipeline is provided; stage2_ab.channel_b.drop_invalid_struct_ce_multiplier "
+                    "is disallowed and must be moved into stage2_ab.pipeline.objective[*].config "
+                    "as token_ce.rollout_drop_invalid_struct_ce_multiplier"
+                )
+
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
@@ -1165,12 +1422,18 @@ class Stage2ABConfig:
             desc_ce_weight=desc_ce_weight,
             bbox_smoothl1_weight=bbox_smoothl1_weight,
             bbox_ciou_weight=bbox_ciou_weight,
+            coord_ctx_embed_mode=cast(
+                Literal["soft", "st", "hard"], coord_ctx_embed_mode
+            ),
+            coord_decode_mode=cast(Literal["exp", "st"], coord_decode_mode),
+            text_gate_weight=text_gate_weight,
             coord_ce_weight=coord_ce_weight,
             coord_el1_weight=coord_el1_weight,
             coord_ehuber_weight=coord_ehuber_weight,
             coord_huber_delta=coord_huber_delta,
             coord_entropy_weight=coord_entropy_weight,
             coord_gate_weight=coord_gate_weight,
+            pipeline=pipeline,
             channel_b=channel_b,
         )
 
@@ -1258,6 +1521,9 @@ class TrainingConfig:
             "rlhf", rlhf, allowed=_rlhf_arguments_allowed_keys()
         )
         custom_raw = data.pop("custom", None)
+        custom_coord_soft_ce_w1_present = bool(
+            isinstance(custom_raw, Mapping) and "coord_soft_ce_w1" in custom_raw
+        )
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
@@ -1285,13 +1551,21 @@ class TrainingConfig:
 
         custom = CustomConfig.from_mapping(custom_raw, prompts=prompts)
         trainer_variant = str(custom.trainer_variant or "")
+        if trainer_variant == "stage2_ab_training":
+            raise ValueError(
+                "custom.trainer_variant=stage2_ab_training has been removed; use stage2_two_channel"
+            )
+        if trainer_variant == "rollout_matching_sft":
+            raise ValueError(
+                "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
+            )
 
         stage2_ab = None
         if stage2_ab_raw is not None:
             stage2_ab = Stage2ABConfig.from_mapping(stage2_ab_raw)
-        elif trainer_variant == "stage2_ab_training":
+        elif trainer_variant == "stage2_two_channel":
             raise ValueError(
-                "stage2_ab section must be provided when custom.trainer_variant=stage2_ab_training"
+                "stage2_ab section must be provided when custom.trainer_variant=stage2_two_channel"
             )
 
         rollout_matching = None
@@ -1322,11 +1596,41 @@ class TrainingConfig:
                     path="rollout_matching",
                 )
 
-        if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+        if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
             if rollout_matching is None:
                 raise ValueError(
-                    "rollout_matching section must be provided for rollout_matching_sft/stage2_ab_training"
+                    "rollout_matching section must be provided for stage2_rollout_aligned/stage2_two_channel"
                 )
+
+        stage2_pipeline_present = bool(
+            stage2_ab is not None and getattr(stage2_ab, "pipeline", None) is not None
+        )
+        rollout_pipeline_present = bool(
+            rollout_matching is not None
+            and getattr(rollout_matching, "pipeline", None) is not None
+        )
+
+        if stage2_pipeline_present and custom_coord_soft_ce_w1_present:
+            raise ValueError(
+                "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
+                "stage2_ab.pipeline.objective[*].config for the coord_reg module"
+            )
+        if rollout_pipeline_present and custom_coord_soft_ce_w1_present:
+            raise ValueError(
+                "rollout_matching.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
+                "rollout_matching.pipeline.objective[*].config for the coord_reg module"
+            )
+
+        if trainer_variant == "stage2_two_channel" and rollout_pipeline_present:
+            raise ValueError(
+                "rollout_matching.pipeline is not allowed when custom.trainer_variant=stage2_two_channel. "
+                "Use stage2_ab.pipeline instead."
+            )
+        if trainer_variant == "stage2_rollout_aligned" and stage2_pipeline_present:
+            raise ValueError(
+                "stage2_ab.pipeline is not allowed when custom.trainer_variant=stage2_rollout_aligned. "
+                "Use rollout_matching.pipeline instead."
+            )
 
         # Length-coherence guardrails (fail-fast). These settings affect whether the
         # rollout backend will truncate/error on long prompts, which is objective-changing.

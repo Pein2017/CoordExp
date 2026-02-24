@@ -86,7 +86,7 @@ training:
   eval_packing: true
 
 custom:
-  trainer_variant: rollout_matching_sft
+  trainer_variant: stage2_rollout_aligned
 
   # Real LVIS coord-token dataset (update paths if needed).
   train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl

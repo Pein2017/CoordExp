@@ -1,17 +1,13 @@
-# Stage-2 AB canonical profile base (standalone).
-# This file intentionally does not extend configs/base.yaml.
-
 global_max_length: 12000
 
 model:
+  model: /data/CoordExp/output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
   torch_dtype: bfloat16
   attn_impl: flash_attention_2
-  model: output/1-26/checkpoint-1516-merged
 
 template:
   template: qwen3_vl
   truncation_strategy: raise
-  # CoordExp forbids runtime image resizing; keep max_pixels fixed.
   max_pixels: 786432
 
 tuner:
@@ -29,12 +25,11 @@ tuner:
   lora_dropout: 0.0
   lora_bias: none
 
-deepspeed:
-  enabled: false
-
 training:
+  run_name: smoke_ab_mixed_pipeline_explicit
+  output_dir: output/stage2_two_channel/smoke/ab_mixed_pipeline_explicit
+  logging_dir: tb/stage2_two_channel/smoke/ab_mixed_pipeline_explicit
   gradient_checkpointing: true
-  lr_scheduler_type: cosine_warmup_with_min_lr
   bf16: true
   report_to: [tensorboard]
   seed: 17
@@ -45,17 +40,15 @@ training:
   save_total_limit: 2
   save_last_epoch: true
   save_only_model: true
-  logging_steps: 10
+  logging_steps: 1
   logging_first_step: true
-  lr_scheduler_kwargs:
-    min_lr: 1.0e-6
-  num_train_epochs: 4
+  num_train_epochs: 1
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 4
-  effective_batch_size: 64
+  effective_batch_size: 8
   dataloader_drop_last: true
   packing: true
-  packing_buffer: 256
+  packing_buffer: 128
   packing_min_fill_ratio: 0.5
   packing_drop_last: true
   eval_packing: false
@@ -67,75 +60,59 @@ training:
   aligner_lr: 5.0e-5
   weight_decay: 0.0
   eval_strategy: steps
-  eval_steps: 80
+  eval_steps: 1
   save_strategy: steps
-  save_steps: 200
+  save_steps: 1
+  save_delay_steps: 0
+  max_steps: 2
 
 data:
-  # Required by ms-swift TrainArguments validation.
   dataset: [dummy]
   val_dataset: [dummy]
-  dataset_num_proc: 8
-  dataloader_num_workers: 16
-  dataloader_pin_memory: true
-  dataloader_prefetch_factor: 4
-  dataloader_persistent_workers: true
+  dataset_num_proc: 1
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
 
 stage2_ab:
   schedule:
-    b_ratio: 0.05
+    b_ratio: 0.5
   n_softctx_iter: 2
-  coord_gate_weight: 1.0
-  bbox_smoothl1_weight: 2.0
-  bbox_ciou_weight: 0.5
+  softctx_grad_mode: em_detach
+  pipeline:
+    objective:
+      - name: token_ce
+      - name: bbox_geo
+      - name: coord_reg
+        config:
+          coord_gate_weight: 1.0
+          soft_ce_weight: 0.02
+          w1_weight: 0.02
+    diagnostics:
+      - name: coord_diag
   channel_b: {}
 
 custom:
+  trainer_variant: stage2_two_channel
   json_format: standard
   object_field_order: desc_first
   emit_norm: none
-  trainer_variant: stage2_ab_training
-  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
-  train_sample_limit: null
-  val_sample_limit: null
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  train_sample_limit: 64
+  val_sample_limit: 16
   coord_tokens:
     enabled: true
     skip_bbox_norm: true
-  coord_soft_ce_w1:
-    enabled: true
-    soft_ce_weight: 0.02
-    w1_weight: 0.02
-
-debug:
-  enabled: false
+  extra:
+    prompt_variant: coco_80
 
 rollout_matching:
-  offload:
-    enabled: false
-    offload_model: false
-    offload_optimizer: false
-  rollout_backend: vllm
-  decode_batch_size: 4
-  vllm:
-    mode: server
-    tensor_parallel_size: 1
-    gpu_memory_utilization: 0.85
-    max_model_len: 12000
-    enable_lora: false
-    enable_prefix_caching: true
-    sleep_level: 0
-    server:
-      timeout_s: 240.0
-      infer_timeout_s: null
-      servers:
-        - base_url: http://127.0.0.1:8000
-          group_port: 51216
-    sync:
-      mode: full
-      fallback_to_full: true
+  rollout_backend: hf
+  decode_batch_size: 2
   decode_mode: greedy
-  max_new_tokens: 3084
+  max_new_tokens: 256
   decoding:
     temperature: 0.0
     top_p: 1.0
@@ -147,12 +124,10 @@ rollout_matching:
   fp_cost: 0.5
   fn_cost: 2
   eval_detection:
-    # Run COCO mAP during trainer eval_step on the same eval cadence as rollout/f1.
     enabled: true
     metrics: coco
     use_segm: false
     strict_parse: true
-    # Eval-step score policy is intentionally lightweight; confidence post-op remains offline.
     score_mode: constant
     constant_score: 1.0
     pred_score_source: eval_rollout_constant
@@ -160,3 +135,5 @@ rollout_matching:
   ot_cost: l2
   ot_epsilon: 10
   ot_iters: 1
+  monitor_dump:
+    enabled: false

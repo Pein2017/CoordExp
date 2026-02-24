@@ -1,0 +1,10 @@
+extends: ./geo_first_a_only_em_detach.yaml
+
+training:
+  run_name: smoke_geo_first_a_only_st_bridge
+  output_dir: output/stage2_two_channel/smoke/geo_first_a_only_st_bridge
+  logging_dir: tb/stage2_two_channel/smoke/geo_first_a_only_st_bridge
+
+stage2_ab:
+  coord_ctx_embed_mode: st
+  coord_decode_mode: st

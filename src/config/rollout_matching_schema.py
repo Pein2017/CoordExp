@@ -13,7 +13,7 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class RolloutDescMonitorConfig:
 @dataclass(frozen=True)
 class RolloutEvalDetectionConfig:
     # Enable COCO-style AP/mAP during trainer eval_step.
-    enabled: bool = False
+    enabled: bool = True
     metrics: str = "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
 
     # COCO evaluator knobs.
@@ -168,6 +168,25 @@ class VllmConfig:
     sync: Optional[VllmSyncConfig] = None
 
 
+_ALLOWED_ROLLOUT_OBJECTIVE_MODULES: set[str] = {"token_ce", "bbox_geo", "coord_reg"}
+_ALLOWED_ROLLOUT_DIAGNOSTIC_MODULES: set[str] = {"coord_diag"}
+
+
+@dataclass(frozen=True)
+class RolloutPipelineModuleSpec:
+    name: str
+    enabled: bool = True
+    weight: float = 1.0
+    channels: tuple[str, ...] = ("A", "B")
+    config: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RolloutPipelineConfig:
+    objective: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
+    diagnostics: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
+
+
 @dataclass(frozen=True)
 class RolloutMatchingConfig:
     # Core backend selection.
@@ -182,6 +201,7 @@ class RolloutMatchingConfig:
     repetition_penalty: float = 1.0
 
     decoding: Optional[RolloutDecodingConfig] = None
+    coord_decode_mode: str = "exp"  # exp|st
     # Matching knobs.
     candidate_top_k: int = 10
     maskiou_gate: float = 0.3
@@ -197,7 +217,8 @@ class RolloutMatchingConfig:
     offload: Optional[RolloutOffloadConfig] = None
     monitor_dump: Optional[RolloutMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
-    eval_detection: Optional[RolloutEvalDetectionConfig] = None
+    pipeline: Optional[RolloutPipelineConfig] = None
+    eval_detection: RolloutEvalDetectionConfig = field(default_factory=RolloutEvalDetectionConfig)
     vllm: Optional[VllmConfig] = None
     # Optional override applied only to eval-step rollouts.
     eval_prompt_variant: Optional[str] = None
@@ -218,6 +239,12 @@ class RolloutMatchingConfig:
             raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
         if decode_bs <= 0:
             raise ValueError("rollout_matching.decode_batch_size must be > 0")
+
+        coord_decode_mode = str(self.coord_decode_mode or "exp").strip().lower()
+        if coord_decode_mode not in {"exp", "st"}:
+            raise ValueError(
+                "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
+            )
 
         if self.decoding is not None:
             dec = self.decoding
@@ -254,6 +281,63 @@ class RolloutMatchingConfig:
                 raise ValueError(
                     "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
                 )
+
+        if self.pipeline is not None:
+            if not isinstance(self.pipeline, RolloutPipelineConfig):
+                raise TypeError("rollout_matching.pipeline must be a RolloutPipelineConfig")
+
+            def _validate_specs(
+                specs: tuple[RolloutPipelineModuleSpec, ...],
+                *,
+                allowed_names: set[str],
+                path: str,
+            ) -> None:
+                seen: set[str] = set()
+                for idx, spec in enumerate(specs):
+                    if not isinstance(spec, RolloutPipelineModuleSpec):
+                        raise TypeError(f"{path}[{idx}] must be RolloutPipelineModuleSpec")
+                    name = str(spec.name or "").strip()
+                    if not name:
+                        raise ValueError(f"{path}[{idx}].name must be non-empty")
+                    if name not in allowed_names:
+                        raise ValueError(
+                            f"{path}[{idx}].name must be one of {sorted(allowed_names)}; got {name!r}"
+                        )
+                    if name in seen:
+                        raise ValueError(f"Duplicate module name in {path}: {name}")
+                    seen.add(name)
+
+                    try:
+                        weight = float(spec.weight)
+                    except (TypeError, ValueError) as exc:
+                        raise TypeError(f"{path}[{idx}].weight must be numeric") from exc
+                    if weight < 0.0:
+                        raise ValueError(f"{path}[{idx}].weight must be >= 0")
+
+                    if not isinstance(spec.channels, Sequence) or isinstance(spec.channels, (str, bytes)):
+                        raise TypeError(f"{path}[{idx}].channels must be a sequence")
+                    if not spec.channels:
+                        raise ValueError(f"{path}[{idx}].channels must not be empty")
+                    for cidx, ch in enumerate(spec.channels):
+                        ch_s = str(ch).strip().upper()
+                        if ch_s not in {"A", "B"}:
+                            raise ValueError(
+                                f"{path}[{idx}].channels[{cidx}] must be 'A' or 'B'"
+                            )
+
+                    if not isinstance(spec.config, Mapping):
+                        raise TypeError(f"{path}[{idx}].config must be a mapping")
+
+            _validate_specs(
+                self.pipeline.objective,
+                allowed_names=_ALLOWED_ROLLOUT_OBJECTIVE_MODULES,
+                path="rollout_matching.pipeline.objective",
+            )
+            _validate_specs(
+                self.pipeline.diagnostics,
+                allowed_names=_ALLOWED_ROLLOUT_DIAGNOSTIC_MODULES,
+                path="rollout_matching.pipeline.diagnostics",
+            )
 
         if self.eval_prompt_variant is not None and not isinstance(
             self.eval_prompt_variant, str

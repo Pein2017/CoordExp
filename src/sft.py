@@ -2,6 +2,7 @@
 
 import argparse
 import copy
+import hashlib
 import importlib
 import json
 import sys
@@ -14,7 +15,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 import torch
 from swift.llm.train.rlhf import SwiftRLHF
@@ -56,13 +57,21 @@ from .optim import register_coord_offset_optimizer
 def resolve_trainer_cls(train_args):
     trainer_variant = getattr(train_args, "trainer_variant", None)
     if trainer_variant == "stage2_ab_training":
-        from .trainers.stage2_ab_training import Stage2ABTrainingTrainer
+        raise ValueError(
+            "custom.trainer_variant=stage2_ab_training has been removed; use stage2_two_channel"
+        )
+    if trainer_variant == "rollout_matching_sft":
+        raise ValueError(
+            "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
+        )
+    if trainer_variant == "stage2_two_channel":
+        from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
-        trainer_cls = Stage2ABTrainingTrainer
-    elif trainer_variant == "rollout_matching_sft":
-        from .trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+        trainer_cls = Stage2TwoChannelTrainer
+    elif trainer_variant == "stage2_rollout_aligned":
+        from .trainers.stage2_rollout_aligned import Stage2RolloutAlignedTrainer
 
-        trainer_cls = RolloutMatchingSFTTrainer
+        trainer_cls = Stage2RolloutAlignedTrainer
     elif (
         getattr(train_args, "rlhf_type", None) == "gkd"
         and trainer_variant == "gkd_monitor"
@@ -294,7 +303,7 @@ def _validate_static_packing_accumulation_windows(
     if (not packing_cfg.enabled) or packing_cfg.mode != "static":
         return
 
-    if str(trainer_variant or "") in {"stage2_ab_training", "rollout_matching_sft"}:
+    if str(trainer_variant or "") in {"stage2_two_channel", "stage2_rollout_aligned"}:
         return
 
     gas = max(1, int(gradient_accumulation_steps))
@@ -377,7 +386,7 @@ def _build_static_packing_fingerprint(
 
 
 def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
-    return str(trainer_variant or "") in {"rollout_matching_sft", "stage2_ab_training"}
+    return str(trainer_variant or "") in {"stage2_rollout_aligned", "stage2_two_channel"}
 
 
 def _validate_stage1_static_packing_policy(
@@ -598,7 +607,7 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
     """
 
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
+    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
         return 1
 
     rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
@@ -699,9 +708,332 @@ Examples:
     return parser.parse_args()
 
 
+def _build_pipeline_manifest(
+    cfg: Mapping[str, Any] | None,
+    *,
+    default_objective: list[str],
+    default_diagnostics: list[str],
+    trainer_variant: str,
+    config_path: str,
+    run_name: str,
+    seed: int,
+    coord_soft_cfg: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(cfg, Mapping):
+        cfg = {}
+    if not isinstance(coord_soft_cfg, Mapping):
+        coord_soft_cfg = {}
+
+    pipeline_raw = cfg.get("pipeline", None)
+    if not isinstance(pipeline_raw, Mapping):
+        pipeline_raw = {}
+
+    def _coerce_float(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _finite_float(value: Any, default: float) -> float:
+        out = _coerce_float(value, default)
+        if not math.isfinite(out):
+            raise ValueError("pipeline manifest contains non-finite float (NaN/Inf)")
+        if out == 0.0:
+            return 0.0
+        return float(out)
+
+    def _normalize_channels(channels_raw: Any) -> list[str]:
+        found: set[str] = set()
+        if isinstance(channels_raw, Sequence) and not isinstance(channels_raw, (str, bytes)):
+            for ch in channels_raw:
+                ch_s = str(ch).strip().upper()
+                if ch_s in {"A", "B"}:
+                    found.add(ch_s)
+        if not found:
+            return ["A", "B"]
+        return [ch for ch in ("A", "B") if ch in found]
+
+    def _normalize_json_value(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            out: dict[str, Any] = {}
+            for k in sorted(value.keys(), key=lambda x: str(x)):
+                out[str(k)] = _normalize_json_value(value[k])
+            return out
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return [_normalize_json_value(v) for v in value]
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, float):
+            return _finite_float(value, 0.0)
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return value
+        return _finite_float(f, 0.0)
+
+    def _coord_soft_defaults() -> dict[str, Any]:
+        enabled = bool(coord_soft_cfg.get("enabled", False))
+        soft_default = 1.0 if enabled else 0.0
+        w1_default = 1.0 if enabled else 0.0
+        gate_default = 1.0 if enabled else 0.0
+        return {
+            "coord_ce_weight": _finite_float(coord_soft_cfg.get("ce_weight", 0.0), 0.0),
+            "soft_ce_weight": _finite_float(
+                coord_soft_cfg.get("soft_ce_weight", soft_default),
+                soft_default,
+            ),
+            "w1_weight": _finite_float(
+                coord_soft_cfg.get("w1_weight", w1_default),
+                w1_default,
+            ),
+            "coord_gate_weight": _finite_float(
+                coord_soft_cfg.get("gate_weight", gate_default),
+                gate_default,
+            ),
+            "temperature": _finite_float(
+                coord_soft_cfg.get("temperature", 1.0),
+                1.0,
+            ),
+            "target_sigma": _finite_float(
+                coord_soft_cfg.get("target_sigma", 2.0),
+                2.0,
+            ),
+            "target_truncate": coord_soft_cfg.get("target_truncate", None),
+        }
+
+    def _default_module_config(name: str) -> dict[str, Any]:
+        variant = str(trainer_variant or "")
+        coord_soft_defaults = _coord_soft_defaults()
+
+        if variant == "stage2_two_channel":
+            channel_b_raw = cfg.get("channel_b", {})
+            channel_b = channel_b_raw if isinstance(channel_b_raw, Mapping) else {}
+            desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
+
+            if name == "token_ce":
+                return {
+                    "desc_ce_weight": desc_w,
+                    "rollout_fn_desc_weight": desc_w,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_drop_invalid_struct_ce_multiplier": _finite_float(
+                        channel_b.get("drop_invalid_struct_ce_multiplier", 1.0),
+                        1.0,
+                    ),
+                }
+
+            if name == "bbox_geo":
+                return {
+                    "smoothl1_weight": _finite_float(
+                        cfg.get("bbox_smoothl1_weight", 1.0),
+                        1.0,
+                    ),
+                    "ciou_weight": _finite_float(
+                        cfg.get("bbox_ciou_weight", 1.0),
+                        1.0,
+                    ),
+                }
+
+            if name == "coord_reg":
+                return {
+                    "coord_ce_weight": _finite_float(
+                        cfg.get(
+                            "coord_ce_weight",
+                            coord_soft_defaults.get("coord_ce_weight", 0.0),
+                        ),
+                        0.0,
+                    ),
+                    "coord_el1_weight": _finite_float(
+                        cfg.get("coord_el1_weight", 0.0),
+                        0.0,
+                    ),
+                    "coord_ehuber_weight": _finite_float(
+                        cfg.get("coord_ehuber_weight", 0.0),
+                        0.0,
+                    ),
+                    "coord_huber_delta": _finite_float(
+                        cfg.get("coord_huber_delta", 0.001),
+                        0.001,
+                    ),
+                    "coord_entropy_weight": _finite_float(
+                        cfg.get("coord_entropy_weight", 0.0),
+                        0.0,
+                    ),
+                    "coord_gate_weight": _finite_float(
+                        cfg.get(
+                            "coord_gate_weight",
+                            coord_soft_defaults.get("coord_gate_weight", 0.0),
+                        ),
+                        0.0,
+                    ),
+                    "text_gate_weight": _finite_float(
+                        cfg.get("text_gate_weight", 0.0),
+                        0.0,
+                    ),
+                    "soft_ce_weight": _finite_float(
+                        coord_soft_defaults.get("soft_ce_weight", 0.0),
+                        0.0,
+                    ),
+                    "w1_weight": _finite_float(
+                        coord_soft_defaults.get("w1_weight", 0.0),
+                        0.0,
+                    ),
+                    "temperature": _finite_float(
+                        coord_soft_defaults.get("temperature", 1.0),
+                        1.0,
+                    ),
+                    "target_sigma": _finite_float(
+                        coord_soft_defaults.get("target_sigma", 2.0),
+                        2.0,
+                    ),
+                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
+                }
+
+        if variant == "stage2_rollout_aligned":
+            if name == "token_ce":
+                return {
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                }
+
+            if name == "bbox_geo":
+                return {
+                    "smoothl1_weight": _finite_float(
+                        cfg.get("bbox_smoothl1_weight", 1.0),
+                        1.0,
+                    ),
+                    "ciou_weight": _finite_float(
+                        cfg.get("bbox_ciou_weight", 1.0),
+                        1.0,
+                    ),
+                }
+
+            if name == "coord_reg":
+                return {
+                    "coord_ce_weight": _finite_float(
+                        coord_soft_defaults.get("coord_ce_weight", 0.0),
+                        0.0,
+                    ),
+                    "soft_ce_weight": _finite_float(
+                        coord_soft_defaults.get("soft_ce_weight", 0.0),
+                        0.0,
+                    ),
+                    "w1_weight": _finite_float(
+                        coord_soft_defaults.get("w1_weight", 0.0),
+                        0.0,
+                    ),
+                    "coord_gate_weight": _finite_float(
+                        coord_soft_defaults.get("coord_gate_weight", 0.0),
+                        0.0,
+                    ),
+                    "text_gate_weight": 0.0,
+                    "temperature": _finite_float(
+                        coord_soft_defaults.get("temperature", 1.0),
+                        1.0,
+                    ),
+                    "target_sigma": _finite_float(
+                        coord_soft_defaults.get("target_sigma", 2.0),
+                        2.0,
+                    ),
+                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
+                }
+
+        return {}
+
+    def _resolve(path: str, defaults: list[str]) -> list[dict[str, Any]]:
+        raw = pipeline_raw.get(path, None)
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            raw = None
+
+        if raw is None:
+            return [
+                {
+                    "name": n,
+                    "enabled": True,
+                    "weight": 1.0,
+                    "channels": ["A", "B"],
+                    "config": _default_module_config(n),
+                }
+                for n in defaults
+            ]
+
+        out: list[dict[str, Any]] = []
+        for spec in raw:
+            if not isinstance(spec, Mapping):
+                continue
+            name = str(spec.get("name", "") or "").strip()
+            if not name:
+                continue
+            authored_cfg_raw = spec.get("config", {})
+            authored_cfg = (
+                dict(authored_cfg_raw)
+                if isinstance(authored_cfg_raw, Mapping)
+                else {}
+            )
+            merged_cfg = dict(_default_module_config(name))
+            merged_cfg.update(authored_cfg)
+
+            out.append(
+                {
+                    "name": name,
+                    "enabled": bool(spec.get("enabled", True)),
+                    "weight": max(0.0, _finite_float(spec.get("weight", 1.0), 1.0)),
+                    "channels": _normalize_channels(spec.get("channels", ["A", "B"])),
+                    "config": merged_cfg,
+                }
+            )
+
+        return out
+
+    objective = _resolve("objective", default_objective)
+    diagnostics = _resolve("diagnostics", default_diagnostics)
+
+    extra: dict[str, Any] = {"variant": str(trainer_variant or "")}
+    variant = str(trainer_variant or "")
+    if variant == "stage2_two_channel":
+        extra["coord_ctx_embed_mode"] = str(
+            cfg.get("coord_ctx_embed_mode", "soft") or "soft"
+        ).strip().lower()
+        extra["coord_decode_mode"] = str(
+            cfg.get("coord_decode_mode", "exp") or "exp"
+        ).strip().lower()
+    elif variant == "stage2_rollout_aligned":
+        extra["coord_decode_mode"] = str(
+            cfg.get("coord_decode_mode", "exp") or "exp"
+        ).strip().lower()
+
+    payload = _normalize_json_value(
+        {
+            "objective": objective,
+            "diagnostics": diagnostics,
+            "extra": extra,
+        }
+    )
+
+    checksum = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    run_context = {
+        "config": str(config_path),
+        "run_name": str(run_name or ""),
+        "seed": int(seed or 0),
+    }
+
+    return {
+        "payload": payload,
+        "objective": payload.get("objective", []),
+        "diagnostics": payload.get("diagnostics", []),
+        "checksum": checksum,
+        "run_context": run_context,
+    }
+
+
 def main():
     """Main training entry point - pure config-driven."""
     args = parse_args()
+    config_path = os.path.abspath(str(args.config))
 
     # Configure logging based on runtime flags
     if args.verbose:
@@ -1286,7 +1618,7 @@ def main():
         # trainers with gradient_accumulation_steps>1, this still cannot produce a full
         # accumulation window, so we fail fast instead of silently doing zero-grad steps.
         if drop_last_flag and base_len_i > 0 and per_rank_floor <= 0:
-            if str(trainer_variant or "") == "stage2_ab_training" and gas > 1:
+            if str(trainer_variant or "") == "stage2_two_channel" and gas > 1:
                 raise ValueError(
                     "stage2-ab requires at least one full gradient-accumulation window per rank. "
                     f"Got dataset_len={int(base_len_i)} world_size={int(world_size)} -> per_rank_floor=0 with "
@@ -1345,7 +1677,7 @@ def main():
         # - dataloader_drop_last=true: we drop the final partial window via a dataloader wrapper
         # - dataloader_drop_last=false with per-rank batch count exactly divisible by GAS
         if (
-            str(trainer_variant or "") == "stage2_ab_training"
+            str(trainer_variant or "") == "stage2_two_channel"
             and bool(packing_cfg.enabled)
             and int(gas) > 1
         ):
@@ -1732,7 +2064,7 @@ def main():
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
@@ -1762,7 +2094,7 @@ def main():
         raw_instab = extra_cfg.get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
-    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
     else:
@@ -1793,7 +2125,7 @@ def main():
 
     trainer_cls = resolve_trainer_cls(train_args)
     mixins = []
-    if trainer_variant not in {"rollout_matching_sft", "stage2_ab_training"}:
+    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Fix transformers>=4.57 grad-accum scaling when model_accepts_loss_kwargs=True
         # (ms-swift uses Seq2SeqTrainer for causal_lm). This keeps train `loss` comparable to eval_loss.
         mixins.append(GradAccumLossScaleMixin)
@@ -1877,7 +2209,7 @@ def main():
     # Guard against inherited defaults like eval_token_acc, which would crash
     # best-checkpoint selection at evaluation time.
     if (
-        trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}
+        trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
     ):
@@ -1895,7 +2227,32 @@ def main():
                 train_args.training_args.greater_is_better = True
                 trainer.args.greater_is_better = True
 
-    if trainer_variant in {"rollout_matching_sft", "stage2_ab_training"}:
+    coord_soft_cfg_for_manifest: Mapping[str, Any] | None = None
+    if coord_soft_ce_w1_cfg is not None:
+        if isinstance(coord_soft_ce_w1_cfg, Mapping):
+            coord_soft_cfg_for_manifest = dict(coord_soft_ce_w1_cfg)
+        elif is_dataclass(coord_soft_ce_w1_cfg):
+            coord_soft_cfg_for_manifest = dataclass_asdict_no_none(coord_soft_ce_w1_cfg)
+
+    def _resolve_pipeline_manifest(
+        cfg: Mapping[str, Any] | None,
+        *,
+        default_objective: list[str],
+        default_diagnostics: list[str],
+        coord_soft_cfg: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return _build_pipeline_manifest(
+            cfg,
+            default_objective=default_objective,
+            default_diagnostics=default_diagnostics,
+            trainer_variant=str(trainer_variant or ""),
+            config_path=str(config_path),
+            run_name=str(getattr(train_args, "run_name", "") or ""),
+            seed=int(getattr(train_args.training_args, "seed", 0) or 0),
+            coord_soft_cfg=coord_soft_cfg,
+        )
+
+    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         try:
             rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
             if rollout_cfg_obj is None:
@@ -1911,6 +2268,14 @@ def main():
                 raise TypeError("rollout_matching must be a mapping when provided")
 
             rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
+
+            if trainer_variant == "stage2_two_channel" and isinstance(
+                rollout_cfg.get("pipeline"), Mapping
+            ):
+                raise ValueError(
+                    "rollout_matching.pipeline is not allowed when custom.trainer_variant=stage2_two_channel. "
+                    "Use stage2_ab.pipeline instead."
+                )
 
             # BREAKING: decoding knobs moved under rollout_matching.decoding.*.
             legacy_decoding_keys = [
@@ -1977,10 +2342,24 @@ def main():
             if callable(validate_hook):
                 validate_hook()
 
+            rollout_manifest = _resolve_pipeline_manifest(
+                rollout_cfg,
+                default_objective=["token_ce", "bbox_geo", "coord_reg"],
+                default_diagnostics=["coord_diag"],
+                coord_soft_cfg=coord_soft_cfg_for_manifest,
+            )
+            setattr(trainer, "rollout_pipeline_manifest", rollout_manifest)
+
             logger.info(
-                "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s",
+                "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
                 rollout_cfg.get("rollout_backend", "vllm"),
                 rollout_cfg.get("packing_enabled", False),
+                rollout_manifest.get("checksum", ""),
+                [m.get("name") for m in rollout_manifest.get("objective", [])],
+                [m.get("name") for m in rollout_manifest.get("diagnostics", [])],
+                str(config_path),
+                str(getattr(train_args, "run_name", "") or ""),
+                int(getattr(train_args.training_args, "seed", 0) or 0),
             )
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise RuntimeError(
@@ -1988,11 +2367,11 @@ def main():
                 "This is required for rollout-matching/stage2-ab trainer variants."
             ) from exc
 
-    if trainer_variant == "stage2_ab_training":
+    if trainer_variant == "stage2_two_channel":
         stage2_ab_typed = getattr(training_config, "stage2_ab", None)
         if stage2_ab_typed is None:
             raise ValueError(
-                "training_config.stage2_ab is required for stage2_ab_training; "
+                "training_config.stage2_ab is required for stage2_two_channel; "
                 "check config parsing (top-level stage2_ab section)."
             )
         stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
@@ -2002,11 +2381,25 @@ def main():
         sched = stage2_ab_cfg.get("schedule")
         b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
 
+        stage2_manifest = _resolve_pipeline_manifest(
+            stage2_ab_cfg,
+            default_objective=["token_ce", "bbox_geo", "coord_reg"],
+            default_diagnostics=["coord_diag"],
+            coord_soft_cfg=coord_soft_cfg_for_manifest,
+        )
+        setattr(trainer, "stage2_pipeline_manifest", stage2_manifest)
+
         logger.info(
-            "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s",
+            "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
             b_ratio,
             stage2_ab_cfg.get("n_softctx_iter"),
             stage2_ab_cfg.get("softctx_grad_mode"),
+            stage2_manifest.get("checksum", ""),
+            [m.get("name") for m in stage2_manifest.get("objective", [])],
+            [m.get("name") for m in stage2_manifest.get("diagnostics", [])],
+            str(config_path),
+            str(getattr(train_args, "run_name", "") or ""),
+            int(getattr(train_args.training_args, "seed", 0) or 0),
         )
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)

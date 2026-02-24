@@ -1,0 +1,17 @@
+extends: ab_mixed_ddp_short_worktree.yaml
+
+training:
+  run_name: smoke_ab_mixed_ddp_short_st_worktree
+  output_dir: output/stage2_two_channel/smoke/ab_mixed_ddp_short_st_worktree
+  logging_dir: tb/stage2_two_channel/smoke/ab_mixed_ddp_short_st_worktree
+
+stage2_ab:
+  coord_ctx_embed_mode: st
+  coord_decode_mode: st
+
+rollout_matching:
+  vllm:
+    server:
+      servers:
+        - base_url: http://127.0.0.1:8010
+          group_port: 51226

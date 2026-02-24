@@ -4,9 +4,9 @@ model:
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  run_name: bug_fixed-desc_first_merged_ckpt1832_ep2
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only_em_detach
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_em_detach
+  run_name: desc_first_merged_ckpt1832_ep2
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
   num_train_epochs: 2
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
@@ -23,12 +23,11 @@ stage2_ab:
   schedule:
     b_ratio: 0.0
   n_softctx_iter: 2
-  softctx_grad_mode: em_detach
   coord_gate_weight: 1.0
   bbox_ciou_weight: 0.2
 
 rollout_matching:
-  # Override rollout backend inherited from configs/stage2_ab/base.yaml.
+  # Override rollout backend inherited from configs/stage2_two_channel/base.yaml.
   rollout_backend: hf
   decode_batch_size: 4
   max_new_tokens: 3084

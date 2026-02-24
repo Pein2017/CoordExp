@@ -5,14 +5,14 @@
 # Example (single node, 8 GPUs; default 7 actors / 1 learner split):
 #   server_gpus=0,1,2,3,4,5,6 \
 #   train_gpus=7 \
-#   config=configs/stage2_ab/smoke/ab_mixed.yaml \
+#   config=configs/stage2_two_channel/smoke/ab_mixed.yaml \
 #   bash scripts/train_stage2.sh
 
 set -euo pipefail
 
 if [[ $# -gt 0 ]]; then
   echo "[ERROR] scripts/train_stage2.sh accepts environment variables only (no positional args)." >&2
-  echo "[ERROR] Example: server_gpus=0,1,2,3,4,5,6 train_gpus=7 config=configs/stage2_ab/prod/a_only.yaml bash scripts/train_stage2.sh" >&2
+  echo "[ERROR] Example: server_gpus=0,1,2,3,4,5,6 train_gpus=7 config=configs/stage2_two_channel/prod/ab_mixed.yaml bash scripts/train_stage2.sh" >&2
   exit 2
 fi
 
@@ -21,7 +21,7 @@ SERVER_GPUS="${server_gpus:-${SERVER_GPUS:-0,1,2,3,4,5,6}}"
 TRAIN_GPUS="${train_gpus:-${TRAIN_GPUS:-7}}"
 WAIT_TIMEOUT="${wait_timeout:-${WAIT_TIMEOUT:-900}}"
 WAIT_INTERVAL="${wait_interval:-${WAIT_INTERVAL:-2}}"
-CONFIG_RAW="${config:-${CONFIG:-configs/stage2_ab/smoke/ab_mixed.yaml}}"
+CONFIG_RAW="${config:-${CONFIG:-configs/stage2_two_channel/smoke/ab_mixed.yaml}}"
 DEBUG="${debug:-${DEBUG:-false}}"
 TRAIN_ENV="${train_env:-${TRAIN_ENV:-}}"
 DISABLE_PROXY="${disable_proxy:-${DISABLE_PROXY:-true}}"
