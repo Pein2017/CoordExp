@@ -72,11 +72,11 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     try:
-        text = path.read_text(encoding="utf-8")
+        cache_text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Static packing cache file not found: {path}") from exc
     try:
-        payload = json.loads(text)
+        payload = json.loads(cache_text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Failed to parse static packing cache file: {path}") from exc
     if not isinstance(payload, dict):

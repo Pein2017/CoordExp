@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -23,14 +24,21 @@ _PARENT_PKG = __name__.rsplit(".", 1)[0]
 _IMPL_MOD_NAME = f"{_PARENT_PKG}._stage2_two_channel_impl"
 _IMPL_PATH = Path(__file__).resolve().parents[1] / "stage2_two_channel.py"
 
+logger = logging.getLogger(__name__)
+
 
 def _load_impl() -> ModuleType:
     mod = sys.modules.get(_IMPL_MOD_NAME)
     if isinstance(mod, ModuleType):
         try:
             return importlib.reload(mod)
-        except Exception:
-            pass
+        except ImportError:
+            logger.warning(
+                "Failed to reload stage2_two_channel implementation module %s; continuing with cached module.",
+                _IMPL_MOD_NAME,
+                exc_info=True,
+            )
+            return mod
 
     spec = importlib.util.spec_from_file_location(_IMPL_MOD_NAME, _IMPL_PATH)
     if spec is None or spec.loader is None:
@@ -48,11 +56,15 @@ _IMPL = _load_impl()
 class _Stage2ModuleProxy(ModuleType):
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
-        try:
-            if hasattr(_IMPL, name):
+        if hasattr(_IMPL, name):
+            try:
                 setattr(_IMPL, name, value)
-        except Exception:
-            pass
+            except (AttributeError, TypeError):
+                logger.warning(
+                    "Failed to mirror attribute %s onto stage2_two_channel implementation module.",
+                    name,
+                    exc_info=True,
+                )
 
 
 _module_obj = sys.modules.get(__name__)

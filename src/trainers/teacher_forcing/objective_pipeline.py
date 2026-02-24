@@ -110,7 +110,12 @@ def run_teacher_forcing_pipeline(
                         exc,
                     )
                     warn_cache.add(key)
-                continue
+                metrics[f"diag/{spec.name}_failed"] = 1.0
+                state[f"diag/{spec.name}_failed"] = True
+                out = None
+
+        if out is None:
+            continue
 
         if out.metrics:
             for k, v in out.metrics.items():

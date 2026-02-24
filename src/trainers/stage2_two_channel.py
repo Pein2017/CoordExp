@@ -2760,8 +2760,11 @@ class Stage2ABTrainingTrainer(
                         temperature=float(temp_safe),
                     )
                     diag["coord_vocab_mass_mean"] = mass_mean
-                except Exception:
-                    pass
+                except (ImportError, RuntimeError, TypeError, ValueError):
+                    logger.warning(
+                        "Skipping coord-vocab gate diagnostics for this batch after helper failure.",
+                        exc_info=True,
+                    )
 
                 bins_diag = torch.arange(
                     int(probs_diag.shape[-1]),
