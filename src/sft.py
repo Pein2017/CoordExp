@@ -806,6 +806,7 @@ def _build_pipeline_manifest(
     def _default_module_config(name: str) -> dict[str, Any]:
         variant = str(trainer_variant or "")
         coord_soft_defaults = _coord_soft_defaults()
+        coord_soft_enabled = bool(coord_soft_cfg.get("enabled", False))
 
         if variant == "stage2_two_channel":
             channel_b_raw = cfg.get("channel_b", {})
@@ -815,6 +816,10 @@ def _build_pipeline_manifest(
             if name == "token_ce":
                 return {
                     "desc_ce_weight": desc_w,
+                    "self_context_struct_ce_weight": _finite_float(
+                        cfg.get("fmt_struct_ce_weight", 0.1),
+                        0.1,
+                    ),
                     "rollout_fn_desc_weight": desc_w,
                     "rollout_matched_prefix_struct_weight": 1.0,
                     "rollout_drop_invalid_struct_ce_multiplier": _finite_float(
@@ -874,6 +879,12 @@ def _build_pipeline_manifest(
                     "soft_ce_weight": _finite_float(
                         coord_soft_defaults.get("soft_ce_weight", 0.0),
                         0.0,
+                    ),
+                    "self_context_soft_ce_weight": _finite_float(
+                        coord_soft_defaults.get("soft_ce_weight", 0.0)
+                        if coord_soft_enabled
+                        else 0.05,
+                        0.05,
                     ),
                     "w1_weight": _finite_float(
                         coord_soft_defaults.get("w1_weight", 0.0),
@@ -992,14 +1003,14 @@ def _build_pipeline_manifest(
     extra: dict[str, Any] = {"variant": str(trainer_variant or "")}
     variant = str(trainer_variant or "")
     if variant == "stage2_two_channel":
-        extra["coord_ctx_embed_mode"] = str(
-            cfg.get("coord_ctx_embed_mode", "soft") or "soft"
+        extra["stage2_ab.coord_ctx_embed_mode"] = str(
+            cfg.get("coord_ctx_embed_mode", "st") or "st"
         ).strip().lower()
-        extra["coord_decode_mode"] = str(
+        extra["stage2_ab.coord_decode_mode"] = str(
             cfg.get("coord_decode_mode", "exp") or "exp"
         ).strip().lower()
     elif variant == "stage2_rollout_aligned":
-        extra["coord_decode_mode"] = str(
+        extra["rollout_matching.coord_decode_mode"] = str(
             cfg.get("coord_decode_mode", "exp") or "exp"
         ).strip().lower()
 

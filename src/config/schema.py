@@ -1171,6 +1171,7 @@ class Stage2PipelineConfig:
             if spec.name == "token_ce":
                 allowed_cfg = {
                     "desc_ce_weight",
+                    "self_context_struct_ce_weight",
                     "rollout_fn_desc_weight",
                     "rollout_matched_prefix_struct_weight",
                     "rollout_drop_invalid_struct_ce_multiplier",
@@ -1196,6 +1197,7 @@ class Stage2PipelineConfig:
                     "coord_gate_weight",
                     "text_gate_weight",
                     "soft_ce_weight",
+                    "self_context_soft_ce_weight",
                     "w1_weight",
                     "temperature",
                     "target_sigma",
@@ -1240,10 +1242,11 @@ class Stage2ABConfig:
     softctx_grad_mode: Literal["unroll", "em_detach"] = "unroll"
     softctx_temperature: float = 1.0
     desc_ce_weight: float = 1.0
+    fmt_struct_ce_weight: float = 0.1
     bbox_smoothl1_weight: float = 1.0
     bbox_ciou_weight: float = 1.0
 
-    coord_ctx_embed_mode: Literal["soft", "st", "hard"] = "soft"
+    coord_ctx_embed_mode: Literal["soft", "st", "hard"] = "st"
     coord_decode_mode: Literal["exp", "st"] = "exp"
     text_gate_weight: float = 0.0
 
@@ -1310,7 +1313,9 @@ class Stage2ABConfig:
         coord_ctx_embed_mode_raw = data.pop(
             "coord_ctx_embed_mode", cls.coord_ctx_embed_mode
         )
-        coord_ctx_embed_mode = str(coord_ctx_embed_mode_raw or "soft").strip().lower()
+        coord_ctx_embed_mode = str(
+            coord_ctx_embed_mode_raw or cls.coord_ctx_embed_mode
+        ).strip().lower()
         if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
             raise ValueError(
                 "stage2_ab.coord_ctx_embed_mode must be one of {'soft','st','hard'}"
@@ -1336,6 +1341,14 @@ class Stage2ABConfig:
             raise TypeError("stage2_ab.desc_ce_weight must be a float") from exc
         if desc_ce_weight < 0:
             raise ValueError("stage2_ab.desc_ce_weight must be >= 0")
+
+        fmt_raw = data.pop("fmt_struct_ce_weight", cls.fmt_struct_ce_weight)
+        try:
+            fmt_struct_ce_weight = float(fmt_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("stage2_ab.fmt_struct_ce_weight must be a float") from exc
+        if fmt_struct_ce_weight < 0:
+            raise ValueError("stage2_ab.fmt_struct_ce_weight must be >= 0")
 
         bbox_smoothl1_raw = data.pop("bbox_smoothl1_weight", cls.bbox_smoothl1_weight)
         try:
@@ -1377,6 +1390,7 @@ class Stage2ABConfig:
                 k
                 for k in (
                     "desc_ce_weight",
+                    "fmt_struct_ce_weight",
                     "bbox_smoothl1_weight",
                     "bbox_ciou_weight",
                     "text_gate_weight",
@@ -1420,6 +1434,7 @@ class Stage2ABConfig:
             softctx_grad_mode=cast(Literal["unroll", "em_detach"], softctx_grad_mode),
             softctx_temperature=softctx_temperature,
             desc_ce_weight=desc_ce_weight,
+            fmt_struct_ce_weight=fmt_struct_ce_weight,
             bbox_smoothl1_weight=bbox_smoothl1_weight,
             bbox_ciou_weight=bbox_ciou_weight,
             coord_ctx_embed_mode=cast(

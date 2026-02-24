@@ -33,7 +33,7 @@ from ..common.geometry.coord_utils import decode_coord
 
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
-from .teacher_forcing.contracts import ModuleResult, TeacherForcingContext
+from .teacher_forcing.contracts import ModuleResult, TeacherForcingContext, PipelineModuleSpec
 from .teacher_forcing.forwards import (
     assert_unsliced_logits,
     prepare_forward_inputs,
@@ -44,6 +44,7 @@ from .teacher_forcing.geometry import (
     expectation_decode_coords as _tf_expectation_decode_coords,
 )
 from .teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
+from .teacher_forcing.modules import run_token_ce_module
 from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
     bbox_groups_from_token_ids as _tf_bbox_groups_from_token_ids,
@@ -1875,13 +1876,18 @@ class Stage2ABTrainingTrainer(
         desc_ce_weight = float(self._ab_get("desc_ce_weight", 1.0) or 0.0)
         desc_ce_weight = max(0.0, desc_ce_weight)
 
+        fmt_struct_ce_weight = float(
+            self._ab_get("fmt_struct_ce_weight", 0.1) or 0.0
+        )
+        fmt_struct_ce_weight = max(0.0, fmt_struct_ce_weight)
+
         bbox_smoothl1_w = float(self._ab_get("bbox_smoothl1_weight", 1.0) or 0.0)
         bbox_smoothl1_w = max(0.0, bbox_smoothl1_w)
         bbox_ciou_w = float(self._ab_get("bbox_ciou_weight", 1.0) or 0.0)
         bbox_ciou_w = max(0.0, bbox_ciou_w)
 
         coord_ctx_embed_mode = str(
-            self._ab_get("coord_ctx_embed_mode", "soft") or "soft"
+            self._ab_get("coord_ctx_embed_mode", "st") or "st"
         ).strip().lower()
         if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
             raise ValueError(
@@ -1920,6 +1926,7 @@ class Stage2ABTrainingTrainer(
                     "channels": ["A", "B"],
                     "config": {
                         "desc_ce_weight": float(desc_ce_weight),
+                        "self_context_struct_ce_weight": float(fmt_struct_ce_weight),
                         "rollout_matched_prefix_struct_weight": 1.0,
                         "rollout_fn_desc_weight": float(desc_ce_weight),
                     },
@@ -1936,7 +1943,9 @@ class Stage2ABTrainingTrainer(
                     "enabled": True,
                     "weight": 1.0,
                     "channels": ["A", "B"],
-                    "config": {},
+                    "config": {
+                        "self_context_soft_ce_weight": 0.05,
+                    },
                 },
             ]
 
@@ -2059,6 +2068,13 @@ class Stage2ABTrainingTrainer(
             default=desc_ce_weight,
             min_value=0.0,
         )
+
+        self_context_struct_ce_weight = _cfg_float(
+            token_cfg,
+            keys=("self_context_struct_ce_weight",),
+            default=fmt_struct_ce_weight,
+            min_value=0.0,
+        )
         matched_prefix_struct_ce_weight = _cfg_float(
             token_cfg,
             keys=(
@@ -2167,9 +2183,16 @@ class Stage2ABTrainingTrainer(
             if coord_soft_enabled
             else 0.0
         )
+        coord_soft_ce_keys: Tuple[str, ...] = (
+            "soft_ce_weight",
+            "coord_soft_ce_weight",
+        )
+        if channel == "A":
+            coord_soft_ce_keys = ("self_context_soft_ce_weight",) + coord_soft_ce_keys
+
         coord_soft_ce_w = _cfg_float(
             coord_cfg,
-            keys=("soft_ce_weight", "coord_soft_ce_weight"),
+            keys=coord_soft_ce_keys,
             default=coord_soft_ce_default,
             min_value=0.0,
         )
@@ -2388,164 +2411,97 @@ class Stage2ABTrainingTrainer(
 
         bsz, seq_len, vocab = logits.shape
 
-        # Build labels + weights for CE.
-        labels_masked = torch.full_like(input_ids, -100)
-        weights_masked = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
+        # Token CE:
+        # - Channel-A: anchor desc+struct CE on A1 logits (gt context).
+        # - Channel-A: optionally add a small self-context struct/EOS CE stabilizer on final logits.
+        # - Channel-B: rollout-context CE uses rollout logits (rollout context) with FP-neutral masking.
+        token_ce_metrics: Dict[str, float] = {}
 
-        def _apply_seg(
-            *,
-            b: int,
-            offset: int,
-            encoded_len: int,
-            m: Mapping[str, Any],
-        ) -> None:
-            prompt_len = int(m.get("prompt_len", 0))
-            prefix_len = int(m.get("prefix_len", 0))
-            train_len = int(m.get("train_len", 0))
-            prefix_struct_pos = list(m.get("prefix_struct_pos") or [])
-            tail_ignore_pos = list(m.get("tail_ignore_pos") or [])
-            tail_desc_pos = list(m.get("tail_desc_pos") or [])
+        token_spec_payload = {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "config": dict(token_cfg),
+        }
+        token_spec = PipelineModuleSpec.from_mapping(token_spec_payload)
 
-            drop_invalid_total = int(m.get("drop_invalid_total", 0) or 0)
-            try:
-                drop_invalid_struct_ce_multiplier = float(
-                    m.get("drop_invalid_struct_ce_multiplier", 1.0) or 1.0
+        token_ctx_anchor = TeacherForcingContext(
+            channel=str(channel),
+            registry_context=("gt" if channel == "A" else "rollout"),
+            input_ids=input_ids,
+            logits=logits_ce,
+            logits_ce=logits_ce,
+            meta=meta,
+            coord_token_ids=coord_token_ids,
+            temperature=float(temperature),
+            decode_mode=str(coord_decode_mode),
+            extra={
+                "desc_ce_weight": float(token_desc_ce_weight),
+            },
+        )
+        token_out_anchor = run_token_ce_module(context=token_ctx_anchor, spec=token_spec)
+        ce_loss_anchor = token_out_anchor.loss
+
+        if token_out_anchor.metrics:
+            for k, v in token_out_anchor.metrics.items():
+                token_ce_metrics[str(k)] = float(v)
+        token_ce_metrics["loss/token_ce_anchor"] = float(
+            ce_loss_anchor.detach().cpu().item()
+        )
+
+        fmt_weight = 0.0
+        if channel == "A" and int(n_softctx_iter) > 1:
+            fmt_weight = float(self_context_struct_ce_weight)
+        if fmt_weight < 0.0:
+            fmt_weight = 0.0
+
+        ce_loss_fmt = logits.new_tensor(0.0)
+        if fmt_weight > 0.0:
+            fmt_cfg = dict(token_cfg)
+            fmt_cfg["desc_ce_weight"] = 0.0
+
+            fmt_spec_payload = dict(token_spec_payload)
+            fmt_spec_payload["config"] = fmt_cfg
+            fmt_spec = PipelineModuleSpec.from_mapping(fmt_spec_payload)
+
+            token_ctx_fmt = TeacherForcingContext(
+                channel="A",
+                registry_context="self_context",
+                input_ids=input_ids,
+                logits=logits,
+                logits_ce=logits,
+                meta=meta,
+                coord_token_ids=coord_token_ids,
+                temperature=float(temperature),
+                decode_mode=str(coord_decode_mode),
+                extra={
+                    "desc_ce_weight": 0.0,
+                },
+            )
+            token_out_fmt = run_token_ce_module(context=token_ctx_fmt, spec=fmt_spec)
+            ce_loss_fmt = token_out_fmt.loss
+
+            token_ce_metrics["loss/token_ce_self_context"] = float(
+                ce_loss_fmt.detach().cpu().item()
+            )
+            if token_out_fmt.metrics:
+                # Keep canonical keys anchored to GT (no overwrite); emit self_context
+                # format/EOS CE under explicit names.
+                token_ce_metrics["loss/struct_ce_self_context"] = float(
+                    token_out_fmt.metrics.get("loss/struct_ce", 0.0)
                 )
-            except (TypeError, ValueError):
-                drop_invalid_struct_ce_multiplier = 1.0
+                token_ce_metrics["loss/desc_ce_self_context"] = float(
+                    token_out_fmt.metrics.get("loss/desc_ce", 0.0)
+                )
 
-            tail_start = int(prompt_len + prefix_len)
-            tail_end = int(prompt_len + train_len)
-            desc_tail_weight = (
-                float(fn_desc_ce_weight)
-                if channel == "B"
-                else float(token_desc_ce_weight)
-            )
+        token_ce_metrics["stage2_ab/channel_a/self_context_struct_ce_weight"] = float(
+            fmt_weight
+        )
 
-            seg_start = int(offset)
-            seg_end = int(offset + encoded_len)
-
-            tail_start = max(seg_start + 1, min(seg_start + tail_start, seg_end))
-            tail_end = max(tail_start, min(seg_start + tail_end, seg_end))
-
-            # Prefix matched-structure CE (Channel-B non-reordered contract):
-            # only explicit matched structure positions are supervised; FP prefix remains masked.
-            prefix_start = max(seg_start + 1, min(seg_start + prompt_len, seg_end))
-            prefix_end = max(prefix_start, min(seg_start + prompt_len + prefix_len, seg_end))
-            for rel in prefix_struct_pos:
-                try:
-                    rel_i = int(rel)
-                except (TypeError, ValueError):
-                    continue
-                p = int(seg_start + prompt_len + rel_i)
-                if p < prefix_start or p >= prefix_end:
-                    continue
-                tok_id = int(input_ids[b, p].item())
-                if tok_id in coord_id_set:
-                    continue
-                labels_masked[b, p] = input_ids[b, p]
-                weights_masked[b, p] = float(matched_prefix_struct_ce_weight)
-
-            for p in range(tail_start, tail_end):
-                tok_id = int(input_ids[b, p].item())
-                if tok_id in coord_id_set:
-                    continue
-                labels_masked[b, p] = input_ids[b, p]
-                weights_masked[b, p] = 1.0
-
-            # Tail masking hooks (optional explicit ignore positions).
-            ignore_rel: set[int] = set()
-            for rel in tail_ignore_pos:
-                try:
-                    ignore_rel.add(int(rel))
-                except (TypeError, ValueError):
-                    continue
-            for rel_i in sorted(ignore_rel):
-                p = int(seg_start + prompt_len + prefix_len + rel_i)
-                if p < tail_start or p >= tail_end:
-                    continue
-                if labels_masked[b, p].item() == -100:
-                    continue
-                labels_masked[b, p] = -100
-                weights_masked[b, p] = 0.0
-
-            # Apply desc weighting on tail desc value tokens.
-            for rel in tail_desc_pos:
-                try:
-                    rel_i = int(rel)
-                except (TypeError, ValueError):
-                    continue
-                p = int(seg_start + prompt_len + prefix_len + rel_i)
-                if p < tail_start or p >= tail_end:
-                    continue
-                if labels_masked[b, p].item() == -100:
-                    continue
-                weights_masked[b, p] = float(desc_tail_weight)
-
-
-            # Optional weak correction: if invalid rollout instances were dropped, upweight
-            # structure-token CE to discourage "escaping supervision via invalid instances".
-            effective_drop_invalid_struct_ce_multiplier = (
-                float(drop_invalid_struct_ce_multiplier)
-                * float(rollout_drop_invalid_struct_ce_multiplier_cfg)
-            )
-            if (
-                channel == "B"
-                and drop_invalid_total > 0
-                and float(effective_drop_invalid_struct_ce_multiplier) != 1.0
-            ):
-                try:
-                    mult = float(effective_drop_invalid_struct_ce_multiplier)
-                except (TypeError, ValueError):
-                    mult = 1.0
-                if mult > 0.0 and mult != 1.0:
-                    base = int(seg_start + prompt_len + prefix_len)
-                    desc_rel_set: set[int] = set()
-                    for rel in tail_desc_pos:
-                        try:
-                            desc_rel_set.add(int(rel))
-                        except (TypeError, ValueError):
-                            continue
-
-                    for p in range(tail_start, tail_end):
-                        if labels_masked[b, p].item() == -100:
-                            continue
-                        rel_i = int(p - base)
-                        if rel_i in ignore_rel or rel_i in desc_rel_set:
-                            continue
-                        weights_masked[b, p] = weights_masked[b, p] * mult
-
-        if len(meta) == bsz:
-            for b in range(bsz):
-                _apply_seg(b=b, offset=0, encoded_len=seq_len, m=meta[b])
-        else:
-            if bsz != 1:
-                raise ValueError("packed-mode meta requires bsz==1")
-            offset = 0
-            for seg in meta:
-                enc_len = int(seg.get("encoded_len") or 0)
-                if enc_len <= 0:
-                    raise ValueError("packed-mode segment missing encoded_len")
-                _apply_seg(b=0, offset=offset, encoded_len=enc_len, m=seg)
-                offset += enc_len
-
-        # Weighted CE over supervised (non-coord) tokens.
-        logits_next = logits_ce[:, :-1, :]
-        labels_next = labels_masked[:, 1:]
-        weights_next = weights_masked[:, 1:]
-        per_tok = F.cross_entropy(
-            logits_next.reshape(-1, vocab),
-            labels_next.reshape(-1),
-            ignore_index=-100,
-            reduction="none",
-        ).reshape(bsz, -1)
-        denom_t = weights_next.sum()
-        denom = float(denom_t.detach().cpu().item())
-        if denom <= 0:
-            ce_loss = per_tok.new_tensor(0.0)
-        else:
-            # NOTE: do not clamp to 1.0 here; it would silently shrink loss when sum(weights) < 1.
-            ce_loss = (per_tok * weights_next).sum() / denom_t.clamp(min=1e-6)
+        ce_loss = ce_loss_anchor + (ce_loss_fmt * float(fmt_weight))
+        # Ensure loss/token_ce matches the objective scalar used by the pipeline.
+        token_ce_metrics["loss/token_ce"] = float(ce_loss.detach().cpu().item())
 
         def _flatten_groups(key: str) -> Tuple[List[int], List[int], List[int]]:
             b_list: List[int] = []
@@ -2981,9 +2937,7 @@ class Stage2ABTrainingTrainer(
                 "_precomputed_module_outputs": {
                     "token_ce": ModuleResult(
                         loss=ce_loss,
-                        metrics={
-                            "loss/token_ce": float(ce_loss.detach().cpu().item()),
-                        },
+                        metrics=token_ce_metrics,
                         state={},
                     ),
                     "bbox_geo": ModuleResult(

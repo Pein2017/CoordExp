@@ -329,6 +329,7 @@ def test_default_pipeline_manifest_resolution_and_checksum_golden():
     assert token_ce_cfg["desc_ce_weight"] == pytest.approx(0.7)
     assert token_ce_cfg["rollout_fn_desc_weight"] == pytest.approx(0.7)
     assert token_ce_cfg["rollout_matched_prefix_struct_weight"] == pytest.approx(1.0)
+    assert token_ce_cfg["self_context_struct_ce_weight"] == pytest.approx(0.1)
 
     assert bbox_geo_cfg["smoothl1_weight"] == pytest.approx(2.0)
     assert bbox_geo_cfg["ciou_weight"] == pytest.approx(0.5)
@@ -336,12 +337,13 @@ def test_default_pipeline_manifest_resolution_and_checksum_golden():
     assert coord_reg_cfg["coord_gate_weight"] == pytest.approx(1.0)
     assert coord_reg_cfg["text_gate_weight"] == pytest.approx(0.2)
     assert coord_reg_cfg["soft_ce_weight"] == pytest.approx(0.3)
+    assert coord_reg_cfg["self_context_soft_ce_weight"] == pytest.approx(0.3)
     assert coord_reg_cfg["w1_weight"] == pytest.approx(0.4)
     assert coord_reg_cfg["temperature"] == pytest.approx(0.9)
     assert coord_reg_cfg["target_sigma"] == pytest.approx(1.7)
     assert coord_reg_cfg["target_truncate"] == 8
-    assert manifest["extra"]["coord_ctx_embed_mode"] == "soft"
-    assert manifest["extra"]["coord_decode_mode"] == "exp"
+    assert manifest["extra"]["stage2_ab.coord_ctx_embed_mode"] == "st"
+    assert manifest["extra"]["stage2_ab.coord_decode_mode"] == "exp"
 
     # Checksum is full SHA256 and must be independent of run context.
     assert len(manifest["checksum"]) == 64
