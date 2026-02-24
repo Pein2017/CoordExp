@@ -1,7 +1,7 @@
 extends: ab_mixed_ddp_short.yaml
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: /data/CoordExp/output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
   run_name: smoke_ab_mixed_ddp_short_worktree
@@ -9,5 +9,5 @@ training:
   logging_dir: tb/stage2_two_channel/smoke/ab_mixed_ddp_short_worktree
 
 custom:
-  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
