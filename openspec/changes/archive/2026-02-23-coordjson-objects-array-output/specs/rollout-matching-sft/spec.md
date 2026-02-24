@@ -170,8 +170,3 @@ Normative algorithm sketch (no string-search for coord patterns; structure-aware
 **Reason**: Under CoordJSON + ordering-ablation runs, predicted records are required to follow the configured `custom.object_field_order`; records that violate the configured order are treated as invalid and dropped for rollout-matching training.
 
 **Migration**: Ensure cooked targets are deterministically serialized in the configured order. For rollouts, update parsing/validation so a record is considered invalid when its key order violates the current `custom.object_field_order`.
-
-### Requirement: Legacy top-level container uses `"object_{n}"` keys
-**Reason**: This change replaces the legacy `"object_{n}"`-keyed dict container with a top-level `{"objects": [...]}` array container to reduce structural tokens and make predicted order explicit (array appearance order).
-
-**Migration**: Update all serialization, parsing, matching, and eval logic to consume and produce the `{"objects": [...]}` container. Predicted record indexing uses the array index (`pred_index = objects[i]`), not any numeric suffix extracted from keys.

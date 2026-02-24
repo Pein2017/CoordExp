@@ -58,7 +58,7 @@ Normative placement and validation:
 - **AND** salvage parsing drops that record for rollouts.
 
 ### Requirement: Geometry arity constraints are enforced
-Geometry constraints apply to the CoordJSON records and to the strict JSON produced after conversion.
+The system SHALL enforce geometry arity constraints for both the CoordJSON records and the strict JSON produced after conversion.
 
 Normative constraints:
 - `bbox_2d` MUST be an array of exactly 4 CoordTok literals (CoordJSON) and exactly 4 integers (strict JSON).

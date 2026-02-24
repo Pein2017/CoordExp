@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the detection evaluation contract for CoordExp, including the JSONL artifact schema it consumes, description matching policy, and reported metrics.
-
 ## Requirements
 ### Requirement: Ingestion and validation
 For the unified pipeline workflow, the evaluator SHALL treat the pipeline artifact `gt_vs_pred.jsonl` (containing embedded `gt` and `pred` per sample) as the primary evaluation input.
@@ -24,12 +23,10 @@ Coordinate handling:
 - WHEN the evaluator ingests the predictions JSONL
 - THEN that object is dropped, increments an "invalid_geometry" counter, and does not appear in the COCO outputs.
 
-
 #### Scenario: Multi-image record handled deterministically
 - GIVEN a JSONL record with `images: ["a.jpg", "b.jpg"]`
 - WHEN the evaluator ingests the record
 - THEN it evaluates only `a.jpg`, logs one `multi_image_ignored`, and proceeds without failure.
-
 
 ### Requirement: Parsing and coordinate handling
 - The evaluator SHALL reuse the shared coord-processing module (via `src/common/geometry`/`src/common/schemas`) used by inference/visualization, supporting coord tokens or ints in 0–999 with one geometry per object.
@@ -51,7 +48,6 @@ Coordinate handling:
 - WHEN the evaluator ingests the predictions JSONL
 - THEN that object is dropped, increments an `invalid_geometry` counter, and does not contribute to matches/metrics.
 
-
 ### Requirement: Semantic description matching
 The evaluator SHALL always run description matching via `sentence-transformers/all-MiniLM-L6-v2` when deriving COCO annotations. Predictions whose normalized descriptions are not mapped with cosine similarity ≥ `semantic_threshold` SHALL be dropped (counted in `unknown_dropped`) rather than assigned to synthetic categories.
 
@@ -69,19 +65,41 @@ If the semantic encoder cannot be loaded (missing from the HuggingFace cache and
 - **THEN** evaluation fails fast with an actionable error describing that these keys are unsupported and must be removed.
 
 ### Requirement: COCO artifacts and scoring modes
+When COCO artifacts/metrics are requested, the evaluator SHALL export COCO artifacts and compute metrics in a score-aware manner as specified below.
+
+This requirement applies when COCO artifacts/metrics are requested. Runs that compute only non-COCO metrics (e.g., f1ish-only) MAY accept unscored artifacts.
+
+Milestone scope note:
+- `confidence-postop` currently computes confidence for `bbox_2d` only. As a result, `gt_vs_pred_scored.jsonl` will contain only bbox predictions (polygon predictions are dropped as unscorable).
+- Therefore, COCO evaluation over `gt_vs_pred_scored.jsonl` SHOULD be bbox-only (do not run segm metrics) until polygon confidence is supported.
+
 - The evaluator SHALL emit `coco_gt.json` and `coco_preds.json` with images, annotations, categories, and predictions using xywh bbox format; segmentation is included when polygons are present.
-- Scores SHALL be set to a constant 1.0 for all predictions (greedy decoding without confidence); any provided `score` fields in predictions SHALL be ignored. When scores tie, export order SHALL remain stable using input order.
+- Scores SHALL be taken from each prediction object’s `score` field and exported as the COCO `score` for ranking (AP/mAP).
+- Each prediction object MUST include a finite numeric `score` satisfying `0.0 <= score <= 1.0`. Missing, non-numeric, `NaN`, infinite, or out-of-range scores MUST fail fast with actionable diagnostics (record index + object index).
+- Input records MUST include `pred_score_source` (string, non-empty) and `pred_score_version` (int). This change intentionally rejects unscored artifacts for COCO evaluation.
+- When scores tie, export order SHALL remain stable using input order.
 - Image ids in COCO export SHALL be derived deterministically from the JSONL index (0-based) to avoid collisions across shards.
+- If `coco_preds.json` is empty, evaluator metrics MUST still include the standard aggregate keys for active IoU families and set them explicitly to `0.0` (rather than omitting metrics/nulls).
 
-#### Scenario: Stable ordering under constant scores
-- GIVEN multiple predictions with identical scores
-- WHEN exported
-- THEN they retain their input order in `coco_preds.json`, ensuring deterministic evaluation.
+#### Scenario: COCO export honors prediction scores
+- **GIVEN** a prediction record with two bbox predictions with `score=0.9` and `score=0.1`
+- **WHEN** the evaluator exports COCO predictions
+- **THEN** `coco_preds.json` contains those same score values for the corresponding exported predictions.
 
-#### Scenario: Pred export with polygons
-- GIVEN polygon predictions and GT polygons for an image
-- WHEN the evaluator exports COCO files
-- THEN `coco_preds.json` contains both `bbox` and `segmentation` entries and can be evaluated with COCOeval `segm` metrics.
+#### Scenario: Missing score fails fast
+- **GIVEN** a prediction object missing the `score` field (or with a non-numeric score)
+- **WHEN** the evaluator attempts to export COCO predictions
+- **THEN** evaluation terminates with a clear error identifying the offending record and object index.
+
+#### Scenario: Unscored artifact is rejected for COCO export
+- **GIVEN** an input JSONL record missing `pred_score_source` / `pred_score_version`
+- **WHEN** the evaluator attempts to export COCO predictions
+- **THEN** evaluation terminates with a clear error explaining that scored artifacts are mandatory for COCO evaluation and the input is not score-provenanced.
+
+#### Scenario: Empty scored predictions produce explicit zero COCO metrics
+- **GIVEN** a COCO evaluation run where no predictions survive scoring/export
+- **WHEN** the evaluator writes metrics
+- **THEN** standard aggregate metrics (e.g., `bbox_AP`, `bbox_AP50`, `bbox_AR100`) are present and equal `0.0`.
 
 ### Requirement: Metrics and diagnostics
 In addition to COCOeval metrics, the evaluator SHALL support an F1-ish set-matching evaluation mode that reports:
@@ -116,7 +134,6 @@ Macro definition (required for reproducibility):
 - WHEN the evaluator runs
 - THEN it writes `metrics.json` containing the COCO summary metrics and the robustness counters.
 
-
 ### Requirement: CLI, configuration, and outputs
 The evaluator SHALL support a YAML config template under `configs/eval/` and SHOULD accept `--config` to run evaluation reproducibly.
 
@@ -131,7 +148,6 @@ If both CLI flags and YAML are provided, CLI flags SHALL override YAML values, a
 - GIVEN GT and prediction JSONL files and an output directory
 - WHEN `python -m src.eval.detection --gt_jsonl ... --pred_jsonl ... --out_dir ...` is executed
 - THEN the output directory contains `metrics.json`, `per_class.csv`, and `per_image.json` (and overlays if enabled).
-
 
 ### Requirement: Tests and fixtures
 - The change SHALL include a small fixture dataset (2–3 images) with deterministic predictions and a CI smoke test that exercises parsing, category mapping, COCOeval (AP50 threshold), and robustness counters.
@@ -237,7 +253,6 @@ The evaluator SHALL be callable as a stage from the unified inference pipeline r
 - **WHEN** the pipeline runner executes the eval stage
 - **THEN** evaluation outputs are written under the run directory (or a deterministic subdirectory) without requiring additional user inputs.
 
-
 ### Requirement: Category mapping and unknown handling
 The evaluator SHALL support an `unknown_policy` configuration with modes:
 - `bucket`: map unknown desc to a synthetic `unknown` category id (COCO export only),
@@ -256,7 +271,6 @@ If `unknown_policy=semantic` is requested and the embedding model cannot be load
 - **WHEN** the evaluator is executed
 - **THEN** it raises a runtime error describing how to disable semantic mapping or provide the model.
 
-
 ### Requirement: Evaluator ingestion diagnostics are path-and-line explicit
 Detection-evaluator SHALL provide path-and-line explicit diagnostics for malformed JSONL ingestion failures.
 Diagnostics MUST identify source file and 1-based line number for parse failures.
@@ -268,7 +282,6 @@ Diagnostics SHOULD include a clipped payload snippet for rapid operator triage.
 - **THEN** diagnostics identify the source path and 1-based line number for the malformed record
 - **AND** diagnostics include a clipped snippet of the malformed payload.
 
-
 ### Requirement: Evaluator reuses shared coordinate and geometry helpers
 Detection-evaluator SHALL reuse shared coordinate/geometry helper contracts for conversion and validation, rather than maintaining parallel helper implementations.
 For overlapping active deltas, helper-level strictness/diagnostic defaults are authoritative in `2026-02-11-src-ambiguity-cleanup`; this change MUST remain consistent with that contract.
@@ -279,7 +292,6 @@ This requirement SHALL preserve existing evaluation metric intent and artifact c
 - **WHEN** evaluator processes coordinates through shared helpers
 - **THEN** match eligibility decisions remain consistent with canonical helper behavior.
 
-
 ### Requirement: Evaluation artifact and metric schema parity is preserved during refactor
 Detection-evaluator SHALL preserve existing evaluation artifact schema (`metrics.json`, per-image outputs, match artifacts where enabled) and existing metric naming conventions during internal refactor.
 
@@ -287,7 +299,6 @@ Detection-evaluator SHALL preserve existing evaluation artifact schema (`metrics
 - **GIVEN** the same evaluator inputs and settings
 - **WHEN** evaluation runs before and after refactor
 - **THEN** output artifact schema and stable metric key names remain compatible for downstream consumers.
-
 
 ### Requirement: Evaluator strict-parse behavior is config-driven and bounded
 Evaluator ingestion strictness SHALL be controlled by `eval.strict_parse` (default `false`).
@@ -303,7 +314,6 @@ For overlapping helper-consolidation deltas, this change MUST stay consistent wi
 - **AND WHEN** `eval.strict_parse=false`
 - **THEN** evaluator emits bounded warnings and skips the malformed record deterministically.
 
-
 ### Requirement: Semantic encoder implementation is shared across training and evaluator
 Semantic description normalization and sentence-embedding computation used for evaluator description mapping and Stage-2 semantic gating/monitoring SHALL use the same canonical implementation (normalization rules, mean pooling, and L2 normalization).
 The evaluator MUST NOT carry a separate parallel encoder implementation that could drift.
@@ -312,7 +322,6 @@ The evaluator MUST NOT carry a separate parallel encoder implementation that cou
 - **GIVEN** two descriptions that differ only by punctuation/whitespace (e.g., `Armchair/Chair (Wood)` and `armchair chair wood`)
 - **WHEN** training gating and evaluation normalize descriptions
 - **THEN** they produce the same normalized description string.
-
 
 ### Requirement: Evaluation JSONL ingestion diagnostics are centralized
 When the evaluator loads `gt_vs_pred.jsonl`, JSON parsing diagnostics (path + 1-based line number + clipped snippet) SHALL be implemented via a shared helper so parsing/warning behavior is consistent.
@@ -332,7 +341,6 @@ Bounded diagnostics defaults are normative: `warn_limit=5`, `max_snippet_len=200
 - **THEN** it fails immediately with explicit path+line diagnostics
 - **AND** it does not continue with partial record ingestion.
 
-
 ### Requirement: Image-path resolution helper is shared
 Evaluator surfaces that resolve image paths (e.g., overlay rendering) SHALL delegate to shared image-path resolution helpers rather than implementing ad-hoc base-dir logic.
 
@@ -340,3 +348,4 @@ Evaluator surfaces that resolve image paths (e.g., overlay rendering) SHALL dele
 - **GIVEN** an image field `images/foo.jpg` and an explicit base directory
 - **WHEN** the evaluator resolves the image path via the shared helper
 - **THEN** it deterministically resolves to `<base_dir>/images/foo.jpg` (absolute path).
+

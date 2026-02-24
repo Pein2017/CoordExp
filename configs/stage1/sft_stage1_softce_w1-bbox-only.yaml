@@ -23,9 +23,11 @@ training:
   vit_lr: 1.0e-4
   aligner_lr: 4.0e-4
   packing: true
+  packing_mode: static
   packing_buffer: 512
   packing_min_fill_ratio: 0.7
   packing_drop_last: true
+  packing_length_precompute_workers: 8
   eval_packing: true
   eval_steps: 40
   save_steps: 200

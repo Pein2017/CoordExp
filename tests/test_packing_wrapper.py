@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 from pathlib import Path
 
 import torch
@@ -225,6 +226,7 @@ def test_static_packing_deterministic_plan(tmp_path: Path):
         fingerprint=_static_fingerprint("deterministic"),
         world_size=2,
         train_dataloader_shuffle=True,
+        length_precompute_workers=1,
     )
     run2 = build_static_packed_dataset(
         _FakeDataset(lengths),
@@ -238,6 +240,7 @@ def test_static_packing_deterministic_plan(tmp_path: Path):
         fingerprint=_static_fingerprint("deterministic"),
         world_size=2,
         train_dataloader_shuffle=True,
+        length_precompute_workers=1,
     )
 
     assert run1.raw_plan == run2.raw_plan
@@ -260,6 +263,7 @@ def test_static_packing_ddp_drop_last_truncates_tail(tmp_path: Path):
         fingerprint=_static_fingerprint("drop_true"),
         world_size=4,
         train_dataloader_shuffle=False,
+        length_precompute_workers=1,
     )
 
     assert len(static_ds.raw_plan) == 5
@@ -283,6 +287,7 @@ def test_static_packing_ddp_pad_repeats_prefix(tmp_path: Path):
         fingerprint=_static_fingerprint("drop_false"),
         world_size=4,
         train_dataloader_shuffle=False,
+        length_precompute_workers=1,
     )
 
     assert len(static_ds.raw_plan) == 5
@@ -313,6 +318,7 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
         fingerprint=_static_fingerprint("resume"),
         world_size=1,
         train_dataloader_shuffle=False,
+        length_precompute_workers=1,
     )
 
     length_cache_path = cache_dir / "lengths.json"
@@ -332,6 +338,7 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
         fingerprint=_static_fingerprint("resume"),
         world_size=1,
         train_dataloader_shuffle=False,
+        length_precompute_workers=1,
     )
 
     payload_after = json.loads(length_cache_path.read_text(encoding="utf-8"))
@@ -363,11 +370,128 @@ def test_static_length_cache_default_persist_interval_reduces_flushes(
         cache_path=tmp_path / "lengths.json",
         fingerprint={"test": "persist"},
         persist_every=None,
+        precompute_workers=1,
     )
 
     assert len(computed) == num_samples
     assert all(value == 12 for value in computed)
     assert len(persist_calls) <= 6
+
+
+def test_static_length_cache_parallel_precompute_matches_serial(tmp_path: Path) -> None:
+    if "fork" not in set(multiprocessing.get_all_start_methods()):
+        pytest.skip("fork start method unavailable")
+
+    lengths = [11 + (idx % 7) for idx in range(96)]
+
+    serial = _compute_missing_lengths(
+        dataset=_FakeDataset(lengths),
+        lengths=[None] * len(lengths),
+        cache_path=tmp_path / "serial_lengths.json",
+        fingerprint={"test": "serial"},
+        persist_every=128,
+        precompute_workers=1,
+    )
+
+    parallel = _compute_missing_lengths(
+        dataset=_FakeDataset(lengths),
+        lengths=[None] * len(lengths),
+        cache_path=tmp_path / "parallel_lengths.json",
+        fingerprint={"test": "parallel"},
+        persist_every=128,
+        precompute_workers=4,
+    )
+
+    assert parallel == serial
+
+
+def test_static_length_cache_parallel_uses_thread_pool_when_cuda_initialized(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if "fork" not in set(multiprocessing.get_all_start_methods()):
+        pytest.skip("fork start method unavailable")
+
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_initialized",
+        lambda: False,
+    )
+    monkeypatch.setattr(packed_caption_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        packed_caption_module.torch.cuda,
+        "is_initialized",
+        lambda: True,
+    )
+
+    def _unexpected_get_context(_: str) -> multiprocessing.context.BaseContext:
+        raise AssertionError("multiprocessing precompute should not be used")
+
+    monkeypatch.setattr(
+        packed_caption_module.multiprocessing,
+        "get_context",
+        _unexpected_get_context,
+    )
+
+    thread_workers: list[int] = []
+
+    class _InlineThreadPoolExecutor:
+        def __init__(self, *, max_workers: int):
+            thread_workers.append(int(max_workers))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def map(self, fn, iterable):
+            for item in iterable:
+                yield fn(item)
+
+    monkeypatch.setattr(
+        packed_caption_module.concurrent.futures,
+        "ThreadPoolExecutor",
+        _InlineThreadPoolExecutor,
+    )
+
+    lengths = [13 + (idx % 5) for idx in range(48)]
+    result = _compute_missing_lengths(
+        dataset=_FakeDataset(lengths),
+        lengths=[None] * len(lengths),
+        cache_path=tmp_path / "cuda_lengths.json",
+        fingerprint={"test": "cuda_fallback"},
+        persist_every=64,
+        precompute_workers=4,
+    )
+
+    assert result == lengths
+    assert thread_workers == [4]
+
+
+def test_static_packing_rejects_nonpositive_length_precompute_workers(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="length_precompute_workers"):
+        build_static_packed_dataset(
+            _FakeDataset([16, 20, 24, 28]),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=tmp_path / "invalid_workers",
+            fingerprint=_static_fingerprint("invalid_workers"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=0,
+        )
 
 
 def test_static_packing_rank_wait_timeout_is_configurable(
@@ -390,6 +514,7 @@ def test_static_packing_rank_wait_timeout_is_configurable(
             fingerprint=_static_fingerprint("wait_timeout"),
             world_size=2,
             train_dataloader_shuffle=False,
+            length_precompute_workers=1,
             wait_timeout_s=0.01,
         )
 
@@ -408,6 +533,7 @@ def test_static_packing_rejects_order_sensitive_dataset(tmp_path: Path):
             fingerprint=_static_fingerprint("order_sensitive"),
             world_size=1,
             train_dataloader_shuffle=False,
+            length_precompute_workers=1,
         )
 
 
@@ -425,4 +551,5 @@ def test_static_packing_rejects_fusion_dataset(tmp_path: Path):
             fingerprint=_static_fingerprint("fusion"),
             world_size=1,
             train_dataloader_shuffle=False,
+            length_precompute_workers=1,
         )

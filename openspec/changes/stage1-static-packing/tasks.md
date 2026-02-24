@@ -11,6 +11,7 @@
 - [x] 2.3 Add lazy “compute-missing-lengths” support so interrupted runs can resume without recomputing everything.
 - [x] 2.4 Add a guardrail for order-sensitive / non-deterministic datasets (e.g., fusion): static packing MUST fail fast with actionable guidance rather than silently caching unstable lengths (recommended detection: probe a small index set in two different access orders and require identical planning lengths).
 - [x] 2.5 Add static-cache operational safeguards for large datasets: configurable inter-rank wait timeout and bounded/adaptive length-cache persistence cadence.
+- [x] 2.6 Add rank0 multiprocessing for missing-length precompute with deterministic `(index -> length)` writeback and YAML control via `training.packing_length_precompute_workers` (default `8`; `1` serial, `>1` workers).
 
 ## 3. Static Pack-Plan Dataset Wrapper
 
@@ -29,6 +30,7 @@
   - Always log `world_size`, `dataloader_drop_last`, `pad_needed`, and the repeated pack indices (when padding occurs).
 - [x] 4.3 Fix the `effective_batch_size` + packing footgun: if packing forces `per_device_train_batch_size=1`, recompute/override `gradient_accumulation_steps` derived from `effective_batch_size` so the realized effective batch does not silently drift.
 - [x] 4.4 Add a clear runtime log line for the “unit” of `effective_batch_size` under packing (“packs”, not raw JSONL records).
+- [x] 4.5 Route Stage-1 eval packing through the same static pack-plan pipeline as train packing, default `training.eval_packing=true`, and keep `training.eval_packing=false` as explicit opt-out.
 
 ## 5. Verification (Tests + Smoke)
 

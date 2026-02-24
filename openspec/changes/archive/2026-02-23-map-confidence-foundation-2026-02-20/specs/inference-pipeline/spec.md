@@ -20,16 +20,16 @@ The scored artifact path MUST be resolved from `artifacts.gt_vs_pred_scored_json
 
 If `artifacts.gt_vs_pred_scored_jsonl` is not configured (or the file does not exist), the pipeline MUST fail fast with an actionable error instructing the user to run the confidence post-op first.
 
+#### Scenario: Deprecated score toggle is rejected
+- **WHEN** a pipeline config includes `eval.use_pred_score`
+- **THEN** the pipeline terminates with a clear error explaining that fixed-score evaluation is unsupported and the key must be removed.
+
 ### Requirement: Pipeline artifact contract for confidence workflow
 For score-aware COCO workflows, the pipeline/post-op artifact contract SHALL include:
 - `artifacts.pred_token_trace_jsonl`: canonical token-trace sidecar path (explicit value or deterministic default `<run_dir>/pred_token_trace.jsonl`).
 - Trace records keyed by `line_idx`, with 1:1 `generated_token_text` and `token_logprobs` arrays (full generated output, no filtering).
 
 Inference-only or f1ish-only evaluation runs MAY proceed without running confidence post-op. COCO workflows MUST produce/consume these artifacts in order: `gt_vs_pred.jsonl` + `pred_token_trace.jsonl` -> confidence post-op -> `gt_vs_pred_scored.jsonl`.
-
-#### Scenario: Deprecated score toggle is rejected
-- **WHEN** a pipeline config includes `eval.use_pred_score`
-- **THEN** the pipeline terminates with a clear error explaining that fixed-score evaluation is unsupported and the key must be removed.
 
 #### Scenario: Missing scored artifact fails fast
 - **GIVEN** a pipeline config that requests COCO detection evaluation

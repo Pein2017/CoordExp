@@ -382,6 +382,7 @@ class ConfigLoader:
             "packing_avg_samples",
             "packing_wait_timeout_s",
             "packing_length_cache_persist_every",
+            "packing_length_precompute_workers",
         }
         for key in _packing_keys:
             training_section.pop(key, None)

@@ -16,9 +16,12 @@ For fair ablations (especially across packing settings and length distributions)
 - Stage-1 dataset-level packing is **static-only**:
   - `training.packing_mode` defaults to `static` when omitted.
   - `training.packing_mode=dynamic` is deprecated/unsupported for Stage-1 dataset-level packing and fails fast with migration guidance.
-  - `training.eval_packing` is deprecated/unsupported for Stage-1 static-only policy because eval packing uses the dynamic iterable wrapper.
+  - `training.eval_packing` defaults to `true` and uses the same static pack-plan pipeline as train packing.
+  - `training.eval_packing=false` remains available to disable eval packing explicitly.
+  - Eval static packing preserves coverage with non-dropping alignment semantics (`packing_drop_last=false`, `dataloader_drop_last=false`).
   - Static cache synchronization timeout is configurable via `training.packing_wait_timeout_s` (default `7200` seconds; `0` means wait indefinitely).
   - Length-cache flush cadence is configurable via `training.packing_length_cache_persist_every`; when unset, runtime uses an adaptive interval to avoid excessive full-cache rewrites on large datasets.
+  - Rank0 static-length precompute can be multiprocessing-enabled via `training.packing_length_precompute_workers` (default `8`; `1` serial, `>1` workers) to reduce startup time on large datasets.
 - Clarify and enforce the unit semantics under packing:
   - With packing enabled, one per-device dataloader item is one **packed sequence** (a list of raw encoded samples that the padding-free collator flattens).
   - `training.effective_batch_size` continues to drive `gradient_accumulation_steps`, but its “unit” under packing is **packed sequences**, not raw samples.
@@ -42,5 +45,5 @@ For fair ablations (especially across packing settings and length distributions)
 
 - `src/sft.py`: Remove/disable the `packing_avg_samples`-based `max_steps` heuristic when static packing is enabled; ensure Stage-1 step/epoch semantics are derived from true packed length.
 - `src/datasets/wrappers/packed_caption.py` (or a new wrapper module under `src/datasets/wrappers/`): Introduce a map-style “static packed dataset” implementation and length-cache/pack-plan plumbing.
-- Config surface (`configs/stage1/*.yaml`): Use YAML-first packing knobs (`training.packing_mode`, default `static` for Stage-1; optional `training.packing_wait_timeout_s`; optional `training.packing_length_cache_persist_every`) without introducing new CLI flags; fail fast when Stage-1 sets `packing_mode=dynamic` and when `training.effective_batch_size` is not divisible by `world_size` under packing.
+- Config surface (`configs/stage1/*.yaml`): Use YAML-first packing knobs (`training.packing_mode`, default `static` for Stage-1; optional `training.packing_wait_timeout_s`; optional `training.packing_length_cache_persist_every`; optional `training.packing_length_precompute_workers`) without introducing new CLI flags; fail fast when Stage-1 sets `packing_mode=dynamic` and when `training.effective_batch_size` is not divisible by `world_size` under packing.
 - Documentation/specs: Update `openspec/specs/packing-dataset/spec.md` via a delta spec to describe the new static mode and its determinism/step semantics.

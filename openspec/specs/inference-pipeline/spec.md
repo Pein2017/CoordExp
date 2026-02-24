@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the staged inference pipeline contract (infer -> eval/viz) and the stable JSONL artifact interface between stages.
-
 ## Requirements
 ### Requirement: Inference runner emits robust JSONL
 The unified pipeline inference stage SHALL emit a single JSONL artifact (the "pipeline artifact") that is the stable interface between stages.
@@ -48,18 +47,15 @@ Compatibility guidance (non-normative):
 - WHEN the inference runner processes it
 - THEN it writes a valid JSON line with `preds: []`, retains `raw_output`, sets `error`, `coord_mode: "norm1000"`, and the job continues.
 
-
 #### Scenario: Coord mode recorded for downstream scaling
 - GIVEN a model that outputs 0–999 coord tokens
 - WHEN the inference runner writes the JSONL
 - THEN it sets `coord_mode: "norm1000"` and includes `width`/`height`, enabling downstream tools to convert to pixels without guessing.
 
-
 #### Scenario: Line in generation does not appear in preds
 - GIVEN a sample whose generated text contains a `line` object
 - WHEN the inference runner processes it
 - THEN it excludes the `line` object from `preds` while retaining the verbatim `raw_output` for debugging.
-
 
 ### Requirement: Staged pipeline (inference → eval and/or viz)
 The system SHALL provide a unified pipeline runner that can execute stages:
@@ -125,7 +121,6 @@ Default artifact layout:
 - WHEN the user runs the detection evaluator and the visualization tool against that file
 - THEN both complete without invoking the model, using the same parsed geometry and metadata, enabling apples-to-apples comparison across checkpoints.
 
-
 ### Requirement: Pipeline config resolution is separated from stage execution
 Inference-pipeline SHALL separate config parsing/resolution (including artifact path precedence and overrides) from stage execution logic.
 Resolved stage and artifact decisions MUST be materialized before stage execution begins.
@@ -135,7 +130,6 @@ Resolved stage and artifact decisions MUST be materialized before stage executio
 - **WHEN** the pipeline runs
 - **THEN** stage handlers consume pre-resolved artifact paths
 - **AND** stage handlers do not recompute precedence rules.
-
 
 ### Requirement: `resolved_config.json` is the canonical resolved manifest
 Inference-pipeline SHALL persist resolved run metadata in `resolved_config.json` in the run directory.
@@ -160,7 +154,6 @@ The pipeline SHALL NOT introduce a second parallel manifest artifact for the sam
 - **THEN** the consumer rejects the manifest with explicit version-mismatch diagnostics
 - **AND** does not silently proceed with partial assumptions.
 
-
 ### Requirement: Relative image-root fallback behavior is explicit and shared across eval/vis
 Inference-pipeline SHALL keep compatibility fallback behavior for relative image path resolution while making fallback activation explicit in logs.
 The resolved root behavior SHALL be shared consistently for evaluation and visualization consumers so they do not diverge in relative-path handling.
@@ -176,7 +169,6 @@ This requirement MUST preserve existing downstream contract compatibility for ev
 - **AND** both evaluation and visualization resolve image paths under the same root-resolution contract
 - **AND** `resolved_config.json` records both the chosen `root_image_dir` and its `root_image_dir_source`
 - **AND** stage outputs preserve unchanged artifact semantics.
-
 
 ### Requirement: `resolved_config.json` stable keys are explicit and `cfg` snapshot is opaque
 Within `schema_version` major `1`, the stable top-level contract key set SHALL be:
@@ -194,7 +186,6 @@ The redacted `cfg` snapshot MAY be persisted for diagnostics, but SHALL be treat
 - **WHEN** a downstream consumer validates compatibility
 - **THEN** compatibility decisions are based on stable keys and schema version
 - **AND** changes inside `cfg` do not break the manifest contract.
-
 
 ### Requirement: Image-path resolution logic is shared across infer stages
 Pipeline stages that resolve image paths for reading (inference engine, visualization) SHALL reuse shared image-path resolution helpers.
@@ -229,3 +220,36 @@ The chosen root decision SHALL be recorded in `resolved_config.json` using:
 - **WHEN** root resolution is computed once for the run
 - **THEN** infer/eval/vis use the same resolved root decision
 - **AND** `resolved_config.json` preserves both root path and root source for reproducibility.
+
+### Requirement: Pipeline evaluation is score-aware and rejects fixed-score toggles
+Pipeline evaluation SHALL be score-aware for COCO metrics by default (it MUST NOT provide a fixed-score mode).
+
+The pipeline YAML MUST NOT include `eval.use_pred_score`. If this key is present, the pipeline MUST fail fast with an actionable error instructing the user to remove it.
+
+When the pipeline runs COCO-style detection evaluation, it MUST consume the scored artifact (`gt_vs_pred_scored.jsonl`) rather than the base inference artifact (`gt_vs_pred.jsonl`).
+
+The scored artifact path MUST be resolved from `artifacts.gt_vs_pred_scored_jsonl`.
+
+If `artifacts.gt_vs_pred_scored_jsonl` is not configured (or the file does not exist), the pipeline MUST fail fast with an actionable error instructing the user to run the confidence post-op first.
+
+#### Scenario: Deprecated score toggle is rejected
+- **WHEN** a pipeline config includes `eval.use_pred_score`
+- **THEN** the pipeline terminates with a clear error explaining that fixed-score evaluation is unsupported and the key must be removed.
+
+### Requirement: Pipeline artifact contract for confidence workflow
+For score-aware COCO workflows, the pipeline/post-op artifact contract SHALL include:
+- `artifacts.pred_token_trace_jsonl`: canonical token-trace sidecar path (explicit value or deterministic default `<run_dir>/pred_token_trace.jsonl`).
+- Trace records keyed by `line_idx`, with 1:1 `generated_token_text` and `token_logprobs` arrays (full generated output, no filtering).
+
+Inference-only or f1ish-only evaluation runs MAY proceed without running confidence post-op. COCO workflows MUST produce/consume these artifacts in order: `gt_vs_pred.jsonl` + `pred_token_trace.jsonl` -> confidence post-op -> `gt_vs_pred_scored.jsonl`.
+
+#### Scenario: Missing scored artifact fails fast
+- **GIVEN** a pipeline config that requests COCO detection evaluation
+- **WHEN** `gt_vs_pred_scored.jsonl` is not available
+- **THEN** the pipeline terminates with a clear error instructing the user to produce `gt_vs_pred_scored.jsonl` via the confidence post-op before evaluating.
+
+#### Scenario: f1ish-only evaluation does not require a scored artifact
+- **GIVEN** a pipeline config that requests only f1ish-style (non-COCO) evaluation
+- **WHEN** `gt_vs_pred_scored.jsonl` is not available
+- **THEN** the pipeline continues evaluation using the base inference artifact (`gt_vs_pred.jsonl`).
+
