@@ -1,7 +1,7 @@
 # Stage-2 AB canonical profile base (standalone).
 # This file intentionally does not extend configs/base.yaml.
 
-global_max_length: 12000
+global_max_length: 14000
 
 model:
   torch_dtype: bfloat16
