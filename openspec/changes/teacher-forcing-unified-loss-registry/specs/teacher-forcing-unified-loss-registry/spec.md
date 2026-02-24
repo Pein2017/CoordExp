@@ -134,13 +134,21 @@ For Stage-2 Channel-A, the system SHALL treat:
 - self-context logits as `context=self_context` (final iteration).
 
 Normative behavior:
-- Channel-A token CE MUST be computed from `context=gt` logits (to prevent format drift).
+- Channel-A **desc CE** MUST be computed from `context=gt` logits (to prevent format drift under self-conditioning).
+- Channel-A **struct CE** MUST be computed from `context=gt` logits as the primary CE anchor.
+- Channel-A MAY additionally compute a small-weight **self-context format/closure CE stabilizer** from
+  `context=self_context` logits restricted to token types `struct` and `eos` only:
+  - `type=desc` tokens MUST have CE weight `0` in `context=self_context`,
+  - `type=coord` tokens MUST have CE weight `0` in `context=self_context`,
+  - `type=struct|eos` tokens remain supervised.
+  This stabilizer MUST be controlled by an explicit typed weight in the objective pipeline (e.g.,
+  `token_ce.config.self_context_struct_ce_weight`) and MUST be recorded in pipeline identity so runs are auditable.
 - Channel-A geometry (`geo`) MUST be computed from `context=self_context` logits (to train under self-conditioned coord
   context).
 
 #### Scenario: Channel-A CE uses A1 logits
 - **WHEN** Stage-2 Channel-A executes with `n_softctx_iter >= 2`
-- **THEN** the CE loss uses A1 logits (context `gt`)
+- **THEN** the CE anchor loss uses A1 logits (context `gt`)
 - **AND** geometry uses final-iteration logits (context `self_context`).
 
 
@@ -171,11 +179,11 @@ Normative ST identity (informative but required semantics):
   - forward evaluates the hard path, and
   - backward follows the soft path gradients.
 
-#### Scenario: ST is enable-able without changing defaults
-- **GIVEN** current defaults (e.g., `stage2_ab.coord_ctx_embed_mode=soft`, `stage2_ab.coord_decode_mode=exp`)
+#### Scenario: ST/exp defaults are explicit and override-able
+- **GIVEN** current defaults (e.g., `stage2_ab.coord_ctx_embed_mode=st`, `stage2_ab.coord_decode_mode=exp`)
 - **WHEN** training starts without explicit ST keys
 - **THEN** behavior matches the current implementation
-- **AND** users can enable ST by setting the ST keys in YAML.
+- **AND** users can override embedding/decode modes by setting the ST keys in YAML.
 
 
 ### Requirement: Geometry loss (`geo`) uses canonicalized boxes and a stable decomposition

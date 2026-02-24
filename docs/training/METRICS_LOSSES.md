@@ -19,6 +19,10 @@ Pipeline identity (reproducibility):
   `pipeline_checksum` together with resolved module lists in trainer init logs.
 - `pipeline_checksum` is computed from canonical pipeline identity payload
   (`objective`, `diagnostics`, semantics-only `extra`) and is invariant to run context.
+- The canonical `extra` keys used for checksum (when applicable) include:
+  - `variant` (trainer variant name),
+  - `stage2_ab.coord_ctx_embed_mode`, `stage2_ab.coord_decode_mode`,
+  - `rollout_matching.coord_decode_mode`.
 - Run context (`config`, `run_name`, `seed`) is logged separately and does not affect checksum.
 - Treat the resolved module list + checksum as part of experiment identity for ablations.
 
@@ -28,6 +32,8 @@ ST bridge diagnostics surface:
   - `stage2_ab.coord_decode_mode: exp|st`
 - Stage-2 rollout-aligned supports:
   - `rollout_matching.coord_decode_mode: exp|st`
+- For `L_geo` runs, use `stage2_ab.coord_ctx_embed_mode: st` for coord-slot embedding and
+  `stage2_ab.coord_decode_mode: exp` (soft expectation decode) for geometry output decode.
 - Objective-side monitoring keys that are useful when toggling ST/regularizers include:
   - `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj`, `loss/text_gate`
 
@@ -48,6 +54,20 @@ Stage-2 note (Stage-2 Rollout-Aligned Teacher Forcing):
 - As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` are meaningful
   for stage_2 runs when FN-appended tail desc tokens are present.
 - Stage_2 runbook: `STAGE2_RUNBOOK.md`.
+
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
+- Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) runs a
+  two-surface objective in Channel-A:
+  - **Anchor (GT / A1 logits):** full CE on JSON structure + `desc` value tokens (coord tokens excluded from CE).
+  - **Self-context (final-iteration logits):** format/closure CE on `struct` + `<|im_end|>` only (no `desc` CE, no coord-token CE),
+    with a small stabilizer weight controlled by `token_ce.config.self_context_struct_ce_weight`
+    (defaulted by `stage2_ab.fmt_struct_ce_weight` when pipeline is omitted).
+- Useful monitoring keys for this split (when enabled) include:
+  - `loss/token_ce_anchor`, `loss/token_ce_self_context`,
+  - `loss/struct_ce` (anchor), `loss/struct_ce_self_context`,
+  - `stage2_ab/channel_a/self_context_struct_ce_weight`.
+- Channel-A coord losses are computed from the self-context logits (final iteration). By default, a small coord
+  distribution regularizer may be enabled only for Channel-A via `coord_reg.config.self_context_soft_ce_weight`.
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) uses unified Channel-B by default:

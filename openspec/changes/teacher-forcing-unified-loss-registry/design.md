@@ -79,9 +79,11 @@ same tensor-flow semantics:
     (`src/trainers/stage2_rollout_aligned.py`), so running `custom.trainer_variant: stage2_rollout_aligned` can silently
     produce a different Stage-2 objective than the runbook implies.
 
-- **Scheduler description mismatch (idea doc vs implementation)**
-  - `progress/full_idea.md` describes the realized Channel-B frequency as “determined by queue availability and routing
-    decisions” (`progress/full_idea.md:716`).
+- **Scheduler description mismatch (historical; now resolved)**
+  - Older revisions of `progress/full_idea.md` described realized Channel-B frequency as driven by queue availability and
+    routing decisions.
+  - The current `progress/full_idea.md` documents the deterministic Bresenham-style schedule and strict fail-fast vs
+    explicit fallback semantics.
   - The implemented Stage-2 two-channel router is a deterministic Bresenham-style schedule keyed on `global_step`
     (`src/trainers/stage2_two_channel/scheduler.py:_stage2_channel_for_step`), and the runbook documents the deterministic
     policy (`docs/training/STAGE2_RUNBOOK.md:77-81`).
@@ -191,15 +193,16 @@ Recommended subpackage naming:
   separate code paths.
 
 Rationale:
-- `progress/full_idea.md` treats this registry as the canonical definition. If we only refactor Stage-2 Two-Channel into modules
-  without a shared registry contract, Stage-1 and Stage-2 will continue to drift.
+- `progress/full_idea.md` is the intent-level narrative and keeps a compact reader-facing registry summary, while the canonical
+  implementer-facing contract lives in the OpenSpec `teacher-forcing-unified-loss-registry` capability. If we only refactor
+  Stage-2 Two-Channel into modules without a shared code-level registry contract, Stage-1 and Stage-2 will continue to drift.
 
-2) **ST bridge is explicit and config-controlled (default preserves current behavior)**
+2) **ST bridge is explicit and config-controlled (default is ST-embed + exp-decode)**
 
 - Add two explicit config knobs to Stage-2 Two-Channel (typed under `stage2_ab.*`):
-  - `coord_ctx_embed_mode`: `soft|st|hard` (applies to Channel-A self-context iterations; `soft` is the default).
+  - `coord_ctx_embed_mode`: `soft|st|hard` (applies to Channel-A self-context iterations; `st` is the default).
   - `coord_decode_mode`: `exp|st` (applies to bbox geometry decode; `exp` is the default).
-- ST semantics MUST match the `full_idea.md` definition:
+- ST semantics MUST match the `progress/full_idea.md` definition:
   - ST-embedding: hard forward (`argmax` embed) + soft gradient (expected-embed path).
   - ST-decode: hard forward (`argmax` bin value) + soft gradient (expectation decode path).
 
@@ -298,8 +301,8 @@ Alternatives considered:
 - **[Risk] Objective drift during refactor →** Mitigation: add golden tests that compare current monolith behavior vs
   pipeline default loss
   components for fixed teacher-forced batches (Channel-A and Channel-B), including packed-mode meta paths.
-- **[Risk] ST breaks parity when enabled →** Mitigation: keep ST off by default; add focused tests verifying ST forward
-  values differ while gradients still flow via expectation path; add a smoke config enabling ST explicitly.
+- **[Risk] ST-default shifts parity vs prior soft-default baselines →** Mitigation: add focused tests verifying ST forward
+  values differ while gradients still flow via expectation path; add smoke configs for explicit `soft` and `st` ablations.
 - **[Risk] Module ordering ambiguity →** Mitigation: declare that list order is execution order; provide a canonical
   default order and fail fast on duplicates/unknown names.
 - **[Risk] DDP deadlocks from conditional reductions →** Mitigation: keep the existing `log()` reduction path rank

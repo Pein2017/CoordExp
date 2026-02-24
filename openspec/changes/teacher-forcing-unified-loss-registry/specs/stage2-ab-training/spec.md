@@ -33,6 +33,7 @@ Normative default module configs (effective values):
 - `token_ce`:
   - Channel-A (Expectation):
     - `desc_ce_weight = stage2_ab.desc_ce_weight` (default `1.0`)
+    - `self_context_struct_ce_weight = stage2_ab.fmt_struct_ce_weight` (default `0.1`)
   - Channel-B (Rollout):
     - `rollout_fn_desc_weight = stage2_ab.desc_ce_weight` (default `1.0`)
     - `rollout_matched_prefix_struct_weight = 1.0`
@@ -42,12 +43,14 @@ Normative default module configs (effective values):
   - `ciou_weight = stage2_ab.bbox_ciou_weight` (default `1.0`)
   - decode mode is controlled by `stage2_ab.coord_decode_mode` (default `exp`)
 - `coord_reg`:
-  - Coord-shape terms (enabled only when `custom.coord_soft_ce_w1.enabled: true`):
+  - Coord-shape terms (rollout-context; enabled only when `custom.coord_soft_ce_w1.enabled: true`):
     - `soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` (default `1.0`)
     - `w1_weight = custom.coord_soft_ce_w1.w1_weight` (default `1.0`)
     - `temperature = custom.coord_soft_ce_w1.temperature` (default `1.0`)
     - `target_sigma = custom.coord_soft_ce_w1.target_sigma` (default `2.0`)
     - `target_truncate = custom.coord_soft_ce_w1.target_truncate` (default `null`)
+  - Coord-shape terms (Channel-A self_context regularizer; default-on small weight):
+    - `self_context_soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` when enabled, else `0.05`
   - Additional coord terms (Stage-2 Two-Channel typed knobs):
     - `coord_ce_weight = stage2_ab.coord_ce_weight` (default `0.0`)
     - `coord_el1_weight = stage2_ab.coord_el1_weight` (default `0.0`)
@@ -84,7 +87,7 @@ stage2_ab:
 #### Scenario: Pipeline mode rejects duplicated flat objective knobs
 - **WHEN** a Stage-2 Two-Channel config defines `stage2_ab.pipeline`
 - **AND** the config also defines any objective-affecting flat knobs used by the default manifest (e.g.,
-  `stage2_ab.desc_ce_weight`, `stage2_ab.bbox_smoothl1_weight`, `stage2_ab.bbox_ciou_weight`,
+  `stage2_ab.desc_ce_weight`, `stage2_ab.fmt_struct_ce_weight`, `stage2_ab.bbox_smoothl1_weight`, `stage2_ab.bbox_ciou_weight`,
   `stage2_ab.coord_ce_weight`, `stage2_ab.coord_entropy_weight`, `stage2_ab.coord_gate_weight`,
   `stage2_ab.text_gate_weight`,
   `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`, or `custom.coord_soft_ce_w1.*`)
@@ -135,6 +138,7 @@ Normative behavior:
 Normative config schemas (minimum set; may be extended):
 - `token_ce.config`:
   - `desc_ce_weight: float` (default: `1.0`)
+  - `self_context_struct_ce_weight: float` (default: `0.1`)
   - `rollout_fn_desc_weight: float` (default: `1.0`)
   - `rollout_matched_prefix_struct_weight: float` (default: `1.0`)
   - `rollout_drop_invalid_struct_ce_multiplier: float` (default: `1.0`)
@@ -150,6 +154,7 @@ Normative config schemas (minimum set; may be extended):
   - `coord_gate_weight: float` (default: `0.0`)
   - `text_gate_weight: float` (default: `0.0`)
   - `soft_ce_weight: float` (default: `0.0`)
+  - `self_context_soft_ce_weight: float` (default: `0.05`)
   - `w1_weight: float` (default: `0.0`)
   - `temperature: float` (default: `1.0`)
   - `target_sigma: float` (default: `2.0`)
@@ -169,7 +174,7 @@ capability.
 
 Normative behavior:
 - Stage-2 Two-Channel MUST build token-type masks and object-subset masks according to the registry contexts:
-  - Channel-A uses `context=gt` for CE anchoring and `context=self_context` for geometry.
+  - Channel-A uses `context=gt` for CE anchoring and `context=self_context` for geometry and optional format/closure stabilization.
   - Channel-B uses `context=rollout` with FP-neutral + EOS-enforced semantics.
 - When the module pipeline is enabled, objective/diagnostics modules MUST emit metric keys consistent with the
   registry’s canonical component names.
@@ -187,12 +192,12 @@ Stage-2 Two-Channel SHALL expose config knobs to enable Straight-Through (ST) be
 
 Normative behavior:
 - Config MUST be expressed under the typed Stage-2 Two-Channel namespace (`stage2_ab.*`) and MUST be strict (unknown keys fail).
-- When ST knobs are omitted, defaults MUST preserve current behavior (soft embeddings + expectation decode).
+- When ST knobs are omitted, defaults MUST preserve current behavior (ST embeddings + expectation decode).
 - When ST knobs are enabled, the forward/backward behavior MUST follow the ST semantics defined by
   `teacher-forcing-unified-loss-registry`.
 
 Normative key names:
-- `stage2_ab.coord_ctx_embed_mode: soft|st|hard` (default: `soft`)
+- `stage2_ab.coord_ctx_embed_mode: soft|st|hard` (default: `st`)
 - `stage2_ab.coord_decode_mode: exp|st` (default: `exp`)
 
 Normative mapping / identity:

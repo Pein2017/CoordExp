@@ -5,7 +5,10 @@ Define the Stage-2 AB training contract (Channel-A supervised, Channel-B rollout
 
 ## Requirements
 ### Requirement: Stage-2 AB trainer variant is selectable via YAML
-When training config sets `custom.trainer_variant: stage2_ab_training`, the system SHALL use the Stage-2 AB trainer implementation.
+When training config sets `custom.trainer_variant: stage2_two_channel`, the system SHALL use the Stage-2 AB trainer implementation.
+
+The system MUST reject `custom.trainer_variant: stage2_ab_training` (fail fast) with actionable guidance to use
+`stage2_two_channel`.
 
 The trainer MUST be configurable via YAML and MUST NOT require new CLI flags.
 
@@ -14,30 +17,30 @@ Canonical config location (typed):
 - Unknown keys under `stage2_ab` MUST fail fast with actionable guidance (to avoid silent drift from typos).
 
 #### Scenario: Selecting the trainer variant with typed `stage2_ab`
-- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a training config with `custom.trainer_variant: stage2_two_channel`
 - **AND** a top-level `stage2_ab` mapping is provided
 - **WHEN** training starts
 - **THEN** the Stage-2 AB trainer is constructed and used for training
 - **AND** the trainer reads Stage-2 AB knobs from `stage2_ab`.
 
 #### Scenario: Unknown stage2_ab keys fail fast
-- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a training config with `custom.trainer_variant: stage2_two_channel`
 - **AND** a top-level `stage2_ab` mapping contains an unknown key (e.g., a typo)
 - **WHEN** training starts
 - **THEN** configuration parsing fails fast with guidance to fix/remove the unknown key.
 
 #### Scenario: Selecting the trainer variant
-- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a training config with `custom.trainer_variant: stage2_two_channel`
 - **WHEN** training starts
 - **THEN** the Stage-2 AB trainer is constructed and used for training.
 
 
 ### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
-Stage-2 AB experiment profiles under `configs/stage2_ab/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
+Stage-2 AB experiment profiles under `configs/stage2_two_channel/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
 
 Normative structure:
-- `configs/stage2_ab/base.yaml` MUST be the canonical shared base for Stage-2 AB profile runs.
-- Canonical profile leaves under `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml` MUST extend exactly one file, and that file MUST be `../base.yaml`.
+- `configs/stage2_two_channel/base.yaml` MUST be the canonical shared base for Stage-2 AB profile runs.
+- Canonical profile leaves under `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml` MUST extend exactly one file, and that file MUST be `../base.yaml`.
 - Canonical smoke leaves MUST inline smoke runtime overrides and MUST NOT use dual-parent `extends` lists.
 - Canonical profile leaves MUST NOT use multi-hop inheritance chains (e.g., leaf -> intermediate -> base).
 - Additional optional Stage-2 profile leaves (outside the canonical trio) are allowed only if they satisfy the same one-hop + explicit-leaf contract.
@@ -45,15 +48,15 @@ Normative structure:
 Validation behavior:
 - Config loading for Stage-2 AB profile leaves MUST fail fast when one-hop structure is violated.
 - Error messages MUST include actionable migration guidance (expected parent path and offending `extends` chain).
-- Strict hierarchy/explicitness validation targets the canonical profile directories (`configs/stage2_ab/prod/*.yaml`, `configs/stage2_ab/smoke/*.yaml`) and is expected to pass for all files in those paths.
-- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`.
+- Strict hierarchy/explicitness validation targets the canonical profile directories (`configs/stage2_two_channel/prod/*.yaml`, `configs/stage2_two_channel/smoke/*.yaml`) and is expected to pass for all files in those paths.
+- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`.
 
 #### Scenario: One-hop profile inheritance passes validation
-- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_ab/prod/` extends only `../base.yaml`
+- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_two_channel/prod/` extends only `../base.yaml`
 - **THEN** config loading succeeds for hierarchy validation.
 
 #### Scenario: Multi-hop profile inheritance fails fast
-- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_ab/smoke/` extends an intermediate profile file
+- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_two_channel/smoke/` extends an intermediate profile file
 - **THEN** config loading fails fast with guidance to extend `../base.yaml` directly.
 
 #### Scenario: Dual-parent smoke inheritance fails fast
@@ -62,7 +65,7 @@ Validation behavior:
 
 #### Scenario: Canonical profile discovery is scoped to prod/smoke
 - **WHEN** a config discovery utility scans canonical Stage-2 profiles
-- **THEN** it includes only `configs/stage2_ab/prod/*.yaml` and `configs/stage2_ab/smoke/*.yaml`
+- **THEN** it includes only `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`
 
 ### Requirement: Stage-2 AB downstream profiles explicitly pin high-signal knobs
 Each canonical Stage-2 AB profile leaf MUST explicitly declare high-signal run and ablation knobs so the file is self-consistent without traversing parent configs.
@@ -122,7 +125,7 @@ Normative behavior:
 - Before trainer construction, runtime MUST normalize canonical grouped rollout fields into the rollout config object injected into Stage-2 AB / rollout-matching trainers.
 - For rollout-aware trainer variants, rollout decode/evaluation microbatching MUST be driven by `rollout_matching.decode_batch_size` as the single source of truth.
 - `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batching behavior.
-- For `custom.trainer_variant=stage2_ab_training`, top-level `rollout_matching` remains required and missing it MUST fail fast.
+- For `custom.trainer_variant=stage2_two_channel`, top-level `rollout_matching` remains required and missing it MUST fail fast.
 - Stage-2 launcher preflight (`scripts/train_stage2.sh`) MUST resolve rollout settings from the same shared normalization contract used by runtime, and MUST NOT maintain a divergent raw-field contract.
 - Launcher preflight MUST call the shared Python loader/normalizer (`ConfigLoader.load_training_config(...)` path) and consume machine-readable normalized fields rather than parsing rollout keys directly in bash.
 - Launcher preflight machine-readable output MUST be newline-terminated single-line JSON with keys:
@@ -213,7 +216,7 @@ Normative behavior:
 - Regression verification MUST include fixture coverage for:
   - strict `custom.extra` policy behavior,
   - Stage-2 smoke/profile configs using canonical top-level `rollout_matching.*`,
-  - `stage2_ab_training` requirement for top-level `rollout_matching`.
+  - `stage2_two_channel` requirement for top-level `rollout_matching`.
 
 #### Scenario: Unknown top-level section key fails fast
 - **WHEN** a config includes an unsupported top-level key under canonical Stage-2 profile loading
@@ -249,8 +252,8 @@ Normative behavior:
 - **WHEN** a config includes top-level `extra:` (including empty `{}`)
 - **THEN** config loading fails fast with guidance that only `custom.extra` is the escape-hatch bucket.
 
-#### Scenario: Missing top-level rollout_matching still fails for stage2_ab_training
-- **WHEN** `custom.trainer_variant=stage2_ab_training` and top-level `rollout_matching` is omitted
+#### Scenario: Missing top-level rollout_matching still fails for stage2_two_channel
+- **WHEN** `custom.trainer_variant=stage2_two_channel` and top-level `rollout_matching` is omitted
 - **THEN** config loading fails fast with actionable requirement text for top-level `rollout_matching`.
 
 #### Scenario: Preflight contract format is strict
@@ -274,7 +277,7 @@ Normative constraints:
   - If the required packing metadata cannot be produced, the trainer MUST fail fast during initialization with actionable guidance (e.g., disable `training.packing`).
 
 #### Scenario: Stage-2 AB runs under ms-swift with raw-sample collation
-- **GIVEN** a config that selects `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a config that selects `custom.trainer_variant: stage2_two_channel`
 - **WHEN** training starts under ms-swift
 - **THEN** the trainer receives raw samples with fields required for Channel-B (including `messages` and `assistant_payload`)
 - **AND** no upstream Transformers files are modified to enable the run.
@@ -331,13 +334,13 @@ Legacy rollout namespace placement:
 - **THEN** the channel selected for step `s` is identical to the pre-resume selection for step `s`.
 
 #### Scenario: stage2_ab.schedule.pattern fails fast
-- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a training config with `custom.trainer_variant: stage2_two_channel`
 - **AND** `stage2_ab.schedule.pattern: ["A","B"]` is provided
 - **WHEN** config is parsed/materialized
 - **THEN** it fails fast with guidance to use `stage2_ab.schedule.b_ratio`.
 
 #### Scenario: Missing b_ratio fails fast
-- **GIVEN** a training config with `custom.trainer_variant: stage2_ab_training`
+- **GIVEN** a training config with `custom.trainer_variant: stage2_two_channel`
 - **AND** `stage2_ab.schedule.b_ratio` is not provided
 - **WHEN** config is parsed/materialized
 - **THEN** it fails fast with guidance to set `stage2_ab.schedule.b_ratio`.
@@ -402,14 +405,15 @@ Diagnostics (normative):
 - **THEN** it raises an error indicating bbox-only v1 requires filtering out polygons upstream.
 
 
-### Requirement: Channel-A performs iterative soft self-context via N× full-forwards (no rollout)
-Channel-A MUST implement iterative soft self-context using `stage2_ab.n_softctx_iter` full forward passes:
+### Requirement: Channel-A performs iterative ST/soft self-context via N× full-forwards (no rollout)
+Channel-A MUST implement iterative ST/soft self-context using `stage2_ab.n_softctx_iter` full forward passes:
 - `stage2_ab.n_softctx_iter` MUST be an integer `>= 1`.
 - The iteration index `m` ranges over `m = 0..n_softctx_iter-1`.
 - For `n_softctx_iter = 1`, Channel-A MUST reduce to a single teacher-forced forward (pure TF baseline).
 - For `n_softctx_iter > 1`, Channel-A MUST:
   - Run a teacher-forced forward to obtain logits for coord slots.
-  - Construct coord-slot **soft embeddings** as the expectation over the coord-token sub-vocabulary.
+  - Construct coord-slot context embeddings from coord-token distributions, with ST embedding as the default
+    (hard forward / soft backward) and soft expectation embedding as an explicit alternative.
   - Update coord-slot embeddings and re-run a full forward, repeating until `m = n_softctx_iter-1`.
 
 The trainer MUST use the **final-iteration** logits `z^(n_softctx_iter-1)` for geometry decoding and loss computation.
@@ -1074,8 +1078,8 @@ The Stage-2 AB capability SHALL include a regression guard that detects imports 
 This guard MUST use AST import inspection (test or static check) rather than regex text matching so formatting/comment changes do not create false signals.
 The guard MUST run in routine validation for this capability.
 The guard scope MUST cover the full Stage-2 AB capability surface:
-- `src/trainers/stage2_ab_training.py`
-- `src/trainers/stage2_ab/**/*.py`
+- `src/trainers/stage2_two_channel.py`
+- `src/trainers/stage2_two_channel/**/*.py`
 
 #### Scenario: Validation fails when a private rollout helper import is reintroduced
 - **GIVEN** any Stage-2 AB source file in the guarded surface imports an underscore-prefixed rollout helper

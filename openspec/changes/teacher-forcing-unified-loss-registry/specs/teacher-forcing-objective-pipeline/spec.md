@@ -112,7 +112,8 @@ The system SHALL make the resolved pipeline auditable from logs and artifacts.
 
 Normative behavior:
 - The trainer MUST log the resolved ordered list of objective modules and diagnostics modules at initialization.
-- The trainer MUST emit a stable pipeline checksum (derived from module names + enabled flags + module configs).
+- The trainer MUST emit a stable pipeline checksum derived from the fully-resolved pipeline identity payload
+  (`objective`, `diagnostics`, and semantics-only `extra`).
 
 Normative checksum definition (this repo; required for implementers):
 - The pipeline checksum MUST be the hex digest of `sha256` over UTF-8 bytes of a **canonical JSON** serialization of a
@@ -122,6 +123,12 @@ Normative checksum definition (this repo; required for implementers):
   - `diagnostics`: ordered list of resolved module identity entries,
   - `extra`: mapping (default `{}`) for trainer-specific identity fields that affect objective/metrics semantics (e.g.,
     ST bridge modes). If `extra` is used, it MUST be included in the checksum input.
+- The `extra` mapping MUST use stable, fully-qualified key names (avoid ambiguous short keys).
+  For this repo, implementers MUST use the following reserved keys when applicable:
+  - `variant` (string; trainer variant name, e.g. `stage2_two_channel`),
+  - `stage2_ab.coord_ctx_embed_mode` (string; `soft|st|hard`),
+  - `stage2_ab.coord_decode_mode` (string; `exp|st`),
+  - `rollout_matching.coord_decode_mode` (string; `exp|st`).
 - Each resolved module identity entry MUST be normalized before checksum:
   - `name: str`
   - `enabled: bool`

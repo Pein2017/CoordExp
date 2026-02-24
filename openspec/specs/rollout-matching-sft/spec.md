@@ -357,7 +357,7 @@ Semantics (normative):
 
 Defaulting (normative):
 - If `decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
-- Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_ab/**` uses `4`).
+- Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_two_channel/**` uses `4`).
 
 #### Scenario: Canonical Stage-2 key controls decode microbatching
 - **WHEN** a Stage-2 AB config sets `rollout_matching.decode_batch_size: M` where `M > 1`
