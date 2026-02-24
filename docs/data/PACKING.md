@@ -3,7 +3,7 @@
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage_2 rollout-matching SFT (`custom.trainer_variant: rollout_matching_sft`) supports
+- Stage_2 rollout-matching SFT (`custom.trainer_variant: stage2_rollout_aligned`) supports
   **post-rollout packing inside the trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),

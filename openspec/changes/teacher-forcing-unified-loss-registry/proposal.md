@@ -143,3 +143,16 @@ guidance.
     - FN-injected `desc` tokens are supervised by default,
     - FP spans are fully masked out,
     - and geometry losses include matched+FN but exclude FP.
+
+## Finalized Delta Notes (implementation sync)
+
+- YAML key names remain unchanged from the draft (`stage2_ab.pipeline.*`, `rollout_matching.pipeline.*`).
+- Rollout-rich meta contract is now explicit in both Stage-2 trainers and includes:
+  - `prefix_struct_pos`,
+  - `tail_desc_pos`,
+  - `tail_closure_pos`,
+  - `bbox_groups_prefix`,
+  - `bbox_groups_fn`,
+  - plus existing `prompt_len/prefix_len/train_len` and coord-supervision fields.
+- Canonical registry scalar naming uses `loss/coord_token_ce` for coord-bin CE; the trainer-specific ambiguous
+  `loss/coord_ce` label is superseded by the canonical key in pipeline-emitted payloads.

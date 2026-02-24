@@ -299,7 +299,11 @@ Implementation is **step-level routing** with strict separation per optimizer up
 - **Async actor-learner (optional):** actor rolls out with parameters `θ_{t-Δ}`, learner updates `θ_t`. Each rollout item carries `ver`; learner only consumes items with `ver >= current_ver - version_window`. Use `queue_limit` to bound off-policy gap and memory.
 - **DDP safety:** step kind must be identical across all ranks; rank0 decides and broadcasts step_kind to avoid mismatched collectives or hang.
 - **Gradient accumulation:** step_kind is locked for the entire accumulation window (`grad_accum_steps`); it cannot change mid-window.
-- **Routing rule:** if `B_queue` has enough **fresh** items to cover the full optimizer update (`batch_size_B` across all microbatches), run a **B-step**; otherwise run an **A-step**. A is the fallback when B is insufficient.
+- **Routing rule (deterministic / canonical):** with target `b_ratio`, at optimizer global step `s`, run Channel-B iff
+  `floor((s+1) * b_ratio) > floor(s * b_ratio)` (Bresenham-style schedule); otherwise run Channel-A.
+- **Realized `b_ratio` (`ρ_hat`) semantics:**
+  - **strict fail-fast mode (canonical):** if a scheduled B-step cannot satisfy runtime contracts, training errors immediately (no silent reroute), so realized `ρ_hat` matches the deterministic scheduler up to termination.
+  - **optional fallback mode (explicit opt-in only):** if enabled, failed B-steps may reroute to A; then realized `ρ_hat` is the executed B-step fraction, not the scheduler target.
 
 This is the enforced implementation form for Stage-2 (方案 A).
 
@@ -551,7 +555,9 @@ Combine both channels:
 - Stage-2 is a mixture objective:
   - `L_stage2 = (1-ρ) * L_A + ρ * L_B`
   - where `ρ` is the Channel-B frequency/probability (small, e.g. 0.05).
-  - **Implementation note:** in code, the mixture is approximated by the step-level router, so the realized `ρ_hat` is determined by queue availability and routing decisions.
+  - **Implementation note:** in code, the mixture is implemented by deterministic step-level routing
+    (Bresenham on `global_step`). Under strict fail-fast, realized `ρ_hat` tracks the scheduler target;
+    under explicit fallback modes, realized `ρ_hat` tracks executed B-steps after reroutes.
 
 Expanded:
 - `L_A = L_CE_A1(y_GT) + λ_geo^A * L_geo_soft + λ_dist^A * L_dist(optional)`

@@ -12,18 +12,45 @@ Notes:
   `schema_version` (integer major, current `1`), `mode` (`train|eval`), `global_step`,
   and `metrics` (key/value map). Missing/non-integer/unsupported schema versions are rejected.
 
-Stage-2 note (rollout-matching SFT):
-- Stage_2 (`custom.trainer_variant: rollout_matching_sft`) uses masked losses on a single
+## Stage-2 pipeline identity + metrics reduction contract
+
+Pipeline identity (reproducibility):
+- Stage-2 trainers resolve an effective objective/diagnostics pipeline at init and emit a stable
+  `pipeline_checksum` together with resolved module lists in trainer init logs.
+- `pipeline_checksum` is computed from canonical pipeline identity payload
+  (`objective`, `diagnostics`, semantics-only `extra`) and is invariant to run context.
+- Run context (`config`, `run_name`, `seed`) is logged separately and does not affect checksum.
+- Treat the resolved module list + checksum as part of experiment identity for ablations.
+
+ST bridge diagnostics surface:
+- Stage-2 two-channel supports:
+  - `stage2_ab.coord_ctx_embed_mode: soft|st|hard`
+  - `stage2_ab.coord_decode_mode: exp|st`
+- Stage-2 rollout-aligned supports:
+  - `rollout_matching.coord_decode_mode: exp|st`
+- Objective-side monitoring keys that are useful when toggling ST/regularizers include:
+  - `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj`, `loss/text_gate`
+
+Reduction/naming contract:
+- `loss/*` keys are mean-like scalars (comparable across packing/batch shapes).
+- Counter-like totals must use explicit suffixes (`*_total`, `*_count`, `*_sum`, `*_num`, `*_den`).
+- Ratio-like keys should use `*_rate` / `*_frac`.
+- Internal reduction helpers are underscore-prefixed (for example `rollout/_...`) and are removed
+  from final logged payloads.
+
+Stage-2 note (Stage-2 Rollout-Aligned Teacher Forcing):
+- Stage_2 (`custom.trainer_variant: stage2_rollout_aligned`) uses masked losses on a single
   teacher-forced forward:
   - rollout prefix: coord-token supervision only (prefix text CE is masked out),
   - appended GT tail: normal CE on JSON structure, coord-token supervision on coord slots,
-    and CE for `desc` string *values* is intentionally masked out to avoid amplifying noisy GT labels.
-- As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` may be near-zero
-  or not meaningful for stage_2 runs (because those positions are not supervised).
+    and CE for `desc` string values is supervised by default (weighted via token_ce config,
+    e.g. `desc_ce_weight` / `rollout_fn_desc_weight`).
+- As a result, token-type metrics like `desc_token_frac` / `desc_token_acc` are meaningful
+  for stage_2 runs when FN-appended tail desc tokens are present.
 - Stage_2 runbook: `STAGE2_RUNBOOK.md`.
 
-Stage-2 AB note (Channel-B path):
-- Stage_2 AB (`custom.trainer_variant: stage2_ab_training`) uses unified Channel-B by default:
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
+- Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) uses unified Channel-B by default:
   rollout prefix + FN injection + one teacher-forced forward with explicit CE masks.
 - Channel-B CE/geometry semantics:
   - matched prefix: structure CE ON, desc/coord CE OFF,
@@ -34,7 +61,7 @@ Stage-2 AB note (Channel-B path):
 
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
 
-Stage_2 (`custom.trainer_variant: rollout_matching_sft`) logs additional keys
+Stage_2 (`custom.trainer_variant: stage2_rollout_aligned`) logs additional keys
 under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
 performance during training.
 
@@ -56,7 +83,7 @@ Important semantics:
 - `time/rollout_generate_s`
 - `time/rollout_parse_match_s`
 - `time/rollout_teacher_encode_s`
-  - **Stage-2 AB note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
+  - **Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
     When diagnosing rollout throughput, filter to steps where `stage2/channel_b == 1`.
 
 - `rollout/gen_new_tokens_total|mean|p90|p99`
@@ -99,12 +126,12 @@ Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
 
 ### Matching quality (rollout-level)
 
-- `rollout/gt_objects`, `rollout/valid_pred_objects`
-  - **What:** GT and valid predicted object counts (post-parse).
+- `rollout/gt_objects_total`, `rollout/valid_pred_objects_total`
+  - **What:** GT and valid predicted object counts (post-parse; counter-like totals).
 - `rollout/matched_for_supervision`, `rollout/excluded_from_supervision`
   - **What:** matched objects that were used vs excluded due to target-construction failure.
-- `rollout/fn_appended`, `rollout/fn`
-  - **What:** GT objects not supervised via prefix matching; appended as FN in the tail.
+- `rollout/fn_appended_total`, `rollout/fn_total`
+  - **What:** GT objects not supervised via prefix matching and aggregate FN totals (counter-like totals).
 - `rollout/gating_rejections`, `rollout/gating_rejection_rate`
   - **What:** how often candidate pairs were rejected by the `maskiou_gate` threshold.
 
@@ -159,18 +186,18 @@ affect the training loss.
 - `packing/post_rollout_buffer`
   - **What:** post-rollout packing stats (carry-only mode).
 
-### Stage-2 AB schedule telemetry
+### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) schedule telemetry
 
-Stage-2 AB (`custom.trainer_variant: stage2_ab_training`) logs a small set of scheduler diagnostics
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) logs a small set of scheduler diagnostics
 once per optimizer step (aggregated across gradient accumulation):
 
 - `stage2_ab/b_ratio_realized`
   - **What:** rolling realized fraction of optimizer steps that executed Channel-B.
   - **Why:** sanity-check that the deterministic Bresenham schedule matches `stage2_ab.schedule.b_ratio` over time.
 
-### Stage-2 AB Channel-B strict-drop and closure-supervision diagnostics
+### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B strict-drop and closure-supervision diagnostics
 
-These keys are emitted by `custom.trainer_variant: stage2_ab_training` during Channel-B construction.
+These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Channel-B construction.
 
 - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - **What:** number of predicted objects retained after strict validation for this step.
@@ -199,7 +226,7 @@ Aggregation semantics (training-time `metrics` payload):
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 
-When `custom.trainer_variant: rollout_matching_sft` runs evaluation (`training.eval_strategy != no`),
+When `custom.trainer_variant: stage2_rollout_aligned` runs evaluation (`training.eval_strategy != no`),
 it reports production-style metrics derived from rollout -> parse -> Hungarian matching.
 
 Returned keys (prefixed with `eval_`):
@@ -210,6 +237,12 @@ Returned keys (prefixed with `eval_`):
 - `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
 - `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
 - `eval_rollout/matched_maskiou_mean`
+- `eval_rollout/mAP` (when `rollout_matching.eval_detection.enabled: true`)
+- `eval_rollout/coco_eval_ok` (1.0 on success, 0.0 on best-effort failure fallback)
+
+COCO summary policy (eval-step):
+- Only `eval_rollout/mAP` is emitted for COCO summary output.
+- `eval_rollout/bbox_*` and `eval_rollout/segm_*` summary keys are intentionally suppressed during eval-step.
 
 Optional desc monitor keys (when enabled):
 - `eval_rollout/desc_pairs_total`
@@ -433,7 +466,7 @@ To make scales more intuitive, CoordExp logs a pack-size helper:
   - **What:** number of original samples concatenated into the current unit (batch-wide aggregate).
   - **Note:** in non-packed runs, this is effectively the batch size.
 
-Stage_2 (rollout-matching / Stage2-AB) also logs packing-aware step helpers that are stable even when
+Stage_2 (Stage-2 Rollout-Aligned Teacher Forcing / Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout)) also logs packing-aware step helpers that are stable even when
 post-rollout packing is used:
 - `train/samples_total`
   - **What:** total number of raw (unpacked) samples that contributed to the current optimizer step.
