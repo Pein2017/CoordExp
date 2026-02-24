@@ -1,7 +1,7 @@
 extends: ../base.yaml
 
 model:
-  model: output/stage2_ab/experimental/ab_mixed_ckpt_400
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
   run_name: prod_ab_mixed_continue_from_ckpt_400
@@ -16,6 +16,7 @@ training:
   save_steps: 200
   do_eval: true
   eval_steps: 100
+  metric_for_best_model: rollout/mAP
 
 stage2_ab:
   schedule: {b_ratio: 0.85}

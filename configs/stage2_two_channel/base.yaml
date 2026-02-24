@@ -11,8 +11,8 @@ model:
 template:
   template: qwen3_vl
   truncation_strategy: raise
-  # CoordExp forbids runtime image resizing; keep max_pixels fixed.
-  max_pixels: 786432
+  # note: SET a large value to ban auto-rescale by ms-swift
+  max_pixels: 7864320000
 
 tuner:
   train_type: lora

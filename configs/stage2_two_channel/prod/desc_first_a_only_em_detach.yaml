@@ -17,7 +17,7 @@ training:
   save_strategy: steps
   save_steps: 300
   do_eval: true
-  metric_for_best_model: rollout/f1
+  metric_for_best_model: rollout/mAP
 
 stage2_ab:
   schedule:

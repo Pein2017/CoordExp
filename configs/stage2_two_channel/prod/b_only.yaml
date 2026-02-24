@@ -1,7 +1,7 @@
 extends: ../base.yaml
 
 model:
-  model: output/1-26/checkpoint-1516-merged
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
   run_name: prod_b_only_bbox_max60_ckpt1516_ep2
@@ -16,6 +16,7 @@ training:
   save_strategy: steps
   save_steps: 200
   do_eval: true
+  metric_for_best_model: rollout/mAP
 
 stage2_ab:
   schedule:

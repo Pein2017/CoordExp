@@ -4,7 +4,7 @@ model:
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  run_name: desc_first_merged_ckpt1832_ep2
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-
   output_dir: output/stage2_ab/coco_bbox_max60/a_only
   logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
   num_train_epochs: 2
@@ -17,7 +17,7 @@ training:
   save_strategy: steps
   save_steps: 300
   do_eval: true
-  metric_for_best_model: rollout/f1
+  metric_for_best_model: rollout/mAP
 
 stage2_ab:
   schedule:
