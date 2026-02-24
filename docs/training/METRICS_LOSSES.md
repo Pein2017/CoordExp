@@ -64,9 +64,6 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
 Stage_2 (`custom.trainer_variant: stage2_rollout_aligned`) logs additional keys
 under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
 performance during training.
-It also logs coarse optimizer-step means under `stage2/*`:
-`stage2/ce_mean`, `stage2/coord_mean`, `stage2/coord_prefix_mean`, and
-`stage2/coord_tail_mean`.
 
 For evaluation, Stage_2 uses a production-style evaluator (rollout -> parse ->
 Hungarian match) and reports metrics under `eval_rollout/*` keys. This evaluator
