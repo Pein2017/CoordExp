@@ -675,9 +675,9 @@ class CoordSoftCEW1LossMixin:
     def _mask_coord_targets(
         self, labels: torch.Tensor, coord_token_ids: list[int]
     ) -> torch.Tensor:
-        from src.trainers.losses.coord_soft_ce_w1 import mask_coord_targets
+        from src.trainers.teacher_forcing.stage1 import mask_stage1_coord_targets
 
-        return mask_coord_targets(labels, coord_token_ids)
+        return mask_stage1_coord_targets(labels, coord_token_ids)
 
     def _get_coord_token_ids(self) -> list[int]:
         cached = getattr(self, "_coord_token_ids", None)

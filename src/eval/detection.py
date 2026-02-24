@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -1062,6 +1062,47 @@ def _prepare_all(
         counters,
         prepare_coco=prepare_coco,
     )
+
+
+def compute_coco_metrics_from_records(
+    pred_records: Sequence[Mapping[str, Any]],
+    *,
+    options: EvalOptions,
+) -> Tuple[Dict[str, float], Dict[str, int]]:
+    """Compute COCO metrics from in-memory scored ``gt_vs_pred`` records.
+
+    Returns ``(metrics, counters_dict)`` where ``metrics`` uses the same
+    ``bbox_*`` / ``segm_*`` keys as offline evaluation.
+    """
+
+    counters = EvalCounters()
+    pred_records_list = [dict(r) for r in pred_records]
+    (
+        _gt_samples,
+        _pred_samples,
+        _categories,
+        coco_gt_dict,
+        results,
+        run_segm,
+        _per_image,
+    ) = _prepare_all(
+        pred_records_list,
+        options,
+        counters,
+        prepare_coco=True,
+    )
+
+    coco_gt = COCO()
+    coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+    coco_gt.createIndex()
+
+    metrics, _per_class = _run_coco_eval(
+        coco_gt,
+        results,
+        options=options,
+        run_segm=run_segm,
+    )
+    return metrics, counters.to_dict()
 
 
 def _prepare_all_separate(
