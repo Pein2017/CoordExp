@@ -5854,7 +5854,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # so ranks with different numbers of packed segments (or zero) don't skew the
         # global average under DDP.
         loss_weight = float(sample_total_local)
-        for key in ("loss/ce", "loss/coord", "loss/coord_prefix", "loss/coord_tail"):
+        for key in ("stage2/ce_mean", "stage2/coord_mean", "stage2/coord_prefix_mean", "stage2/coord_tail_mean"):
             if key in reduced:
                 reduced[f"{key}_total"] = float(
                     float(reduced.get(key, 0.0)) * loss_weight
@@ -6012,10 +6012,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         sample_total = float(reduced.get(sample_total_key, 0.0))
 
         for key_total, key_out in (
-            ("loss/ce_total", "loss/ce"),
-            ("loss/coord_total", "loss/coord"),
-            ("loss/coord_prefix_total", "loss/coord_prefix"),
-            ("loss/coord_tail_total", "loss/coord_tail"),
+            ("stage2/ce_mean_total", "stage2/ce_mean"),
+            ("stage2/coord_mean_total", "stage2/coord_mean"),
+            ("stage2/coord_prefix_mean_total", "stage2/coord_prefix_mean"),
+            ("stage2/coord_tail_mean_total", "stage2/coord_tail_mean"),
         ):
             if key_total in reduced:
                 reduced[key_out] = (
@@ -6157,10 +6157,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for key in (
             trunc_num_key,
             trunc_den_key,
-            "loss/ce_total",
-            "loss/coord_total",
-            "loss/coord_prefix_total",
-            "loss/coord_tail_total",
+            "stage2/ce_mean_total",
+            "stage2/coord_mean_total",
+            "stage2/coord_prefix_mean_total",
+            "stage2/coord_tail_mean_total",
             "rollout/_matched_maskiou_sum",
             "rollout/_sample_valid_pred_num",
             "rollout/_sample_any_match_num",
@@ -6569,19 +6569,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if float(getattr(pending, "loss_weight_sum", 0.0)) > 0.0:
             denom = float(pending.loss_weight_sum)
-            payload["loss/ce"] = float(pending.ce_loss_weighted_sum / denom)
-            payload["loss/coord"] = float(pending.coord_loss_weighted_sum / denom)
-            payload["loss/coord_prefix"] = float(
+            payload["stage2/ce_mean"] = float(pending.ce_loss_weighted_sum / denom)
+            payload["stage2/coord_mean"] = float(pending.coord_loss_weighted_sum / denom)
+            payload["stage2/coord_prefix_mean"] = float(
                 pending.coord_prefix_weighted_sum / denom
             )
-            payload["loss/coord_tail"] = float(pending.coord_tail_weighted_sum / denom)
+            payload["stage2/coord_tail_mean"] = float(pending.coord_tail_weighted_sum / denom)
         elif pending.n_micro > 0:
-            payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
-            payload["loss/coord"] = float(pending.coord_loss_sum / float(pending.n_micro))
-            payload["loss/coord_prefix"] = float(
+            payload["stage2/ce_mean"] = float(pending.ce_loss_sum / float(pending.n_micro))
+            payload["stage2/coord_mean"] = float(pending.coord_loss_sum / float(pending.n_micro))
+            payload["stage2/coord_prefix_mean"] = float(
                 pending.coord_prefix_sum / float(pending.n_micro)
             )
-            payload["loss/coord_tail"] = float(pending.coord_tail_sum / float(pending.n_micro))
+            payload["stage2/coord_tail_mean"] = float(pending.coord_tail_sum / float(pending.n_micro))
 
         payload["time/forward_s"] = float(pending.time_forward_s)
         payload["time/mask_build_s"] = float(pending.time_mask_build_s)

@@ -1025,6 +1025,7 @@ def _build_pipeline_manifest(
         "payload": payload,
         "objective": payload.get("objective", []),
         "diagnostics": payload.get("diagnostics", []),
+        "extra": payload.get("extra", {}),
         "checksum": checksum,
         "run_context": run_context,
     }

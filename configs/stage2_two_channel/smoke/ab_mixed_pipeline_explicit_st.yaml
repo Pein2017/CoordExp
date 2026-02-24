@@ -1,7 +1,7 @@
 global_max_length: 12000
 
 model:
-  model: /data/CoordExp/output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
   torch_dtype: bfloat16
   attn_impl: flash_attention_2
 
@@ -99,8 +99,8 @@ custom:
   json_format: standard
   object_field_order: desc_first
   emit_norm: none
-  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
-  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
   train_sample_limit: 64
   val_sample_limit: 16
   coord_tokens:
