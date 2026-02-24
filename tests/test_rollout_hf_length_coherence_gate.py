@@ -2,7 +2,7 @@ import types
 
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_hf_length_gate_raises_when_prompt_plus_generation_exceeds_context() -> None:

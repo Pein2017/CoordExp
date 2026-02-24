@@ -1,7 +1,7 @@
 import os
 import types
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def _make_trainer(tmp_path) -> RolloutMatchingSFTTrainer:

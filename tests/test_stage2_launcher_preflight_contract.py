@@ -13,7 +13,7 @@ from src.trainers.rollout_matching.preflight import (
 
 def test_stage2_launcher_preflight_resolves_expected_fields_for_prod_cfg() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    cfg = repo_root / "configs/stage2_ab/prod/ab_mixed.yaml"
+    cfg = repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml"
     out = resolve_stage2_launcher_preflight(str(cfg))
 
     assert out["rollout_backend"] == "vllm"

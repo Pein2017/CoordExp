@@ -27,7 +27,7 @@ def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # This file lives outside configs/stage2_ab/* so we must force the contract on.
+    # This file lives outside configs/stage2_two_channel/* so we must force the contract on.
     monkeypatch.setattr(
         ConfigLoader,
         "_canonical_stage2_profile_kind",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.trainers.rollout_matching_sft import (
+from src.trainers.stage2_rollout_aligned import (
     RolloutMatchingSFTTrainer,
     _contiguous_chunk_slices,
 )

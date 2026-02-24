@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import torch
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 class _FakeDist:

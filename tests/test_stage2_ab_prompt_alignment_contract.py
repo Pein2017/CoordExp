@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 
-from src.trainers.stage2_ab_training import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 def test_stage2_ab_enforces_prompt_tokenization_alignment() -> None:

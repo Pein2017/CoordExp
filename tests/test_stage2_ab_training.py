@@ -3,12 +3,12 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.trainers.rollout_matching_sft import (
+from src.trainers.stage2_rollout_aligned import (
     GTObject,
     _serialize_append_fragment,
     parse_rollout_for_matching,
 )
-from src.trainers.stage2_ab_training import (
+from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
     _bbox_smoothl1_ciou_loss,
@@ -373,6 +373,42 @@ def test_expectation_decode_is_mean_not_argmax():
     assert float(out.item()) == pytest.approx(0.5, abs=1e-6)
 
 
+def test_expectation_decode_st_has_hard_forward_and_soft_grad() -> None:
+    logits = torch.full((1, 1000), -100.0)
+    logits[0, 0] = 0.0
+    logits[0, 999] = 0.0
+
+    out_exp = _expectation_decode_coords(
+        coord_logits=logits,
+        temperature=1.0,
+        mode="exp",
+    )
+    out_st = _expectation_decode_coords(
+        coord_logits=logits,
+        temperature=1.0,
+        mode="st",
+    )
+
+    # Forward values differ: exp is mean-like, ST uses hard argmax forward.
+    assert float(out_exp.item()) == pytest.approx(0.5, abs=1e-6)
+    assert float(out_st.item()) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_expectation_decode_st_propagates_gradients() -> None:
+    logits = torch.randn(2, 1000, requires_grad=True)
+    out_st = _expectation_decode_coords(
+        coord_logits=logits,
+        temperature=1.0,
+        mode="st",
+    )
+
+    loss = out_st.sum()
+    loss.backward()
+
+    assert logits.grad is not None
+    assert float(logits.grad.abs().sum().item()) > 0.0
+
+
 def test_bbox_losses_stable_on_noncanonical_pred():
     pred = torch.tensor([[1.2, -0.1, -0.2, 0.5]], dtype=torch.float32)
     gt = torch.tensor([[0.0, 0.0, 1.0, 1.0]], dtype=torch.float32)
@@ -635,7 +671,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_ab_training.parse_rollout_for_matching",
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
 
@@ -649,7 +685,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         raise _StopAfterMatch("stop once matcher receives top_k")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_ab_training.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
         _fake_match,
     )
 
@@ -1293,6 +1329,399 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
     )
 
 
+def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 1.0,
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+
+    # Prefix len=4 (only rel=1 is supervised struct); Tail len=4 includes
+    # one FN desc slot (rel=0) and two closure/EOS-like tail tokens (rel=2,3).
+    input_ids = torch.tensor(
+        [[1100, 1100, 1100, 1100, 1101, 1100, 1101, 1101]],
+        dtype=torch.long,
+    )
+
+    meta_base = {
+        "prompt_len": 0,
+        "prefix_len": 4,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "prefix_struct_pos": [1],
+        "tail_desc_pos": [0],
+        "tail_ignore_pos": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [],
+    }
+
+    # Default: FN desc is supervised.
+    loss_default = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta_base)],
+            "input_ids": input_ids,
+        },
+    )
+
+    # Disable FN desc supervision via token_ce module config.
+    t.stage2_pipeline_manifest = {
+        "objective": [
+            {
+                "name": "token_ce",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {"rollout_fn_desc_weight": 0.0},
+            }
+        ],
+        "diagnostics": [],
+    }
+    loss_fn_desc_off = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta_base)],
+            "input_ids": input_ids,
+        },
+    )
+
+    # Mask closure/EOS-like tail positions explicitly; this should also reduce loss,
+    # confirming those positions are supervised when not masked.
+    meta_mask_tail = dict(meta_base)
+    meta_mask_tail["tail_ignore_pos"] = [2, 3]
+    t.stage2_pipeline_manifest = None
+    loss_tail_masked = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_mask_tail],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_fn_desc_off.detach().cpu().item()) < float(
+        loss_default.detach().cpu().item()
+    )
+    assert float(loss_tail_masked.detach().cpu().item()) < float(
+        loss_default.detach().cpu().item()
+    )
+
+
+def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": 0.0,
+        "bbox_smoothl1_weight": 1.0,
+        "bbox_ciou_weight": 1.0,
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
+    meta = {
+        "prompt_len": 0,
+        "prefix_len": 0,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "prefix_struct_pos": [],
+        "tail_desc_pos": [],
+        "tail_ignore_pos": [],
+        "bbox_groups_prefix": [{"pos": [2, 3, 4, 5], "gt_bins": [10, 20, 30, 40]}],
+        "bbox_groups_fn": [],
+    }
+
+    t.stage2_pipeline_manifest = None
+    loss_default = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta)],
+            "input_ids": input_ids,
+        },
+    )
+
+    t.stage2_pipeline_manifest = {
+        "objective": [
+            {
+                "name": "token_ce",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "desc_ce_weight": 0.0,
+                    "rollout_fn_desc_weight": 0.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                },
+            },
+            {
+                "name": "bbox_geo",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {"smoothl1_weight": 0.0, "ciou_weight": 0.0},
+            },
+            {
+                "name": "coord_reg",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "coord_ce_weight": 0.0,
+                    "soft_ce_weight": 0.0,
+                    "w1_weight": 0.0,
+                    "coord_el1_weight": 0.0,
+                    "coord_ehuber_weight": 0.0,
+                    "coord_entropy_weight": 0.0,
+                    "coord_gate_weight": 0.0,
+                    "text_gate_weight": 0.0,
+                },
+            },
+        ],
+        "diagnostics": [],
+    }
+    loss_geo_off = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta)],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_geo_off.detach().cpu().item()) < float(
+        loss_default.detach().cpu().item()
+    )
+
+
+def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> None:
+    desc_w = 0.35
+
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": float(desc_w),
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+    input_ids = torch.tensor([[1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101]], dtype=torch.long)
+    meta = {
+        "prompt_len": 0,
+        "prefix_len": 4,
+        "train_len": int(input_ids.shape[1]),
+        "encoded_len": int(input_ids.shape[1]),
+        "prefix_struct_pos": [1],
+        "tail_desc_pos": [0, 1],
+        "tail_ignore_pos": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [],
+    }
+
+    t.stage2_pipeline_manifest = None
+    loss_implicit = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta)],
+            "input_ids": input_ids,
+        },
+    )
+
+    t.stage2_pipeline_manifest = {
+        "objective": [
+            {
+                "name": "token_ce",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_fn_desc_weight": float(desc_w),
+                },
+            },
+            {"name": "bbox_geo", "enabled": True, "weight": 1.0, "channels": ["A", "B"], "config": {}},
+            {
+                "name": "coord_reg",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "coord_ce_weight": 0.0,
+                    "soft_ce_weight": 0.0,
+                    "w1_weight": 0.0,
+                    "coord_el1_weight": 0.0,
+                    "coord_ehuber_weight": 0.0,
+                    "coord_entropy_weight": 0.0,
+                    "coord_gate_weight": 0.0,
+                    "text_gate_weight": 0.0,
+                },
+            },
+        ],
+        "diagnostics": [],
+    }
+    loss_explicit = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta)],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_implicit.detach().cpu().item()) == pytest.approx(
+        float(loss_explicit.detach().cpu().item()), rel=1e-6, abs=1e-6
+    )
+
+
+def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> None:
+    desc_w = 0.4
+
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "n_softctx_iter": 1,
+        "softctx_temperature": 1.0,
+        "desc_ce_weight": float(desc_w),
+        "bbox_smoothl1_weight": 0.0,
+        "bbox_ciou_weight": 0.0,
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "channel_b": {},
+    }
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyAlwaysTokenModel(pred_id=1100)
+
+    seg_len = 8
+    input_ids = torch.tensor(
+        [[1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101, 1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101]],
+        dtype=torch.long,
+    )
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 4,
+            "train_len": seg_len,
+            "encoded_len": seg_len,
+            "prefix_struct_pos": [1],
+            "tail_desc_pos": [0],
+            "tail_ignore_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+        },
+        {
+            "prompt_len": 0,
+            "prefix_len": 4,
+            "train_len": seg_len,
+            "encoded_len": seg_len,
+            "prefix_struct_pos": [0, 2],
+            "tail_desc_pos": [1],
+            "tail_ignore_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+        },
+    ]
+
+    t.stage2_pipeline_manifest = None
+    loss_implicit = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta[0]), dict(meta[1])],
+            "input_ids": input_ids,
+        },
+    )
+
+    t.stage2_pipeline_manifest = {
+        "objective": [
+            {
+                "name": "token_ce",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_fn_desc_weight": float(desc_w),
+                },
+            },
+            {"name": "bbox_geo", "enabled": True, "weight": 1.0, "channels": ["A", "B"], "config": {}},
+            {
+                "name": "coord_reg",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {
+                    "coord_ce_weight": 0.0,
+                    "soft_ce_weight": 0.0,
+                    "w1_weight": 0.0,
+                    "coord_el1_weight": 0.0,
+                    "coord_ehuber_weight": 0.0,
+                    "coord_entropy_weight": 0.0,
+                    "coord_gate_weight": 0.0,
+                    "text_gate_weight": 0.0,
+                },
+            },
+        ],
+        "diagnostics": [],
+    }
+    loss_explicit = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta[0]), dict(meta[1])],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_implicit.detach().cpu().item()) == pytest.approx(
+        float(loss_explicit.detach().cpu().item()), rel=1e-6, abs=1e-6
+    )
+
+
 def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
     tok = _DummyTokenizer()
 
@@ -1522,6 +1951,27 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
     assert "stage2/_log_weight_total" not in out
 
 
+def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer._dist_info = lambda: (0, 1, None)
+
+    out = trainer._reduce_stage2_pending_metrics_global(
+        {
+            "stage2/_log_weight_total": 2.0,
+            "rollout/_parse_truncated_num": 1.0,
+            "rollout/_parse_truncated_den": 4.0,
+            "rollout/parse_truncated": 1.0,
+            "stage2/raw_rollouts": 4.0,
+            "loss/bbox_smoothl1": 1.0,
+        }
+    )
+
+    assert "stage2/_log_weight_total" not in out
+    assert "rollout/_parse_truncated_num" not in out
+    assert "rollout/_parse_truncated_den" not in out
+    assert all(not str(k).startswith("rollout/_") for k in out)
+
+
 
 def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     # Stage2-AB standardizes Channel-B to a single step-budgeted pathway.
@@ -1583,3 +2033,172 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     assert isinstance(bm, dict)
     assert bm["stage2_ab/b_ratio_realized"] == 3.0
     assert bm["rollout/backend_vllm"] == 2.0
+
+
+def _make_eval_ready_stage2_ab_trainer() -> Stage2ABTrainingTrainer:
+    trainer = object.__new__(Stage2ABTrainingTrainer)
+
+    class _EvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _EvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=object())
+    trainer._cfg = lambda _k, default=None: default
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[{"sample_id": 0}]]
+    trainer._rollout_many = lambda batch, prompt_variant_override=None: [
+        ([101], "{}", "greedy", []) for _ in batch
+    ]
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+    trainer.log = lambda _metrics: None
+    return trainer
+
+
+def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(monkeypatch) -> None:
+    trainer = _make_eval_ready_stage2_ab_trainer()
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[101],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        lambda **_kwargs: (
+            {"bbox_AP": 0.25, "bbox_AP50": 0.5, "segm_AP": 0.75},
+            {"empty_pred": 0},
+        ),
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+
+    metrics = trainer.evaluate(metric_key_prefix="eval")
+
+    assert trainer.model.training is True
+    assert logged_metrics == metrics
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.25)
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
+    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
+    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+
+
+def test_stage2_two_channel_eval_sets_map_zero_when_coco_eval_fails(monkeypatch) -> None:
+    trainer = _make_eval_ready_stage2_ab_trainer()
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[101],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    def _raise_coco_eval(**_kwargs):
+        raise ValueError("synthetic coco eval failure")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        _raise_coco_eval,
+    )
+
+    metrics = trainer.evaluate(metric_key_prefix="eval")
+
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(0.0)
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.0)
+    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
+    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)

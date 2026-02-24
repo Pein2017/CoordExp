@@ -1,4 +1,4 @@
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_clip_text_returns_full_string_when_disabled() -> None:

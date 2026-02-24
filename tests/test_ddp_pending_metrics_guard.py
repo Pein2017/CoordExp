@@ -5,8 +5,8 @@ import types
 import pytest
 import torch
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
-from src.trainers.stage2_ab_training import Stage2ABTrainingTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 def _mk_min_rm_trainer() -> RolloutMatchingSFTTrainer:
@@ -83,7 +83,7 @@ def test_rollout_matching_training_step_rejects_empty_raw_batch(
         t.training_step(model=object(), inputs=[])
 
 
-def test_stage2_ab_training_step_rejects_empty_raw_batch(
+def test_stage2_two_channel_step_rejects_empty_raw_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(torch.distributed, "is_available", lambda: True, raising=False)

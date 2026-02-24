@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.trainers.stage2_ab_training import _PendingStage2Log
+from src.trainers.stage2_two_channel import _PendingStage2Log
 
 
 def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None:
@@ -74,4 +74,62 @@ def test_stage2_pending_log_finalize_uses_segment_weight_when_provided() -> None
     assert out["loss/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert out["stage2/raw_rollouts"] == pytest.approx(3.0)
     assert "stage2/_log_weight_total" not in out
+
+
+def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
+    pending = _PendingStage2Log()
+
+    pending.add(
+        {
+            "loss/token_ce_obj": 1.0,
+            "rollout/fp_total": 2.0,
+            "rollout/fn_total": 1.0,
+            "rollout/matched_maskiou_count": 3.0,
+            "stage2/_log_weight": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "loss/token_ce_obj": 3.0,
+            "rollout/fp_total": 5.0,
+            "rollout/fn_total": 4.0,
+            "rollout/matched_maskiou_count": 7.0,
+            "stage2/_log_weight": 3.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    # Mean-like loss keys are weighted by stage2/_log_weight.
+    assert out["loss/token_ce_obj"] == pytest.approx((1.0 * 1.0 + 3.0 * 3.0) / 4.0)
+
+    # Counter-like keys with suffixes are always summed.
+    assert out["rollout/fp_total"] == pytest.approx(7.0)
+    assert out["rollout/fn_total"] == pytest.approx(5.0)
+    assert out["rollout/matched_maskiou_count"] == pytest.approx(10.0)
+
+    # Internal helper keys are removed from final payload.
+    assert "stage2/_log_weight_total" not in out
+    assert "rollout/_parse_truncated_num" not in out
+    assert "rollout/_parse_truncated_den" not in out
+
+
+def test_stage2_pending_log_emits_canonical_loss_prefix_only() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "loss/token_ce_obj": 0.5,
+            "loss/bbox_geo_obj": 0.25,
+            "loss/coord_reg_obj": 0.125,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert "loss/token_ce_obj" in out
+    assert "loss/bbox_geo_obj" in out
+    assert "loss/coord_reg_obj" in out
+    assert "loss_token_ce_obj" not in out
+    assert "loss_bbox_geo_obj" not in out
+    assert "loss_coord_reg_obj" not in out
 

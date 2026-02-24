@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from src.config.prompts import build_dense_user_prompt
-from src.trainers.rollout_matching_sft import (
+from src.trainers.stage2_rollout_aligned import (
     GTObject,
     RolloutMatchingSFTTrainer,
     _PendingTrainRolloutLog,
@@ -23,6 +23,12 @@ from src.trainers.rollout_matching_sft import (
     hungarian_match_maskiou,
     parse_rollout_for_matching,
 )
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+
+
+def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
+    assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
+    assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
 
 
 class _DummyTokenizerRM:
@@ -465,6 +471,49 @@ def test_build_rollout_metrics_from_meta_skips_inactive_rollout_steps() -> None:
     assert out == {}
 
 
+def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer._cfg = lambda _k, default=None: default
+    trainer._decoding_params = lambda: (0.0, 1.0, -1)
+
+    metrics = trainer._build_rollout_metrics_from_meta(
+        [
+            {
+                "rollout_len": 8,
+                "decode_mode": "greedy",
+                "gt_objects": 2,
+                "matched_for_supervision": 1,
+                "valid_pred_objects": 3,
+                "excluded_from_supervision": 0,
+                "parse_dropped_invalid": 1,
+                "parse_dropped_ambiguous": 0,
+                "parse_truncated": False,
+                "gating_rejections": 0,
+                "matched_maskiou_sum": 0.8,
+                "matched_maskiou_count": 1,
+                "fn_count": 1,
+                "prefix_coord_target_bins": [1, 2],
+                "tail_ignore_pos": [7],
+                "prompt_len": 10,
+                "prefix_len": 12,
+                "train_len": 16,
+                "encoded_len": 20,
+            }
+        ]
+    )
+
+    assert metrics["rollout/gt_objects_total"] == pytest.approx(2.0)
+    assert metrics["rollout/valid_pred_objects_total"] == pytest.approx(3.0)
+    assert metrics["rollout/fp_total"] == pytest.approx(2.0)
+    assert metrics["rollout/fn_total"] == pytest.approx(1.0)
+    assert metrics["rollout/fn_appended_total"] == pytest.approx(1.0)
+    assert "rollout/gt_objects" not in metrics
+    assert "rollout/valid_pred_objects" not in metrics
+    assert "rollout/fp" not in metrics
+    assert "rollout/fn" not in metrics
+    assert "rollout/fn_appended" not in metrics
+
+
 def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
@@ -478,6 +527,33 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
     assert out["train/samples_total"] == pytest.approx(4.0)
     assert out["loss/ce"] == pytest.approx(1.5)
     assert "rollout/parse_truncated_rate" not in out
+
+
+def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer._cfg = lambda _k, default=None: default
+
+    out = trainer._reduce_train_rollout_log_payload_global(
+        {
+            "train/samples_total": 2.0,
+            "loss/ce": 1.0,
+            "loss/coord": 0.5,
+            "rollout/_matched_maskiou_sum": 1.2,
+            "rollout/matched_maskiou_count": 2.0,
+            "rollout/_sample_valid_pred_num": 1.0,
+            "rollout/sample_valid_pred_rate": 0.5,
+            "rollout/_desc_exact_ok": 1.0,
+            "rollout/desc_pairs_total": 2.0,
+            "rollout/desc_exact_acc_on_matched": 0.5,
+        }
+    )
+
+    assert all(not str(k).startswith("rollout/_") for k in out.keys())
+    assert out["loss/ce"] == pytest.approx(1.0)
+    assert out["loss/coord"] == pytest.approx(0.5)
+    assert out["rollout/matched_maskiou_mean"] == pytest.approx(0.6)
+    assert out["rollout/sample_valid_pred_rate"] == pytest.approx(0.5)
+    assert out["rollout/desc_exact_acc_on_matched"] == pytest.approx(0.5)
 
 
 def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
@@ -636,15 +712,15 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     }
 
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
         lambda **kwargs: parse_map[int(kwargs["response_token_ids"][0])],
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft._extract_gt_objects",
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
         lambda _sample: [
             GTObject(index=0, geom_type="bbox", points_norm1000=[0, 0, 10, 10], desc="")
         ],
@@ -674,7 +750,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
         _fake_hungarian,
     )
 
@@ -836,15 +912,15 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft._extract_gt_objects",
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -855,7 +931,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -866,7 +942,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_matching_sft._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
         lambda **_kwargs: (
             {"bbox_AP": 0.123, "bbox_AP50": 0.456},
             {"empty_pred": 0},
@@ -882,11 +958,137 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     metrics = trainer.evaluate()
 
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/bbox_AP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/bbox_AP50"] == pytest.approx(0.456)
     assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
     assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
     assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
+    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+
+
+def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    def _raise_coco(**_kwargs):
+        raise RuntimeError("forced coco failure")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        _raise_coco,
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+
+    assert logged_metrics == metrics
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(0.0)
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.0)
+    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
+    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
 
 
 def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):
@@ -1316,6 +1518,55 @@ def test_loss_masking_can_ignore_desc_like_tail_tokens():
     assert 9 in coord_pos
 
 
+def test_rollout_context_masking_full_idea_semantics_prefix_fn_fp_and_closure():
+    prompt_len = 2
+    prefix_len = 4
+    train_len = 8
+
+    coord_id_set = {10}
+    coord_id_to_bin = {10: 10}
+
+    # assistant span: [2, 10)
+    # prefix: [2, 6), tail: [6, 10)
+    input_ids = torch.tensor([1, 2, 30, 31, 32, 33, 40, 41, 10, 42, 0, 0], dtype=torch.long)
+
+    labels, coord_pos, coord_bins, coord_is_prefix = _build_labels_and_coord_targets_for_sample(
+        input_ids_1d=input_ids,
+        prompt_len=prompt_len,
+        prefix_len=prefix_len,
+        train_len=train_len,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+        prefix_coord_pos=[],
+        prefix_coord_target_bins=[],
+        # ignore tail rel=0 and rel=3, but rel=3 is closure and must stay supervised
+        tail_ignore_pos=[0, 3],
+        # matched-prefix struct-only CE
+        prefix_struct_pos=[0, 2],
+        # FN desc token rel=1 is supervised by default
+        tail_desc_pos=[1],
+        # closure/EOS supervision (tail rel=3)
+        tail_closure_pos=[3],
+    )
+
+    # Prefix matched-struct CE on rel=0,2 only (FP prefix spans masked).
+    assert labels[2].item() == 30
+    assert labels[3].item() == -100
+    assert labels[4].item() == 32
+    assert labels[5].item() == -100
+
+    # Tail FN semantics: desc token is supervised, coord token masked, closure supervised.
+    assert labels[6].item() == -100  # ignored non-closure
+    assert labels[7].item() == 41    # desc supervised by default
+    assert labels[8].item() == -100  # coord
+    assert labels[9].item() == 42    # closure supervised even if listed in tail_ignore_pos
+
+    # Tail coord token still contributes to coord supervision targets.
+    assert coord_pos == [8]
+    assert coord_bins == [10]
+    assert coord_is_prefix == [False]
+
+
 def test_packed_label_mask_equivalence_two_segments():
     # Two synthetic segments; packed-mode labels should equal concatenated per-segment labels.
     coord_id_set = {10, 20}
@@ -1446,7 +1697,7 @@ def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
 
 
 def test_adaptive_raw_microbatch_stacker_bumps_on_underfill() -> None:
-    from src.trainers.rollout_matching_sft import _AdaptiveRawMicroBatchStacker
+    from src.trainers.stage2_rollout_aligned import _AdaptiveRawMicroBatchStacker
 
     class _DummyTrainer:
         def __init__(self) -> None:

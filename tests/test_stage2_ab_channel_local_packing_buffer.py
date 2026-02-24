@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.trainers.stage2_ab_training import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 def test_stage2_ab_post_rollout_packing_buffers_are_channel_local() -> None:

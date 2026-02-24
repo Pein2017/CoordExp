@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from src.trainers.rollout_matching_sft import _build_labels_and_coord_targets_for_batch
+from src.trainers.stage2_rollout_aligned import _build_labels_and_coord_targets_for_batch
 
 
 def test_build_labels_and_coord_targets_packed_respects_segment_boundaries() -> None:

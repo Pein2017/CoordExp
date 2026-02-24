@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_build_vllm_server_infer_requests_matches_swift_rollout_infer_request() -> None:
