@@ -140,9 +140,16 @@ Packing is supported post-rollout only:
 - Enable with `training.packing: true`.
 - Rollout generation remains un-packed (padded batch). The trainer temporarily disables padding-free / packing during rollouts.
 - Stage-2 uses dynamic post-rollout packing inside the trainer (dataset-level packing wrappers are not used).
+- Post-rollout packing here means **post-rollout, pre-forward**: the trainer builds per-sample teacher-forced segments (`Y_train`)
+  first, then packs those segments into packed sequences under the `packing_length` cap before any forward/backward.
 - Selection uses a deterministic constant-volume binpacking heuristic; the `binpacking` dependency is required when packing is enabled.
-- Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
+  - `stage2_rollout_aligned`: spec-compliant selection that never returns a pack shorter than the FIFO-greedy baseline for the same buffer state.
+  - `stage2_two_channel` (step-budgeted): pool-aware selection that prioritizes minimizing the total number of packed sequences per optimizer step
+    (fewer forward/backward calls), and secondarily avoids tiny remainder packs when feasible.
 - Stage-2 uses micro-scope dynamic post-rollout packing only (window lookahead removed).
+- `training.packing_drop_last: true` is required (the trainer does not run flush steps at the end).
+  - `stage2_rollout_aligned`: carries leftover segments across optimizer steps (carry-only buffer).
+  - `stage2_two_channel`: the per-step pool is fully consumed by contract (no cross-step carry), but `packing_drop_last` remains required for stable semantics.
 
 The rollout prefix is treated as immutable in token space:
 - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).

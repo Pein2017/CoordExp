@@ -100,6 +100,8 @@ class Stage2ABChannelExecutorsMixin:
         selected_idx = self._select_post_rollout_segment_indices(
             encoded_lens,
             packing_length,
+            min_fill_ratio=self._packing_min_fill_ratio(),
+            allow_shorter_than_fifo=True,
         )
         if not selected_idx:
             raise AssertionError("post-rollout packing selected an empty segment set")

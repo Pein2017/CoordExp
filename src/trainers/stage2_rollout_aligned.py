@@ -4960,6 +4960,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _select_post_rollout_segment_indices(
         encoded_lens: Sequence[int],
         packing_length: int,
+        *,
+        min_fill_ratio: Optional[float] = None,
+        allow_shorter_than_fifo: bool = False,
     ) -> List[int]:
         """Select segment indices for one packed forward pass.
 
@@ -4967,10 +4970,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         are in insertion order, MUST include the oldest segment, and total length MUST
         be <= packing_length.
 
-        Selection is:
-          - FIFO-greedy baseline (current behavior), and
-          - ms-swift-like constant-volume binpacking candidate constrained to include oldest,
-        with a strict "never worse than FIFO" fallback rule.
+        Default behavior (`allow_shorter_than_fifo=False`) is spec-compliant for the
+        rollout-matching trainer:
+        - compute FIFO-greedy baseline,
+        - compute an ms-swift-like constant-volume binpacking candidate (oldest pinned),
+        - return the candidate only if it strictly increases total selected length,
+          otherwise return the baseline.
+
+        Stage-2 AB step-budgeted mode can optionally enable pool-aware packing
+        (`allow_shorter_than_fifo=True`) to mimic Stage-1 smart packing inside the
+        per-step pool (e.g. 8 raw samples/rank/optimizer.step) and reduce tiny remainder
+        packs when carry across steps is forbidden.
+
+        `min_fill_ratio` is treated as a soft policy knob for pool-aware mode only.
         """
         packing_length = int(packing_length)
         if packing_length <= 0:
@@ -4996,14 +5008,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if oldest_len <= 0:
             raise ValueError("oldest post-rollout segment has non-positive encoded_len")
 
-        # Defensive invariant check (insertion should already enforce this).
         for sl in lens:
             if int(sl) > packing_length:
                 raise ValueError(
                     f"post-rollout packing buffer contains an oversized segment: encoded_len={int(sl)} > packing_length={packing_length}."
                 )
 
-        # 1) FIFO-greedy baseline (current behavior): always include oldest, then scan.
+        # 1) FIFO-greedy baseline (must include oldest; stable insertion-order scan).
         baseline: List[int] = [0]
         used = int(oldest_len)
         for i in range(1, len(lens)):
@@ -5013,46 +5024,265 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if used + sl <= packing_length:
                 baseline.append(int(i))
                 used += sl
+        baseline = sorted(int(i) for i in baseline)
         baseline_total = int(used)
 
-        # 2) Binpacking candidate under the residual cap (oldest is pinned).
-        cap_rem = int(packing_length - oldest_len)
-        if cap_rem <= 0:
-            return baseline
+        # Default mode: MUST NOT return a selection with lower total length than FIFO.
+        if not bool(allow_shorter_than_fifo):
+            cap_rem = int(packing_length - oldest_len)
+            if cap_rem <= 0:
+                return baseline
 
-        items: List[Tuple[int, int]] = []
-        for i in range(1, len(lens)):
-            sl = int(lens[i])
-            if sl <= 0:
-                continue
-            if sl <= cap_rem:
-                items.append((int(i), int(sl)))
+            items: List[Tuple[int, int]] = []
+            for i in range(1, len(lens)):
+                sl = int(lens[i])
+                if sl <= 0:
+                    continue
+                if sl <= cap_rem:
+                    items.append((int(i), int(sl)))
 
-        bins = (
-            binpacking.to_constant_volume(items, cap_rem, weight_pos=1) if items else []
-        )
-
-        best_rest: List[int] = []
-        best_key: Optional[Tuple[int, int, Tuple[int, ...]]] = None
-        for b in bins:
-            rest = sorted(int(idx) for idx, _ in b)
-            total = int(sum(int(lens[i]) for i in rest))
-            key = (-total, len(rest), tuple(rest))
-            if best_key is None or key < best_key:
-                best_key = key
-                best_rest = rest
-
-        candidate: List[int] = [0] + best_rest
-        candidate.sort()
-        candidate_total = int(sum(int(lens[i]) for i in candidate))
-        if candidate_total > packing_length:
-            raise AssertionError(
-                "post-rollout packing selection overflowed packing_length"
+            bins = (
+                binpacking.to_constant_volume(items, cap_rem, weight_pos=1) if items else []
             )
 
-        # Baseline-fallback rule: only switch if binpacking strictly improves total length.
-        if candidate_total > baseline_total:
-            return candidate
+            best_rest: List[int] = []
+            best_key: Optional[Tuple[int, int, Tuple[int, ...]]] = None
+            for b in bins:
+                rest = sorted(int(idx) for idx, _ in b)
+                total = int(sum(int(lens[i]) for i in rest))
+                key = (-total, len(rest), tuple(rest))
+                if best_key is None or key < best_key:
+                    best_key = key
+                    best_rest = rest
+
+            candidate = sorted([0] + best_rest)
+            candidate_total = int(sum(int(lens[i]) for i in candidate))
+            if candidate_total > packing_length:
+                raise AssertionError(
+                    "post-rollout packing selection overflowed packing_length"
+                )
+
+            if candidate_total > baseline_total:
+                return candidate
+            return baseline
+
+        # Pool-aware mode: allow selecting a shorter current pack when it improves the
+        # remaining pool packing (reduces underfilled remainder packs).
+        target_len = 0
+        if min_fill_ratio is not None:
+            try:
+                mfr = float(min_fill_ratio)
+            except (TypeError, ValueError):
+                mfr = 0.0
+            if math.isfinite(mfr) and mfr > 0.0:
+                mfr = min(1.0, max(0.0, mfr))
+                target_len = int(math.ceil(float(mfr) * float(packing_length)))
+
+        def _bin_total(idxs: Sequence[int]) -> int:
+            return int(sum(int(lens[i]) for i in idxs))
+
+        def _bins_from_indices(indices: Sequence[int]) -> List[List[int]]:
+            if not indices:
+                return []
+            items: List[Tuple[int, int]] = []
+            for i in indices:
+                ii = int(i)
+                sl = int(lens[ii])
+                if sl <= 0:
+                    continue
+                if sl > packing_length:
+                    continue
+                items.append((ii, sl))
+            if not items:
+                return []
+
+            raw_bins = binpacking.to_constant_volume(
+                items,
+                packing_length,
+                weight_pos=1,
+            )
+
+            out: List[List[int]] = []
+            for b in raw_bins:
+                idxs = sorted(int(idx) for idx, _ in b)
+                if idxs:
+                    out.append(idxs)
+            return out
+
+        def _count_underfilled(bins: Sequence[Sequence[int]]) -> int:
+            if target_len <= 0:
+                return 0
+            c = 0
+            for b in bins:
+                if _bin_total(b) < int(target_len):
+                    c += 1
+            return int(c)
+
+        def _min_fill(bins: Sequence[Sequence[int]]) -> float:
+            if not bins:
+                return 1.0
+            mf = 1.0
+            for b in bins:
+                tot = float(_bin_total(b))
+                mf = min(mf, tot / float(packing_length))
+            return float(mf)
+
+        def _rebalance_bins(
+            bins: List[List[int]],
+            *,
+            frozen: Optional[set[int]] = None,
+        ) -> List[List[int]]:
+            if target_len <= 0:
+                return bins
+            if len(bins) < 2:
+                return bins
+
+            frozen_set: set[int] = set(frozen or set())
+
+            for _pass in range(8):
+                totals = [_bin_total(b) for b in bins]
+                moved_any = False
+
+                order = sorted(
+                    range(len(bins)),
+                    key=lambda bi: (totals[bi], bins[bi][0] if bins[bi] else 10**9, bi),
+                )
+
+                for recv_i in order:
+                    recv = bins[recv_i]
+                    if not recv:
+                        continue
+                    recv_total = int(totals[recv_i])
+                    if recv_total >= int(target_len):
+                        continue
+
+                    recv_cap = int(packing_length - recv_total)
+                    if recv_cap <= 0:
+                        continue
+
+                    deficit = int(target_len - recv_total)
+
+                    best: Optional[Tuple[int, int, int, int, int]] = None
+                    # (category, secondary, item_len, item_idx, donor_i) smaller is better
+
+                    for donor_i, donor in enumerate(bins):
+                        if donor_i == recv_i:
+                            continue
+                        if len(donor) <= 1:
+                            continue
+                        donor_total = int(totals[donor_i])
+                        if donor_total <= int(target_len):
+                            continue
+
+                        for item_idx in donor:
+                            ii = int(item_idx)
+                            if ii in frozen_set:
+                                continue
+                            item_len = int(lens[ii])
+                            if item_len <= 0:
+                                continue
+                            if item_len > recv_cap:
+                                continue
+                            if int(donor_total - item_len) < int(target_len):
+                                continue
+
+                            if item_len <= deficit:
+                                key = (0, -item_len, item_len, ii, donor_i)
+                            else:
+                                key = (1, item_len, item_len, ii, donor_i)
+
+                            if best is None or key < best:
+                                best = key
+
+                    if best is None:
+                        continue
+
+                    _cat, _sec, item_len, item_idx, donor_i = best
+
+                    donor = bins[int(donor_i)]
+                    if int(item_idx) not in donor:
+                        continue
+                    if len(donor) <= 1:
+                        continue
+
+                    donor_total = int(_bin_total(donor))
+                    recv_total = int(_bin_total(recv))
+                    if int(donor_total - item_len) < int(target_len):
+                        continue
+                    if int(recv_total + item_len) > int(packing_length):
+                        continue
+
+                    donor.remove(int(item_idx))
+                    recv.append(int(item_idx))
+                    donor.sort()
+                    recv.sort()
+
+                    totals[int(donor_i)] = int(donor_total - item_len)
+                    totals[int(recv_i)] = int(recv_total + item_len)
+                    moved_any = True
+
+                if not moved_any:
+                    break
+
+            return bins
+
+        def _score(
+            *,
+            selection: List[int],
+            remaining_bins: List[List[int]],
+        ) -> Tuple[int, int, float, int, Tuple[int, ...]]:
+            tot = int(sum(int(lens[i]) for i in selection))
+            fill = float(tot) / float(packing_length) if packing_length > 0 else 0.0
+            underfilled = 0
+            if target_len > 0 and tot < int(target_len):
+                underfilled += 1
+            underfilled += int(_count_underfilled(remaining_bins))
+
+            n_bins = 1 + int(len(remaining_bins))
+            min_fill = min(
+                float(fill),
+                float(_min_fill(remaining_bins)) if remaining_bins else float(fill),
+            )
+            return (
+                int(n_bins),
+                int(underfilled),
+                -float(min_fill),
+                -int(tot),
+                tuple(int(i) for i in selection),
+            )
+
+        baseline_set = set(baseline)
+        baseline_remaining_idx = [i for i in range(len(lens)) if i not in baseline_set]
+        baseline_remaining_bins = _bins_from_indices(baseline_remaining_idx)
+        baseline_remaining_bins = _rebalance_bins(baseline_remaining_bins)
+        baseline_score = _score(
+            selection=baseline,
+            remaining_bins=baseline_remaining_bins,
+        )
+
+        all_idx = list(range(len(lens)))
+        bins_full = _bins_from_indices(all_idx)
+        if not bins_full:
+            return baseline
+        bins_full = _rebalance_bins(bins_full, frozen={0})
+
+        oldest_bin: Optional[List[int]] = None
+        rest_bins: List[List[int]] = []
+        for b in bins_full:
+            if 0 in b and oldest_bin is None:
+                oldest_bin = list(b)
+            else:
+                rest_bins.append(list(b))
+        if oldest_bin is None:
+            return baseline
+
+        oldest_bin = sorted(int(i) for i in oldest_bin)
+        if not oldest_bin or oldest_bin[0] != 0:
+            return baseline
+
+        smart_score = _score(selection=oldest_bin, remaining_bins=rest_bins)
+        if smart_score < baseline_score:
+            return oldest_bin
         return baseline
 
     def _pop_post_rollout_pack(
@@ -5073,7 +5303,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         encoded_lens = [int(seg_len) for _, _, seg_len in self._post_rollout_segments]
         selected_idx = self._select_post_rollout_segment_indices(
-            encoded_lens, packing_length
+            encoded_lens,
+            packing_length,
+            min_fill_ratio=self._packing_min_fill_ratio(),
         )
         if not selected_idx:
             raise AssertionError("post-rollout packing selected an empty segment set")

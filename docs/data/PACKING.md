@@ -3,12 +3,15 @@
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage_2 rollout-matching SFT (`custom.trainer_variant: stage2_rollout_aligned`) supports
+- Stage_2 trainers (`custom.trainer_variant: stage2_rollout_aligned` and `stage2_two_channel`) support
   **post-rollout packing inside the trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
-  - carry-only mode requires `training.packing_drop_last: true`,
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
+  - `training.packing_drop_last: true` is required (no end-of-run flush steps; `stage2_rollout_aligned` uses a carry buffer).
+  - `stage2_two_channel` (step-budgeted) uses a *pool-aware* selector that prioritizes minimizing the total number of packed
+    sequences per optimizer step (fewer forward/backward calls) and secondarily avoids tiny remainder packs.
+    - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
 - Stage_2 runbook: `../training/STAGE2_RUNBOOK.md`.
 
 ## Why this is the new default
@@ -60,4 +63,3 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 3) Monitor GPU memory; if headroom shrinks, drop to `global_max_length: 12000` and keep eff_bs=12.
 4) Keep ROOT_IMAGE_DIR set for dataset paths; packing requires non-lazy tokenize.
 5) If comparing to padding runs, match total samples (epochs) rather than optimizer steps.
-

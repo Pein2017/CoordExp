@@ -204,7 +204,9 @@ affect the training loss.
 - `packing/post_rollout_fill`
 - `packing/post_rollout_segments`
 - `packing/post_rollout_buffer`
-  - **What:** post-rollout packing stats (carry-only mode).
+  - **What:** post-rollout packing stats for the teacher-forced forward pass.
+  - **Note:** `stage2_rollout_aligned` uses a carry buffer across optimizer steps; `stage2_two_channel` is step-budgeted (no cross-step carry),
+    so `packing/post_rollout_buffer` should normally drain to `0` at the end of each step.
 
 ### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) schedule telemetry
 
@@ -496,7 +498,9 @@ post-rollout packing is used:
   - **What:** cumulative `train/samples_total` over the run (rank-local in multi-GPU; exact in server-mode world_size=1).
   - **Why:** use this as a packing-aware "progress" axis for eval scheduling and throughput comparisons.
 - `train/micro_steps`
-  - **What:** number of micro-steps accumulated into the current optimizer step (≈ `gradient_accumulation_steps`).
+  - **What:** number of packed forward/backward passes executed inside the current optimizer step (i.e., number of packed sequences consumed).
+  - **Why:** directly measures how many times the model did a full forward/backward for this step; post-rollout packing selection aims to
+    minimize this under step-budgeted semantics.
 
 ## Reduction / Aggregation Semantics (Important)
 

@@ -1,4 +1,7 @@
+import math
 import types
+from typing import List, Sequence
+
 import pytest
 import torch
 import torch.nn as nn
@@ -784,6 +787,65 @@ def test_packing_enabled_requires_qwen_packing_metadata():
                 "input_ids": input_ids,
             },
         )
+
+
+def test_post_rollout_packing_selector_is_remainder_aware():
+    pytest.importorskip("binpacking")
+
+    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+
+    packing_length = 10
+    min_fill_ratio = 0.5
+    target_len = int(math.ceil(float(min_fill_ratio) * float(packing_length)))
+
+    # Construct a small pool where FIFO-greedy produces a tiny remainder pack,
+    # but a stage-1-like "smart" plan can avoid underfill by leaving a small
+    # segment to pair with the leftover medium segment.
+    lens = [9, 6, 4, 4, 1]
+
+    def _legacy_fifo(buf_lens: Sequence[int]) -> List[int]:
+        used = int(buf_lens[0])
+        sel = [0]
+        for i in range(1, len(buf_lens)):
+            sl = int(buf_lens[i])
+            if sl <= 0:
+                continue
+            if used + sl <= int(packing_length):
+                sel.append(int(i))
+                used += sl
+        return sel
+
+    def _simulate(buf_lens: Sequence[int], *, selector) -> int:
+        buf = [int(x) for x in buf_lens]
+        underfilled = 0
+        while buf:
+            idx = selector(buf)
+            assert idx
+            assert idx[0] == 0
+
+            total = int(sum(int(buf[i]) for i in idx))
+            if total < int(target_len):
+                underfilled += 1
+
+            for i in reversed(idx):
+                buf.pop(int(i))
+        return int(underfilled)
+
+    legacy_underfilled = _simulate(lens, selector=_legacy_fifo)
+
+    def _smart(buf_lens: Sequence[int]) -> List[int]:
+        return RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(
+            buf_lens,
+            packing_length,
+            min_fill_ratio=min_fill_ratio,
+            allow_shorter_than_fifo=True,
+        )
+
+    smart_underfilled = _simulate(lens, selector=_smart)
+
+    assert legacy_underfilled == 1
+    assert smart_underfilled == 0
+
 
 
 def test_extract_gt_bboxonly_rejects_poly_geometry():
