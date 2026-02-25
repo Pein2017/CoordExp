@@ -83,9 +83,24 @@ def test_validate_rollout_matching_cfg_accepts_eval_detection_block():
     t._validate_rollout_matching_cfg()
 
 
+def test_validate_rollout_matching_cfg_accepts_eval_detection_confidence_postop():
+    t = _mk_uninit_trainer(
+        {
+            "eval_detection": {
+                "score_mode": "confidence_postop",
+                "pred_score_source": "eval_rollout_constant",
+            }
+        }
+    )
+    t._validate_rollout_matching_cfg()
+
+
 def test_validate_rollout_matching_cfg_rejects_eval_detection_bad_score_mode():
     t = _mk_uninit_trainer({"eval_detection": {"score_mode": "unsupported"}})
-    with pytest.raises(ValueError, match=r"eval_detection\.score_mode must be 'constant'"):
+    with pytest.raises(
+        ValueError,
+        match=r"eval_detection\.score_mode must be one of \{'constant', 'confidence_postop'\}",
+    ):
         t._validate_rollout_matching_cfg()
 
 

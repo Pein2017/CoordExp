@@ -1600,9 +1600,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             score_mode = str(
                 eval_det_raw.get("score_mode", "constant") or "constant"
             ).strip().lower()
-            if score_mode != "constant":
+            if score_mode not in {"constant", "confidence_postop"}:
                 raise ValueError(
-                    "rollout_matching.eval_detection.score_mode must be 'constant'"
+                    "rollout_matching.eval_detection.score_mode must be one of {'constant', 'confidence_postop'}"
                 )
             try:
                 score = float(eval_det_raw.get("constant_score", 1.0) or 1.0)
