@@ -117,10 +117,15 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "(case-sensitive): "
             f"{COCO_80_CLASS_LIST_COMPACT}.\n"
             "- Do not emit any class outside this list; if uncertain, choose the closest canonical class and keep details concise.\n"
+            "- Atomic instances: each record must refer to exactly one object instance; each bbox_2d must tightly cover a single instance.\n"
+            "- Do not output group boxes that cover multiple instances (e.g., a long thin strip over a crowd or shelf row).\n"
+            "- Avoid duplicates: do not output multiple near-identical boxes for the same instance.\n"
+            "- If you cannot localize a single instance, omit it.\n"
         ),
         dense_user_suffix=(
             " Restrict `desc` to this COCO-80 class list: "
             f"{COCO_80_CLASS_LIST_COMPACT}."
+            " Each record must correspond to exactly one object instance with an atomic bbox; do not use one box to cover multiple objects and do not repeat near-identical boxes."
         ),
     ),
 }
