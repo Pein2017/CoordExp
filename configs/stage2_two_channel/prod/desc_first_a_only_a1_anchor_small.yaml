@@ -1,29 +1,18 @@
-extends: ../base.yaml
+extends: desc_first_a_only.yaml
 
-model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+# Channel-A only (b_ratio=0), with small A1 (GT-prefix) coord/geo anchors.
+#
+# Motivation:
+# - A1 logits are used to bootstrap A2 self-context embeddings.
+# - A weak A1 anchor can reduce self-context drift/noise (esp. in crowded scenes),
+#   stabilizing bbox_geo/coord_reg objectives without overpowering A2.
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_2
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
-  num_train_epochs: 2
-  learning_rate: 2.0e-5
-  vit_lr: 2.0e-5
-  aligner_lr: 5.0e-5
-  effective_batch_size: 64
-  eval_strategy: steps
-  eval_steps: 300
-  save_strategy: steps
-  save_steps: 300
-  do_eval: true
-  metric_for_best_model: rollout/mAP
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-a1_anchor_small-
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only_a1_anchor_small
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_a1_anchor_small
 
 stage2_ab:
-  schedule:
-    b_ratio: 0.0
-  n_softctx_iter: 2
-  softctx_grad_mode: unroll
   pipeline:
     objective:
       - name: token_ce
@@ -43,8 +32,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
+          a1_smoothl1_weight: 0.2
+          a1_ciou_weight: 0.02
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -60,8 +49,8 @@ stage2_ab:
           soft_ce_weight: 0.1
           self_context_soft_ce_weight: 0.1
           w1_weight: 0.1
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
+          a1_soft_ce_weight: 0.02
+          a1_w1_weight: 0.02
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8
@@ -71,22 +60,3 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         config: {}
-
-rollout_matching:
-  # Override rollout backend inherited from configs/stage2_two_channel/base.yaml.
-  rollout_backend: hf
-  decode_batch_size: 8
-  max_new_tokens: 3084
-  monitor_dump:
-    enabled: true
-    every_steps: 300
-    max_events: 0
-    max_samples: 10
-    max_text_chars: 0
-    write_markdown: false
-
-custom:
-  object_field_order: desc_first
-  val_sample_limit: 512
-  extra:
-    prompt_variant: coco_80

@@ -1,7 +1,7 @@
 extends: desc_first_a_only.yaml
 
 training:
-  run_name: bug_fixed-desc_first_merged_ckpt1832_ep2
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-em_detach
   output_dir: output/stage2_ab/coco_bbox_max60/a_only_em_detach
   logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_em_detach
 
