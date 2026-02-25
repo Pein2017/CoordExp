@@ -77,10 +77,23 @@ class AggregateTokenTypeMetricsMixin:
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         # Ensure batch-extras are stripped before model forward (Stage-1).
+        from src.metrics.reporter import warn_once
         from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
-        extras = maybe_pop_and_stash_batch_extras(self, inputs)
-        token_types = extras.token_types
+        token_types = None
+        try:
+            extras = maybe_pop_and_stash_batch_extras(self, inputs)
+            token_types = extras.token_types
+        except Exception:
+            warn_once(
+                self,
+                key="batch_extras_failed",
+                message=(
+                    "Batch-extras extraction failed (best-effort); "
+                    "continuing without token-type metrics for this step."
+                ),
+                exc_info=True,
+            )
 
         # Snapshot labels before downstream mixins mutate them (e.g., coord loss masking).
         labels_for_metrics = inputs.get("labels") if isinstance(inputs, dict) else None
@@ -300,9 +313,21 @@ class CoordSoftCEW1LossMixin:
         self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
     ):
         # Ensure batch-extras are stripped before model forward.
+        from src.metrics.reporter import warn_once
         from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
-        maybe_pop_and_stash_batch_extras(self, inputs)
+        try:
+            maybe_pop_and_stash_batch_extras(self, inputs)
+        except Exception:
+            warn_once(
+                self,
+                key="batch_extras_failed",
+                message=(
+                    "Batch-extras extraction failed (best-effort); "
+                    "continuing without extra batch diagnostics for this step."
+                ),
+                exc_info=True,
+            )
 
         cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
         if cfg is None or not getattr(cfg, "enabled", False):
@@ -675,9 +700,9 @@ class CoordSoftCEW1LossMixin:
     def _mask_coord_targets(
         self, labels: torch.Tensor, coord_token_ids: list[int]
     ) -> torch.Tensor:
-        from src.trainers.losses.coord_soft_ce_w1 import mask_coord_targets
+        from src.trainers.teacher_forcing.stage1 import mask_stage1_coord_targets
 
-        return mask_coord_targets(labels, coord_token_ids)
+        return mask_stage1_coord_targets(labels, coord_token_ids)
 
     def _get_coord_token_ids(self) -> list[int]:
         cached = getattr(self, "_coord_token_ids", None)

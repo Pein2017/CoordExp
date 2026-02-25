@@ -1,6 +1,6 @@
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_vllm_request_config_enforces_return_details() -> None:

@@ -1,16 +1,9 @@
-"""Stage-2 AB training components.
+"""Deprecated compatibility package for Stage-2 two-channel helpers.
 
-This package decomposes Stage-2 AB internals by concern:
-- scheduler: deterministic channel selection and realized-ratio tracking
-- executors: per-channel execution helpers
-
-The public trainer entrypoint remains `src.trainers.stage2_ab_training.Stage2ABTrainingTrainer`.
+Canonical package: `src.trainers.stage2_two_channel`.
 """
 
-from .executors import Stage2ABChannelExecutorsMixin
-from .scheduler import Stage2ABSchedulerMixin
+from src.trainers.stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
+from src.trainers.stage2_two_channel.scheduler import Stage2ABSchedulerMixin
 
-__all__ = [
-    "Stage2ABChannelExecutorsMixin",
-    "Stage2ABSchedulerMixin",
-]
+__all__ = ["Stage2ABChannelExecutorsMixin", "Stage2ABSchedulerMixin"]

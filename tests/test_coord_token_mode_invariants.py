@@ -8,7 +8,7 @@ def test_coord_token_mode_invariants_for_anchored_configs() -> None:
         "configs/stage1/ablation/geometry_first_coco80.yaml"
     )
     stage2 = ConfigLoader.load_materialized_training_config(
-        "configs/stage2_ab/prod/ab_mixed.yaml"
+        "configs/stage2_two_channel/prod/ab_mixed.yaml"
     )
 
     # Both anchored pipelines train on pre-quantized coord-token JSONLs, so runtime

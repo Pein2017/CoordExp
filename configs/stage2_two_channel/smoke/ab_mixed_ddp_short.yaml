@@ -1,0 +1,41 @@
+extends: ../base.yaml
+
+model:
+  model: output/1-26/checkpoint-1516-merged
+
+training:
+  run_name: smoke_ab_mixed_ddp_short
+  output_dir: output/stage2_ab/smoke/ab_mixed_ddp_short
+  logging_dir: tb/stage2_ab/smoke/ab_mixed_ddp_short
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  effective_batch_size: 64
+  eval_strategy: "no"
+  eval_steps: 40
+  save_strategy: "no"
+  save_steps: 40
+  max_steps: 3
+  logging_steps: 1
+  do_eval: false
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.85
+  n_softctx_iter: 2
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 32
+
+rollout_matching:
+  rollout_backend: vllm
+  decode_batch_size: 4
+  max_new_tokens: 2048
+  monitor_dump:
+    enabled: false
+  vllm:
+    mode: server
+    server:
+      debug_dump:
+        enabled: false

@@ -1,0 +1,88 @@
+extends: ../base.yaml
+
+model:
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+
+training:
+  run_name: bug_fixed-desc_first_merged_ckpt1832_ep2
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only_em_detach
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_em_detach
+  num_train_epochs: 2
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  effective_batch_size: 64
+  eval_strategy: steps
+  eval_steps: 300
+  save_strategy: steps
+  save_steps: 300
+  do_eval: true
+  metric_for_best_model: rollout/mAP
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.0
+  n_softctx_iter: 2
+  softctx_grad_mode: em_detach
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+
+rollout_matching:
+  # Override rollout backend inherited from configs/stage2_two_channel/base.yaml.
+  rollout_backend: hf
+  decode_batch_size: 4
+  max_new_tokens: 3084
+  monitor_dump:
+    enabled: true
+    every_steps: 300
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
+
+custom:
+  object_field_order: desc_first
+  val_sample_limit: 512
+  extra:
+    prompt_variant: coco_80

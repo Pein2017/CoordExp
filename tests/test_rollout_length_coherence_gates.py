@@ -14,6 +14,7 @@ def _base_training_payload() -> dict:
             "user_prompt": "prompt",
             "emit_norm": "none",
             "json_format": "standard",
+            "object_field_order": "desc_first",
         },
     }
 

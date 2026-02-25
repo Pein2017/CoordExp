@@ -1,9 +1,9 @@
-# Stage-2 Training Runbook (Rollout-Matching & AB)
+# Stage-2 Training Runbook (Rollout-Aligned + Two-Channel)
 
 This document is the consolidated runbook for Stage-2 training workflows in CoordExp:
 
-- **Rollout-matching SFT**: `custom.trainer_variant: rollout_matching_sft`
-- **Stage-2 AB** (scheduler over channels A/B): `custom.trainer_variant: stage2_ab_training`
+- **Stage-2 Rollout-Aligned Teacher Forcing**: `custom.trainer_variant: stage2_rollout_aligned`
+- **Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout)** (scheduler over channels A/B): `custom.trainer_variant: stage2_two_channel`
 
 Stage-2 aims to align the model with its own decoded outputs while recovering missing GT objects.
 
@@ -34,7 +34,7 @@ PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <ya
 ```
 
 Multi-GPU + vLLM server mode (recommended topology for long rollouts): this is supported, but requires
-the default Stage2-AB Channel-B step-budgeted pathway.
+the default Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B step-budgeted pathway.
 
 Requirements:
 - `rollout_matching.rollout_backend: vllm`
@@ -43,9 +43,12 @@ Requirements:
   (DDP-safe rank0-only full-weight sync with strict barriers).
 
 Where this lives in code:
-- Rollout-matching SFT trainer: `src/trainers/rollout_matching_sft.py`
-- Stage-2 AB trainer: `src/trainers/stage2_ab_training.py`
+- Stage-2 Rollout-Aligned Teacher Forcing trainer: `src/trainers/stage2_rollout_aligned.py`
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) trainer: `src/trainers/stage2_two_channel.py`
 - Training entrypoint (YAML loader + wiring): `src/sft.py`
+- Import note: `src/trainers/stage2_two_channel/__init__.py` intentionally uses a proxy-style dynamic loader
+  to preserve monkeypatch/import compatibility with the historical single-file module; avoid "simplifying"
+  this wrapper without updating the associated tests.
 
 ---
 
@@ -67,9 +70,9 @@ Key policies:
 
 ---
 
-## Stage-2 AB (Scheduler + Channels)
+## Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (Scheduler + Channels)
 
-Stage-2 AB composes two channels:
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) composes two channels:
 
 - **Channel-A** (Expectation Loop): builds teacher-forced targets from GT (no rollouts), then runs packed SFT forward/backward.
 - **Channel-B** (Rollout Matching): generates rollouts (no grad), parses + matches, builds `Y_train`, then runs packed SFT forward/backward.
@@ -84,9 +87,9 @@ Scheduler:
 Channel-B is standardized to a single step-budgeted pathway (legacy `micro/async` modes removed).
 
 Key semantics:
-- `training.effective_batch_size` is REQUIRED for `custom.trainer_variant: stage2_ab_training`.
+- `training.effective_batch_size` is REQUIRED for `custom.trainer_variant: stage2_two_channel`.
 - One optimizer step consumes exactly `effective_batch_size` raw rollout samples globally (across all learner ranks).
-- Stage2-AB requires `effective_batch_size` to be divisible by `learner_world_size`, so each learner rank receives exactly `effective_batch_size / learner_world_size` raw samples.
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) requires `effective_batch_size` to be divisible by `learner_world_size`, so each learner rank receives exactly `effective_batch_size / learner_world_size` raw samples.
 - Raw rollouts are dynamically post-packed into a variable number of packed sequences (<= `global_max_length`), and the trainer runs
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
@@ -137,9 +140,16 @@ Packing is supported post-rollout only:
 - Enable with `training.packing: true`.
 - Rollout generation remains un-packed (padded batch). The trainer temporarily disables padding-free / packing during rollouts.
 - Stage-2 uses dynamic post-rollout packing inside the trainer (dataset-level packing wrappers are not used).
+- Post-rollout packing here means **post-rollout, pre-forward**: the trainer builds per-sample teacher-forced segments (`Y_train`)
+  first, then packs those segments into packed sequences under the `packing_length` cap before any forward/backward.
 - Selection uses a deterministic constant-volume binpacking heuristic; the `binpacking` dependency is required when packing is enabled.
-- Carry-only mode requires `training.packing_drop_last: true` (the trainer does not run flush steps at the end).
+  - `stage2_rollout_aligned`: spec-compliant selection that never returns a pack shorter than the FIFO-greedy baseline for the same buffer state.
+  - `stage2_two_channel` (step-budgeted): pool-aware selection that prioritizes minimizing the total number of packed sequences per optimizer step
+    (fewer forward/backward calls), and secondarily avoids tiny remainder packs when feasible.
 - Stage-2 uses micro-scope dynamic post-rollout packing only (window lookahead removed).
+- `training.packing_drop_last: true` is required (the trainer does not run flush steps at the end).
+  - `stage2_rollout_aligned`: carries leftover segments across optimizer steps (carry-only buffer).
+  - `stage2_two_channel`: the per-step pool is fully consumed by contract (no cross-step carry), but `packing_drop_last` remains required for stable semantics.
 
 The rollout prefix is treated as immutable in token space:
 - Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
@@ -176,15 +186,247 @@ Interpretation:
 
 Start from a template config and fill in dataset + rollout knobs:
 
-- Rollout-matching Stage-2 base: `configs/stage2_ab/base.yaml`
-- Stage-2 AB examples: `configs/stage2_ab/`
+- Rollout-matching Stage-2 base: `configs/stage2_two_channel/base.yaml`
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) examples: `configs/stage2_two_channel/`
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
 - Set top-level `rollout_matching.*` (including `decoding.*` + matching knobs).
-- If using Stage-2 AB (`custom.trainer_variant: stage2_ab_training`), provide a top-level `stage2_ab` section (typed) including:
+- If using Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
+- Stage-2 pipelines are **required** (no implicit defaults):
+  - For `custom.trainer_variant: stage2_two_channel`, `stage2_ab.pipeline` MUST be present.
+  - For `custom.trainer_variant: stage2_rollout_aligned`, `rollout_matching.pipeline` MUST be present.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
+
+Objective pipeline declaration (required, ordered):
+- `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
+- `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
+- Canonical module names:
+  - objective: `token_ce`, `bbox_geo`, `coord_reg`
+  - diagnostics: `coord_diag`
+- **Order matters**: `bbox_geo` MUST run before `coord_reg` (coord_reg consumes bbox_geo state).
+- Pipeline module specs are strict and explicit (no silent defaults):
+  - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
+  - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
+- Flat objective knobs are intentionally removed; author all loss weights in `*.pipeline.<objective|diagnostics>[i].config`.
+
+### Stage-2 Two-Channel examples (A-only / B-only / AB-mixed)
+
+AB-mixed (typical production):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 0.85}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+A-only (disable rollouts; keep Channel-A expectation loop + self-context objectives):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 0.0}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+B-only (always rollouts; skip Channel-A steps via scheduler):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 1.0}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+### Rollout-aligned Stage-2 example (standalone rollout-matching SFT)
+
+Rollout-aligned Stage-2 uses the same objective modules, but the pipeline lives under `rollout_matching.pipeline`:
+
+```yaml
+custom:
+  trainer_variant: stage2_rollout_aligned
+
+rollout_matching:
+  rollout_backend: vllm
+  decode_batch_size: 4
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.0
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 1.0
+          ciou_weight: 1.0
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.0
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 1.0
+          self_context_soft_ce_weight: 0.0
+          w1_weight: 1.0
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 16
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+Geometry objective expectation:
+- `bbox_geo` is the canonical bbox geometry objective in both trainer variants
+  (`stage2_rollout_aligned` and `stage2_two_channel`).
+- Geometry uses expectation/ST decode with bbox canonicalization and the
+  `SmoothL1 + CIoU` composition.
 
 Breaking config migrations (no backward compatibility):
 - Rollout sampling knobs are configured under `rollout_matching.decoding.*`:
@@ -320,7 +562,7 @@ If the model / long-context KV cache does **not** fit as a single replica, use t
 
 Notes:
 - Server and learner GPU sets must be disjoint.
-- Server GPUs will be idle on steps that do not call the rollout backend (e.g., Stage-2 AB Channel-A steps). This is expected.
+- Server GPUs will be idle on steps that do not call the rollout backend (e.g., Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-A steps). This is expected.
   - In this idle state, vLLM may still reserve a large amount of VRAM for weights/KV cache, so `nvidia-smi` can show high memory usage with near-zero utilization.
 
 ---
@@ -336,7 +578,7 @@ export NO_PROXY=127.0.0.1,localhost
 bash scripts/train_stage2.sh \
   server_gpus=0,1,2,3 train_gpus=4,5,6,7 \
   vllm_gpu_memory_utilization=0.75 \
-  config=configs/stage2_ab/prod/ab_mixed.yaml
+  config=configs/stage2_two_channel/prod/ab_mixed.yaml
 ```
 
 Launcher knobs (runtime-only; no YAML drift):
@@ -376,6 +618,9 @@ Eval metrics include:
 - Parse health: `eval_rollout/parse_truncated_rate`, `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
 - Sample health: `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
 - Geometry quality: `eval_rollout/matched_maskiou_mean`
+- COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval_rollout/mAP`
+  - Eval-step COCO summary keys are intentionally compact: only `eval_rollout/mAP` is emitted (no `eval_rollout/bbox_*` or `eval_rollout/segm_*` keys).
+  - On COCO-eval failure, training/evaluation continues and `eval_rollout/mAP` is set to `0.0`; status is surfaced via `eval_rollout/coco_eval_ok`.
 
 Best-checkpoint selection:
 - Prefer `training.metric_for_best_model: rollout/f1` and `training.greater_is_better: true`.
@@ -386,7 +631,7 @@ Best-checkpoint selection:
 
 ### Key Health Metrics (Most Load-Bearing)
 
-Channel scheduling (AB):
+Channel scheduling (Expectation/Rollout):
 - `stage2/channel_a` (1 on A steps)
 - `stage2/channel_b` (1 on B steps)
 
@@ -399,7 +644,7 @@ Throughput:
 - `time/rollout_generate_s`
 - `rollout/gen_tokens_per_s`
 
-Stage-2 AB extras:
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras:
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
 - `stage2_ab/channel_b/closure_supervision/N_drop` (closure-marker resolution drops; should stay near 0)
 
@@ -456,13 +701,13 @@ Symptom:
 Interpretation:
 - In the standardized pathway, Channel-B execution is deterministic and schedule-driven. This typically indicates:
   - `stage2_ab.schedule.b_ratio` is 0.0 (A-only), or
-  - you are not actually running `custom.trainer_variant: stage2_ab_training`.
+  - you are not actually running `custom.trainer_variant: stage2_two_channel`.
 
 Checks:
 1) Confirm schedule:
    - `stage2_ab.schedule.b_ratio` (1.0 for B-only; 0.0 for A-only).
 2) Confirm trainer variant:
-   - `custom.trainer_variant: stage2_ab_training`
+   - `custom.trainer_variant: stage2_two_channel`
 
 Mitigations (smoke/debug runs):
 - Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
@@ -484,7 +729,7 @@ Rule of thumb:
 ## Preflight Validation (Suggested)
 
 - Unit tests (Stage-2):
-  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_matching_sft.py`
+  - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
   - `PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_rollout_offload_context.py`
 
 ---

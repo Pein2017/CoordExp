@@ -1,0 +1,51 @@
+extends: ../base.yaml
+
+model:
+  model: output/1-26/checkpoint-1516-merged
+
+training:
+  run_name: smoke_ab_mixed
+  output_dir: output/stage2_ab/smoke/ab_mixed
+  logging_dir: tb/stage2_ab/smoke/ab_mixed
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  effective_batch_size: 64
+  eval_strategy: steps
+  eval_steps: 40
+  save_strategy: steps
+  save_steps: 40
+  max_steps: 100
+  save_delay_steps: 0
+  logging_steps: 2
+  do_eval: true
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.85
+  n_softctx_iter: 2
+
+custom:
+  train_sample_limit: 512
+  val_sample_limit: 128
+
+rollout_matching:
+  rollout_backend: vllm
+  decode_batch_size: 4
+  max_new_tokens: 2048
+  monitor_dump:
+    enabled: true
+    every_steps: null
+    max_events: 200
+    max_samples: 1
+    max_text_chars: 4000
+  vllm:
+    mode: server
+    server:
+      debug_dump:
+        enabled: true
+        every_steps: 4
+        dump_first_step: true
+        max_events: 20
+        max_samples: 10
+        max_chars: 0

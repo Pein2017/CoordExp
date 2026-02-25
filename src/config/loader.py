@@ -392,13 +392,13 @@ class ConfigLoader:
         # Stage2-AB standardizes step semantics around a true (exact) global effective batch.
         is_stage2_ab = bool(
             str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
-            == "stage2_ab_training"
+            == "stage2_two_channel"
         )
 
         effective_batch_size = training_section.pop("effective_batch_size", None)
         if is_stage2_ab and effective_batch_size is None:
             raise ValueError(
-                "stage2_ab_training requires training.effective_batch_size to be set (global raw rollouts per optimizer step)."
+                "stage2_two_channel requires training.effective_batch_size to be set (global raw rollouts per optimizer step)."
             )
 
         if effective_batch_size is not None:
@@ -438,7 +438,7 @@ class ConfigLoader:
 
             if is_stage2_ab and (effective_batch_size % denominator != 0):
                 raise ValueError(
-                    "For stage2_ab_training, training.effective_batch_size must be divisible by "
+                    "For stage2_two_channel, training.effective_batch_size must be divisible by "
                     f"training.per_device_train_batch_size*world_size ({per_device_train_batch_size}*{world_size}={denominator}). "
                     f"Got effective_batch_size={effective_batch_size}."
                 )
@@ -468,7 +468,7 @@ class ConfigLoader:
                     )
                 if int(user_gas) != int(gradient_accumulation_steps):
                     raise ValueError(
-                        "For stage2_ab_training, training.gradient_accumulation_steps is derived from "
+                        "For stage2_two_channel, training.gradient_accumulation_steps is derived from "
                         "training.effective_batch_size and must not conflict. "
                         f"Got gradient_accumulation_steps={user_gas} but expected {gradient_accumulation_steps} "
                         f"(effective_batch_size={effective_batch_size}, per_device_train_batch_size={per_device_train_batch_size}, world_size={world_size})."

@@ -101,7 +101,7 @@ def test_audited_configs_enable_save_only_model() -> None:
 
     audited = [
         "configs/stage1/ablation/geometry_first_coco80.yaml",
-        "configs/stage2_ab/prod/ab_mixed.yaml",
+        "configs/stage2_two_channel/prod/ab_mixed.yaml",
     ]
 
     for path in audited:

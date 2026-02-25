@@ -260,7 +260,7 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_ab/smoke/ab_mixed.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",

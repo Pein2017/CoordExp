@@ -473,6 +473,7 @@ def test_training_config_materializes_with_fusion_config_without_train_jsonl(
               fusion_config: some/fusion.yaml
               emit_norm: none
               json_format: standard
+              object_field_order: desc_first
             """
         ).strip()
         + "\n",
@@ -524,7 +525,12 @@ def test_fusion_dataset_prompt_overrides_take_precedence_over_variant_defaults(
     )
 
     prompts = ConfigLoader.resolve_prompts(
-        {"custom": {"extra": {"prompt_variant": "coco_80"}}}
+        {
+            "custom": {
+                "object_field_order": "desc_first",
+                "extra": {"prompt_variant": "coco_80"},
+            }
+        }
     )
 
     fusion_cfg = FusionConfig.from_file(str(cfg_path))

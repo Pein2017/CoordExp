@@ -1,6 +1,6 @@
 import types
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_monitor_dump_does_not_raise_on_json_io_error(monkeypatch, tmp_path) -> None:

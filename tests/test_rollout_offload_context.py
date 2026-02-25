@@ -4,7 +4,7 @@ from typing import Iterable
 
 import torch
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def _iter_optimizer_state_tensors(optimizer: torch.optim.Optimizer) -> Iterable[torch.Tensor]:

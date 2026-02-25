@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from src.trainers.stage2_ab_training import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 def _count_b_steps(*, b_ratio: float, steps: int) -> int:

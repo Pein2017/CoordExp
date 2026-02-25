@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer, _IM_END
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer, _IM_END
 
 
 def _mk_uninit_trainer(cfg):

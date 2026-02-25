@@ -172,7 +172,7 @@ def test_validate_stage1_static_packing_policy_allows_eval_packing() -> None:
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:
     _validate_stage1_static_packing_policy(
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
-        trainer_variant="stage2_ab_training",
+        trainer_variant="stage2_two_channel",
     )
 
 

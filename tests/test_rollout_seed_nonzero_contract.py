@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def test_normalize_rollout_seed_int32_maps_zero_to_one() -> None:

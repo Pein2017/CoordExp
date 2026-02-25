@@ -1,6 +1,6 @@
 import types
 
-from src.trainers.stage2_ab_training import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 class _DummyTemplate:

@@ -4,7 +4,7 @@ import builtins
 
 import pytest
 
-from src.trainers.rollout_matching_sft import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 
 
 def _fifo_greedy_selected_total(lengths: list[int], cap: int) -> int:

@@ -10,13 +10,13 @@ from src.config.loader import ConfigLoader
 
 def test_stage2_ab_canonical_profiles_are_one_hop_and_explicit() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    stage2_root = repo_root / "configs" / "stage2_ab"
+    stage2_root = repo_root / "configs" / "stage2_two_channel"
 
     profiles: list[Path] = []
     for kind in ("prod", "smoke"):
         profiles.extend(sorted((stage2_root / kind).glob("*.yaml")))
 
-    assert profiles, "Expected stage2_ab canonical profile leaves under prod/ and smoke/."
+    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/ and smoke/."
 
     for path in profiles:
         # `load_materialized_training_config` is intentionally side-effect free.
@@ -27,7 +27,7 @@ def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # This file lives outside configs/stage2_ab/* so we must force the contract on.
+    # This file lives outside configs/stage2_two_channel/* so we must force the contract on.
     monkeypatch.setattr(
         ConfigLoader,
         "_canonical_stage2_profile_kind",

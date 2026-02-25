@@ -13,7 +13,14 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
+
+from src.trainers.teacher_forcing.module_registry import (
+    ALLOWED_DIAGNOSTIC_MODULES,
+    ALLOWED_OBJECTIVE_MODULES,
+    DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_CONFIG_ALLOWLIST,
+)
 
 
 @dataclass(frozen=True)
@@ -65,9 +72,22 @@ class RolloutDescMonitorConfig:
 
 
 @dataclass(frozen=True)
+class RolloutEvalConfidencePostOpConfig:
+    """Confidence post-op knobs reused inside trainer eval_step.
+
+    Mirrors `src.eval.confidence_postop.ConfidencePostOpOptions` defaults.
+    """
+
+    fusion_w_geom: float = 0.7
+    fusion_w_desc: float = 0.3
+    desc_span_policy: str = "best_effort"  # best_effort|strict
+    empty_desc_policy: str = "geom_only"  # geom_only|drop
+
+
+@dataclass(frozen=True)
 class RolloutEvalDetectionConfig:
     # Enable COCO-style AP/mAP during trainer eval_step.
-    enabled: bool = False
+    enabled: bool = True
     metrics: str = "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
 
     # COCO evaluator knobs.
@@ -89,9 +109,12 @@ class RolloutEvalDetectionConfig:
     pred_score_source: str = "eval_rollout_constant"
     pred_score_version: int = 2
 
-    # Lightweight score policy used inside trainer eval-step (confidence post-op is offline).
-    score_mode: str = "constant"  # constant
+    # Score policy used inside trainer eval-step.
+    score_mode: str = "constant"  # constant | confidence_postop
     constant_score: float = 1.0
+    confidence: RolloutEvalConfidencePostOpConfig = field(
+        default_factory=RolloutEvalConfidencePostOpConfig
+    )
 
 
 @dataclass(frozen=True)
@@ -169,6 +192,21 @@ class VllmConfig:
 
 
 @dataclass(frozen=True)
+class RolloutPipelineModuleSpec:
+    name: str
+    enabled: bool
+    weight: float
+    channels: tuple[str, ...]
+    config: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class RolloutPipelineConfig:
+    objective: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
+    diagnostics: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class RolloutMatchingConfig:
     # Core backend selection.
     rollout_backend: str = "vllm"
@@ -182,6 +220,7 @@ class RolloutMatchingConfig:
     repetition_penalty: float = 1.0
 
     decoding: Optional[RolloutDecodingConfig] = None
+    coord_decode_mode: str = "exp"  # exp|st
     # Matching knobs.
     candidate_top_k: int = 10
     maskiou_gate: float = 0.3
@@ -197,7 +236,8 @@ class RolloutMatchingConfig:
     offload: Optional[RolloutOffloadConfig] = None
     monitor_dump: Optional[RolloutMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
-    eval_detection: Optional[RolloutEvalDetectionConfig] = None
+    pipeline: Optional[RolloutPipelineConfig] = None
+    eval_detection: RolloutEvalDetectionConfig = field(default_factory=RolloutEvalDetectionConfig)
     vllm: Optional[VllmConfig] = None
     # Optional override applied only to eval-step rollouts.
     eval_prompt_variant: Optional[str] = None
@@ -218,6 +258,12 @@ class RolloutMatchingConfig:
             raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
         if decode_bs <= 0:
             raise ValueError("rollout_matching.decode_batch_size must be > 0")
+
+        coord_decode_mode = str(self.coord_decode_mode or "exp").strip().lower()
+        if coord_decode_mode not in {"exp", "st"}:
+            raise ValueError(
+                "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
+            )
 
         if self.decoding is not None:
             dec = self.decoding
@@ -255,6 +301,116 @@ class RolloutMatchingConfig:
                     "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
                 )
 
+        if self.pipeline is not None:
+            if not isinstance(self.pipeline, RolloutPipelineConfig):
+                raise TypeError("rollout_matching.pipeline must be a RolloutPipelineConfig")
+
+            if not self.pipeline.objective:
+                raise ValueError("rollout_matching.pipeline.objective must be non-empty")
+
+            def _validate_specs(
+                specs: tuple[RolloutPipelineModuleSpec, ...],
+                *,
+                allowed_names: set[str],
+                config_allowlist_by_name: Mapping[str, set[str]],
+                path: str,
+            ) -> None:
+                seen: set[str] = set()
+                for idx, spec in enumerate(specs):
+                    if not isinstance(spec, RolloutPipelineModuleSpec):
+                        raise TypeError(f"{path}[{idx}] must be RolloutPipelineModuleSpec")
+                    name = str(spec.name or "").strip()
+                    if not name:
+                        raise ValueError(f"{path}[{idx}].name must be non-empty")
+                    if name not in allowed_names:
+                        raise ValueError(
+                            f"{path}[{idx}].name must be one of {sorted(allowed_names)}; got {name!r}"
+                        )
+                    if name in seen:
+                        raise ValueError(f"Duplicate module name in {path}: {name}")
+                    seen.add(name)
+
+                    try:
+                        weight = float(spec.weight)
+                    except (TypeError, ValueError) as exc:
+                        raise TypeError(f"{path}[{idx}].weight must be numeric") from exc
+                    if weight < 0.0:
+                        raise ValueError(f"{path}[{idx}].weight must be >= 0")
+
+                    if not isinstance(spec.channels, Sequence) or isinstance(spec.channels, (str, bytes)):
+                        raise TypeError(f"{path}[{idx}].channels must be a sequence")
+                    if not spec.channels:
+                        raise ValueError(f"{path}[{idx}].channels must not be empty")
+                    for cidx, ch in enumerate(spec.channels):
+                        ch_s = str(ch).strip().upper()
+                        if ch_s not in {"A", "B"}:
+                            raise ValueError(
+                                f"{path}[{idx}].channels[{cidx}] must be 'A' or 'B'"
+                            )
+
+                    if not isinstance(spec.config, Mapping):
+                        raise TypeError(f"{path}[{idx}].config must be a mapping")
+
+                    allowed_cfg = config_allowlist_by_name.get(name, set())
+                    unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)
+                    if unknown_cfg:
+                        raise ValueError(
+                            f"Unknown {path}[{idx}].config keys for module {name!r}: "
+                            f"{sorted(str(k) for k in unknown_cfg)}"
+                        )
+                    missing_cfg = set(allowed_cfg) - set(spec.config.keys())
+                    if missing_cfg:
+                        raise ValueError(
+                            f"Missing required {path}[{idx}].config keys for module {name!r}: "
+                            f"{sorted(str(k) for k in missing_cfg)}"
+                        )
+
+            _validate_specs(
+                self.pipeline.objective,
+                allowed_names=ALLOWED_OBJECTIVE_MODULES,
+                config_allowlist_by_name=OBJECTIVE_CONFIG_ALLOWLIST,
+                path="rollout_matching.pipeline.objective",
+            )
+            _validate_specs(
+                self.pipeline.diagnostics,
+                allowed_names=ALLOWED_DIAGNOSTIC_MODULES,
+                config_allowlist_by_name=DIAGNOSTIC_CONFIG_ALLOWLIST,
+                path="rollout_matching.pipeline.diagnostics",
+            )
+
+            obj_by_name = {str(spec.name): spec for spec in self.pipeline.objective}
+            bbox_geo = obj_by_name.get("bbox_geo")
+            coord_reg = obj_by_name.get("coord_reg")
+            if coord_reg is not None and bool(getattr(coord_reg, "enabled", False)):
+                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective requires bbox_geo to be present+enabled when coord_reg is enabled "
+                        "(coord_reg depends on bbox_geo state)."
+                    )
+                missing_channels = set(coord_reg.channels) - set(bbox_geo.channels)
+                if missing_channels:
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
+                        f"missing={sorted(missing_channels)}"
+                    )
+
+            for dspec in self.pipeline.diagnostics:
+                if not bool(getattr(dspec, "enabled", False)):
+                    continue
+                if str(getattr(dspec, "name", "") or "") != "coord_diag":
+                    continue
+                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "rollout_matching.pipeline.diagnostics requires bbox_geo to be present+enabled when coord_diag is enabled "
+                        "(coord_diag depends on bbox_geo state)."
+                    )
+                missing_channels = set(dspec.channels) - set(bbox_geo.channels)
+                if missing_channels:
+                    raise ValueError(
+                        "rollout_matching.pipeline.diagnostics coord_diag channels must be a subset of bbox_geo channels; "
+                        f"missing={sorted(missing_channels)}"
+                    )
+
         if self.eval_prompt_variant is not None and not isinstance(
             self.eval_prompt_variant, str
         ):
@@ -272,9 +428,9 @@ class RolloutMatchingConfig:
 
             score_mode = str(getattr(eval_det, "score_mode", "constant") or "constant")
             score_mode = score_mode.strip().lower()
-            if score_mode != "constant":
+            if score_mode not in {"constant", "confidence_postop"}:
                 raise ValueError(
-                    "rollout_matching.eval_detection.score_mode must be 'constant'"
+                    "rollout_matching.eval_detection.score_mode must be one of {'constant', 'confidence_postop'}"
                 )
 
             try:

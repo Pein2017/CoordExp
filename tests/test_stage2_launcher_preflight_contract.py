@@ -13,20 +13,23 @@ from src.trainers.rollout_matching.preflight import (
 
 def test_stage2_launcher_preflight_resolves_expected_fields_for_prod_cfg() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    cfg = repo_root / "configs/stage2_ab/prod/ab_mixed.yaml"
+    cfg = repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml"
     out = resolve_stage2_launcher_preflight(str(cfg))
 
     assert out["rollout_backend"] == "vllm"
     assert out["vllm_mode"] == "server"
     assert isinstance(out["server_base_urls"], list) and len(out["server_base_urls"]) == 1
     assert out["server_base_urls"][0].startswith("http")
-    assert out["server_model"] == "output/1-26/checkpoint-1516-merged"
+    assert (
+        out["server_model"]
+        == "output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged"
+    )
 
     root = Path(out["root_image_dir_resolved"]).resolve()
     assert root.name == "rescale_32_768_bbox_max60"
     assert "public_data" in root.parts
 
-    assert int(out["vllm_max_model_len"]) == 12000
+    assert int(out["vllm_max_model_len"]) == 14000
     assert bool(out["vllm_enable_lora"]) is False
     assert pytest.approx(float(out["vllm_gpu_memory_utilization"]), rel=1e-6) == 0.85
     assert out["server_torch_dtype"] in {"bfloat16", "bf16"}

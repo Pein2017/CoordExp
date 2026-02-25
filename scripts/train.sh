@@ -7,7 +7,7 @@ set -euo pipefail
 
 if [[ $# -gt 0 ]]; then
   echo "[ERROR] scripts/train.sh accepts environment variables only (no positional args)." >&2
-  echo "[ERROR] Example: config=configs/stage2_ab/prod/a_only.yaml gpus=0,1 bash scripts/train.sh" >&2
+  echo "[ERROR] Example: config=configs/stage2_two_channel/prod/desc_first_a_only.yaml gpus=0,1 bash scripts/train.sh" >&2
   exit 2
 fi
 

@@ -21,5 +21,5 @@ def test_placeholder_datasets_present_for_stage1_and_stage2_anchored_configs() -
     _assert_placeholder_datasets_present(
         "configs/stage1/ablation/geometry_first_coco80.yaml"
     )
-    _assert_placeholder_datasets_present("configs/stage2_ab/prod/ab_mixed.yaml")
+    _assert_placeholder_datasets_present("configs/stage2_two_channel/prod/ab_mixed.yaml")
 
