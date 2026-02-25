@@ -1,10 +1,9 @@
-"""
-One-time utility to expand Qwen3-VL vocab with coordinate tokens and save a new checkpoint.
+"""One-time utility to expand Qwen3-VL vocab with coordinate tokens and save a new checkpoint.
 
 Default source:
-  /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct
+  <repo>/model_cache/models/Qwen/Qwen3-VL-2B-Instruct
 Default output:
-  /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+  <repo>/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 
 Run inside the `ms` conda environment:
   python scripts/tools/expand_coord_vocab.py
@@ -35,6 +34,10 @@ def build_coord_tokens(num_bins: int, include_wildcard: bool = True) -> List[str
     return tokens
 
 
+def _default_2b_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "model_cache" / "models" / "Qwen" / "Qwen3-VL-2B-Instruct"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Expand Qwen3-VL tokenizer with coordinate tokens."
@@ -42,17 +45,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--src",
         type=Path,
-        default=Path(
-            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct"
-        ),
+        default=_default_2b_dir(),
         help="Path to the base checkpoint directory.",
     )
     parser.add_argument(
         "--dst",
         type=Path,
-        default=Path(
-            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct-coordexp"
-        ),
+        default=_default_2b_dir().parent
+        / (f"{_default_2b_dir().name}-coordexp"),
         help="Path to save the expanded checkpoint.",
     )
     parser.add_argument(
