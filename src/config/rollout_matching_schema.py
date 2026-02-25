@@ -65,6 +65,19 @@ class RolloutDescMonitorConfig:
 
 
 @dataclass(frozen=True)
+class RolloutEvalConfidencePostOpConfig:
+    """Confidence post-op knobs reused inside trainer eval_step.
+
+    Mirrors `src.eval.confidence_postop.ConfidencePostOpOptions` defaults.
+    """
+
+    fusion_w_geom: float = 0.7
+    fusion_w_desc: float = 0.3
+    desc_span_policy: str = "best_effort"  # best_effort|strict
+    empty_desc_policy: str = "geom_only"  # geom_only|drop
+
+
+@dataclass(frozen=True)
 class RolloutEvalDetectionConfig:
     # Enable COCO-style AP/mAP during trainer eval_step.
     enabled: bool = True
@@ -89,9 +102,12 @@ class RolloutEvalDetectionConfig:
     pred_score_source: str = "eval_rollout_constant"
     pred_score_version: int = 2
 
-    # Lightweight score policy used inside trainer eval-step (confidence post-op is offline).
-    score_mode: str = "constant"  # constant
+    # Score policy used inside trainer eval-step.
+    score_mode: str = "constant"  # constant | confidence_postop
     constant_score: float = 1.0
+    confidence: RolloutEvalConfidencePostOpConfig = field(
+        default_factory=RolloutEvalConfidencePostOpConfig
+    )
 
 
 @dataclass(frozen=True)

@@ -512,6 +512,131 @@ def _build_eval_detection_record(
     return out
 
 
+def _build_eval_detection_record_confidence_postop_input(
+    *,
+    sample: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    preds: Sequence[GTObject],
+    pred_meta: Sequence[ParsedPredObject],
+    object_field_order: Literal["desc_first", "geometry_first"],
+    record_index: int,
+) -> Dict[str, Any]:
+    """Build an eval-step record compatible with confidence_postop.
+
+    The confidence scorer expects:
+      - record["pred"][*] in canonical {type, points, desc} pixel-space shape
+      - record["raw_output_json"] to preserve the original coord bins (norm1000)
+        so we can recover the exact coordinate token sequence.
+
+    This mirrors the offline `gt_vs_pred.jsonl` contract closely enough for
+    in-eval scoring without writing intermediate artifacts.
+    """
+
+    from src.common.geometry import denorm_and_clamp
+
+    images_raw = sample.get("images")
+    images: List[str] = []
+    if isinstance(images_raw, list):
+        for v in images_raw:
+            if isinstance(v, str) and v.strip():
+                images = [str(v)]
+                break
+    if not images:
+        image_one = sample.get("image")
+        if isinstance(image_one, str) and image_one.strip():
+            images = [str(image_one)]
+    if not images:
+        images = [f"image_{int(record_index)}.jpg"]
+
+    width = sample.get("width")
+    height = sample.get("height")
+    try:
+        width = int(width) if width is not None else None
+    except (TypeError, ValueError):
+        width = None
+    try:
+        height = int(height) if height is not None else None
+    except (TypeError, ValueError):
+        height = None
+    if width is None:
+        width = 1000
+    if height is None:
+        height = 1000
+
+    def _normalize_geometry_key(value: Any) -> str:
+        key = str(value or "").strip().lower()
+        if key == "bbox":
+            return "bbox_2d"
+        return key
+
+    gt_payload: List[Dict[str, Any]] = []
+    for obj in gts:
+        gtype = _normalize_geometry_key(getattr(obj, "geom_type", ""))
+        pts_px = denorm_and_clamp(
+            [int(x) for x in obj.points_norm1000],
+            float(width),
+            float(height),
+            coord_mode="norm1000",
+        )
+        gt_payload.append(
+            {
+                "type": gtype,
+                "points": pts_px,
+                "desc": str(getattr(obj, "desc", "") or "").strip(),
+                "score": 1.0,
+            }
+        )
+
+    pred_payload: List[Dict[str, Any]] = []
+    raw_objects: List[Dict[str, Any]] = []
+    for idx, pobj in enumerate(preds):
+        desc = ""
+        if idx < len(pred_meta):
+            desc = str(getattr(pred_meta[idx], "desc", "") or "").strip()
+        gtype = _normalize_geometry_key(getattr(pobj, "geom_type", ""))
+        pts_norm = [int(x) for x in pobj.points_norm1000]
+        pts_px = denorm_and_clamp(
+            pts_norm,
+            float(width),
+            float(height),
+            coord_mode="norm1000",
+        )
+        pred_payload.append(
+            {
+                "type": gtype,
+                "points": pts_px,
+                "desc": desc,
+            }
+        )
+        # NOTE: raw_output_json must preserve coord bins (0..999) for token
+        # alignment, not the pixel-space points.
+        try:
+            raw_objects.append(
+                build_object_payload(
+                    desc=desc,
+                    geometry_key=gtype,
+                    geometry_value=pts_norm,
+                    object_field_order=object_field_order,
+                )
+            )
+        except Exception:
+            raw_objects.append({"type": gtype, "points": pts_norm, "desc": desc})
+
+    out: Dict[str, Any] = {
+        "index": int(record_index),
+        "mode": "text",
+        "coord_mode": "pixel",
+        "images": images,
+        "gt": gt_payload,
+        "pred": pred_payload,
+        "width": int(width),
+        "height": int(height),
+        "raw_output_json": {"objects": raw_objects},
+        "errors": [],
+    }
+    return out
+
+
 def _coerce_optional_float_list(value: Any, *, path: str) -> Optional[List[float]]:
     if value is None:
         return None
@@ -1666,6 +1791,97 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         token_ids = [int(t) for t in token_ids_raw]
 
         return token_ids, text, prompt_ids
+
+
+    @staticmethod
+    def _extract_swift_choice_logprobs(logprobs_raw: Any) -> Tuple[List[float], List[str]]:
+        if not isinstance(logprobs_raw, Mapping):
+            raise RuntimeError(
+                "Missing vLLM logprobs in server response; ensure request_config.logprobs=true"
+            )
+        content = logprobs_raw.get("content")
+        if not isinstance(content, list):
+            raise RuntimeError(
+                "Malformed vLLM logprobs payload: expected logprobs.content as a list"
+            )
+
+        token_logprobs: List[float] = []
+        generated_token_text: List[str] = []
+        for item in content:
+            if not isinstance(item, Mapping):
+                raise RuntimeError(
+                    "Malformed vLLM logprobs payload: expected items in logprobs.content to be mappings"
+                )
+            generated_token_text.append(str(item.get("token") or ""))
+            lp_raw = item.get("logprob")
+            try:
+                lp = float(lp_raw)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"Malformed vLLM logprobs payload: non-numeric logprob={lp_raw!r}"
+                ) from exc
+            token_logprobs.append(lp)
+
+        return token_logprobs, generated_token_text
+
+
+    @staticmethod
+    def _parse_vllm_server_output_traced(
+        raw: Any,
+    ) -> Tuple[List[int], str, List[int], List[float], List[str]]:
+        """Parse one ms-swift /infer/ response item including per-token logprobs.
+
+        Requires request_config.return_details=true and request_config.logprobs=true.
+        """
+
+        if isinstance(raw, dict):
+            resp = raw.get("response")
+            if isinstance(resp, dict):
+                raw = resp
+
+        if not isinstance(raw, dict):
+            raise RuntimeError("vLLM server returned a non-dict output")
+        if raw.get("object") == "error":
+            raise RuntimeError(str(raw.get("message") or raw))
+
+        prompt_ids_raw = raw.get("prompt_token_ids")
+        if not isinstance(prompt_ids_raw, list) or not prompt_ids_raw:
+            raise RuntimeError(
+                "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
+            )
+        prompt_ids = [int(t) for t in prompt_ids_raw]
+
+        choices = raw.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError("vLLM server response missing choices")
+        ch0 = choices[0]
+        if not isinstance(ch0, dict):
+            raise RuntimeError("vLLM server response choice is not a dict")
+
+        msg = ch0.get("message")
+        if not isinstance(msg, dict):
+            msg = {}
+        text = str(msg.get("content") or "")
+
+        token_ids_raw = ch0.get("token_ids")
+        if not isinstance(token_ids_raw, list):
+            raise RuntimeError(
+                "vLLM server response missing token_ids; ensure request_config.return_details=true"
+            )
+        token_ids = [int(t) for t in token_ids_raw]
+
+        token_logprobs, generated_token_text = (
+            RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(ch0.get("logprobs"))
+        )
+        if len(token_logprobs) != len(token_ids) or len(generated_token_text) != len(
+            token_ids
+        ):
+            raise RuntimeError(
+                "vLLM server logprob trace length mismatch: "
+                f"token_ids={len(token_ids)} logprobs={len(token_logprobs)} text={len(generated_token_text)}"
+            )
+
+        return token_ids, text, prompt_ids, token_logprobs, generated_token_text
 
 
     def _build_vllm_server_infer_requests(
@@ -3698,7 +3914,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if i >= max_samples:
                 break
 
-            _, resp_text, _, _ = out
+            resp_text = ""
+            try:
+                if isinstance(out, (list, tuple)) and len(out) > 1:
+                    resp_text = str(out[1])
+            except Exception:
+                resp_text = ""
             sample_obj = sample_list[i] if i < len(sample_list) else {}
 
             gt_text_raw = _extract_gt_text(sample_obj)
@@ -4384,6 +4605,254 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return out
 
     @torch.no_grad()
+    def _rollout_many_hf_traced(
+        self, samples: Sequence[Mapping[str, Any]]
+    ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
+        """HF rollout backend that also captures per-token logprobs.
+
+        This is intended for eval-step confidence scoring. It is restricted to
+        greedy, non-sampling generation.
+
+        Returns tuples:
+          (resp_token_ids, resp_text, decode_mode, prompt_token_ids,
+           token_logprobs, generated_token_text)
+
+        Where `token_logprobs[i]` is `log p(token_i | prefix)` under the exact
+        processed logits used for greedy selection.
+        """
+
+        template = self.template
+        tok = template.tokenizer
+        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
+        if decode_mode == "beam":
+            raise ValueError(
+                "eval-step confidence scoring does not support decode_mode=beam"
+            )
+
+        max_new_tokens = int(self._cfg("max_new_tokens", 512))
+        num_beams = int(self._cfg("num_beams", 1))
+        temperature, top_p, top_k = self._decoding_params()
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError("rollout_matching.repetition_penalty must be > 0")
+
+        if float(temperature) > 0.0:
+            raise ValueError(
+                "eval-step confidence scoring requires decoding.temperature=0.0 "
+                f"(greedy), got {float(temperature)}"
+            )
+
+        # Build GenerationConfig from model defaults.
+        gen_cfg = getattr(self.model, "generation_config", None)
+        if gen_cfg is None:
+            from transformers import GenerationConfig
+
+            gen_cfg = GenerationConfig()
+        gen_cfg = deepcopy(gen_cfg)
+        gen_cfg.max_new_tokens = max_new_tokens
+        self._apply_rollout_decoding_to_generation_config(
+            gen_cfg=gen_cfg,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+        )
+
+        # Force greedy semantics.
+        gen_cfg.num_beams = 1
+        gen_cfg.num_return_sequences = 1
+        if decode_mode == "beam":
+            gen_cfg.num_beams = max(1, num_beams)
+            gen_cfg.num_return_sequences = max(
+                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
+            )
+
+        try:
+            from transformers.generation.logits_process import (
+                LogitsProcessor,
+                LogitsProcessorList,
+            )
+        except Exception:  # pragma: no cover
+            from transformers.generation_logits_process import (  # type: ignore[no-redef]
+                LogitsProcessor,
+                LogitsProcessorList,
+            )
+
+        def _decode_token_pieces(token_ids: List[int]) -> List[str]:
+            if not token_ids:
+                return []
+            if hasattr(tok, "batch_decode"):
+                try:
+                    return list(
+                        tok.batch_decode(
+                            [[int(t)] for t in token_ids],
+                            skip_special_tokens=False,
+                            clean_up_tokenization_spaces=False,
+                        )
+                    )
+                except Exception:
+                    pass
+            return [
+                str(
+                    tok.decode(
+                        [int(t)],
+                        skip_special_tokens=False,
+                        clean_up_tokenization_spaces=False,
+                    )
+                )
+                for t in token_ids
+            ]
+
+        out: List[Tuple[List[int], str, str, List[int], List[float], List[str]]] = []
+        mb = int(self._decode_batch_size())
+
+        from swift.llm import to_device
+
+        idx = 0
+        while idx < len(samples):
+            chunk = list(samples[idx : idx + mb])
+            idx += len(chunk)
+
+            with self._template_packing_disabled():
+                with template.generate_context():
+                    encoded_list = [
+                        template.encode(dict(s), return_length=True) for s in chunk
+                    ]
+                    # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
+                    # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
+                    batch = template.data_collator(encoded_list)
+
+            batch = to_device(batch, self.model.device)
+            input_ids_t = batch["input_ids"]
+            attn = batch.get("attention_mask")
+            if attn is None:
+                pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
+                attn = (input_ids_t != pad_id).to(dtype=torch.long)
+
+            # Prompt token ids for strict sanity checks (strip padding using attention_mask).
+            prompt_ids_list: List[List[int]] = []
+            for row_ids, row_mask in zip(input_ids_t, attn):
+                ids = [
+                    int(t)
+                    for t, m in zip(
+                        row_ids.detach().cpu().tolist(),
+                        row_mask.detach().cpu().tolist(),
+                    )
+                    if int(m) == 1
+                ]
+                prompt_ids_list.append(ids)
+
+            prompt_pad_len = int(input_ids_t.shape[1])
+            self._enforce_hf_rollout_max_position_embeddings(
+                prompt_pad_len=prompt_pad_len,
+                max_new_tokens=max_new_tokens,
+            )
+            model_inputs = {k: v for k, v in batch.items() if k != "labels"}
+            model_inputs.pop("position_ids", None)
+            model_inputs.pop("text_position_ids", None)
+
+            class _GreedyTokenLogprobTracer(LogitsProcessor):
+                def __init__(self) -> None:
+                    self.token_logprobs: List[List[float]] = []
+
+                def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor):
+                    # Lazy init: one list per batch element.
+                    if not self.token_logprobs:
+                        bsz_local = int(scores.shape[0])
+                        self.token_logprobs = [[] for _ in range(bsz_local)]
+
+                    # NOTE: restricted to greedy + do_sample=False. In this regime the
+                    # next token is argmax over the processed scores.
+                    token_ids = torch.argmax(scores, dim=-1)
+                    scores_f = scores.float()
+                    selected = scores_f.gather(
+                        dim=1, index=token_ids.unsqueeze(1)
+                    ).squeeze(1)
+                    log_norm = torch.logsumexp(scores_f, dim=-1)
+                    logprobs = (selected - log_norm).detach().cpu().tolist()
+                    for i, lp in enumerate(logprobs):
+                        self.token_logprobs[i].append(float(lp))
+                    return scores
+
+            tracer = _GreedyTokenLogprobTracer()
+            logits_processor: LogitsProcessorList = LogitsProcessorList([tracer])
+
+            with unwrap_model_for_generation(
+                self.model_wrapped,
+                self.accelerator,
+                gather_deepspeed3_params=getattr(
+                    self.args, "ds3_gather_for_generation", False
+                ),
+            ) as unwrapped:
+                unwrapped.eval()
+                with self._template_packing_disabled():
+                    with template.generate_context():
+                        if (
+                            getattr(self.model, "model_meta", None) is not None
+                            and self.model.model_meta.is_multimodal
+                        ):
+                            _, model_inputs = template.pre_forward_hook(
+                                unwrapped, None, model_inputs
+                            )
+                        model_inputs.pop("position_ids", None)
+                        model_inputs.pop("text_position_ids", None)
+                        gen_out = template.generate(
+                            unwrapped,
+                            **model_inputs,
+                            generation_config=gen_cfg,
+                            return_dict_in_generate=True,
+                            logits_processor=logits_processor,
+                        )
+                unwrapped.train()
+
+            sequences = gen_out.sequences
+            if sequences.ndim != 2:
+                raise ValueError("unexpected generate output shape")
+
+            bsz = int(input_ids_t.shape[0])
+            sequences = sequences[:bsz, :]
+
+            for i in range(bsz):
+                seq = sequences[i]
+                resp_ids_full = [int(t) for t in seq[prompt_pad_len:].tolist()]
+                resp_ids = template.skip_stop_tokens(resp_ids_full, is_finished=True)
+
+                token_logprobs_full = tracer.token_logprobs[i]
+                if len(token_logprobs_full) < len(resp_ids):
+                    raise RuntimeError(
+                        "rollout logprob trace shorter than generated token ids: "
+                        f"trace_len={len(token_logprobs_full)} gen_len={len(resp_ids)}"
+                    )
+                token_logprobs = [
+                    float(x) for x in token_logprobs_full[: len(resp_ids)]
+                ]
+                generated_token_text = _decode_token_pieces(resp_ids)
+                if len(generated_token_text) != len(token_logprobs):
+                    raise RuntimeError(
+                        "rollout trace token/text length mismatch: "
+                        f"text_len={len(generated_token_text)} logprob_len={len(token_logprobs)}"
+                    )
+
+                text = template.decode(
+                    resp_ids,
+                    is_finished=True,
+                    first_token=True,
+                    clean_up_tokenization_spaces=False,
+                )
+                out.append(
+                    (
+                        resp_ids,
+                        text,
+                        decode_mode,
+                        prompt_ids_list[i],
+                        token_logprobs,
+                        generated_token_text,
+                    )
+                )
+
+        return out
+
+    @torch.no_grad()
     def _rollout_many_vllm(
         self,
         samples: Sequence[Mapping[str, Any]],
@@ -4401,11 +4870,59 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
         return self._rollout_many_vllm_colocate(samples)
 
+
+    @torch.no_grad()
+    def _rollout_many_vllm_traced(
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
+        request_index_offset: int = 0,
+    ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
+        """vLLM rollout backend that also captures per-token logprobs.
+
+        NOTE: vLLM logprob tracing is experimental and not yet verified end-to-end.
+
+        Used by eval-step confidence scoring.
+        """
+
+        mode = self._vllm_mode()
+        if mode == "server":
+            out = self._rollout_many_vllm_server(
+                samples,
+                debug_samples=debug_samples,
+                request_index_offset=int(request_index_offset),
+                with_logprobs=True,
+            )
+        else:
+            out = self._rollout_many_vllm_colocate(samples, with_logprobs=True)
+        return [
+            (
+                list(token_ids),
+                str(text),
+                str(decode_mode),
+                list(prompt_ids),
+                [float(lp) for lp in token_logprobs],
+                [str(t) for t in generated_token_text],
+            )
+            for (
+                token_ids,
+                text,
+                decode_mode,
+                prompt_ids,
+                token_logprobs,
+                generated_token_text,
+            ) in out
+        ]
+
     @torch.no_grad()
     def _rollout_many_vllm_colocate(
-        self, samples: Sequence[Mapping[str, Any]]
-    ) -> List[Tuple[List[int], str, str, List[int]]]:
-        """vLLM colocate rollout backend (token ids)."""
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        with_logprobs: bool = False,
+    ) -> List[Any]:
+        """vLLM colocate rollout backend (token ids, optional token logprobs)."""
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         if decode_mode != "greedy":
             raise ValueError(
@@ -4420,6 +4937,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.repetition_penalty must be > 0"
             )
 
+        if with_logprobs and float(temperature) > 0.0:
+            raise ValueError(
+                "eval-step confidence scoring requires decoding.temperature=0.0 "
+                f"(greedy), got {float(temperature)}"
+            )
+
         try:
             from swift.llm import RequestConfig
         except (TypeError, ValueError) as exc:
@@ -4427,15 +4950,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "swift.llm.RequestConfig is required for vLLM rollouts"
             ) from exc
 
-        request_config = RequestConfig(
-            **self._rollout_vllm_request_config_kwargs(
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-            )
+        request_kwargs = self._rollout_vllm_request_config_kwargs(
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
         )
+        if with_logprobs:
+            request_kwargs["logprobs"] = True
+        request_config = RequestConfig(**request_kwargs)
 
         # Build infer requests using swift.llm.InferRequest (ms-swift stable contract).
         # NOTE: Do not pass dataset-level GT "objects" into vLLM infer; it may be interpreted as multimodal payload.
@@ -4463,25 +4987,58 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if len(outs) != len(infer_requests):
             raise RuntimeError("vLLM returned unexpected number of outputs")
 
-        results: List[Tuple[List[int], str, str, List[int]]] = []
+        results: List[Any] = []
         for out in outs:
             if isinstance(out, Exception):
-                results.append(([], "", decode_mode, []))
+                if with_logprobs:
+                    results.append(([], "", decode_mode, [], [], []))
+                else:
+                    results.append(([], "", decode_mode, []))
                 continue
+
             text = ""
             token_ids: List[int] = []
             prompt_ids: List[int] = []
+            choice_logprobs = None
             try:
                 text = str(out.choices[0].message.content or "")
                 token_ids = [int(t) for t in (out.choices[0].token_ids or [])]
                 prompt_ids = [
                     int(t) for t in (getattr(out, "prompt_token_ids", None) or [])
                 ]
+                choice_logprobs = getattr(out.choices[0], "logprobs", None)
             except (TypeError, ValueError):
                 text = ""
                 token_ids = []
                 prompt_ids = []
-            results.append((token_ids, text, decode_mode, prompt_ids))
+                choice_logprobs = None
+
+            if with_logprobs:
+                token_logprobs, generated_token_text = (
+                    RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(
+                        choice_logprobs
+                    )
+                )
+                if len(token_logprobs) != len(token_ids) or len(
+                    generated_token_text
+                ) != len(token_ids):
+                    raise RuntimeError(
+                        "vLLM rollout logprob trace length mismatch: "
+                        f"token_ids={len(token_ids)} logprobs={len(token_logprobs)} text={len(generated_token_text)}"
+                    )
+                results.append(
+                    (
+                        token_ids,
+                        text,
+                        decode_mode,
+                        prompt_ids,
+                        token_logprobs,
+                        generated_token_text,
+                    )
+                )
+            else:
+                results.append((token_ids, text, decode_mode, prompt_ids))
+
         return results
 
     @torch.no_grad()
@@ -4491,8 +5048,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         *,
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
         request_index_offset: int = 0,
-    ) -> List[Tuple[List[int], str, str, List[int]]]:
-        """vLLM server rollout backend (token ids via ms-swift `swift rollout`)."""
+        with_logprobs: bool = False,
+    ) -> List[Any]:
+        """vLLM server rollout backend (token ids, optional token logprobs).
+
+        When `with_logprobs=True`, requests per-token logprobs from the server
+        (RequestConfig(logprobs=True)). This is used by eval-step confidence
+        scoring.
+        """
         decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
         if decode_mode != "greedy":
             raise ValueError(
@@ -4520,6 +5083,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.repetition_penalty must be > 0"
             )
 
+        if with_logprobs and float(temperature) > 0.0:
+            raise ValueError(
+                "eval-step confidence scoring requires decoding.temperature=0.0 "
+                f"(greedy), got {float(temperature)}"
+            )
+
         try:
             from swift.llm import RequestConfig
         except (TypeError, ValueError) as exc:
@@ -4528,15 +5097,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ) from exc
 
         # Base request config (per-server seed is set deterministically below).
-        base_request_config = RequestConfig(
-            **self._rollout_vllm_request_config_kwargs(
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-            )
+        base_request_kwargs = self._rollout_vllm_request_config_kwargs(
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
         )
+        if with_logprobs:
+            base_request_kwargs["logprobs"] = True
+        base_request_config = RequestConfig(**base_request_kwargs)
         base_request_config_dict = asdict(base_request_config)
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -4653,9 +5223,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             self._vllm_server_last_logged_step = int(gs)
 
-        results: List[Optional[Tuple[List[int], str, str, List[int]]]] = [None] * len(
-            infer_requests
-        )
+        results: List[Any] = [None] * len(infer_requests)
 
 
         def _infer_on_server(server_idx: int, start: int, end: int) -> None:
@@ -4737,9 +5305,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
 
             for j, raw_out in enumerate(data):
-                token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
                 idx = int(start + j)
-                results[idx] = (token_ids, text, decode_mode, prompt_ids)
+                if with_logprobs:
+                    (
+                        token_ids,
+                        text,
+                        prompt_ids,
+                        token_logprobs,
+                        generated_token_text,
+                    ) = self._parse_vllm_server_output_traced(raw_out)
+                    results[idx] = (
+                        token_ids,
+                        text,
+                        decode_mode,
+                        prompt_ids,
+                        token_logprobs,
+                        generated_token_text,
+                    )
+                else:
+                    token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
+                    results[idx] = (token_ids, text, decode_mode, prompt_ids)
 
         # Parallelize by server within each round.
         # Each round enforces strict per-server caps for this learner rank.
@@ -4779,7 +5364,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             cursor = int(cursor + round_budget)
 
-        out: List[Tuple[List[int], str, str, List[int]]] = []
+        out: List[Any] = []
         for r in results:
             if r is None:
                 raise RuntimeError(
@@ -4797,13 +5382,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return out
 
-    @torch.no_grad()
-    def _rollout_many(
+
+    def _prepare_samples_for_rollout(
         self,
         samples: Sequence[Mapping[str, Any]],
         *,
         prompt_variant_override: Optional[str] = None,
-    ) -> List[Tuple[List[int], str, str, List[int]]]:
+    ) -> List[Mapping[str, Any]]:
+        """Normalize samples before calling the rollout backend.
+
+        - Strip any trailing assistant turns (rollouts must end at a user message).
+        - Optionally override the last user prompt (prompt_variant_override).
+        - For vLLM, ensure a resolved system prompt message is present.
+
+        Returns a list that may contain shallow-copied sample dicts when message
+        edits are required.
+        """
+
         backend = self._rollout_backend()
 
         user_prompt_override: str | None = None
@@ -4887,6 +5482,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     samples_for_rollout.append(s)
             else:
                 samples_for_rollout.append(s)
+
+        return samples_for_rollout
+
+    @torch.no_grad()
+    def _rollout_many(
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        prompt_variant_override: Optional[str] = None,
+    ) -> List[Tuple[List[int], str, str, List[int]]]:
+        backend = self._rollout_backend()
+        samples_for_rollout = self._prepare_samples_for_rollout(
+            samples,
+            prompt_variant_override=prompt_variant_override,
+        )
 
         if backend == "hf":
             return self._rollout_many_hf(samples_for_rollout)
@@ -7149,6 +7759,48 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             eval_detection_cfg.get("pred_score_version", 2) or 2
         )
 
+        eval_detection_use_confidence_postop = bool(
+            eval_detection_enabled
+            and eval_detection_score_mode in {"confidence_postop", "confidence"}
+        )
+
+        confidence_postop_opts = None
+        if eval_detection_use_confidence_postop:
+            backend_norm = str(self._rollout_backend()).strip().lower()
+            if backend_norm not in {"hf", "vllm"}:
+                raise ValueError(
+                    "rollout_matching.eval_detection.score_mode=confidence_postop requires "
+                    "rollout_matching.rollout_backend in {'hf', 'vllm'} (token logprob traces must be available)."
+                )
+
+            try:
+                from src.eval.confidence_postop import (
+                    TraceRecord,
+                    _build_scored_record,
+                    _compute_sample_confidence_objects,
+                    options_from_config,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "Failed to import src.eval.confidence_postop for eval-step confidence scoring"
+                ) from exc
+
+            conf_raw = eval_detection_cfg.get("confidence", None)
+            if conf_raw is None:
+                conf_cfg: Mapping[str, Any] = {}
+            elif isinstance(conf_raw, Mapping):
+                conf_cfg = conf_raw
+            else:
+                try:
+                    conf_cfg = asdict(conf_raw)
+                except Exception as exc:
+                    raise TypeError(
+                        "rollout_matching.eval_detection.confidence must be a mapping"
+                    ) from exc
+
+            # Validate early so failures are consistent across ranks.
+            confidence_postop_opts = options_from_config({"confidence": conf_cfg})
+
         # Optional semantic desc monitoring (metrics only).
         desc_cfg = self._desc_monitor_cfg()
         desc_enabled = isinstance(desc_cfg, Mapping) and bool(
@@ -7240,21 +7892,50 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     continue
 
                 n_steps += 1.0
-                if eval_prompt_variant is None:
-                    rollout_results = self._rollout_many(batch)
-                else:
-                    rollout_results = self._rollout_many(
+
+                has_token_trace = bool(eval_detection_use_confidence_postop)
+                if has_token_trace:
+                    batch_for_rollout = self._prepare_samples_for_rollout(
                         batch,
                         prompt_variant_override=eval_prompt_variant,
                     )
+                    backend_norm = str(self._rollout_backend()).strip().lower()
+                    if backend_norm == "hf":
+                        rollout_results = self._rollout_many_hf_traced(batch_for_rollout)
+                    elif backend_norm == "vllm":
+                        rollout_results = self._rollout_many_vllm_traced(batch_for_rollout)
+                    else:
+                        raise ValueError(
+                            "eval-step confidence scoring requires rollout_backend in {'hf','vllm'}"
+                        )
+                else:
+                    if eval_prompt_variant is None:
+                        rollout_results = self._rollout_many(batch)
+                    else:
+                        rollout_results = self._rollout_many(
+                            batch,
+                            prompt_variant_override=eval_prompt_variant,
+                        )
+
                 if len(rollout_results) != len(batch):
                     raise RuntimeError(
                         "rollout backend returned unexpected number of results"
                     )
 
-                for sample, (resp_ids, _resp_text, _decode_mode, _prompt_ids) in zip(
-                    batch, rollout_results
-                ):
+                for sample, rollout in zip(batch, rollout_results):
+                    if has_token_trace:
+                        (
+                            resp_ids,
+                            _resp_text,
+                            _decode_mode,
+                            _prompt_ids,
+                            token_logprobs,
+                            generated_token_text,
+                        ) = rollout
+                    else:
+                        resp_ids, _resp_text, _decode_mode, _prompt_ids = rollout
+                        token_logprobs = None
+                        generated_token_text = None
                     n_samples += 1.0
 
                     parse = parse_rollout_for_matching(
@@ -7328,20 +8009,75 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if eval_detection_enabled:
                         eval_record_index = int(eval_record_counter_local)
                         eval_record_counter_local += 1
-                        eval_detection_records_local.append(
-                            _build_eval_detection_record(
+
+                        if eval_detection_use_confidence_postop:
+                            if confidence_postop_opts is None:
+                                raise RuntimeError(
+                                    "confidence_postop_opts missing for eval-step scoring"
+                                )
+                            if token_logprobs is None or generated_token_text is None:
+                                raise RuntimeError(
+                                    "eval-step confidence scoring requires token traces"
+                                )
+
+                            trace_len = int(len(parse.response_token_ids))
+                            if len(token_logprobs) < trace_len:
+                                raise RuntimeError(
+                                    "rollout trace shorter than parsed response_token_ids: "
+                                    f"trace_len={len(token_logprobs)} parsed_len={trace_len}"
+                                )
+                            trace = TraceRecord(
+                                line_idx=int(eval_record_index),
+                                generated_token_text=list(
+                                    generated_token_text[:trace_len]
+                                ),
+                                token_logprobs=[
+                                    float(x) for x in token_logprobs[:trace_len]
+                                ],
+                            )
+
+                            record = _build_eval_detection_record_confidence_postop_input(
                                 sample=sample,
                                 gts=gts,
                                 preds=preds,
                                 pred_meta=pred_meta,
                                 object_field_order=object_field_order,
                                 record_index=eval_record_index,
-                                pred_score_source=eval_detection_score_source,
-                                pred_score_version=eval_detection_score_version,
-                                score_mode=eval_detection_score_mode,
-                                constant_score=eval_detection_const_score,
                             )
-                        )
+                            confidence_objects = _compute_sample_confidence_objects(
+                                line_idx=int(eval_record_index),
+                                record=record,
+                                trace=trace,
+                                options=confidence_postop_opts,
+                            )
+                            scored_record = _build_scored_record(
+                                record=record,
+                                confidence_objects=confidence_objects,
+                            )
+                            # Shrink gather payload (scores are all we need for COCO eval).
+                            scored_record.pop("raw_output_json", None)
+                            eval_detection_records_local.append(scored_record)
+                        else:
+                            if eval_detection_score_mode != "constant":
+                                raise ValueError(
+                                    "rollout_matching.eval_detection.score_mode must be 'constant' "
+                                    "or 'confidence_postop'"
+                                )
+
+                            eval_detection_records_local.append(
+                                _build_eval_detection_record(
+                                    sample=sample,
+                                    gts=gts,
+                                    preds=preds,
+                                    pred_meta=pred_meta,
+                                    object_field_order=object_field_order,
+                                    record_index=eval_record_index,
+                                    pred_score_source=eval_detection_score_source,
+                                    pred_score_version=eval_detection_score_version,
+                                    score_mode=eval_detection_score_mode,
+                                    constant_score=eval_detection_const_score,
+                                )
+                            )
 
                     if do_dump and (
                         len(dump_fail_samples) < dump_max_samples

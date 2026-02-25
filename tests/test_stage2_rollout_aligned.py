@@ -965,6 +965,312 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
 
 
+def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "confidence_postop",
+            # These should be overridden by confidence_postop provenance.
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+            "confidence": {},
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+
+    trainer._rollout_many_hf_traced = lambda batch: [
+        ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in batch
+    ]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "src.eval.confidence_postop._compute_sample_confidence_objects",
+        lambda **_kwargs: [
+            {
+                "object_idx": 0,
+                "kept": True,
+                "score": 0.9,
+                "confidence": 0.9,
+                "confidence_details": {},
+            }
+        ],
+    )
+
+    def _fake_coco(*, pred_records, eval_cfg):
+        assert isinstance(eval_cfg, dict)
+        assert len(pred_records) == 1
+        rec = pred_records[0]
+        assert rec["pred_score_source"] == "confidence_postop"
+        assert rec["pred_score_version"] == 2
+        assert rec["pred"][0]["score"] == pytest.approx(0.9)
+        return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        _fake_coco,
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+
+    assert logged_metrics == metrics
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+
+
+def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "confidence_postop",
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+            "confidence": {},
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+
+    called = {"vllm": 0}
+
+    def _fake_vllm_traced(batch):
+        called["vllm"] += 1
+        return [([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in batch]
+
+    trainer._rollout_many_vllm_traced = _fake_vllm_traced
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "src.eval.confidence_postop._compute_sample_confidence_objects",
+        lambda **_kwargs: [
+            {
+                "object_idx": 0,
+                "kept": True,
+                "score": 0.9,
+                "confidence": 0.9,
+                "confidence_details": {},
+            }
+        ],
+    )
+
+    def _fake_coco(*, pred_records, eval_cfg):
+        assert isinstance(eval_cfg, dict)
+        assert len(pred_records) == 1
+        rec = pred_records[0]
+        assert rec["pred_score_source"] == "confidence_postop"
+        assert rec["pred_score_version"] == 2
+        assert rec["pred"][0]["score"] == pytest.approx(0.9)
+        return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        _fake_coco,
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+
+    assert called["vllm"] == 1
+    assert logged_metrics == metrics
+    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
+    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+
+
 def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
