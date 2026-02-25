@@ -1,7 +1,7 @@
 # Stage-2 AB canonical profile base (standalone).
 # This file intentionally does not extend configs/base.yaml.
 
-global_max_length: 12000
+global_max_length: 14000
 
 model:
   torch_dtype: bfloat16
@@ -189,11 +189,18 @@ rollout_matching:
     metrics: coco
     use_segm: false
     strict_parse: true
-    # Eval-step score policy is intentionally lightweight; confidence post-op remains offline.
-    score_mode: constant
+    # Score policy used during trainer eval_step:
+    # - constant: cheap, but COCO AP can be insensitive to \"tail\" FP pruning when all scores tie.
+    # - confidence_postop: compute per-object scores from token logprob traces (requires rollout_backend=hf|vllm).
+    #   NOTE: vLLM token logprob tracing is experimental / not yet verified end-to-end; prefer HF if you need a trusted scorer.
+    score_mode: confidence_postop
     constant_score: 1.0
     pred_score_source: eval_rollout_constant
     pred_score_version: 2
+    confidence:
+      # Default to geometry-only confidence (desc does not affect COCO metrics under category mapping).
+      fusion_w_geom: 1.0
+      fusion_w_desc: 0.0
   ot_cost: l2
   ot_epsilon: 10
   ot_iters: 1

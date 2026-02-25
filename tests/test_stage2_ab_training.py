@@ -1,4 +1,7 @@
+import math
 import types
+from typing import List, Sequence
+
 import pytest
 import torch
 import torch.nn as nn
@@ -867,6 +870,65 @@ def test_packing_enabled_requires_qwen_packing_metadata():
         )
 
 
+def test_post_rollout_packing_selector_is_remainder_aware():
+    pytest.importorskip("binpacking")
+
+    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+
+    packing_length = 10
+    min_fill_ratio = 0.5
+    target_len = int(math.ceil(float(min_fill_ratio) * float(packing_length)))
+
+    # Construct a small pool where FIFO-greedy produces a tiny remainder pack,
+    # but a stage-1-like "smart" plan can avoid underfill by leaving a small
+    # segment to pair with the leftover medium segment.
+    lens = [9, 6, 4, 4, 1]
+
+    def _legacy_fifo(buf_lens: Sequence[int]) -> List[int]:
+        used = int(buf_lens[0])
+        sel = [0]
+        for i in range(1, len(buf_lens)):
+            sl = int(buf_lens[i])
+            if sl <= 0:
+                continue
+            if used + sl <= int(packing_length):
+                sel.append(int(i))
+                used += sl
+        return sel
+
+    def _simulate(buf_lens: Sequence[int], *, selector) -> int:
+        buf = [int(x) for x in buf_lens]
+        underfilled = 0
+        while buf:
+            idx = selector(buf)
+            assert idx
+            assert idx[0] == 0
+
+            total = int(sum(int(buf[i]) for i in idx))
+            if total < int(target_len):
+                underfilled += 1
+
+            for i in reversed(idx):
+                buf.pop(int(i))
+        return int(underfilled)
+
+    legacy_underfilled = _simulate(lens, selector=_legacy_fifo)
+
+    def _smart(buf_lens: Sequence[int]) -> List[int]:
+        return RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(
+            buf_lens,
+            packing_length,
+            min_fill_ratio=min_fill_ratio,
+            allow_shorter_than_fifo=True,
+        )
+
+    smart_underfilled = _simulate(lens, selector=_smart)
+
+    assert legacy_underfilled == 1
+    assert smart_underfilled == 0
+
+
+
 def test_extract_gt_bboxonly_rejects_poly_geometry():
     sample = {
         "assistant_payload": {"objects": [{"desc": "x", "poly": [0, 1, 2, 3]}]}
@@ -1039,11 +1101,6 @@ def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "coord_ce_weight": 0.0,
-        "coord_el1_weight": 0.0,
-        "coord_ehuber_weight": 0.0,
-        "coord_entropy_weight": 0.0,
-        "coord_gate_weight": 0.0,
         "channel_b": {},
     }
     t._stage2_pending_train_logs = {}
@@ -1058,8 +1115,7 @@ def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
         token_ce_enabled=False,
         token_ce_weight=0.0,
         bbox_geo_enabled=True,
-        # Must run bbox_geo to populate coord_reg state, but don't let it contribute.
-        bbox_geo_weight=0.0,
+        # Must run bbox_geo to populate coord_reg state, but don't let it contribute to total loss.\n        bbox_geo_weight=0.0,
         bbox_smoothl1_weight=0.0,
         bbox_ciou_weight=0.0,
         coord_reg_enabled=True,
@@ -1114,11 +1170,6 @@ def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "coord_ce_weight": 0.0,
-        "coord_el1_weight": 0.0,
-        "coord_ehuber_weight": 0.0,
-        "coord_entropy_weight": 0.0,
-        "coord_gate_weight": 0.0,
         "channel_b": {},
     }
     t._stage2_pending_train_logs = {}
@@ -1461,7 +1512,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        rollout_fn_desc_weight=1.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -1527,7 +1577,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     meta_mask_tail["tail_ignore_pos"] = [2, 3]
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        rollout_fn_desc_weight=1.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -1699,10 +1748,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     )
 
     assert float(loss_from_desc_ce.detach().cpu().item()) == pytest.approx(
-        float(loss_from_rollout_fn_desc.detach().cpu().item()),
-        rel=1e-6,
-        abs=1e-6,
-    )
+        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6\n    )
 
 
 def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> None:
@@ -1794,10 +1840,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     )
 
     assert float(loss_from_desc_ce.detach().cpu().item()) == pytest.approx(
-        float(loss_from_rollout_fn_desc.detach().cpu().item()),
-        rel=1e-6,
-        abs=1e-6,
-    )
+        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6\n    )
 
 
 def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
