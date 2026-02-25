@@ -23,6 +23,7 @@ stage2_ab:
   schedule:
     b_ratio: 0.0
   n_softctx_iter: 2
+  softctx_grad_mode: unroll
   pipeline:
     objective:
       - name: token_ce
