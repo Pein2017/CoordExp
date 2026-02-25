@@ -1,0 +1,23 @@
+extends: ../sft_stage1_softce_w1-bbox-only.yaml
+
+model:
+  model_name: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+training:
+  output_dir: ./output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate
+  run_name: epoch_4-LRs-2e-4_1e-4_4e-4-from-base-2B
+  logging_dir: ./tb/stage1_2b/coco_bbox_max60-hard_ce_softce_w1_gate
+
+custom:
+  # Mixed coord loss:
+  #   - base CE: standard full-vocab CE on non-coord tokens (coord targets are masked)
+  #   - coord loss: coord-only (CE + softCE + W1 + gate) on coord-token positions
+  coord_soft_ce_w1:
+    enabled: true
+    ce_weight: 1.0
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 2.0
+    temperature: 0.7
+    target_sigma: 1
+    target_truncate: 8

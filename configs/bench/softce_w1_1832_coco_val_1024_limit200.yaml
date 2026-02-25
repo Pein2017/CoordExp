@@ -1,0 +1,28 @@
+run:
+  name: softce_w1_1832_merged_coco_val_limit200_res1024
+  output_dir: output/bench
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  mode: auto
+  pred_coord_mode: auto
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  backend:
+    type: hf
+  generation:
+    temperature: 0.1
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 8
+    seed: 42
+  device: cuda:0
+  limit: 200
+  detect_samples: 128
