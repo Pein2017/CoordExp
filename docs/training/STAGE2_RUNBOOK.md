@@ -14,7 +14,7 @@ Stage-2 aims to align the model with its own decoded outputs while recovering mi
 From repo root:
 
 ```bash
-PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>]
+PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--verbose]
 ```
 
 Recommended wrapper (config-driven; handles `PYTHONPATH`, `torchrun`, proxy hygiene):
@@ -30,7 +30,7 @@ bash scripts/train.sh config=<yaml> gpus=0,1,2,3
 Multi-GPU:
 
 ```bash
-PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]
+PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>] [--verbose]
 ```
 
 Multi-GPU + vLLM server mode (recommended topology for long rollouts): this is supported, but requires
@@ -96,6 +96,7 @@ Key semantics:
 Rollout decode batching:
 - Single knob: `rollout_matching.decode_batch_size`.
   - Definition: per rollout GPU cap for one `generation()` / `/infer/` call.
+  - Note: the training entrypoint mirrors this value into `per_device_eval_batch_size` for Stage-2 trainer variants so rollout microbatching stays consistent.
 - HF + vLLM colocate:
   - Each learner rank chunks its local requests to `decode_batch_size`.
 - vLLM server mode:
@@ -186,8 +187,11 @@ Interpretation:
 
 Start from a template config and fill in dataset + rollout knobs:
 
-- Rollout-matching Stage-2 base: `configs/stage2_two_channel/base.yaml`
-- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) examples: `configs/stage2_two_channel/`
+- Stage-2 Rollout-Aligned Teacher Forcing base: `configs/stage2_rollout_aligned/base.yaml`
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) base: `configs/stage2_two_channel/base.yaml`
+- Examples:
+  - `configs/stage2_rollout_aligned/`
+  - `configs/stage2_two_channel/`
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
@@ -210,6 +214,11 @@ Objective pipeline declaration (required, ordered):
   - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
   - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
 - Flat objective knobs are intentionally removed; author all loss weights in `*.pipeline.<objective|diagnostics>[i].config`.
+
+Optional Channel-A A1 anchor losses (ablation knobs):
+- `bbox_geo.config.{a1_smoothl1_weight,a1_ciou_weight}` add bbox-geometry supervision on the A1 (GT-anchor) forward.
+- `coord_reg.config.{a1_soft_ce_weight,a1_w1_weight}` add coord distribution supervision on the A1 (GT-anchor) forward (SoftCE/W1 only; no hard CE or gates in this path).
+- When enabled (non-zero), these atoms are logged under `loss/A1_coord/*` and contribute to the total loss.
 
 ### Stage-2 Two-Channel examples (A-only / B-only / AB-mixed)
 
@@ -238,6 +247,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -253,6 +264,8 @@ stage2_ab:
           soft_ce_weight: 0.1
           self_context_soft_ce_weight: 0.1
           w1_weight: 0.1
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8
@@ -289,6 +302,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -304,6 +319,8 @@ stage2_ab:
           soft_ce_weight: 0.1
           self_context_soft_ce_weight: 0.1
           w1_weight: 0.1
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8
@@ -340,6 +357,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -355,6 +374,8 @@ stage2_ab:
           soft_ce_weight: 0.1
           self_context_soft_ce_weight: 0.1
           w1_weight: 0.1
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8
@@ -396,6 +417,8 @@ rollout_matching:
         config:
           smoothl1_weight: 1.0
           ciou_weight: 1.0
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -411,6 +434,8 @@ rollout_matching:
           soft_ce_weight: 1.0
           self_context_soft_ce_weight: 0.0
           w1_weight: 1.0
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 16
@@ -614,12 +639,12 @@ Important:
 
 Eval metrics include:
 - `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
-- Counters: `eval_rollout/pred_objects`, `eval_rollout/gt_objects`, `eval_rollout/matched`, `eval_rollout/fp`, `eval_rollout/fn`
+- Counters: `eval_rollout/pred_objects`, `eval_rollout/gt_objects_total`, `eval_rollout/matched`, `eval_rollout/fp_total`, `eval_rollout/fn_total` (aliases: `eval_rollout/fp`, `eval_rollout/fn`)
 - Parse health: `eval_rollout/parse_truncated_rate`, `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
 - Sample health: `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
 - Geometry quality: `eval_rollout/matched_maskiou_mean`
 - COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval_rollout/mAP`
-  - Eval-step COCO summary keys are intentionally compact: only `eval_rollout/mAP` is emitted (no `eval_rollout/bbox_*` or `eval_rollout/segm_*` keys).
+  - Eval-step COCO summary keys are intentionally compact: `eval_rollout/mAP` plus a small set of `eval_rollout/coco_counter_*` counters (no `eval_rollout/bbox_*` or `eval_rollout/segm_*` keys).
   - On COCO-eval failure, training/evaluation continues and `eval_rollout/mAP` is set to `0.0`; status is surfaced via `eval_rollout/coco_eval_ok`.
 
 Best-checkpoint selection:
@@ -631,22 +656,26 @@ Best-checkpoint selection:
 
 ### Key Health Metrics (Most Load-Bearing)
 
-Channel scheduling (Expectation/Rollout):
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout):
 - `stage2/channel_a` (1 on A steps)
 - `stage2/channel_b` (1 on B steps)
+- `stage2/raw_rollouts` (0 on A steps; >0 on B steps)
 
-Rollout health:
+Rollout health (Stage-2 Rollout-Aligned Teacher Forcing):
 - `rollout/parse_truncated_rate`
 - `rollout/sample_valid_pred_rate`
 - `rollout/f1`
 
-Throughput:
+Throughput (both variants; Channel-B steps only for two-channel):
 - `time/rollout_generate_s`
 - `rollout/gen_tokens_per_s`
 
-Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras:
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras (Channel-B steps):
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
 - `stage2_ab/channel_b/closure_supervision/N_drop` (closure-marker resolution drops; should stay near 0)
+- `stage2/invalid_rollout` (alias: `stage2_ab/channel_b/invalid_rollout`; rollout invalid/fallback/drop count; should stay near 0)
+- `stage2/drop_poly`, `stage2/drop_unknown`, `stage2/drop_bbox_invalid` (strict-drop breakdown; should stay near 0 in bbox-only rollouts)
+- `rollout/backend_{hf,vllm}` and `rollout/decode_mode_{greedy,beam}` (backend/decode provenance tags)
 
 ### Qualitative Monitoring Dumps
 
@@ -739,7 +768,7 @@ Rule of thumb:
 If you want to benchmark rollout generation throughput (analysis only; not an official launch script):
 
 - Runner: `scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py`
-- Example configs: `configs/bench/rollout_backend_bench*.yaml`
+- Example config: `configs/bench/rollout_backend_bench.yaml`
 
 General expectations:
 - vLLM is typically substantially faster for long rollouts but can reserve a large KV cache.

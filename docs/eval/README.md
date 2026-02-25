@@ -15,11 +15,11 @@ Offline evaluator to compute COCO-style metrics and/or an F1-ish set-matching me
 - Pixel-ready consumption: no coord-mode inference/denorm is performed; polygons are exported directly as COCO `segmentation` (mask IoU), bboxes as `bbox`. Line geometries are rejected and counted as invalid.
 - One geometry per object; degenerate/invalid entries are dropped with counters and recorded per-image for diagnostics.
 - Categories use exact GT desc strings. Predicted `desc` values that are not in the GT category set are **semantically mapped** to the closest GT desc (excluding synthetic `unknown`) using a sentence-transformer encoder; if the best match is below threshold, the prediction is **dropped** (map-or-drop; no bucket/drop fallbacks).
-  - `--unknown-policy` and `--semantic-fallback` are **deprecated/ignored** (retained only for back-compat; the evaluator will warn once).
+  - `--unknown-policy` and `--semantic-fallback` are deprecated and **unsupported**: the evaluator fails fast if they are provided (to avoid silent metric drift).
   - When semantic mapping runs, the evaluator writes `semantic_desc_report.json` to the output directory for inspection.
 - COCO scoring always honors each kept prediction’s `pred[*].score`; missing/non-numeric/non-finite/out-of-range scores are contract violations and fail fast with record/object indices.
 - For COCO runs, unscored legacy artifacts are rejected: each record must include non-empty `pred_score_source` and integer `pred_score_version`.
-- COCOeval runs for bbox and segm (when polygons exist). TODO: polygon GIoU hook.
+- COCOeval runs for bbox and segm (when polygons exist). (Not implemented: polygon GIoU hook.)
   - Milestone note: `confidence-postop` v1 scores `bbox_2d` only and drops unscorable predictions in the scored artifact. For scored COCO runs, prefer bbox-only evaluation (`use_segm: false`) until polygon confidence is added.
 - Optional F1-ish mode runs greedy 1:1 matching by IoU, then reports set-level counts (matched / missing / hallucination) and semantic-on-matched correctness (exact or embedding similarity).
   - By default (`--f1ish-pred-scope annotated`), predictions whose `desc` is **not semantically close to any GT `desc` in the image** are **ignored** (not counted as FP). This makes F1-ish behave like “how well do we recover annotated objects” on partially-annotated / open-vocab settings.
@@ -149,6 +149,8 @@ silent contract drift between infer/eval/vis stages.
   - HF backend: set `infer.generation.batch_size` (>1) to use batched `model.generate()`.
   - vLLM backend: set `infer.generation.batch_size` and (optionally) `infer.backend.client_concurrency`
     to issue multiple requests concurrently (server-side batching still depends on your vLLM server settings).
+    - Server mode requires `infer.backend.base_url` (or env `VLLM_BASE_URL`); optional: `infer.backend.model`, `infer.backend.timeout_s`.
+    - Local mode uses `infer.backend.mode: local` and supports `infer.backend.server_options.*` knobs (for example `vllm_max_model_len`) for reproducibility.
 - Record the backend choice and generation config in run artifacts:
   - YAML pipeline: `<run_dir>/resolved_config.json`
   - Legacy: `<run_dir>/summary.json` + your shell logs.

@@ -6,7 +6,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
 - **Practical training**: Stays in the standard SFT pipeline (ms-swift), no heavy RL; compatible with native chat templates.
-- **Dataset focus**: Supports single-source JSONL or multi-dataset fusion via `custom.fusion_config`.
+- **Dataset focus**: Defaults to single-source JSONL training; multi-dataset fusion via `custom.fusion_config` is supported but less common (see `docs/data/FUSION_DATASET.md` for packing limitations).
 
 ## Repo layout
 - `src/` – training stack (datasets, callbacks, config loader, SFT entry `sft.py`; optional fusion dataset support)
@@ -34,7 +34,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --base_config configs/base.yaml
    ```
    - Set `custom.train_jsonl` / `custom.val_jsonl` in the YAMLs to your datasets (single-source).
-   - Or set `custom.fusion_config` to a fusion YAML/JSON to train/eval on multiple datasets (see `docs/data/FUSION_DATASET.md`).
+   - Or set `custom.fusion_config` to a fusion YAML/JSON to train/eval on multiple datasets (see `docs/data/FUSION_DATASET.md` for current packing limitations).
 
 ### Data prep: LVIS end-to-end (raw → resized JSONL → coord tokens → tiny)
 - After `public_data/scripts/download_lvis.py`, run:
@@ -51,9 +51,11 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - Tunables via env: `FACTOR` (default 32), `MAX_BLOCKS` (pixel budget, default 768), `MIN_BLOCKS` (default 4), `POLY_MAX_POINTS` (default 20), `TINY` (default 256), `NUM_WORKERS`, `RAW_ROOT`, `OUTPUT_BASE`, `SPLITS`.
 
 4) **Key config knobs**
-- `custom.emit_norm`: coordinate normalization mode (default `norm1000` uses a 0–999 integer grid; 1000 bins)
-- `custom.coord_tokens.*`: opt-in coord-token mode (`enabled`, `skip_bbox_norm`) to consume pre-quantized `<|coord_k|>` data without double normalization
-   - `training.*`: ms-swift trainer settings (deepspeed, schedulers, etc.)
+- `custom.emit_norm`: must be `none` (runtime normalization is disabled; training assumes pre-normalized norm1000 coords)
+- `custom.coord_tokens.*`: required (`enabled`, `skip_bbox_norm`) to consume pre-quantized coords without double normalization
+- `custom.json_format`: required (currently only `standard`; typo-guard for deterministic parsing)
+- `custom.object_field_order`: required (`desc_first|geometry_first`); keep train/infer parity with `infer.object_field_order`
+- `training.*`: ms-swift trainer settings (deepspeed, schedulers, etc.)
 
 ### Coord-offset tuning (opt-in)
 - Purpose: lets coord token rows learn without touching the rest of the vocab. Adds trainable offsets on `embed_tokens` and `lm_head` for coord IDs 151670–152669 (skips 151669 `<|coord_*|>`).

@@ -4,10 +4,11 @@ This document details the specialized training objectives and architectural adap
 
 ## Coord distribution loss (coord tokens)
 
-CoordExp trains coordinate tokens with **distribution-based supervision** only:
+CoordExp can supervise coordinate tokens with **distribution-based losses** (recommended default):
 
 - Standard full-vocab CE is applied **only to non-coordinate tokens** (text + JSON structure).
 - At `<|coord_*|>` positions, the model is supervised via:
+  - `CE` (optional): hard CE over the 1000-bin coord vocabulary (ablation knob; default `0.0`)
   - `softCE`: soft cross-entropy between predicted coord-bin distribution `p` and a unimodal Gaussian soft label `q`
   - `W1`: 1D Wasserstein-1 distance on discrete bins via CDF differences between `p` and `q`
   - `gate`: coord-vocab gate loss that penalizes probability mass leaking to non-coord tokens
@@ -16,7 +17,8 @@ CoordExp trains coordinate tokens with **distribution-based supervision** only:
 custom:
   coord_soft_ce_w1:
     enabled: true
-    # total_loss += soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate
+    # total_loss += ce_weight * CE + soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate
+    ce_weight: 0.0
     soft_ce_weight: 1.0
     w1_weight: 1.0
     gate_weight: 1.0

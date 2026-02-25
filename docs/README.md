@@ -22,7 +22,7 @@ PYTHONPATH=. conda run -n ms python ...
 
 ```bash
 # Train (YAML-first)
-PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug]
+PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug] [--verbose]
 
 # Inspect how one JSONL record renders under the current Qwen3-VL chat template
 PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path.jsonl> --index 0
@@ -43,6 +43,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.
 *   **[Stage-2 Runbook](training/STAGE2_RUNBOOK.md)**: Runbook for Rollout-Matching and Stage-2 AB training.
 *   **[Metrics & Losses](training/METRICS_LOSSES.md)**: Detailed explanation of training metrics and loss functions.
 *   **[Coord Objective & Adapter](training/COORD_OBJECTIVE_AND_ADAPTER.md)**: SoftCE/W1 losses and offset adapters.
+*   **[Architecture (Logging & Reproducibility)](ARCHITECTURE.md)**: What files/logs a run produces and how to keep runs paper-ready.
 
 ## [Evaluation](eval/README.md)
 *   **[Detection Evaluator](eval/README.md)**: Guide to the offline detection evaluator.

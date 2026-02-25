@@ -121,6 +121,8 @@ rollout_matching:
         config:
           smoothl1_weight: 1.0
           ciou_weight: 1.0
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -134,6 +136,8 @@ rollout_matching:
           soft_ce_weight: 1.0
           self_context_soft_ce_weight: 0.0
           w1_weight: 1.0
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           coord_gate_weight: 1.0
           text_gate_weight: 0.0
           temperature: 1.0

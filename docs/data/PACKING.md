@@ -14,6 +14,11 @@ Note:
     - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
 - Stage_2 runbook: `../training/STAGE2_RUNBOOK.md`.
 
+Stage-1 packing guardrails (current implementation):
+- Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
+- Fusion datasets (`custom.fusion_config`) are not compatible with Stage-1 static packing (order-sensitive schedule). If you need multi-dataset mixing *and* packing, materialize an offline merged JSONL first; otherwise disable `training.packing` for fusion runs.
+- Packed dataset wrappers expect the template to expose `packing` and `padding_free` attributes (ms-swift templates do; custom templates must implement them).
+
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
 - Keeps per-update scale close to padding: ~117 base samples/update vs 128 baseline.

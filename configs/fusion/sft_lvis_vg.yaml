@@ -6,11 +6,14 @@
 extends: ../base.yaml
 
 model:
-  model: model_cache/Qwen3-VL-8B-Instruct-coordexp
+  # Use an in-repo model-cache path that exists by default in this environment.
+  model: model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
 
 training:
   output_dir: ./output/fusion_example
   run_name: fusion_lvis_vg_example
+  # Stage-1 dataset-level packing is not supported for fusion datasets.
+  packing: false
 
 custom:
   fusion_config: configs/fusion/examples/lvis_vg.yaml

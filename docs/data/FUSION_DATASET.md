@@ -5,6 +5,9 @@ CoordExp can train/evaluate on **multiple JSONL datasets** without pre-merging b
 - Enable it in your training YAML via `custom.fusion_config: <path/to/fusion.yaml>`.
 - When `custom.fusion_config` is set, the runner **ignores** `custom.train_jsonl` / `custom.val_jsonl`.
 
+Note:
+- Fusion-config training is supported, but it is not the default workflow in this repo. Prefer single-dataset training unless you explicitly need mixing.
+
 ## 1) Fusion Config Schema
 
 Fusion configs are YAML/JSON mappings with Qwen3-VL-style containers:
@@ -91,9 +94,9 @@ The eval dataset is built from **any entry with a non-null `val_jsonl`**.
 
 ## 3) Interaction With Packing + Coord Tokens
 
-- **Packing**: fusion datasets are compatible with `training.packing: true`.
-  - Packing still forces `per_device_train_batch_size=1`.
-  - Recommend keeping `global_max_length` consistent across runs.
+- **Packing (Stage-1)**: fusion datasets are **not** compatible with Stage-1 dataset-level static packing.
+  - Stage-1 packed training requires `training.packing_mode: static` and fails fast on fusion datasets (order-sensitive sample schedule).
+  - Recommended: disable `training.packing` for fusion runs, or materialize an offline merged JSONL if you need packing.
 - **Coord-token mode (required)**: fusion datasets require `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`.
 
 ## 4) Example
@@ -106,15 +109,15 @@ Fusion config (containers + ratios + `val_jsonl: null`):
 targets:
   - dataset: lvis
     name: lvis
-    train_jsonl: /abs/path/to/lvis_train.jsonl
-    val_jsonl: /abs/path/to/lvis_val.jsonl
+    train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+    val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
     template: poly_preferred
     ratio: 1.0
 
 sources:  # accepted for compatibility; treated the same as targets
   - dataset: vg
     name: vg
-    train_jsonl: /abs/path/to/vg_train.jsonl
+    train_jsonl: public_data/vg/rescale_32_768_bbox/train.coord.jsonl
     val_jsonl: null
     template: poly_preferred
     ratio: 0.2
@@ -126,17 +129,20 @@ Training YAML:
 # configs/fusion/sft_lvis_vg.yaml
 
 extends: ../base.yaml
+training:
+  packing: false  # Stage-1 packing is not supported for fusion datasets (see section 3)
 custom:
   fusion_config: configs/fusion/examples/lvis_vg.yaml
 ```
 
 ## 5) When To Prefer Offline Merge
 
-Runtime fusion is the default for experiments.
+Runtime fusion is supported and is a good fit for quick multi-dataset mixing ablations.
 
 Offline merge can still be useful when:
 
 - you need a single JSONL for external tools
 - you want a fixed materialized dataset snapshot
+- you need Stage-1 packing (offline merge produces a single stable dataset schedule)
 
 You can materialize a fused JSONL using the helper in `src/datasets/fusion.py` (`build_fused_jsonl`) or the thin wrapper script `public_data/scripts/merge_jsonl.py`.
