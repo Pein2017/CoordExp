@@ -428,9 +428,9 @@ class RolloutMatchingConfig:
 
             score_mode = str(getattr(eval_det, "score_mode", "constant") or "constant")
             score_mode = score_mode.strip().lower()
-            if score_mode != "constant":
+            if score_mode not in {"constant", "confidence_postop"}:
                 raise ValueError(
-                    "rollout_matching.eval_detection.score_mode must be 'constant'"
+                    "rollout_matching.eval_detection.score_mode must be one of {'constant', 'confidence_postop'}"
                 )
 
             try:

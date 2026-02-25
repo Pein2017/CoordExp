@@ -1748,7 +1748,8 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     )
 
     assert float(loss_from_desc_ce.detach().cpu().item()) == pytest.approx(
-        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6\n    )
+        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6
+    )
 
 
 def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> None:
@@ -1840,7 +1841,8 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     )
 
     assert float(loss_from_desc_ce.detach().cpu().item()) == pytest.approx(
-        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6\n    )
+        float(loss_from_rollout_fn_desc.detach().cpu().item()), rel=1e-6, abs=1e-6
+    )
 
 
 def test_tail_closure_positions_match_same_brace_used_for_fn_injection():

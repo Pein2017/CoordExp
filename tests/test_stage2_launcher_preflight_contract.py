@@ -29,7 +29,7 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_prod_cfg() -> No
     assert root.name == "rescale_32_768_bbox_max60"
     assert "public_data" in root.parts
 
-    assert int(out["vllm_max_model_len"]) == 12000
+    assert int(out["vllm_max_model_len"]) == 14000
     assert bool(out["vllm_enable_lora"]) is False
     assert pytest.approx(float(out["vllm_gpu_memory_utilization"]), rel=1e-6) == 0.85
     assert out["server_torch_dtype"] in {"bfloat16", "bf16"}
