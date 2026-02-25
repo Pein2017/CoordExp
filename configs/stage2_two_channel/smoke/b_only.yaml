@@ -24,7 +24,6 @@ stage2_ab:
   schedule:
     b_ratio: 1.0
   n_softctx_iter: 2
-  coord_gate_weight: 1.0
 
 custom:
   train_sample_limit: 512

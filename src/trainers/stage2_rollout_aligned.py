@@ -79,6 +79,12 @@ from .teacher_forcing.forwards import (
     prepare_forward_inputs,
     run_no_cache_forward,
 )
+from .teacher_forcing.module_registry import (
+    ALLOWED_DIAGNOSTIC_MODULES,
+    ALLOWED_OBJECTIVE_MODULES,
+    DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_CONFIG_ALLOWLIST,
+)
 from .teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
 from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
@@ -1432,45 +1438,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if not isinstance(cfg_map, Mapping):
                         raise TypeError(f"{path}[{idx}].config must be a mapping")
 
-                    if name == "token_ce":
-                        allowed_cfg = {
-                            "desc_ce_weight",
-                            "rollout_fn_desc_weight",
-                            "rollout_matched_prefix_struct_weight",
-                            "rollout_drop_invalid_struct_ce_multiplier",
-                            # Backward-compat aliases.
-                            "matched_prefix_struct_ce_weight",
-                            "fn_desc_ce_weight",
-                        }
-                    elif name == "bbox_geo":
-                        allowed_cfg = {
-                            "smoothl1_weight",
-                            "ciou_weight",
-                            # Backward-compat aliases.
-                            "bbox_smoothl1_weight",
-                            "bbox_ciou_weight",
-                        }
-                    elif name == "coord_reg":
-                        allowed_cfg = {
-                            "coord_ce_weight",
-                            "coord_el1_weight",
-                            "coord_ehuber_weight",
-                            "coord_huber_delta",
-                            "coord_entropy_weight",
-                            "coord_gate_weight",
-                            "text_gate_weight",
-                            "soft_ce_weight",
-                            "w1_weight",
-                            "temperature",
-                            "target_sigma",
-                            "target_truncate",
-                            # Backward-compat aliases.
-                            "coord_soft_ce_weight",
-                            "coord_w1_weight",
-                        }
-                    else:
-                        allowed_cfg = set()
-                    unknown_cfg = set(cfg_map.keys()) - allowed_cfg
+                    allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(name)
+                    if allowed_cfg is None:
+                        allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(name, set())
+
+                    unknown_cfg = set(cfg_map.keys()) - set(allowed_cfg)
                     if unknown_cfg:
                         raise ValueError(
                             f"Unknown {path}[{idx}].config keys for module {name!r}: "
@@ -1480,12 +1452,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             _validate_pipeline_specs(
                 pipeline_raw.get("objective", []),
                 path="rollout_matching.pipeline.objective",
-                allowed_names={"token_ce", "bbox_geo", "coord_reg"},
+                allowed_names=set(ALLOWED_OBJECTIVE_MODULES),
             )
             _validate_pipeline_specs(
                 pipeline_raw.get("diagnostics", []),
                 path="rollout_matching.pipeline.diagnostics",
-                allowed_names={"coord_diag"},
+                allowed_names=set(ALLOWED_DIAGNOSTIC_MODULES),
             )
 
         eval_det_raw = cfg.get("eval_detection", None)
@@ -5853,13 +5825,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Loss scalars are mean-like per-segment metrics. Reduce them with sample weights
         # so ranks with different numbers of packed segments (or zero) don't skew the
         # global average under DDP.
+        #
+        # Contract: Any scalar under `loss/*` is mean-like and should be averaged across
+        # ranks using `train/samples_total` as a weight (not an unweighted rank mean).
         loss_weight = float(sample_total_local)
-        for key in ("loss/ce", "loss/coord", "loss/coord_prefix", "loss/coord_tail"):
-            if key in reduced:
-                reduced[f"{key}_total"] = float(
-                    float(reduced.get(key, 0.0)) * loss_weight
-                )
-                reduced.pop(key, None)
+        loss_total_keys: Dict[str, str] = {}
+        loss_mean_keys = [
+            str(k)
+            for k in list(reduced.keys())
+            if str(k).startswith("loss/")
+            and not str(k).endswith("_total")
+            and not str(k).endswith("_sum")
+            and not str(k).endswith("_count")
+            and not str(k).endswith("_num")
+            and not str(k).endswith("_den")
+        ]
+        for key in loss_mean_keys:
+            total_key = f"{key}_total"
+            loss_total_keys[total_key] = key
+            reduced[total_key] = float(float(reduced.get(key, 0.0)) * loss_weight)
+            reduced.pop(key, None)
 
         try:
             import torch.distributed as dist
@@ -6011,12 +5996,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
 
-        for key_total, key_out in (
-            ("loss/ce_total", "loss/ce"),
-            ("loss/coord_total", "loss/coord"),
-            ("loss/coord_prefix_total", "loss/coord_prefix"),
-            ("loss/coord_tail_total", "loss/coord_tail"),
-        ):
+        for key_total, key_out in loss_total_keys.items():
             if key_total in reduced:
                 reduced[key_out] = (
                     float(reduced.get(key_total, 0.0) / sample_total)
@@ -6046,16 +6026,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         pred_total = float(reduced.get("rollout/valid_pred_objects_total", 0.0))
         gt_total = float(reduced.get("rollout/gt_objects_total", 0.0))
         matched_total = float(reduced.get("rollout/matched_for_supervision", 0.0))
-        precision = (matched_total / pred_total) if pred_total > 0.0 else 0.0
-        recall = (matched_total / gt_total) if gt_total > 0.0 else 0.0
-        f1 = (
-            (2.0 * precision * recall / (precision + recall))
-            if (precision + recall) > 0.0
-            else 0.0
-        )
-        reduced["rollout/precision"] = float(precision)
-        reduced["rollout/recall"] = float(recall)
-        reduced["rollout/f1"] = float(f1)
+
+        if any(str(k).startswith("rollout/") for k in reduced.keys()):
+            precision = (matched_total / pred_total) if pred_total > 0.0 else 0.0
+            recall = (matched_total / gt_total) if gt_total > 0.0 else 0.0
+            f1 = (
+                (2.0 * precision * recall / (precision + recall))
+                if (precision + recall) > 0.0
+                else 0.0
+            )
+            reduced["rollout/precision"] = float(precision)
+            reduced["rollout/recall"] = float(recall)
+            reduced["rollout/f1"] = float(f1)
 
         if "rollout/excluded_rate" in reduced:
             excluded_total = float(
@@ -6157,10 +6139,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for key in (
             trunc_num_key,
             trunc_den_key,
-            "loss/ce_total",
-            "loss/coord_total",
-            "loss/coord_prefix_total",
-            "loss/coord_tail_total",
+            *sorted(loss_total_keys.keys()),
             "rollout/_matched_maskiou_sum",
             "rollout/_sample_valid_pred_num",
             "rollout/_sample_any_match_num",
@@ -6552,7 +6531,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _build_train_rollout_log_payload(
         self, pending: _PendingTrainRolloutLog
     ) -> Dict[str, float]:
-        payload = self._build_rollout_metrics_from_meta(pending.meta)
+        payload: Dict[str, float] = {}
 
         sample_total = float(len(pending.meta))
         payload["train/samples_total"] = float(sample_total)
@@ -6561,30 +6540,34 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
         )
 
-        if "rollout/parse_truncated" in payload:
-            payload["rollout/_parse_truncated_num"] = float(
-                payload.get("rollout/parse_truncated", 0.0)
-            )
-            payload["rollout/_parse_truncated_den"] = float(sample_total)
 
-        if float(getattr(pending, "loss_weight_sum", 0.0)) > 0.0:
-            denom = float(pending.loss_weight_sum)
-            payload["loss/ce"] = float(pending.ce_loss_weighted_sum / denom)
-            payload["loss/coord"] = float(pending.coord_loss_weighted_sum / denom)
-            payload["loss/coord_prefix"] = float(
-                pending.coord_prefix_weighted_sum / denom
-            )
-            payload["loss/coord_tail"] = float(pending.coord_tail_weighted_sum / denom)
-        elif pending.n_micro > 0:
-            payload["loss/ce"] = float(pending.ce_loss_sum / float(pending.n_micro))
-            payload["loss/coord"] = float(pending.coord_loss_sum / float(pending.n_micro))
-            payload["loss/coord_prefix"] = float(
-                pending.coord_prefix_sum / float(pending.n_micro)
-            )
-            payload["loss/coord_tail"] = float(pending.coord_tail_sum / float(pending.n_micro))
+        if sample_total > 0.0:
+            if float(getattr(pending, "loss_weight_sum", 0.0)) > 0.0:
+                denom = float(pending.loss_weight_sum)
+                atom_keys = sorted(
+                    set(getattr(pending, "objective_atom_weighted_sum", {}).keys())
+                    | set(getattr(pending, "objective_atom_sum", {}).keys())
+                )
+                for key in atom_keys:
+                    payload[str(key)] = float(
+                        float(getattr(pending, "objective_atom_weighted_sum", {}).get(key, 0.0))
+                        / denom
+                    )
+            elif pending.n_micro > 0:
+                atom_keys = sorted(
+                    set(getattr(pending, "objective_atom_sum", {}).keys())
+                    | set(getattr(pending, "objective_atom_weighted_sum", {}).keys())
+                )
+                denom = float(pending.n_micro)
+                for key in atom_keys:
+                    payload[str(key)] = float(
+                        float(getattr(pending, "objective_atom_sum", {}).get(key, 0.0))
+                        / denom
+                    )
 
         payload["time/forward_s"] = float(pending.time_forward_s)
-        payload["time/mask_build_s"] = float(pending.time_mask_build_s)
+        if float(pending.time_mask_build_s) > 0.0:
+            payload["time/mask_build_s"] = float(pending.time_mask_build_s)
 
         # Rollout pipeline timings are only meaningful when we actually ran a rollout.
         ran_rollout = bool(
@@ -6593,6 +6576,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             or float(pending.time_rollout_teacher_encode_s) > 0.0
         )
         if ran_rollout:
+            payload.update(self._build_rollout_metrics_from_meta(pending.meta))
+            if "rollout/parse_truncated" in payload:
+                payload["rollout/_parse_truncated_num"] = float(
+                    payload.get("rollout/parse_truncated", 0.0)
+                )
+                payload["rollout/_parse_truncated_den"] = float(sample_total)
+
             payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
             payload["time/rollout_parse_match_s"] = float(pending.time_rollout_parse_match_s)
             payload["time/rollout_teacher_encode_s"] = float(
@@ -6660,6 +6650,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             else []
         )
 
+        if not objective_specs:
+            raise ValueError(
+                "rollout-matching trainer requires rollout_matching.pipeline.objective (pipeline-only contract). "
+                "Ensure `sft.py` injected rollout_pipeline_manifest from your config."
+            )
+
         ignored_keys = {
             "labels",
             "compute_loss_func",
@@ -6702,24 +6698,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
             )
 
-        cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
-        temperature_coord = float(
-            self._cfg("temperature_coord", float(getattr(cfg, "temperature", 1.0)))
-        )
-        target_sigma = float(
-            self._cfg("target_sigma", float(getattr(cfg, "target_sigma", 2.0)))
-        )
-        target_truncate = self._cfg("target_truncate", getattr(cfg, "target_truncate", None))
-        if target_truncate is not None:
-            target_truncate = int(target_truncate)
-            if target_truncate < 0:
-                target_truncate = None
+        coord_cfg_for_temp: Mapping[str, Any] = {}
+        for spec in list(objective_specs or []):
+            if not isinstance(spec, Mapping):
+                continue
+            if str(spec.get("name", "") or "").strip() != "coord_reg":
+                continue
+            cfg_raw = spec.get("config", {})
+            if isinstance(cfg_raw, Mapping):
+                coord_cfg_for_temp = cfg_raw
+            break
 
-        soft_w = float(
-            self._cfg("soft_ce_weight", float(getattr(cfg, "soft_ce_weight", 1.0)))
-        )
-        w1_w = float(self._cfg("w1_weight", float(getattr(cfg, "w1_weight", 1.0))))
-        gate_w = float(self._cfg("gate_weight", float(getattr(cfg, "gate_weight", 0.0))))
+        try:
+            temperature_coord = float(coord_cfg_for_temp.get("temperature", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            temperature_coord = 1.0
+        temperature_coord = max(1e-6, float(temperature_coord))
 
         token_type_masks = build_token_type_masks(
             input_ids=input_ids,
@@ -6741,38 +6735,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             logits_ce=logits,
             meta=meta,
             coord_token_ids=coord_token_ids,
-            temperature=max(1e-6, float(temperature_coord)),
+            temperature=float(temperature_coord),
             decode_mode=str(coord_decode_mode),
             token_type_masks=token_type_masks,
             rollout_subset_masks=rollout_subset_masks,
-            extra={
-                "desc_ce_weight": max(0.0, float(self._cfg("desc_ce_weight", 1.0))),
-                "bbox_smoothl1_weight": max(
-                    0.0,
-                    float(self._cfg("bbox_smoothl1_weight", 1.0)),
-                ),
-                "bbox_ciou_weight": max(
-                    0.0,
-                    float(self._cfg("bbox_ciou_weight", 1.0)),
-                ),
-                "coord_ce_weight": max(0.0, float(self._cfg("coord_ce_weight", 0.0))),
-                "coord_soft_ce_weight": max(0.0, float(soft_w)),
-                "coord_w1_weight": max(0.0, float(w1_w)),
-                "coord_el1_weight": max(0.0, float(self._cfg("coord_el1_weight", 0.0))),
-                "coord_ehuber_weight": max(
-                    0.0,
-                    float(self._cfg("coord_ehuber_weight", 0.0)),
-                ),
-                "coord_entropy_weight": float(self._cfg("coord_entropy_weight", 0.0)),
-                "coord_gate_weight": max(0.0, float(gate_w)),
-                "text_gate_weight": max(0.0, float(self._cfg("text_gate_weight", 0.0))),
-                "coord_huber_delta": max(
-                    1e-6,
-                    float(self._cfg("coord_huber_delta", 0.001)),
-                ),
-                "coord_soft_sigma": max(1e-6, float(target_sigma)),
-                "coord_soft_truncate": target_truncate,
-            },
+            extra={},
         )
 
         warn_once = getattr(self, "_tf_diag_warn_once", None)
@@ -6789,17 +6756,141 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         total = pipeline_result.total_loss
-        ce_loss_obj = pipeline_result.module_losses.get("token_ce", logits.new_tensor(0.0))
-        bbox_loss_obj = pipeline_result.module_losses.get("bbox_geo", logits.new_tensor(0.0))
-        coord_reg_loss_obj = pipeline_result.module_losses.get(
-            "coord_reg",
-            logits.new_tensor(0.0),
-        )
-
         pipeline_metrics = dict(pipeline_result.metrics)
-        coord_total_obj = bbox_loss_obj + coord_reg_loss_obj
-        coord_prefix = float(pipeline_metrics.get("loss/geo_prefix", 0.0) or 0.0)
-        coord_tail = float(pipeline_metrics.get("loss/geo_tail", 0.0) or 0.0)
+
+        # Stage-2 logging contract: emit only objective atoms (post-weighting) with
+        # provenance keys. Do not emit aggregate "geo"/"coord_reg" combinations.
+        objective_atoms: Dict[str, float] = {}
+        try:
+            from .teacher_forcing.contracts import PipelineModuleSpec
+
+            specs: Dict[str, PipelineModuleSpec] = {}
+            for spec_raw in list(objective_specs or []):
+                if not isinstance(spec_raw, Mapping):
+                    continue
+                parsed = PipelineModuleSpec.from_mapping(spec_raw)
+                if not parsed.name:
+                    continue
+                specs.setdefault(parsed.name, parsed)
+
+            token_spec = specs.get("token_ce")
+            if (
+                token_spec is not None
+                and token_spec.enabled_for_channel("B")
+                and float(token_spec.weight) != 0.0
+            ):
+                token_struct = float(pipeline_metrics.get("loss/token_ce_struct", 0.0) or 0.0)
+                token_desc = float(pipeline_metrics.get("loss/token_ce_desc", 0.0) or 0.0)
+
+                objective_atoms["loss/B_rollout_text/struct_ce"] = float(
+                    float(token_spec.weight) * float(token_struct)
+                )
+
+                token_cfg = (
+                    dict(token_spec.config)
+                    if isinstance(token_spec.config, Mapping)
+                    else {}
+                )
+                rollout_fn_desc_weight_raw = token_cfg.get(
+                    "rollout_fn_desc_weight",
+                    token_cfg.get("desc_ce_weight", 1.0),
+                )
+                try:
+                    rollout_fn_desc_weight = float(rollout_fn_desc_weight_raw or 0.0)
+                except (TypeError, ValueError):
+                    rollout_fn_desc_weight = 0.0
+                rollout_fn_desc_weight = max(0.0, float(rollout_fn_desc_weight))
+                if float(rollout_fn_desc_weight) != 0.0:
+                    objective_atoms["loss/B_rollout_text/desc_ce"] = float(
+                        float(token_spec.weight) * float(token_desc)
+                    )
+
+            bbox_spec = specs.get("bbox_geo")
+            if (
+                bbox_spec is not None
+                and bbox_spec.enabled_for_channel("B")
+                and float(bbox_spec.weight) != 0.0
+            ):
+                bbox_cfg = (
+                    dict(bbox_spec.config)
+                    if isinstance(bbox_spec.config, Mapping)
+                    else {}
+                )
+
+                def _bbox_w(key: str, default: float) -> float:
+                    if key not in bbox_cfg or bbox_cfg.get(key) is None:
+                        return float(default)
+                    try:
+                        return float(bbox_cfg.get(key))
+                    except (TypeError, ValueError):
+                        return float(default)
+
+                smoothl1_w = max(0.0, _bbox_w("smoothl1_weight", 1.0))
+                ciou_w = max(0.0, _bbox_w("ciou_weight", 1.0))
+                smoothl1 = float(pipeline_metrics.get("loss/bbox_smoothl1", 0.0) or 0.0)
+                ciou = float(pipeline_metrics.get("loss/bbox_ciou", 0.0) or 0.0)
+
+                if float(smoothl1_w) != 0.0:
+                    objective_atoms["loss/B_coord/bbox_smoothl1"] = float(
+                        float(bbox_spec.weight) * float(smoothl1_w) * float(smoothl1)
+                    )
+                if float(ciou_w) != 0.0:
+                    objective_atoms["loss/B_coord/bbox_ciou"] = float(
+                        float(bbox_spec.weight) * float(ciou_w) * float(ciou)
+                    )
+
+            coord_spec = specs.get("coord_reg")
+            if (
+                coord_spec is not None
+                and coord_spec.enabled_for_channel("B")
+                and float(coord_spec.weight) != 0.0
+            ):
+                coord_cfg = (
+                    dict(coord_spec.config)
+                    if isinstance(coord_spec.config, Mapping)
+                    else {}
+                )
+
+                def _coord_w(key: str, default: float, *, clamp_min0: bool = True) -> float:
+                    value = coord_cfg.get(key, default)
+                    if value is None:
+                        value = default
+                    try:
+                        out = float(value)
+                    except (TypeError, ValueError):
+                        out = float(default)
+                    if clamp_min0:
+                        out = max(0.0, float(out))
+                    return float(out)
+
+                w_coord_ce = _coord_w("coord_ce_weight", 0.0, clamp_min0=True)
+                w_soft_ce = _coord_w("soft_ce_weight", 0.0, clamp_min0=True)
+                w_w1 = _coord_w("w1_weight", 0.0, clamp_min0=True)
+                w_el1 = _coord_w("coord_el1_weight", 0.0, clamp_min0=True)
+                w_ehuber = _coord_w("coord_ehuber_weight", 0.0, clamp_min0=True)
+                # Entropy is sign-sensitive: positive increases entropy, negative sharpens.
+                w_entropy = _coord_w("coord_entropy_weight", 0.0, clamp_min0=False)
+                w_gate = _coord_w("coord_gate_weight", 0.0, clamp_min0=True)
+                w_text_gate = _coord_w("text_gate_weight", 0.0, clamp_min0=True)
+
+                def _emit(term: str, weight: float, raw_key: str) -> None:
+                    if float(weight) == 0.0:
+                        return
+                    value = float(pipeline_metrics.get(raw_key, 0.0) or 0.0)
+                    objective_atoms[f"loss/B_coord/{term}"] = float(
+                        float(coord_spec.weight) * float(weight) * float(value)
+                    )
+
+                _emit("coord_token_ce", w_coord_ce, "loss/coord_token_ce")
+                _emit("coord_soft_ce", w_soft_ce, "loss/coord_soft_ce")
+                _emit("coord_w1", w_w1, "loss/coord_w1")
+                _emit("coord_el1", w_el1, "loss/coord_el1")
+                _emit("coord_ehuber", w_ehuber, "loss/coord_ehuber")
+                _emit("coord_entropy", w_entropy, "loss/coord_entropy")
+                _emit("coord_gate", w_gate, "loss/coord_gate")
+                _emit("text_gate", w_text_gate, "loss/text_gate")
+        except (TypeError, ValueError):
+            raise
 
         try:
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -6810,15 +6901,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 self._rm_pending_train_logs[target_step] = pending
             pending.add_micro(
                 meta=meta,
-                ce_loss=float(ce_loss_obj.detach().cpu().item()),
-                coord_loss=float(coord_total_obj.detach().cpu().item()),
-                coord_prefix=float(coord_prefix),
-                coord_tail=float(coord_tail),
+                objective_atoms=objective_atoms,
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),
-                batch_metrics=batch_metrics
-                if isinstance(batch_metrics, Mapping)
-                else None,
+                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
             )
         except (TypeError, ValueError):
             raise

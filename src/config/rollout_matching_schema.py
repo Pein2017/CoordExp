@@ -15,6 +15,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 
+from src.trainers.teacher_forcing.module_registry import (
+    ALLOWED_DIAGNOSTIC_MODULES,
+    ALLOWED_OBJECTIVE_MODULES,
+    DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_CONFIG_ALLOWLIST,
+)
+
 
 @dataclass(frozen=True)
 class RolloutDecodingConfig:
@@ -168,17 +175,13 @@ class VllmConfig:
     sync: Optional[VllmSyncConfig] = None
 
 
-_ALLOWED_ROLLOUT_OBJECTIVE_MODULES: set[str] = {"token_ce", "bbox_geo", "coord_reg"}
-_ALLOWED_ROLLOUT_DIAGNOSTIC_MODULES: set[str] = {"coord_diag"}
-
-
 @dataclass(frozen=True)
 class RolloutPipelineModuleSpec:
     name: str
-    enabled: bool = True
-    weight: float = 1.0
-    channels: tuple[str, ...] = ("A", "B")
-    config: Mapping[str, Any] = field(default_factory=dict)
+    enabled: bool
+    weight: float
+    channels: tuple[str, ...]
+    config: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -286,10 +289,14 @@ class RolloutMatchingConfig:
             if not isinstance(self.pipeline, RolloutPipelineConfig):
                 raise TypeError("rollout_matching.pipeline must be a RolloutPipelineConfig")
 
+            if not self.pipeline.objective:
+                raise ValueError("rollout_matching.pipeline.objective must be non-empty")
+
             def _validate_specs(
                 specs: tuple[RolloutPipelineModuleSpec, ...],
                 *,
                 allowed_names: set[str],
+                config_allowlist_by_name: Mapping[str, set[str]],
                 path: str,
             ) -> None:
                 seen: set[str] = set()
@@ -328,16 +335,65 @@ class RolloutMatchingConfig:
                     if not isinstance(spec.config, Mapping):
                         raise TypeError(f"{path}[{idx}].config must be a mapping")
 
+                    allowed_cfg = config_allowlist_by_name.get(name, set())
+                    unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)
+                    if unknown_cfg:
+                        raise ValueError(
+                            f"Unknown {path}[{idx}].config keys for module {name!r}: "
+                            f"{sorted(str(k) for k in unknown_cfg)}"
+                        )
+                    missing_cfg = set(allowed_cfg) - set(spec.config.keys())
+                    if missing_cfg:
+                        raise ValueError(
+                            f"Missing required {path}[{idx}].config keys for module {name!r}: "
+                            f"{sorted(str(k) for k in missing_cfg)}"
+                        )
+
             _validate_specs(
                 self.pipeline.objective,
-                allowed_names=_ALLOWED_ROLLOUT_OBJECTIVE_MODULES,
+                allowed_names=ALLOWED_OBJECTIVE_MODULES,
+                config_allowlist_by_name=OBJECTIVE_CONFIG_ALLOWLIST,
                 path="rollout_matching.pipeline.objective",
             )
             _validate_specs(
                 self.pipeline.diagnostics,
-                allowed_names=_ALLOWED_ROLLOUT_DIAGNOSTIC_MODULES,
+                allowed_names=ALLOWED_DIAGNOSTIC_MODULES,
+                config_allowlist_by_name=DIAGNOSTIC_CONFIG_ALLOWLIST,
                 path="rollout_matching.pipeline.diagnostics",
             )
+
+            obj_by_name = {str(spec.name): spec for spec in self.pipeline.objective}
+            bbox_geo = obj_by_name.get("bbox_geo")
+            coord_reg = obj_by_name.get("coord_reg")
+            if coord_reg is not None and bool(getattr(coord_reg, "enabled", False)):
+                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective requires bbox_geo to be present+enabled when coord_reg is enabled "
+                        "(coord_reg depends on bbox_geo state)."
+                    )
+                missing_channels = set(coord_reg.channels) - set(bbox_geo.channels)
+                if missing_channels:
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
+                        f"missing={sorted(missing_channels)}"
+                    )
+
+            for dspec in self.pipeline.diagnostics:
+                if not bool(getattr(dspec, "enabled", False)):
+                    continue
+                if str(getattr(dspec, "name", "") or "") != "coord_diag":
+                    continue
+                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "rollout_matching.pipeline.diagnostics requires bbox_geo to be present+enabled when coord_diag is enabled "
+                        "(coord_diag depends on bbox_geo state)."
+                    )
+                missing_channels = set(dspec.channels) - set(bbox_geo.channels)
+                if missing_channels:
+                    raise ValueError(
+                        "rollout_matching.pipeline.diagnostics coord_diag channels must be a subset of bbox_geo channels; "
+                        f"missing={sorted(missing_channels)}"
+                    )
 
         if self.eval_prompt_variant is not None and not isinstance(
             self.eval_prompt_variant, str

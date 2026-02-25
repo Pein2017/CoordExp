@@ -15,6 +15,13 @@ class _FakeTrainArguments:
 
 
 def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
+    token_ce_cfg = {
+        "desc_ce_weight": 1.0,
+        "self_context_struct_ce_weight": 0.1,
+        "rollout_fn_desc_weight": 1.0,
+        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -29,6 +36,18 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
         "rollout_matching": {"rollout_backend": "hf"},
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "token_ce",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "config": dict(token_ce_cfg),
+                    }
+                ],
+                "diagnostics": [],
+            },
             "channel_b": {},
         },
     }
@@ -64,6 +83,13 @@ def test_stage2_ab_channel_b_removed_keys_fail_fast(payload: dict, expected_msg:
 
 
 def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> None:
+    token_ce_cfg = {
+        "desc_ce_weight": 1.0,
+        "self_context_struct_ce_weight": 0.1,
+        "rollout_fn_desc_weight": 1.0,
+        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -85,7 +111,7 @@ def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> N
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "config": {},
+                        "config": dict(token_ce_cfg),
                     }
                 ],
                 "diagnostics": [],
@@ -103,6 +129,13 @@ def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> N
 
 
 def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
+    token_ce_cfg = {
+        "desc_ce_weight": 1.0,
+        "self_context_struct_ce_weight": 0.1,
+        "rollout_fn_desc_weight": 1.0,
+        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -125,7 +158,7 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "config": {},
+                        "config": dict(token_ce_cfg),
                     }
                 ],
                 "diagnostics": [],
@@ -140,6 +173,13 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
 
 
 def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
+    token_ce_cfg = {
+        "desc_ce_weight": 1.0,
+        "self_context_struct_ce_weight": 0.0,
+        "rollout_fn_desc_weight": 1.0,
+        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -161,7 +201,7 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "config": {},
+                        "config": dict(token_ce_cfg),
                     }
                 ],
                 "diagnostics": [],
@@ -171,6 +211,132 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
 
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(ValueError, match=r"custom\.coord_soft_ce_w1"):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
+    coord_reg_cfg = {
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_huber_delta": 0.001,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "text_gate_weight": 0.25,
+        "soft_ce_weight": 0.0,
+        "self_context_soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+        "target_truncate": None,
+    }
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {"rollout_backend": "hf"},
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "bbox_geo",
+                        "enabled": True,
+                        "weight": 0.0,
+                        "channels": ["A", "B"],
+                        "config": {"smoothl1_weight": 0.0, "ciou_weight": 0.0},
+                    },
+                    {
+                        "name": "coord_reg",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "config": {
+                            **coord_reg_cfg,
+                            "unknown_weight": 1.0,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
+    coord_reg_cfg = {
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_huber_delta": 0.001,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "text_gate_weight": 0.25,
+        "soft_ce_weight": 0.0,
+        "self_context_soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+        "target_truncate": None,
+    }
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_rollout_aligned",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "bbox_geo",
+                        "enabled": True,
+                        "weight": 0.0,
+                        "channels": ["A", "B"],
+                        "config": {"smoothl1_weight": 0.0, "ciou_weight": 0.0},
+                    },
+                    {
+                        "name": "coord_reg",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "config": {
+                            **coord_reg_cfg,
+                            "unknown_weight": 1.0,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
+    ):
         TrainingConfig.from_mapping(raw, prompts)
 
 
@@ -285,7 +451,7 @@ def test_rollout_decode_batch_size_overrides_eval_batch_size_when_mismatched():
     assert train_args.per_device_eval_batch_size == 4
 
 
-def test_default_pipeline_manifest_resolution_and_checksum_golden():
+def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
     from src.sft import _build_pipeline_manifest
 
     cfg = {
@@ -304,63 +470,17 @@ def test_default_pipeline_manifest_resolution_and_checksum_golden():
         "target_truncate": 8,
     }
 
-    manifest = _build_pipeline_manifest(
-        cfg,
-        default_objective=["token_ce", "bbox_geo", "coord_reg"],
-        default_diagnostics=["coord_diag"],
-        trainer_variant="stage2_two_channel",
-        config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
-        run_name="smoke_ab_mixed_pipeline_explicit",
-        seed=17,
-        coord_soft_cfg=coord_soft_cfg,
-    )
-
-    assert [m["name"] for m in manifest["objective"]] == [
-        "token_ce",
-        "bbox_geo",
-        "coord_reg",
-    ]
-    assert [m["name"] for m in manifest["diagnostics"]] == ["coord_diag"]
-
-    token_ce_cfg = manifest["objective"][0]["config"]
-    bbox_geo_cfg = manifest["objective"][1]["config"]
-    coord_reg_cfg = manifest["objective"][2]["config"]
-
-    assert token_ce_cfg["desc_ce_weight"] == pytest.approx(0.7)
-    assert token_ce_cfg["rollout_fn_desc_weight"] == pytest.approx(0.7)
-    assert token_ce_cfg["rollout_matched_prefix_struct_weight"] == pytest.approx(1.0)
-    assert token_ce_cfg["self_context_struct_ce_weight"] == pytest.approx(0.1)
-
-    assert bbox_geo_cfg["smoothl1_weight"] == pytest.approx(2.0)
-    assert bbox_geo_cfg["ciou_weight"] == pytest.approx(0.5)
-
-    assert coord_reg_cfg["coord_gate_weight"] == pytest.approx(1.0)
-    assert coord_reg_cfg["text_gate_weight"] == pytest.approx(0.2)
-    assert coord_reg_cfg["soft_ce_weight"] == pytest.approx(0.3)
-    assert coord_reg_cfg["self_context_soft_ce_weight"] == pytest.approx(0.3)
-    assert coord_reg_cfg["w1_weight"] == pytest.approx(0.4)
-    assert coord_reg_cfg["temperature"] == pytest.approx(0.9)
-    assert coord_reg_cfg["target_sigma"] == pytest.approx(1.7)
-    assert coord_reg_cfg["target_truncate"] == 8
-    assert manifest["extra"]["stage2_ab.coord_ctx_embed_mode"] == "st"
-    assert manifest["extra"]["stage2_ab.coord_decode_mode"] == "exp"
-
-    # Checksum is full SHA256 and must be independent of run context.
-    assert len(manifest["checksum"]) == 64
-
-    manifest_same_pipeline_other_run = _build_pipeline_manifest(
-        cfg,
-        default_objective=["token_ce", "bbox_geo", "coord_reg"],
-        default_diagnostics=["coord_diag"],
-        trainer_variant="stage2_two_channel",
-        config_path="configs/stage2_two_channel/prod/ab_mixed.yaml",
-        run_name="different_run_name",
-        seed=999,
-        coord_soft_cfg=coord_soft_cfg,
-    )
-    assert (
-        manifest_same_pipeline_other_run["checksum"] == manifest["checksum"]
-    ), "pipeline checksum must be run-context invariant"
+    with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):
+        _build_pipeline_manifest(
+            cfg,
+            default_objective=["token_ce", "bbox_geo", "coord_reg"],
+            default_diagnostics=["coord_diag"],
+            trainer_variant="stage2_two_channel",
+            config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
+            run_name="smoke_ab_mixed_pipeline_explicit",
+            seed=17,
+            coord_soft_cfg=coord_soft_cfg,
+        )
 
 
 def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():

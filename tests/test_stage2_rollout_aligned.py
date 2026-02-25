@@ -520,12 +520,12 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
     out = trainer._reduce_train_rollout_log_payload_global(
         {
             "train/samples_total": 4.0,
-            "loss/ce": 1.5,
+            "loss/B_rollout_text/struct_ce": 1.5,
         }
     )
 
     assert out["train/samples_total"] == pytest.approx(4.0)
-    assert out["loss/ce"] == pytest.approx(1.5)
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(1.5)
     assert "rollout/parse_truncated_rate" not in out
 
 
@@ -536,8 +536,8 @@ def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys
     out = trainer._reduce_train_rollout_log_payload_global(
         {
             "train/samples_total": 2.0,
-            "loss/ce": 1.0,
-            "loss/coord": 0.5,
+            "loss/B_rollout_text/struct_ce": 1.0,
+            "loss/B_coord/bbox_smoothl1": 0.5,
             "rollout/_matched_maskiou_sum": 1.2,
             "rollout/matched_maskiou_count": 2.0,
             "rollout/_sample_valid_pred_num": 1.0,
@@ -549,8 +549,8 @@ def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys
     )
 
     assert all(not str(k).startswith("rollout/_") for k in out.keys())
-    assert out["loss/ce"] == pytest.approx(1.0)
-    assert out["loss/coord"] == pytest.approx(0.5)
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(1.0)
+    assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx(0.5)
     assert out["rollout/matched_maskiou_mean"] == pytest.approx(0.6)
     assert out["rollout/sample_valid_pred_rate"] == pytest.approx(0.5)
     assert out["rollout/desc_exact_acc_on_matched"] == pytest.approx(0.5)
@@ -562,20 +562,14 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     pending = _PendingTrainRolloutLog()
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0}],
-        ce_loss=10.0,
-        coord_loss=0.0,
-        coord_prefix=0.0,
-        coord_tail=0.0,
+        objective_atoms={"loss/B_rollout_text/struct_ce": 10.0},
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
     )
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
-        ce_loss=20.0,
-        coord_loss=0.0,
-        coord_prefix=0.0,
-        coord_tail=0.0,
+        objective_atoms={"loss/B_rollout_text/struct_ce": 20.0},
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
@@ -585,7 +579,9 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
 
     assert out["train/samples_total"] == pytest.approx(4.0)
     assert out["train/micro_steps"] == pytest.approx(2.0)
-    assert out["loss/ce"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(
+        (10.0 * 1.0 + 20.0 * 3.0) / 4.0
+    )
 
 
 def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
@@ -637,13 +633,13 @@ def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
     out = trainer._reduce_train_rollout_log_payload_global(
         {
             "train/samples_total": 1.0,
-            "loss/ce": 10.0,
+            "loss/B_rollout_text/struct_ce": 10.0,
         }
     )
 
     assert out["train/samples_total"] == pytest.approx(4.0)
-    assert out["loss/ce"] == pytest.approx(17.5)
-    assert "loss/ce_total" not in out
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(17.5)
+    assert "loss/B_rollout_text/struct_ce_total" not in out
 
 
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:

@@ -753,6 +753,11 @@ def _build_pipeline_manifest(
 
     pipeline_raw = cfg.get("pipeline", None)
     if not isinstance(pipeline_raw, Mapping):
+        variant = str(trainer_variant or "")
+        if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+            raise ValueError(
+                f"{variant} requires an explicit pipeline config; missing {variant}.*.pipeline."
+            )
         pipeline_raw = {}
 
     def _coerce_float(value: Any, default: float) -> float:
@@ -982,19 +987,13 @@ def _build_pipeline_manifest(
     def _resolve(path: str, defaults: list[str]) -> list[dict[str, Any]]:
         raw = pipeline_raw.get(path, None)
         if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            variant = str(trainer_variant or "")
+            if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+                raise TypeError(f"pipeline.{path} must be a list of module specs")
             raw = None
 
         if raw is None:
-            return [
-                {
-                    "name": n,
-                    "enabled": True,
-                    "weight": 1.0,
-                    "channels": ["A", "B"],
-                    "config": _default_module_config(n),
-                }
-                for n in defaults
-            ]
+            return []
 
         out: list[dict[str, Any]] = []
         for spec in raw:
@@ -2449,12 +2448,30 @@ def main():
             if callable(validate_hook):
                 validate_hook()
 
-            rollout_manifest = _resolve_pipeline_manifest(
-                rollout_cfg,
-                default_objective=["token_ce", "bbox_geo", "coord_reg"],
-                default_diagnostics=["coord_diag"],
-                coord_soft_cfg=coord_soft_cfg_for_manifest,
-            )
+            if trainer_variant == "stage2_rollout_aligned":
+                rollout_manifest = _resolve_pipeline_manifest(
+                    rollout_cfg,
+                    default_objective=["token_ce", "bbox_geo", "coord_reg"],
+                    default_diagnostics=["coord_diag"],
+                    coord_soft_cfg=coord_soft_cfg_for_manifest,
+                )
+            else:
+                rollout_manifest = {
+                    "payload": {
+                        "objective": [],
+                        "diagnostics": [],
+                        "extra": {"variant": str(trainer_variant or "")},
+                    },
+                    "objective": [],
+                    "diagnostics": [],
+                    "extra": {"variant": str(trainer_variant or "")},
+                    "checksum": "",
+                    "run_context": {
+                        "config": str(config_path),
+                        "run_name": str(getattr(train_args, "run_name", "") or ""),
+                        "seed": int(getattr(train_args.training_args, "seed", 0) or 0),
+                    },
+                }
             setattr(trainer, "rollout_pipeline_manifest", rollout_manifest)
 
             logger.info(

@@ -155,31 +155,30 @@ def run_bbox_geo_module(
     context: TeacherForcingContext,
     spec: PipelineModuleSpec,
 ) -> ModuleResult:
+    if str(context.registry_context) == "gt":
+        z = context.logits.new_tensor(0.0)
+        metrics = {
+            "loss/geo": 0.0,
+            "loss/bbox_smoothl1": 0.0,
+            "loss/bbox_ciou": 0.0,
+            "bbox/groups_total": 0.0,
+            "bbox/slots_total": 0.0,
+        }
+        return ModuleResult(loss=z, metrics=metrics, state={})
+
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
 
     bbox_smoothl1_w = max(
         0.0,
         _coerce_float(
-            cfg.get(
-                "smoothl1_weight",
-                cfg.get(
-                    "bbox_smoothl1_weight",
-                    context.extra.get("bbox_smoothl1_weight", 1.0),
-                ),
-            ),
+            cfg.get("smoothl1_weight", 1.0),
             1.0,
         ),
     )
     bbox_ciou_w = max(
         0.0,
         _coerce_float(
-            cfg.get(
-                "ciou_weight",
-                cfg.get(
-                    "bbox_ciou_weight",
-                    context.extra.get("bbox_ciou_weight", 1.0),
-                ),
-            ),
+            cfg.get("ciou_weight", 1.0),
             1.0,
         ),
     )

@@ -4,8 +4,58 @@
 Define the rollout-matching SFT trainer contract, including rollout generation backends, vLLM server/weight-sync behavior, decode microbatching, and matching/packing invariants.
 
 ## Requirements
+### Requirement: Rollout-aligned Stage-2 uses explicit objective pipeline (no implicit defaults)
+When `custom.trainer_variant: stage2_rollout_aligned`, the rollout-aligned teacher-forcing objective MUST be fully determined by the declared module pipeline under:
+- `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]`.
+
+Normative behavior:
+- `rollout_matching.pipeline` MUST be present (no implicit default manifest).
+- Legacy aux-loss config surfaces MUST be rejected, including `custom.coord_soft_ce_w1.*`.
+
+#### Scenario: Missing rollout pipeline fails fast
+- **WHEN** `custom.trainer_variant: stage2_rollout_aligned`
+- **AND** `rollout_matching.pipeline` is absent
+- **THEN** config loading fails fast before trainer init
+- **AND** the error indicates `rollout_matching.pipeline` is required.
+
+### Requirement: Rollout pipeline specs are explicit and complete (no implicit defaults)
+Rollout pipeline module specs MUST be authored with explicit fields and complete module configs to prevent silent drift from default injection.
+
+Normative behavior:
+- Each entry in `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]` MUST include:
+  - `name`, `enabled`, `weight`, `channels`, `config`.
+- `channels` MUST be explicitly authored as a subset of `{A,B}`.
+- `config` MUST include exactly the allowlisted keys for the referenced module:
+  - missing required keys MUST fail fast (no implicit defaults),
+  - unknown keys MUST fail fast (no escape-hatch aliases).
+
+### Requirement: Rollout pipeline module configs are strict and canonical (no aliases)
+Rollout pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
+
+Normative behavior:
+- `bbox_geo.config` MUST accept only:
+  - `smoothl1_weight`
+  - `ciou_weight`
+- `coord_reg.config` MUST accept only canonical keys, including:
+  - `coord_ce_weight`
+  - `soft_ce_weight`
+  - `w1_weight`
+  - `coord_gate_weight`
+  - `text_gate_weight`
+  - `temperature`
+  - `target_sigma`
+  - `target_truncate`
+- Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
+
+### Requirement: Rollout-aligned Stage-2 supports text_gate via coord_reg module config
+Rollout-aligned Stage-2 MUST support `text_gate` as part of `coord_reg` with a typed weight:
+- `rollout_matching.pipeline.objective[*].config.text_gate_weight`
+
+Normative behavior:
+- `text_gate_weight > 0` MUST introduce a non-zero `text_gate` contribution when coord-vocab mass appears at supervised text positions under `context=rollout` (FP-neutral).
+
 ### Requirement: Stage-2 post-rollout packing selection uses deterministic ms-swift-like binpacking
-When rollout-matching training is enabled (`custom.trainer_variant: rollout_matching_sft`) and post-rollout packing is enabled (`training.packing: true`), the trainer SHALL select which buffered segments are included in the packed teacher-forced forward pass using a deterministic, ms-swift-like constant-volume binpacking heuristic.
+When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_aligned`) and post-rollout packing is enabled (`training.packing: true`), the trainer SHALL select which buffered segments are included in the packed teacher-forced forward pass using a deterministic, ms-swift-like constant-volume binpacking heuristic.
 
 Definitions:
 - A “segment” is one sample’s teacher-forced encoding of `Y_train` (rollout prefix + mandatory FN append), and is treated as an atomic unit.
@@ -61,7 +111,7 @@ The selection algorithm MUST reuse existing YAML knobs and MUST NOT require new 
 - **THEN** it raises an error that includes at least one mitigation suggestion (e.g., install `binpacking` or disable `training.packing`).
 
 ### Requirement: Post-rollout packing is supported under rollout-matching training
-When rollout-matching training is enabled (`custom.trainer_variant: rollout_matching_sft`), the system SHALL support packing for the *post-rollout teacher-forced forward pass* to improve training efficiency.
+When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_aligned`), the system SHALL support packing for the *post-rollout teacher-forced forward pass* to improve training efficiency.
 
 Packing MUST remain YAML-driven and MUST NOT require new CLI hyperparameter flags.
 
@@ -80,7 +130,7 @@ When packing is enabled for rollout-matching training:
   - supervised coord indices fall within the assistant span.
 
 #### Scenario: Packing enabled does not break rollout-matching training
-- **GIVEN** a YAML config sets `custom.trainer_variant: rollout_matching_sft`
+- **GIVEN** a YAML config sets `custom.trainer_variant: stage2_rollout_aligned`
 - **AND** packing is enabled for training
 - **WHEN** one training step executes
 - **THEN** rollouts are generated without sequence packing
@@ -108,7 +158,7 @@ When packing is enabled for rollout-matching training:
 - **THEN** the trainer fails fast with an error message that suggests at least one mitigation (e.g. reduce raw batch size, increase `packing_buffer`, or enable multi-pack-per-step in a future change).
 
 ### Requirement: Rollout generation supports vLLM backends (colocate default, server optional)
-When rollout-matching training is enabled (`custom.trainer_variant: rollout_matching_sft`), the system SHALL support generating rollouts using a vLLM backend, while keeping teacher-forced forward/backprop on the normal training model.
+When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_aligned`), the system SHALL support generating rollouts using a vLLM backend, while keeping teacher-forced forward/backprop on the normal training model.
 
 Rollout-matching settings are a first-class top-level namespace:
 - Rollout-matching settings MUST be authored under top-level `rollout_matching.*`.
@@ -282,7 +332,7 @@ Determinism (server mode):
 
 
 ### Requirement: Stage_2 supports a 3v1 rollout-server + learner workflow (actors vs learner)
-The stage_2 rollout-matching trainer (`custom.trainer_variant: rollout_matching_sft`) MUST support a practical single-node workflow where rollout generation runs on dedicated GPUs via a vLLM server, and teacher-forced SFT training runs on a separate GPU.
+The stage_2 rollout-matching trainer (`custom.trainer_variant: stage2_rollout_aligned`) MUST support a practical single-node workflow where rollout generation runs on dedicated GPUs via a vLLM server, and teacher-forced SFT training runs on a separate GPU.
 
 Normative workflow (one node):
 - A vLLM rollout server runs on a dedicated GPU subset (e.g., 3 GPUs) and is responsible only for inference.
@@ -519,12 +569,12 @@ Semantics when enabled:
 
 ### Requirement: Rollout-matching trainer is YAML-gated
 The system SHALL provide an opt-in rollout-matching training mode (alias: `stage_2`) that is enabled via YAML by setting:
-- `custom.trainer_variant: rollout_matching_sft`.
+- `custom.trainer_variant: stage2_rollout_aligned`.
 
 When enabled, rollout-matching training SHALL be driven by YAML configuration and SHALL NOT require adding new hyperparameter CLI flags.
 
 #### Scenario: Rollout-matching enabled via trainer_variant
-- **GIVEN** a training config sets `custom.trainer_variant: rollout_matching_sft`
+- **GIVEN** a training config sets `custom.trainer_variant: stage2_rollout_aligned`
 - **WHEN** `python -m src.sft --config <yaml>` is executed
 - **THEN** training uses the rollout-matching trainer implementation
 - **AND** the baseline training behaviour (alias: `stage_1`) is not used for that run.

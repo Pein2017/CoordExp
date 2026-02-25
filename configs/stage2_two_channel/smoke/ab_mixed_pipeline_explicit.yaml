@@ -83,14 +83,46 @@ stage2_ab:
   pipeline:
     objective:
       - name: token_ce
-      - name: bbox_geo
-      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
         config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.5
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.0
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
+          text_gate_weight: 0.0
           soft_ce_weight: 0.02
+          self_context_soft_ce_weight: 0.02
           w1_weight: 0.02
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: null
     diagnostics:
       - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
   channel_b: {}
 
 custom:

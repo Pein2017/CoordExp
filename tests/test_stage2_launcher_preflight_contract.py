@@ -20,7 +20,10 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_prod_cfg() -> No
     assert out["vllm_mode"] == "server"
     assert isinstance(out["server_base_urls"], list) and len(out["server_base_urls"]) == 1
     assert out["server_base_urls"][0].startswith("http")
-    assert out["server_model"] == "output/1-26/checkpoint-1516-merged"
+    assert (
+        out["server_model"]
+        == "output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged"
+    )
 
     root = Path(out["root_image_dir_resolved"]).resolve()
     assert root.name == "rescale_32_768_bbox_max60"

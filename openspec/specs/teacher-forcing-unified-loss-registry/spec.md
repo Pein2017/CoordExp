@@ -1,7 +1,9 @@
-# teacher-forcing-unified-loss-registry Specification (Delta)
+# teacher-forcing-unified-loss-registry Specification
 
-## ADDED Requirements
+## Purpose
+Define the canonical teacher-forcing contexts, token types, and registry-level loss component naming shared across Stage-2 two-channel and rollout-aligned training.
 
+## Requirements
 ### Requirement: Canonical contexts, token types, and loss component names are shared
 The system SHALL define canonical teacher-forcing contexts and token types that are used consistently across Stage-2 two-channel and rollout-aligned training.
 
@@ -16,7 +18,7 @@ Normative token types (mutually exclusive):
 - `coord`: coord-vocabulary tokens `<|coord_k|>`.
 - `eos`: end token `<|im_end|>` (Qwen3-VL).
 
-Normative minimum canonical loss component names (metrics use these names):
+Normative minimum canonical loss component names (metrics use these names when emitted):
 - `struct_ce`
 - `desc_ce`
 - `geo`
@@ -24,7 +26,7 @@ Normative minimum canonical loss component names (metrics use these names):
 
 NOTE (logging contract):
 - These are canonical registry component names (often surfaced as `loss/<component>` keys inside pipeline-internal metrics).
-- Trainers MAY choose to omit raw component keys from the training log to reduce redundancy and instead emit only objective-weighted provenance keys under `loss/<provenance>/<module>` (see `trainer-metrics-components`).
+- Trainers MAY choose to omit raw component keys from the training log to reduce redundancy and instead emit only objective-weighted provenance keys under `loss/<provenance>/<atom>` (see `trainer-metrics-components`).
 
 #### Scenario: EOS token is assigned exactly once
 - **WHEN** token-type masks are built for a sequence containing `<|im_end|>`
@@ -55,9 +57,9 @@ Gate terms MUST respect the same masking semantics as CE for the current context
 Normative behavior:
 - In `context=rollout`:
   - FP spans MUST NOT contribute to `coord_gate` or `text_gate`.
-  - Matched prefix objects MUST receive `desc`-disabled behavior (matched-prefix desc spans excluded from `text_gate` where `CE_desc=0`).
+  - Desc-disabled behavior MUST be respected (if `desc` supervision is masked/disabled, `text_gate` MUST NOT apply to those spans).
 - In `context=self_context`:
-  - `text_gate` MUST apply only to `type=struct` tokens (self-context desc is disabled by default).
+  - `text_gate` MUST apply only to supervised non-coord text positions (struct/EOS by default).
   - Gate terms MAY ignore `type=eos`.
 
 #### Scenario: FP objects do not contribute to text gate

@@ -16,6 +16,17 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `rollout_matching.pipeline` is required.
 
+### Requirement: Rollout pipeline specs are explicit and complete (no implicit defaults)
+Rollout pipeline module specs MUST be authored with explicit fields and complete module configs to prevent silent drift from default injection.
+
+Normative behavior:
+- Each entry in `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]` MUST include:
+  - `name`, `enabled`, `weight`, `channels`, `config`.
+- `channels` MUST be explicitly authored as a subset of `{A,B}`.
+- `config` MUST include exactly the allowlisted keys for the referenced module:
+  - missing required keys MUST fail fast (no implicit defaults),
+  - unknown keys MUST fail fast (no escape-hatch aliases).
+
 ### Requirement: Rollout pipeline module configs are strict and canonical (no aliases)
 Rollout pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
 
@@ -50,6 +61,5 @@ Normative behavior:
 #### Scenario: FP-neutral text_gate is effective
 - **WHEN** rollout-context supervision includes both FN spans and FP spans
 - **AND** `text_gate_weight > 0`
-- **THEN** FP spans do not contribute to `loss/text_gate`
-- **AND** FN text spans contribute to `loss/text_gate` when they exhibit coord-vocab mass.
-
+- **THEN** FP spans do not contribute to the emitted `text_gate` objective atom `loss/B_coord/text_gate`
+- **AND** FN text spans contribute to the `text_gate` sub-term and increase `loss/B_coord/text_gate` when they exhibit coord-vocab mass.

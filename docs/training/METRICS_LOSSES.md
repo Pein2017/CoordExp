@@ -12,6 +12,32 @@ Notes:
   `schema_version` (integer major, current `1`), `mode` (`train|eval`), `global_step`,
   and `metrics` (key/value map). Missing/non-integer/unsupported schema versions are rejected.
 
+## Breaking change note (Stage-2 loss keys)
+
+Stage-2 trainers (`custom.trainer_variant: stage2_two_channel|stage2_rollout_aligned`) now emit only
+**objective atoms** under provenance keys (objective-by-default; no `*_obj` suffix or `obj/` prefix).
+
+Definitions:
+- An "objective atom" is a post-weighting contribution that directly participates in the trainer's total loss.
+- Multi-term objective modules (notably bbox geometry and coord regularization) are **emitted as atoms**
+  rather than as pre-summed aggregates (i.e., no `geo` / `coord_reg` combined keys).
+
+Key replacements (non-exhaustive):
+- Old objective suffix keys: `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj` (removed)
+  - Use provenance keys instead:
+    - Channel-A:
+      - `loss/A1_text/{struct_ce,desc_ce}`
+      - `loss/A2_text/struct_ce`
+      - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
+      - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+    - Channel-B:
+      - `loss/B_rollout_text/{struct_ce,desc_ce}`
+      - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
+      - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+- Old provenance prefix: `obj/<provenance>/<atom>` (removed) -> `loss/<provenance>/<atom>`
+- Legacy aliases removed: `loss/ce`, `loss/coord`, `loss/coord_prefix`, `loss/coord_tail`
+- Rollout-only monitors are sparse-emitted: `rollout/*` and `time/rollout_*` keys are omitted on steps where no rollout ran.
+
 ## Stage-2 pipeline identity + metrics reduction contract
 
 Pipeline identity (reproducibility):
@@ -34,8 +60,16 @@ ST bridge diagnostics surface:
   - `rollout_matching.coord_decode_mode: exp|st`
 - For `L_geo` runs, use `stage2_ab.coord_ctx_embed_mode: st` for coord-slot embedding and
   `stage2_ab.coord_decode_mode: exp` (soft expectation decode) for geometry output decode.
-- Objective-side monitoring keys that are useful when toggling ST/regularizers include:
-  - `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj`, `loss/text_gate`
+- Canonical Stage-2 objective keys (objective atoms; emitted only when effective weight is non-zero) include:
+  - Channel-A:
+    - `loss/A1_text/{struct_ce,desc_ce}`
+    - `loss/A2_text/struct_ce`
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
+    - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+  - Channel-B:
+    - `loss/B_rollout_text/{struct_ce,desc_ce}`
+    - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
+    - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 
 Reduction/naming contract:
 - `loss/*` keys are mean-like scalars (comparable across packing/batch shapes).
@@ -59,15 +93,27 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) runs a
   two-surface objective in Channel-A:
   - **Anchor (GT / A1 logits):** full CE on JSON structure + `desc` value tokens (coord tokens excluded from CE).
-  - **Self-context (final-iteration logits):** format/closure CE on `struct` + `<|im_end|>` only (no `desc` CE, no coord-token CE),
-    with a small stabilizer weight controlled by `token_ce.config.self_context_struct_ce_weight`
-    (defaulted by `stage2_ab.fmt_struct_ce_weight` when pipeline is omitted).
-- Useful monitoring keys for this split (when enabled) include:
-  - `loss/token_ce_anchor`, `loss/token_ce_self_context`,
-  - `loss/struct_ce` (anchor), `loss/struct_ce_self_context`,
-  - `stage2_ab/channel_a/self_context_struct_ce_weight`.
+- **Self-context (final-iteration logits):** a format/closure CE stabilizer on `struct` + `<|im_end|>` only (no `desc` CE; coord tokens excluded from token-CE),
+    with a small stabilizer weight controlled by `token_ce.config.self_context_struct_ce_weight` (pipeline-only; flat `stage2_ab.fmt_struct_ce_weight` removed).
+- Canonical objective keys for this split include:
+  - `loss/A1_text/{struct_ce,desc_ce}` (GT anchor forward; token CE objective atoms)
+  - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer)
+  - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
+  - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
 - Channel-A coord losses are computed from the self-context logits (final iteration). By default, a small coord
   distribution regularizer may be enabled only for Channel-A via `coord_reg.config.self_context_soft_ce_weight`.
+  Optional hard coord-token CE (peaky logits stabilizer) is controlled by `coord_reg.config.coord_ce_weight`.
+
+Stage-2 coord-distribution diagnostics (`coord_diag/<provenance>/*`):
+- These are **monitor-only** metrics derived from the coord-vocab slice at GT coord-token positions (not part of the loss).
+- They are emitted only when `coord_diag` diagnostics module has a non-zero effective weight.
+- Provenance:
+  - `coord_diag/A1/*`: computed from Channel-A **A1** logits (GT anchor forward; `logits_a1`, `it==0`).
+  - `coord_diag/A2/*`: computed from Channel-A **A2** logits (final softctx forward; `it==n_softctx_iter-1`), emitted only when `n_softctx_iter > 1`.
+  - `coord_diag/B/*`: computed from Channel-B logits (rollout-context forward).
+- Canonical keys under each provenance include:
+  - `coord_diag/<prov>/coord_tokens_total`
+  - `coord_diag/<prov>/{acc_top5,p_gt_mean,margin_mean,expected_bin_mae,expected_bin_abs_err_p90,coord_vocab_mass_mean}`
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) uses unified Channel-B by default:
@@ -103,8 +149,8 @@ Important semantics:
 - `time/rollout_generate_s`
 - `time/rollout_parse_match_s`
 - `time/rollout_teacher_encode_s`
-  - **Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note:** Channel-A steps do not generate rollouts, so these will also be 0.0 when `stage2/channel_b == 0`.
-    When diagnosing rollout throughput, filter to steps where `stage2/channel_b == 1`.
+  - **Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note:** Channel-A steps do not generate rollouts, so these keys are omitted (absent; not `0.0`) on Channel-A steps.
+    When diagnosing rollout throughput in AB-mixed runs, filter to steps where `stage2/channel_b == 1` or `stage2/raw_rollouts > 0`.
 
 - `rollout/gen_new_tokens_total|mean|p90|p99`
   - **What:** generated assistant token counts (after stage_2 suffix trimming).

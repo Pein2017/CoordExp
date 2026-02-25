@@ -1,29 +1,24 @@
 extends: ../base.yaml
 
 model:
+  # Keep aligned with prod init for smoke parity.
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  run_name: bug_fixed-desc_first_merged_ckpt1832_ep2
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only_em_detach
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_em_detach
-  num_train_epochs: 2
-  learning_rate: 2.0e-5
-  vit_lr: 2.0e-5
-  aligner_lr: 5.0e-5
-  effective_batch_size: 64
-  eval_strategy: steps
-  eval_steps: 300
-  save_strategy: steps
-  save_steps: 300
-  do_eval: true
-  metric_for_best_model: rollout/mAP
+  run_name: smoke_ab_mixed_text_gate
+  output_dir: output/stage2_ab/smoke/ab_mixed_text_gate
+  logging_dir: tb/stage2_ab/smoke/ab_mixed_text_gate
+  effective_batch_size: 8
+  logging_steps: 1
+  logging_first_step: true
+  eval_strategy: "no"
+  save_strategy: "no"
+  do_eval: false
+  max_steps: 2
 
 stage2_ab:
-  schedule:
-    b_ratio: 0.0
+  schedule: {b_ratio: 0.85}
   n_softctx_iter: 2
-  softctx_grad_mode: em_detach
   pipeline:
     objective:
       - name: token_ce
@@ -68,21 +63,12 @@ stage2_ab:
         channels: [A, B]
         config: {}
 
-rollout_matching:
-  # Override rollout backend inherited from configs/stage2_two_channel/base.yaml.
-  rollout_backend: hf
-  decode_batch_size: 4
-  max_new_tokens: 3084
-  monitor_dump:
-    enabled: true
-    every_steps: 300
-    max_events: 0
-    max_samples: 10
-    max_text_chars: 0
-    write_markdown: false
-
 custom:
-  object_field_order: desc_first
-  val_sample_limit: 512
-  extra:
-    prompt_variant: coco_80
+  train_sample_limit: 64
+  val_sample_limit: 16
+
+rollout_matching:
+  # Runtime knobs only (keep objective pipeline aligned with prod).
+  max_new_tokens: 256
+  monitor_dump:
+    enabled: false

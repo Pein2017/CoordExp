@@ -19,6 +19,12 @@ from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
 )
+from src.trainers.teacher_forcing.module_registry import (
+    ALLOWED_DIAGNOSTIC_MODULES,
+    ALLOWED_OBJECTIVE_MODULES,
+    DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_CONFIG_ALLOWLIST,
+)
 
 from .rollout_matching_schema import RolloutMatchingConfig
 from .strict_dataclass import parse_dataclass_strict
@@ -968,8 +974,6 @@ class Stage2ABScheduleConfig:
 
 @dataclass(frozen=True)
 class Stage2ABChannelBConfig:
-    drop_invalid_struct_ce_multiplier: float = 1.0
-
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
         if payload is None:
@@ -1006,6 +1010,13 @@ class Stage2ABChannelBConfig:
                 "Use rollout_matching.decode_batch_size instead."
             )
 
+        if "drop_invalid_struct_ce_multiplier" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier has been removed. "
+                "Move it into stage2_ab.pipeline.objective[*].config as "
+                "token_ce.rollout_drop_invalid_struct_ce_multiplier."
+            )
+
         # Removed keys (legacy/ablation-only behavior is now deleted).
         if "reordered_gt_sft" in data:
             raise ValueError(
@@ -1023,30 +1034,12 @@ class Stage2ABChannelBConfig:
                 "Remove this key (training-time semantic gating is unsupported)."
             )
 
-        drop_invalid_raw = data.pop(
-            "drop_invalid_struct_ce_multiplier", cls.drop_invalid_struct_ce_multiplier
-        )
-        try:
-            drop_invalid_struct_ce_multiplier = float(drop_invalid_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be a float"
-            ) from exc
-        if not (1.0 <= drop_invalid_struct_ce_multiplier <= 4.0):
-            raise ValueError(
-                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier must be in [1.0, 4.0]"
-            )
-
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
             )
 
-        return cls(drop_invalid_struct_ce_multiplier=drop_invalid_struct_ce_multiplier)
-
-
-_ALLOWED_STAGE2_OBJECTIVE_MODULES: set[str] = {"token_ce", "bbox_geo", "coord_reg"}
-_ALLOWED_STAGE2_DIAGNOSTIC_MODULES: set[str] = {"coord_diag"}
+        return cls()
 
 
 @dataclass(frozen=True)
@@ -1078,10 +1071,18 @@ class Stage2PipelineModuleSpec:
                 f"{path}.name must be one of {sorted(allowed_names)}; got {name!r}"
             )
 
-        enabled_raw = data.pop("enabled", True)
+        if "enabled" not in data:
+            raise ValueError(
+                f"{path}.enabled must be provided (explicit pipeline spec; no defaults)"
+            )
+        enabled_raw = data.pop("enabled")
         enabled = bool(enabled_raw)
 
-        weight_raw = data.pop("weight", 1.0)
+        if "weight" not in data:
+            raise ValueError(
+                f"{path}.weight must be provided (explicit pipeline spec; no defaults)"
+            )
+        weight_raw = data.pop("weight")
         try:
             weight = float(weight_raw)
         except (TypeError, ValueError) as exc:
@@ -1089,7 +1090,11 @@ class Stage2PipelineModuleSpec:
         if weight < 0.0:
             raise ValueError(f"{path}.weight must be >= 0")
 
-        channels_raw = data.pop("channels", ("A", "B"))
+        if "channels" not in data:
+            raise ValueError(
+                f"{path}.channels must be provided (explicit pipeline spec; no defaults)"
+            )
+        channels_raw = data.pop("channels")
         if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
             raise TypeError(f"{path}.channels must be a sequence of 'A'/'B'")
         channels_list: list[str] = []
@@ -1102,7 +1107,11 @@ class Stage2PipelineModuleSpec:
             raise ValueError(f"{path}.channels must not be empty")
         channels = tuple(dict.fromkeys(channels_list).keys())
 
-        cfg_raw = data.pop("config", {})
+        if "config" not in data:
+            raise ValueError(
+                f"{path}.config must be provided (explicit pipeline spec; no defaults)"
+            )
+        cfg_raw = data.pop("config")
         if cfg_raw is None:
             cfg_raw = {}
         if not isinstance(cfg_raw, Mapping):
@@ -1145,15 +1154,17 @@ class Stage2PipelineConfig:
             Stage2PipelineModuleSpec.from_mapping(
                 item,
                 path=f"stage2_ab.pipeline.objective[{idx}]",
-                allowed_names=_ALLOWED_STAGE2_OBJECTIVE_MODULES,
+                allowed_names=ALLOWED_OBJECTIVE_MODULES,
             )
             for idx, item in enumerate(objective_raw)
         ]
+        if not objective_specs:
+            raise ValueError("stage2_ab.pipeline.objective must be non-empty")
         diagnostics_specs = [
             Stage2PipelineModuleSpec.from_mapping(
                 item,
                 path=f"stage2_ab.pipeline.diagnostics[{idx}]",
-                allowed_names=_ALLOWED_STAGE2_DIAGNOSTIC_MODULES,
+                allowed_names=ALLOWED_DIAGNOSTIC_MODULES,
             )
             for idx, item in enumerate(diagnostics_raw)
         ]
@@ -1169,46 +1180,7 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
         for idx, spec in enumerate(objective_specs):
-            if spec.name == "token_ce":
-                allowed_cfg = {
-                    "desc_ce_weight",
-                    "self_context_struct_ce_weight",
-                    "rollout_fn_desc_weight",
-                    "rollout_matched_prefix_struct_weight",
-                    "rollout_drop_invalid_struct_ce_multiplier",
-                    # Backward-compat aliases.
-                    "fn_desc_ce_weight",
-                    "matched_prefix_struct_ce_weight",
-                }
-            elif spec.name == "bbox_geo":
-                allowed_cfg = {
-                    "smoothl1_weight",
-                    "ciou_weight",
-                    # Backward-compat aliases.
-                    "bbox_smoothl1_weight",
-                    "bbox_ciou_weight",
-                }
-            elif spec.name == "coord_reg":
-                allowed_cfg = {
-                    "coord_ce_weight",
-                    "coord_el1_weight",
-                    "coord_ehuber_weight",
-                    "coord_huber_delta",
-                    "coord_entropy_weight",
-                    "coord_gate_weight",
-                    "text_gate_weight",
-                    "soft_ce_weight",
-                    "self_context_soft_ce_weight",
-                    "w1_weight",
-                    "temperature",
-                    "target_sigma",
-                    "target_truncate",
-                    # Backward-compat aliases.
-                    "coord_soft_ce_weight",
-                    "coord_w1_weight",
-                }
-            else:
-                allowed_cfg = set()
+            allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
                 raise ValueError(
@@ -1216,14 +1188,55 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in unknown_cfg)}"
                 )
+            missing_cfg = allowed_cfg - set(spec.config.keys())
+            if missing_cfg:
+                raise ValueError(
+                    "Missing required stage2_ab.pipeline.objective"
+                    f"[{idx}].config keys for module {spec.name!r}: "
+                    f"{sorted(str(k) for k in missing_cfg)}"
+                )
 
         for idx, spec in enumerate(diagnostics_specs):
-            unknown_cfg = set(spec.config.keys())
+            allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(str(spec.name), set())
+            unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
                 raise ValueError(
                     "Unknown stage2_ab.pipeline.diagnostics"
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in unknown_cfg)}"
+                )
+
+        specs_by_name = {spec.name: spec for spec in objective_specs}
+        bbox_geo = specs_by_name.get("bbox_geo")
+        coord_reg = specs_by_name.get("coord_reg")
+        if coord_reg is not None and bool(coord_reg.enabled):
+            if bbox_geo is None or not bool(bbox_geo.enabled):
+                raise ValueError(
+                    "stage2_ab.pipeline.objective requires bbox_geo to be present+enabled when coord_reg is enabled "
+                    "(coord_reg depends on bbox_geo state: coord logits + targets)."
+                )
+            missing_channels = set(coord_reg.channels) - set(bbox_geo.channels)
+            if missing_channels:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
+                    f"missing={sorted(missing_channels)}"
+                )
+
+        for dspec in diagnostics_specs:
+            if not bool(dspec.enabled):
+                continue
+            if dspec.name != "coord_diag":
+                continue
+            if bbox_geo is None or not bool(bbox_geo.enabled):
+                raise ValueError(
+                    "stage2_ab.pipeline.diagnostics requires bbox_geo to be present+enabled when coord_diag is enabled "
+                    "(coord_diag depends on bbox_geo state)."
+                )
+            missing_channels = set(dspec.channels) - set(bbox_geo.channels)
+            if missing_channels:
+                raise ValueError(
+                    "stage2_ab.pipeline.diagnostics coord_diag channels must be a subset of bbox_geo channels; "
+                    f"missing={sorted(missing_channels)}"
                 )
 
         if data:
@@ -1239,26 +1252,13 @@ class Stage2PipelineConfig:
 @dataclass(frozen=True)
 class Stage2ABConfig:
     schedule: Stage2ABScheduleConfig
+    pipeline: Stage2PipelineConfig
     n_softctx_iter: int = 2
     softctx_grad_mode: Literal["unroll", "em_detach"] = "unroll"
     softctx_temperature: float = 1.0
-    desc_ce_weight: float = 1.0
-    fmt_struct_ce_weight: float = 0.1
-    bbox_smoothl1_weight: float = 1.0
-    bbox_ciou_weight: float = 1.0
 
     coord_ctx_embed_mode: Literal["soft", "st", "hard"] = "st"
     coord_decode_mode: Literal["exp", "st"] = "exp"
-    text_gate_weight: float = 0.0
-
-    coord_ce_weight: float = 0.0
-    coord_el1_weight: float = 0.0
-    coord_ehuber_weight: float = 0.0
-    coord_huber_delta: float = 0.001
-    coord_entropy_weight: float = 0.0
-    coord_gate_weight: float = 0.0
-
-    pipeline: Optional[Stage2PipelineConfig] = None
     channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
 
     @classmethod
@@ -1267,8 +1267,30 @@ class Stage2ABConfig:
             raise TypeError("stage2_ab section must be a mapping")
 
         data: MutableMapping[str, Any] = dict(payload)
-        raw_keys: set[str] = {str(k) for k in data.keys()}
-        channel_b_raw = data.get("channel_b")
+
+        disallowed_flat = [
+            k
+            for k in (
+                "desc_ce_weight",
+                "fmt_struct_ce_weight",
+                "bbox_smoothl1_weight",
+                "bbox_ciou_weight",
+                "text_gate_weight",
+                "coord_ce_weight",
+                "coord_el1_weight",
+                "coord_ehuber_weight",
+                "coord_huber_delta",
+                "coord_entropy_weight",
+                "coord_gate_weight",
+            )
+            if k in data
+        ]
+        if disallowed_flat:
+            raise ValueError(
+                "Flat stage2_ab objective knobs have been removed. "
+                "Express objective weights via stage2_ab.pipeline.objective[*].config instead: "
+                f"{sorted(disallowed_flat)}"
+            )
 
         schedule_raw = data.pop("schedule", None)
         if schedule_raw is None:
@@ -1276,16 +1298,17 @@ class Stage2ABConfig:
         schedule = Stage2ABScheduleConfig.from_mapping(schedule_raw)
 
         pipeline_raw = data.pop("pipeline", None)
-        pipeline = (
-            Stage2PipelineConfig.from_mapping(pipeline_raw)
-            if pipeline_raw is not None
-            else None
-        )
+        if pipeline_raw is None:
+            raise ValueError(
+                "stage2_ab.pipeline must be provided (no implicit default objective manifest)."
+            )
+        pipeline = Stage2PipelineConfig.from_mapping(pipeline_raw)
 
         if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
             raise ValueError(
                 "stage2_ab.bbox_l1_weight/bbox_giou_weight are deprecated. "
-                "Use stage2_ab.bbox_smoothl1_weight and stage2_ab.bbox_ciou_weight instead."
+                "Move bbox weights into stage2_ab.pipeline.objective[*].config for the bbox_geo module "
+                "using smoothl1_weight/ciou_weight."
             )
 
         n_softctx_iter_raw = data.pop("n_softctx_iter", cls.n_softctx_iter)
@@ -1327,97 +1350,6 @@ class Stage2ABConfig:
         if coord_decode_mode not in {"exp", "st"}:
             raise ValueError("stage2_ab.coord_decode_mode must be one of {'exp','st'}")
 
-        text_gate_weight_raw = data.pop("text_gate_weight", cls.text_gate_weight)
-        try:
-            text_gate_weight = float(text_gate_weight_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.text_gate_weight must be a float") from exc
-        if text_gate_weight < 0:
-            raise ValueError("stage2_ab.text_gate_weight must be >= 0")
-
-        desc_ce_raw = data.pop("desc_ce_weight", cls.desc_ce_weight)
-        try:
-            desc_ce_weight = float(desc_ce_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.desc_ce_weight must be a float") from exc
-        if desc_ce_weight < 0:
-            raise ValueError("stage2_ab.desc_ce_weight must be >= 0")
-
-        fmt_raw = data.pop("fmt_struct_ce_weight", cls.fmt_struct_ce_weight)
-        try:
-            fmt_struct_ce_weight = float(fmt_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.fmt_struct_ce_weight must be a float") from exc
-        if fmt_struct_ce_weight < 0:
-            raise ValueError("stage2_ab.fmt_struct_ce_weight must be >= 0")
-
-        bbox_smoothl1_raw = data.pop("bbox_smoothl1_weight", cls.bbox_smoothl1_weight)
-        try:
-            bbox_smoothl1_weight = float(bbox_smoothl1_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.bbox_smoothl1_weight must be a float") from exc
-        if bbox_smoothl1_weight < 0:
-            raise ValueError("stage2_ab.bbox_smoothl1_weight must be >= 0")
-
-        bbox_ciou_raw = data.pop("bbox_ciou_weight", cls.bbox_ciou_weight)
-        try:
-            bbox_ciou_weight = float(bbox_ciou_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.bbox_ciou_weight must be a float") from exc
-        if bbox_ciou_weight < 0:
-            raise ValueError("stage2_ab.bbox_ciou_weight must be >= 0")
-
-        coord_ce_weight = float(data.pop("coord_ce_weight", cls.coord_ce_weight) or 0.0)
-        coord_ce_weight = max(0.0, coord_ce_weight)
-        coord_el1_weight = float(data.pop("coord_el1_weight", cls.coord_el1_weight) or 0.0)
-        coord_el1_weight = max(0.0, coord_el1_weight)
-        coord_ehuber_weight = float(
-            data.pop("coord_ehuber_weight", cls.coord_ehuber_weight) or 0.0
-        )
-        coord_ehuber_weight = max(0.0, coord_ehuber_weight)
-        coord_huber_delta = float(data.pop("coord_huber_delta", cls.coord_huber_delta) or 0.001)
-        coord_huber_delta = max(1e-6, coord_huber_delta)
-        coord_entropy_weight = float(
-            data.pop("coord_entropy_weight", cls.coord_entropy_weight) or 0.0
-        )
-
-        coord_gate_weight = float(
-            data.pop("coord_gate_weight", cls.coord_gate_weight) or 0.0
-        )
-        coord_gate_weight = max(0.0, coord_gate_weight)
-
-        if pipeline is not None:
-            disallowed_flat = [
-                k
-                for k in (
-                    "desc_ce_weight",
-                    "fmt_struct_ce_weight",
-                    "bbox_smoothl1_weight",
-                    "bbox_ciou_weight",
-                    "text_gate_weight",
-                    "coord_ce_weight",
-                    "coord_el1_weight",
-                    "coord_ehuber_weight",
-                    "coord_huber_delta",
-                    "coord_entropy_weight",
-                    "coord_gate_weight",
-                )
-                if k in raw_keys
-            ]
-            if disallowed_flat:
-                raise ValueError(
-                    "stage2_ab.pipeline is provided; flat objective knobs are disallowed and must be moved into "
-                    f"stage2_ab.pipeline.*.config: {sorted(disallowed_flat)}"
-                )
-            if isinstance(channel_b_raw, Mapping) and (
-                "drop_invalid_struct_ce_multiplier" in channel_b_raw
-            ):
-                raise ValueError(
-                    "stage2_ab.pipeline is provided; stage2_ab.channel_b.drop_invalid_struct_ce_multiplier "
-                    "is disallowed and must be moved into stage2_ab.pipeline.objective[*].config "
-                    "as token_ce.rollout_drop_invalid_struct_ce_multiplier"
-                )
-
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
@@ -1434,21 +1366,10 @@ class Stage2ABConfig:
             n_softctx_iter=n_softctx_iter,
             softctx_grad_mode=cast(Literal["unroll", "em_detach"], softctx_grad_mode),
             softctx_temperature=softctx_temperature,
-            desc_ce_weight=desc_ce_weight,
-            fmt_struct_ce_weight=fmt_struct_ce_weight,
-            bbox_smoothl1_weight=bbox_smoothl1_weight,
-            bbox_ciou_weight=bbox_ciou_weight,
             coord_ctx_embed_mode=cast(
                 Literal["soft", "st", "hard"], coord_ctx_embed_mode
             ),
             coord_decode_mode=cast(Literal["exp", "st"], coord_decode_mode),
-            text_gate_weight=text_gate_weight,
-            coord_ce_weight=coord_ce_weight,
-            coord_el1_weight=coord_el1_weight,
-            coord_ehuber_weight=coord_ehuber_weight,
-            coord_huber_delta=coord_huber_delta,
-            coord_entropy_weight=coord_entropy_weight,
-            coord_gate_weight=coord_gate_weight,
             pipeline=pipeline,
             channel_b=channel_b,
         )
@@ -1625,6 +1546,12 @@ class TrainingConfig:
             rollout_matching is not None
             and getattr(rollout_matching, "pipeline", None) is not None
         )
+
+        if trainer_variant == "stage2_rollout_aligned" and not rollout_pipeline_present:
+            raise ValueError(
+                "rollout_matching.pipeline must be provided when custom.trainer_variant=stage2_rollout_aligned "
+                "(no implicit default objective manifest)."
+            )
 
         if stage2_pipeline_present and custom_coord_soft_ce_w1_present:
             raise ValueError(

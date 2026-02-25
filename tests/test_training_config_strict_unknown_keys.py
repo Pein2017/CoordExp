@@ -212,7 +212,11 @@ def test_unknown_stage2_ab_schedule_key_fails_fast():
 
 def test_unknown_stage2_ab_key_fails_fast():
     payload = _base_training_payload()
-    payload["stage2_ab"] = {"schedule": {"b_ratio": 0.5}, "unknown_top": 1}
+    payload["stage2_ab"] = {
+        "schedule": {"b_ratio": 0.5},
+        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
+        "unknown_top": 1,
+    }
 
     with pytest.raises(ValueError) as exc:
         TrainingConfig.from_mapping(payload, PromptOverrides())
@@ -318,6 +322,7 @@ def _base_stage2_two_channel_payload() -> dict:
     payload["rollout_matching"] = {"rollout_backend": "hf"}
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
+        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
         "channel_b": {},
     }
     return payload
@@ -326,14 +331,44 @@ def _base_stage2_two_channel_payload() -> dict:
 def _base_stage2_rollout_aligned_payload() -> dict:
     payload = _base_training_payload()
     payload["custom"]["trainer_variant"] = "stage2_rollout_aligned"
-    payload["rollout_matching"] = {"rollout_backend": "hf"}
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
+    }
     return payload
+
+
+def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict | None = None) -> dict:
+    token_ce_cfg = {
+        "desc_ce_weight": 1.0,
+        "self_context_struct_ce_weight": 0.1,
+        "rollout_fn_desc_weight": 1.0,
+        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    }
+    if isinstance(config, dict):
+        token_ce_cfg.update(dict(config))
+    return {
+        "name": "token_ce",
+        "enabled": True,
+        "weight": 1.0,
+        "channels": list(channels) if channels is not None else ["A", "B"],
+        "config": token_ce_cfg,
+    }
 
 
 def test_stage2_pipeline_unknown_module_name_fails_fast():
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
-        "objective": [{"name": "unknown_module"}],
+        "objective": [
+            {
+                "name": "unknown_module",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": {},
+            }
+        ],
     }
 
     with pytest.raises(ValueError, match=r"stage2_ab\.pipeline\.objective\[0\]\.name"):
@@ -344,8 +379,8 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
-            {"name": "token_ce"},
-            {"name": "token_ce"},
+            _pipeline_token_ce_spec(),
+            _pipeline_token_ce_spec(),
         ],
     }
 
@@ -361,10 +396,7 @@ def test_stage2_pipeline_channels_scope_parses(channels: list[str], expected: tu
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
-            {
-                "name": "token_ce",
-                "channels": channels,
-            }
+            _pipeline_token_ce_spec(channels=list(channels)),
         ]
     }
 
@@ -378,10 +410,7 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
-            {
-                "name": "token_ce",
-                "config": {"unknown_knob": 1.0},
-            }
+            _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
         ]
     }
 
@@ -392,7 +421,8 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
 def test_guardrail_stage2_two_channel_rejects_rollout_pipeline():
     payload = _base_stage2_two_channel_payload()
     payload["rollout_matching"]["pipeline"] = {
-        "objective": [{"name": "token_ce"}],
+        "objective": [_pipeline_token_ce_spec()],
+        "diagnostics": [],
     }
 
     with pytest.raises(ValueError, match=r"rollout_matching\.pipeline is not allowed"):
@@ -403,7 +433,7 @@ def test_guardrail_rollout_aligned_rejects_stage2_pipeline():
     payload = _base_stage2_rollout_aligned_payload()
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": [{"name": "token_ce"}]},
+        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
     }
 
     with pytest.raises(ValueError, match=r"stage2_ab\.pipeline is not allowed"):
@@ -415,9 +445,9 @@ def test_stage2_pipeline_disallows_flat_objective_knobs():
     payload["stage2_ab"].update(
         {
             "desc_ce_weight": 0.5,
-            "pipeline": {"objective": [{"name": "token_ce"}]},
+            "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
         }
     )
 
-    with pytest.raises(ValueError, match=r"flat objective knobs are disallowed"):
+    with pytest.raises(ValueError, match=r"Flat stage2_ab objective knobs have been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())

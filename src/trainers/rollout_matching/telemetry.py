@@ -71,16 +71,13 @@ class PendingTrainRolloutLog:
 
     meta: List[Dict[str, Any]] = field(default_factory=list)
 
-    ce_loss_sum: float = 0.0
-    coord_loss_sum: float = 0.0
-    coord_prefix_sum: float = 0.0
-    coord_tail_sum: float = 0.0
+    # Stage-2 objective atoms (already post-weighting) accumulated across micro-batches.
+    #
+    # Keys should be full provenance keys (e.g. `loss/B_coord/bbox_smoothl1`).
+    objective_atom_sum: Dict[str, float] = field(default_factory=dict)
 
-    # Segment-weighted loss sums (weight = number of meta entries in the micro-pack).
-    ce_loss_weighted_sum: float = 0.0
-    coord_loss_weighted_sum: float = 0.0
-    coord_prefix_weighted_sum: float = 0.0
-    coord_tail_weighted_sum: float = 0.0
+    # Segment-weighted objective sums (weight = number of meta entries in the micro-pack).
+    objective_atom_weighted_sum: Dict[str, float] = field(default_factory=dict)
     loss_weight_sum: float = 0.0
 
     n_micro: int = 0
@@ -107,21 +104,27 @@ class PendingTrainRolloutLog:
         self,
         *,
         meta: List[Mapping[str, Any]],
-        ce_loss: float,
-        coord_loss: float,
-        coord_prefix: float,
-        coord_tail: float,
+        objective_atoms: Optional[Mapping[str, Any]],
         time_forward_s: float,
         time_mask_build_s: float,
         batch_metrics: Optional[Mapping[str, Any]],
     ) -> None:
         self.n_micro += 1
-        self.ce_loss_sum += float(ce_loss)
-        self.coord_loss_sum += float(coord_loss)
-        self.coord_prefix_sum += float(coord_prefix)
-        self.coord_tail_sum += float(coord_tail)
         self.time_forward_s += float(time_forward_s)
         self.time_mask_build_s += float(time_mask_build_s)
+
+        atoms: Dict[str, float] = {}
+        if isinstance(objective_atoms, Mapping):
+            for k, v in objective_atoms.items():
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                ks = str(k)
+                atoms[ks] = fv
+                self.objective_atom_sum[ks] = float(
+                    float(self.objective_atom_sum.get(ks, 0.0)) + fv
+                )
 
         micro_weight = 0.0
         for m in meta:
@@ -131,10 +134,11 @@ class PendingTrainRolloutLog:
 
         if micro_weight > 0.0:
             self.loss_weight_sum += float(micro_weight)
-            self.ce_loss_weighted_sum += float(ce_loss) * float(micro_weight)
-            self.coord_loss_weighted_sum += float(coord_loss) * float(micro_weight)
-            self.coord_prefix_weighted_sum += float(coord_prefix) * float(micro_weight)
-            self.coord_tail_weighted_sum += float(coord_tail) * float(micro_weight)
+            for k, v in atoms.items():
+                self.objective_atom_weighted_sum[k] = float(
+                    float(self.objective_atom_weighted_sum.get(k, 0.0))
+                    + float(v) * float(micro_weight)
+                )
 
         if not isinstance(batch_metrics, Mapping):
             return

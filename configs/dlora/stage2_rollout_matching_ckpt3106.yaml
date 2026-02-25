@@ -1,4 +1,4 @@
-extends: sft_base.yaml
+extends: ../base.yaml
 
 # Stage_2 rollout-matching with buffered rollouts (production-style defaults) starting from ckpt-3106.
 #
@@ -102,6 +102,49 @@ rollout_matching:
   rollout_backend: vllm
   # Unified rollout decode batch size (per device per generation call).
   decode_batch_size: 4
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.0
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 1.0
+          ciou_weight: 1.0
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.0
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          soft_ce_weight: 1.0
+          self_context_soft_ce_weight: 0.0
+          w1_weight: 1.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.0
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 16
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
 
   # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.
   vllm:

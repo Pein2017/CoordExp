@@ -44,20 +44,6 @@ def run_teacher_forcing_pipeline(
     metrics: dict[str, float] = {}
     state: dict[str, Any] = dict(initial_state or {})
 
-    precomputed_module_outputs: dict[str, ModuleResult] = {}
-    raw_precomputed_obj = state.pop("_precomputed_module_outputs", {})
-    if isinstance(raw_precomputed_obj, Mapping):
-        for name, out in raw_precomputed_obj.items():
-            if isinstance(out, ModuleResult):
-                precomputed_module_outputs[str(name)] = out
-
-    precomputed_diag_outputs: dict[str, ModuleResult] = {}
-    raw_precomputed_diag = state.pop("_precomputed_diagnostics", {})
-    if isinstance(raw_precomputed_diag, Mapping):
-        for name, out in raw_precomputed_diag.items():
-            if isinstance(out, ModuleResult):
-                precomputed_diag_outputs[str(name)] = out
-
     objective_registry = {
         "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
         "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
@@ -71,12 +57,10 @@ def run_teacher_forcing_pipeline(
     for spec in obj_specs:
         if not spec.enabled_for_channel(context.channel):
             continue
-        out = precomputed_module_outputs.get(spec.name)
-        if out is None:
-            module_fn = objective_registry.get(spec.name)
-            if module_fn is None:
-                raise ValueError(f"unknown objective module: {spec.name}")
-            out = module_fn(spec)
+        module_fn = objective_registry.get(spec.name)
+        if module_fn is None:
+            raise ValueError(f"unknown objective module: {spec.name}")
+        out = module_fn(spec)
         weighted_loss = out.loss * float(spec.weight)
         total = total + weighted_loss
 
@@ -84,7 +68,8 @@ def run_teacher_forcing_pipeline(
         if out.metrics:
             for k, v in out.metrics.items():
                 metrics[str(k)] = float(v)
-        metrics[f"loss/{spec.name}_obj"] = float(weighted_loss.detach().cpu().item())
+        # By convention, `loss/<module>` is the module-weighted objective scalar.
+        metrics[f"loss/{spec.name}"] = float(weighted_loss.detach().cpu().item())
 
         if out.state:
             state.update(dict(out.state))
@@ -93,26 +78,24 @@ def run_teacher_forcing_pipeline(
     for spec in diag_specs:
         if not spec.enabled_for_channel(context.channel):
             continue
-        out = precomputed_diag_outputs.get(spec.name)
-        if out is None:
-            module_fn = diag_registry.get(spec.name)
-            if module_fn is None:
-                raise ValueError(f"unknown diagnostics module: {spec.name}")
+        module_fn = diag_registry.get(spec.name)
+        if module_fn is None:
+            raise ValueError(f"unknown diagnostics module: {spec.name}")
 
-            try:
-                out = module_fn(spec)
-            except Exception as exc:
-                key = f"{spec.name}:{type(exc).__name__}:{str(exc)}"
-                if key not in warn_cache:
-                    logger.warning(
-                        "teacher-forcing diagnostics module %s disabled for current run after failure: %s",
-                        spec.name,
-                        exc,
-                    )
-                    warn_cache.add(key)
-                metrics[f"diag/{spec.name}_failed"] = 1.0
-                state[f"diag/{spec.name}_failed"] = True
-                out = None
+        try:
+            out = module_fn(spec)
+        except Exception as exc:
+            key = f"{spec.name}:{type(exc).__name__}:{str(exc)}"
+            if key not in warn_cache:
+                logger.warning(
+                    "teacher-forcing diagnostics module %s disabled for current run after failure: %s",
+                    spec.name,
+                    exc,
+                )
+                warn_cache.add(key)
+            metrics[f"diag/{spec.name}_failed"] = 1.0
+            state[f"diag/{spec.name}_failed"] = True
+            out = None
 
         if out is None:
             continue

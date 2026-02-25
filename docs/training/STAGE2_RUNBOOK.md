@@ -187,16 +187,233 @@ Minimum required edits:
 - Set top-level `rollout_matching.*` (including `decoding.*` + matching knobs).
 - If using Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
+- Stage-2 pipelines are **required** (no implicit defaults):
+  - For `custom.trainer_variant: stage2_two_channel`, `stage2_ab.pipeline` MUST be present.
+  - For `custom.trainer_variant: stage2_rollout_aligned`, `rollout_matching.pipeline` MUST be present.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
-Objective pipeline declaration (optional, ordered):
+Objective pipeline declaration (required, ordered):
 - `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
 - `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
 - Canonical module names:
   - objective: `token_ce`, `bbox_geo`, `coord_reg`
   - diagnostics: `coord_diag`
-- When `stage2_ab.pipeline` is present, flat objective knobs are intentionally disallowed; move module knobs into
-  `stage2_ab.pipeline.<objective|diagnostics>[i].config`.
+- **Order matters**: `bbox_geo` MUST run before `coord_reg` (coord_reg consumes bbox_geo state).
+- Pipeline module specs are strict and explicit (no silent defaults):
+  - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
+  - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
+- Flat objective knobs are intentionally removed; author all loss weights in `*.pipeline.<objective|diagnostics>[i].config`.
+
+### Stage-2 Two-Channel examples (A-only / B-only / AB-mixed)
+
+AB-mixed (typical production):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 0.85}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+A-only (disable rollouts; keep Channel-A expectation loop + self-context objectives):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 0.0}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+B-only (always rollouts; skip Channel-A steps via scheduler):
+
+```yaml
+stage2_ab:
+  schedule: {b_ratio: 1.0}
+  n_softctx_iter: 2
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.1
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 2.0
+          ciou_weight: 0.2
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.02
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          self_context_soft_ce_weight: 0.1
+          w1_weight: 0.1
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
+
+### Rollout-aligned Stage-2 example (standalone rollout-matching SFT)
+
+Rollout-aligned Stage-2 uses the same objective modules, but the pipeline lives under `rollout_matching.pipeline`:
+
+```yaml
+custom:
+  trainer_variant: stage2_rollout_aligned
+
+rollout_matching:
+  rollout_backend: vllm
+  decode_batch_size: 4
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          desc_ce_weight: 1.0
+          self_context_struct_ce_weight: 0.0
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          smoothl1_weight: 1.0
+          ciou_weight: 1.0
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          coord_ce_weight: 0.0
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 1.0
+          self_context_soft_ce_weight: 0.0
+          w1_weight: 1.0
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 16
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}
+```
 
 Geometry objective expectation:
 - `bbox_geo` is the canonical bbox geometry objective in both trainer variants

@@ -33,6 +33,75 @@ Canonical config location (typed):
 - **WHEN** training starts
 - **THEN** the Stage-2 AB trainer is constructed and used for training.
 
+### Requirement: Stage-2 AB objective weights are pipeline-only (no flat objective knobs)
+When `custom.trainer_variant: stage2_two_channel`, the Stage-2 AB objective MUST be fully determined by the declared module pipeline under:
+- `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]`.
+
+Normative behavior:
+- `stage2_ab.pipeline` MUST be present (no implicit default objective manifest).
+- Flat objective knobs are removed and MUST fail fast when present (non-exhaustive):
+  - `stage2_ab.desc_ce_weight`, `stage2_ab.fmt_struct_ce_weight`
+  - `stage2_ab.bbox_smoothl1_weight`, `stage2_ab.bbox_ciou_weight`
+  - `stage2_ab.coord_ce_weight`, `stage2_ab.coord_el1_weight`, `stage2_ab.coord_ehuber_weight`
+  - `stage2_ab.coord_entropy_weight`, `stage2_ab.coord_gate_weight`, `stage2_ab.text_gate_weight`
+- Legacy aux-loss config surfaces MUST be rejected for Stage-2 AB, including `custom.coord_soft_ce_w1.*`.
+
+#### Scenario: Missing pipeline fails fast
+- **WHEN** a Stage-2 AB config sets `custom.trainer_variant: stage2_two_channel`
+- **AND** `stage2_ab.pipeline` is absent
+- **THEN** config loading fails fast before trainer init
+- **AND** the error indicates `stage2_ab.pipeline` is required.
+
+### Requirement: Stage-2 AB pipeline specs are explicit and complete (no implicit defaults)
+Stage-2 AB pipeline module specs MUST be authored with explicit fields and complete module configs to prevent silent drift from default injection.
+
+Normative behavior:
+- Each entry in `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` MUST include:
+  - `name`, `enabled`, `weight`, `channels`, `config`.
+- `channels` MUST be explicitly authored as a subset of `{A,B}`.
+- `config` MUST include exactly the allowlisted keys for the referenced module:
+  - missing required keys MUST fail fast (no implicit defaults),
+  - unknown keys MUST fail fast (no escape-hatch aliases).
+
+### Requirement: Stage-2 AB module configs are strict and canonical (no aliases)
+Stage-2 AB pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
+
+Normative behavior:
+- `bbox_geo.config` MUST accept only:
+  - `smoothl1_weight`
+  - `ciou_weight`
+- `coord_reg.config` MUST accept only canonical keys, including:
+  - `coord_ce_weight`
+  - `soft_ce_weight`
+  - `w1_weight`
+  - `coord_gate_weight`
+  - `text_gate_weight`
+  - `temperature`
+  - `target_sigma`
+  - `target_truncate`
+- Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
+
+### Requirement: Stage-2 AB supports text_gate via coord_reg module config
+Stage-2 AB MUST support `text_gate` as part of `coord_reg` with a typed weight:
+- `stage2_ab.pipeline.objective[*].config.text_gate_weight`
+
+Normative behavior:
+- `text_gate_weight > 0` MUST introduce a non-zero `text_gate` contribution when coord-vocab mass appears at supervised text positions (subject to registry masking).
+
+### Requirement: Coord diagnostics are attributed to A1 vs A2 logits in Channel-A
+Stage-2 AB SHOULD provide coord-distribution monitors that let operators compare the GT-anchor logits (`A1`) versus the final softctx logits (`A2`) on the same GT coord-token positions.
+
+Normative behavior:
+- When `coord_diag` diagnostics module is enabled (non-zero effective weight for the current channel), the trainer MUST emit coord distribution monitor keys with explicit forward provenance:
+  - `coord_diag/A1/*`: computed from the Channel-A A1 logits (`logits_a1`, `it==0`).
+  - `coord_diag/A2/*`: computed from the Channel-A final softctx logits (`it==n_softctx_iter-1`), emitted only when `n_softctx_iter > 1`.
+- The monitor set SHOULD include at least:
+  - `coord_diag/<prov>/acc_top5`
+  - `coord_diag/<prov>/p_gt_mean`
+  - `coord_diag/<prov>/expected_bin_mae`
+- These diagnostics MUST NOT affect the training objective (they are monitors only).
+- The trainer MUST NOT emit ambiguous bare `coord_diag/*` keys for these monitors in Stage-2 AB logs.
+
 ### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
 Stage-2 AB experiment profiles under `configs/stage2_two_channel/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
 
@@ -588,7 +657,7 @@ Channel-B:
   - FN objects MUST be appended to the B3 target so they are supervised even when they were missing from rollout.
   - If `N_valid_pred == 0` after strict validation, the trainer MUST treat all GT objects as FN (canonical GT order) and append them, which is equivalent to “FN append all GT objects”.
   - Optional weak correction: when `N_drop_invalid > 0`, the trainer MAY upweight Channel-B’s B3 structure-token CE weights to discourage “escaping supervision via invalid instances”.
-    - This upweight MUST be controlled by `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (float).
+    - This upweight MUST be controlled by `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier` (float).
     - The multiplier MUST default to `1.0` (no effect) and MUST be constrained to a safe range `[1.0, 4.0]` (clamp or fail fast).
     - “Structure-token CE weights” refers to Channel-B CE-supervised tokens excluding:
       - coord tokens,
@@ -596,7 +665,9 @@ Channel-B:
       - stop-neutral masked token positions (`}` and `<|im_end|>`).
 
 Configurable desc supervision (both channels):
-- `stage2_ab.desc_ce_weight` MUST be a float `>= 0` and applies to desc value tokens by default.
+- Desc CE weights MUST be expressed via the declared pipeline module configs:
+  - Channel-A: `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight`
+  - Channel-B (FN tail): `stage2_ab.pipeline.objective[name=token_ce].config.rollout_fn_desc_weight`
 
 Bbox geometry losses (both channels) are computed from coord distributions:
 - The trainer MUST decode coordinates from coord-token distributions via CoordExp expectation decoding (not argmax):
@@ -631,12 +702,12 @@ Efficiency rule (normative):
 
 #### Scenario: Dropped invalid instances may upweight B3 structure CE
 - **GIVEN** a Channel-B rollout with `N_drop_invalid > 0`
-- **AND** `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier: 1.5`
+- **AND** `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier: 1.5`
 - **WHEN** Channel-B builds CE weights for structure tokens in B3
 - **THEN** it MAY multiply the structure-token CE weights by `1.5` (bounded) for that sample/window.
 
 #### Scenario: Desc can be fully masked while keeping structure CE
-- **GIVEN** `desc_ce_weight: 0`
+- **GIVEN** `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight: 0`
 - **WHEN** CE labels are built for a batch
 - **THEN** JSON structure tokens remain supervised by CE
 - **AND** desc value tokens do not contribute to CE.
@@ -709,7 +780,7 @@ Efficiency rule (normative):
 - **AND** this is equivalent to appending all GT objects as FN-supervised targets.
 
 #### Scenario: Out-of-range struct CE multiplier is handled safely
-- **GIVEN** `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` is outside `[1.0, 4.0]`
+- **GIVEN** `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier` is outside `[1.0, 4.0]`
 - **WHEN** trainer parses Channel-B config
 - **THEN** it clamps the value into `[1.0, 4.0]` or fails fast (implementation choice)
 - **AND** it MUST NOT run with an effective multiplier outside the safe range `[1.0, 4.0]`.
@@ -1087,45 +1158,51 @@ Stage-2 AB trainer MUST support Stage-1-style coord distribution penalties in St
   - matched-prefix groups (`bbox_groups_prefix`),
   - and FN-injected groups (`bbox_groups_fn`).
 - The coord distribution for each supervised coord slot MUST follow the same causal shift contract as other Stage-2 coord losses (coord token at position `p` uses logits at `p-1`).
-- These terms MUST be aggregated into Stage-2 coord regularization (`loss/coord_reg`) and surfaced as train metrics:
-  - `loss/coord_soft_ce`,
-  - `loss/coord_w1`.
+- These terms MUST contribute to the Stage-2 coord regularization objective (coord_reg module), and MUST be surfaced in training logs as **objective atoms** under provenance keys:
+  - Channel-A (self-context): `loss/A2_coord/{coord_soft_ce,coord_w1}`
+  - Channel-B (rollout-context): `loss/B_coord/{coord_soft_ce,coord_w1}`
 - The trainer MUST NOT apply these terms to unsupervised FP-only coord slots.
 
 Weighting/config contract:
-- Stage-2 uses `custom.coord_soft_ce_w1` as the config source for `soft_ce_weight`, `w1_weight`, `target_sigma`, `target_truncate`, and `temperature` when enabled.
-- If `custom.coord_soft_ce_w1.enabled` is false, Stage-2 soft-CE/W1 contributions MUST be zero.
+- Stage-2 uses the declared pipeline config for coord distribution penalties:
+  - `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight`
+  - `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight`
+  - `stage2_ab.pipeline.objective[name=coord_reg].config.temperature`
+  - `stage2_ab.pipeline.objective[name=coord_reg].config.target_sigma`
+  - `stage2_ab.pipeline.objective[name=coord_reg].config.target_truncate`
+- If `soft_ce_weight` and `w1_weight` are both `0`, Stage-2 soft-CE/W1 contributions MUST be zero.
 
 #### Scenario: Enabled coord soft-CE/W1 increases Stage-2 coord regularization
-- **GIVEN** Stage-2 config has `custom.coord_soft_ce_w1.enabled: true` with non-zero `soft_ce_weight` and `w1_weight`
+- **GIVEN** Stage-2 config has `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight > 0`
+- **AND** `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight > 0`
 - **AND** a batch has supervised bbox coord slots
 - **WHEN** Stage-2 computes loss
-- **THEN** `loss/coord_soft_ce` and `loss/coord_w1` are positive
-- **AND** both contribute to `loss/coord_reg`.
+- **THEN** `loss/B_coord/coord_soft_ce` and `loss/B_coord/coord_w1` are positive
+- **AND** both contribute to the coord_reg objective.
 
-### Requirement: Canonical Stage-2 base and prod leaves declare CIoU/soft-CE/W1 weights explicitly
+### Requirement: Canonical Stage-2 base and prod leaves declare CIoU/coord-CE/soft-CE/W1 weights explicitly
 The canonical Stage-2 AB config surfaces MUST declare CIoU and coord-distribution weights explicitly to avoid ambiguity between inherited defaults and production-tuned overrides.
 
-Canonical base defaults:
-- `stage2_ab.bbox_smoothl1_weight: 2.0`
-- `stage2_ab.bbox_ciou_weight: 0.5`
+Canonical base defaults (pipeline-only):
+- `stage2_ab.pipeline.objective[name=bbox_geo].config.smoothl1_weight: 2.0`
+- `stage2_ab.pipeline.objective[name=bbox_geo].config.ciou_weight: 0.5`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.coord_ce_weight: 0.0`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight: 0.02`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight: 0.02`
 
-Canonical base MUST also set:
-- `custom.coord_soft_ce_w1.enabled: true`
-- `custom.coord_soft_ce_w1.soft_ce_weight: 0.02`
-- `custom.coord_soft_ce_w1.w1_weight: 0.02`
-
-Canonical prod overrides:
-- `stage2_ab.bbox_ciou_weight: 0.2`
-- `custom.coord_soft_ce_w1.soft_ce_weight: 0.2`
-- `custom.coord_soft_ce_w1.w1_weight: 0.2`
+Canonical prod overrides (pipeline-only):
+- `stage2_ab.pipeline.objective[name=bbox_geo].config.ciou_weight: 0.2`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.coord_ce_weight: 0.02`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight: 0.1`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight: 0.1`
+- `stage2_ab.pipeline.objective[name=coord_reg].config.target_truncate: 8`
 
 #### Scenario: Canonical prod leaves pin explicit CIoU/soft-CE/W1 overrides
-- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_ab/prod/*.yaml`
+- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/prod/*.yaml`
 - **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
 - **THEN** the leaf explicitly overrides effective Stage-2 loss weights with the canonical prod values above.
 
 #### Scenario: Canonical smoke leaves inherit base CIoU/soft-CE/W1 defaults
-- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_ab/smoke/*.yaml`
+- **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/smoke/*.yaml`
 - **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
 - **THEN** effective Stage-2 loss defaults include canonical base CIoU downweight and non-zero soft-CE/W1 terms.
