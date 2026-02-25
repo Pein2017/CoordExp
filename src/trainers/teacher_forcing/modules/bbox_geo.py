@@ -206,7 +206,9 @@ def run_bbox_geo_module(
         smoothl1 = context.logits.new_tensor(0.0)
         ciou = context.logits.new_tensor(0.0)
 
-    loss = float(bbox_smoothl1_w) * smoothl1 + float(bbox_ciou_w) * ciou
+    bbox_smoothl1_contrib = float(bbox_smoothl1_w) * smoothl1
+    bbox_ciou_contrib = float(bbox_ciou_w) * ciou
+    loss = bbox_smoothl1_contrib + bbox_ciou_contrib
 
     metrics = {
         "loss/geo": float(loss.detach().cpu().item()),
@@ -224,6 +226,8 @@ def run_bbox_geo_module(
         "bbox_geo": loss,
         "smoothl1": smoothl1,
         "ciou": ciou,
+        "bbox_smoothl1_contrib": bbox_smoothl1_contrib,
+        "bbox_ciou_contrib": bbox_ciou_contrib,
         "coord_logits": coord_logits,
         "coord_logits_full": logits_full,
         "coord_target_bins": target_bins,

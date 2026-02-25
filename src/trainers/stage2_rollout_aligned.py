@@ -85,6 +85,7 @@ from .teacher_forcing.module_registry import (
     DIAGNOSTIC_CONFIG_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
 )
+from .teacher_forcing.objective_atoms import project_stage2_objective_atoms
 from .teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
 from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
@@ -7598,141 +7599,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         total = pipeline_result.total_loss
-        pipeline_metrics = dict(pipeline_result.metrics)
 
         # Stage-2 logging contract: emit only objective atoms (post-weighting) with
         # provenance keys. Do not emit aggregate "geo"/"coord_reg" combinations.
-        objective_atoms: Dict[str, float] = {}
-        try:
-            from .teacher_forcing.contracts import PipelineModuleSpec
-
-            specs: Dict[str, PipelineModuleSpec] = {}
-            for spec_raw in list(objective_specs or []):
-                if not isinstance(spec_raw, Mapping):
-                    continue
-                parsed = PipelineModuleSpec.from_mapping(spec_raw)
-                if not parsed.name:
-                    continue
-                specs.setdefault(parsed.name, parsed)
-
-            token_spec = specs.get("token_ce")
-            if (
-                token_spec is not None
-                and token_spec.enabled_for_channel("B")
-                and float(token_spec.weight) != 0.0
-            ):
-                token_struct = float(pipeline_metrics.get("loss/token_ce_struct", 0.0) or 0.0)
-                token_desc = float(pipeline_metrics.get("loss/token_ce_desc", 0.0) or 0.0)
-
-                objective_atoms["loss/B_rollout_text/struct_ce"] = float(
-                    float(token_spec.weight) * float(token_struct)
-                )
-
-                token_cfg = (
-                    dict(token_spec.config)
-                    if isinstance(token_spec.config, Mapping)
-                    else {}
-                )
-                rollout_fn_desc_weight_raw = token_cfg.get(
-                    "rollout_fn_desc_weight",
-                    token_cfg.get("desc_ce_weight", 1.0),
-                )
-                try:
-                    rollout_fn_desc_weight = float(rollout_fn_desc_weight_raw or 0.0)
-                except (TypeError, ValueError):
-                    rollout_fn_desc_weight = 0.0
-                rollout_fn_desc_weight = max(0.0, float(rollout_fn_desc_weight))
-                if float(rollout_fn_desc_weight) != 0.0:
-                    objective_atoms["loss/B_rollout_text/desc_ce"] = float(
-                        float(token_spec.weight) * float(token_desc)
-                    )
-
-            bbox_spec = specs.get("bbox_geo")
-            if (
-                bbox_spec is not None
-                and bbox_spec.enabled_for_channel("B")
-                and float(bbox_spec.weight) != 0.0
-            ):
-                bbox_cfg = (
-                    dict(bbox_spec.config)
-                    if isinstance(bbox_spec.config, Mapping)
-                    else {}
-                )
-
-                def _bbox_w(key: str, default: float) -> float:
-                    if key not in bbox_cfg or bbox_cfg.get(key) is None:
-                        return float(default)
-                    try:
-                        return float(bbox_cfg.get(key))
-                    except (TypeError, ValueError):
-                        return float(default)
-
-                smoothl1_w = max(0.0, _bbox_w("smoothl1_weight", 1.0))
-                ciou_w = max(0.0, _bbox_w("ciou_weight", 1.0))
-                smoothl1 = float(pipeline_metrics.get("loss/bbox_smoothl1", 0.0) or 0.0)
-                ciou = float(pipeline_metrics.get("loss/bbox_ciou", 0.0) or 0.0)
-
-                if float(smoothl1_w) != 0.0:
-                    objective_atoms["loss/B_coord/bbox_smoothl1"] = float(
-                        float(bbox_spec.weight) * float(smoothl1_w) * float(smoothl1)
-                    )
-                if float(ciou_w) != 0.0:
-                    objective_atoms["loss/B_coord/bbox_ciou"] = float(
-                        float(bbox_spec.weight) * float(ciou_w) * float(ciou)
-                    )
-
-            coord_spec = specs.get("coord_reg")
-            if (
-                coord_spec is not None
-                and coord_spec.enabled_for_channel("B")
-                and float(coord_spec.weight) != 0.0
-            ):
-                coord_cfg = (
-                    dict(coord_spec.config)
-                    if isinstance(coord_spec.config, Mapping)
-                    else {}
-                )
-
-                def _coord_w(key: str, default: float, *, clamp_min0: bool = True) -> float:
-                    value = coord_cfg.get(key, default)
-                    if value is None:
-                        value = default
-                    try:
-                        out = float(value)
-                    except (TypeError, ValueError):
-                        out = float(default)
-                    if clamp_min0:
-                        out = max(0.0, float(out))
-                    return float(out)
-
-                w_coord_ce = _coord_w("coord_ce_weight", 0.0, clamp_min0=True)
-                w_soft_ce = _coord_w("soft_ce_weight", 0.0, clamp_min0=True)
-                w_w1 = _coord_w("w1_weight", 0.0, clamp_min0=True)
-                w_el1 = _coord_w("coord_el1_weight", 0.0, clamp_min0=True)
-                w_ehuber = _coord_w("coord_ehuber_weight", 0.0, clamp_min0=True)
-                # Entropy is sign-sensitive: positive increases entropy, negative sharpens.
-                w_entropy = _coord_w("coord_entropy_weight", 0.0, clamp_min0=False)
-                w_gate = _coord_w("coord_gate_weight", 0.0, clamp_min0=True)
-                w_text_gate = _coord_w("text_gate_weight", 0.0, clamp_min0=True)
-
-                def _emit(term: str, weight: float, raw_key: str) -> None:
-                    if float(weight) == 0.0:
-                        return
-                    value = float(pipeline_metrics.get(raw_key, 0.0) or 0.0)
-                    objective_atoms[f"loss/B_coord/{term}"] = float(
-                        float(coord_spec.weight) * float(weight) * float(value)
-                    )
-
-                _emit("coord_token_ce", w_coord_ce, "loss/coord_token_ce")
-                _emit("coord_soft_ce", w_soft_ce, "loss/coord_soft_ce")
-                _emit("coord_w1", w_w1, "loss/coord_w1")
-                _emit("coord_el1", w_el1, "loss/coord_el1")
-                _emit("coord_ehuber", w_ehuber, "loss/coord_ehuber")
-                _emit("coord_entropy", w_entropy, "loss/coord_entropy")
-                _emit("coord_gate", w_gate, "loss/coord_gate")
-                _emit("text_gate", w_text_gate, "loss/text_gate")
-        except (TypeError, ValueError):
-            raise
+        objective_atoms = project_stage2_objective_atoms(
+            pipeline_result=pipeline_result,
+            objective_specs=objective_specs,
+            text_provenance="B_rollout_text",
+            coord_provenance="B_coord",
+            emit_text=True,
+            emit_coord=True,
+        )
 
         try:
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -8473,6 +8350,48 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if eval_prompt_variant is not None:
             metrics[_k("rollout/prompt_variant_is_coco_80")] = (
                 1.0 if str(eval_prompt_variant).strip().lower() == "coco_80" else 0.0
+            )
+
+        if eval_detection_enabled:
+            cfg_mode = str(eval_detection_score_mode or "constant").strip().lower()
+            metrics[_k("rollout/config_score_mode_is_constant")] = float(
+                1.0 if cfg_mode == "constant" else 0.0
+            )
+            metrics[_k("rollout/config_score_mode_is_confidence_postop")] = float(
+                1.0 if cfg_mode in {"confidence_postop", "confidence"} else 0.0
+            )
+
+            eff_mode = (
+                "confidence_postop" if eval_detection_use_confidence_postop else "constant"
+            )
+            metrics[_k("rollout/effective_score_mode_is_constant")] = float(
+                1.0 if eff_mode == "constant" else 0.0
+            )
+            metrics[_k("rollout/effective_score_mode_is_confidence_postop")] = float(
+                1.0 if eff_mode == "confidence_postop" else 0.0
+            )
+
+            metrics[_k("rollout/config_pred_score_version")] = float(
+                int(eval_detection_score_version)
+            )
+            eff_version = 2 if eval_detection_use_confidence_postop else int(
+                eval_detection_score_version
+            )
+            metrics[_k("rollout/effective_pred_score_version")] = float(int(eff_version))
+
+            cfg_source = str(eval_detection_score_source or "").strip()
+            eff_source = "confidence_postop" if eval_detection_use_confidence_postop else cfg_source
+            metrics[_k("rollout/config_pred_score_source_is_eval_rollout_constant")] = float(
+                1.0 if cfg_source == "eval_rollout_constant" else 0.0
+            )
+            metrics[_k("rollout/config_pred_score_source_is_confidence_postop")] = float(
+                1.0 if cfg_source == "confidence_postop" else 0.0
+            )
+            metrics[_k("rollout/effective_pred_score_source_is_eval_rollout_constant")] = float(
+                1.0 if eff_source == "eval_rollout_constant" else 0.0
+            )
+            metrics[_k("rollout/effective_pred_score_source_is_confidence_postop")] = float(
+                1.0 if eff_source == "confidence_postop" else 0.0
             )
 
         if eval_detection_enabled:

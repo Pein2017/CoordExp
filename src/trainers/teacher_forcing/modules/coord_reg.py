@@ -318,15 +318,24 @@ def run_coord_reg_module(
             )
             coord_ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=context.logits.dtype)
 
+    coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
+    coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce
+    coord_w1_contrib = weights["coord_w1_weight"] * coord_w1
+    coord_el1_contrib = weights["coord_el1_weight"] * coord_el1
+    coord_ehuber_contrib = weights["coord_ehuber_weight"] * coord_ehuber
+    coord_entropy_contrib = weights["coord_entropy_weight"] * coord_entropy
+    coord_gate_contrib = weights["coord_gate_weight"] * coord_gate
+    text_gate_contrib = weights["text_gate_weight"] * text_gate
+
     loss = (
-        weights["coord_ce_weight"] * coord_ce
-        + weights["coord_soft_ce_weight"] * coord_soft_ce
-        + weights["coord_w1_weight"] * coord_w1
-        + weights["coord_el1_weight"] * coord_el1
-        + weights["coord_ehuber_weight"] * coord_ehuber
-        + weights["coord_entropy_weight"] * coord_entropy
-        + weights["coord_gate_weight"] * coord_gate
-        + weights["text_gate_weight"] * text_gate
+        coord_token_ce_contrib
+        + coord_soft_ce_contrib
+        + coord_w1_contrib
+        + coord_el1_contrib
+        + coord_ehuber_contrib
+        + coord_entropy_contrib
+        + coord_gate_contrib
+        + text_gate_contrib
     )
 
     metrics = {
@@ -341,4 +350,16 @@ def run_coord_reg_module(
         "loss/text_gate": float(text_gate.detach().cpu().item()),
     }
 
-    return ModuleResult(loss=loss, metrics=metrics, state={"coord_reg": loss})
+    state = {
+        "coord_reg": loss,
+        "coord_token_ce_contrib": coord_token_ce_contrib,
+        "coord_soft_ce_contrib": coord_soft_ce_contrib,
+        "coord_w1_contrib": coord_w1_contrib,
+        "coord_el1_contrib": coord_el1_contrib,
+        "coord_ehuber_contrib": coord_ehuber_contrib,
+        "coord_entropy_contrib": coord_entropy_contrib,
+        "coord_gate_contrib": coord_gate_contrib,
+        "text_gate_contrib": text_gate_contrib,
+    }
+
+    return ModuleResult(loss=loss, metrics=metrics, state=state)

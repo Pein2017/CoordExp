@@ -1,0 +1,27 @@
+extends: stage2_rollout_matching_ckpt3106.yaml
+
+# Smoke: a few rollout-matching steps from ckpt-3106 using HF backend.
+# This avoids vLLM server/colocate complexity and is intended only for contract sanity checks.
+
+training:
+  run_name: smoke_stage2_ckpt3106_hf
+  output_dir: output/rollout_matching_sft/smoke_stage2_ckpt3106_hf
+  logging_dir: tb/rollout_matching_sft/smoke_stage2_ckpt3106_hf
+  max_steps: 2
+  logging_steps: 1
+  logging_first_step: true
+  eval_strategy: "no"
+  save_strategy: "no"
+
+custom:
+  train_sample_limit: 32
+  val_sample_limit: 8
+
+rollout_matching:
+  rollout_backend: hf
+  decode_batch_size: 2
+  max_new_tokens: 256
+  eval_detection:
+    enabled: false
+  vllm: null
+

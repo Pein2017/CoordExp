@@ -198,7 +198,6 @@ def run_token_ce_module(
             return per_tok.new_tensor(0.0)
         return (per_tok * w).sum() / denom.clamp(min=1e-6)
 
-    token_ce = _weighted_mean(weights_next)
     struct_ce = _weighted_mean(struct_weights_next)
     desc_ce = _weighted_mean(desc_weights_next)
 
@@ -219,6 +218,8 @@ def run_token_ce_module(
         token_ce_struct = per_tok.new_tensor(0.0)
         token_ce_desc = per_tok.new_tensor(0.0)
 
+    token_ce = token_ce_struct + token_ce_desc
+
     token_masks = build_token_type_masks(
         input_ids=input_ids,
         meta=meta,
@@ -227,8 +228,14 @@ def run_token_ce_module(
     )
 
     loss = token_ce
+
+    token_ce_struct_contrib = token_ce_struct
+    token_ce_desc_contrib = token_ce_desc
     if registry_context == "self_context" and channel != "B":
-        loss = loss * float(self_context_struct_ce_weight)
+        scale = float(self_context_struct_ce_weight)
+        loss = loss * scale
+        token_ce_struct_contrib = token_ce_struct_contrib * scale
+        token_ce_desc_contrib = token_ce_desc_contrib * scale
 
     metrics = {
         "loss/token_ce": float(token_ce.detach().cpu().item()),
@@ -242,6 +249,8 @@ def run_token_ce_module(
         "token_ce": loss,
         "struct_ce": struct_ce,
         "desc_ce": desc_ce,
+        "token_ce_struct_contrib": token_ce_struct_contrib,
+        "token_ce_desc_contrib": token_ce_desc_contrib,
         "labels_masked": labels_masked,
         "weights_masked": weights,
         "token_type_masks": token_masks,
