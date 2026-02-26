@@ -4,7 +4,7 @@ model:
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_2-  # todo: fix the subfix `-`
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-add_coord_ce
   output_dir: output/stage2_ab/coco_bbox_max60/a_only
   logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
   num_train_epochs: 2
@@ -23,6 +23,7 @@ stage2_ab:
   schedule:
     b_ratio: 0.0
   n_softctx_iter: 2
+  softctx_grad_mode: unroll
   pipeline:
     objective:
       - name: token_ce
@@ -42,6 +43,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -57,6 +60,8 @@ stage2_ab:
           soft_ce_weight: 0.1
           self_context_soft_ce_weight: 0.1
           w1_weight: 0.1
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8

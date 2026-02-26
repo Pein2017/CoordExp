@@ -2406,7 +2406,103 @@ class Stage2ABTrainingTrainer(
                 warn_once_cache=warn_once,
             )
             pipeline_metrics_gt = dict(pipeline_gt.metrics)
-            total = pipeline_gt.total_loss + pipeline_ctx.total_loss
+
+            # Optional A1 coord/geometric anchors (small weights).
+            #
+            # Motivation: A1 (GT-prefix) logits are used to bootstrap A2 self-context.
+            # Adding a weak A1 anchor can reduce self-context noise and stabilize bbox loss.
+            a1_bbox_obj = logits_ce.new_tensor(0.0)
+            a1_coord_obj = logits_ce.new_tensor(0.0)
+            a1_bbox_metrics: Dict[str, float] = {}
+            a1_coord_metrics: Dict[str, float] = {}
+
+            try:
+                a1_smoothl1_w = float(bbox_cfg.get("a1_smoothl1_weight", 0.0) or 0.0)
+                a1_ciou_w = float(bbox_cfg.get("a1_ciou_weight", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                a1_smoothl1_w = 0.0
+                a1_ciou_w = 0.0
+
+            try:
+                a1_soft_ce_w = float(coord_cfg.get("a1_soft_ce_weight", 0.0) or 0.0)
+                a1_w1_w = float(coord_cfg.get("a1_w1_weight", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                a1_soft_ce_w = 0.0
+                a1_w1_w = 0.0
+
+            if (
+                (float(bbox_geo_module_w) != 0.0 or float(coord_reg_module_w) != 0.0)
+                and (
+                    float(a1_smoothl1_w) != 0.0
+                    or float(a1_ciou_w) != 0.0
+                    or float(a1_soft_ce_w) != 0.0
+                    or float(a1_w1_w) != 0.0
+                )
+            ):
+                from .teacher_forcing.modules import run_bbox_geo_module, run_coord_reg_module
+
+                ctx_a1_obj = TeacherForcingContext(
+                    channel="A",
+                    registry_context="a1",
+                    input_ids=input_ids,
+                    logits=logits_ce,
+                    logits_ce=logits_ce,
+                    meta=meta,
+                    coord_token_ids=coord_token_ids,
+                    temperature=float(temperature),
+                    decode_mode=str(coord_decode_mode),
+                    token_type_masks=token_type_masks,
+                    rollout_subset_masks=rollout_subset_masks,
+                    extra={},
+                )
+
+                bbox_spec_a1 = PipelineModuleSpec(
+                    name="bbox_geo",
+                    enabled=True,
+                    weight=1.0,
+                    channels=("A",),
+                    config={
+                        "smoothl1_weight": float(max(float(a1_smoothl1_w), 0.0)),
+                        "ciou_weight": float(max(float(a1_ciou_w), 0.0)),
+                    },
+                )
+                bbox_out_a1 = run_bbox_geo_module(context=ctx_a1_obj, spec=bbox_spec_a1)
+                a1_bbox_obj = bbox_out_a1.loss * float(bbox_geo_module_w)
+                a1_bbox_metrics = {
+                    str(k): float(v) for k, v in dict(bbox_out_a1.metrics or {}).items()
+                }
+
+                if float(a1_soft_ce_w) != 0.0 or float(a1_w1_w) != 0.0:
+                    coord_spec_a1 = PipelineModuleSpec(
+                        name="coord_reg",
+                        enabled=True,
+                        weight=1.0,
+                        channels=("A",),
+                        config={
+                            # A1 uses SoftCE/W1 only by default (no hard CE, no gates).
+                            "coord_ce_weight": 0.0,
+                            "coord_gate_weight": 0.0,
+                            "text_gate_weight": 0.0,
+                            "soft_ce_weight": float(max(float(a1_soft_ce_w), 0.0)),
+                            "w1_weight": float(max(float(a1_w1_w), 0.0)),
+                            # Keep distribution target settings aligned with A2 unless overridden.
+                            "temperature": coord_cfg.get("temperature", float(temperature)),
+                            "target_sigma": coord_cfg.get("target_sigma", 2.0),
+                            "target_truncate": coord_cfg.get("target_truncate", None),
+                        },
+                    )
+                    coord_out_a1 = run_coord_reg_module(
+                        context=ctx_a1_obj,
+                        spec=coord_spec_a1,
+                        state=bbox_out_a1.state,
+                    )
+                    a1_coord_obj = coord_out_a1.loss * float(coord_reg_module_w)
+                    a1_coord_metrics = {
+                        str(k): float(v)
+                        for k, v in dict(coord_out_a1.metrics or {}).items()
+                    }
+
+            total = pipeline_gt.total_loss + pipeline_ctx.total_loss + a1_bbox_obj + a1_coord_obj
         else:
             total = pipeline_ctx.total_loss
 
@@ -2453,6 +2549,59 @@ class Stage2ABTrainingTrainer(
                             * float(fmt_weight)
                             * float(token_self_struct)
                         )
+
+                # Optional A1 coord/geo anchors.
+                # NOTE: these are computed from A1 logits but under registry_context='a1'
+                # (not 'gt'), so bbox_geo/coord_reg modules can run.
+                if (
+                    float(a1_smoothl1_w) != 0.0
+                    or float(a1_ciou_w) != 0.0
+                    or float(a1_soft_ce_w) != 0.0
+                    or float(a1_w1_w) != 0.0
+                ):
+                    if float(bbox_geo_module_w) != 0.0 and (
+                        float(a1_smoothl1_w) != 0.0 or float(a1_ciou_w) != 0.0
+                    ):
+                        smoothl1_a1 = float(
+                            a1_bbox_metrics.get("loss/bbox_smoothl1", 0.0) or 0.0
+                        )
+                        ciou_a1 = float(a1_bbox_metrics.get("loss/bbox_ciou", 0.0) or 0.0)
+                        if float(a1_smoothl1_w) != 0.0:
+                            stage2_logs["loss/A1_coord/bbox_smoothl1"] = float(
+                                float(bbox_geo_module_w)
+                                * float(a1_smoothl1_w)
+                                * float(smoothl1_a1)
+                            )
+                        if float(a1_ciou_w) != 0.0:
+                            stage2_logs["loss/A1_coord/bbox_ciou"] = float(
+                                float(bbox_geo_module_w)
+                                * float(a1_ciou_w)
+                                * float(ciou_a1)
+                            )
+
+                    if float(coord_reg_module_w) != 0.0 and (
+                        float(a1_soft_ce_w) != 0.0 or float(a1_w1_w) != 0.0
+                    ):
+                        soft_ce_a1 = float(
+                            a1_coord_metrics.get("loss/coord_soft_ce", 0.0) or 0.0
+                        )
+                        w1_a1 = float(a1_coord_metrics.get("loss/coord_w1", 0.0) or 0.0)
+                        if float(a1_soft_ce_w) != 0.0:
+                            stage2_logs["loss/A1_coord/coord_soft_ce"] = float(
+                                float(coord_reg_module_w)
+                                * float(a1_soft_ce_w)
+                                * float(soft_ce_a1)
+                            )
+                        if float(a1_w1_w) != 0.0:
+                            stage2_logs["loss/A1_coord/coord_w1"] = float(
+                                float(coord_reg_module_w)
+                                * float(a1_w1_w)
+                                * float(w1_a1)
+                            )
+
+                    stage2_logs["loss/A1_coord/total"] = float(
+                        float(a1_bbox_obj + a1_coord_obj).detach().cpu().item()
+                    )
 
                 if float(bbox_geo_module_w) != 0.0:
                     smoothl1 = float(

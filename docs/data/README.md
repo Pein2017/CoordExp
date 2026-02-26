@@ -42,10 +42,15 @@ Rendering note:
 
 CoordExp disables runtime normalization:
 - You must set `custom.emit_norm: none` (enforced by config validation).
-- Numeric coords that appear in JSON must already be **norm1000 integer values** in `0..999`.
+- Geometry coords in JSONL must already be on the **norm1000 integer grid** (`0..999`):
+  - either as integers (`123`), or
+  - as quoted coord-token strings (`"<|coord_123|>"`).
 - Coord-token mode is mandatory (`<|coord_k|>` where `k in [0,999]`):
   - `custom.coord_tokens.enabled: true`
   - `custom.coord_tokens.skip_bbox_norm: true`
+
+Note:
+- When coord-token mode is enabled, the dataset pipeline attaches coord-token metadata for either representation and renders assistant dense targets as CoordJSON with **bare coord tokens** in geometry arrays.
 
 Why this is strict:
 - Prevents silent scaling drift between datasets/runs.
@@ -69,11 +74,13 @@ data:
   val_dataset: ["dummy"]  # keep eval_strategy stable in ms-swift
 
 custom:
-  user_prompt: <prompt_id>           # required (see src/config/prompts.py)
+  # user_prompt: /path/to/prompt.txt  # optional override; omit to use the built-in prompt from src/config/prompts.py
   train_jsonl: /path/to/train.jsonl
   val_jsonl: /path/to/val.jsonl
   emit_norm: none                    # required (runtime normalization is disabled)
-  object_ordering: sorted            # sorted|minY,minX default; random for ablation only
+  json_format: standard              # required (only supported value; typo-guard)
+  object_field_order: desc_first     # required: desc_first|geometry_first (train/infer parity)
+  object_ordering: sorted            # sorted (minY,minX) | random (ablation only)
   extra:
     prompt_variant: default          # optional: default|coco_80
   coord_tokens:
@@ -84,6 +91,7 @@ custom:
 Notes:
 - `data.dataset: ["dummy"]` is a placeholder to satisfy ms-swift argument validation; training data is loaded from `custom.train_jsonl`.
 - Training encodes with `do_resize=False` (images should already be prepared offline).
+  (If you start from `configs/base.yaml`, it already sets `custom.json_format` and `custom.object_field_order`.)
 
 ## Prompt Variants (Train/Infer Parity)
 

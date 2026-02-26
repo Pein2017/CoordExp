@@ -27,6 +27,8 @@ Key replacements (non-exhaustive):
   - Use provenance keys instead:
     - Channel-A:
       - `loss/A1_text/{struct_ce,desc_ce}`
+      - Optional A1 anchor coord/geo atoms (only when configured via `bbox_geo.config.a1_*` / `coord_reg.config.a1_*`):
+        - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}`
       - `loss/A2_text/struct_ce`
       - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
       - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
@@ -63,6 +65,7 @@ ST bridge diagnostics surface:
 - Canonical Stage-2 objective keys (objective atoms; emitted only when effective weight is non-zero) include:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}`
+    - Optional: `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}` (A1 anchor ablation knobs in pipeline module configs)
     - `loss/A2_text/struct_ce`
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
@@ -93,10 +96,12 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) runs a
   two-surface objective in Channel-A:
   - **Anchor (GT / A1 logits):** full CE on JSON structure + `desc` value tokens (coord tokens excluded from CE).
-- **Self-context (final-iteration logits):** a format/closure CE stabilizer on `struct` + `<|im_end|>` only (no `desc` CE; coord tokens excluded from token-CE),
+  - **Self-context (final-iteration logits):** a format/closure CE stabilizer on `struct` + `<|im_end|>` only (no `desc` CE; coord tokens excluded from token-CE),
     with a small stabilizer weight controlled by `token_ce.config.self_context_struct_ce_weight` (pipeline-only; flat `stage2_ab.fmt_struct_ce_weight` removed).
+  - Optional A1 coord/geo anchors (ablation knobs): enable via `bbox_geo.config.a1_*` / `coord_reg.config.a1_*` to add anchor supervision and emit `loss/A1_coord/*`.
 - Canonical objective keys for this split include:
   - `loss/A1_text/{struct_ce,desc_ce}` (GT anchor forward; token CE objective atoms)
+  - Optional: `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}` (A1 anchor coord/geo atoms; see Stage-2 runbook)
   - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer)
   - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
   - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
@@ -283,14 +288,53 @@ These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Ch
   - **What:** number of samples dropped because deterministic closure-marker resolution failed (`}` / `<|im_end|>` alignment).
   - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
 
-- `stage2_ab/channel_b/invalid_rollout`
-  - **What:** number of samples in this step where rollout parsing could not produce an append-ready `{"objects": [` prefix and therefore fell back to empty-pred mode.
-  - **Why:** tracks sample-level rollout/container failures that force FN-only completion supervision.
+- `stage2/invalid_rollout`, `stage2_ab/channel_b/invalid_rollout`
+  - **What:** number of samples in this step where the rollout was marked invalid for Channel-B supervision construction.
+    - Includes parser-level invalid rollouts (container/prefix parse fallback) and samples dropped due to closure-marker resolution failure (also counted by `stage2_ab/channel_b/closure_supervision/N_drop`).
+  - **Why:** tracks sample-level rollout/container failures that force FN-only completion supervision or drop the sample entirely.
+
+### Stage-2 Two-Channel Rollout Tags (Channel-B Steps Only)
+
+Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) emits
+additional per-step tags on Channel-B steps to make rollout configuration and strict-drop pressure visible in logs.
+
+- `stage2/raw_rollouts`
+  - **What:** number of raw rollouts produced in this step (0 on Channel-A steps).
+  - **Why:** disambiguates “no rollout happened” vs “rollout happened but produced no valid objects”.
+
+- `stage2/invalid_rollout`
+  - **What:** number of rollouts that were marked invalid (see strict-drop section above for details).
+  - **Why:** quick health check for container/prefix/closure failures; should stay near 0.
+
+- `stage2/drop_poly`
+  - **What:** number of strictly-parsed predicted objects dropped because they were `poly` (Channel-B currently supports `bbox_2d` only).
+  - **Why:** detects schema drift when rollouts emit polygons unexpectedly.
+
+- `stage2/drop_unknown`
+  - **What:** number of strictly-parsed predicted objects dropped due to unknown geometry types.
+  - **Why:** catches unexpected geometry emission.
+
+- `stage2/drop_bbox_invalid`
+  - **What:** number of strictly-parsed predicted objects dropped due to invalid bbox arity/order (e.g. wrong length, non-int bins, or `x2<x1`/`y2<y1`).
+  - **Why:** detects bbox decoding / truncation pathologies.
+
+- `rollout/backend_hf`, `rollout/backend_vllm`
+  - **What:** backend identity tags (1.0 on the active backend).
+
+- `rollout/decode_mode_greedy`, `rollout/decode_mode_beam`
+  - **What:** decode-mode tags (1.0 on the active mode).
+
+- `rollout/seed_base`, `rollout/hf_seeded_global`
+  - **What:** seed tags used for best-effort determinism diagnostics.
+
+- `rollout/max_new_tokens`, `rollout/num_beams`, `rollout/repetition_penalty`
+  - **What:** effective rollout decode knobs (logged as scalars for run provenance/debugging).
 
 Aggregation semantics (training-time `metrics` payload):
 - counters are global sums across grad-accum + DDP ranks
 - boolean activation flags use global max
 - rates use ratio-of-global-sums (e.g., `rollout/parse_truncated_rate`)
+- for Stage-2 AB step-budgeted packing, mean-like scalars are segment-weighted across micro-packs (internal `stage2/_log_weight`).
 
 ## Stage-2 Rollout-Matching Metrics (Eval)
 
@@ -299,18 +343,20 @@ it reports production-style metrics derived from rollout -> parse -> Hungarian m
 
 Returned keys (prefixed with `eval_`):
 - `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
-- `eval_rollout/pred_objects`, `eval_rollout/gt_objects`, `eval_rollout/matched`
-- `eval_rollout/fp`, `eval_rollout/fn`
+- `eval_rollout/pred_objects`, `eval_rollout/gt_objects_total`, `eval_rollout/matched`
+- `eval_rollout/fp_total`, `eval_rollout/fn_total` (aliases: `eval_rollout/fp`, `eval_rollout/fn`)
 - `eval_rollout/parse_truncated_rate`
 - `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
 - `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
 - `eval_rollout/matched_maskiou_mean`
 - `eval_rollout/mAP` (when `rollout_matching.eval_detection.enabled: true`)
 - `eval_rollout/coco_eval_ok` (1.0 on success, 0.0 on best-effort failure fallback)
+- `eval_rollout/coco_counter_*` (compact COCO failure counters, when detection eval runs)
+- `eval_rollout/prompt_variant_is_coco_80` (1.0 iff `rollout_matching.eval_prompt_variant: coco_80`)
 
 COCO summary policy (eval-step):
-- Only `eval_rollout/mAP` is emitted for COCO summary output.
-- `eval_rollout/bbox_*` and `eval_rollout/segm_*` summary keys are intentionally suppressed during eval-step.
+- COCO eval logs `eval_rollout/mAP` plus a small set of `eval_rollout/coco_counter_*` counters.
+- Per-class summaries and `eval_rollout/bbox_*` / `eval_rollout/segm_*` aggregates are intentionally suppressed during eval-step.
 
 Optional desc monitor keys (when enabled):
 - `eval_rollout/desc_pairs_total`

@@ -100,6 +100,11 @@ _Source: `/data/home/xiaoyan/AIteam/data/ms-swift` (notably `swift/llm/train/sft
   - Support forward-only KD (no on-policy sampling): set `seq_kd: false`, `lmbda: 0.0`.
   - TRL versions ≥0.17 recommended. ms-swift adapts TRL GKD; trainer selection occurs in `src/sft.py`.
 
+- **Visual KD (optional)**: configure `custom.visual_kd` to add vision-feature distillation targets on top of (or alongside) GKD.
+  - Config is parsed/validated by `src/config/schema.py` and attached to TrainArguments as `visual_kd_config`.
+  - Implementation lives in `src/trainers/gkd_monitor.py` (fails fast if enabled without a teacher model).
+  - Targets are explicit and typed (`vit`, `aligner`, `deepstack`), each with `{enabled, weight, distance}` where `distance ∈ {mse, cosine}`.
+
 - Extra callbacks (`swift.plugin.extra_callbacks`) added via `SwiftSft._prepare_callbacks()` include logging helpers, checkpoint throttling, and optional visualization.
 - `SwiftSft._save_val_dataset()` saves the validation split to `val_dataset.jsonl` on rank 0 when the validation set is carved from training data—useful for reproduction.
 

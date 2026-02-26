@@ -18,9 +18,11 @@ Outputs are written to a timestamped run directory under:
 
 ## Configs
 
-Example configs live under `configs/bench/`:
-- `configs/bench/rollout_backend_bench_ckpt3106.yaml`
-- `configs/bench/rollout_backend_bench_ckpt3106_vllm05.yaml`
+Example config lives under `configs/bench/`:
+- `configs/bench/rollout_backend_bench.yaml`
+
+Bench-specific knobs are sourced from:
+- `custom.extra.rollout_backend_bench.*`
 
 ## What `gpu_memory_utilization` Controls
 

@@ -103,6 +103,9 @@ def _categorize_doc(rel_path: Path) -> str:
     if len(parts) >= 2 and parts[1] == "eval":
         return "Eval + Inference"
 
+    if "ARCHITECTURE" in name_u:
+        return "Training + Repro"
+
     if "STAGE2" in name_u or "ROLLOUT" in name_u:
         return "Stage-2 / Rollout Matching"
 
@@ -201,7 +204,7 @@ def _iter_code_items(repo_root: Path) -> list[CodeItem]:
             rel = p.relative_to(repo_root).as_posix()
             items.append(CodeItem(rel_path=rel, label="", category="Trainer Modules"))
 
-    add_path("src/datasets/augmentation/ops", "Augmentation ops", "Dataset Modules")
+    add_path("src/datasets/augmentation/ops.py", "Augmentation ops", "Dataset Modules")
     datasets_dir = repo_root / "src/datasets"
     if datasets_dir.exists():
         for p in sorted(datasets_dir.glob("*.py")):

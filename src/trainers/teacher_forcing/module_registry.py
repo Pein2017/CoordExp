@@ -22,6 +22,8 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "bbox_geo": {
         "smoothl1_weight",
         "ciou_weight",
+        "a1_smoothl1_weight",
+        "a1_ciou_weight",
     },
     "coord_reg": {
         "coord_ce_weight",
@@ -34,6 +36,8 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "soft_ce_weight",
         "self_context_soft_ce_weight",
         "w1_weight",
+        "a1_soft_ce_weight",
+        "a1_w1_weight",
         "temperature",
         "target_sigma",
         "target_truncate",

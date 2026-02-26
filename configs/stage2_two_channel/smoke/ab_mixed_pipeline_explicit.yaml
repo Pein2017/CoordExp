@@ -99,6 +99,8 @@ stage2_ab:
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.5
+          a1_smoothl1_weight: 0.0
+          a1_ciou_weight: 0.0
       - name: coord_reg
         enabled: true
         weight: 1.0
@@ -114,6 +116,8 @@ stage2_ab:
           soft_ce_weight: 0.02
           self_context_soft_ce_weight: 0.02
           w1_weight: 0.02
+          a1_soft_ce_weight: 0.0
+          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: null

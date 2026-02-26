@@ -1,0 +1,56 @@
+# Rollout backend benchmark (analysis-only).
+#
+# Runner:
+#   PYTHONPATH=. conda run -n ms python \
+#     scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py \
+#     --config configs/bench/rollout_backend_bench.yaml --backend both
+#
+# Bench knobs:
+#   custom.extra.rollout_backend_bench.*
+
+extends: ../base.yaml
+
+# Keep benchmarks lightweight by default.
+global_max_length: 4096
+
+model:
+  # Local model directory (required by the benchmark runner).
+  model: model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+  attn_impl: flash_attention_2
+
+template:
+  # Prefer an explicit max_length for the benchmark runner.
+  max_length: 4096
+
+custom:
+  # The benchmark runner samples from custom.train_jsonl.
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+
+  extra:
+    rollout_backend_bench:
+      # Data sampling
+      num_samples: 32
+      # Optional reservoir-sampling cap (0 means "scan the full JSONL").
+      max_records_to_scan: 4096
+
+      # Decode knobs
+      max_new_tokens: 512
+      temperature: 0.0
+
+      # Runtime
+      warmup_steps: 2
+      repeats: 3
+      batch_size: 4
+      output_dir: output/bench/rollout_backend_bench
+
+      # Backend-specific knobs (passed through to the runner).
+      hf:
+        attn_impl: flash_attention_2
+
+      vllm:
+        gpu_memory_utilization: 0.7
+        tensor_parallel_size: 1
+        max_model_len: 4096
+        max_num_seqs: 256
+        enforce_eager: false
+        disable_custom_all_reduce: true
