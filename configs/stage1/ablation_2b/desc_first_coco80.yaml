@@ -1,7 +1,7 @@
 extends: ../sft_stage1_softce_w1-bbox-only.yaml
 
 model:
-  model_name: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 
 training:
   output_dir: ./output/stage1_2b/coco_bbox_max60-coco80-desc_first
