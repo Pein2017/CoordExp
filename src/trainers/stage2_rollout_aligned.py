@@ -3234,6 +3234,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
             )
 
+        # Snapshot CUDA allocator before vLLM init. vLLM sleep mode can switch
+        # the active allocator; if left active until interpreter finalization,
+        # PyTorch can attempt to free pointers via the wrong allocator and abort.
+        self._vllm_saved_cuda_allocator = None
+        try:
+            if torch.cuda.is_available():
+                import torch.cuda.memory as cuda_mem
+
+                self._vllm_saved_cuda_allocator = cuda_mem._get_current_allocator()
+        except Exception:
+            self._vllm_saved_cuda_allocator = None
+
         try:
             from swift.llm import VllmEngine
 
