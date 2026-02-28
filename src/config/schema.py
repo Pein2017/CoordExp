@@ -1576,38 +1576,60 @@ class TrainingConfig:
             )
 
         # Length-coherence guardrails (fail-fast). These settings affect whether the
-        # rollout backend will truncate/error on long prompts, which is objective-changing.
+        # eval-step vLLM backend will truncate/error on long prompts, which is
+        # objective-changing.
         if rollout_matching is not None:
-            backend = str(getattr(rollout_matching, "rollout_backend", "") or "").strip()
-            if backend == "vllm":
-                vllm_cfg = getattr(rollout_matching, "vllm", None)
-                vllm_max_model_len_raw = getattr(vllm_cfg, "max_model_len", None)
-                max_new_tokens_raw = getattr(rollout_matching, "max_new_tokens", None)
+            backend = str(
+                getattr(rollout_matching, "rollout_backend", "") or ""
+            ).strip().lower()
+            if backend != "hf":
+                raise ValueError(
+                    "Legacy training-step vLLM rollouts are removed; "
+                    "rollout_matching.rollout_backend must be 'hf'."
+                )
 
-                if vllm_max_model_len_raw is not None:
-                    vllm_max_model_len = int(vllm_max_model_len_raw)
-                    if vllm_max_model_len <= 0:
+            effective_eval_backend = str(
+                getattr(rollout_matching, "eval_rollout_backend", "") or ""
+            ).strip().lower()
+            if effective_eval_backend != "vllm":
+                raise ValueError(
+                    "Stage-2 eval backend is fixed to vLLM; "
+                    "rollout_matching.eval_rollout_backend must be 'vllm'."
+                )
+
+            vllm_cfg = getattr(rollout_matching, "vllm", None)
+            if bool(getattr(vllm_cfg, "enable_lora", False)):
+                raise ValueError(
+                    "vLLM rollouts require full merged-weight sync in this stack: "
+                    "set rollout_matching.vllm.enable_lora=false."
+                )
+            vllm_max_model_len_raw = getattr(vllm_cfg, "max_model_len", None)
+            max_new_tokens_raw = getattr(rollout_matching, "max_new_tokens", None)
+
+            if vllm_max_model_len_raw is not None:
+                vllm_max_model_len = int(vllm_max_model_len_raw)
+                if vllm_max_model_len <= 0:
+                    raise ValueError(
+                        "rollout_matching.vllm.max_model_len must be > 0 when provided."
+                    )
+
+                if max_new_tokens_raw is not None:
+                    max_new_tokens = int(max_new_tokens_raw)
+                    if max_new_tokens >= vllm_max_model_len:
                         raise ValueError(
-                            "rollout_matching.vllm.max_model_len must be > 0 when provided."
+                            "rollout_matching.max_new_tokens must be < rollout_matching.vllm.max_model_len "
+                            f"to avoid truncation/overflow. Got max_new_tokens={max_new_tokens} "
+                            f"vllm.max_model_len={vllm_max_model_len}."
                         )
 
-                    if max_new_tokens_raw is not None:
-                        max_new_tokens = int(max_new_tokens_raw)
-                        if max_new_tokens >= vllm_max_model_len:
-                            raise ValueError(
-                                "rollout_matching.max_new_tokens must be < rollout_matching.vllm.max_model_len "
-                                f"to avoid truncation/overflow. Got max_new_tokens={max_new_tokens} "
-                                f"vllm.max_model_len={vllm_max_model_len}."
-                            )
-
-                    if global_max_length is not None and vllm_max_model_len < int(
-                        global_max_length
-                    ):
-                        raise ValueError(
-                            "rollout_matching.vllm.max_model_len must be >= global_max_length to avoid "
-                            "silent truncation drift between training and rollouts. "
-                            f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
-                        )
+                if global_max_length is not None and vllm_max_model_len < int(
+                    global_max_length
+                ):
+                    raise ValueError(
+                        "rollout_matching.vllm.max_model_len must be >= global_max_length to avoid "
+                        "silent truncation drift between training and rollouts. "
+                        f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
+                    )
 
         return cls(
             template=template,

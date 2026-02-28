@@ -156,9 +156,8 @@ debug:
 rollout_matching:
   offload:
     enabled: false
-    offload_model: false
-    offload_optimizer: false
-  rollout_backend: vllm
+  rollout_backend: hf
+  eval_rollout_backend: vllm
   decode_batch_size: 4
   vllm:
     mode: server
@@ -167,16 +166,12 @@ rollout_matching:
     max_model_len: 14000
     enable_lora: false
     enable_prefix_caching: true
-    sleep_level: 0
     server:
       timeout_s: 240.0
       infer_timeout_s: null
       servers:
         - base_url: http://127.0.0.1:8000
           group_port: 51216
-    sync:
-      mode: full
-      fallback_to_full: true
   decode_mode: greedy
   max_new_tokens: 3084
   decoding:
@@ -198,7 +193,8 @@ rollout_matching:
     # Score policy used during trainer eval_step:
     # - constant: cheap, but COCO AP can be insensitive to \"tail\" FP pruning when all scores tie.
     # - confidence_postop: compute per-object scores from token logprob traces (requires rollout_backend=hf|vllm).
-    #   NOTE: vLLM token logprob tracing is experimental / not yet verified end-to-end; prefer HF if you need a trusted scorer.
+    #   vLLM confidence tracing is a supported path in this stack. If trace invariants are violated during eval,
+    #   scoring falls back to constant mode for that eval window and records eval/trace_fallback_count.
     score_mode: confidence_postop
     constant_score: 1.0
     pred_score_source: eval_rollout_constant

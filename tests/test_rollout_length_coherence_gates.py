@@ -23,7 +23,8 @@ def test_vllm_max_model_len_must_cover_global_max_length() -> None:
     payload = _base_training_payload()
     payload["global_max_length"] = 1024
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "max_new_tokens": 64,
         "vllm": {
             "max_model_len": 512,
@@ -47,10 +48,38 @@ def test_vllm_max_model_len_must_cover_global_max_length() -> None:
     assert "rollout_matching.vllm.max_model_len" in msg or "vllm.max_model_len" in msg
 
 
+def test_vllm_guardrails_apply_case_insensitive_backend_value() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "VLLM",
+        "max_new_tokens": 64,
+        "vllm": {
+            "max_model_len": 2048,
+            "mode": "server",
+            "server": {
+                "servers": [
+                    {
+                        "base_url": "http://127.0.0.1:8000",
+                        "group_port": 51216,
+                    }
+                ]
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "rollout_matching.rollout_backend" in msg
+    assert "must be 'hf'" in msg
+
+
 def test_rollout_max_new_tokens_must_be_less_than_vllm_max_model_len() -> None:
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "max_new_tokens": 2048,
         "vllm": {
             "max_model_len": 2048,
@@ -73,3 +102,59 @@ def test_rollout_max_new_tokens_must_be_less_than_vllm_max_model_len() -> None:
     assert "rollout_matching.max_new_tokens" in msg
     assert "rollout_matching.vllm.max_model_len" in msg or "vllm.max_model_len" in msg
 
+
+def test_eval_only_vllm_triggers_length_guardrails() -> None:
+    payload = _base_training_payload()
+    payload["global_max_length"] = 2048
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "max_new_tokens": 2048,
+        "vllm": {
+            "max_model_len": 1024,
+            "mode": "server",
+            "server": {
+                "servers": [
+                    {
+                        "base_url": "http://127.0.0.1:8000",
+                        "group_port": 51216,
+                    }
+                ]
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "vllm.max_model_len" in msg
+    assert "global_max_length" in msg or "max_new_tokens" in msg
+
+
+def test_eval_only_vllm_rejects_enable_lora_true() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "vllm": {
+            "mode": "server",
+            "enable_lora": True,
+            "max_model_len": 4096,
+            "server": {
+                "servers": [
+                    {
+                        "base_url": "http://127.0.0.1:8000",
+                        "group_port": 51216,
+                    }
+                ]
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value).lower()
+    assert "enable_lora" in msg
+    assert "full" in msg and "sync" in msg

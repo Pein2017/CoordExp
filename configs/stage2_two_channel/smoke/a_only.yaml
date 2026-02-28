@@ -1,4 +1,4 @@
-extends: ../prod/desc_first_a_only.yaml
+extends: ../prod/a_only.yaml
 
 training:
   run_name: smoke_a_only
@@ -22,7 +22,6 @@ custom:
   val_sample_limit: 16
 
 rollout_matching:
-  rollout_backend: vllm
   decode_batch_size: 4
   max_new_tokens: 2048
   monitor_dump:

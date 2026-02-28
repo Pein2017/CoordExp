@@ -102,6 +102,7 @@ except Exception as exc:
 
 required_schema = {
     "rollout_backend": str,
+    "eval_rollout_backend": str,
     "vllm_mode": (str, type(None)),
     "server_base_urls": list,
 }
@@ -118,6 +119,7 @@ if not all(isinstance(url, str) for url in preflight["server_base_urls"]):
 
 rollout_contract = {
     "rollout_backend": preflight["rollout_backend"],
+    "eval_rollout_backend": preflight["eval_rollout_backend"],
     "vllm_mode": preflight["vllm_mode"],
     "server_base_urls": preflight["server_base_urls"],
 }
@@ -169,10 +171,13 @@ except Exception as exc:
     die(f"Failed to parse rollout contract JSON: {exc}")
 
 backend = contract.get("rollout_backend")
+eval_backend = contract.get("eval_rollout_backend")
 mode = contract.get("vllm_mode")
 urls = contract.get("server_base_urls")
-if backend != "vllm":
-    die(f"rollout_backend must be 'vllm', got: {backend!r}")
+if backend != "hf":
+    die(f"rollout_backend must be 'hf', got: {backend!r}")
+if eval_backend != "vllm":
+    die(f"eval_rollout_backend must be 'vllm', got: {eval_backend!r}")
 if mode != "server":
     die(f"vllm_mode must be 'server', got: {mode!r}")
 if not isinstance(urls, list) or not urls:
@@ -343,7 +348,7 @@ echo "[INFO] ROOT_IMAGE_DIR:${ROOT_IMAGE_DIR_RESOLVED}"
 echo "[INFO] torch_dtype: ${SERVER_TORCH_DTYPE}"
 echo "[INFO] eager:       ${SERVER_VLLM_ENFORCE_EAGER}"
 echo "[INFO] max_model_len:${VLLM_MAX_MODEL_LEN}"
-echo "[INFO] enable_lora: ${VLLM_ENABLE_LORA}"
+echo "[INFO] enable_lora: ${VLLM_ENABLE_LORA} (full-sync-only; adapter sync unsupported)"
 echo "[INFO] disable_proxy:${DISABLE_PROXY}"
 echo "========================================================================"
 

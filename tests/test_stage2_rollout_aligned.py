@@ -201,6 +201,160 @@ def test_shutdown_vllm_server_client_closes_resources():
     assert trainer._vllm_server_comm_inited is False
 
 
+def test_shutdown_vllm_colocate_engine_cleans_runtime(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer._vllm_last_loaded_step = 9
+    trainer._vllm_tp_group = object()
+    trainer._vllm_tp_size = 4
+    trainer._eval_vllm_window_active = True
+
+    class _DummyCore:
+        def __init__(self) -> None:
+            self.shutdown_calls = 0
+
+        def shutdown(self) -> None:
+            self.shutdown_calls += 1
+
+    class _DummyRawEngine:
+        def __init__(self) -> None:
+            self._sleeping = True
+            self.wake_calls = 0
+            self.engine_core = _DummyCore()
+
+        def is_sleeping(self) -> bool:
+            return self._sleeping
+
+        def wake_up(self, tags=None) -> None:
+            self.wake_calls += 1
+            self._sleeping = False
+
+    raw = _DummyRawEngine()
+    core = raw.engine_core
+    trainer._vllm_engine = types.SimpleNamespace(engine=raw)
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    trainer._shutdown_vllm_colocate_engine(wake_before_release=True)
+
+    assert raw.wake_calls == 1
+    assert core.shutdown_calls == 1
+
+    assert trainer._vllm_engine is None
+    assert trainer._vllm_last_loaded_step == -1
+    assert trainer._vllm_tp_group is None
+    assert trainer._vllm_tp_size == 1
+    assert trainer._eval_vllm_window_active is False
+
+
+def test_fix_vllm_nccl_allocator_atexit_order_registers_mem_pool_last(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    import atexit
+    from vllm.distributed.device_communicators import pynccl_allocator
+
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        atexit,
+        "unregister",
+        lambda fn: calls.append(("unregister", fn)),
+    )
+    monkeypatch.setattr(
+        atexit,
+        "register",
+        lambda fn: calls.append(("register", fn)),
+    )
+
+    trainer._best_effort_fix_vllm_nccl_allocator_atexit_order()
+
+    assert calls[-2:] == [
+        ("register", pynccl_allocator._cleanup_nccl_allocator_wrapper),
+        ("register", pynccl_allocator._cleanup_nccl_mem_pool),
+    ]
+
+
+def test_patch_vllm_cumem_sleep_no_empty_cache_wraps_sleep(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyCuMemAllocator:
+        def sleep(self, *args, **kwargs):
+            import torch
+
+            torch.cuda.empty_cache()
+
+    fake_cumem = types.SimpleNamespace(CuMemAllocator=_DummyCuMemAllocator)
+    monkeypatch.setitem(sys.modules, "vllm.device_allocator.cumem", fake_cumem)
+
+    import torch
+
+    empty_cache_calls: list[int] = []
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: empty_cache_calls.append(1))
+
+    trainer._best_effort_patch_vllm_cumem_sleep_no_empty_cache()
+
+    # After patching, calling sleep should not call the (monkeypatched) empty_cache.
+    alloc = _DummyCuMemAllocator()
+    alloc.sleep()
+    assert empty_cache_calls == []
+
+    # empty_cache is restored after the sleep call.
+    torch.cuda.empty_cache()
+    assert empty_cache_calls == [1]
+
+
+def test_best_effort_cleanup_vllm_sleep_mode_pools_clears_globals(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyCuMemInst:
+        def __init__(self) -> None:
+            self.allocator_and_pools = {"weights": (object(), object())}
+            self.pointer_to_data = {123: object()}
+
+    dummy_inst = _DummyCuMemInst()
+
+    class _DummyCuMemAllocator:
+        instance = dummy_inst
+
+        @staticmethod
+        def get_instance():
+            raise AssertionError("cleanup must not instantiate CuMemAllocator")
+
+    fake_cumem = types.SimpleNamespace(CuMemAllocator=_DummyCuMemAllocator)
+
+    fake_pynccl = types.SimpleNamespace(
+        _mem_pool=object(),
+        _allocator_wrapper=object(),
+        _allocator=object(),
+    )
+
+    # Provide fake modules so the cleanup helper is deterministic and CPU-only.
+    monkeypatch.setitem(sys.modules, "vllm.device_allocator.cumem", fake_cumem)
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm.distributed.device_communicators.pynccl_allocator",
+        fake_pynccl,
+    )
+
+    import gc
+
+    gc_calls: list[int] = []
+    monkeypatch.setattr(gc, "collect", lambda: gc_calls.append(1))
+
+    trainer._best_effort_cleanup_vllm_sleep_mode_pools()
+
+    assert dummy_inst.allocator_and_pools == {}
+    assert list(dummy_inst.pointer_to_data.keys()) == [123]
+    assert _DummyCuMemAllocator.instance is dummy_inst
+
+    assert fake_pynccl._mem_pool is None
+    assert fake_pynccl._allocator_wrapper is None
+    assert fake_pynccl._allocator is None
+
+    assert gc_calls == [1]
+
+
 def test_vllm_server_timeouts_allow_null_or_non_positive_infer_timeout() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
@@ -220,7 +374,6 @@ def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
 ) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer._decode_batch_size = lambda: 1
-    trainer._rollout_backend = lambda: "vllm"
     trainer._vllm_mode = lambda: "server"
     trainer._vllm_server_world_sizes = lambda: [1]
 
@@ -231,7 +384,7 @@ def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
     monkeypatch.setattr(dist, "get_world_size", lambda: 4)
 
     with pytest.raises(ValueError, match="decode_batch_size cap is infeasible"):
-        trainer._rollout_decode_batch_size_per_rank()
+        trainer._rollout_decode_batch_size_per_rank(rollout_backend="vllm")
 
 
 def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> None:
@@ -277,9 +430,9 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
         call_offsets.append(int(request_index_offset))
         return [([1], "{}", "greedy", [2]) for _ in samples]
 
-    trainer._rollout_backend = lambda: "vllm"
     trainer._vllm_mode = lambda: "server"
-    trainer._rollout_decode_batch_size_per_rank = lambda: 2
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+    trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     trainer._rollout_many_vllm = _capture_rollout_many_vllm
 
     original_samples = [
@@ -363,9 +516,9 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
         captured["request_index_offset"] = int(request_index_offset)
         return [([1], "{}", "greedy", [2])]
 
-    trainer._rollout_backend = lambda: "vllm"
     trainer._vllm_mode = lambda: "server"
-    trainer._rollout_decode_batch_size_per_rank = lambda: 4
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+    trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 4
     trainer._rollout_many_vllm = _capture_rollout_many_vllm
 
     original_samples = [
@@ -664,6 +817,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
     trainer._cfg = lambda _k, default=None: default
+    trainer._effective_rollout_backend = lambda context="train": "hf"
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
 
@@ -672,7 +826,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         [samples[0]],
         [samples[1]],
     ]
-    trainer._rollout_many = lambda batch: [
+    trainer._rollout_many = lambda batch, **_kwargs: [
         ([100 + int(item["sample_id"])], "{}", "greedy", []) for item in batch
     ]
 
@@ -857,6 +1011,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
     trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
         "eval_prompt_variant": "coco_80",
         "object_ordering": "sorted",
         "eval_detection": {
@@ -870,6 +1025,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     }
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._effective_rollout_backend = lambda context="train": "hf"
 
     sample = {
         "sample_id": 0,
@@ -998,6 +1154,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
     }
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._effective_rollout_backend = lambda context="train": "hf"
     trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
 
     sample = {
@@ -1135,7 +1292,8 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
     trainer.rollout_matching_cfg = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "eval_prompt_variant": "coco_80",
         "object_ordering": "sorted",
         "eval_detection": {
@@ -1146,7 +1304,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
             "pred_score_version": 2,
             "confidence": {},
         },
+        "vllm": {"mode": "server"},
     }
+    trainer._vllm_mode = lambda: "server"
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
     trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
@@ -1267,6 +1427,683 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
+def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "vllm": {
+            "mode": "colocate",
+            "enable_sleep_mode": True,
+            "sync": {"mode": "full"},
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="rollout_matching.vllm.enable_sleep_mode is no longer supported",
+    ):
+        trainer._validate_rollout_matching_cfg()
+
+
+def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "vllm": {
+            "mode": "colocate",
+            "sync": {"mode": "full"},
+        },
+    }
+    trainer._vllm_eval_lifecycle_preflight_done = False
+
+    def _raise_preflight():
+        raise RuntimeError("sleep/wake preflight missing")
+
+    trainer._validate_vllm_eval_lifecycle_preflight = _raise_preflight
+
+    trainer._validate_rollout_matching_cfg()
+    assert trainer._vllm_eval_lifecycle_preflight_done is False
+
+
+def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {"enabled": False},
+        "vllm": {"mode": "server"},
+    }
+    trainer._vllm_mode = lambda: "server"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+
+    sample = {
+        "sample_id": 0,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            }
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+
+    captured: dict[str, object] = {}
+
+    def _fake_rollout_many(batch, **kwargs):
+        captured["rollout_backend"] = kwargs.get("rollout_backend")
+        return [([100], "{}", "greedy", []) for _ in batch]
+
+    trainer._rollout_many = _fake_rollout_many
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    _ = trainer.evaluate()
+    assert captured.get("rollout_backend") == "vllm"
+
+
+def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "confidence_postop",
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+            "confidence": {},
+        },
+        "vllm": {"mode": "server"},
+    }
+    trainer._vllm_mode = lambda: "server"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "messages": [{"role": "user", "content": "q"}],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many_vllm_traced = lambda batch: [
+        ([100], "{}", "greedy", [], [], []) for _ in batch
+    ]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        lambda **_kwargs: ({"bbox_AP": 0.123}, {"empty_pred": 0}),
+    )
+
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+    assert metrics["eval/trace_fallback_count"] == pytest.approx(1.0)
+    assert metrics["eval_rollout/effective_score_mode_is_constant"] == pytest.approx(1.0)
+    assert (
+        metrics["eval_rollout/effective_score_mode_is_confidence_postop"]
+        == pytest.approx(0.0)
+    )
+
+
+def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {"enabled": False},
+        "vllm": {"mode": "server"},
+    }
+    trainer._vllm_mode = lambda: "server"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+
+    samples = [
+        {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]},
+        {"sample_id": 1, "messages": [{"role": "user", "content": "q1"}]},
+    ]
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [samples]
+
+    def _fake_rollout_many(batch, **_kwargs):
+        if len(batch) > 1:
+            raise RuntimeError("batch vllm decode failure")
+        if int(batch[0]["sample_id"]) == 0:
+            raise RuntimeError("sample decode failure")
+        return [([100], "{}", "greedy", [])]
+
+    trainer._rollout_many = _fake_rollout_many
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+    assert metrics["eval/vllm_decode_error_count"] == pytest.approx(1.0)
+
+
+def test_evaluate_vllm_engine_level_failure_is_fatal() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {"enabled": False},
+        "vllm": {"mode": "server"},
+    }
+    trainer._vllm_mode = lambda: "server"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [
+        [{"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}]
+    ]
+    trainer._rollout_many = lambda batch, **_kwargs: (
+        (_ for _ in ()).throw(RuntimeError("engine init failed"))
+    )
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    with pytest.raises(RuntimeError, match="aborting evaluation"):
+        trainer.evaluate()
+
+
+def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {"enabled": False},
+        "vllm": {"mode": "colocate"},
+    }
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._eval_vllm_window_active = False
+
+    sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    events = {"offload_enter": 0, "offload_exit": 0, "wake": 0, "sleep": []}
+
+    class _OffloadContext:
+        def __enter__(self):
+            events["offload_enter"] += 1
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            events["offload_exit"] += 1
+            return False
+
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: _OffloadContext()
+    trainer._ensure_vllm_engine = lambda: object()
+    trainer._wake_vllm_engine = lambda _engine: events.__setitem__(
+        "wake", int(events["wake"]) + 1
+    )
+    trainer._sleep_vllm_engine = lambda _engine, *, level: events["sleep"].append(
+        int(level)
+    )
+
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    _ = trainer.evaluate()
+    assert events["offload_enter"] == 1
+    assert events["offload_exit"] == 1
+    assert events["wake"] == 0
+    assert events["sleep"] == []
+
+
+def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace()
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {"enabled": False},
+        "vllm": {"mode": "colocate"},
+    }
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._eval_vllm_window_active = False
+
+    sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    events = {"offload_enter": 0, "offload_exit": 0, "wake": 0, "sleep": []}
+
+    class _OffloadContext:
+        def __enter__(self):
+            events["offload_enter"] += 1
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            events["offload_exit"] += 1
+            return False
+
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: _OffloadContext()
+    trainer._ensure_vllm_engine = lambda: object()
+    trainer._wake_vllm_engine = lambda _engine: events.__setitem__(
+        "wake", int(events["wake"]) + 1
+    )
+    trainer._sleep_vllm_engine = lambda _engine, *, level: events["sleep"].append(
+        int(level)
+    )
+
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    _ = trainer.evaluate()
+    assert events["offload_enter"] == 1
+    assert events["offload_exit"] == 1
+    assert events["wake"] == 0
+    assert events["sleep"] == []
+
+
+def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "vllm": {
+            "mode": "colocate",
+        }
+    }
+    trainer._eval_vllm_window_active = False
+
+    events = {"ensure": 0, "shutdown": []}
+
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: nullcontext()
+    trainer._ensure_vllm_engine = lambda: events.__setitem__(
+        "ensure", int(events["ensure"]) + 1
+    ) or object()
+    trainer._shutdown_vllm_colocate_engine = (
+        lambda *, wake_before_release: events["shutdown"].append(
+            bool(wake_before_release)
+        )
+    )
+
+    with trainer._maybe_eval_vllm_colocate_window(rollout_backend="vllm"):
+        assert trainer._eval_vllm_window_active is True
+
+    assert trainer._eval_vllm_window_active is False
+    assert events["ensure"] == 1
+    assert events["shutdown"] == []
+
+
 def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
@@ -1289,6 +2126,7 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
     trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
         "eval_prompt_variant": "coco_80",
         "object_ordering": "sorted",
         "eval_detection": {
@@ -1302,6 +2140,7 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
     }
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._effective_rollout_backend = lambda context="train": "hf"
 
     sample = {
         "sample_id": 0,

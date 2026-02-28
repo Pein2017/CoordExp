@@ -33,8 +33,11 @@ class RolloutDecodingConfig:
 @dataclass(frozen=True)
 class RolloutOffloadConfig:
     enabled: bool = False
-    offload_model: bool = False
-    offload_optimizer: bool = False
+    # Missing values default at runtime:
+    # - enabled=true  -> offload_model/offload_optimizer default to true
+    # - enabled=false -> both default to false
+    offload_model: Optional[bool] = None
+    offload_optimizer: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -148,7 +151,8 @@ class VllmServerConfig:
 
 @dataclass(frozen=True)
 class VllmSyncConfig:
-    mode: str = "full"  # full|adapter|auto
+    mode: str = "full"  # full (only supported mode in this stack)
+    # Deprecated/ignored: kept for backwards-compatible config parsing only.
     fallback_to_full: bool = True
 
 
@@ -165,7 +169,6 @@ class VllmConfig:
     load_format: Optional[str] = None
 
     enable_prefix_caching: bool = True
-    sleep_level: int = 0
     enforce_eager: bool = False
     disable_custom_all_reduce: bool = True
 
@@ -209,7 +212,8 @@ class RolloutPipelineConfig:
 @dataclass(frozen=True)
 class RolloutMatchingConfig:
     # Core backend selection.
-    rollout_backend: str = "vllm"
+    rollout_backend: str = "hf"
+    eval_rollout_backend: str = "vllm"
 
     # Decode / generation.
     decode_batch_size: int = 1
@@ -252,6 +256,45 @@ class RolloutMatchingConfig:
 
     def __post_init__(self) -> None:
         # Lightweight semantic checks that do not require runtime state.
+        def _normalize_backend(
+            raw: Any, *, field_name: str, allow_none: bool
+        ) -> Optional[str]:
+            if raw is None:
+                if allow_none:
+                    return None
+                raise ValueError(
+                    f"rollout_matching.{field_name} must be one of {{hf,vllm}}"
+                )
+            value = str(raw).strip().lower()
+            if allow_none and value in {"", "null", "none"}:
+                return None
+            if value not in {"hf", "vllm"}:
+                allowed = "{null,hf,vllm}" if allow_none else "{hf,vllm}"
+                raise ValueError(
+                    f"rollout_matching.{field_name} must be one of {allowed}; got {raw!r}"
+                )
+            return value
+
+        rollout_backend = _normalize_backend(
+            self.rollout_backend,
+            field_name="rollout_backend",
+            allow_none=False,
+        )
+        eval_backend = _normalize_backend(
+            self.eval_rollout_backend,
+            field_name="eval_rollout_backend",
+            allow_none=False,
+        )
+        if rollout_backend != "hf":
+            raise ValueError(
+                "rollout_matching.rollout_backend must be 'hf' (training-step vLLM rollouts are removed)."
+            )
+        if eval_backend != "vllm":
+            raise ValueError(
+                "rollout_matching.eval_rollout_backend must be 'vllm' (eval-step backend is fixed)."
+            )
+        effective_eval_backend = "vllm"
+
         try:
             decode_bs = int(self.decode_batch_size)
         except (TypeError, ValueError) as exc:
@@ -296,9 +339,19 @@ class RolloutMatchingConfig:
 
         if self.vllm is not None and self.vllm.sync is not None:
             mode = str(self.vllm.sync.mode or "full").strip().lower()
-            if mode not in {"full", "adapter", "auto"}:
+            if mode != "full":
                 raise ValueError(
-                    "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
+                    "rollout_matching.vllm.sync.mode must be 'full' in this stack "
+                    "(adapter/auto sync modes are unsupported)."
+                )
+
+        if (
+            rollout_backend == "vllm" or effective_eval_backend == "vllm"
+        ) and self.vllm is not None:
+            if bool(getattr(self.vllm, "enable_lora", False)):
+                raise ValueError(
+                    "vLLM rollouts require full merged-weight sync in this stack: "
+                    "set rollout_matching.vllm.enable_lora=false."
                 )
 
         if self.pipeline is not None:

@@ -460,7 +460,7 @@ class Stage2ABTrainingTrainer(
         batch["_rollout_matching_batch_metrics"] = out
 
     def train(self, *args, **kwargs):
-        """Run training and ensure rollout server clients shut down cleanly."""
+        """Run training and ensure rollout resources shut down cleanly."""
         try:
             return super().train(*args, **kwargs)
         finally:
@@ -472,6 +472,22 @@ class Stage2ABTrainingTrainer(
                 )
             except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
                 logger.warning("Failed to shutdown vLLM server client: %s", exc)
+
+            # Best-effort: release colocate engine before Python finalization to
+            # reduce allocator teardown races in sleep-mode runs.
+            try:
+                self._shutdown_vllm_colocate_engine(wake_before_release=False)
+            except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning("Failed to shutdown vLLM colocate engine: %s", exc)
+
+            # Ensure process-group teardown is explicit.
+            try:
+                import torch.distributed as dist
+
+                if dist.is_available() and dist.is_initialized():
+                    dist.destroy_process_group()
+            except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning("Failed to destroy distributed process group: %s", exc)
 
     @contextlib.contextmanager
     def _hf_sampling_seed_context(

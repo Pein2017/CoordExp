@@ -167,6 +167,14 @@ Rollout-matching settings are a first-class top-level namespace:
 Backend selection MUST be YAML-driven under `rollout_matching`:
 - `rollout_backend` MUST accept `"vllm"` or `"hf"`.
 - `rollout_backend` MUST default to `"vllm"`.
+- `eval_rollout_backend` MUST accept `null`, `"hf"`, or `"vllm"` (case-insensitive). Missing MUST be treated as `null`.
+  - When `null`/missing, evaluation rollouts MUST inherit `rollout_backend`.
+  - When set to `"hf"` or `"vllm"`, evaluation rollouts MUST use `eval_rollout_backend` and MUST NOT affect training-time rollouts.
+
+Length-coherence guardrails (fail-fast):
+- If the effective rollout backend is `vllm` (training or eval), the system MUST enforce:
+  - `rollout_matching.max_new_tokens < rollout_matching.vllm.max_model_len` (to avoid truncation/overflow), and
+  - `rollout_matching.vllm.max_model_len >= global_max_length` (to avoid silent truncation drift between training and rollouts).
 
 When `rollout_backend: "vllm"`:
 - The trainer MUST configure vLLM from `rollout_matching.vllm` (mapping).
@@ -193,11 +201,11 @@ Server mode requirements (`rollout_matching.vllm.mode: server`):
 - The trainer MUST connect to an external vLLM rollout server (pre-launched) instead of instantiating a local vLLM engine.
 - The trainer MUST support in-memory weight synchronization to the server (no disk checkpoint reload) so that rollouts can be generated with the latest policy parameters.
 - Server mode MUST support multi-process learners (i.e., `torch.distributed` initialized with `world_size >= 1`).
-  - Under multi-process learners (`world_size > 1`), the trainer MUST synchronize weights in a DDP-safe way:
+- Under multi-process learners (`world_size > 1`), the trainer MUST synchronize weights in a DDP-safe way:
     - rank0-only communicator init + weight push,
     - strict ordering: barrier -> rank0 sync -> barrier,
     - all ranks MUST take the same control-flow (including early-return decisions) to avoid deadlocks.
-  - Under multi-process learners (`world_size > 1`), `rollout_matching.vllm.sync.mode` MUST resolve to `full`.
+  - `rollout_matching.vllm.sync.mode` MUST resolve to `full` (only `full` is supported in this stack).
   - If these requirements cannot be satisfied (e.g., communicator init fails, misconfigured sync mode), the trainer MUST fail fast with actionable guidance.
 
 Server connectivity MUST be YAML-driven under `rollout_matching.vllm.server` (mapping).
@@ -234,19 +242,13 @@ Multi-server request distribution (normative):
 - The trainer MUST reassemble outputs in a way that preserves the original request order.
 
 Weight sync mode selection MUST be YAML-driven under `rollout_matching.vllm.sync`:
-- `sync.mode` MUST accept `full`, `adapter`, or `auto`.
-- If unset, `sync.mode` MUST default to `full` (robust for multimodal + DoRA).
-- `sync.fallback_to_full` MUST accept a boolean and MUST default to `true`.
+- `sync.mode` MUST accept only `full` (case-insensitive).
+  - If unset, `sync.mode` MUST default to `full`.
+- `sync.fallback_to_full` MUST accept a boolean and MAY be present for backwards-compatible config parsing, but it has no effect (only full sync is supported in this stack).
 
 Weight sync behavior (normative):
 - `sync.mode: full` MUST sync full merged weights (GRPO-style) into vLLM.
-- `sync.mode: adapter` MUST sync adapters only, and MUST require `rollout_matching.vllm.enable_lora: true`.
-- `sync.mode: auto` MUST behave as:
-  - `adapter` when `enable_lora: true`
-  - otherwise `full`
-- If adapter-only sync fails at runtime:
-  - when `sync.fallback_to_full: true`, the trainer MUST emit a warning and permanently fall back to `full` sync for the remainder of the run
-  - when `sync.fallback_to_full: false`, the trainer MUST fail fast with actionable guidance
+- Adapter-only sync (vLLM LoRA upload / `add_lora`) is unsupported in this stack. Any attempt to request adapter-only behavior (e.g., `sync.mode: adapter|auto` or `rollout_matching.vllm.enable_lora: true`) MUST fail fast with actionable guidance.
 
 Determinism (server mode):
 - For server mode, the trainer MUST set a deterministic `RequestConfig.seed` for each server `/infer/` call.
@@ -274,12 +276,12 @@ Determinism (server mode):
 - **THEN** it assigns the same contiguous chunks to the same server indices both times
 - **AND** the reassembled outputs preserve the original request order.
 
-#### Scenario: Adapter sync can fall back to full sync
-- **GIVEN** `rollout_matching.vllm.sync.mode: adapter`
-- **AND** `rollout_matching.vllm.sync.fallback_to_full: true`
-- **WHEN** adapter sync fails due to a runtime incompatibility
-- **THEN** the trainer logs a warning
-- **AND** switches to full merged-weight sync for subsequent E-steps.
+#### Scenario: Adapter-only sync is rejected (full-sync-only vLLM)
+- **GIVEN** rollout-matching training is enabled
+- **AND** the effective rollout backend resolves to vLLM (training or eval)
+- **AND** config requests adapter-only sync (e.g., `rollout_matching.vllm.enable_lora: true` or `rollout_matching.vllm.sync.mode: adapter`)
+- **WHEN** training starts (before the first vLLM rollout)
+- **THEN** configuration validation fails fast with actionable guidance to use full merged-weight sync (`enable_lora: false`, `sync.mode: full`).
 
 #### Scenario: Server mode produces token ids suitable for strict alignment
 - **GIVEN** rollout-matching training is enabled
@@ -316,18 +318,19 @@ Determinism (server mode):
 
 #### Scenario: Multi-process learner does not deadlock in server mode
 - **GIVEN** rollout-matching training is enabled
-- **AND** `custom.extra.rollout_matching.rollout_backend: vllm`
-- **AND** `custom.extra.rollout_matching.vllm.mode: server`
+- **AND** `rollout_matching.rollout_backend: vllm`
+- **AND** `rollout_matching.vllm.mode: server`
 - **AND** training is launched under `torchrun` with `world_size=2`
 - **WHEN** the trainer performs a fresh-rollout step that requires a server sync
 - **THEN** rank0 performs the server weight sync and other ranks do not
 - **AND** all ranks proceed to issue rollout `/infer/` requests without deadlock.
 
 
-#### Scenario: Non-full sync mode fails fast under multi-process learner
-- **GIVEN** rollout-matching training is enabled with server mode under `world_size > 1`
-- **AND** `custom.extra.rollout_matching.vllm.sync.mode: adapter` (or `auto` resolving to adapter)
-- **WHEN** training starts (before the first rollout)
+#### Scenario: Non-full sync mode fails fast (all learners)
+- **GIVEN** rollout-matching training is enabled
+- **AND** the effective rollout backend resolves to vLLM (training or eval)
+- **AND** `rollout_matching.vllm.sync.mode` is set to a non-`full` value (e.g., `adapter` or `auto`)
+- **WHEN** training starts (before the first vLLM rollout)
 - **THEN** configuration validation fails fast with actionable guidance to use `sync.mode: full`.
 
 
@@ -368,7 +371,7 @@ When `rollout_matching.vllm.mode: server` is enabled, the trainer MUST log suffi
 
 At minimum, the trainer MUST log:
 - the effective server list (base URLs and group ports)
-- the effective weight sync mode (`full` vs `adapter`) including any fallback events
+- the effective weight sync mode (full merged-weight sync; adapter-only sync is unsupported in this stack)
 - the per-batch rollout seed used for `RequestConfig.seed`
 
 #### Scenario: Server mode logs reproducibility metadata
@@ -547,8 +550,12 @@ to reduce peak GPU memory usage during rollout inference.
 
 Offload MUST be YAML-driven under `rollout_matching.offload`:
 - `rollout_matching.offload.enabled` MUST accept a boolean and MUST default to `false`.
-- `rollout_matching.offload.offload_model` MUST accept a boolean and MUST default to `false`.
-- `rollout_matching.offload.offload_optimizer` MUST accept a boolean and MUST default to `false`.
+- `rollout_matching.offload.offload_model` MUST accept a boolean.
+- `rollout_matching.offload.offload_optimizer` MUST accept a boolean.
+
+Defaulting (normative):
+- When `rollout_matching.offload.enabled: false` (default), missing `offload_model/offload_optimizer` MUST be treated as `false`.
+- When `rollout_matching.offload.enabled: true`, missing `offload_model/offload_optimizer` MUST be treated as `true` (minimize peak VRAM by default).
 
 Semantics when enabled:
 - Offloading MUST occur only during rollout generation (no-grad inference).
@@ -556,6 +563,8 @@ Semantics when enabled:
 - When rollout backend is not vLLM colocate (e.g., vLLM server mode or HF rollouts), offload settings MUST be ignored (no-op).
 - When vLLM is lazily initialized, the offload context MUST cover all vLLM-side allocations required for rollout
   generation, including vLLM engine initialization and LoRA adapter loading/synchronization, not only the infer call.
+- For evaluation rollouts (`evaluate()`), offload MUST occur once per evaluation window (not once per eval batch) when eval uses vLLM colocate.
+- Offloading MUST NOT be enabled under runtimes that partition or alias optimizer/model state (e.g., DeepSpeed/ZeRO). If offload is requested under such a runtime, the run MUST fail fast with actionable guidance (disable offload, switch to HF rollouts, or disable DeepSpeed/ZeRO).
 - If offload is requested but cannot be applied safely under the current setup, the trainer MUST fail fast with an
   actionable error message that suggests at least one mitigation (e.g., disable offload, switch rollout backend to HF,
   or adjust DeepSpeed/ZeRO settings).
@@ -566,6 +575,35 @@ Semantics when enabled:
 - **WHEN** one training step executes
 - **THEN** rollout inference completes without allocating training activations on GPU
 - **AND** teacher-forced forward/backprop still executes successfully after offload restoration.
+
+### Requirement: Colocate vLLM evaluation lifecycle is DDP-safe; sleep mode is optional (advanced)
+When evaluation rollouts use vLLM in colocate mode, the system MUST preserve training correctness and MUST be DDP-safe. vLLM sleep mode is an optional/advanced optimization and MUST be disabled by default in standard colocate mode due to observed teardown incompatibilities in our environment.
+
+Normative behavior:
+- When the effective evaluation rollout backend resolves to `vllm` and `rollout_matching.vllm.mode: colocate`:
+  - The system MUST NOT attempt to shutdown vLLM in-process as part of the evaluation lifecycle (DDP safety).
+  - Default behavior MUST NOT require vLLM sleep mode:
+    - The system MUST NOT force vLLM sleep mode enablement at engine construction time (e.g., do not unconditionally set `enable_sleep_mode=true`).
+    - Absence of vLLM sleep/wake APIs MUST NOT fail the run.
+  - If vLLM sleep mode is explicitly enabled for the run (advanced / operator-controlled):
+    - Before issuing any evaluation rollouts, the system MUST ensure the vLLM engine is awake (call `LLMEngine.wake_up()` or a version-equivalent wake method when available and when the engine was previously slept).
+    - After `evaluate()` completes, the system SHOULD call vLLM sleep at level `2` (`LLMEngine.sleep(level=2)` or a version-equivalent sleep method) to release GPU allocations between eval windows.
+    - If required vLLM APIs are missing or unsupported, the run MUST fail fast with actionable guidance *before training begins*.
+
+#### Scenario: Optional colocated vLLM sleep-after-eval lifecycle
+- **GIVEN** evaluation rollouts use vLLM in colocate mode
+- **AND** vLLM sleep mode is enabled for the run (advanced)
+- **WHEN** `evaluate()` completes
+- **THEN** the vLLM engine is transitioned to a low-GPU-memory state (recommended: sleep level `2`)
+- **AND** the next `evaluate()` call wakes the vLLM engine before issuing rollouts.
+
+### Requirement: Eval-only vLLM rollouts are robust to sample-local failures, but fail fast on engine-level failures
+Evaluation is a measurement stage. The system MUST be robust to rare sample-local decode failures under vLLM, but MUST fail fast on vLLM engine-level failures (which indicate a misconfiguration or environment/runtime problem).
+
+Normative behavior:
+- When the effective evaluation rollout backend resolves to `vllm`:
+  - If an individual sample fails to decode due to a sample-local runtime error, the evaluator MUST skip that sample and continue evaluation.
+  - If evaluation rollouts cannot proceed due to an engine-level failure (engine init failure, missing required lifecycle APIs for the configured mode (e.g., sleep/wake when sleep mode is enabled), eval-time OOM, or other fatal runtime error), evaluation MUST fail fast with actionable guidance (no silent fallback to HF for that eval window).
 
 ### Requirement: Rollout-matching trainer is YAML-gated
 The system SHALL provide an opt-in rollout-matching training mode (alias: `stage_2`) that is enabled via YAML by setting:

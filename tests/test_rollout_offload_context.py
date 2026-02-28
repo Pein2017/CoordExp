@@ -25,7 +25,8 @@ def _iter_optimizer_state_tensors(optimizer: torch.optim.Optimizer) -> Iterable[
 def test_rollout_offload_context_smoke_cpu_keeps_state_on_cpu():
     trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "vllm": {"mode": "colocate"},
         "offload": {"enabled": True, "offload_model": True, "offload_optimizer": True},
     }
@@ -48,7 +49,7 @@ def test_rollout_offload_context_smoke_cpu_keeps_state_on_cpu():
     assert all(p.device.type == "cpu" for p in trainer.model.parameters())
     assert all(t.device.type == "cpu" for t in _iter_optimizer_state_tensors(trainer.optimizer))
 
-    with trainer._maybe_rollout_offload_context():
+    with trainer._maybe_rollout_offload_context(rollout_backend="vllm"):
         assert all(p.device.type == "cpu" for p in trainer.model.parameters())
         assert all(
             t.device.type == "cpu" for t in _iter_optimizer_state_tensors(trainer.optimizer)
@@ -58,10 +59,41 @@ def test_rollout_offload_context_smoke_cpu_keeps_state_on_cpu():
     assert all(t.device.type == "cpu" for t in _iter_optimizer_state_tensors(trainer.optimizer))
 
 
+def test_offload_settings_defaults_to_model_and_optimizer_when_enabled():
+    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {"offload": {"enabled": True}}
+
+    enabled, offload_model, offload_optimizer = trainer._offload_settings()
+    assert enabled is True
+    assert offload_model is True
+    assert offload_optimizer is True
+
+
+def test_rollout_offload_context_works_for_eval_only_vllm_override():
+    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "vllm": {"mode": "colocate"},
+        "offload": {"enabled": True},
+    }
+    trainer.is_deepspeed_enabled = False
+    trainer.accelerator = type(
+        "_Acc",
+        (),
+        {"device": torch.device("cpu"), "unwrap_model": staticmethod(lambda m: m)},
+    )()
+    trainer.model = torch.nn.Linear(2, 2)
+    trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=1e-3)
+
+    with trainer._maybe_rollout_offload_context(rollout_backend="vllm"):
+        pass
+
+
 def test_rollout_offload_context_rejects_deepspeed():
     trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "vllm": {"mode": "colocate"},
         "offload": {"enabled": True, "offload_model": True, "offload_optimizer": True},
     }
@@ -75,7 +107,7 @@ def test_rollout_offload_context_rejects_deepspeed():
     trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=1e-3)
 
     try:
-        with trainer._maybe_rollout_offload_context():
+        with trainer._maybe_rollout_offload_context(rollout_backend="vllm"):
             pass
     except RuntimeError as exc:
         assert "deepspeed" in str(exc).lower()

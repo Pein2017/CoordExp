@@ -69,10 +69,21 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
         raise ValueError(
             "rollout_matching.rollout_backend is required for Stage-2 rollout preflight."
         )
-    backend = str(backend_raw).strip()
-    if backend != "vllm":
+    backend = str(backend_raw).strip().lower()
+    if backend != "hf":
         raise ValueError(
-            "rollout_matching.rollout_backend must be 'vllm' for server-mode rollout launch."
+            "rollout_matching.rollout_backend must be 'hf' (training-step vLLM rollouts are removed)."
+        )
+
+    eval_backend_raw = rollout_cfg.get("eval_rollout_backend")
+    if eval_backend_raw is None:
+        raise ValueError(
+            "rollout_matching.eval_rollout_backend must be set to 'vllm' for Stage-2 rollout preflight."
+        )
+    eval_backend = str(eval_backend_raw).strip().lower()
+    if eval_backend != "vllm":
+        raise ValueError(
+            "rollout_matching.eval_rollout_backend must be 'vllm' for Stage-2 rollout preflight."
         )
 
     vllm_cfg = _extract_required_mapping(rollout_cfg, "rollout_matching.vllm")
@@ -118,6 +129,7 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
 
     return {
         "rollout_backend": backend,
+        "eval_rollout_backend": eval_backend,
         "vllm_mode": mode,
         "server_base_urls": base_urls,
     }
@@ -215,6 +227,7 @@ def build_stage2_launcher_preflight(
 
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
+        "eval_rollout_backend": rollout_contract["eval_rollout_backend"],
         "vllm_mode": rollout_contract["vllm_mode"],
         "server_base_urls": server_base_urls,
         "server_model": model_path,

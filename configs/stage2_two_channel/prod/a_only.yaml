@@ -1,0 +1,6 @@
+extends: desc_first_a_only_eval_vllm_colocate.yaml
+
+# Canonical Stage-2 production A-only profile:
+# - training rollouts on HF (inherited)
+# - eval_step rollouts on vLLM colocate (inherited)
+# - sleep mode disabled by default (inherited)
