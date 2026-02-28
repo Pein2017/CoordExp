@@ -88,6 +88,7 @@ def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
         "decode_batch_size": 2,
         "eval_prompt_variant": "coco_80",
         "eval_detection": {
@@ -98,10 +99,23 @@ def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
             "pred_score_source": "eval_rollout_constant",
             "pred_score_version": 2,
         },
+        "vllm": {
+            "mode": "server",
+            "max_model_len": 4096,
+            "server": {
+                "servers": [
+                    {
+                        "base_url": "http://127.0.0.1:8000",
+                        "group_port": 51216,
+                    }
+                ]
+            },
+        },
     }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.eval_rollout_backend == "vllm"
     assert cfg.rollout_matching.eval_prompt_variant == "coco_80"
     assert cfg.rollout_matching.eval_detection is not None
     assert cfg.rollout_matching.eval_detection.enabled is True
@@ -121,6 +135,38 @@ def test_rollout_eval_detection_defaults_to_enabled_coco_when_omitted():
     assert cfg.rollout_matching.eval_detection.metrics == "coco"
 
 
+def test_rollout_eval_rollout_backend_null_inherits() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": None,
+        "decode_batch_size": 2,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "rollout_matching.eval_rollout_backend" in msg
+    assert "must be one of" in msg
+
+
+def test_rollout_eval_rollout_backend_invalid_value_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "bogus",
+        "decode_batch_size": 2,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "rollout_matching.eval_rollout_backend" in msg
+    assert "vllm" in msg.lower()
+
+
 def test_training_packing_length_deprecated_fails_fast():
     payload = _base_training_payload()
     payload["training"] = {"packing": True, "packing_length": 128}
@@ -136,7 +182,7 @@ def test_training_packing_length_deprecated_fails_fast():
 def test_unknown_nested_rollout_key_fails_before_trainer_init():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
         "vllm": {
             "mode": "server",
             "server": {
@@ -160,7 +206,7 @@ def test_unknown_nested_rollout_key_fails_before_trainer_init():
 def test_unknown_rollout_decoding_key_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
         "decoding": {"unknown": True},
     }
 
@@ -175,7 +221,7 @@ def test_unknown_rollout_decoding_key_fails_fast():
 def test_unknown_rollout_monitor_dump_key_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
         "monitor_dump": {"unknown": True},
     }
 
@@ -188,7 +234,7 @@ def test_unknown_rollout_monitor_dump_key_fails_fast():
 def test_unknown_rollout_vllm_sync_key_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
         "vllm": {"sync": {"unknown": True}},
     }
 
@@ -229,7 +275,7 @@ def test_unknown_stage2_ab_key_fails_fast():
 def test_legacy_rollout_server_paired_list_shape_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
-        "rollout_backend": "vllm",
+        "rollout_backend": "hf",
         "vllm": {
             "mode": "server",
             "server": {

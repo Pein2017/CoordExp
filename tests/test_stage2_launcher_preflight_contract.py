@@ -16,7 +16,8 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_prod_cfg() -> No
     cfg = repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml"
     out = resolve_stage2_launcher_preflight(str(cfg))
 
-    assert out["rollout_backend"] == "vllm"
+    assert out["rollout_backend"] == "hf"
+    assert out["eval_rollout_backend"] == "vllm"
     assert out["vllm_mode"] == "server"
     assert isinstance(out["server_base_urls"], list) and len(out["server_base_urls"]) == 1
     assert out["server_base_urls"][0].startswith("http")
@@ -42,7 +43,8 @@ def test_stage2_launcher_preflight_rejects_multi_server_configs() -> None:
         custom=types.SimpleNamespace(train_jsonl="public_data/lvis/train.jsonl"),
         template={"max_pixels": 32 * 32 * 768},
         rollout_matching={
-            "rollout_backend": "vllm",
+            "rollout_backend": "hf",
+            "eval_rollout_backend": "vllm",
             "vllm": {
                 "mode": "server",
                 "max_model_len": 128,
@@ -67,7 +69,8 @@ def test_stage2_launcher_preflight_requires_vllm_max_model_len() -> None:
         custom=types.SimpleNamespace(train_jsonl="public_data/lvis/train.jsonl"),
         template={"max_pixels": 32 * 32 * 768},
         rollout_matching={
-            "rollout_backend": "vllm",
+            "rollout_backend": "hf",
+            "eval_rollout_backend": "vllm",
             "vllm": {
                 "mode": "server",
                 "server": {"servers": [{"base_url": "http://127.0.0.1:8000"}]},

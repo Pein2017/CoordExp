@@ -476,57 +476,56 @@ Logging tip:
 
 If you use vLLM colocate mode and hit peak memory issues during rollouts, Stage-2 can optionally offload training state to CPU during rollout generation:
 
-- `rollout_matching.offload.enabled: true`
-- `rollout_matching.offload.offload_model: true` moves training model params to CPU during rollouts.
-- `rollout_matching.offload.offload_optimizer: true` moves optimizer state to CPU during rollouts.
+- `rollout_matching.offload.enabled: true` (recommended minimal setting; this defaults both model+optimizer offload to enabled).
+- Optional override: `rollout_matching.offload.offload_model: false|true` controls model-parameter offload explicitly.
+- Optional override: `rollout_matching.offload.offload_optimizer: false|true` controls optimizer-state offload explicitly.
 
 Notes:
 - Offload is currently not supported with DeepSpeed/ZeRO in this trainer; if you need ZeRO, disable offload or switch `rollout_backend: hf`.
+- Offload is the preferred peak-memory lever for colocate vLLM in this stack.
+- For sleep-mode guidance, see **Sleep-Mode Policy (colocate)** below.
 
 ---
 
 ## Rollout Backend Options
 
-### vLLM (Default)
+### Fixed Stage-2 pipeline (no legacy fallback)
 
-Set `rollout_matching.rollout_backend: vllm`.
+Stage-2 now uses a single backend contract:
 
-Note: vLLM rollouts currently support **non-beam decoding only** (`decode_mode=greedy` is enforced in code).
-Sampling can still be enabled via `decoding.temperature/top_p/top_k` (see Decoding Tips below). Use `rollout_backend: hf` if you need beam search.
+- `rollout_matching.rollout_backend: hf` for **all train_step rollouts**.
+- `rollout_matching.eval_rollout_backend: vllm` for **all eval_step rollouts**.
 
-vLLM has a mode switch under `rollout_matching.vllm.mode`:
+Legacy training-step vLLM rollouts are removed.
 
-- `colocate` (default): learner instantiates a local vLLM engine on the same GPU(s) as training.
+### Sleep-Mode Policy (colocate)
+
+- Sleep mode is removed from Stage-2 runtime lifecycle.
+- Do not set `rollout_matching.vllm.enable_sleep_mode`, `rollout_matching.vllm.reinit_each_eval`, or `rollout_matching.vllm.sleep_level`.
+- If you need memory headroom, use `rollout_matching.offload.*` or vLLM `server` mode.
+
+### vLLM (eval_step only)
+
+- `colocate` (default): learner instantiates a local vLLM engine on the same GPU(s) as training for eval_step.
   - Requires `rollout_matching.vllm.max_model_len`.
-  - Weight sync modes:
-    - Recommended (default): `rollout_matching.vllm.enable_lora: false`
+  - Weight sync:
+    - Supported (required in this stack): `rollout_matching.vllm.enable_lora: false`
       - The trainer merges adapters into full weights and loads merged full weights into vLLM on rollout steps.
-    - Optional: `rollout_matching.vllm.enable_lora: true`
-      - The trainer pushes adapter tensors into vLLM via `add_lora` (faster, but can be unstable on multimodal stacks).
+      - Adapter-only sync (`enable_lora: true` / `add_lora`) is unsupported and will fail fast.
 
-- `server` (recommended for long rollouts): learner connects to a pre-launched `swift rollout` server and generates rollouts on dedicated GPUs.
+- `server`: learner connects to a pre-launched `swift rollout` server and generates eval_step rollouts on dedicated GPUs.
   - Supports multi-process learner (`torchrun`, `world_size > 1`).
   - Under `world_size > 1`, the trainer performs rank0-only weight sync with strict barriers and requires `rollout_matching.vllm.sync.mode: full`.
   - Connectivity is configured in YAML under `rollout_matching.vllm.server`.
   - Weight sync is configured under `rollout_matching.vllm.sync`:
-    - `sync.mode: full` (default): full merged-weight sync (robust for multimodal + DoRA).
-    - `sync.mode: adapter`: adapter-only sync (requires server launched with `--vllm_enable_lora true`).
-    - `sync.fallback_to_full: true` permanently falls back to full sync if adapter sync fails at runtime.
+    - Only `sync.mode: full` is supported in this stack (full merged-weight sync; robust for multimodal + DoRA).
+    - Adapter-only sync options are unsupported and will fail fast.
   - Deploy-readiness gates (enforced by `scripts/train_stage2.sh`):
-    - `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`
+    - `rollout_matching.rollout_backend=hf`, `rollout_matching.eval_rollout_backend=vllm`, and `rollout_matching.vllm.mode=server`
     - `rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
     - `server_gpus` and `train_gpus` must be disjoint device sets
     - no external repeat-terminate plugin is required
-
-### HF (Fallback)
-
-Set `rollout_matching.rollout_backend: hf`.
-
-Notes:
-- Rollout batching is controlled by a single knob: `rollout_matching.decode_batch_size`.
-- For rollout-aware trainer variants, `training.per_device_eval_batch_size` and similar per-device eval knobs do not independently control rollout decode/eval chunking.
-- HF `generate()` (and vLLM colocate) chunk per rank using the resolved `rollout_matching.decode_batch_size`.
 
 ---
 
@@ -721,6 +720,18 @@ Checks:
 Mitigations:
 - Change `vllm.server.servers[].group_port` to an unused port and restart server and learner.
 - Ensure localhost connections are not routed through proxies (prefer the helper launcher, or unset proxies + set `NO_PROXY`).
+
+### Hard Abort at Process Exit (Colocate + Sleep Mode)
+
+Symptom:
+- Process aborts during shutdown (often after eval windows).
+- Logs include allocator signatures like `CUDAPluggableAllocator::raw_delete` or "Trying to free a pointer not allocated here".
+
+Mitigations:
+- Apply **Sleep-Mode Policy (colocate)** above.
+- For memory relief, prefer:
+  - `rollout_matching.offload.enabled: true` (DDP-only), or
+  - vLLM `server` mode for process isolation.
 
 ### Channel-B never executes
 

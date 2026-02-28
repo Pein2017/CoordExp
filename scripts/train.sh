@@ -12,7 +12,9 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # CUDA / NCCL runtime defaults (can be overridden by caller)
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+if [[ -z "${PYTORCH_CUDA_ALLOC_CONF+x}" ]]; then
+  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+fi
 
 
 export NCCL_ASYNC_ERROR_HANDLING=${NCCL_ASYNC_ERROR_HANDLING:-1}

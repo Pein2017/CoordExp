@@ -1,0 +1,22 @@
+extends: ../prod/desc_first_a_only_eval_vllm_colocate.yaml
+
+training:
+  run_name: smoke_desc_first_a_only_eval_vllm_colocate
+  output_dir: output/stage2_ab/smoke/desc_first_a_only_eval_vllm_colocate
+  logging_dir: tb/stage2_ab/smoke/desc_first_a_only_eval_vllm_colocate
+  eval_strategy: steps
+  eval_steps: 1
+  save_strategy: steps
+  save_steps: 1
+  max_steps: 3
+  save_delay_steps: 0
+  logging_steps: 1
+  do_eval: true
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8
+
+rollout_matching:
+  # Keep smoke decode small while still exercising traced eval + lifecycle.
+  decode_batch_size: 2

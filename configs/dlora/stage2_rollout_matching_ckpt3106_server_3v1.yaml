@@ -20,13 +20,9 @@ rollout_matching:
   vllm:
     mode: server
 
-    # Weight sync mode:
-    # - Recommended default: full merged-weight sync (robust for multimodal + DoRA).
-    # - Optional: adapter-only sync when vLLM LoRA is enabled on the server.
+    # Weight sync:
+    # - Full merged-weight sync only (robust for multimodal + DoRA).
     enable_lora: false
-    sync:
-      mode: full        # full|adapter|auto
-      fallback_to_full: true
 
     # Server connectivity (preferred explicit list form).
     #

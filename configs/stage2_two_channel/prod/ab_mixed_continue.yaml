@@ -84,7 +84,6 @@ rollout_matching:
     max_samples: 10
     max_text_chars: 0
     write_markdown: false
-  rollout_backend: vllm
   vllm:
     mode: server
     server:

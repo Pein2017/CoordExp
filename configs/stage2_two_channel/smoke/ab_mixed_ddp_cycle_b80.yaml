@@ -35,7 +35,6 @@ data:
   dataloader_persistent_workers: false
 
 rollout_matching:
-  rollout_backend: vllm
   decode_batch_size: 4
   max_new_tokens: 512
   monitor_dump:

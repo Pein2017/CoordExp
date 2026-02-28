@@ -10,7 +10,9 @@ High-level loop per batch:
 
 from __future__ import annotations
 
+import gc
 import json
+import inspect
 import math
 import os
 import tempfile
@@ -1312,6 +1314,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._desc_semantic_encoder: Any = None
         self._desc_semantic_encoder_sig: Any = None
 
+        # Eval-only vLLM rollout window lifecycle state.
+        self._eval_vllm_window_active: bool = False
+        self._vllm_eval_lifecycle_preflight_done: bool = False
+
         # Mutable config injected by src/sft.py after construction.
         self.rollout_matching_cfg: Mapping[str, Any] = {}
 
@@ -1341,6 +1347,54 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not isinstance(cfg, Mapping):
             return default
         return cfg.get(str(key), default)
+
+    @staticmethod
+    def _normalize_rollout_backend_value(
+        raw: Any,
+        *,
+        key_path: str,
+        allow_none: bool,
+    ) -> Optional[Literal["hf", "vllm"]]:
+        if raw is None:
+            if allow_none:
+                return None
+            raise ValueError(f"{key_path} must be one of {{hf,vllm}}")
+        value = str(raw).strip().lower()
+        if allow_none and value in {"", "null", "none"}:
+            return None
+        if value not in {"hf", "vllm"}:
+            allowed = "{null,hf,vllm}" if allow_none else "{hf,vllm}"
+            raise ValueError(f"{key_path} must be one of {allowed}, got {raw!r}")
+        return value  # type: ignore[return-value]
+
+    def _effective_rollout_backend(
+        self, *, context: Literal["train", "eval"] = "train"
+    ) -> Literal["hf", "vllm"]:
+        train_backend = self._normalize_rollout_backend_value(
+            self._cfg("rollout_backend", "hf"),
+            key_path="rollout_matching.rollout_backend",
+            allow_none=False,
+        )
+        assert train_backend is not None
+        if train_backend != "hf":
+            raise ValueError(
+                "Legacy training-step vLLM rollouts are removed; "
+                "set rollout_matching.rollout_backend='hf'."
+            )
+
+        eval_backend = self._normalize_rollout_backend_value(
+            self._cfg("eval_rollout_backend", "vllm"),
+            key_path="rollout_matching.eval_rollout_backend",
+            allow_none=False,
+        )
+        assert eval_backend is not None
+        if eval_backend != "vllm":
+            raise ValueError(
+                "Eval backend is fixed to vLLM in the Stage-2 pipeline; "
+                "set rollout_matching.eval_rollout_backend='vllm'."
+            )
+
+        return "hf" if context == "train" else "vllm"
 
     def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:
         raw = getattr(self, "object_field_order", None)
@@ -1491,6 +1545,54 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if coord_decode_mode not in {"exp", "st"}:
             raise ValueError(
                 "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
+            )
+
+        train_backend = self._effective_rollout_backend(context="train")
+        eval_backend = self._effective_rollout_backend(context="eval")
+        vllm_cfg = cfg.get("vllm", {})
+        if vllm_cfg is None:
+            vllm_cfg = {}
+        if not isinstance(vllm_cfg, Mapping):
+            raise TypeError("rollout_matching.vllm must be a mapping when provided")
+        if train_backend == "vllm" or eval_backend == "vllm":
+            if bool(vllm_cfg.get("enable_lora", False)):
+                raise ValueError(
+                    "vLLM rollouts require full merged-weight sync in this stack: "
+                    "set rollout_matching.vllm.enable_lora=false."
+                )
+            sync_raw = vllm_cfg.get("sync", {}) or {}
+            if sync_raw is not None and not isinstance(sync_raw, Mapping):
+                raise TypeError("rollout_matching.vllm.sync must be a mapping")
+            sync_mode = (
+                str(sync_raw.get("mode", "full") or "full").strip().lower()
+                if isinstance(sync_raw, Mapping)
+                else "full"
+            )
+            if sync_mode != "full":
+                raise ValueError(
+                    "rollout_matching.vllm.sync.mode must be 'full' in this stack "
+                    "(adapter/auto sync modes are unsupported)."
+                )
+
+        # Legacy sleep-mode lifecycle is removed.
+        if bool(vllm_cfg.get("enable_sleep_mode", False)):
+            raise ValueError(
+                "rollout_matching.vllm.enable_sleep_mode is no longer supported."
+            )
+        if bool(vllm_cfg.get("reinit_each_eval", False)):
+            raise ValueError(
+                "rollout_matching.vllm.reinit_each_eval is no longer supported."
+            )
+        sleep_level_raw = vllm_cfg.get("sleep_level", 0)
+        try:
+            sleep_level = int(0 if sleep_level_raw is None else sleep_level_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "rollout_matching.vllm.sleep_level must be an int"
+            ) from exc
+        if sleep_level != 0:
+            raise ValueError(
+                "rollout_matching.vllm.sleep_level is no longer supported (must be 0)."
             )
 
         eval_prompt_variant_raw = cfg.get("eval_prompt_variant", None)
@@ -1793,6 +1895,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 raise RuntimeError(
                     f"Malformed vLLM logprobs payload: non-numeric logprob={lp_raw!r}"
                 ) from exc
+            if not math.isfinite(lp):
+                raise RuntimeError(
+                    f"Malformed vLLM logprobs payload: non-finite logprob={lp_raw!r}"
+                )
             token_logprobs.append(lp)
 
         return token_logprobs, generated_token_text
@@ -2304,12 +2410,34 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise ValueError("rollout_matching.offload must be a mapping")
 
         enabled = bool(cfg_raw.get("enabled", False))
-        offload_model = bool(cfg_raw.get("offload_model", False))
-        offload_optimizer = bool(cfg_raw.get("offload_optimizer", False))
+        offload_model_raw = cfg_raw.get("offload_model", None)
+        offload_optimizer_raw = cfg_raw.get("offload_optimizer", None)
+        if enabled:
+            offload_model = (
+                True if offload_model_raw is None else bool(offload_model_raw)
+            )
+            offload_optimizer = (
+                True
+                if offload_optimizer_raw is None
+                else bool(offload_optimizer_raw)
+            )
+        else:
+            offload_model = (
+                False if offload_model_raw is None else bool(offload_model_raw)
+            )
+            offload_optimizer = (
+                False
+                if offload_optimizer_raw is None
+                else bool(offload_optimizer_raw)
+            )
         return enabled, offload_model, offload_optimizer
 
     @contextmanager
-    def _maybe_rollout_offload_context(self):
+    def _maybe_rollout_offload_context(
+        self,
+        *,
+        rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+    ):
         """Offload training state during colocate vLLM rollout generation.
 
         Fail-fast when offload is requested but not safe to apply.
@@ -2320,8 +2448,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             yield
             return
 
+        backend = (
+            rollout_backend
+            if rollout_backend is not None
+            else self._effective_rollout_backend(context="train")
+        )
         # Only applicable for colocate vLLM rollouts.
-        if self._rollout_backend() != "vllm" or self._vllm_mode() != "colocate":
+        if backend != "vllm" or self._vllm_mode() != "colocate":
             yield
             return
 
@@ -2395,12 +2528,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 torch.cuda.empty_cache()
 
     def _rollout_backend(self) -> Literal["hf", "vllm"]:
-        backend = str(self._cfg("rollout_backend", "vllm")).strip().lower()
-        if backend not in {"hf", "vllm"}:
-            raise ValueError(
-                f"rollout_matching.rollout_backend must be one of {{hf,vllm}}, got {backend!r}"
-            )
-        return backend  # type: ignore[return-value]
+        return self._effective_rollout_backend(context="train")
 
     def _vllm_mode(self) -> Literal["colocate", "server"]:
         """vLLM integration mode.
@@ -2418,6 +2546,308 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 f"got {mode!r}"
             )
         return mode  # type: ignore[return-value]
+
+
+    def _vllm_sleep_mode_enabled(self) -> bool:
+        """Whether colocate vLLM should use sleep-mode lifecycle hooks."""
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("rollout_matching.vllm must be a mapping")
+        return bool(vcfg_raw.get("enable_sleep_mode", False))
+
+
+    def _vllm_reinit_each_eval(self) -> bool:
+        """Whether colocate vLLM engine should be rebuilt every eval window."""
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("rollout_matching.vllm must be a mapping")
+        return bool(vcfg_raw.get("reinit_each_eval", False))
+
+    def _vllm_sleep_level(self, *, default: int = 0) -> int:
+        """Normalized sleep level for optional vLLM sleep-mode lifecycle."""
+        vcfg_raw = self._cfg("vllm", {}) or {}
+        if not isinstance(vcfg_raw, Mapping):
+            raise ValueError("rollout_matching.vllm must be a mapping")
+
+        raw_level = vcfg_raw.get("sleep_level", default)
+        try:
+            level = int(default if raw_level is None else raw_level)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "rollout_matching.vllm.sleep_level must be an int >= 0"
+            ) from exc
+        if level < 0:
+            raise ValueError("rollout_matching.vllm.sleep_level must be >= 0")
+        return level
+
+    def _validate_vllm_eval_lifecycle_preflight(self) -> None:
+        try:
+            from vllm import EngineArgs
+        except Exception as exc:
+            raise RuntimeError(
+                "Eval-time colocate vLLM lifecycle requires a vLLM runtime with sleep/wake "
+                "support. Failed to import vllm.EngineArgs."
+            ) from exc
+
+        try:
+            ctor_sig = inspect.signature(EngineArgs.__init__)
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to inspect vLLM EngineArgs for sleep-mode support preflight."
+            ) from exc
+        if "enable_sleep_mode" not in ctor_sig.parameters:
+            raise RuntimeError(
+                "Eval-time colocate vLLM requires EngineArgs(enable_sleep_mode=...). "
+                "Upgrade vLLM to a runtime that supports sleep mode."
+            )
+
+        llm_engine_cls = None
+        for module_name in (
+            "vllm.v1.engine.llm_engine",
+            "vllm.engine.llm_engine",
+        ):
+            try:
+                module = __import__(module_name, fromlist=["LLMEngine"])
+                candidate = getattr(module, "LLMEngine", None)
+            except Exception:
+                continue
+            if candidate is not None:
+                llm_engine_cls = candidate
+                break
+        if llm_engine_cls is None:
+            raise RuntimeError(
+                "Unable to locate vLLM LLMEngine class for sleep/wake preflight checks."
+            )
+        if not callable(getattr(llm_engine_cls, "sleep", None)) or not callable(
+            getattr(llm_engine_cls, "wake_up", None)
+        ):
+            raise RuntimeError(
+                "Eval-time colocate vLLM requires LLMEngine.sleep(level=...) and "
+                "LLMEngine.wake_up() APIs."
+            )
+
+    @staticmethod
+    def _vllm_raw_engine_or_raise(engine_wrapper: Any) -> Any:
+        raw_engine = getattr(engine_wrapper, "engine", None)
+        if raw_engine is None:
+            raise RuntimeError(
+                "vLLM engine wrapper is missing an underlying `engine` handle."
+            )
+        return raw_engine
+
+    @classmethod
+    def _wake_vllm_engine(cls, engine_wrapper: Any) -> None:
+        raw_engine = cls._vllm_raw_engine_or_raise(engine_wrapper)
+        wake_fn = getattr(raw_engine, "wake_up", None)
+        if not callable(wake_fn):
+            raise RuntimeError(
+                "vLLM runtime does not expose LLMEngine.wake_up(); "
+                "cannot satisfy eval lifecycle requirements."
+            )
+        try:
+            wake_fn()
+        except Exception as exc:
+            raise RuntimeError("Failed to wake vLLM engine for evaluation.") from exc
+
+    @classmethod
+    def _sleep_vllm_engine(cls, engine_wrapper: Any, *, level: int) -> None:
+        raw_engine = cls._vllm_raw_engine_or_raise(engine_wrapper)
+        sleep_fn = getattr(raw_engine, "sleep", None)
+        if not callable(sleep_fn):
+            raise RuntimeError(
+                "vLLM runtime does not expose LLMEngine.sleep(level=...); "
+                "cannot satisfy eval lifecycle requirements."
+            )
+        try:
+            sleep_fn(int(level))
+            return
+        except TypeError:
+            try:
+                sleep_fn(level=int(level))
+                return
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to sleep vLLM engine at level={int(level)}."
+                ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to sleep vLLM engine at level={int(level)}."
+            ) from exc
+
+
+    @staticmethod
+    def _best_effort_fix_vllm_nccl_allocator_atexit_order() -> None:
+        """Best-effort mitigation for vLLM CUDAPluggableAllocator teardown crashes.
+
+        vLLM registers atexit handlers for its NCCL symmetric-memory pluggable
+        allocator globals. In practice we have observed process-finalization
+        crashes with CUDAPluggableAllocator when the allocator wrapper is torn
+        down before the MemPool using it.
+
+        Re-register the handlers so MemPool cleanup runs before allocator-wrapper
+        cleanup (atexit executes handlers in LIFO order).
+
+        This is a best-effort guard: if vLLM internals change or the module is
+        unavailable, we silently skip.
+        """
+        try:
+            import atexit
+
+            from vllm.distributed.device_communicators import (
+                pynccl_allocator as _pynccl_alloc,
+            )
+
+            mem_cleanup = getattr(_pynccl_alloc, "_cleanup_nccl_mem_pool", None)
+            alloc_cleanup = getattr(
+                _pynccl_alloc, "_cleanup_nccl_allocator_wrapper", None
+            )
+            if not callable(mem_cleanup) or not callable(alloc_cleanup):
+                return
+
+            try:
+                atexit.unregister(mem_cleanup)
+            except Exception:
+                pass
+            try:
+                atexit.unregister(alloc_cleanup)
+            except Exception:
+                pass
+
+            # Register allocator cleanup first, then MemPool cleanup, so MemPool
+            # runs first at exit.
+            atexit.register(alloc_cleanup)
+            atexit.register(mem_cleanup)
+        except Exception:
+            return
+
+
+    @staticmethod
+    def _best_effort_patch_vllm_cumem_sleep_no_empty_cache() -> None:
+        """Best-effort mitigation for CUDAPluggableAllocator teardown aborts.
+
+        In vLLM sleep mode, `CuMemAllocator.sleep()` currently calls
+        `torch.cuda.empty_cache()`. In some multi-process runs we observe a hard
+        abort during interpreter shutdown from `CUDAPluggableAllocator::raw_delete`
+        ("Trying to free a pointer not allocated here") during MemPool teardown.
+
+        One plausible trigger is `empty_cache()` interacting poorly with
+        CUDAPluggableAllocator-backed pools, leaving bookkeeping inconsistent at
+        finalization time.
+
+        As a conservative mitigation, wrap vLLM's sleep method so that
+        `torch.cuda.empty_cache()` is a no-op for the duration of the sleep call.
+
+        This patch is best-effort, version-tolerant, and only applied once.
+        """
+        try:
+            from vllm.device_allocator import cumem as _cumem
+
+            CuMemAllocator = getattr(_cumem, "CuMemAllocator", None)
+            if CuMemAllocator is None:
+                return
+
+            orig_sleep = getattr(CuMemAllocator, "sleep", None)
+            if not callable(orig_sleep):
+                return
+
+            if bool(getattr(orig_sleep, "_coordexp_no_empty_cache", False)):
+                return
+
+            def _sleep_no_empty_cache(self, *args, **kwargs):
+                import torch
+
+                orig_empty_cache = torch.cuda.empty_cache
+                try:
+                    torch.cuda.empty_cache = lambda: None
+                    return orig_sleep(self, *args, **kwargs)
+                finally:
+                    torch.cuda.empty_cache = orig_empty_cache
+
+            setattr(_sleep_no_empty_cache, "_coordexp_no_empty_cache", True)
+            CuMemAllocator.sleep = _sleep_no_empty_cache  # type: ignore[assignment]
+        except Exception:
+            return
+
+
+    @staticmethod
+    def _best_effort_cleanup_vllm_sleep_mode_pools() -> None:
+        """Best-effort cleanup for vLLM sleep-mode pluggable allocator pools.
+
+        vLLM's sleep mode uses PyTorch MemPool(s) backed by CUDAPluggableAllocator
+        instances (e.g. CuMemAllocator pools for tags like 'weights' and
+        'kv_cache'). In some multi-process runs we've observed teardown crashes
+        during Python finalization when a lingering MemPool is destructed.
+
+        To reduce the chance of that late-finalization crash, explicitly drop
+        references to vLLM's global MemPool/allocator pools while the
+        interpreter and Torch CUDA runtime are still fully alive.
+
+        This is best-effort and intentionally conservative: it only cleans up
+        already-created instances and never instantiates new allocators.
+        """
+        try:
+            import gc
+
+            # vLLM CuMemAllocator (sleep mode pools for weights/kv_cache).
+            # IMPORTANT: do not clear `pointer_to_data` here. CUDAPluggableAllocator
+            # frees may invoke the Python free callback during MemPool teardown,
+            # which expects pointer bookkeeping to still be present.
+            try:
+                from vllm.device_allocator.cumem import CuMemAllocator
+
+                inst = getattr(CuMemAllocator, "instance", None)
+                if inst is not None:
+                    try:
+                        getattr(inst, "allocator_and_pools", {}).clear()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # vLLM NCCL symmetric-memory allocator (if enabled).
+            try:
+                import sys
+
+                pynccl_allocator = sys.modules.get(
+                    "vllm.distributed.device_communicators.pynccl_allocator"
+                )
+                if pynccl_allocator is None:
+                    from vllm.distributed.device_communicators import (
+                        pynccl_allocator,
+                    )
+
+                # Ensure pool is dropped before wrapper (MemPool depends on it).
+                if getattr(pynccl_allocator, "_mem_pool", None) is not None:
+                    pynccl_allocator._mem_pool = None
+                if getattr(pynccl_allocator, "_allocator_wrapper", None) is not None:
+                    pynccl_allocator._allocator_wrapper = None
+                if getattr(pynccl_allocator, "_allocator", None) is not None:
+                    pynccl_allocator._allocator = None
+            except Exception:
+                pass
+
+            gc.collect()
+        except Exception:
+            return
+
+    @contextmanager
+    def _maybe_eval_vllm_colocate_window(
+        self,
+        *,
+        rollout_backend: Literal["hf", "vllm"],
+    ):
+        if rollout_backend != "vllm" or self._vllm_mode() != "colocate":
+            yield
+            return
+
+        with self._maybe_rollout_offload_context(rollout_backend=rollout_backend):
+            _ = self._ensure_vllm_engine()
+            prev = bool(getattr(self, "_eval_vllm_window_active", False))
+            self._eval_vllm_window_active = True
+            try:
+                yield
+            finally:
+                self._eval_vllm_window_active = prev
 
     def _vllm_server_cfg(self) -> Mapping[str, Any]:
         vcfg_raw = self._cfg("vllm", {}) or {}
@@ -2582,7 +3012,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return list(out)
 
 
-    def _rollout_decode_batch_size_per_rank(self) -> int:
+    def _rollout_decode_batch_size_per_rank(
+        self,
+        *,
+        rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+    ) -> int:
         """Derived rollout request chunk size per learner rank.
 
         `decode_batch_size` is defined as a per-rollout-GPU cap per generation call.
@@ -2595,7 +3029,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
           and learner world size.
         """
         cap = int(self._decode_batch_size())
-        backend = str(self._rollout_backend()).strip().lower()
+        backend = (
+            rollout_backend
+            if rollout_backend is not None
+            else self._effective_rollout_backend(context="train")
+        )
         if backend != "vllm":
             return max(1, int(cap))
 
@@ -2653,23 +3091,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return int(per_rank)
 
-    def _vllm_server_sync_cfg(self) -> Tuple[str, bool]:
+    def _vllm_server_sync_cfg(self) -> str:
         vcfg_raw = self._cfg("vllm", {}) or {}
         if not isinstance(vcfg_raw, Mapping):
             raise ValueError("rollout_matching.vllm must be a mapping")
         sync_raw = vcfg_raw.get("sync", {}) or {}
         if not isinstance(sync_raw, Mapping):
-            raise ValueError(
-                "rollout_matching.vllm.sync must be a mapping"
-            )
+            raise ValueError("rollout_matching.vllm.sync must be a mapping")
 
         mode = str(sync_raw.get("mode", "full") or "full").strip().lower()
-        if mode not in {"full", "adapter", "auto"}:
+        if mode != "full":
             raise ValueError(
-                "rollout_matching.vllm.sync.mode must be one of: full|adapter|auto"
+                "rollout_matching.vllm.sync.mode must be 'full' in this stack "
+                "(adapter/auto sync modes are unsupported)."
             )
-        fallback_to_full = bool(sync_raw.get("fallback_to_full", True))
-        return mode, fallback_to_full
+        return "full"
 
     @staticmethod
     def _normalize_rollout_seed_int32(seed: int) -> int:
@@ -3007,16 +3443,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.vllm.max_model_len must be > 0"
             )
 
-        # NOTE: vLLM LoRA on multimodal models (Qwen3-VL ViT) can be unstable on
-        # some stacks. Allow disabling vLLM LoRA and instead syncing merged
-        # weights into the colocated vLLM engine (GRPO-style).
         enable_lora = bool(vcfg.get("enable_lora", False))
+        if enable_lora:
+            raise RuntimeError(
+                "vLLM rollouts require full merged-weight sync in this stack: "
+                "set rollout_matching.vllm.enable_lora=false."
+            )
 
         load_format = vcfg.get("load_format", None)
         if load_format is None:
             # When we sync weights from the training model, loading real weights
             # from disk is unnecessary; dummy init reduces overhead.
-            load_format = "dummy" if not enable_lora else "auto"
+            load_format = "dummy"
         if not isinstance(load_format, str):
             raise ValueError(
                 "rollout_matching.vllm.load_format must be a string"
@@ -3025,10 +3463,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         gpu_mem = float(vcfg.get("gpu_memory_utilization", 0.45))
         enable_prefix_caching = bool(vcfg.get("enable_prefix_caching", True))
-        sleep_level = int(vcfg.get("sleep_level", 0) or 0)
+        # Legacy sleep-mode lifecycle is removed from Stage-2.
+        enable_sleep_mode = False
+        sleep_level = 0
         enforce_eager = bool(vcfg.get("enforce_eager", False))
         disable_custom_all_reduce = bool(vcfg.get("disable_custom_all_reduce", True))
-        max_num_seqs_raw = vcfg.get("max_num_seqs", None)
+
+        decode_bs_per_rank = max(
+            1,
+            int(self._rollout_decode_batch_size_per_rank(rollout_backend="vllm")),
+        )
+        # Avoid vLLM's very large default (256), which can reserve excessive KV cache
+        # memory in colocate eval-only runs and starve full-sync merge/unmerge steps.
+        # Keep enough headroom for scheduler jitter while tying capacity to request load.
+        default_max_num_seqs = max(8, int(decode_bs_per_rank) * 4)
+
+        max_num_seqs_raw = vcfg.get("max_num_seqs", default_max_num_seqs)
         max_num_seqs: Optional[int] = None
         if max_num_seqs_raw is not None:
             try:
@@ -3152,18 +3602,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 vcfg.get("skip_mm_profiling")
             )
 
-        # Patch vLLM to allow loading LoRA from in-memory tensors (only needed
-        # when vLLM LoRA is enabled).
-        if enable_lora:
-            try:
-                from swift.trainers.rlhf_trainer.utils import patch_vllm_load_adapter
-
-                patch_vllm_load_adapter()
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    "vLLM rollout backend is enabled but vLLM is unavailable or incompatible. "
-                    "Install/upgrade vLLM in the ms env, or set rollout_matching.rollout_backend: hf."
-                ) from exc
+        # Optional eval-scoped wake/sleep lifecycle management.
+        # Pass via VllmEngine(enable_sleep_mode=...) when supported; otherwise
+        # fall back to engine_kwargs to avoid duplicate-kwarg failures.
 
         model_dir = getattr(self.model, "model_dir", None) or getattr(
             getattr(self.model, "model", None), "model_dir", None
@@ -3178,16 +3619,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             getattr(model_info, "torch_dtype", None) if model_info is not None else None
         )
 
-        # Derive max_lora_rank from peft config when possible (must be >= actual rank).
         max_lora_rank = 16
-        if enable_lora:
-            peft_cfg = getattr(self.model, "peft_config", None)
-            if isinstance(peft_cfg, Mapping) and peft_cfg:
-                cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
-                try:
-                    max_lora_rank = int(getattr(cfg0, "r", max_lora_rank))
-                except (TypeError, ValueError):
-                    raise
 
         # Build TP subgroup (colocate only; server mode unsupported here).
         if tp_size > 1:
@@ -3214,12 +3646,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         logger.info(
             "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
-            "max_num_seqs=%s limit_mm_per_prompt=%s engine_kwargs=%s",
+            "decode_batch_size_per_rank=%s max_num_seqs=%s sleep_mode=%s limit_mm_per_prompt=%s engine_kwargs=%s",
             tp_size,
             world_size,
             max_model_len,
             gpu_mem,
-            max_num_seqs if max_num_seqs is not None else 256,
+            int(decode_bs_per_rank),
+            max_num_seqs,
+            bool(enable_sleep_mode),
             limit_mm_per_prompt,
             vllm_engine_kwargs or {},
         )
@@ -3256,7 +3690,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 tensor_parallel_size=tp_size,
                 gpu_memory_utilization=gpu_mem,
                 max_model_len=max_model_len,
-                max_num_seqs=max_num_seqs if max_num_seqs is not None else 256,
+                max_num_seqs=max_num_seqs,
                 enforce_eager=enforce_eager,
                 disable_custom_all_reduce=disable_custom_all_reduce,
                 limit_mm_per_prompt=limit_mm_per_prompt,
@@ -3277,32 +3711,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "Set rollout_backend: hf to bypass vLLM."
             ) from exc
 
-        if sleep_level > 0:
-            try:
-                engine.engine.sleep(sleep_level)
-            except (TypeError, ValueError):
-                raise
-
         self._vllm_engine = engine
         return engine
 
     def _sync_vllm_rollout_model_if_needed(self) -> None:
-        """Sync the rollout model weights into the colocated vLLM engine.
+        """Sync merged rollout weights into the colocated vLLM engine.
 
-        We support two modes:
-        - vLLM LoRA enabled: push adapter tensors via `add_lora` (fast, but can be
-          unstable on some multimodal stacks).
-        - vLLM LoRA disabled: merge adapters into the training model weights and
-          load the merged weights into vLLM (GRPO-style; more robust for ViT).
+        Full merged-weight sync is the only supported mode in this stack.
         """
         vcfg = self._cfg("vllm", {}) or {}
-        enable_lora = (
-            bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
-        )
+        enable_lora = bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
         if enable_lora:
-            self._sync_vllm_lora_if_needed()
-        else:
-            self._sync_vllm_full_weights_if_needed()
+            raise RuntimeError(
+                "vLLM rollouts require full merged-weight sync in this stack: "
+                "set rollout_matching.vllm.enable_lora=false."
+            )
+        self._sync_vllm_full_weights_if_needed()
 
     def _sync_vllm_full_weights_if_needed(self) -> None:
         """Sync merged (LoRA-applied) weights into vLLM when vLLM LoRA is disabled."""
@@ -3314,13 +3738,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         from contextlib import nullcontext
 
+        unwrap_model = getattr(getattr(self, "accelerator", None), "unwrap_model", None)
+        train_model = unwrap_model(self.model) if callable(unwrap_model) else self.model
+
         try:
             from accelerate.utils import is_peft_model
         except (TypeError, ValueError):
             is_peft_model = None  # type: ignore[assignment]
 
         is_peft = (
-            bool(is_peft_model(self.model)) if is_peft_model is not None else False
+            bool(is_peft_model(train_model)) if is_peft_model is not None else False
         )
 
         merge_cm = nullcontext()
@@ -3332,13 +3759,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     patch_lora_unmerge,
                 )
 
-                merge_cm = patch_lora_merge(self.model)
-                unmerge_cm = patch_lora_unmerge(self.model)
+                merge_cm = patch_lora_merge(train_model)
+                unmerge_cm = patch_lora_unmerge(train_model)
             except (TypeError, ValueError):
                 merge_cm = nullcontext()
                 unmerge_cm = nullcontext()
 
-        params = [p for _, p in self.model.named_parameters()]
+        params = [p for _, p in train_model.named_parameters()]
         gather_if_zero3 = get_gather_if_zero3_context(self)
 
         with gather_if_zero3(params), merge_cm, torch.no_grad():
@@ -3347,17 +3774,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if is_peft:
                     try:
                         # Merge adapter weights into base weights for extraction.
-                        self.model.merge_adapter()
+                        train_model.merge_adapter()
                         merged = True
                     except (TypeError, ValueError) as exc:
                         raise RuntimeError(
-                            "vLLM LoRA is disabled, but we failed to merge the adapter weights from the training "
-                            "model. Mitigations: set rollout_matching.vllm.enable_lora=true "
-                            "(may be unstable on multimodal), or ensure your PEFT stack supports "
+                            "Failed to merge adapter weights from the training model for vLLM full sync. "
+                            "Mitigations: switch rollout backend to HF or ensure your PEFT stack supports "
                             "merge_adapter/unmerge_adapter."
                         ) from exc
 
-                state_dict = self.model.state_dict()
+                state_dict = train_model.state_dict()
                 if is_peft:
                     # Follow ms-swift GRPO key mapping conventions to match vLLM model names.
                     prefix_removed = {
@@ -3368,7 +3794,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         k.replace(".base_layer", ""): v
                         for k, v in prefix_removed.items()
                     }
-                    prefix = getattr(self.model, "prefix", None)
+                    prefix = getattr(train_model, "prefix", None)
                     if isinstance(prefix, str) and prefix:
                         state_dict = {
                             k: v for k, v in state_dict.items() if prefix not in k
@@ -3388,7 +3814,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 # Never leave the training model in merged state, even if vLLM loading fails.
                 if is_peft and merged:
                     with unmerge_cm:
-                        self.model.unmerge_adapter()
+                        train_model.unmerge_adapter()
 
         try:
             engine.engine.reset_prefix_cache()
@@ -3398,100 +3824,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self._vllm_last_loaded_step = step
 
     def _sync_vllm_lora_if_needed(self) -> None:
-        """Sync LoRA adapter weights into vLLM on global_step boundaries."""
-        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        if step == self._vllm_last_loaded_step:
-            return
-
-        engine = self._ensure_vllm_engine()
-
-        # Build LoRA tensors (CPU) for vLLM.
-        peft_cfg = getattr(self.model, "peft_config", None)
-        if not isinstance(peft_cfg, Mapping) or not peft_cfg:
-            raise RuntimeError(
-                "vLLM rollout backend requires a PEFT LoRA model (peft_config missing). "
-                "Switch rollout_backend: hf if training is not LoRA."
-            )
-        cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
-
-        try:
-            peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            if hasattr(cfg0, "to_dict"):
-                peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
-            else:
-                peft_cfg_dict = {}
-
-        try:
-            from peft.utils.save_and_load import get_peft_model_state_dict
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError("peft is required for vLLM LoRA sync") from exc
-
-        named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
-        if not named:
-            raise RuntimeError(
-                "No LoRA parameters found on model, but vLLM LoRA sync is required. "
-                "Disable vLLM (rollout_backend: hf) or ensure LoRA is enabled."
-            )
-        names = [n for n, _ in named]
-        params = [p for _, p in named]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-        with gather_if_zero3(params):
-            subset = {}
-            for n, p in zip(names, params):
-                t = p.full_tensor() if hasattr(p, "full_tensor") else p
-                subset[n] = t.detach()
-            lora_params = get_peft_model_state_dict(self.model, subset)
-            lora_params = {
-                k: (v.full_tensor() if hasattr(v, "full_tensor") else v).detach().cpu()
-                for k, v in lora_params.items()
-            }
-
-        try:
-            from swift.trainers.rlhf_trainer.utils import TensorLoRARequest
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "Unable to import TensorLoRARequest for vLLM LoRA sync"
-            ) from exc
-        if TensorLoRARequest is None:
-            raise RuntimeError("vLLM is not available (TensorLoRARequest is None)")
-
-        lora_int_id = int(time.time_ns() % 0x7FFFFFFF)
-        lora_request = TensorLoRARequest(
-            lora_name=f"{lora_int_id}",
-            lora_int_id=lora_int_id,
-            lora_path="dummy_lora_path",
-            peft_config=peft_cfg_dict,
-            lora_tensors=lora_params,
+        raise RuntimeError(
+            "Adapter-only vLLM sync is unsupported in this stack. "
+            "vLLM rollouts require full merged-weight sync: set "
+            "rollout_matching.vllm.enable_lora=false."
         )
-        try:
-            engine.engine.add_lora(lora_request)
-            try:
-                engine.engine.reset_prefix_cache()
-            except (TypeError, ValueError):
-                raise
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "Failed to load LoRA adapter into vLLM. "
-                "If this is due to multimodal/Vision LoRA incompatibility, freeze ViT or set rollout_backend: hf."
-            ) from exc
-
-        self._vllm_last_loaded_step = step
 
     def _effective_vllm_server_sync_mode(self) -> str:
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        enable_lora = (
-            bool(vcfg_raw.get("enable_lora", False))
-            if isinstance(vcfg_raw, Mapping)
-            else False
-        )
-
-        mode, _fallback_to_full = self._vllm_server_sync_cfg()
-        if bool(getattr(self, "_vllm_server_force_full_sync", False)):
-            return "full"
-        if mode == "auto":
-            return "adapter" if enable_lora else "full"
-        return mode
+        return self._vllm_server_sync_cfg()
 
     def _ensure_vllm_server_client(self) -> Any:
         """Create an ms-swift vLLM server client (lazy).
@@ -3670,6 +4010,80 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             self._vllm_server_client = None
             setattr(self, "_vllm_server_comm_inited", False)
+
+    def _shutdown_vllm_colocate_engine(
+        self, *, wake_before_release: bool = True
+    ) -> None:
+        """Best-effort cleanup for colocate vLLM engine resources."""
+        engine = getattr(self, "_vllm_engine", None)
+        if engine is None:
+            return
+
+        raw_engine: Optional[Any] = None
+
+        if bool(wake_before_release):
+            try:
+                raw_engine = self._vllm_raw_engine_or_raise(engine)
+                is_sleeping_fn = getattr(raw_engine, "is_sleeping", None)
+                is_sleeping = (
+                    bool(is_sleeping_fn()) if callable(is_sleeping_fn) else False
+                )
+                if is_sleeping:
+                    self._wake_vllm_engine(engine)
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                logger.warning(
+                    "Failed to wake colocate vLLM engine during shutdown: %s", exc
+                )
+
+        if raw_engine is None:
+            try:
+                raw_engine = self._vllm_raw_engine_or_raise(engine)
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
+                raw_engine = None
+
+        if raw_engine is not None:
+            try:
+                shutdown_fn = getattr(raw_engine, "shutdown", None)
+                if callable(shutdown_fn):
+                    shutdown_fn()
+                else:
+                    engine_core = getattr(raw_engine, "engine_core", None)
+                    core_shutdown_fn = getattr(engine_core, "shutdown", None)
+                    if callable(core_shutdown_fn):
+                        core_shutdown_fn()
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                logger.warning(
+                    "Failed to shutdown colocate vLLM engine cleanly: %s", exc
+                )
+
+        self._vllm_engine = None
+        self._vllm_last_loaded_step = -1
+        self._vllm_tp_group = None
+        self._vllm_tp_size = 1
+        self._eval_vllm_window_active = False
+
+        try:
+            del engine
+        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+            pass
 
     def _vllm_server_infer_guard(self):
         """Optional hook for staging safe vLLM server inference.
@@ -4008,34 +4422,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return
 
         eff_mode = self._effective_vllm_server_sync_mode()
-        if int(world_size) > 1 and eff_mode != "full":
+        if eff_mode != "full":
             raise ValueError(
-                "rollout_matching.vllm.sync.mode must resolve to 'full' under multi-process learners "
-                f"(world_size={int(world_size)}). Got effective sync mode={eff_mode!r}."
+                "rollout_matching.vllm.sync.mode must be 'full' in this stack "
+                "(adapter/auto sync modes are unsupported)."
             )
 
-        # Single-process learner: allow adapter/full sync modes.
+        # Single-process learner: full sync.
         if (
             dist is None
             or (not dist.is_available())
             or (not dist.is_initialized())
             or int(world_size) == 1
         ):
-            vcfg_raw = self._cfg("vllm", {}) or {}
-            enable_lora = (
-                bool(vcfg_raw.get("enable_lora", False))
-                if isinstance(vcfg_raw, Mapping)
-                else False
-            )
-
-            mode, fallback_to_full = self._vllm_server_sync_cfg()
-            _ = mode
-
-            if eff_mode == "adapter" and not enable_lora:
-                raise ValueError(
-                    "rollout_matching.vllm.sync.mode=adapter requires rollout_matching.vllm.enable_lora: true"
-                )
-
             client = self._ensure_vllm_server_client()
             if not bool(getattr(self, "_vllm_server_comm_inited", False)):
                 try:
@@ -4047,39 +4446,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
                     ) from exc
 
-            if eff_mode == "adapter":
-                # Optional runtime sanity check (server must have vLLM LoRA enabled).
-                try:
-                    info = client.get_engine_type()
-                    if isinstance(info, dict) and not bool(
-                        info.get("enable_lora", False)
-                    ):
-                        raise RuntimeError(
-                            "vLLM server reports enable_lora=false, but adapter-only sync was requested. "
-                            "Launch the rollout server with vLLM LoRA enabled (e.g. swift rollout --vllm_enable_lora true), "
-                            "or set vllm.sync.mode=full."
-                        )
-                except (TypeError, ValueError) as exc:
-                    # If the check itself fails, continue; sync will fail with a clearer error.
-                    logger.warning(
-                        "Unable to verify rollout server LoRA capability: %s", exc
-                    )
-
-                try:
-                    self._sync_vllm_server_adapter(client)
-                except (TypeError, ValueError) as exc:
-                    if bool(fallback_to_full):
-                        logger.warning(
-                            "Adapter-only vLLM server sync failed; falling back to full sync for the remainder of the run. "
-                            "Error: %s",
-                            exc,
-                        )
-                        self._vllm_server_force_full_sync = True
-                        self._sync_vllm_server_full_weights(client)
-                    else:
-                        raise
-            else:
-                self._sync_vllm_server_full_weights(client)
+            self._sync_vllm_server_full_weights(client)
 
             # Keep local state consistent across ranks so the next call is stable.
             self._vllm_server_last_synced_step = step
@@ -4181,7 +4548,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     except (TypeError, ValueError) as exc:
                         raise RuntimeError(
                             "vLLM server full sync requires merging adapter weights from the training model. "
-                            "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter, or use sync.mode=adapter."
+                            "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter (required for vLLM full sync in this stack), or switch rollout_matching.rollout_backend=hf."
                         ) from exc
 
                 state_dict = self.model.state_dict()
@@ -4268,69 +4635,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         _flush_bucket()
 
     def _sync_vllm_server_adapter(self, client: Any) -> None:
-        """Adapter-only sync to vLLM server (requires vLLM LoRA)."""
-        peft_cfg = getattr(self.model, "peft_config", None)
-        if not isinstance(peft_cfg, Mapping) or not peft_cfg:
-            raise RuntimeError(
-                "vLLM server adapter sync requires a PEFT LoRA model (peft_config missing). "
-                "Use sync.mode=full or disable server mode."
-            )
-        cfg0 = peft_cfg.get("default") or next(iter(peft_cfg.values()), None)
-
-        try:
-            peft_cfg_dict = asdict(cfg0)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            if hasattr(cfg0, "to_dict"):
-                peft_cfg_dict = cfg0.to_dict()  # type: ignore[assignment]
-            else:
-                peft_cfg_dict = {}
-
-        try:
-            from peft.utils.save_and_load import get_peft_model_state_dict
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError("peft is required for vLLM server adapter sync") from exc
-
-        named = [(n, p) for n, p in self.model.named_parameters() if "lora_" in n]
-        if not named:
-            raise RuntimeError(
-                "No LoRA parameters found on model, but adapter sync is enabled. "
-                "Mitigations: set sync.mode=full or ensure LoRA/DoRA is enabled."
-            )
-
-        names = [n for n, _ in named]
-        params = [p for _, p in named]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-        with gather_if_zero3(params):
-            subset: Dict[str, torch.Tensor] = {}
-            for n, p in zip(names, params):
-                t = p.full_tensor() if hasattr(p, "full_tensor") else p
-                subset[n] = t.detach()
-            lora_params = get_peft_model_state_dict(self.model, subset)
-            lora_params = {
-                k: (v.full_tensor() if hasattr(v, "full_tensor") else v).detach()
-                for k, v in lora_params.items()
-            }
-
-        try:
-            from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "FlattenedTensorBucket is required for vLLM server adapter sync"
-            ) from exc
-
-        bucket = FlattenedTensorBucket(named_tensors=list(lora_params.items()))
-        client.update_adapter_flattened_param(
-            peft_cfg_dict,
-            bucket.get_metadata(),
-            bucket.get_flattened_tensor(),
+        _ = client
+        raise RuntimeError(
+            "Adapter-only vLLM server sync is unsupported in this stack. "
+            "Use rollout_matching.vllm.sync.mode=full and "
+            "rollout_matching.vllm.enable_lora=false."
         )
-
-        try:
-            client.reset_prefix_cache()
-        except (TypeError, ValueError) as exc:
-            logger.warning(
-                "Failed to reset vLLM server prefix cache after adapter sync: %s", exc
-            )
 
     def _vllm_infer_tp_group(
         self, infer_requests: List[Dict[str, Any]], request_config: Any
@@ -4866,8 +5176,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
         """vLLM rollout backend that also captures per-token logprobs.
 
-        NOTE: vLLM logprob tracing is experimental and not yet verified end-to-end.
-
         Used by eval-step confidence scoring.
         """
 
@@ -4964,8 +5272,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
             infer_requests.append(InferRequest(messages=msgs))
 
-        # Ensure vLLM engine init + LoRA sync + infer are all covered by offload.
-        with self._maybe_rollout_offload_context():
+        # Ensure vLLM engine init + full sync + infer are covered by offload.
+        # During an eval-scoped colocate lifecycle window, offload is handled once
+        # by the outer evaluate() context to avoid repeated CPU<->GPU transfers.
+        offload_cm = (
+            nullcontext()
+            if bool(getattr(self, "_eval_vllm_window_active", False))
+            else self._maybe_rollout_offload_context(rollout_backend="vllm")
+        )
+        with offload_cm:
             self._sync_vllm_rollout_model_if_needed()
             outs: List[Any] = self._vllm_infer_tp_group(infer_requests, request_config)
 
@@ -4973,13 +5288,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise RuntimeError("vLLM returned unexpected number of outputs")
 
         results: List[Any] = []
-        for out in outs:
+        for out_idx, out in enumerate(outs):
             if isinstance(out, Exception):
-                if with_logprobs:
-                    results.append(([], "", decode_mode, [], [], []))
-                else:
-                    results.append(([], "", decode_mode, []))
-                continue
+                raise RuntimeError(
+                    "vLLM decode failed for a rollout sample "
+                    f"(sample_idx={int(out_idx)}): {out!r}"
+                ) from out
 
             text = ""
             token_ids: List[int] = []
@@ -5004,13 +5318,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         choice_logprobs
                     )
                 )
-                if len(token_logprobs) != len(token_ids) or len(
-                    generated_token_text
-                ) != len(token_ids):
-                    raise RuntimeError(
-                        "vLLM rollout logprob trace length mismatch: "
-                        f"token_ids={len(token_ids)} logprobs={len(token_logprobs)} text={len(generated_token_text)}"
+                if len(token_logprobs) != len(generated_token_text):
+                    trace_pair_len = min(
+                        len(token_logprobs), len(generated_token_text)
                     )
+                    logger.warning(
+                        "vLLM rollout trace payload length mismatch; clamping to common length. "
+                        "sample_idx=%s token_ids=%s logprobs=%s text=%s",
+                        int(out_idx),
+                        int(len(token_ids)),
+                        int(len(token_logprobs)),
+                        int(len(generated_token_text)),
+                    )
+                    token_logprobs = token_logprobs[:trace_pair_len]
+                    generated_token_text = generated_token_text[:trace_pair_len]
                 results.append(
                     (
                         token_ids,
@@ -5373,6 +5694,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         samples: Sequence[Mapping[str, Any]],
         *,
         prompt_variant_override: Optional[str] = None,
+        rollout_backend: Optional[Literal["hf", "vllm"]] = None,
     ) -> List[Mapping[str, Any]]:
         """Normalize samples before calling the rollout backend.
 
@@ -5384,7 +5706,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         edits are required.
         """
 
-        backend = self._rollout_backend()
+        backend = (
+            rollout_backend
+            if rollout_backend is not None
+            else self._effective_rollout_backend(context="train")
+        )
 
         user_prompt_override: str | None = None
         system_prompt_override: str | None = None
@@ -5476,11 +5802,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         samples: Sequence[Mapping[str, Any]],
         *,
         prompt_variant_override: Optional[str] = None,
+        rollout_backend: Optional[Literal["hf", "vllm"]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
-        backend = self._rollout_backend()
+        backend = (
+            rollout_backend
+            if rollout_backend is not None
+            else self._effective_rollout_backend(context="train")
+        )
         samples_for_rollout = self._prepare_samples_for_rollout(
             samples,
             prompt_variant_override=prompt_variant_override,
+            rollout_backend=backend,
         )
 
         if backend == "hf":
@@ -5491,7 +5823,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if mode == "server":
                 # Enforce the per-rank rollout request cap centrally so all callers
                 # (Stage2-AB + evaluator) obey decode_batch_size topology constraints.
-                chunk_size = max(1, int(self._rollout_decode_batch_size_per_rank()))
+                chunk_size = max(
+                    1,
+                    int(
+                        self._rollout_decode_batch_size_per_rank(
+                            rollout_backend=backend
+                        )
+                    ),
+                )
                 if int(len(samples_for_rollout)) > 0:
                     chunk_size = min(chunk_size, int(len(samples_for_rollout)))
 
@@ -7738,14 +8077,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             eval_detection_enabled
             and eval_detection_score_mode in {"confidence_postop", "confidence"}
         )
+        eval_rollout_backend = self._effective_rollout_backend(context="eval")
+        eval_vllm_mode = self._vllm_mode() if eval_rollout_backend == "vllm" else "n/a"
+        logger.info(
+            "Starting evaluate(): resolved_eval_rollout_backend=%s vllm_mode=%s",
+            eval_rollout_backend,
+            eval_vllm_mode,
+        )
 
         confidence_postop_opts = None
         if eval_detection_use_confidence_postop:
-            backend_norm = str(self._rollout_backend()).strip().lower()
-            if backend_norm not in {"hf", "vllm"}:
+            if eval_rollout_backend not in {"hf", "vllm"}:
                 raise ValueError(
                     "rollout_matching.eval_detection.score_mode=confidence_postop requires "
-                    "rollout_matching.rollout_backend in {'hf', 'vllm'} (token logprob traces must be available)."
+                    "effective eval rollout backend in {'hf', 'vllm'} "
+                    "(token logprob traces must be available)."
                 )
 
             try:
@@ -7831,6 +8177,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         n_steps = 0.0
         eval_detection_records_local: List[Dict[str, Any]] = []
         eval_record_counter_local = 0
+        trace_fallback_count_local = 0.0
+        vllm_decode_error_count_local = 0.0
+        trace_fallback_window_active = False
 
         # Optional qualitative monitor dumps during eval (rank0 only).
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -7854,7 +8203,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # Mark early to avoid duplicate dumps in the same global_step.
             self._monitor_dump_last_step = int(gs)
 
-        with torch.no_grad():
+        with torch.no_grad(), self._maybe_eval_vllm_colocate_window(
+            rollout_backend=eval_rollout_backend
+        ):
             for batch in dl:
                 # For rollout-matching, we expect identity_data_collator to yield a
                 # list[dict] of raw samples (with `messages` + GT geometry).
@@ -7869,35 +8220,112 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 n_steps += 1.0
 
                 has_token_trace = bool(eval_detection_use_confidence_postop)
+                sample_rollouts: List[Tuple[Mapping[str, Any], Any]] = []
                 if has_token_trace:
                     batch_for_rollout = self._prepare_samples_for_rollout(
                         batch,
                         prompt_variant_override=eval_prompt_variant,
+                        rollout_backend=eval_rollout_backend,
                     )
-                    backend_norm = str(self._rollout_backend()).strip().lower()
-                    if backend_norm == "hf":
+                    if eval_rollout_backend == "hf":
                         rollout_results = self._rollout_many_hf_traced(batch_for_rollout)
-                    elif backend_norm == "vllm":
-                        rollout_results = self._rollout_many_vllm_traced(batch_for_rollout)
+                        if len(rollout_results) != len(batch):
+                            raise RuntimeError(
+                                "rollout backend returned unexpected number of results"
+                            )
+                        sample_rollouts = list(zip(batch, rollout_results))
+                    elif eval_rollout_backend == "vllm":
+                        try:
+                            rollout_results = self._rollout_many_vllm_traced(
+                                batch_for_rollout
+                            )
+                            if len(rollout_results) != len(batch):
+                                raise RuntimeError(
+                                    "rollout backend returned unexpected number of results"
+                                )
+                            sample_rollouts = list(zip(batch, rollout_results))
+                        except Exception as batch_exc:
+                            sample_rollouts = []
+                            for sample_idx, sample in enumerate(batch):
+                                sample_prepared = self._prepare_samples_for_rollout(
+                                    [sample],
+                                    prompt_variant_override=eval_prompt_variant,
+                                    rollout_backend=eval_rollout_backend,
+                                )
+                                try:
+                                    rollout_one = self._rollout_many_vllm_traced(
+                                        sample_prepared,
+                                        debug_samples=[sample],
+                                        request_index_offset=int(sample_idx),
+                                    )
+                                    if len(rollout_one) != 1:
+                                        raise RuntimeError(
+                                            "rollout backend returned unexpected number of results"
+                                        )
+                                    sample_rollouts.append((sample, rollout_one[0]))
+                                except Exception as sample_exc:
+                                    vllm_decode_error_count_local += 1.0
+                                    logger.warning(
+                                        "Eval vLLM decode failed for sample_idx=%s; skipping sample. "
+                                        "error=%s: %s",
+                                        int(sample_idx),
+                                        sample_exc.__class__.__name__,
+                                        sample_exc,
+                                    )
+                            if not sample_rollouts:
+                                raise RuntimeError(
+                                    "Eval vLLM rollout failed for all samples in a batch; "
+                                    "aborting evaluation."
+                                ) from batch_exc
                     else:
                         raise ValueError(
-                            "eval-step confidence scoring requires rollout_backend in {'hf','vllm'}"
+                            "eval-step confidence scoring requires effective eval rollout backend "
+                            "in {'hf','vllm'}"
                         )
                 else:
-                    if eval_prompt_variant is None:
-                        rollout_results = self._rollout_many(batch)
-                    else:
+                    try:
                         rollout_results = self._rollout_many(
                             batch,
                             prompt_variant_override=eval_prompt_variant,
+                            rollout_backend=eval_rollout_backend,
                         )
+                        if len(rollout_results) != len(batch):
+                            raise RuntimeError(
+                                "rollout backend returned unexpected number of results"
+                            )
+                        sample_rollouts = list(zip(batch, rollout_results))
+                    except Exception as batch_exc:
+                        if eval_rollout_backend != "vllm":
+                            raise
+                        sample_rollouts = []
+                        for sample_idx, sample in enumerate(batch):
+                            try:
+                                rollout_one = self._rollout_many(
+                                    [sample],
+                                    prompt_variant_override=eval_prompt_variant,
+                                    rollout_backend=eval_rollout_backend,
+                                )
+                                if len(rollout_one) != 1:
+                                    raise RuntimeError(
+                                        "rollout backend returned unexpected number of results"
+                                    )
+                                sample_rollouts.append((sample, rollout_one[0]))
+                            except Exception as sample_exc:
+                                vllm_decode_error_count_local += 1.0
+                                logger.warning(
+                                    "Eval vLLM decode failed for sample_idx=%s; skipping sample. "
+                                    "error=%s: %s",
+                                    int(sample_idx),
+                                    sample_exc.__class__.__name__,
+                                    sample_exc,
+                                )
+                        if not sample_rollouts:
+                            raise RuntimeError(
+                                "Eval vLLM rollout failed for all samples in a batch; "
+                                "aborting evaluation."
+                            ) from batch_exc
 
-                if len(rollout_results) != len(batch):
-                    raise RuntimeError(
-                        "rollout backend returned unexpected number of results"
-                    )
-
-                for sample, rollout in zip(batch, rollout_results):
+                for sample, rollout in sample_rollouts:
                     if has_token_trace:
                         (
                             resp_ids,
@@ -7986,52 +8414,119 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         eval_record_counter_local += 1
 
                         if eval_detection_use_confidence_postop:
+                            trace_len = int(len(parse.response_token_ids))
+                            trace_invalid_reason: Optional[str] = None
+                            trace_fallback_counted_this_sample = False
                             if confidence_postop_opts is None:
-                                raise RuntimeError(
+                                trace_invalid_reason = (
                                     "confidence_postop_opts missing for eval-step scoring"
                                 )
-                            if token_logprobs is None or generated_token_text is None:
-                                raise RuntimeError(
+                            elif token_logprobs is None or generated_token_text is None:
+                                trace_invalid_reason = (
                                     "eval-step confidence scoring requires token traces"
                                 )
-
-                            trace_len = int(len(parse.response_token_ids))
-                            if len(token_logprobs) < trace_len:
-                                raise RuntimeError(
+                            elif len(token_logprobs) < trace_len:
+                                trace_invalid_reason = (
                                     "rollout trace shorter than parsed response_token_ids: "
                                     f"trace_len={len(token_logprobs)} parsed_len={trace_len}"
                                 )
-                            trace = TraceRecord(
-                                line_idx=int(eval_record_index),
-                                generated_token_text=list(
-                                    generated_token_text[:trace_len]
-                                ),
-                                token_logprobs=[
-                                    float(x) for x in token_logprobs[:trace_len]
-                                ],
-                            )
+                            elif len(generated_token_text) < trace_len:
+                                trace_invalid_reason = (
+                                    "generated_token_text shorter than parsed response_token_ids: "
+                                    f"trace_text_len={len(generated_token_text)} parsed_len={trace_len}"
+                                )
+                            elif any(
+                                not math.isfinite(float(x))
+                                for x in token_logprobs[:trace_len]
+                            ):
+                                trace_invalid_reason = (
+                                    "rollout trace contains non-finite logprobs"
+                                )
 
-                            record = _build_eval_detection_record_confidence_postop_input(
-                                sample=sample,
-                                gts=gts,
-                                preds=preds,
-                                pred_meta=pred_meta,
-                                object_field_order=object_field_order,
-                                record_index=eval_record_index,
-                            )
-                            confidence_objects = _compute_sample_confidence_objects(
-                                line_idx=int(eval_record_index),
-                                record=record,
-                                trace=trace,
-                                options=confidence_postop_opts,
-                            )
-                            scored_record = _build_scored_record(
-                                record=record,
-                                confidence_objects=confidence_objects,
-                            )
-                            # Shrink gather payload (scores are all we need for COCO eval).
-                            scored_record.pop("raw_output_json", None)
-                            eval_detection_records_local.append(scored_record)
+                            if trace_invalid_reason is not None:
+                                trace_fallback_window_active = True
+                                trace_fallback_count_local += 1.0
+                                trace_fallback_counted_this_sample = True
+                                if trace_fallback_count_local <= 3.0:
+                                    logger.warning(
+                                        "Eval confidence trace invariant violation; falling back to "
+                                        "constant-score policy for this eval window. "
+                                        "line_idx=%s reason=%s",
+                                        int(eval_record_index),
+                                        trace_invalid_reason,
+                                    )
+
+                            confidence_record_appended = False
+                            if (
+                                trace_invalid_reason is None
+                                and not trace_fallback_window_active
+                            ):
+                                try:
+                                    trace = TraceRecord(
+                                        line_idx=int(eval_record_index),
+                                        generated_token_text=list(
+                                            generated_token_text[:trace_len]
+                                        ),
+                                        token_logprobs=[
+                                            float(x) for x in token_logprobs[:trace_len]
+                                        ],
+                                    )
+                                    record = _build_eval_detection_record_confidence_postop_input(
+                                        sample=sample,
+                                        gts=gts,
+                                        preds=preds,
+                                        pred_meta=pred_meta,
+                                        object_field_order=object_field_order,
+                                        record_index=eval_record_index,
+                                    )
+                                    confidence_objects = _compute_sample_confidence_objects(
+                                        line_idx=int(eval_record_index),
+                                        record=record,
+                                        trace=trace,
+                                        options=confidence_postop_opts,
+                                    )
+                                    scored_record = _build_scored_record(
+                                        record=record,
+                                        confidence_objects=confidence_objects,
+                                    )
+                                    # Shrink gather payload (scores are all we need for COCO eval).
+                                    scored_record.pop("raw_output_json", None)
+                                    eval_detection_records_local.append(scored_record)
+                                    confidence_record_appended = True
+                                except Exception as exc:
+                                    trace_fallback_window_active = True
+                                    trace_fallback_count_local += 1.0
+                                    trace_fallback_counted_this_sample = True
+                                    if trace_fallback_count_local <= 3.0:
+                                        logger.warning(
+                                            "Eval confidence scoring failed; falling back to "
+                                            "constant-score policy for this eval window. "
+                                            "line_idx=%s error=%s: %s",
+                                            int(eval_record_index),
+                                            exc.__class__.__name__,
+                                            exc,
+                                        )
+
+                            if not confidence_record_appended:
+                                if (
+                                    trace_fallback_window_active
+                                    and not trace_fallback_counted_this_sample
+                                ):
+                                    trace_fallback_count_local += 1.0
+                                eval_detection_records_local.append(
+                                    _build_eval_detection_record(
+                                        sample=sample,
+                                        gts=gts,
+                                        preds=preds,
+                                        pred_meta=pred_meta,
+                                        object_field_order=object_field_order,
+                                        record_index=eval_record_index,
+                                        pred_score_source="eval_rollout_constant",
+                                        pred_score_version=2,
+                                        score_mode="constant",
+                                        constant_score=eval_detection_const_score,
+                                    )
+                                )
                         else:
                             if eval_detection_score_mode != "constant":
                                 raise ValueError(
@@ -8247,6 +8742,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 desc_sem_sim_sum_total,
                 desc_sem_sim_count_total,
                 sem_loaded_local,
+                trace_fallback_count_local,
+                vllm_decode_error_count_local,
+                1.0 if trace_fallback_window_active else 0.0,
             ],
             device=self.model.device,
             dtype=torch.float64,
@@ -8281,8 +8779,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             desc_sem_sim_sum_total,
             desc_sem_sim_count_total,
             sem_loaded_sum,
+            trace_fallback_count_local,
+            vllm_decode_error_count_local,
+            trace_fallback_window_active_sum,
         ) = [float(x.item()) for x in sums_t]
         runtime = float(rt_t.item())
+        trace_fallback_window_active = bool(trace_fallback_window_active_sum > 0.0)
 
         precision = (matched_total / pred_total) if pred_total > 0 else 0.0
         recall = (matched_total / gt_total) if gt_total > 0 else 0.0
@@ -8331,6 +8833,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         metrics[_k("rollout/matched_maskiou_mean")] = (
             float(matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
         )
+        metrics[_k("rollout/trace_fallback_count")] = float(trace_fallback_count_local)
+        metrics[_k("rollout/vllm_decode_error_count")] = float(
+            vllm_decode_error_count_local
+        )
+        metrics[f"{metric_key_prefix}/trace_fallback_count"] = float(
+            trace_fallback_count_local
+        )
+        metrics[f"{metric_key_prefix}/vllm_decode_error_count"] = float(
+            vllm_decode_error_count_local
+        )
 
         # Desc monitor outputs (matched pairs only).
         if desc_enabled:
@@ -8373,9 +8885,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 1.0 if cfg_mode in {"confidence_postop", "confidence"} else 0.0
             )
 
-            eff_mode = (
-                "confidence_postop" if eval_detection_use_confidence_postop else "constant"
+            effective_confidence_postop = bool(
+                eval_detection_use_confidence_postop
+                and not trace_fallback_window_active
             )
+            eff_mode = "confidence_postop" if effective_confidence_postop else "constant"
             metrics[_k("rollout/effective_score_mode_is_constant")] = float(
                 1.0 if eff_mode == "constant" else 0.0
             )
@@ -8386,13 +8900,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metrics[_k("rollout/config_pred_score_version")] = float(
                 int(eval_detection_score_version)
             )
-            eff_version = 2 if eval_detection_use_confidence_postop else int(
+            eff_version = 2 if effective_confidence_postop else int(
                 eval_detection_score_version
             )
             metrics[_k("rollout/effective_pred_score_version")] = float(int(eff_version))
 
             cfg_source = str(eval_detection_score_source or "").strip()
-            eff_source = "confidence_postop" if eval_detection_use_confidence_postop else cfg_source
+            eff_source = "confidence_postop" if effective_confidence_postop else cfg_source
             metrics[_k("rollout/config_pred_score_source_is_eval_rollout_constant")] = float(
                 1.0 if cfg_source == "eval_rollout_constant" else 0.0
             )
@@ -8526,7 +9040,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "meta": {
                         "phase": "eval",
                         "metric_key_prefix": str(metric_key_prefix),
-                        "rollout_backend": str(self._rollout_backend()),
+                        "rollout_backend": str(eval_rollout_backend),
+                        "vllm_mode": str(eval_vllm_mode),
                         "decode_mode": str(self._cfg("decode_mode", "greedy")),
                         "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
                         "candidate_top_k": int(top_k),

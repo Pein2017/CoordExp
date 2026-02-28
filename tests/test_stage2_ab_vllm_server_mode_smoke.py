@@ -235,7 +235,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/b_only.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
@@ -246,7 +246,8 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
                 "  max_steps: 3",
                 "  effective_batch_size: 1",
                 "stage2_ab:",
-                "  channel_b: {}",
+                "  schedule:",
+                "    b_ratio: 1.0",
                 "rollout_matching:",
                 "  max_new_tokens: 256",
                 "  vllm:",
