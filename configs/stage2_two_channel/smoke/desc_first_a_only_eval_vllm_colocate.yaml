@@ -19,4 +19,5 @@ custom:
 
 rollout_matching:
   # Keep smoke decode small while still exercising traced eval + lifecycle.
-  decode_batch_size: 2
+  channel_b_decode_batch_size: 2
+  eval_decode_batch_size: 2

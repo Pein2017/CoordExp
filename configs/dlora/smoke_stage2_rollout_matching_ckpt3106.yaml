@@ -19,9 +19,9 @@ custom:
 
 rollout_matching:
   rollout_backend: hf
-  decode_batch_size: 2
+  channel_b_decode_batch_size: 2
+  eval_decode_batch_size: 2
   max_new_tokens: 256
   eval_detection:
     enabled: false
   vllm: null
-

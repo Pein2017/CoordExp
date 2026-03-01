@@ -15,6 +15,8 @@ training:
 
 rollout_matching:
   rollout_backend: vllm
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
 
   # vLLM server mode: connect to external rollout server(s).
   vllm:

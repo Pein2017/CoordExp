@@ -1,7 +1,7 @@
 # Stage-2 AB canonical profile base (standalone).
 # This file intentionally does not extend configs/base.yaml.
 
-global_max_length: 14000
+global_max_length: 8192
 
 model:
   torch_dtype: bfloat16
@@ -158,7 +158,8 @@ rollout_matching:
     enabled: false
   rollout_backend: hf
   eval_rollout_backend: vllm
-  decode_batch_size: 4
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   vllm:
     mode: server
     tensor_parallel_size: 1
@@ -168,7 +169,7 @@ rollout_matching:
     enable_prefix_caching: true
     server:
       timeout_s: 240.0
-      infer_timeout_s: null
+      infer_timeout_s: 240.0
       servers:
         - base_url: http://127.0.0.1:8000
           group_port: 51216

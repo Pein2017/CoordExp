@@ -44,8 +44,8 @@ training:
   num_train_epochs: 2
   # Rollout-matching is rollout-heavy; keep per-device small for stability on long sequences.
   per_device_train_batch_size: 1
-  # Keep aligned with the single rollout batching knob:
-  # rollout_matching.decode_batch_size.
+  # Keep aligned with eval rollout batching:
+  # rollout_matching.eval_decode_batch_size.
   per_device_eval_batch_size: 4
   # On 4xA100 this yields grad_acc=16 (more stable than grad_acc=1 at long lengths).
   effective_batch_size: 32
@@ -100,8 +100,9 @@ rollout_matching:
   # Default: vLLM colocate rollouts (teacher-forced forward/backprop stays on the training model).
   # For monitoring/debugging, you can switch to HF backend: rollout_backend: hf
   rollout_backend: vllm
-  # Unified rollout decode batch size (per device per generation call).
-  decode_batch_size: 4
+  # Explicit rollout decode batch sizes (per device per generation call).
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   pipeline:
     objective:
       - name: token_ce
@@ -152,7 +153,7 @@ rollout_matching:
 
   # REQUIRED for vLLM rollouts (colocate). Must cover prompt_len + max_new_tokens.
   vllm:
-    # Keep max_num_seqs close to decode_batch_size for lower memory overhead.
+    # Keep max_num_seqs close to eval_decode_batch_size for lower memory overhead.
     # For monitoring runs, you can use: max_num_seqs: 4
     max_num_seqs: 4
     infer_batch_size: 1

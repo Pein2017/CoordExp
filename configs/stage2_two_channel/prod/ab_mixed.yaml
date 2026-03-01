@@ -1,25 +1,28 @@
 extends: ../base.yaml
+global_max_length: 14000
+
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-n_softctx_iter_2-merged
 
 training:
-  run_name: prod_ab_mixed_bbox_max60_ckpt1516_ep2
+  num_train_epochs: 2
+  run_name: b_ratio_0.75-n_softctx_iter_2-epoch_2
   output_dir: output/stage2_ab/prod/ab_mixed
   logging_dir: tb/stage2_ab/prod/ab_mixed
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
-  effective_batch_size: 56
+  effective_batch_size: 64
   eval_strategy: steps
   save_strategy: steps
-  save_steps: 200
+  save_steps: 300
   do_eval: true
-  eval_steps: 100
+  eval_steps: 300
   metric_for_best_model: rollout/mAP
 
 stage2_ab:
-  schedule: {b_ratio: 0.85}
+  schedule: {b_ratio: 0.75}
   n_softctx_iter: 2
   pipeline:
     objective:
@@ -75,8 +78,15 @@ custom:
     prompt_variant: coco_80
 
 rollout_matching:
-  max_new_tokens: 2048
-  decode_batch_size: 4
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  offload:
+    enabled: true
+    offload_model: false
+    offload_optimizer: true
+  max_new_tokens: 2560
+  channel_b_decode_batch_size: 16
+  eval_decode_batch_size: 16
   monitor_dump:
     enabled: true
     every_steps: 100
@@ -86,11 +96,10 @@ rollout_matching:
     write_markdown: false
   vllm:
     mode: server
+    gpu_memory_utilization: 0.80
     server:
-      debug_dump:
-        enabled: true
-        every_steps: 4
-        dump_first_step: true
-        max_events: 20
-        max_samples: 10
-        max_chars: 0
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

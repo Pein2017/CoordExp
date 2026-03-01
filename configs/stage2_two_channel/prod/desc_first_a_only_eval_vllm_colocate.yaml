@@ -13,6 +13,9 @@ global_max_length: 8192
 rollout_matching:
   # Eval-only backend override (training backend unchanged).
   eval_rollout_backend: vllm
+  # Keep train/eval rollout decode caps explicit in this profile.
+  channel_b_decode_batch_size: 8
+  eval_decode_batch_size: 8
 
   # Optional: offload HF training state during the eval window to maximize VRAM headroom.
   offload:

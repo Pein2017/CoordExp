@@ -22,7 +22,8 @@ custom:
   val_sample_limit: 16
 
 rollout_matching:
-  decode_batch_size: 4
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   max_new_tokens: 2048
   monitor_dump:
     enabled: true

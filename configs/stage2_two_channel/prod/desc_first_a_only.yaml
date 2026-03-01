@@ -75,7 +75,8 @@ stage2_ab:
 rollout_matching:
   # Override rollout backend inherited from configs/stage2_two_channel/base.yaml.
   rollout_backend: hf
-  decode_batch_size: 8
+  channel_b_decode_batch_size: 8
+  eval_decode_batch_size: 8
   max_new_tokens: 3084
   monitor_dump:
     enabled: true
