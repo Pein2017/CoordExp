@@ -34,3 +34,37 @@ def test_stage2_ab_post_rollout_packing_buffers_are_channel_local() -> None:
     assert [m.get("id") for _, m, _ in trainer._stage2_post_rollout_buffer(channel="B")] == [
         "b0"
     ]
+
+
+def test_stage2_ab_post_rollout_pack_selector_passes_fill_target() -> None:
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer.rollout_matching_cfg = {
+        "packing_enabled": True,
+        "packing_length": 10,
+        "packing_buffer": 100,
+        "packing_min_fill_ratio": 0.5,
+        "packing_drop_last": True,
+    }
+
+    captured: dict[str, object] = {}
+
+    def _selector(
+        encoded_lens,
+        packing_length,
+        *,
+        min_fill_ratio=None,
+    ):
+        captured["min_fill_ratio"] = float(min_fill_ratio)
+        assert list(encoded_lens) == [6, 3]
+        assert int(packing_length) == 10
+        return [0, 1]
+
+    trainer._select_post_rollout_segment_indices = _selector
+
+    seg_a0 = ({"input_ids": [0] * 6, "length": 6}, {"id": "a0"}, 6)
+    seg_a1 = ({"input_ids": [0] * 3, "length": 3}, {"id": "a1"}, 3)
+    trainer._stage2_append_post_rollout_segments(channel="A", segments=[seg_a0, seg_a1])
+
+    selected_a, _pm_a = trainer._stage2_pop_post_rollout_pack(channel="A")
+    assert [m.get("id") for _, m, _ in selected_a] == ["a0", "a1"]
+    assert captured["min_fill_ratio"] == 0.5

@@ -25,6 +25,8 @@ def test_vllm_max_model_len_must_cover_global_max_length() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "max_new_tokens": 64,
         "vllm": {
             "max_model_len": 512,
@@ -52,6 +54,9 @@ def test_vllm_guardrails_apply_case_insensitive_backend_value() -> None:
     payload = _base_training_payload()
     payload["rollout_matching"] = {
         "rollout_backend": "VLLM",
+        "eval_rollout_backend": "VLLM",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "max_new_tokens": 64,
         "vllm": {
             "max_model_len": 2048,
@@ -67,12 +72,9 @@ def test_vllm_guardrails_apply_case_insensitive_backend_value() -> None:
         },
     }
 
-    with pytest.raises(ValueError) as exc:
-        TrainingConfig.from_mapping(payload, PromptOverrides())
-
-    msg = str(exc.value)
-    assert "rollout_matching.rollout_backend" in msg
-    assert "must be 'hf'" in msg
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert str(cfg.rollout_matching.rollout_backend).lower() == "vllm"
+    assert str(cfg.rollout_matching.eval_rollout_backend).lower() == "vllm"
 
 
 def test_rollout_max_new_tokens_must_be_less_than_vllm_max_model_len() -> None:
@@ -80,6 +82,8 @@ def test_rollout_max_new_tokens_must_be_less_than_vllm_max_model_len() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "max_new_tokens": 2048,
         "vllm": {
             "max_model_len": 2048,
@@ -109,6 +113,8 @@ def test_eval_only_vllm_triggers_length_guardrails() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "max_new_tokens": 2048,
         "vllm": {
             "max_model_len": 1024,
@@ -137,6 +143,8 @@ def test_eval_only_vllm_rejects_enable_lora_true() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "vllm": {
             "mode": "server",
             "enable_lora": True,

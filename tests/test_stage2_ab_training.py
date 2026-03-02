@@ -1,5 +1,6 @@
 import math
 import types
+from contextlib import nullcontext
 from typing import List, Sequence
 
 import pytest
@@ -919,7 +920,6 @@ def test_post_rollout_packing_selector_is_remainder_aware():
             buf_lens,
             packing_length,
             min_fill_ratio=min_fill_ratio,
-            allow_shorter_than_fifo=True,
         )
 
     smart_underfilled = _simulate(lens, selector=_smart)
@@ -2183,9 +2183,10 @@ def _make_eval_ready_stage2_ab_trainer() -> Stage2ABTrainingTrainer:
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[{"sample_id": 0}]]
-    trainer._rollout_many = lambda batch, prompt_variant_override=None: [
+    trainer._rollout_many = lambda batch, prompt_variant_override=None, **_kwargs: [
         ([101], "{}", "greedy", []) for _ in batch
     ]
+    trainer._maybe_eval_vllm_colocate_window = lambda **_kwargs: nullcontext()
     trainer.callback_handler = types.SimpleNamespace(
         on_evaluate=lambda args, state, control, metrics: control
     )

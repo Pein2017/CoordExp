@@ -33,7 +33,11 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
             "trainer_variant": "stage2_two_channel",
         },
         "training": dict(training_section),
-        "rollout_matching": {"rollout_backend": "hf"},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": {
@@ -82,6 +86,100 @@ def test_stage2_ab_channel_b_removed_keys_fail_fast(payload: dict, expected_msg:
         Stage2ABChannelBConfig.from_mapping(payload)
 
 
+def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping(
+        {"producer_wait_timeout_s": 0, "ddp_phase_timeout_s": 600}
+    )
+    assert cfg.producer_wait_timeout_s == pytest.approx(0.0)
+    assert cfg.ddp_phase_timeout_s == pytest.approx(600.0)
+
+
+def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
+    with pytest.raises(
+        TypeError,
+        match=r"stage2_ab\.channel_b\.producer_wait_timeout_s must be a float/int when set",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"producer_wait_timeout_s": "oops"})
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.producer_wait_timeout_s must be >= 0",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"producer_wait_timeout_s": -1})
+
+    with pytest.raises(
+        TypeError,
+        match=r"stage2_ab\.channel_b\.ddp_phase_timeout_s must be a float/int when set",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": "oops"})
+
+    cfg = Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": 0})
+    assert cfg.ddp_phase_timeout_s == pytest.approx(0.0)
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.ddp_phase_timeout_s must be >= 0",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": -1})
+
+
+def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
+    cfg = _make_stage2_training_config(
+        {"per_device_train_batch_size": 1, "effective_batch_size": 1}
+    )
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s is None
+    assert cfg.stage2_ab.channel_b.producer_wait_timeout_s is None
+
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "token_ce",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "config": {
+                            "desc_ce_weight": 1.0,
+                            "self_context_struct_ce_weight": 0.1,
+                            "rollout_fn_desc_weight": 1.0,
+                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+            "channel_b": {
+                "producer_wait_timeout_s": 120.0,
+                "ddp_phase_timeout_s": 900.0,
+            },
+        },
+    }
+    prompts = ConfigLoader.resolve_prompts(raw)
+    parsed = TrainingConfig.from_mapping(raw, prompts)
+    assert parsed.stage2_ab is not None
+    assert parsed.stage2_ab.channel_b.producer_wait_timeout_s == pytest.approx(120.0)
+    assert parsed.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(900.0)
+
+
 def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> None:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
@@ -101,7 +199,11 @@ def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> N
             "trainer_variant": "stage2_two_channel",
         },
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {"rollout_backend": "hf"},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": {
@@ -148,7 +250,11 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
             "coord_soft_ce_w1": {"enabled": True, "soft_ce_weight": 0.25},
         },
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {"rollout_backend": "hf"},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": {
@@ -194,6 +300,8 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
         "rollout_matching": {
             "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
             "pipeline": {
                 "objective": [
                     {
@@ -243,7 +351,11 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
             "trainer_variant": "stage2_two_channel",
         },
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {"rollout_backend": "hf"},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": {
@@ -316,6 +428,8 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
         "rollout_matching": {
             "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
             "pipeline": {
                 "objective": [
                     {
@@ -446,23 +560,28 @@ def test_resolve_prompts_invalid_object_field_order_fails_fast():
 
 
 
-def test_rollout_decode_batch_size_overrides_eval_batch_size_when_mismatched():
+def test_rollout_eval_decode_batch_size_overrides_eval_batch_size_when_mismatched():
     from src.sft import _apply_rollout_decode_batch_size_override
 
     train_args = types.SimpleNamespace(
         trainer_variant="stage2_two_channel",
         training_args=types.SimpleNamespace(per_device_eval_batch_size=1),
     )
-    training_config = types.SimpleNamespace(rollout_matching={"decode_batch_size": 4})
+    training_config = types.SimpleNamespace(
+        rollout_matching={
+            "channel_b_decode_batch_size": 4,
+            "eval_decode_batch_size": 3,
+        }
+    )
 
     resolved = _apply_rollout_decode_batch_size_override(
         train_args=train_args,
         training_config=training_config,
     )
 
-    assert resolved == 4
-    assert train_args.training_args.per_device_eval_batch_size == 4
-    assert train_args.per_device_eval_batch_size == 4
+    assert resolved == 3
+    assert train_args.training_args.per_device_eval_batch_size == 3
+    assert train_args.per_device_eval_batch_size == 3
 
 
 def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():

@@ -89,7 +89,8 @@ def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
-        "decode_batch_size": 2,
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
         "eval_prompt_variant": "coco_80",
         "eval_detection": {
             "enabled": True,
@@ -121,11 +122,37 @@ def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
     assert cfg.rollout_matching.eval_detection.enabled is True
 
 
+def test_rollout_server_base_url_rejects_0_0_0_0() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "vllm",
+        "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "vllm": {
+            "mode": "server",
+            "max_model_len": 4096,
+            "server": {
+                "servers": [
+                    {
+                        "base_url": "http://0.0.0.0:8000",
+                        "group_port": 51216,
+                    }
+                ]
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match=r"must not use 0\.0\.0\.0"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_rollout_eval_detection_defaults_to_enabled_coco_when_omitted():
     payload = _base_training_payload()
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
-        "decode_batch_size": 2,
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
     }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
@@ -140,7 +167,8 @@ def test_rollout_eval_rollout_backend_null_inherits() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": None,
-        "decode_batch_size": 2,
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
     }
 
     with pytest.raises(ValueError) as exc:
@@ -156,7 +184,8 @@ def test_rollout_eval_rollout_backend_invalid_value_fails_fast() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "bogus",
-        "decode_batch_size": 2,
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
     }
 
     with pytest.raises(ValueError) as exc:
@@ -365,7 +394,11 @@ def test_unknown_top_level_key_fails_fast() -> None:
 def _base_stage2_two_channel_payload() -> dict:
     payload = _base_training_payload()
     payload["custom"]["trainer_variant"] = "stage2_two_channel"
-    payload["rollout_matching"] = {"rollout_backend": "hf"}
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
+    }
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
         "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
@@ -379,6 +412,8 @@ def _base_stage2_rollout_aligned_payload() -> dict:
     payload["custom"]["trainer_variant"] = "stage2_rollout_aligned"
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
         "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
     }
     return payload

@@ -107,7 +107,12 @@ def test_rollout_offload_context_rejects_deepspeed():
     trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=1e-3)
 
     try:
-        with trainer._maybe_rollout_offload_context(rollout_backend="vllm"):
+        with trainer._maybe_rollout_offload_context(
+            rollout_backend="vllm",
+            force_enable=True,
+            force_offload_model=True,
+            force_offload_optimizer=True,
+        ):
             pass
     except RuntimeError as exc:
         assert "deepspeed" in str(exc).lower()

@@ -7,9 +7,17 @@ import pytest
 from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer, _IM_END
 
 
-def _mk_uninit_trainer(cfg):
+def _mk_uninit_trainer(cfg, *, include_decode_defaults: bool = True):
     t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
-    t.rollout_matching_cfg = cfg
+    if include_decode_defaults:
+        merged = {
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        }
+        merged.update(dict(cfg))
+        t.rollout_matching_cfg = merged
+    else:
+        t.rollout_matching_cfg = dict(cfg)
     return t
 
 
@@ -33,18 +41,38 @@ def test_validate_rollout_matching_cfg_rejects_removed_rollout_keys(legacy_key: 
         t._validate_rollout_matching_cfg()
 
 
-def test_decode_batch_size_defaults_to_one_when_unset():
-    t = _mk_uninit_trainer({})
-    assert t._decode_batch_size() == 1
+def test_decode_batch_size_requires_explicit_context_keys():
+    t = _mk_uninit_trainer({}, include_decode_defaults=False)
+    with pytest.raises(
+        ValueError,
+        match=r"channel_b_decode_batch_size must be provided explicitly",
+    ):
+        t._validate_rollout_matching_cfg()
 
 
 def test_decode_batch_size_rejects_non_positive_values():
-    t0 = _mk_uninit_trainer({"decode_batch_size": 0})
-    with pytest.raises(ValueError, match=r"decode_batch_size must be > 0"):
+    t0 = _mk_uninit_trainer(
+        {
+            "channel_b_decode_batch_size": 0,
+            "eval_decode_batch_size": 1,
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"channel_b_decode_batch_size must be > 0",
+    ):
         t0._validate_rollout_matching_cfg()
 
-    t1 = _mk_uninit_trainer({"decode_batch_size": -3})
-    with pytest.raises(ValueError, match=r"decode_batch_size must be > 0"):
+    t1 = _mk_uninit_trainer(
+        {
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": -3,
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"eval_decode_batch_size must be > 0",
+    ):
         t1._validate_rollout_matching_cfg()
 
 
