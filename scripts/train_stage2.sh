@@ -174,8 +174,8 @@ backend = contract.get("rollout_backend")
 eval_backend = contract.get("eval_rollout_backend")
 mode = contract.get("vllm_mode")
 urls = contract.get("server_base_urls")
-if backend != "hf":
-    die(f"rollout_backend must be 'hf', got: {backend!r}")
+if backend not in ("hf", "vllm"):
+    die(f"rollout_backend must be 'hf' or 'vllm', got: {backend!r}")
 if eval_backend != "vllm":
     die(f"eval_rollout_backend must be 'vllm', got: {eval_backend!r}")
 if mode != "server":
@@ -336,6 +336,13 @@ if [[ -z "${VLLM_GPU_MEMORY_UTILIZATION}" ]]; then
   VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}"
 fi
 
+# Fail-fast NCCL watchdog defaults (can be overridden by caller env).
+# These guard against indefinite DDP hangs when one learner rank is stuck.
+export TORCH_NCCL_ENABLE_MONITORING="${TORCH_NCCL_ENABLE_MONITORING:-1}"
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="${TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC:-180}"
+export TORCH_NCCL_DUMP_ON_TIMEOUT="${TORCH_NCCL_DUMP_ON_TIMEOUT:-1}"
+export TORCH_NCCL_TRACE_BUFFER_SIZE="${TORCH_NCCL_TRACE_BUFFER_SIZE:-67108864}"
+
 echo "========================================================================"
 echo "  Stage-2 AB vLLM Server + Learner Launcher"
 echo "========================================================================"
@@ -350,6 +357,7 @@ echo "[INFO] eager:       ${SERVER_VLLM_ENFORCE_EAGER}"
 echo "[INFO] max_model_len:${VLLM_MAX_MODEL_LEN}"
 echo "[INFO] enable_lora: ${VLLM_ENABLE_LORA} (full-sync-only; adapter sync unsupported)"
 echo "[INFO] disable_proxy:${DISABLE_PROXY}"
+echo "[INFO] nccl_monitor:${TORCH_NCCL_ENABLE_MONITORING} heartbeat_s:${TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC} dump_on_timeout:${TORCH_NCCL_DUMP_ON_TIMEOUT}"
 echo "========================================================================"
 
 SERVER_ENV=(CUDA_VISIBLE_DEVICES="${SERVER_GPUS}")
@@ -371,7 +379,173 @@ SERVER_CMD=(swift rollout \
   --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
   --vllm_enable_lora "${VLLM_ENABLE_LORA}")
 
+SCRIPT_PGID="$(ps -o pgid= "$$" | tr -d ' ')"
+SERVER_PID=""
+SERVER_PGID=""
+TRAIN_PID=""
+TRAIN_PGID=""
+CLEANUP_DONE=0
+
+_collect_descendants() {
+  local root_pid="$1"
+  local -a queue=("${root_pid}")
+  local -a descendants=()
+  local current child
+  while (( ${#queue[@]} > 0 )); do
+    current="${queue[0]}"
+    queue=("${queue[@]:1}")
+    while read -r child; do
+      child="${child//[[:space:]]/}"
+      [[ -z "${child}" ]] && continue
+      descendants+=("${child}")
+      queue+=("${child}")
+    done < <(ps -o pid= --ppid "${current}" 2>/dev/null || true)
+  done
+  if (( ${#descendants[@]} > 0 )); then
+    printf '%s\n' "${descendants[@]}"
+  fi
+}
+
+_collect_server_pids() {
+  local -a raw_pids=()
+  local pid
+  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
+    raw_pids+=("${SERVER_PID}")
+    while read -r pid; do
+      [[ -n "${pid}" ]] && raw_pids+=("${pid}")
+    done < <(_collect_descendants "${SERVER_PID}" || true)
+  fi
+  if [[ -n "${SERVER_PGID:-}" ]]; then
+    while read -r pid; do
+      pid="${pid//[[:space:]]/}"
+      [[ -n "${pid}" ]] && raw_pids+=("${pid}")
+    done < <(ps -o pid= -g "${SERVER_PGID}" 2>/dev/null || true)
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    while read -r pid; do
+      pid="${pid//[[:space:]]/}"
+      [[ -n "${pid}" ]] && raw_pids+=("${pid}")
+    done < <(lsof -t -iTCP:"${SERVER_PORT}" -sTCP:LISTEN 2>/dev/null || true)
+  fi
+
+  local -A seen=()
+  local -a unique_pids=()
+  for pid in "${raw_pids[@]}"; do
+    [[ -z "${pid}" ]] && continue
+    [[ ! "${pid}" =~ ^[0-9]+$ ]] && continue
+    if [[ -z "${seen[$pid]+x}" ]]; then
+      seen[$pid]=1
+      unique_pids+=("${pid}")
+    fi
+  done
+
+  if (( ${#unique_pids[@]} > 0 )); then
+    printf '%s\n' "${unique_pids[@]}"
+  fi
+}
+
+_kill_pid_list() {
+  local label="$1"
+  shift || true
+  local -a pids=("$@")
+  local pid
+  if (( ${#pids[@]} == 0 )); then
+    return 0
+  fi
+  echo "[INFO] Stopping ${label} pids: ${pids[*]}"
+  kill -TERM "${pids[@]}" >/dev/null 2>&1 || true
+  sleep 3
+  local -a alive=()
+  for pid in "${pids[@]}"; do
+    if kill -0 "${pid}" >/dev/null 2>&1; then
+      alive+=("${pid}")
+    fi
+  done
+  if (( ${#alive[@]} > 0 )); then
+    echo "[WARN] Force-killing lingering ${label} pids: ${alive[*]}"
+    kill -KILL "${alive[@]}" >/dev/null 2>&1 || true
+  fi
+}
+
+_stop_train_processes() {
+  if [[ -n "${TRAIN_PGID:-}" && "${TRAIN_PGID}" != "${SCRIPT_PGID}" ]]; then
+    echo "[INFO] Stopping learner process group (pgid ${TRAIN_PGID})"
+    kill -TERM "-${TRAIN_PGID}" >/dev/null 2>&1 || true
+  elif [[ -n "${TRAIN_PID:-}" ]] && kill -0 "${TRAIN_PID}" >/dev/null 2>&1; then
+    echo "[INFO] Stopping learner process (pid ${TRAIN_PID})"
+    kill -TERM "${TRAIN_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+_stop_server_processes() {
+  if [[ -n "${SERVER_PGID:-}" ]]; then
+    echo "[INFO] Stopping vLLM server process group (pgid ${SERVER_PGID})"
+    kill -TERM "-${SERVER_PGID}" >/dev/null 2>&1 || true
+    sleep 2
+  fi
+  local -a server_pids=()
+  mapfile -t server_pids < <(_collect_server_pids || true)
+  _kill_pid_list "vLLM server" "${server_pids[@]}"
+}
+
+cleanup() {
+  if [[ "${CLEANUP_DONE}" -eq 1 ]]; then
+    return
+  fi
+  CLEANUP_DONE=1
+  trap - EXIT INT TERM
+  _stop_train_processes
+  _stop_server_processes
+}
+
+on_interrupt() {
+  local sig="$1"
+  echo "[INFO] Received ${sig}; shutting down learner + vLLM server..."
+  exit 130
+}
+
+_assert_server_port_free() {
+  local host="$1"
+  local port="$2"
+
+  if python - "${host}" "${port}" <<'PY'
+import socket
+import sys
+
+host = str(sys.argv[1]).strip() or "127.0.0.1"
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+  then
+    return 0
+  fi
+
+  echo "[ERROR] Requested vLLM server endpoint is already in use: ${host}:${port}" >&2
+  if command -v lsof >/dev/null 2>&1; then
+    local -a listener_pids=()
+    mapfile -t listener_pids < <(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u || true)
+    if (( ${#listener_pids[@]} > 0 )); then
+      echo "[ERROR] Existing LISTEN pid(s) on port ${port}: ${listener_pids[*]}" >&2
+      ps -fp "${listener_pids[@]}" >&2 || true
+    fi
+  fi
+  echo "[ERROR] Refusing to continue: rollout server may auto-shift to another port, which desynchronizes trainer/server endpoints." >&2
+  exit 2
+}
+
 echo "[RUN] ${SERVER_ENV[*]} ${SERVER_CMD[*]}"
+HEALTH_HOST="${SERVER_HOST}"
+if [[ "${HEALTH_HOST}" == "0.0.0.0" ]]; then
+  HEALTH_HOST="127.0.0.1"
+fi
+_assert_server_port_free "${HEALTH_HOST}" "${SERVER_PORT}"
+
 if command -v setsid >/dev/null 2>&1; then
   setsid env "${SERVER_ENV[@]}" "${SERVER_CMD[@]}" &
   SERVER_PID=$!
@@ -382,24 +556,10 @@ else
   SERVER_PGID=""
 fi
 
-cleanup() {
-  if [[ -n "${SERVER_PGID}" ]]; then
-    echo "[INFO] Stopping vLLM server process group (pgid ${SERVER_PGID})"
-    kill -TERM "-${SERVER_PGID}" >/dev/null 2>&1 || true
-    sleep 3
-    kill -KILL "-${SERVER_PGID}" >/dev/null 2>&1 || true
-  elif [[ -n "${SERVER_PID:-}" ]] && kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
-    echo "[INFO] Stopping vLLM server (pid ${SERVER_PID})"
-    kill "${SERVER_PID}" >/dev/null 2>&1 || true
-    wait "${SERVER_PID}" || true
-  fi
-}
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'on_interrupt INT' INT
+trap 'on_interrupt TERM' TERM
 
-HEALTH_HOST="${SERVER_HOST}"
-if [[ "${HEALTH_HOST}" == "0.0.0.0" ]]; then
-  HEALTH_HOST="127.0.0.1"
-fi
 HEALTH_URL="http://${HEALTH_HOST}:${SERVER_PORT}/health/"
 WORLD_URL="http://${HEALTH_HOST}:${SERVER_PORT}/get_world_size/"
 
@@ -418,7 +578,48 @@ while true; do
   sleep "${WAIT_INTERVAL}"
 done
 
-echo "[INFO] vLLM server is ready. world_size: $(curl --noproxy \"*\" -s \"${WORLD_URL}\" || true)"
+SERVER_WORLD_RAW="$(curl --noproxy "*" -s "${WORLD_URL}" || true)"
+SERVER_WORLD_SIZE="$(
+  SERVER_WORLD_RAW="${SERVER_WORLD_RAW}" python - <<'PY'
+import json
+import os
+import sys
+
+raw = str(os.environ.get("SERVER_WORLD_RAW", "")).strip()
+if not raw:
+    raise SystemExit(2)
+
+try:
+    payload = json.loads(raw)
+except Exception:
+    payload = raw
+
+world_size = None
+if isinstance(payload, int):
+    world_size = int(payload)
+elif isinstance(payload, dict):
+    if "world_size" in payload:
+        world_size = int(payload["world_size"])
+elif isinstance(payload, str) and payload.strip().isdigit():
+    world_size = int(payload.strip())
+
+if world_size is None:
+    raise SystemExit(3)
+print(world_size)
+PY
+)" || {
+  echo "[ERROR] Failed to parse rollout server world_size from ${WORLD_URL}. Raw payload: ${SERVER_WORLD_RAW:-<empty>}" >&2
+  exit 1
+}
+
+EXPECTED_SERVER_WORLD_SIZE=$(( SERVER_DP * SERVER_TP ))
+if [[ "${SERVER_WORLD_SIZE}" -ne "${EXPECTED_SERVER_WORLD_SIZE}" ]]; then
+  echo "[ERROR] Unexpected rollout server world_size at ${WORLD_URL}: got=${SERVER_WORLD_SIZE} expected=${EXPECTED_SERVER_WORLD_SIZE}" >&2
+  echo "[ERROR] This usually indicates a stale server or a port mismatch; aborting before learner launch." >&2
+  exit 1
+fi
+
+echo "[INFO] vLLM server is ready. world_size: ${SERVER_WORLD_SIZE}"
 
 STAGE2_META_ENV_VARS=(
   "COORDEXP_STAGE2_LAUNCHER=scripts/train_stage2.sh"
@@ -445,4 +646,17 @@ fi
 TRAIN_CMD="${STAGE2_META_ENV_VARS[*]} ${TRAIN_CMD}"
 
 echo "[RUN] ${TRAIN_CMD}"
-eval "${TRAIN_CMD}"
+if command -v setsid >/dev/null 2>&1; then
+  setsid bash -lc "${TRAIN_CMD}" &
+else
+  bash -lc "${TRAIN_CMD}" &
+fi
+TRAIN_PID=$!
+TRAIN_PGID="$(ps -o pgid= "${TRAIN_PID}" | tr -d ' ')"
+
+set +e
+wait "${TRAIN_PID}"
+TRAIN_RC=$?
+set -e
+
+exit "${TRAIN_RC}"

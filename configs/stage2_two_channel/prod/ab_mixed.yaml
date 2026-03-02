@@ -24,6 +24,8 @@ training:
 stage2_ab:
   schedule: {b_ratio: 0.75}
   n_softctx_iter: 2
+  channel_b:
+    ddp_phase_timeout_s: 0
   pipeline:
     objective:
       - name: token_ce
@@ -78,14 +80,12 @@ custom:
     prompt_variant: coco_80
 
 rollout_matching:
-  rollout_backend: vllm
+  rollout_backend: hf
   eval_rollout_backend: vllm
   offload:
-    enabled: true
-    offload_model: false
-    offload_optimizer: true
+    enabled: false
   max_new_tokens: 2560
-  channel_b_decode_batch_size: 16
+  channel_b_decode_batch_size: 8
   eval_decode_batch_size: 16
   monitor_dump:
     enabled: true
@@ -95,11 +95,6 @@ rollout_matching:
     max_text_chars: 0
     write_markdown: false
   vllm:
-    mode: server
-    gpu_memory_utilization: 0.80
-    server:
-      timeout_s: 240.0
-      infer_timeout_s: 240.0
-      servers:
-        - base_url: http://127.0.0.1:8000
-          group_port: 51216
+    mode: colocate
+    gpu_memory_utilization: 0.5
+    reinit_each_eval: true
