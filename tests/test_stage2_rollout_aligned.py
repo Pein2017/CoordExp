@@ -48,6 +48,7 @@ class _DummyTokenizerRM:
         # Fused ']}' token
         self.fused_brace_id = 2000
         self._id_to_piece[self.fused_brace_id] = "]}"
+        self.pad_token_id = 0
 
     def convert_tokens_to_ids(self, tokens):
         out = []
@@ -182,6 +183,7 @@ def _make_rollout_server_trainer():
     trainer._vllm_server_infer_guard = lambda: nullcontext()
     trainer._effective_vllm_server_sync_mode = lambda: "full"
     trainer._maybe_debug_dump_vllm_server_rollouts = lambda **_kwargs: None
+    trainer.processing_class = _DummyTokenizerRM()
     return trainer
 
 
@@ -287,6 +289,16 @@ def test_patch_vllm_cumem_sleep_no_empty_cache_wraps_sleep(monkeypatch) -> None:
             torch.cuda.empty_cache()
 
     fake_cumem = types.SimpleNamespace(CuMemAllocator=_DummyCuMemAllocator)
+
+    # The implementation imports `from vllm.device_allocator import cumem as _cumem`,
+    # so populate the full module chain in sys.modules.
+    fake_vllm = types.ModuleType("vllm")
+    fake_device_allocator = types.ModuleType("vllm.device_allocator")
+    fake_device_allocator.cumem = fake_cumem
+    fake_vllm.device_allocator = fake_device_allocator
+
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+    monkeypatch.setitem(sys.modules, "vllm.device_allocator", fake_device_allocator)
     monkeypatch.setitem(sys.modules, "vllm.device_allocator.cumem", fake_cumem)
 
     import torch
