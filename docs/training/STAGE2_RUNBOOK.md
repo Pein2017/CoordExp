@@ -94,18 +94,20 @@ Key semantics:
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
 Rollout decode batching:
-- Single knob: `rollout_matching.decode_batch_size`.
-  - Definition: per rollout GPU cap for one `generation()` / `/infer/` call.
-  - Note: the training entrypoint mirrors this value into `per_device_eval_batch_size` for Stage-2 trainer variants so rollout microbatching stays consistent.
+- Explicit knobs:
+  - `rollout_matching.channel_b_decode_batch_size` (train-step Channel-B rollout decoding).
+  - `rollout_matching.eval_decode_batch_size` (eval-step rollout decoding).
+  - Definition: per rollout GPU cap for one `generation()` / `/infer/` call in the corresponding context.
+  - Note: the training entrypoint mirrors `eval_decode_batch_size` into `per_device_eval_batch_size` for Stage-2 trainer variants.
 - HF + vLLM colocate:
-  - Each learner rank chunks its local requests to `decode_batch_size`.
+  - Each learner rank chunks its local requests to the context-specific decode batch size.
 - vLLM server mode:
   - The learner queries each rollout server DP `world_size` via `/get_world_size/` and derives a per-rank request chunk size so the
     per-GPU cap holds when all learner ranks generate concurrently.
   - Pipeline overlap (produce segments while consuming packs) is enabled automatically in server mode.
 
 Worked example (default launcher):
-- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `decode_batch_size=4`:
+- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `channel_b_decode_batch_size=4`:
   - per-rank chunk size = `floor(4 * 6 / 2) = 12` requests per call.
   - Across 2 ranks: 24 requests per synchronized round; average 4 per rollout GPU.
 
@@ -131,7 +133,9 @@ Worked example (default launcher):
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
   - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
-  - Optional structure-token CE upweight: `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (clamped to `[1.0, 4.0]`).
+- Optional Channel-B runtime timeouts:
+  - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): base DDP phase-barrier watchdog.
+  - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
 
 ---
 
@@ -397,7 +401,8 @@ custom:
 
 rollout_matching:
   rollout_backend: vllm
-  decode_batch_size: 4
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   pipeline:
     objective:
       - name: token_ce
@@ -460,7 +465,7 @@ Breaking config migrations (no backward compatibility):
   - `custom.extra.rollout_matching.*` is removed and MUST fail fast if present.
 - Legacy keys are removed and MUST fail fast if present:
   - `rollout_matching.temperature`, `rollout_matching.top_p`, `rollout_matching.top_k`
-  - `rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + `decode_batch_size` to scale throughput)
+  - `rollout_matching.rollout_buffer` (buffered reuse is removed; use vLLM server mode + derived chunking + context-specific decode batch sizes to scale throughput)
   - `stage2_ab.channel_b.reordered_gt_sft` (removed; unified Channel-B only)
   - `stage2_ab.channel_b.desc_ce_weight_matched` (removed; no matched-desc CE knob)
   - `stage2_ab.channel_b.semantic_desc_gate` (removed; no training-time semantic gating)
@@ -474,15 +479,14 @@ Logging tip:
 
 ## Colocate Offload (Peak Memory Relief During Rollouts)
 
-If you use vLLM colocate mode and hit peak memory issues during rollouts, Stage-2 can optionally offload training state to CPU during rollout generation:
+Stage-2 uses a strict offload+drain handoff window for **eval_step vLLM colocate** to keep teardown safe and avoid allocator lifecycle issues.
 
-- `rollout_matching.offload.enabled: true` (recommended minimal setting; this defaults both model+optimizer offload to enabled).
-- Optional override: `rollout_matching.offload.offload_model: false|true` controls model-parameter offload explicitly.
-- Optional override: `rollout_matching.offload.offload_optimizer: false|true` controls optimizer-state offload explicitly.
+Policy:
+- User-configurable rollout offload (`rollout_matching.offload.*`) is **disabled/ignored** in this stack to avoid severe performance regressions and cross-rank stragglers in DDP.
+- Offload is only performed in internal forced windows (currently: eval-time vLLM colocate handoff), not during train_step rollouts.
 
 Notes:
-- Offload is currently not supported with DeepSpeed/ZeRO in this trainer; if you need ZeRO, disable offload or switch `rollout_backend: hf`.
-- Offload is the preferred peak-memory lever for colocate vLLM in this stack.
+- Offload is not supported with DeepSpeed/ZeRO in this trainer; if you need ZeRO, use vLLM `server` mode for eval or disable vLLM colocate eval.
 - For sleep-mode guidance, see **Sleep-Mode Policy (colocate)** below.
 
 ---
@@ -502,7 +506,7 @@ Legacy training-step vLLM rollouts are removed.
 
 - Sleep mode is removed from Stage-2 runtime lifecycle.
 - Do not set `rollout_matching.vllm.enable_sleep_mode`, `rollout_matching.vllm.reinit_each_eval`, or `rollout_matching.vllm.sleep_level`.
-- If you need memory headroom, use `rollout_matching.offload.*` or vLLM `server` mode.
+- If you need memory headroom, prefer vLLM `server` mode (process isolation) or reduce rollout lengths/throughput knobs.
 
 ### vLLM (eval_step only)
 
@@ -729,9 +733,7 @@ Symptom:
 
 Mitigations:
 - Apply **Sleep-Mode Policy (colocate)** above.
-- For memory relief, prefer:
-  - `rollout_matching.offload.enabled: true` (DDP-only), or
-  - vLLM `server` mode for process isolation.
+- For memory relief, use vLLM `server` mode for process isolation (or reduce rollout lengths/throughput knobs).
 
 ### Channel-B never executes
 
@@ -751,7 +753,9 @@ Checks:
 
 Mitigations (smoke/debug runs):
 - Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
-- Reduce rollout decode batching by setting `rollout_matching.decode_batch_size: 1`.
+- Reduce rollout decode batching by setting:
+  - `rollout_matching.channel_b_decode_batch_size: 1`
+  - `rollout_matching.eval_decode_batch_size: 1`
 - Lower `vllm_gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)
