@@ -10,6 +10,7 @@ instance (some unit tests construct the trainer via `__new__`).
 from __future__ import annotations
 
 import contextlib
+from datetime import timedelta
 import logging
 import queue
 import threading
@@ -74,7 +75,7 @@ class Stage2ABChannelExecutorsMixin:
                 raise ValueError(
                     "post-rollout packing buffer overflow: "
                     f"buffer_size={new_size} > packing_buffer={cap}. "
-                    "Mitigations: reduce rollout_matching.decode_batch_size, increase training.packing_buffer, "
+                    "Mitigations: reduce rollout_matching.channel_b_decode_batch_size, increase training.packing_buffer, "
                     "or disable packing."
                 )
 
@@ -101,7 +102,6 @@ class Stage2ABChannelExecutorsMixin:
             encoded_lens,
             packing_length,
             min_fill_ratio=self._packing_min_fill_ratio(),
-            allow_shorter_than_fifo=True,
         )
         if not selected_idx:
             raise AssertionError("post-rollout packing selected an empty segment set")
@@ -265,6 +265,51 @@ class Stage2ABChannelExecutorsMixin:
             raise AssertionError("stage2-ab Channel-A step mode produced no packs")
         return loss_total
 
+    def _stage2_channel_b_pipeline_enabled(
+        self,
+        *,
+        backend: str,
+        mode: str,
+    ) -> bool:
+        if str(backend).strip().lower() != "vllm" or str(mode).strip().lower() != "server":
+            return False
+
+        rank = 0
+        world_size = 1
+        dist_info_fn = getattr(self, "_dist_info", None)
+        if callable(dist_info_fn):
+            try:
+                rank_raw, world_raw, _dist = dist_info_fn()
+                rank = int(rank_raw)
+                world_size = max(1, int(world_raw))
+            except (TypeError, ValueError):
+                rank = 0
+                world_size = 1
+        else:
+            try:
+                import torch.distributed as dist
+
+                if dist.is_available() and dist.is_initialized():
+                    rank = int(dist.get_rank())
+                    world_size = max(1, int(dist.get_world_size()))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                rank = 0
+                world_size = 1
+
+        if int(world_size) > 1:
+            warned = bool(getattr(self, "_stage2_channel_b_pipeline_ddp_warned", False))
+            if (not warned) and int(rank) == 0:
+                logger.warning(
+                    "stage2-ab Channel-B async rollout pipeline is disabled under DDP "
+                    "(world_size=%s) to prevent cross-rank sync deadlocks; "
+                    "falling back to non-pipelined step execution.",
+                    int(world_size),
+                )
+                setattr(self, "_stage2_channel_b_pipeline_ddp_warned", True)
+            return False
+
+        return True
+
     def _stage2_b_step_budgeted_train(
         self,
         model,
@@ -299,7 +344,12 @@ class Stage2ABChannelExecutorsMixin:
 
         backend = str(getattr(self, "_rollout_backend", lambda: "")()).strip().lower()
         mode = str(getattr(self, "_vllm_mode", lambda: "")()).strip().lower()
-        enable_pipeline = bool(backend == "vllm" and mode == "server")
+        enable_pipeline = bool(
+            self._stage2_channel_b_pipeline_enabled(
+                backend=backend,
+                mode=mode,
+            )
+        )
 
         rollout_decode_bs = int(self._rollout_decode_batch_size_per_rank())
         rollout_decode_bs = max(1, int(rollout_decode_bs))
@@ -328,6 +378,116 @@ class Stage2ABChannelExecutorsMixin:
                 producer_wait_timeout_s = max(120.0, float(base_timeout) * 2.0)
             except Exception:
                 producer_wait_timeout_s = 300.0
+
+        try:
+            import torch.distributed as dist
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            dist = None  # type: ignore[assignment]
+
+        ddp_rank = 0
+        ddp_world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            try:
+                ddp_rank = int(dist.get_rank())
+                ddp_world_size = max(1, int(dist.get_world_size()))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                ddp_rank = 0
+                ddp_world_size = 1
+
+        ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
+        if ddp_phase_timeout_raw is None:
+            ddp_phase_monitor_enabled = True
+            ddp_phase_timeout_s = 180.0
+        else:
+            try:
+                ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
+                ) from exc
+
+            if float(ddp_phase_timeout_s) <= 0.0:
+                # Allow disabling the optional DDP phase monitor in production.
+                ddp_phase_monitor_enabled = False
+                ddp_phase_timeout_s = 0.0
+            else:
+                ddp_phase_monitor_enabled = True
+                ddp_phase_timeout_s = float(max(30.0, min(3600.0, ddp_phase_timeout_s)))
+        ddp_phase_final_sync_timeout_s = float(
+            max(ddp_phase_timeout_s, float(producer_wait_timeout_s) * 2.0)
+        )
+        ddp_phase_final_sync_timeout_s = float(
+            max(30.0, min(3600.0, ddp_phase_final_sync_timeout_s))
+        )
+        ddp_monitor_group_timeout_s = float(
+            max(ddp_phase_timeout_s, ddp_phase_final_sync_timeout_s)
+        )
+
+        def _ddp_phase_barrier(phase: str, *, timeout_s: float | None = None) -> None:
+            if (
+                dist is None
+                or (not dist.is_available())
+                or (not dist.is_initialized())
+                or int(ddp_world_size) <= 1
+            ):
+                return
+
+            if not bool(ddp_phase_monitor_enabled):
+                return
+
+            if not hasattr(dist, "monitored_barrier"):
+                return
+
+            group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
+            if group is None:
+                try:
+                    group = dist.new_group(
+                        backend="gloo",
+                        timeout=timedelta(seconds=float(ddp_monitor_group_timeout_s)),
+                    )
+                except Exception as exc:
+                    warned = bool(
+                        getattr(self, "_stage2_ab_ddp_monitor_group_warned", False)
+                    )
+                    if int(ddp_rank) == 0 and not warned:
+                        logger.warning(
+                            "stage2-ab DDP phase monitor disabled (gloo group init failed): %r",
+                            exc,
+                        )
+                        setattr(self, "_stage2_ab_ddp_monitor_group_warned", True)
+                    setattr(self, "_stage2_ab_ddp_monitor_group", False)
+                    return
+                setattr(self, "_stage2_ab_ddp_monitor_group", group)
+
+            if group is False:
+                return
+
+            local_timeout_s = (
+                float(ddp_phase_timeout_s)
+                if timeout_s is None
+                else float(timeout_s)
+            )
+            local_timeout_s = float(max(30.0, min(3600.0, local_timeout_s)))
+
+            try:
+                try:
+                    dist.monitored_barrier(
+                        group=group,
+                        timeout=timedelta(seconds=float(local_timeout_s)),
+                        wait_all_ranks=True,
+                    )
+                except TypeError:
+                    dist.monitored_barrier(
+                        group=group,
+                        timeout=timedelta(seconds=float(local_timeout_s)),
+                    )
+            except Exception as exc:
+                raise RuntimeError(
+                    "stage2-ab Channel-B DDP phase barrier timed out; "
+                    f"phase={str(phase)} rank={int(ddp_rank)}/{int(ddp_world_size)} "
+                    f"timeout_s={float(local_timeout_s):.1f}. "
+                    "This indicates a cross-rank stage skew or deadlock after rollout."
+                ) from exc
 
         def _split_metrics(metrics: Mapping[str, Any]) -> Tuple[Dict[str, float], Dict[str, float]]:
             rollout_static: Dict[str, float] = {}
@@ -430,6 +590,7 @@ class Stage2ABChannelExecutorsMixin:
             step_totals["stage2/raw_rollouts"] = float(total_segments_target)
 
             self._stage2_append_post_rollout_segments(channel="B", segments=segments)
+            _ddp_phase_barrier("channel_b_non_pipeline_after_prepare")
 
             loss_total = None
             first_pack = True
@@ -443,6 +604,11 @@ class Stage2ABChannelExecutorsMixin:
 
                 step_totals_pack = step_totals if first_pack else {}
                 sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="B"))
+                if bool(sync_gradients):
+                    _ddp_phase_barrier(
+                        "channel_b_non_pipeline_before_final_sync_backward",
+                        timeout_s=float(ddp_phase_final_sync_timeout_s),
+                    )
                 loss_pack = _train_one_pack(
                     selected=selected,
                     pack_metrics=pack_metrics,
@@ -513,13 +679,13 @@ class Stage2ABChannelExecutorsMixin:
         seen_segments = 0
         producer_done = False
 
+        prefill_target_len = int(max(1, int(packing_length)))
+
         loss_total = None
 
         while (not producer_done) or self._stage2_post_rollout_buffer(channel="B"):
-            # Fill the buffer until we can build a reasonably full pack, or until producer finishes.
-            while (not producer_done) and (
-                buf_total_len < float(target_fill) * float(packing_length)
-            ):
+            # Fill the buffer until we can build a near-capacity pack, or until producer finishes.
+            while (not producer_done) and (buf_total_len < int(prefill_target_len)):
                 try:
                     item = q.get(timeout=float(producer_wait_timeout_s))
                 except queue.Empty as exc:
@@ -534,7 +700,8 @@ class Stage2ABChannelExecutorsMixin:
                         f"buf_total_len={int(buf_total_len)} pending_buf={int(pending_buf)} "
                         f"producer_done={bool(producer_done)} producer_alive={bool(producer_alive)} "
                         f"rollout_decode_batch_size={int(rollout_decode_bs)} "
-                        f"packing_length={int(packing_length)} target_fill={float(target_fill):.3f}."
+                        f"packing_length={int(packing_length)} target_fill={float(target_fill):.3f} "
+                        f"prefill_target_len={int(prefill_target_len)}."
                     ) from exc
                 if item is None:
                     producer_done = True

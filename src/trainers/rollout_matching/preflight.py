@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 from dataclasses import is_dataclass
+from urllib.parse import urlparse
 from typing import Any, Optional
 
 from src.config.loader import ConfigLoader
@@ -70,9 +71,9 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
             "rollout_matching.rollout_backend is required for Stage-2 rollout preflight."
         )
     backend = str(backend_raw).strip().lower()
-    if backend != "hf":
+    if backend not in {"hf", "vllm"}:
         raise ValueError(
-            "rollout_matching.rollout_backend must be 'hf' (training-step vLLM rollouts are removed)."
+            "rollout_matching.rollout_backend must be one of {'hf', 'vllm'} for Stage-2 rollout preflight."
         )
 
     eval_backend_raw = rollout_cfg.get("eval_rollout_backend")
@@ -125,6 +126,15 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
             raise ValueError(
                 "rollout_matching.vllm.server.servers[%d].base_url must be non-empty." % idx
             )
+
+        parsed = urlparse(base_url)
+        host = str(parsed.hostname or "").strip().lower()
+        if host == "0.0.0.0":
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[%d].base_url must not use 0.0.0.0; "
+                "use 127.0.0.1 or a routable host/IP instead." % idx
+            )
+
         base_urls.append(base_url)
 
     return {

@@ -350,6 +350,50 @@ def _validate_static_packing_accumulation_windows(
         )
 
 
+def _validate_stage2_step_budget_windows(
+    *,
+    trainer_variant: str | None,
+    packing_enabled: bool,
+    per_rank_batches_est: int,
+    gradient_accumulation_steps: int,
+    dataloader_drop_last: bool,
+) -> None:
+    """Fail-fast guard for Stage2 step-budgeted accumulation windows.
+
+    Stage2 executes forward/backward only on the last micro-step of each
+    accumulation window. Underfull windows would otherwise allow optimizer.step()
+    with stale/zero gradients.
+    """
+    if str(trainer_variant or "") != "stage2_two_channel":
+        return
+    if not bool(packing_enabled):
+        return
+
+    gas = max(1, int(gradient_accumulation_steps))
+    if gas <= 1:
+        return
+
+    per_rank_batches = max(0, int(per_rank_batches_est))
+    if per_rank_batches < gas:
+        raise ValueError(
+            "stage2-ab requires per-rank batches >= gradient_accumulation_steps. "
+            f"Got per_rank_batches_est={int(per_rank_batches)} "
+            f"but gradient_accumulation_steps={int(gas)}. "
+            "Mitigations: increase custom.train_sample_limit, reduce world_size, "
+            "or reduce training.effective_batch_size."
+        )
+
+    remainder = int(per_rank_batches % gas)
+    if (not bool(dataloader_drop_last)) and remainder != 0:
+        raise ValueError(
+            "stage2-ab step-budgeted mode does not support a partial gradient-accumulation window. "
+            f"Got dataloader_drop_last=false with per_rank_batches_est={int(per_rank_batches)} and "
+            f"gradient_accumulation_steps={int(gas)} (remainder={int(remainder)}). "
+            "Mitigations: set training.dataloader_drop_last=true (recommended), or adjust "
+            "dataset size/world_size so per-rank batches is a multiple of gradient_accumulation_steps."
+        )
+
+
 def _build_static_packing_fingerprint(
     *,
     training_config: Any,
@@ -626,11 +670,11 @@ def _collect_launcher_metadata_from_env() -> dict[str, str]:
 def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_config: Any) -> int:
     """Override eval batching for rollout-aware trainer variants.
 
-    Rollout-aware variants treat `rollout_matching.decode_batch_size` as the single
-    source of truth for rollout decode/eval microbatching. We mirror that by
-    forcing `per_device_eval_batch_size` to match the resolved decode batch size.
+    Rollout-aware variants use `rollout_matching.eval_decode_batch_size` as the
+    eval-step decode microbatch source of truth. We mirror that by forcing
+    `per_device_eval_batch_size` to the resolved eval decode batch size.
 
-    Returns the resolved decode batch size.
+    Returns the resolved eval decode batch size.
     """
 
     trainer_variant = getattr(train_args, "trainer_variant", None)
@@ -650,34 +694,42 @@ def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_confi
     if not isinstance(rollout_cfg_for_batch, Mapping):
         raise TypeError("rollout_matching must be a mapping when provided")
 
-    decode_bs_raw = rollout_cfg_for_batch.get("decode_batch_size", 1)
+    eval_decode_bs_raw = rollout_cfg_for_batch.get("eval_decode_batch_size", None)
+    if eval_decode_bs_raw is None:
+        raise ValueError(
+            "rollout_matching.eval_decode_batch_size must be provided explicitly"
+        )
     try:
-        rollout_decode_bs = int(decode_bs_raw)
+        rollout_eval_decode_bs = int(eval_decode_bs_raw)
     except (TypeError, ValueError) as exc:
-        raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
-    if rollout_decode_bs <= 0:
-        raise ValueError("rollout_matching.decode_batch_size must be > 0")
+        raise TypeError(
+            "rollout_matching.eval_decode_batch_size must be an int"
+        ) from exc
+    if rollout_eval_decode_bs <= 0:
+        raise ValueError("rollout_matching.eval_decode_batch_size must be > 0")
 
     if getattr(train_args, "training_args", None) is not None:
         current_eval_bs_raw = getattr(
             train_args.training_args,
             "per_device_eval_batch_size",
-            rollout_decode_bs,
+            rollout_eval_decode_bs,
         )
         try:
             current_eval_bs = int(current_eval_bs_raw)
         except (TypeError, ValueError):
-            current_eval_bs = int(rollout_decode_bs)
-        if int(current_eval_bs) != int(rollout_decode_bs):
+            current_eval_bs = int(rollout_eval_decode_bs)
+        if int(current_eval_bs) != int(rollout_eval_decode_bs):
             logger.warning(
-                "Overriding per_device_eval_batch_size=%s with rollout decode_batch_size=%s for rollout trainer variants.",
+                "Overriding per_device_eval_batch_size=%s with rollout eval_decode_batch_size=%s for rollout trainer variants.",
                 int(current_eval_bs),
-                int(rollout_decode_bs),
+                int(rollout_eval_decode_bs),
             )
-        train_args.training_args.per_device_eval_batch_size = int(rollout_decode_bs)
+        train_args.training_args.per_device_eval_batch_size = int(
+            rollout_eval_decode_bs
+        )
 
-    setattr(train_args, "per_device_eval_batch_size", int(rollout_decode_bs))
-    return int(rollout_decode_bs)
+    setattr(train_args, "per_device_eval_batch_size", int(rollout_eval_decode_bs))
+    return int(rollout_eval_decode_bs)
 
 
 def parse_args():
@@ -1709,35 +1761,6 @@ def main():
                 padded,
             )
 
-        # Stage2-ab step-budgeted trainers execute the forward/backward only on the
-        # final micro-step of the accumulation window. If the train dataloader yields
-        # a partial window at the end of an epoch, the outer Trainer will still call
-        # optimizer.step(), but this trainer will not have produced gradients.
-        #
-        # We only support two safe modes today:
-        # - dataloader_drop_last=true: we drop the final partial window via a dataloader wrapper
-        # - dataloader_drop_last=false with per-rank batch count exactly divisible by GAS
-        if (
-            str(trainer_variant or "") == "stage2_two_channel"
-            and bool(packing_cfg.enabled)
-            and int(gas) > 1
-        ):
-            if int(per_rank_batches_est) < int(gas):
-                raise ValueError(
-                    "stage2-ab requires per-rank batches >= gradient_accumulation_steps. "
-                    f"Got dataset_len={int(base_len_i)} world_size={int(world_size)} -> per_rank_batches_est={int(per_rank_batches_est)} "
-                    f"but gradient_accumulation_steps={int(gas)}. "
-                    "Mitigations: reduce gpus/world_size, increase custom.train_sample_limit, "
-                    "or reduce training.effective_batch_size."
-                )
-            if (not drop_last_flag) and (int(per_rank_batches_est) % int(gas) != 0):
-                raise ValueError(
-                    "stage2-ab step-budgeted mode does not support a partial gradient-accumulation window. "
-                    f"Got dataloader_drop_last=false with per_rank_batches_est={int(per_rank_batches_est)} and "
-                    f"gradient_accumulation_steps={int(gas)} (remainder={int(per_rank_batches_est) % int(gas)}). "
-                    "Mitigations: set training.dataloader_drop_last=true (recommended), or adjust "
-                    "dataset size/world_size so per-rank batches is a multiple of gradient_accumulation_steps."
-                )
 
     if base_len_i is not None and per_rank_batches_est_for_static is None:
         if drop_last_flag:
@@ -1746,6 +1769,15 @@ def main():
             per_rank_batches_est_for_static = int(
                 (base_len_i + per_device_train_bs - 1) // per_device_train_bs
             )
+
+    if per_rank_batches_est_for_static is not None:
+        _validate_stage2_step_budget_windows(
+            trainer_variant=trainer_variant,
+            packing_enabled=bool(packing_cfg.enabled),
+            per_rank_batches_est=int(per_rank_batches_est_for_static),
+            gradient_accumulation_steps=int(gas),
+            dataloader_drop_last=bool(drop_last_flag),
+        )
 
     if per_rank_batches_est_for_static is not None:
         _validate_static_packing_accumulation_windows(
@@ -2175,8 +2207,8 @@ def main():
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
-        # Single rollout batching knob: rollout_matching.decode_batch_size.
-        # Rollout trainer variants use this value for eval dataloader batch size too.
+        # Eval rollout batching knob: rollout_matching.eval_decode_batch_size.
+        # Rollout trainer variants use this value for eval dataloader batch size.
         _apply_rollout_decode_batch_size_override(
             train_args=train_args,
             training_config=training_config,
@@ -2476,7 +2508,7 @@ def main():
 
             logger.info(
                 "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
-                rollout_cfg.get("rollout_backend", "vllm"),
+                rollout_cfg.get("rollout_backend", "hf"),
                 rollout_cfg.get("packing_enabled", False),
                 rollout_manifest.get("checksum", ""),
                 [m.get("name") for m in rollout_manifest.get("objective", [])],

@@ -1285,6 +1285,11 @@ class Stage2ABTrainingTrainer(
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         do_sample = bool(float(temperature) > 0.0)
 
+        inputs_for_rollout = self._prepare_samples_for_rollout(
+            inputs,
+            rollout_backend=backend,
+        )
+
         with self._hf_sampling_seed_context(
             seed_base=seed_base, backend=backend, do_sample=do_sample
         ) as seeded:
@@ -1294,24 +1299,27 @@ class Stage2ABTrainingTrainer(
 
             # Derived rollout request chunk size per learner rank.
             #
-            # `decode_batch_size` is defined as a per-rollout-GPU cap per generation call.
-            # For vLLM server mode (data-parallel replicas), we derive the per-rank chunk
-            # size so the per-GPU cap holds when all learner ranks run concurrently.
+            # `channel_b_decode_batch_size` is defined as a per-rollout-GPU cap per
+            # generation call during train-step Channel-B rollouts. For vLLM server mode
+            # (data-parallel replicas), we derive the per-rank chunk size so the per-GPU
+            # cap holds when all learner ranks run concurrently.
             rollout_infer_bs = int(self._rollout_decode_batch_size_per_rank())
             rollout_infer_bs = max(1, int(rollout_infer_bs))
-            if int(len(inputs)) > 0:
-                rollout_infer_bs = min(int(rollout_infer_bs), int(len(inputs)))
+            if int(len(inputs_for_rollout)) > 0:
+                rollout_infer_bs = min(
+                    int(rollout_infer_bs), int(len(inputs_for_rollout))
+                )
 
             rollout_results = []
-            for off in range(0, int(len(inputs)), int(rollout_infer_bs)):
-                chunk = inputs[int(off) : int(off + rollout_infer_bs)]
+            for off in range(0, int(len(inputs_for_rollout)), int(rollout_infer_bs)):
+                chunk = inputs_for_rollout[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
                     continue
 
                 chunk_results = self._rollout_many(chunk)
                 rollout_results.extend(chunk_results)
 
-            if len(rollout_results) != len(inputs):
+            if len(rollout_results) != len(inputs_for_rollout):
                 raise RuntimeError(
                     "rollout backend returned unexpected number of results"
                 )
@@ -1336,7 +1344,7 @@ class Stage2ABTrainingTrainer(
         strict_drop_by_reason_total: Dict[str, int] = {}
 
         for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
-            inputs,
+            inputs_for_rollout,
             rollout_results,
         ):
             if "messages" not in sample:
@@ -1632,8 +1640,26 @@ class Stage2ABTrainingTrainer(
                 prompt_ids_int = [int(t) for t in prompt_ids]
                 teacher_prefix = enc_ids_list[: len(prompt_ids_int)]
                 if teacher_prefix != prompt_ids_int:
+                    mismatch_at = next(
+                        (
+                            i
+                            for i, (a, b) in enumerate(
+                                zip(teacher_prefix, prompt_ids_int)
+                            )
+                            if int(a) != int(b)
+                        ),
+                        None,
+                    )
+                    if mismatch_at is None:
+                        raise ValueError(
+                            "prompt tokenization mismatch between generation and teacher-forced encoding"
+                        )
+                    lo = max(0, int(mismatch_at) - 3)
+                    hi = min(int(len(prompt_ids_int)), int(mismatch_at) + 4)
                     raise ValueError(
-                        "prompt tokenization mismatch between generation and teacher-forced encoding"
+                        "prompt tokenization mismatch between generation and teacher-forced encoding; "
+                        f"mismatch_at={int(mismatch_at)} teacher_ids={teacher_prefix[lo:hi]} "
+                        f"server_ids={prompt_ids_int[lo:hi]}"
                     )
                 if int(prompt_len) != int(len(prompt_ids_int)):
                     raise ValueError(
@@ -2399,6 +2425,8 @@ class Stage2ABTrainingTrainer(
             warn_once_cache=warn_once,
         )
         pipeline_metrics_ctx = dict(pipeline_ctx.metrics)
+        pipeline_ctx_total_loss = pipeline_ctx.total_loss
+        del pipeline_ctx
 
         pipeline_metrics_gt: Dict[str, float] = {}
         if channel == "A":
@@ -2422,6 +2450,8 @@ class Stage2ABTrainingTrainer(
                 warn_once_cache=warn_once,
             )
             pipeline_metrics_gt = dict(pipeline_gt.metrics)
+            pipeline_gt_total_loss = pipeline_gt.total_loss
+            del pipeline_gt
 
             # Optional A1 coord/geometric anchors (small weights).
             #
@@ -2518,9 +2548,14 @@ class Stage2ABTrainingTrainer(
                         for k, v in dict(coord_out_a1.metrics or {}).items()
                     }
 
-            total = pipeline_gt.total_loss + pipeline_ctx.total_loss + a1_bbox_obj + a1_coord_obj
+            total = (
+                pipeline_gt_total_loss
+                + pipeline_ctx_total_loss
+                + a1_bbox_obj
+                + a1_coord_obj
+            )
         else:
-            total = pipeline_ctx.total_loss
+            total = pipeline_ctx_total_loss
 
         # Buffer Stage-2 logs to merge into post-optimizer-step train log line.
         try:

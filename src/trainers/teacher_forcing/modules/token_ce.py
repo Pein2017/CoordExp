@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import torch
 import torch.nn.functional as F
@@ -185,21 +185,57 @@ def run_token_ce_module(
     struct_weights_next = struct_weights[:, 1:]
     desc_weights_next = desc_weights[:, 1:]
 
-    per_tok = F.cross_entropy(
-        logits_next.reshape(-1, vocab),
-        labels_next.reshape(-1),
-        ignore_index=-100,
-        reduction="none",
-    ).reshape(bsz, -1)
+    # Keep CE memory bounded by chunking flattened rows. This avoids materializing
+    # a full [bsz*(seq-1)] per-token CE tensor for long packed sequences.
+    flat_logits = logits_next.reshape(-1, vocab)
+    flat_labels = labels_next.reshape(-1)
+    flat_weights = weights_next.reshape(-1)
+    flat_struct_weights = struct_weights_next.reshape(-1)
+    flat_desc_weights = desc_weights_next.reshape(-1)
 
-    def _weighted_mean(w: torch.Tensor) -> torch.Tensor:
-        denom = w.sum()
+    # A small constant chunk keeps peak memory stable while preserving exact math.
+    rows_per_chunk = 4096
+    n_rows = int(flat_labels.numel())
+
+    ce_num_total: Optional[torch.Tensor] = None
+    ce_num_struct: Optional[torch.Tensor] = None
+    ce_num_desc: Optional[torch.Tensor] = None
+    for start in range(0, n_rows, rows_per_chunk):
+        end = min(start + rows_per_chunk, n_rows)
+        ce_chunk = F.cross_entropy(
+            flat_logits[start:end],
+            flat_labels[start:end],
+            ignore_index=-100,
+            reduction="none",
+        )
+        if ce_num_total is None:
+            z = ce_chunk.new_tensor(0.0)
+            ce_num_total = z
+            ce_num_struct = z
+            ce_num_desc = z
+
+        w_chunk = flat_weights[start:end].to(dtype=ce_chunk.dtype)
+        w_struct_chunk = flat_struct_weights[start:end].to(dtype=ce_chunk.dtype)
+        w_desc_chunk = flat_desc_weights[start:end].to(dtype=ce_chunk.dtype)
+
+        ce_num_total = ce_num_total + (ce_chunk * w_chunk).sum()
+        ce_num_struct = ce_num_struct + (ce_chunk * w_struct_chunk).sum()
+        ce_num_desc = ce_num_desc + (ce_chunk * w_desc_chunk).sum()
+
+    if ce_num_total is None or ce_num_struct is None or ce_num_desc is None:
+        z = logits_ce.new_tensor(0.0)
+        ce_num_total = z
+        ce_num_struct = z
+        ce_num_desc = z
+
+    def _weighted_mean(num: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+        denom = w.sum().to(dtype=num.dtype)
         if float(denom.detach().cpu().item()) <= 0.0:
-            return per_tok.new_tensor(0.0)
-        return (per_tok * w).sum() / denom.clamp(min=1e-6)
+            return num.new_tensor(0.0)
+        return num / denom.clamp(min=1e-6)
 
-    struct_ce = _weighted_mean(struct_weights_next)
-    desc_ce = _weighted_mean(desc_weights_next)
+    struct_ce = _weighted_mean(ce_num_struct, flat_struct_weights)
+    desc_ce = _weighted_mean(ce_num_desc, flat_desc_weights)
 
     # Decompose the token_ce objective into atomic contributions by token type.
     #
@@ -209,14 +245,14 @@ def run_token_ce_module(
     # We expose the corresponding per-type contributions using the *same* global
     # denominator, so:
     #   token_ce == token_ce_struct + token_ce_desc
-    denom_total = weights_next.sum()
+    denom_total = flat_weights.sum()
     if float(denom_total.detach().cpu().item()) > 0.0:
-        denom_safe = denom_total.clamp(min=1e-6)
-        token_ce_struct = (per_tok * struct_weights_next).sum() / denom_safe
-        token_ce_desc = (per_tok * desc_weights_next).sum() / denom_safe
+        denom_safe = denom_total.to(dtype=ce_num_total.dtype).clamp(min=1e-6)
+        token_ce_struct = ce_num_struct / denom_safe
+        token_ce_desc = ce_num_desc / denom_safe
     else:
-        token_ce_struct = per_tok.new_tensor(0.0)
-        token_ce_desc = per_tok.new_tensor(0.0)
+        token_ce_struct = ce_num_total.new_tensor(0.0)
+        token_ce_desc = ce_num_total.new_tensor(0.0)
 
     token_ce = token_ce_struct + token_ce_desc
 

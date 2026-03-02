@@ -974,6 +974,9 @@ class Stage2ABScheduleConfig:
 
 @dataclass(frozen=True)
 class Stage2ABChannelBConfig:
+    producer_wait_timeout_s: Optional[float] = None
+    ddp_phase_timeout_s: Optional[float] = None
+
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
         if payload is None:
@@ -1007,7 +1010,7 @@ class Stage2ABChannelBConfig:
         if "rollout_decode_batch_size" in data:
             raise ValueError(
                 "stage2_ab.channel_b.rollout_decode_batch_size has been removed. "
-                "Use rollout_matching.decode_batch_size instead."
+                "Use rollout_matching.channel_b_decode_batch_size instead."
             )
 
         if "drop_invalid_struct_ce_multiplier" in data:
@@ -1034,12 +1037,45 @@ class Stage2ABChannelBConfig:
                 "Remove this key (training-time semantic gating is unsupported)."
             )
 
+        producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
+        producer_wait_timeout_s: Optional[float] = None
+        if producer_wait_timeout_s_raw is not None:
+            try:
+                producer_wait_timeout_s = float(producer_wait_timeout_s_raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "stage2_ab.channel_b.producer_wait_timeout_s must be a float/int when set"
+                ) from exc
+            if producer_wait_timeout_s < 0.0:
+                raise ValueError(
+                    "stage2_ab.channel_b.producer_wait_timeout_s must be >= 0 when set "
+                    "(use 0 for automatic timeout selection)"
+                )
+
+        ddp_phase_timeout_s_raw = data.pop("ddp_phase_timeout_s", None)
+        ddp_phase_timeout_s: Optional[float] = None
+        if ddp_phase_timeout_s_raw is not None:
+            try:
+                ddp_phase_timeout_s = float(ddp_phase_timeout_s_raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
+                ) from exc
+            if ddp_phase_timeout_s < 0.0:
+                raise ValueError(
+                    "stage2_ab.channel_b.ddp_phase_timeout_s must be >= 0 when set "
+                    "(use 0 to disable the optional DDP phase monitor)"
+                )
+
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
             )
 
-        return cls()
+        return cls(
+            producer_wait_timeout_s=producer_wait_timeout_s,
+            ddp_phase_timeout_s=ddp_phase_timeout_s,
+        )
 
 
 @dataclass(frozen=True)
@@ -1582,10 +1618,9 @@ class TrainingConfig:
             backend = str(
                 getattr(rollout_matching, "rollout_backend", "") or ""
             ).strip().lower()
-            if backend != "hf":
+            if backend not in {"hf", "vllm"}:
                 raise ValueError(
-                    "Legacy training-step vLLM rollouts are removed; "
-                    "rollout_matching.rollout_backend must be 'hf'."
+                    "rollout_matching.rollout_backend must be one of {'hf', 'vllm'}."
                 )
 
             effective_eval_backend = str(

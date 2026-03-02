@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
+from urllib.parse import urlparse
 
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
@@ -140,6 +141,42 @@ class VllmServerEntryConfig:
     base_url: str
     group_port: int
 
+    def __post_init__(self) -> None:
+        base_url = str(self.base_url or "").strip()
+        if not base_url:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[*].base_url must be non-empty"
+            )
+
+        parsed = urlparse(base_url)
+        scheme = str(parsed.scheme or "").strip().lower()
+        host = str(parsed.hostname or "").strip().lower()
+
+        if scheme not in {"http", "https"}:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[*].base_url must use http:// or https://"
+            )
+        if not host:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[*].base_url must include a hostname"
+            )
+        if host == "0.0.0.0":
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[*].base_url must not use 0.0.0.0; "
+                "use 127.0.0.1 or a routable host/IP instead"
+            )
+
+        try:
+            group_port = int(self.group_port)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout_matching.vllm.server.servers[*].group_port must be an int"
+            ) from exc
+        if group_port <= 0:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[*].group_port must be > 0"
+            )
+
 
 @dataclass(frozen=True)
 class VllmServerConfig:
@@ -171,6 +208,9 @@ class VllmConfig:
     enable_prefix_caching: bool = True
     enforce_eager: bool = False
     disable_custom_all_reduce: bool = True
+
+    # Rebuild colocate vLLM engine at each eval-step window boundary.
+    reinit_each_eval: bool = False
 
     max_num_seqs: Optional[int] = None
     max_num_batched_tokens: Optional[int] = None
@@ -216,7 +256,9 @@ class RolloutMatchingConfig:
     eval_rollout_backend: str = "vllm"
 
     # Decode / generation.
-    decode_batch_size: int = 1
+    # Explicit per-context rollout decode batch sizes (required).
+    channel_b_decode_batch_size: Optional[int] = None
+    eval_decode_batch_size: Optional[int] = None
     decode_mode: str = "greedy"
     max_new_tokens: int = 512
     num_beams: int = 1
@@ -285,22 +327,41 @@ class RolloutMatchingConfig:
             field_name="eval_rollout_backend",
             allow_none=False,
         )
-        if rollout_backend != "hf":
-            raise ValueError(
-                "rollout_matching.rollout_backend must be 'hf' (training-step vLLM rollouts are removed)."
-            )
         if eval_backend != "vllm":
             raise ValueError(
                 "rollout_matching.eval_rollout_backend must be 'vllm' (eval-step backend is fixed)."
             )
-        effective_eval_backend = "vllm"
+        effective_eval_backend = eval_backend
 
+        if self.channel_b_decode_batch_size is None:
+            raise ValueError(
+                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+            )
         try:
-            decode_bs = int(self.decode_batch_size)
+            channel_b_decode_bs = int(self.channel_b_decode_batch_size)
         except (TypeError, ValueError) as exc:
-            raise TypeError("rollout_matching.decode_batch_size must be an int") from exc
-        if decode_bs <= 0:
-            raise ValueError("rollout_matching.decode_batch_size must be > 0")
+            raise TypeError(
+                "rollout_matching.channel_b_decode_batch_size must be an int"
+            ) from exc
+        if channel_b_decode_bs <= 0:
+            raise ValueError(
+                "rollout_matching.channel_b_decode_batch_size must be > 0"
+            )
+
+        if self.eval_decode_batch_size is None:
+            raise ValueError(
+                "rollout_matching.eval_decode_batch_size must be provided explicitly"
+            )
+        try:
+            eval_decode_bs = int(self.eval_decode_batch_size)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout_matching.eval_decode_batch_size must be an int"
+            ) from exc
+        if eval_decode_bs <= 0:
+            raise ValueError(
+                "rollout_matching.eval_decode_batch_size must be > 0"
+            )
 
         coord_decode_mode = str(self.coord_decode_mode or "exp").strip().lower()
         if coord_decode_mode not in {"exp", "st"}:

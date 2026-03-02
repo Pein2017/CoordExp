@@ -68,6 +68,7 @@ from .rollout_matching.packing import (
 )
 from .rollout_matching.parsing import (
     coerce_int as _coerce_int,
+    decode_pieces as _decode_pieces,
     parse_rollout_for_matching,
     points_from_coord_tokens as _points_from_coord_tokens,
     serialize_append_fragment as _serialize_append_fragment,
@@ -1185,7 +1186,7 @@ class _AdaptiveRawMicroBatchStacker:
     packs can automatically increase the raw sample budget.
 
     The class is currently used for unit tests and diagnostics; production runs
-    typically rely on a configured `decode_batch_size`.
+    typically rely on configured context-specific decode batch sizes.
     """
 
     def __init__(self, dataloader, *, trainer: Any):
@@ -1376,11 +1377,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             allow_none=False,
         )
         assert train_backend is not None
-        if train_backend != "hf":
-            raise ValueError(
-                "Legacy training-step vLLM rollouts are removed; "
-                "set rollout_matching.rollout_backend='hf'."
-            )
 
         eval_backend = self._normalize_rollout_backend_value(
             self._cfg("eval_rollout_backend", "vllm"),
@@ -1394,7 +1390,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "set rollout_matching.eval_rollout_backend='vllm'."
             )
 
-        return "hf" if context == "train" else "vllm"
+        return train_backend if context == "train" else eval_backend
 
     def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:
         raw = getattr(self, "object_field_order", None)
@@ -1455,7 +1451,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "top_k",
                 # Removed buffer reuse.
                 "rollout_buffer",
-                # Legacy batching knobs (replaced by decode_batch_size).
+                # Legacy batching knobs (replaced by explicit per-context decode batch sizes).
+                "decode_batch_size",
                 "rollout_generate_batch_size",
                 "rollout_infer_batch_size",
                 # Removed packing-scope knob.
@@ -1466,9 +1463,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if removed:
             rendered: List[str] = []
             for k in removed:
-                if k in {"rollout_generate_batch_size", "rollout_infer_batch_size"}:
+                if k in {
+                    "decode_batch_size",
+                    "rollout_generate_batch_size",
+                    "rollout_infer_batch_size",
+                }:
                     rendered.append(
-                        f"rollout_matching.{k} (use rollout_matching.decode_batch_size)"
+                        "rollout_matching."
+                        f"{k} (use rollout_matching.channel_b_decode_batch_size / rollout_matching.eval_decode_batch_size)"
                     )
                 elif k == "post_rollout_pack_scope":
                     rendered.append(
@@ -1483,17 +1485,37 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 f"{legacy_s}. (No backward compatibility.)"
             )
 
-        # Validate unified decode batch size knob.
-        decode_bs_raw = cfg.get("decode_batch_size", 1)
+        # Validate explicit per-context decode batch-size knobs.
+        channel_b_decode_bs_raw = cfg.get("channel_b_decode_batch_size", None)
+        if channel_b_decode_bs_raw is None:
+            raise ValueError(
+                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+            )
         try:
-            decode_bs = int(decode_bs_raw)
+            channel_b_decode_bs = int(channel_b_decode_bs_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "rollout_matching.decode_batch_size must be an int"
+                "rollout_matching.channel_b_decode_batch_size must be an int"
             ) from exc
-        if decode_bs <= 0:
+        if channel_b_decode_bs <= 0:
             raise ValueError(
-                "rollout_matching.decode_batch_size must be > 0"
+                "rollout_matching.channel_b_decode_batch_size must be > 0"
+            )
+
+        eval_decode_bs_raw = cfg.get("eval_decode_batch_size", None)
+        if eval_decode_bs_raw is None:
+            raise ValueError(
+                "rollout_matching.eval_decode_batch_size must be provided explicitly"
+            )
+        try:
+            eval_decode_bs = int(eval_decode_bs_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout_matching.eval_decode_batch_size must be an int"
+            ) from exc
+        if eval_decode_bs <= 0:
+            raise ValueError(
+                "rollout_matching.eval_decode_batch_size must be > 0"
             )
 
         dec = cfg.get("decoding", None)
@@ -1579,10 +1601,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise ValueError(
                 "rollout_matching.vllm.enable_sleep_mode is no longer supported."
             )
-        if bool(vllm_cfg.get("reinit_each_eval", False)):
-            raise ValueError(
-                "rollout_matching.vllm.reinit_each_eval is no longer supported."
+
+        reinit_each_eval_raw = vllm_cfg.get("reinit_each_eval", False)
+        if not isinstance(reinit_each_eval_raw, bool):
+            raise TypeError(
+                "rollout_matching.vllm.reinit_each_eval must be a bool"
             )
+        if bool(reinit_each_eval_raw):
+            if eval_backend != "vllm":
+                raise ValueError(
+                    "rollout_matching.vllm.reinit_each_eval requires eval_rollout_backend=vllm."
+                )
+            mode_raw = str(vllm_cfg.get("mode", "colocate") or "colocate").strip().lower()
+            if mode_raw != "colocate":
+                raise ValueError(
+                    "rollout_matching.vllm.reinit_each_eval requires rollout_matching.vllm.mode=colocate."
+                )
+
         sleep_level_raw = vllm_cfg.get("sleep_level", 0)
         try:
             sleep_level = int(0 if sleep_level_raw is None else sleep_level_raw)
@@ -1905,8 +1940,34 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
 
     @staticmethod
+    def _strip_left_padding_token_ids(
+        token_ids: Sequence[int],
+        *,
+        pad_token_id: Any | None,
+    ) -> List[int]:
+        ids = [int(t) for t in token_ids]
+        try:
+            pad = int(pad_token_id) if pad_token_id is not None else None
+        except (TypeError, ValueError):
+            pad = None
+        if pad is None:
+            return ids
+
+        i = 0
+        while i < int(len(ids)) and int(ids[i]) == int(pad):
+            i += 1
+        if i == 0:
+            return ids
+
+        trimmed = ids[i:]
+        return trimmed if trimmed else ids
+
+
+    @staticmethod
     def _parse_vllm_server_output_traced(
         raw: Any,
+        *,
+        tokenizer: Any | None = None,
     ) -> Tuple[List[int], str, List[int], List[float], List[str]]:
         """Parse one ms-swift /infer/ response item including per-token logprobs.
 
@@ -1929,6 +1990,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
             )
         prompt_ids = [int(t) for t in prompt_ids_raw]
+        prompt_ids = RolloutMatchingSFTTrainer._strip_left_padding_token_ids(
+            prompt_ids,
+            pad_token_id=getattr(tokenizer, "pad_token_id", None)
+            if tokenizer is not None
+            else None,
+        )
 
         choices = raw.get("choices")
         if not isinstance(choices, list) or not choices:
@@ -1952,13 +2019,51 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         token_logprobs, generated_token_text = (
             RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(ch0.get("logprobs"))
         )
-        if len(token_logprobs) != len(token_ids) or len(generated_token_text) != len(
-            token_ids
-        ):
-            raise RuntimeError(
-                "vLLM server logprob trace length mismatch: "
-                f"token_ids={len(token_ids)} logprobs={len(token_logprobs)} text={len(generated_token_text)}"
+        if len(token_logprobs) != len(generated_token_text):
+            pair_len = min(len(token_logprobs), len(generated_token_text))
+            logger.warning(
+                "vLLM server returned inconsistent trace payload lengths; clamping to common length. "
+                "token_ids=%s logprobs=%s text=%s",
+                int(len(token_ids)),
+                int(len(token_logprobs)),
+                int(len(generated_token_text)),
             )
+            token_logprobs = token_logprobs[:pair_len]
+            generated_token_text = generated_token_text[:pair_len]
+
+        if len(token_logprobs) > len(token_ids):
+            # ms-swift server mode may keep trailing stop/special-token logprobs while
+            # token_ids is already post-processed via template.skip_stop_tokens(...).
+            excess_trace = int(len(token_logprobs) - len(token_ids))
+            logger.debug(
+                "vLLM server trace longer than token_ids; dropping trailing trace entries. "
+                "token_ids=%s logprobs=%s text=%s excess=%s",
+                int(len(token_ids)),
+                int(len(token_logprobs)),
+                int(len(generated_token_text)),
+                int(excess_trace),
+            )
+            token_logprobs = token_logprobs[: len(token_ids)]
+            generated_token_text = generated_token_text[: len(token_ids)]
+        elif len(token_logprobs) < len(token_ids):
+            logger.warning(
+                "vLLM server trace shorter than token_ids; keeping shorter trace for fallback scoring. "
+                "token_ids=%s logprobs=%s text=%s",
+                int(len(token_ids)),
+                int(len(token_logprobs)),
+                int(len(generated_token_text)),
+            )
+
+        if tokenizer is not None:
+            trace_token_ids = token_ids[: len(token_logprobs)]
+            canonical_token_text = [
+                str(t)
+                for t in _decode_pieces(
+                    tokenizer=tokenizer,
+                    token_ids=trace_token_ids,
+                )
+            ]
+            generated_token_text = canonical_token_text
 
         return token_ids, text, prompt_ids, token_logprobs, generated_token_text
 
@@ -2437,13 +2542,38 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self,
         *,
         rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+        force_enable: bool = False,
+        force_offload_model: bool = False,
+        force_offload_optimizer: bool = False,
+        require_cuda_drain: bool = False,
     ):
         """Offload training state during colocate vLLM rollout generation.
 
         Fail-fast when offload is requested but not safe to apply.
+
+        Args:
+            rollout_backend: Explicit rollout backend override for gating.
+            force_enable: Force-enable offload for this context.
+            force_offload_model: Force model parameters/buffers CPU offload.
+            force_offload_optimizer: Force optimizer state CPU offload.
+            require_cuda_drain: Use stricter CUDA drain (sync + cache drain) at
+                transition boundaries.
         """
 
         enabled, offload_model, offload_optimizer = self._offload_settings()
+        if bool(force_enable):
+            enabled = True
+        if bool(force_offload_model):
+            offload_model = True
+        if bool(force_offload_optimizer):
+            offload_optimizer = True
+
+        # CoordExp policy: user-configurable offload is disabled. Offload is only
+        # permitted in internal forced handoff windows (e.g. eval-time vLLM colocate).
+        if not bool(force_enable):
+            yield
+            return
+
         if not enabled or (not offload_model and not offload_optimizer):
             yield
             return
@@ -2453,8 +2583,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if rollout_backend is not None
             else self._effective_rollout_backend(context="train")
         )
-        # Only applicable for colocate vLLM rollouts.
-        if backend != "vllm" or self._vllm_mode() != "colocate":
+        is_vllm_colocate = bool(
+            backend == "vllm" and self._vllm_mode() == "colocate"
+        )
+
+        # Model offload is only safe/needed for colocate vLLM windows.
+        if offload_model and not is_vllm_colocate:
+            offload_model = False
+
+        # Optimizer-only offload is also useful for HF rollout generation in Channel-B
+        # to avoid transient memory additive peaks (train state + decode cache).
+        if not is_vllm_colocate and not offload_optimizer:
             yield
             return
 
@@ -2477,13 +2616,28 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         @torch.no_grad()
         def _offload_model_to_cpu(m) -> None:
-            for p in m.parameters():
-                p.data = p.data.to(torch.device("cpu"), non_blocking=True)
+            params = getattr(m, "parameters", None)
+            buffers = getattr(m, "buffers", None)
+            if params is None or buffers is None:
+                return
+
+            cpu = torch.device("cpu")
+            for p in params():
+                p.data = p.data.to(cpu, non_blocking=True)
+            for b in buffers():
+                b.data = b.data.to(cpu, non_blocking=True)
 
         @torch.no_grad()
         def _load_model_to_device(m) -> None:
-            for p in m.parameters():
+            params = getattr(m, "parameters", None)
+            buffers = getattr(m, "buffers", None)
+            if params is None or buffers is None:
+                return
+
+            for p in params():
                 p.data = p.data.to(train_device, non_blocking=True)
+            for b in buffers():
+                b.data = b.data.to(train_device, non_blocking=True)
 
         @torch.no_grad()
         def _offload_opt_to_cpu(o) -> None:
@@ -2516,19 +2670,55 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 _offload_model_to_cpu(model)
             if offload_optimizer:
                 _offload_opt_to_cpu(opt)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._cuda_memory_drain(synchronize=bool(require_cuda_drain))
             yield
         finally:
             if offload_model:
                 _load_model_to_device(model)
             if offload_optimizer:
                 _load_opt_to_device(opt)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._cuda_memory_drain(synchronize=bool(require_cuda_drain))
+
+    @staticmethod
+    def _cuda_memory_drain(*, synchronize: bool = False) -> None:
+        """Best-effort CUDA allocator drain at lifecycle transitions."""
+        if not torch.cuda.is_available():
+            return
+
+        try:
+            if bool(synchronize):
+                torch.cuda.synchronize()
+        except Exception:
+            pass
+
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        try:
+            ipc_collect = getattr(torch.cuda, "ipc_collect", None)
+            if callable(ipc_collect):
+                ipc_collect()
+        except Exception:
+            pass
+
+        try:
+            import gc
+
+            gc.collect()
+        except Exception:
+            pass
 
     def _rollout_backend(self) -> Literal["hf", "vllm"]:
         return self._effective_rollout_backend(context="train")
+
+    def _current_rollout_context(self) -> Literal["train", "eval"]:
+        model_obj = getattr(self, "model", None)
+        if model_obj is None:
+            return "train"
+        training_attr = getattr(model_obj, "training", True)
+        return "train" if bool(training_attr) else "eval"
 
     def _vllm_mode(self) -> Literal["colocate", "server"]:
         """vLLM integration mode.
@@ -2561,7 +2751,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         vcfg_raw = self._cfg("vllm", {}) or {}
         if not isinstance(vcfg_raw, Mapping):
             raise ValueError("rollout_matching.vllm must be a mapping")
-        return bool(vcfg_raw.get("reinit_each_eval", False))
+        raw_reinit = vcfg_raw.get("reinit_each_eval", False)
+        if not isinstance(raw_reinit, bool):
+            raise ValueError(
+                "rollout_matching.vllm.reinit_each_eval must be a bool"
+            )
+        return bool(raw_reinit)
 
     def _vllm_sleep_level(self, *, default: int = 0) -> int:
         """Normalized sleep level for optional vLLM sleep-mode lifecycle."""
@@ -2840,7 +3035,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             yield
             return
 
-        with self._maybe_rollout_offload_context(rollout_backend=rollout_backend):
+        reinit_each_eval = bool(self._vllm_reinit_each_eval())
+
+        # Strict handoff lifecycle for eval-time colocate rollout:
+        # 1) Offload training model/optimizer from GPU and drain allocator.
+        # 2) Initialize and use vLLM engine.
+        # 3) Shutdown vLLM engine and drain allocator.
+        # 4) Restore training model/optimizer to GPU.
+        with self._maybe_rollout_offload_context(
+            rollout_backend=rollout_backend,
+            force_enable=True,
+            force_offload_model=True,
+            force_offload_optimizer=True,
+            require_cuda_drain=True,
+        ):
+            if reinit_each_eval:
+                self._shutdown_vllm_colocate_engine(wake_before_release=False)
+                self._cuda_memory_drain(synchronize=True)
             _ = self._ensure_vllm_engine()
             prev = bool(getattr(self, "_eval_vllm_window_active", False))
             self._eval_vllm_window_active = True
@@ -2848,6 +3059,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 yield
             finally:
                 self._eval_vllm_window_active = prev
+                if reinit_each_eval:
+                    self._shutdown_vllm_colocate_engine(wake_before_release=False)
+                    self._cuda_memory_drain(synchronize=True)
 
     def _vllm_server_cfg(self) -> Mapping[str, Any]:
         vcfg_raw = self._cfg("vllm", {}) or {}
@@ -3016,23 +3230,37 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self,
         *,
         rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+        rollout_context: Literal["train", "eval"] = "train",
     ) -> int:
         """Derived rollout request chunk size per learner rank.
 
-        `decode_batch_size` is defined as a per-rollout-GPU cap per generation call.
+        Context-specific decode caps are used per rollout phase:
+        - train: `rollout_matching.channel_b_decode_batch_size`
+        - eval: `rollout_matching.eval_decode_batch_size`
 
         - HF backend and vLLM colocate mode: each learner rank decodes locally on its own
-          device(s), so the per-call batch size is exactly `decode_batch_size`.
+          device(s), so the per-call batch size is exactly the effective context-specific
+          decode batch size.
         - vLLM server mode: learner ranks concurrently issue rollout RPCs to a pool of
           rollout GPUs (data-parallel replicas). To preserve a per-rollout-GPU cap, we
           derive a per-rank request chunk size based on the rollout server world size
           and learner world size.
         """
-        cap = int(self._decode_batch_size())
+        context_norm = str(rollout_context).strip().lower()
+        if context_norm not in {"train", "eval"}:
+            raise ValueError(
+                "rollout_context must be one of {'train', 'eval'}"
+            )
+
+        cap = int(
+            self._decode_batch_size(
+                context=("eval" if context_norm == "eval" else "train")
+            )
+        )
         backend = (
             rollout_backend
             if rollout_backend is not None
-            else self._effective_rollout_backend(context="train")
+            else self._effective_rollout_backend(context=context_norm)
         )
         if backend != "vllm":
             return max(1, int(cap))
@@ -3062,10 +3290,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             learner_world = 1
 
         if int(cap) * int(rollout_world) < int(learner_world):
+            cap_key = (
+                "rollout_matching.eval_decode_batch_size"
+                if context_norm == "eval"
+                else "rollout_matching.channel_b_decode_batch_size"
+            )
             raise ValueError(
-                "decode_batch_size cap is infeasible for the current topology: "
-                f"decode_batch_size={cap} rollout_world_size={rollout_world} learner_world_size={learner_world}. "
-                "Increase rollout server DP world size, reduce learner world size, or increase decode_batch_size."
+                "rollout decode batch-size cap is infeasible for the current topology: "
+                f"context={context_norm} {cap_key}={cap} rollout_world_size={rollout_world} learner_world_size={learner_world}. "
+                "Increase rollout server DP world size, reduce learner world size, or increase the context-specific decode batch size."
             )
 
         per_rank = max(1, int(int(cap) * int(rollout_world) // int(learner_world)))
@@ -3075,11 +3308,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             int(learner_world),
             tuple(int(x) for x in server_world_sizes),
             int(per_rank),
+            str(context_norm),
         )
         if meta != getattr(self, "_last_logged_rollout_decode_chunk_meta", None):
             logger.info(
-                "Rollout decode batching (vLLM server): decode_batch_size_cap=%s learner_world_size=%s "
+                "Rollout decode batching (vLLM server): context=%s decode_batch_size_cap=%s learner_world_size=%s "
                 "rollout_server_world_sizes=%s rollout_world_size=%s per_rank_chunk=%s total_chunk_across_ranks=%s",
+                str(context_norm),
                 int(cap),
                 int(learner_world),
                 list(int(x) for x in server_world_sizes),
@@ -3136,18 +3371,43 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Keep in non-zero signed int32 range for compatibility with ms-swift rollouts.
         return self._normalize_rollout_seed_int32(int(base + gs * 1000003))
 
-    def _decode_batch_size(self) -> int:
-        raw = self._cfg("decode_batch_size", 1)
+    def _decode_batch_size(
+        self,
+        *,
+        context: Literal["train", "eval"] = "train",
+    ) -> int:
+        context_norm = str(context).strip().lower()
+        if context_norm not in {"train", "eval"}:
+            raise ValueError(
+                "decode batch-size context must be one of {'train', 'eval'}"
+            )
+
+        if context_norm == "train":
+            raw = self._cfg("channel_b_decode_batch_size", None)
+            missing_msg = (
+                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+            )
+            type_msg = "rollout_matching.channel_b_decode_batch_size must be an int"
+            positive_msg = "rollout_matching.channel_b_decode_batch_size must be > 0"
+        else:
+            raw = self._cfg("eval_decode_batch_size", None)
+            missing_msg = (
+                "rollout_matching.eval_decode_batch_size must be provided explicitly"
+            )
+            type_msg = "rollout_matching.eval_decode_batch_size must be an int"
+            positive_msg = "rollout_matching.eval_decode_batch_size must be > 0"
+
+        if raw is None:
+            raise ValueError(missing_msg)
+
         try:
             v = int(raw)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "rollout_matching.decode_batch_size must be an int"
-            ) from exc
+            raise ValueError(type_msg) from exc
+
         if v <= 0:
-            raise ValueError(
-                "rollout_matching.decode_batch_size must be > 0"
-            )
+            raise ValueError(positive_msg)
+
         return int(v)
 
     def _packing_enabled(self) -> bool:
@@ -3400,8 +3660,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     # ---- rollout backends -------------------------------------------------
     def _ensure_vllm_engine(self) -> Any:
         """Initialize a colocated vLLM engine (lazy)."""
-        if self._vllm_engine is not None:
-            return self._vllm_engine
+        engine = getattr(self, "_vllm_engine", None)
+        if engine is not None:
+            return engine
 
         vcfg_raw = self._cfg("vllm", {}) or {}
         if not isinstance(vcfg_raw, Mapping):
@@ -3471,7 +3732,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         decode_bs_per_rank = max(
             1,
-            int(self._rollout_decode_batch_size_per_rank(rollout_backend="vllm")),
+            int(
+                self._rollout_decode_batch_size_per_rank(
+                    rollout_backend="vllm",
+                    rollout_context="eval",
+                )
+            ),
         )
         # Avoid vLLM's very large default (256), which can reserve excessive KV cache
         # memory in colocate eval-only runs and starve full-sync merge/unmerge steps.
@@ -4053,16 +4319,45 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ):
                 raw_engine = None
 
-        if raw_engine is not None:
+        # Ensure outstanding kernels are finished before tearing engine internals down.
+        self._cuda_memory_drain(synchronize=True)
+
+        def _maybe_invoke_shutdown(obj: Any) -> None:
+            if obj is None:
+                return
             try:
-                shutdown_fn = getattr(raw_engine, "shutdown", None)
+                shutdown_fn = getattr(obj, "shutdown", None)
                 if callable(shutdown_fn):
                     shutdown_fn()
-                else:
-                    engine_core = getattr(raw_engine, "engine_core", None)
-                    core_shutdown_fn = getattr(engine_core, "shutdown", None)
-                    if callable(core_shutdown_fn):
-                        core_shutdown_fn()
+                    return
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
+                pass
+
+            try:
+                close_fn = getattr(obj, "close", None)
+                if callable(close_fn):
+                    close_fn()
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
+                pass
+
+        if raw_engine is not None:
+            try:
+                _maybe_invoke_shutdown(raw_engine)
+                _maybe_invoke_shutdown(getattr(raw_engine, "engine_core", None))
+                _maybe_invoke_shutdown(getattr(raw_engine, "model_executor", None))
+                _maybe_invoke_shutdown(getattr(raw_engine, "executor", None))
             except (
                 AttributeError,
                 OSError,
@@ -4074,6 +4369,30 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "Failed to shutdown colocate vLLM engine cleanly: %s", exc
                 )
 
+        # Best-effort: drop strong references on both wrapper and raw-engine objects.
+        for obj in (engine, raw_engine):
+            if obj is None:
+                continue
+            for attr in (
+                "engine",
+                "engine_core",
+                "model_executor",
+                "executor",
+                "model",
+                "llm_engine",
+            ):
+                try:
+                    if hasattr(obj, attr):
+                        setattr(obj, attr, None)
+                except (
+                    AttributeError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ):
+                    pass
+
         self._vllm_engine = None
         self._vllm_last_loaded_step = -1
         self._vllm_tp_group = None
@@ -4084,6 +4403,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             del engine
         except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
             pass
+        try:
+            del raw_engine
+        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+            pass
+
+        # Sleep-mode globals can retain mempools even when sleep mode is disabled.
+        self._best_effort_cleanup_vllm_sleep_mode_pools()
+
+        # Drain allocator state immediately after engine release so the next
+        # training/eval phase does not overlap with stale vLLM allocations.
+        self._cuda_memory_drain(synchronize=True)
 
     def _vllm_server_infer_guard(self):
         """Optional hook for staging safe vLLM server inference.
@@ -4772,130 +5102,132 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             gen_cfg.num_return_sequences = 1
 
         out: List[Tuple[List[int], str, str, List[int]]] = []
-        mb = int(self._decode_batch_size())
+        mb = int(self._decode_batch_size(context=self._current_rollout_context()))
 
         from swift.llm import to_device
 
-        idx = 0
-        while idx < len(samples):
-            chunk = list(samples[idx : idx + mb])
-            idx += len(chunk)
+        # Optional: offload training state during rollout generation (config-controlled).
+        with self._maybe_rollout_offload_context(rollout_backend="hf"): 
+            idx = 0
+            while idx < len(samples):
+                chunk = list(samples[idx : idx + mb])
+                idx += len(chunk)
 
-            with self._template_packing_disabled():
-                with template.generate_context():
-                    encoded_list = [
-                        template.encode(dict(s), return_length=True) for s in chunk
-                    ]
-                    # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
-                    # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
-                    batch = template.data_collator(encoded_list)
-
-            batch = to_device(batch, self.model.device)
-            input_ids_t = batch["input_ids"]
-            attn = batch.get("attention_mask")
-            if attn is None:
-                pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
-                attn = (input_ids_t != pad_id).to(dtype=torch.long)
-
-            # Prompt token ids for strict sanity checks (strip padding using attention_mask).
-            prompt_ids_list: List[List[int]] = []
-            for row_ids, row_mask in zip(input_ids_t, attn):
-                ids = [
-                    int(t)
-                    for t, m in zip(
-                        row_ids.detach().cpu().tolist(),
-                        row_mask.detach().cpu().tolist(),
-                    )
-                    if int(m) == 1
-                ]
-                prompt_ids_list.append(ids)
-
-            prompt_pad_len = int(input_ids_t.shape[1])
-            self._enforce_hf_rollout_max_position_embeddings(
-                prompt_pad_len=prompt_pad_len,
-                max_new_tokens=max_new_tokens,
-            )
-            model_inputs = {k: v for k, v in batch.items() if k != "labels"}
-            model_inputs.pop("position_ids", None)
-            model_inputs.pop("text_position_ids", None)
-
-            logits_processor = None
-
-            with unwrap_model_for_generation(
-                self.model_wrapped,
-                self.accelerator,
-                gather_deepspeed3_params=getattr(
-                    self.args, "ds3_gather_for_generation", False
-                ),
-            ) as unwrapped:
-                unwrapped.eval()
                 with self._template_packing_disabled():
                     with template.generate_context():
-                        if (
-                            getattr(self.model, "model_meta", None) is not None
-                            and self.model.model_meta.is_multimodal
-                        ):
-                            _, model_inputs = template.pre_forward_hook(
-                                unwrapped, None, model_inputs
-                            )
-                        model_inputs.pop("position_ids", None)
-                        model_inputs.pop("text_position_ids", None)
-                        gen_out = template.generate(
-                            unwrapped,
-                            **model_inputs,
-                            generation_config=gen_cfg,
-                            return_dict_in_generate=True,
-                            logits_processor=logits_processor,
+                        encoded_list = [
+                            template.encode(dict(s), return_length=True) for s in chunk
+                        ]
+                        # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
+                        # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
+                        batch = template.data_collator(encoded_list)
+
+                batch = to_device(batch, self.model.device)
+                input_ids_t = batch["input_ids"]
+                attn = batch.get("attention_mask")
+                if attn is None:
+                    pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
+                    attn = (input_ids_t != pad_id).to(dtype=torch.long)
+
+                # Prompt token ids for strict sanity checks (strip padding using attention_mask).
+                prompt_ids_list: List[List[int]] = []
+                for row_ids, row_mask in zip(input_ids_t, attn):
+                    ids = [
+                        int(t)
+                        for t, m in zip(
+                            row_ids.detach().cpu().tolist(),
+                            row_mask.detach().cpu().tolist(),
                         )
-                unwrapped.train()
+                        if int(m) == 1
+                    ]
+                    prompt_ids_list.append(ids)
 
-            sequences = gen_out.sequences
-            if sequences.ndim != 2:
-                raise ValueError("unexpected generate output shape")
-
-            bsz = int(input_ids_t.shape[0])
-            nret = int(getattr(gen_cfg, "num_return_sequences", 1) or 1)
-            if nret < 1:
-                nret = 1
-
-            # Pick best sequence per sample for beam mode when possible.
-            if (
-                decode_mode == "beam"
-                and nret > 1
-                and hasattr(gen_out, "sequences_scores")
-                and gen_out.sequences_scores is not None
-            ):
-                scores = gen_out.sequences_scores
-                if scores.ndim != 1 or sequences.shape[0] != bsz * nret:
-                    best_idx = torch.zeros(
-                        (bsz,), dtype=torch.long, device=sequences.device
-                    )
-                else:
-                    scores = scores.view(bsz, nret)
-                    best_idx = torch.argmax(scores, dim=1)
-                sequences = sequences.view(bsz, nret, -1)
-                best_seqs = sequences[
-                    torch.arange(bsz, device=sequences.device), best_idx
-                ]
-            else:
-                # Default: first sequence per sample.
-                if sequences.shape[0] == bsz * nret:
-                    sequences = sequences.view(bsz, nret, -1)[:, 0, :]
-                else:
-                    sequences = sequences[:bsz, :]
-                best_seqs = sequences
-
-            for i in range(bsz):
-                seq = best_seqs[i]
-                resp_ids = seq[prompt_pad_len:].tolist()
-                resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
-                text = template.decode(
-                    resp_ids,
-                    is_finished=True,
-                    first_token=True,
-                    clean_up_tokenization_spaces=False,
+                prompt_pad_len = int(input_ids_t.shape[1])
+                self._enforce_hf_rollout_max_position_embeddings(
+                    prompt_pad_len=prompt_pad_len,
+                    max_new_tokens=max_new_tokens,
                 )
-                out.append((resp_ids, text, decode_mode, prompt_ids_list[i]))
+                model_inputs = {k: v for k, v in batch.items() if k != "labels"}
+                model_inputs.pop("position_ids", None)
+                model_inputs.pop("text_position_ids", None)
+
+                logits_processor = None
+
+                with unwrap_model_for_generation(
+                    self.model_wrapped,
+                    self.accelerator,
+                    gather_deepspeed3_params=getattr(
+                        self.args, "ds3_gather_for_generation", False
+                    ),
+                ) as unwrapped:
+                    unwrapped.eval()
+                    with self._template_packing_disabled():
+                        with template.generate_context():
+                            if (
+                                getattr(self.model, "model_meta", None) is not None
+                                and self.model.model_meta.is_multimodal
+                            ):
+                                _, model_inputs = template.pre_forward_hook(
+                                    unwrapped, None, model_inputs
+                                )
+                            model_inputs.pop("position_ids", None)
+                            model_inputs.pop("text_position_ids", None)
+                            gen_out = template.generate(
+                                unwrapped,
+                                **model_inputs,
+                                generation_config=gen_cfg,
+                                return_dict_in_generate=True,
+                                logits_processor=logits_processor,
+                            )
+                    unwrapped.train()
+
+                sequences = gen_out.sequences
+                if sequences.ndim != 2:
+                    raise ValueError("unexpected generate output shape")
+
+                bsz = int(input_ids_t.shape[0])
+                nret = int(getattr(gen_cfg, "num_return_sequences", 1) or 1)
+                if nret < 1:
+                    nret = 1
+
+                # Pick best sequence per sample for beam mode when possible.
+                if (
+                    decode_mode == "beam"
+                    and nret > 1
+                    and hasattr(gen_out, "sequences_scores")
+                    and gen_out.sequences_scores is not None
+                ):
+                    scores = gen_out.sequences_scores
+                    if scores.ndim != 1 or sequences.shape[0] != bsz * nret:
+                        best_idx = torch.zeros(
+                            (bsz,), dtype=torch.long, device=sequences.device
+                        )
+                    else:
+                        scores = scores.view(bsz, nret)
+                        best_idx = torch.argmax(scores, dim=1)
+                    sequences = sequences.view(bsz, nret, -1)
+                    best_seqs = sequences[
+                        torch.arange(bsz, device=sequences.device), best_idx
+                    ]
+                else:
+                    # Default: first sequence per sample.
+                    if sequences.shape[0] == bsz * nret:
+                        sequences = sequences.view(bsz, nret, -1)[:, 0, :]
+                    else:
+                        sequences = sequences[:bsz, :]
+                    best_seqs = sequences
+
+                for i in range(bsz):
+                    seq = best_seqs[i]
+                    resp_ids = seq[prompt_pad_len:].tolist()
+                    resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
+                    text = template.decode(
+                        resp_ids,
+                        is_finished=True,
+                        first_token=True,
+                        clean_up_tokenization_spaces=False,
+                    )
+                    out.append((resp_ids, text, decode_mode, prompt_ids_list[i]))
 
         return out
 
@@ -4999,7 +5331,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ]
 
         out: List[Tuple[List[int], str, str, List[int], List[float], List[str]]] = []
-        mb = int(self._decode_batch_size())
+        mb = int(self._decode_batch_size(context=self._current_rollout_context()))
 
         from swift.llm import to_device
 
@@ -5305,6 +5637,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 prompt_ids = [
                     int(t) for t in (getattr(out, "prompt_token_ids", None) or [])
                 ]
+                prompt_ids = RolloutMatchingSFTTrainer._strip_left_padding_token_ids(
+                    prompt_ids,
+                    pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
+                )
                 choice_logprobs = getattr(out.choices[0], "logprobs", None)
             except (TypeError, ValueError):
                 text = ""
@@ -5332,6 +5668,37 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
                     token_logprobs = token_logprobs[:trace_pair_len]
                     generated_token_text = generated_token_text[:trace_pair_len]
+                if len(token_logprobs) > len(token_ids):
+                    excess_trace = int(len(token_logprobs) - len(token_ids))
+                    logger.debug(
+                        "vLLM rollout trace longer than token_ids; dropping trailing trace entries. "
+                        "sample_idx=%s token_ids=%s logprobs=%s text=%s excess=%s",
+                        int(out_idx),
+                        int(len(token_ids)),
+                        int(len(token_logprobs)),
+                        int(len(generated_token_text)),
+                        int(excess_trace),
+                    )
+                    token_logprobs = token_logprobs[: len(token_ids)]
+                    generated_token_text = generated_token_text[: len(token_ids)]
+                elif len(token_logprobs) < len(token_ids):
+                    logger.warning(
+                        "vLLM rollout trace shorter than token_ids; keeping shorter trace for fallback scoring. "
+                        "sample_idx=%s token_ids=%s logprobs=%s text=%s",
+                        int(out_idx),
+                        int(len(token_ids)),
+                        int(len(token_logprobs)),
+                        int(len(generated_token_text)),
+                    )
+
+                trace_token_ids = token_ids[: len(token_logprobs)]
+                generated_token_text = [
+                    str(t)
+                    for t in _decode_pieces(
+                        tokenizer=self.tokenizer,
+                        token_ids=trace_token_ids,
+                    )
+                ]
                 results.append(
                     (
                         token_ids,
@@ -5451,10 +5818,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         learner_world = max(1, int(learner_world))
         learner_rank = max(0, int(learner_rank))
 
-        decode_cap = int(self._decode_batch_size())
+        rollout_context = self._current_rollout_context()
+        decode_cap = int(self._decode_batch_size(context=rollout_context))
         # Use the canonical per-rank chunk contract (with feasibility check) so
         # server mode behaves identically across all callers.
-        per_rank_chunk = int(self._rollout_decode_batch_size_per_rank())
+        per_rank_chunk = int(
+            self._rollout_decode_batch_size_per_rank(
+                rollout_context=rollout_context,
+            )
+        )
 
         per_server_rank_caps = _per_server_rank_request_caps(
             per_rank_chunk_size=int(per_rank_chunk),
@@ -5561,20 +5933,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 req_timeout_s = float(infer_timeout_s)
                 # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
                 req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
+
+            import requests
+
+            request_errors: Tuple[type[BaseException], ...] = (
+                requests.exceptions.RequestException,
+                TypeError,
+                ValueError,
+            )
             try:
                 with self._vllm_server_infer_guard():
                     resp = session.post(url, json=payload, timeout=req_timeout)
-            except (TypeError, ValueError) as exc:
+            except request_errors as exc:
                 # Retry once with a fresh session. This helps when the server was idle for A steps
                 # (AAB schedules) and the underlying keep-alive connection was dropped.
                 try:
-                    import requests
-
                     client.sessions[server_idx] = requests.Session()
                     session = client.sessions[server_idx]
                     with self._vllm_server_infer_guard():
                         resp = session.post(url, json=payload, timeout=req_timeout)
-                except (TypeError, ValueError) as exc2:
+                except request_errors as exc2:
                     # If this was a batched request, fall back to smaller batches. This is a
                     # common failure mode when a few samples hit max_new_tokens and the read
                     # timeout is exceeded.
@@ -5593,7 +5971,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         return
 
                     raise RuntimeError(
-                        f"vLLM server infer request failed after retry: url={url} exc={exc!r}"
+                        "vLLM server infer request failed after retry: "
+                        f"url={url} timeout={req_timeout!r} first_exc={exc!r} retry_exc={exc2!r}"
                     ) from exc2
 
             if int(getattr(resp, "status_code", 0) or 0) != 200:
@@ -5619,7 +5998,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         prompt_ids,
                         token_logprobs,
                         generated_token_text,
-                    ) = self._parse_vllm_server_output_traced(raw_out)
+                    ) = self._parse_vllm_server_output_traced(
+                        raw_out, tokenizer=self.tokenizer
+                    )
                     results[idx] = (
                         token_ids,
                         text,
@@ -5630,6 +6011,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
                 else:
                     token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
+                    prompt_ids = self._strip_left_padding_token_ids(
+                        prompt_ids,
+                        pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
+                    )
                     results[idx] = (token_ids, text, decode_mode, prompt_ids)
 
         # Parallelize by server within each round.
@@ -5785,9 +6170,32 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         modified = True
                         msgs_out = msgs_sys
 
+                images_out = None
+                if backend == "vllm":
+                    images_raw = s.get("images", None)
+                    if images_raw is None:
+                        img = s.get("image", None)
+                        if isinstance(img, str) and img:
+                            images_raw = [img]
+
+                    if images_raw is not None:
+                        if isinstance(images_raw, str):
+                            images_out = [images_raw]
+                        elif isinstance(images_raw, list):
+                            images_out = images_raw
+                        elif isinstance(images_raw, tuple):
+                            images_out = list(images_raw)
+
+                        if images_out is not None and not isinstance(
+                            s.get("images"), list
+                        ):
+                            modified = True
+
                 if modified:
                     s2 = dict(s)
                     s2["messages"] = msgs_out
+                    if images_out is not None:
+                        s2["images"] = images_out
                     samples_for_rollout.append(s2)
                 else:
                     samples_for_rollout.append(s)
@@ -5804,10 +6212,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         prompt_variant_override: Optional[str] = None,
         rollout_backend: Optional[Literal["hf", "vllm"]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
+        rollout_context = self._current_rollout_context()
         backend = (
             rollout_backend
             if rollout_backend is not None
-            else self._effective_rollout_backend(context="train")
+            else self._effective_rollout_backend(context=rollout_context)
         )
         samples_for_rollout = self._prepare_samples_for_rollout(
             samples,
@@ -5822,12 +6231,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             mode = self._vllm_mode()
             if mode == "server":
                 # Enforce the per-rank rollout request cap centrally so all callers
-                # (Stage2-AB + evaluator) obey decode_batch_size topology constraints.
+                # (Stage2-AB + evaluator) obey context-specific decode batch-size topology constraints.
                 chunk_size = max(
                     1,
                     int(
                         self._rollout_decode_batch_size_per_rank(
-                            rollout_backend=backend
+                            rollout_backend=backend,
+                            rollout_context=rollout_context,
                         )
                     ),
                 )
@@ -5896,7 +6306,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         packing_length: int,
         *,
         min_fill_ratio: Optional[float] = None,
-        allow_shorter_than_fifo: bool = False,
     ) -> List[int]:
         """Select segment indices for one packed forward pass.
 
@@ -5904,19 +6313,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         are in insertion order, MUST include the oldest segment, and total length MUST
         be <= packing_length.
 
-        Default behavior (`allow_shorter_than_fifo=False`) is spec-compliant for the
-        rollout-matching trainer:
+        Selection always uses pool-aware packing:
         - compute FIFO-greedy baseline,
-        - compute an ms-swift-like constant-volume binpacking candidate (oldest pinned),
-        - return the candidate only if it strictly increases total selected length,
-          otherwise return the baseline.
+        - compute a stage-1-like constant-volume pool plan (oldest pinned),
+        - pick the plan with better pool-level packing score.
 
-        Stage-2 AB step-budgeted mode can optionally enable pool-aware packing
-        (`allow_shorter_than_fifo=True`) to mimic Stage-1 smart packing inside the
-        per-step pool (e.g. 8 raw samples/rank/optimizer.step) and reduce tiny remainder
-        packs when carry across steps is forbidden.
-
-        `min_fill_ratio` is treated as a soft policy knob for pool-aware mode only.
+        `min_fill_ratio` acts as a soft fill target used during pool-level scoring.
         """
         packing_length = int(packing_length)
         if packing_length <= 0:
@@ -5959,46 +6361,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 baseline.append(int(i))
                 used += sl
         baseline = sorted(int(i) for i in baseline)
-        baseline_total = int(used)
-
-        # Default mode: MUST NOT return a selection with lower total length than FIFO.
-        if not bool(allow_shorter_than_fifo):
-            cap_rem = int(packing_length - oldest_len)
-            if cap_rem <= 0:
-                return baseline
-
-            items: List[Tuple[int, int]] = []
-            for i in range(1, len(lens)):
-                sl = int(lens[i])
-                if sl <= 0:
-                    continue
-                if sl <= cap_rem:
-                    items.append((int(i), int(sl)))
-
-            bins = (
-                binpacking.to_constant_volume(items, cap_rem, weight_pos=1) if items else []
-            )
-
-            best_rest: List[int] = []
-            best_key: Optional[Tuple[int, int, Tuple[int, ...]]] = None
-            for b in bins:
-                rest = sorted(int(idx) for idx, _ in b)
-                total = int(sum(int(lens[i]) for i in rest))
-                key = (-total, len(rest), tuple(rest))
-                if best_key is None or key < best_key:
-                    best_key = key
-                    best_rest = rest
-
-            candidate = sorted([0] + best_rest)
-            candidate_total = int(sum(int(lens[i]) for i in candidate))
-            if candidate_total > packing_length:
-                raise AssertionError(
-                    "post-rollout packing selection overflowed packing_length"
-                )
-
-            if candidate_total > baseline_total:
-                return candidate
-            return baseline
 
         # Pool-aware mode: allow selecting a shorter current pack when it improves the
         # remaining pool packing (reduces underfilled remainder packs).
@@ -8001,7 +8363,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         trainer_variant = str(getattr(self.args, "trainer_variant", "") or "")
         if trainer_variant == "stage2_rollout_aligned":
             try:
-                decode_bs = int(self._decode_batch_size())
+                decode_bs = int(self._decode_batch_size(context="train"))
             except (TypeError, ValueError):
                 decode_bs = 1
             decode_bs = max(1, int(decode_bs))
@@ -8275,7 +8637,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             if not sample_rollouts:
                                 raise RuntimeError(
                                     "Eval vLLM rollout failed for all samples in a batch; "
-                                    "aborting evaluation."
+                                    "aborting evaluation. "
+                                    f"batch_error={batch_exc.__class__.__name__}: {batch_exc}"
                                 ) from batch_exc
                     else:
                         raise ValueError(
@@ -8322,7 +8685,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         if not sample_rollouts:
                             raise RuntimeError(
                                 "Eval vLLM rollout failed for all samples in a batch; "
-                                "aborting evaluation."
+                                "aborting evaluation. "
+                                f"batch_error={batch_exc.__class__.__name__}: {batch_exc}"
                             ) from batch_exc
 
                 for sample, rollout in sample_rollouts:
@@ -8999,6 +9363,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     metrics[_k("rollout/mAP")] = float(coco_metrics_recv["bbox_AP"])
                 except (TypeError, ValueError):
                     metrics[_k("rollout/mAP")] = 0.0
+
+            metric_for_best_model = str(
+                getattr(getattr(self, "args", None), "metric_for_best_model", "") or ""
+            ).strip()
+            metric_for_best_model_norm = str(metric_for_best_model)
+            if metric_for_best_model_norm.startswith("eval_"):
+                metric_for_best_model_norm = metric_for_best_model_norm[len("eval_") :]
+            if metric_for_best_model_norm == "rollout/mAP":
+                coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
+                if coco_ok <= 0.0:
+                    coco_err = str(recv_payload.get("error", "") or "").strip()
+                    raise RuntimeError(
+                        "Eval-step COCO/mAP failed while metric_for_best_model targets rollout/mAP; "
+                        "aborting to avoid invalid best-checkpoint selection. "
+                        f"error={coco_err or 'unknown'}"
+                    )
 
             coco_counters_recv = recv_payload.get("counters", {})
             if isinstance(coco_counters_recv, Mapping):
