@@ -1,5 +1,9 @@
 # Detection Run Comparison
 
+Date: 2026-02-26
+Last updated: 2026-02-26
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 Baseline: `pure_ce_1932_merged_coco_val_limit200_res768_temp0`
 
 ## Summary Metrics

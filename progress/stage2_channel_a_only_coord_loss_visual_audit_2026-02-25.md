@@ -1,5 +1,9 @@
 # Stage-2 (Channel-A Only) Visual Audit: Coord Token Drift, Duplicate Boxes, and A1 Coord-Loss Decision (2026-02-25)
 
+Date: 2026-02-25
+Last updated: 2026-02-25
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note analyzes the Stage-2 **Channel-A only** experiment primarily through **monitor dump visualizations** (GT vs Pred side-by-side), with the goal of:
 
 - diagnosing *coordinate token loss / coordinate-decoding* failure modes that show up in rollouts,

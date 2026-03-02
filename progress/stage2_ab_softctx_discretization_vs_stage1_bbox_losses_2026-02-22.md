@@ -1,6 +1,8 @@
 # Stage-2 AB: Continuous Soft-Context Mismatch vs Discrete Rollouts (and Stage-1 Loss Alignment)
 
 Date: 2026-02-22
+Last updated: 2026-02-22
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 
 This note records an important diagnosis from Stage-2 AB Channel-A-only experiments (COCO bbox max60, COCO-80 prompt variant), focusing on rollout degradation modes and why a continuous self-context expectation update can diverge from real (discrete) rollout behavior.
 
@@ -220,4 +222,3 @@ If rollouts are severely constrained:
 - Is `wrong_arity` primarily a decoding issue (greedy) or a learned formatting drift?
 - How much of the rollout degradation is dominated by a small number of outlier images?
 - For polygons, what is the best constrained decoding strategy (token filter vs grammar-based) compatible with vLLM/HF backends?
-

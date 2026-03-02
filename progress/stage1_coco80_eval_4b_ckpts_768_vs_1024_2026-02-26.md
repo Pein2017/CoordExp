@@ -1,5 +1,9 @@
 # COCO80 Bench (200 samples): 4B Checkpoints @ max_pixels=32*32*{768,1024} (2026-02-26)
 
+Date: 2026-02-26
+Last updated: 2026-02-26
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note records *measured* detection metrics for three **4B-sized** CoordExp stage-1 checkpoints on the **COCO80 val** eval set (limited to **200** samples), evaluated under two `public_data` rescale presets:
 
 - `rescale_32_768_bbox_max60`
@@ -99,4 +103,3 @@ All runs below use:
 - soft_ce_hard_ce_mixed:
   - 768: `output/bench/pure_ce_2b_1344_coco_val_limit200_res768/`
   - 1024: `output/bench/pure_ce_2b_1344_coco_val_limit200_res1024/`
-

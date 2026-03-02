@@ -1,5 +1,9 @@
 # Stage-2 (Channel-A only) Diagnosis: Coord Loss Dynamics from Monitor Dumps (2026-02-25)
 
+Date: 2026-02-25
+Last updated: 2026-02-25
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note focuses on *what the model is actually doing* in crowded scenes, using monitor-dump visualizations as the primary evidence source (loss curves are treated as supporting signals).
 
 Run under analysis:
@@ -155,4 +159,3 @@ In crowded/unlabeled regimes:
 Therefore:
 - Use monitor dumps + mAP together to decide whether behavior improved.
 - Treat f1 drops in dense “unlabeled” scenes as ambiguous without qualitative inspection.
-

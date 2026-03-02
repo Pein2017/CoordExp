@@ -1,5 +1,9 @@
 # Stage-2 Infrastructure Exploration Request
 
+Date: 2026-01-26
+Last updated: 2026-01-26
+Note: referenced run artifacts and external checkouts may be pruned; paths are best-effort pointers.
+
 ## Context
 
 I have completed **Stage-1 training** (see `progress/pretrain/first_stage.md`), which implements standard SFT with coord token distribution losses (softCE + W1 + gate). The model now reliably outputs structured detection format with `<|coord_k|>` tokens.

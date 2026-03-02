@@ -1,5 +1,8 @@
 # Stage-2 (AB) Channel-A Only — COCO Parseability Degradation Diagnosis + Coord-Vocab Gate (2026-02-21)
 
+Date: 2026-02-21
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 Last updated: 2026-02-22
 
 This note records an ongoing investigation into a serious **Stage-2 AB Channel-A only** failure mode on **COCO bbox-only** where rollout outputs become increasingly **unparseable / format-incorrect** as training proceeds (many invalid predictions dropped during eval).

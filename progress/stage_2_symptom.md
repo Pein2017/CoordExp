@@ -1,6 +1,8 @@
 # Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash
 
+Date: 2026-02-17
 Last updated: 2026-02-17
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 
 This note summarizes **what goes wrong** when Stage-2 AB training runs with **Channel-B dominating** (`stage2_ab.schedule.b_ratio=0.85`) for a few hundred steps, especially when rollouts are allowed to grow long (e.g., `rollout_matching.max_new_tokens=3084`). It also maps symptoms to likely root causes and gives config-first cures with concrete verification steps.
 

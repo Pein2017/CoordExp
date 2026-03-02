@@ -1,5 +1,9 @@
 # Stage-1 Training Dynamics (4B): soft_ce_only vs pure_ce_only vs soft_ce_hard_ce_mixed (2026-02-26)
 
+Date: 2026-02-26
+Last updated: 2026-02-26
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note analyzes *training-time dynamics* (teacher-forcing metrics) for three **4B-sized** stage-1 runs whose merged checkpoints were evaluated in:
 
 - [progress/stage1_coco80_eval_4b_ckpts_768_vs_1024_2026-02-26.md](/data/home/xiaoyan/AIteam/data/CoordExp/progress/stage1_coco80_eval_4b_ckpts_768_vs_1024_2026-02-26.md)

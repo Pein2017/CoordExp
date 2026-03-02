@@ -1,5 +1,9 @@
 # Stage-2 (AB) Channel-A Only — Inference/Eval Notes (2026-02-01)
 
+Date: 2026-02-01
+Last updated: 2026-02-01
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note summarizes what we observed when benchmarking **Channel-A only** Stage-2 checkpoints on LVIS bbox-only validation, focusing on:
 
 - **Stability** under autoregressive inference (empty/invalid/degenerate outputs).
@@ -128,4 +132,3 @@ To keep comparisons clean and paper-ready:
    - `empty_pred`, `degenerate/invalid_geometry`
    - `dup_exact` rate (IoU==1 / identical bbox) and “near-dup” rate (IoU>0.95)
    - preds/image tail (p99/max) to catch rare meltdowns.
-

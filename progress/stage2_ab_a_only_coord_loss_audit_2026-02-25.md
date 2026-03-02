@@ -1,5 +1,9 @@
 # Stage-2 AB (Channel-A only) — Coord Loss Dynamics + “A1 coord loss?” Decision Note (2026-02-25)
 
+Date: 2026-02-25
+Last updated: 2026-02-25
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note analyzes the **Stage-2 AB “Channel‑A only”** experiment to diagnose **coord-token loss behavior** and to inform the design decision of whether we should introduce **any explicit coord loss on A1** (the **first** GT/teacher‑forced forward pass).
 
 Primary artifact (this note is scoped to this run only):

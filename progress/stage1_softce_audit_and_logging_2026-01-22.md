@@ -1,5 +1,9 @@
 # Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)
 
+Date: 2026-01-22
+Last updated: 2026-02-01
+Note: referenced run artifacts may be pruned; paths are best-effort pointers.
+
 This note captures the key findings from auditing CoordExp stage-1 pretraining (soft cross-entropy over coord bins, optional W1 regularizer), with emphasis on:
 - why earlier train/eval losses looked misaligned,
 - what we changed to make metrics comparable,
