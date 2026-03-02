@@ -235,6 +235,41 @@ def build_stage2_launcher_preflight(
             raise TypeError("model.dtype/torch_dtype must be a string when provided")
         server_torch_dtype = dtype_raw.strip() or None
 
+    server_template = ""
+    template_raw = None
+    try:
+        template_raw = training_config.template.get("template")
+    except Exception:
+        template_raw = None
+    if isinstance(template_raw, str) and template_raw.strip():
+        server_template = template_raw.strip()
+
+    server_max_length = None
+    gml_raw = getattr(training_config, "global_max_length", None)
+    if gml_raw is not None:
+        try:
+            server_max_length = int(gml_raw)
+        except Exception as exc:
+            raise TypeError("global_max_length must be an int when provided") from exc
+        if server_max_length <= 0:
+            raise ValueError(
+                f"global_max_length must be a positive int when provided, got {gml_raw!r}"
+            )
+
+    server_truncation_strategy = ""
+    trunc_raw = None
+    try:
+        trunc_raw = training_config.template.get("truncation_strategy")
+    except Exception:
+        trunc_raw = None
+    if isinstance(trunc_raw, str) and trunc_raw.strip():
+        trunc = trunc_raw.strip().lower()
+        # ms-swift CLI uses truncation_strategy='delete' to mean Template(truncation_strategy='raise').
+        if trunc == "raise":
+            server_truncation_strategy = "delete"
+        else:
+            server_truncation_strategy = trunc
+
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "eval_rollout_backend": rollout_contract["eval_rollout_backend"],
@@ -244,6 +279,9 @@ def build_stage2_launcher_preflight(
         "train_jsonl_resolved": str(train_jsonl_path),
         "val_jsonl_resolved": "" if val_jsonl_path is None else str(val_jsonl_path),
         "template_max_pixels": template_max_pixels,
+        "server_template": server_template,
+        "server_max_length": server_max_length,
+        "server_truncation_strategy": server_truncation_strategy,
         "root_image_dir_resolved": str(root_image_dir),
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,

@@ -26,6 +26,7 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
     )
 
     training_config = types.SimpleNamespace(
+        global_max_length=14000,
         model={
             "model": "output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged",
             "dtype": "bfloat16",
@@ -34,7 +35,11 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
             train_jsonl=str(train_jsonl),
             val_jsonl=str(val_jsonl),
         ),
-        template={"max_pixels": 32 * 32 * 768 * 10000},
+        template={
+            "template": "qwen3_vl",
+            "truncation_strategy": "raise",
+            "max_pixels": 32 * 32 * 768 * 10000,
+        },
         rollout_matching={
             "rollout_backend": "hf",
             "eval_rollout_backend": "vllm",
@@ -72,6 +77,10 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
     assert "public_data" in root.parts
 
     assert int(out["vllm_max_model_len"]) == 14000
+    assert out["server_template"] == "qwen3_vl"
+    assert int(out["server_max_length"]) == 14000
+    assert out["server_truncation_strategy"] == "delete"
+
     assert bool(out["vllm_enable_lora"]) is False
     assert pytest.approx(float(out["vllm_gpu_memory_utilization"]), rel=1e-6) == 0.85
     assert out["server_torch_dtype"] in {"bfloat16", "bf16"}

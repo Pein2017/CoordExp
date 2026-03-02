@@ -132,6 +132,10 @@ emit("SERVER_MODEL", preflight["server_model"])
 emit("TRAIN_JSONL_RESOLVED", preflight["train_jsonl_resolved"])
 emit("VAL_JSONL_RESOLVED", preflight.get("val_jsonl_resolved") or "")
 emit("TEMPLATE_MAX_PIXELS", int(preflight["template_max_pixels"]))
+emit("SERVER_TEMPLATE", preflight.get("server_template") or "")
+server_max_length = preflight.get("server_max_length")
+emit("SERVER_MAX_LENGTH", "" if server_max_length is None else int(server_max_length))
+emit("SERVER_TRUNCATION_STRATEGY", preflight.get("server_truncation_strategy") or "")
 emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
@@ -378,6 +382,22 @@ SERVER_CMD=(swift rollout \
   --vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
   --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
   --vllm_enable_lora "${VLLM_ENABLE_LORA}")
+
+# Keep server prompt encoding identical to learner template.encode:
+# - `--template` pins the exact chat template (e.g. qwen3_vl).
+# - `--max_pixels` must match training to avoid vision token count drift.
+# - `--max_length` aligns the template max_length with global_max_length.
+# - truncation_strategy: ms-swift CLI uses `delete` to mean Template(..., truncation_strategy='raise').
+if [[ -n "${SERVER_TEMPLATE:-}" ]]; then
+  SERVER_CMD+=(--template "${SERVER_TEMPLATE}")
+fi
+if [[ -n "${SERVER_MAX_LENGTH:-}" ]]; then
+  SERVER_CMD+=(--max_length "${SERVER_MAX_LENGTH}")
+fi
+if [[ -n "${SERVER_TRUNCATION_STRATEGY:-}" ]]; then
+  SERVER_CMD+=(--truncation_strategy "${SERVER_TRUNCATION_STRATEGY}")
+fi
+SERVER_CMD+=(--max_pixels "${TEMPLATE_MAX_PIXELS}")
 
 SCRIPT_PGID="$(ps -o pgid= "$$" | tr -d ' ')"
 SERVER_PID=""
