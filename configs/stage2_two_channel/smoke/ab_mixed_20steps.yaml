@@ -1,4 +1,4 @@
-extends: ../prod/ab_mixed_server.yaml
+extends: ../prod/ab_mixed.yaml
 
 
 training:

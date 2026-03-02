@@ -77,6 +77,8 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
     assert "public_data" in root.parts
 
     assert int(out["vllm_max_model_len"]) == 14000
+    assert int(out["vllm_tensor_parallel_size"]) == 1
+    assert bool(out["vllm_enforce_eager"]) is False
     assert out["server_template"] == "qwen3_vl"
     assert int(out["server_max_length"]) == 14000
     assert out["server_truncation_strategy"] == "delete"

@@ -80,7 +80,7 @@ custom:
     prompt_variant: coco_80
 
 rollout_matching:
-  rollout_backend: hf
+  rollout_backend: vllm
   eval_rollout_backend: vllm
   offload:
     enabled: false
@@ -95,6 +95,16 @@ rollout_matching:
     max_text_chars: 0
     write_markdown: false
   vllm:
-    mode: colocate
-    gpu_memory_utilization: 0.5
-    reinit_each_eval: true
+    mode: server
+    tensor_parallel_size: 1
+    enforce_eager: true
+    gpu_memory_utilization: 0.7
+    max_model_len: 14000
+    enable_lora: false
+    enable_prefix_caching: true
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

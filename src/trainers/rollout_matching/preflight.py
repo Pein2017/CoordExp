@@ -212,6 +212,22 @@ def build_stage2_launcher_preflight(
 
     enable_lora = bool(vllm_cfg.get("enable_lora", False))
 
+    tensor_parallel_size = 1
+    tp_raw = vllm_cfg.get("tensor_parallel_size")
+    if tp_raw is not None:
+        try:
+            tensor_parallel_size = int(tp_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout_matching.vllm.tensor_parallel_size must be an int when provided"
+            ) from exc
+    if tensor_parallel_size <= 0:
+        raise ValueError(
+            "rollout_matching.vllm.tensor_parallel_size must be > 0 when provided"
+        )
+
+    enforce_eager = bool(vllm_cfg.get("enforce_eager", False))
+
     gpu_memory_utilization = None
     gpu_mem_raw = vllm_cfg.get("gpu_memory_utilization")
     if gpu_mem_raw is not None:
@@ -283,6 +299,8 @@ def build_stage2_launcher_preflight(
         "server_max_length": server_max_length,
         "server_truncation_strategy": server_truncation_strategy,
         "root_image_dir_resolved": str(root_image_dir),
+        "vllm_tensor_parallel_size": tensor_parallel_size,
+        "vllm_enforce_eager": enforce_eager,
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
         "vllm_gpu_memory_utilization": gpu_memory_utilization,

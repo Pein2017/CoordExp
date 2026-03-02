@@ -25,11 +25,6 @@ CONFIG_RAW="${config:-${CONFIG:-configs/stage2_two_channel/smoke/ab_mixed.yaml}}
 DEBUG="${debug:-${DEBUG:-false}}"
 TRAIN_ENV="${train_env:-${TRAIN_ENV:-}}"
 DISABLE_PROXY="${disable_proxy:-${DISABLE_PROXY:-true}}"
-SERVER_DP="${server_dp:-${SERVER_DP:-}}"
-SERVER_TP="${server_tp:-${SERVER_TP:-1}}"
-SERVER_TORCH_DTYPE="${server_torch_dtype:-${SERVER_TORCH_DTYPE:-}}"
-SERVER_VLLM_ENFORCE_EAGER="${server_vllm_enforce_eager:-${SERVER_VLLM_ENFORCE_EAGER:-true}}"
-VLLM_GPU_MEMORY_UTILIZATION="${vllm_gpu_memory_utilization:-${VLLM_GPU_MEMORY_UTILIZATION:-}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -137,6 +132,11 @@ server_max_length = preflight.get("server_max_length")
 emit("SERVER_MAX_LENGTH", "" if server_max_length is None else int(server_max_length))
 emit("SERVER_TRUNCATION_STRATEGY", preflight.get("server_truncation_strategy") or "")
 emit("ROOT_IMAGE_DIR_RESOLVED", preflight["root_image_dir_resolved"])
+emit("VLLM_TENSOR_PARALLEL_SIZE_CFG", int(preflight["vllm_tensor_parallel_size"]))
+emit(
+    "VLLM_ENFORCE_EAGER_CFG",
+    "true" if bool(preflight["vllm_enforce_eager"]) else "false",
+)
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
 gpu_mem = preflight.get("vllm_gpu_memory_utilization")
@@ -212,6 +212,12 @@ PY
 )"
 eval "${SERVER_HOST_PORT}"
 
+# vLLM server launch knobs are config-derived (YAML is the single source of truth).
+SERVER_TP="${VLLM_TENSOR_PARALLEL_SIZE_CFG:-1}"
+SERVER_VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER_CFG:-false}"
+SERVER_TORCH_DTYPE="${SERVER_TORCH_DTYPE_CFG:-bfloat16}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}"
+
 # Resolve model dir to an absolute path (ms-swift treats missing local paths as hub IDs).
 if [[ "${SERVER_MODEL}" != /* ]]; then
   SERVER_MODEL="${REPO_DIR}/${SERVER_MODEL}"
@@ -273,7 +279,7 @@ python "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   --enforce-rescale-images-real-dir \
   --image-check-n 0
 
-# Derive data-parallel size from SERVER_GPUS unless explicitly overridden.
+# Derive vLLM server data-parallel size from SERVER_GPUS and tensor-parallel size.
 IFS=',' read -r -a _server_gpu_array <<< "${SERVER_GPUS}"
 server_gpu_array=()
 for _dev in "${_server_gpu_array[@]}"; do
@@ -306,39 +312,19 @@ for _dev in "${train_gpu_array[@]}"; do
   _gpu_seen[$_dev]="train"
 done
 
-SERVER_DP_RAW="${SERVER_DP}"
-
-# Server runtime knobs (kept config-free; affects only server launch)
-if [[ -z "${SERVER_TORCH_DTYPE}" ]]; then
-  SERVER_TORCH_DTYPE="${SERVER_TORCH_DTYPE_CFG:-bfloat16}"
-fi
-
 # Default server parallelism: **data-parallel first** (tp=1, dp=#gpus).
 # Rationale: on nodes where a single GPU can fit the full model, DP maximizes
 # rollout throughput and keeps per-request latency stable.
-#
-# If caller sets `server_tp>1` (and leaves `server_dp` unset), we derive
-# `server_dp = n_gpus / server_tp` so TP+DP combinations still work without
-# extra knobs.
-if [[ -z "${SERVER_DP_RAW}" ]]; then
-  if [[ "${SERVER_TP}" -le 0 ]]; then
-    echo "[ERROR] server_tp must be >= 1. Got server_tp=${SERVER_TP}" >&2
-    exit 2
-  fi
-  if (( ${#server_gpu_array[@]} % SERVER_TP != 0 )); then
-    echo "[ERROR] server_gpus count must be divisible by server_tp when server_dp is not set." >&2
-    echo "[ERROR] server_gpus=${SERVER_GPUS} (n=${#server_gpu_array[@]}) server_tp=${SERVER_TP}" >&2
-    exit 2
-  fi
-  SERVER_DP=$(( ${#server_gpu_array[@]} / SERVER_TP ))
-else
-  SERVER_DP="${SERVER_DP_RAW}"
+if [[ "${SERVER_TP}" -le 0 ]]; then
+  echo "[ERROR] rollout_matching.vllm.tensor_parallel_size must be >= 1. Got ${SERVER_TP}" >&2
+  exit 2
 fi
-
-# Default lower utilization for stability (avoid borderline OOM on busy nodes).
-if [[ -z "${VLLM_GPU_MEMORY_UTILIZATION}" ]]; then
-  VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION_CFG:-0.75}"
+if (( ${#server_gpu_array[@]} % SERVER_TP != 0 )); then
+  echo "[ERROR] server_gpus count must be divisible by rollout_matching.vllm.tensor_parallel_size." >&2
+  echo "[ERROR] server_gpus=${SERVER_GPUS} (n=${#server_gpu_array[@]}) tensor_parallel_size=${SERVER_TP}" >&2
+  exit 2
 fi
+SERVER_DP=$(( ${#server_gpu_array[@]} / SERVER_TP ))
 
 # Fail-fast NCCL watchdog defaults (can be overridden by caller env).
 # These guard against indefinite DDP hangs when one learner rank is stuck.

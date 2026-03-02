@@ -15,3 +15,9 @@ def test_stage2_launcher_passes_template_flags_to_swift_rollout() -> None:
     assert "--max_length" in src
     assert "--truncation_strategy" in src
     assert "--max_pixels" in src
+
+    # Config-derived vLLM engine knobs should be plumbed through preflight (YAML is source-of-truth).
+    assert "VLLM_TENSOR_PARALLEL_SIZE_CFG" in src
+    assert "VLLM_ENFORCE_EAGER_CFG" in src
+    assert "--vllm_tensor_parallel_size" in src
+    assert "--vllm_enforce_eager" in src
