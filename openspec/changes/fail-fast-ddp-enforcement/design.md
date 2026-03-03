@@ -34,15 +34,27 @@ Constraints:
 - If `torch.distributed` is initialized (`world_size > 1`), any unexpected exception in a region that can reach a collective MUST terminate the run.
 - “Proceed with local metrics” (or any local fallback) is forbidden once a collective is expected; it is both correctness-risky and deadlock-prone.
 
-2) **Canonical coordinated-failure pattern**
-For any rank0-only operation that must be synchronized, use a strict pattern:
-- barrier (align entry),
-- rank0 executes side effect,
-- broadcast `{failed_flag, error_message}`,
-- barrier (align exit),
-- raise on all ranks if failed.
+2) **Canonical coordinated-failure patterns**
 
-This preserves rank symmetry and prevents hangs where non-rank0 continues until the next collective.
+2a) **Rank0-only side effects (bounded; no raise-before-broadcast)**
+For any rank0-only operation that must be synchronized, all ranks MUST execute the following **bounded** pattern:
+- bounded barrier (align entry),
+- rank0 executes the side effect inside `try/except`, capturing `{failed_flag, error_summary}`,
+- rank0 broadcasts `{failed_flag, error_summary}` to all ranks,
+- bounded barrier (align exit),
+- only after broadcast + exit alignment completes, raise on all ranks if `failed_flag` is set (rank0 logs full traceback).
+
+Rank0 MUST NOT raise (or return) before completing the broadcast and exit alignment barrier; exceptions are caught only to coordinate termination and are then re-raised.
+
+If the bounded barrier mechanism (e.g., monitored barrier / monitor group) is enabled/configured but cannot be initialized, the system MUST fail fast with actionable guidance and MUST NOT silently downgrade to an unbounded barrier.
+
+2b) **Any-rank exceptions inside DDP-critical regions**
+If a DDP-critical operation is executed by all ranks and may raise, implementations MAY catch exceptions **only** to coordinate a rank-symmetric termination:
+- execute the operation inside a local `try/except` on each rank (capture local failure flag + short summary),
+- perform a rank-symmetric failure coordination step (e.g., reduce a tensor failure flag so all ranks agree on “any failure happened”),
+- raise on all ranks if any failure occurred.
+
+This preserves rank symmetry and prevents hangs where “rank k fails, rank j continues into the next collective”.
 
 3) **No “best-effort” wrappers around collectives**
 Diagnostics-only wrappers (e.g., “warn once and disable diagnostic”) are allowed only when:
@@ -65,4 +77,3 @@ No new early-abort rules are introduced beyond existing hard-error guards (e.g.,
 - More runs will terminate earlier (intentional): this is preferable to silent divergence or deadlocks.
 - Some “metrics-only” features may become strict in DDP; this is acceptable since metric aggregation uses distributed collectives and is therefore DDP-critical.
 - Bounded probe timeouts may surface flaky networking sooner; operators can adjust `WAIT_TIMEOUT` rather than relying on unbounded hangs.
-

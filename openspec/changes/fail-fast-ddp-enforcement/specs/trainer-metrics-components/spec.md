@@ -18,6 +18,7 @@ When `torch.distributed` is initialized (`world_size > 1`), any cross-rank metri
 - **Strict failure semantics**:
   - aggregation MUST NOT fall back to rank-local metrics when DDP is initialized,
   - any unexpected exception in aggregation MUST abort all ranks with coordinated error propagation.
+  - all ranks MUST participate in union/reduction collectives even if their local metric set is empty (missing keys MUST reduce as zeros so tensor shapes match).
 
 #### Scenario: Metric key union failure aborts rather than “proceeding locally”
 - **GIVEN** DDP is initialized
@@ -30,6 +31,7 @@ When `torch.distributed` is initialized (`world_size > 1`), any cross-rank metri
 - **GIVEN** DDP is initialized
 - **WHEN** aggregation performs an `all_reduce` over a tensor built from metric keys
 - **THEN** the tensor length and key ordering are identical on every rank
+- **AND** ranks with empty local metrics still build the same ordered tensor length (zero-filled)
 - **AND** the system does not hang due to mismatched tensor shapes or skipped collectives.
 
 ### Requirement: Best-effort diagnostics MUST NOT perform collective sync

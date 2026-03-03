@@ -22,9 +22,14 @@
 ## 2. Implementation (DDP fail-fast enforcement)
 
 - [ ] 2.1 Add a small DDP helper (repo-owned) to implement coordinated failure propagation:
-  - broadcast `{failed_flag, message}` from rank0,
-  - enforce symmetric barriers where needed,
-  - provide a simple `ddp_fail_fast(where, fn_rank0_only=...)` or equivalent primitive.
+  - rank0-only side effect wrapper:
+    - bounded entry/exit alignment barriers,
+    - rank0 captures failures without raising before broadcast,
+    - broadcast `{failed_flag, error_summary}` and raise on all ranks after exit alignment.
+  - any-rank wrapper (DDP-critical regions):
+    - catch exceptions only to coordinate termination,
+    - reduce a failure-flag tensor so all ranks agree on “any failure happened”,
+    - raise on all ranks with a message that includes `where`, `rank`, `world_size` (rank0 logs full traceback).
 - [ ] 2.2 Fix Stage-2 AB pending metric reduction to be strict under DDP:
   - remove `try/except` “proceed without key union” fallback under DDP,
   - if key union or all-reduce fails, abort all ranks with coordinated error propagation.
@@ -47,4 +52,6 @@
 - [ ] 3.2 Run targeted tests:
   - `conda run -n ms python -m pytest tests/` (scoped to any new DDP regression tests)
   - a Stage-2 smoke run (short) to confirm no deadlocks at log/metric aggregation boundaries.
-
+- [ ] 3.3 Add a regression check that readiness probing cannot exceed `WAIT_TIMEOUT` due to a stuck probe (e.g., verify `curl` uses connect+max time).
+- [ ] 3.4 Add a CPU DDP test (2 ranks) that simulates a rank0-only side effect failure and asserts both ranks exit (non-zero) without hanging at the exit barrier.
+- [ ] 3.5 Add a CPU DDP test (2 ranks) that simulates a non-rank0 exception inside a DDP-critical aggregation step and asserts both ranks terminate (non-zero) without hanging at a later collective.
