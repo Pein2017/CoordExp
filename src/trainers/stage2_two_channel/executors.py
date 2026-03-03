@@ -239,6 +239,18 @@ class Stage2ABChannelExecutorsMixin:
 
         self._stage2_append_post_rollout_segments(channel="A", segments=segments)
 
+        try:
+            import torch.distributed as dist
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            dist = None  # type: ignore[assignment]
+
+        ddp_world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            try:
+                ddp_world_size = max(1, int(dist.get_world_size()))
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                ddp_world_size = 1
+
         loss_total = None
         first_pack = True
         while self._stage2_post_rollout_buffer(channel="A"):
@@ -251,6 +263,16 @@ class Stage2ABChannelExecutorsMixin:
 
             step_totals_pack = step_totals if first_pack else {}
             sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="A"))
+            if (
+                bool(sync_gradients)
+                and dist is not None
+                and dist.is_available()
+                and dist.is_initialized()
+                and int(ddp_world_size) > 1
+            ):
+                # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
+                # when per-rank pack counts differ.
+                dist.barrier()
             loss_pack = _train_one_pack(
                 selected=selected,
                 pack_metrics=pack_metrics,
