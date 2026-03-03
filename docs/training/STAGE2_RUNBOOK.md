@@ -134,7 +134,7 @@ Worked example (default launcher):
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
   - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
 - Optional Channel-B runtime timeouts:
-  - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): base DDP phase-barrier watchdog.
+  - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). `0` disables the watchdog, but a plain DDP barrier still runs for correctness (prevents no_sync skew deadlocks).
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
 
 ---

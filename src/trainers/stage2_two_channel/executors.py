@@ -407,7 +407,10 @@ class Stage2ABChannelExecutorsMixin:
                 ) from exc
 
             if float(ddp_phase_timeout_s) <= 0.0:
-                # Allow disabling the optional DDP phase monitor in production.
+                # Disable the optional (timeout) monitored barriers.
+                #
+                # IMPORTANT: we still need a plain DDP barrier for correctness when pack
+                # counts differ across ranks (no_sync vs sync backward skew).
                 ddp_phase_monitor_enabled = False
                 ddp_phase_timeout_s = 0.0
             else:
@@ -432,10 +435,11 @@ class Stage2ABChannelExecutorsMixin:
             ):
                 return
 
-            if not bool(ddp_phase_monitor_enabled):
-                return
-
-            if not hasattr(dist, "monitored_barrier"):
+            if (not bool(ddp_phase_monitor_enabled)) or (
+                not hasattr(dist, "monitored_barrier")
+            ):
+                # Fallback: always barrier to avoid DDP no_sync skew deadlocks.
+                dist.barrier()
                 return
 
             group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
@@ -456,10 +460,12 @@ class Stage2ABChannelExecutorsMixin:
                         )
                         setattr(self, "_stage2_ab_ddp_monitor_group_warned", True)
                     setattr(self, "_stage2_ab_ddp_monitor_group", False)
+                    dist.barrier()
                     return
                 setattr(self, "_stage2_ab_ddp_monitor_group", group)
 
             if group is False:
+                dist.barrier()
                 return
 
             local_timeout_s = (
@@ -752,6 +758,11 @@ class Stage2ABChannelExecutorsMixin:
             is_last_pack = (seen_segments >= total_segments_target) and (
                 not bool(self._stage2_post_rollout_buffer(channel="B"))
             )
+            if bool(is_last_pack):
+                _ddp_phase_barrier(
+                    "channel_b_pipeline_before_final_sync_backward",
+                    timeout_s=float(ddp_phase_final_sync_timeout_s),
+                )
             loss_pack = _train_one_pack(
                 selected=selected,
                 pack_metrics=pack_metrics,

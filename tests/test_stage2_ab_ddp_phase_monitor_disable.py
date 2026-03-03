@@ -4,8 +4,9 @@ import pytest
 def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch):
     """`ddp_phase_timeout_s: 0` should disable the optional monitored barriers.
 
-    This is a production-safety knob: monitored barriers are useful for debugging deadlocks,
-    but they can also introduce large idle windows when Channel-B pack counts differ across ranks.
+    The monitored barriers provide timeouts and nicer error messages, but Stage2-AB still
+    needs a plain `dist.barrier()` for correctness when Channel-B pack counts differ
+    across ranks (DDP no_sync skew).
     """
 
     import torch.distributed as dist
@@ -65,6 +66,13 @@ def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch
     monkeypatch.setattr(dist, "get_rank", lambda: 0)
     monkeypatch.setattr(dist, "get_world_size", lambda: 2)
 
+    barrier_calls = {"n": 0}
+
+    def _barrier(*_args, **_kwargs):
+        barrier_calls["n"] += 1
+
+    monkeypatch.setattr(dist, "barrier", _barrier)
+
     def _boom(*_args, **_kwargs):
         raise AssertionError(
             "dist.new_group/monitored_barrier should not be called when ddp_phase_timeout_s <= 0"
@@ -80,3 +88,4 @@ def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch
             raw_samples=[{"messages": []}],
             global_step=1,
         )
+    assert barrier_calls["n"] == 1
