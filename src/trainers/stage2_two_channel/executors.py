@@ -757,7 +757,10 @@ class Stage2ABChannelExecutorsMixin:
                     if not chunk:
                         continue
                     segs, m = self._prepare_batch_inputs_b(chunk, _segments_only=True)
-                    q.put((segs, dict(m) if isinstance(m, Mapping) else {}))
+                    # `raw_n` counts pre-drop rollouts; under strict format policy
+                    # `len(segs)` may be < raw_n due to dropped malformed rollouts.
+                    raw_n = int(len(chunk))
+                    q.put((segs, dict(m) if isinstance(m, Mapping) else {}, raw_n))
             except (
                 AttributeError,
                 IndexError,
@@ -786,7 +789,10 @@ class Stage2ABChannelExecutorsMixin:
         }
 
         buf_total_len = 0
+        # Under strict rollout-format policies, `_prepare_batch_inputs_b(..., _segments_only=True)`
+        # may drop malformed rollouts, so `seen_segments` (valid segments) can be < raw_n.
         seen_segments = 0
+        seen_raw = 0
         producer_done = False
 
         prefill_target_len = int(max(1, int(packing_length)))
@@ -806,7 +812,8 @@ class Stage2ABChannelExecutorsMixin:
                     raise RuntimeError(
                         "stage2-ab Channel-B pipeline stalled while waiting for producer output; "
                         f"waited={float(producer_wait_timeout_s):.1f}s "
-                        f"seen_segments={int(seen_segments)}/{int(total_segments_target)} "
+                        f"seen_raw={int(seen_raw)}/{int(total_segments_target)} "
+                        f"seen_segments={int(seen_segments)} "
                         f"buf_total_len={int(buf_total_len)} pending_buf={int(pending_buf)} "
                         f"producer_done={bool(producer_done)} producer_alive={bool(producer_alive)} "
                         f"rollout_decode_batch_size={int(rollout_decode_bs)} "
@@ -817,13 +824,16 @@ class Stage2ABChannelExecutorsMixin:
                     producer_done = True
                     break
 
-                segs, metrics = item
+                segs, metrics, raw_n = item
                 if not isinstance(segs, list):
                     raise TypeError("producer returned non-list segments")
                 if not isinstance(metrics, Mapping):
                     metrics = {}
+                raw_n = int(raw_n)
 
+                # Track raw rollouts separately from valid segments; strict-drop affects only the latter.
                 seen_segments += int(len(segs))
+                seen_raw += int(raw_n)
                 buf_total_len += int(sum(int(sl) for _, _, sl in segs))
 
                 self._stage2_append_post_rollout_segments(channel="B", segments=segs)
@@ -859,7 +869,10 @@ class Stage2ABChannelExecutorsMixin:
             step_totals_pack = dict(pending_totals)
             pending_totals = {}
 
-            is_last_pack = (seen_segments >= total_segments_target) and (
+            # IMPORTANT: `total_segments_target` is a raw-rollout target. Under strict format
+            # policies we may drop malformed rollouts, so `seen_segments` can be < target; gate
+            # the final synced backward on `seen_raw` instead to avoid cross-rank sync skew.
+            is_last_pack = (seen_raw >= total_segments_target) and (
                 not bool(self._stage2_post_rollout_buffer(channel="B"))
             )
             if bool(is_last_pack):
@@ -886,11 +899,20 @@ class Stage2ABChannelExecutorsMixin:
             # Re-raise the first producer exception.
             raise producer_exc[0]
 
-        if total_segments_target > 0 and seen_segments != total_segments_target:
+        if total_segments_target > 0 and seen_raw != total_segments_target:
             raise ValueError(
-                "stage2-ab Channel-B pipeline produced unexpected segment count: "
-                f"seen={seen_segments} target={total_segments_target}"
+                "stage2-ab Channel-B pipeline produced unexpected raw-rollout count: "
+                f"seen_raw={seen_raw} target={total_segments_target}"
             )
+
+        if total_segments_target > 0 and seen_segments > total_segments_target:
+            raise ValueError(
+                "stage2-ab Channel-B pipeline produced too many segments: "
+                f"seen_segments={seen_segments} target={total_segments_target}"
+            )
+
+        # Under strict rollout-format policies, `seen_segments < total_segments_target` is expected:
+        # malformed rollouts are dropped (emit no segment) instead of training on ambiguous supervision.
 
         if loss_total is None:
             raise AssertionError("stage2-ab Channel-B pipelined step produced no packs")

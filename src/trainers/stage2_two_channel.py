@@ -1363,6 +1363,12 @@ class Stage2ABTrainingTrainer(
 
             parse_truncated_total += int(1 if bool(parse.truncated) else 0)
 
+            # Strict format policy: drop malformed rollouts early (no segment emitted).
+            # This intentionally allows segment_count < raw_n for the step.
+            if int(invalid_rollout) != 0:
+                invalid_rollout_total += 1
+                continue
+
             gts = _extract_gt_bboxonly(sample)
 
             # Filter preds to bbox-only and accumulate strict-drop diagnostics.
@@ -1713,6 +1719,9 @@ class Stage2ABTrainingTrainer(
             assistant_span_ids = enc_ids_list[
                 int(prompt_len) : int(prompt_len) + int(train_len_eff)
             ]
+            # Under strict rollout-format policies, malformed/truncated generations can
+            # make closure-marker resolution ambiguous. We intentionally drop the sample
+            # (emit no segment) and let the Channel-B executor tolerate segment_count < raw_n.
             try:
                 tail_closure_pos_eff = _stage2_ab_tail_closure_positions(
                     tokenizer=tok,

@@ -7,13 +7,13 @@ model:
 
 training:
   num_train_epochs: 2
-  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2
+  run_name: eff_size_98-b_ratio_0.75-n_softctx_iter_2-epoch_2
   output_dir: output/stage2_ab/prod/ab_mixed
   logging_dir: tb/stage2_ab/prod/ab_mixed
   learning_rate: 2.0e-5
   vit_lr: 2.0e-5
   aligner_lr: 5.0e-5
-  effective_batch_size: 96
+  effective_batch_size: 98
   eval_strategy: steps
   save_strategy: steps
   save_steps: 300
@@ -85,8 +85,8 @@ rollout_matching:
   offload:
     enabled: false
   max_new_tokens: 2560
-  channel_b_decode_batch_size: 16
-  eval_decode_batch_size: 16
+  channel_b_decode_batch_size: 14
+  eval_decode_batch_size: 14
   monitor_dump:
     enabled: true
     every_steps: 100
