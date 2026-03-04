@@ -413,6 +413,36 @@ class Stage2ABTrainingTrainer(
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Stage2-AB step-budgeted packing can execute a variable number of packed
+        # forwards/backwards per optimizer step. All loss/metrics should be locally
+        # normalized, with global averaging performed later at the log/aggregation
+        # boundary (one reduction per optimizer step).
+        #
+        # In particular, `average_tokens_across_devices=True` may trigger distributed
+        # collectives during loss computation (e.g. coord_soft_ce_w1 denom reductions),
+        # which can deadlock under DDP when per-rank pack counts differ.
+        args_obj = getattr(self, "args", None)
+        if args_obj is not None and hasattr(args_obj, "average_tokens_across_devices"):
+            try:
+                prev_avg = bool(getattr(args_obj, "average_tokens_across_devices", False))
+            except (TypeError, ValueError):
+                prev_avg = False
+            if bool(prev_avg):
+                try:
+                    setattr(args_obj, "average_tokens_across_devices", False)
+                except Exception:
+                    pass
+                else:
+                    logger.warning(
+                        "Stage2-AB: forcing args.average_tokens_across_devices=false by default; "
+                        "loss/metrics are locally normalized and globally reduced at the step boundary."
+                    )
+
+        # Disable per-forward dataset-metric key sync collectives; Stage2-AB performs
+        # key union/reduction via pending-log aggregation.
+        setattr(self, "_coordexp_disable_dataset_metric_key_sync", True)
+
         self._stage2_pending_train_logs: Dict[int, _PendingStage2Log] = {}
         self._stage2_channel_override: Optional[str] = None
 

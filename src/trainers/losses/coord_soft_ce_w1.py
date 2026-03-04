@@ -164,7 +164,18 @@ def compute_coord_soft_ce_w1_loss(
 
     target_bins_all = coord_id_map[labels_safe].to(dtype=torch.long)
     coord_positions_mask = (target_bins_all >= 0) & (labels_next != -100)
-    if not coord_positions_mask.any().item():
+
+    # Token-averaging across devices uses distributed collectives. Even when there are
+    # no coord-token positions locally, we still participate in the denom reduction so
+    # callers never deadlock due to conditional collectives.
+    denom_local = coord_positions_mask.sum().to(dtype=torch.float32)
+    denom = denom_local
+    if average_tokens_across_devices and model_accepts_loss_kwargs and dist.is_available() and dist.is_initialized():
+        denom_global = denom_local.detach().clone()
+        dist.all_reduce(denom_global, op=dist.ReduceOp.SUM)
+        denom = denom_global
+
+    if float(denom_local.detach().item()) <= 0.0:
         return None
 
     flat_logits_full = logits_next[coord_positions_mask]
@@ -249,11 +260,6 @@ def compute_coord_soft_ce_w1_loss(
         )
         gate_sum = gate_per_token.sum()
 
-    denom = coord_positions_mask.sum().to(dtype=torch.float32)
-    if average_tokens_across_devices and model_accepts_loss_kwargs and dist.is_available() and dist.is_initialized():
-        denom_global = denom.detach().clone()
-        dist.all_reduce(denom_global, op=dist.ReduceOp.SUM)
-        denom = denom_global
     denom = torch.where(denom > 0, denom, denom.new_tensor(1.0))
 
     softce_loss = softce_sum / denom

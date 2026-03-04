@@ -263,6 +263,8 @@ class AggregateTokenTypeMetricsMixin:
         return coord_mask[labels_safe]
 
     def _sync_dataset_metrics(self) -> None:
+        if bool(getattr(self, "_coordexp_disable_dataset_metric_key_sync", False)):
+            return
         if not dist.is_available() or not dist.is_initialized():
             return
         mode = (

@@ -28,6 +28,82 @@ class Stage2ABChannelExecutorsMixin:
         s = str(channel).strip().upper()
         return "A" if s == "A" else "B"
 
+    @contextlib.contextmanager
+    def _stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+        self,
+        *,
+        dist: Any,
+        ddp_rank: int,
+        ddp_world_size: int,
+        where: str,
+    ):
+        """Temporarily disable `average_tokens_across_devices` during packed per-step loops.
+
+        Stage2-AB step-budgeted packing can execute a variable number of per-pack
+        forward/backward passes per optimizer step, and the *pack count may differ
+        across ranks*. When `TrainingArguments.average_tokens_across_devices=True`,
+        some loss terms (e.g. coord_soft_ce_w1) perform distributed collectives
+        inside loss computation. If ranks call those collectives a different number
+        of times, training will deadlock.
+
+        We force-disable token-averaging for the duration of a single packed forward
+        to ensure no per-pack collectives are executed under DDP.
+        """
+
+        args = getattr(self, "args", None)
+        prev = None
+        changed = False
+
+        if (
+            args is not None
+            and hasattr(args, "average_tokens_across_devices")
+            and dist is not None
+            and hasattr(dist, "is_available")
+            and hasattr(dist, "is_initialized")
+            and callable(dist.is_available)
+            and callable(dist.is_initialized)
+            and bool(dist.is_available())
+            and bool(dist.is_initialized())
+            and int(ddp_world_size) > 1
+        ):
+            try:
+                prev = bool(getattr(args, "average_tokens_across_devices", False))
+            except (TypeError, ValueError):
+                prev = None
+
+            if bool(prev):
+                try:
+                    setattr(args, "average_tokens_across_devices", False)
+                    changed = True
+                except Exception:
+                    changed = False
+                else:
+                    warned = bool(
+                        getattr(self, "_stage2_ab_avg_tokens_override_warned", False)
+                    )
+                    if (not warned) and int(ddp_rank) == 0:
+                        logger.warning(
+                            "Stage2-AB: forcing args.average_tokens_across_devices=false during packed per-step execution "
+                            "(world_size=%s where=%s) to avoid per-pack collective deadlocks when pack counts differ across ranks.",
+                            int(ddp_world_size),
+                            str(where),
+                        )
+                        setattr(self, "_stage2_ab_avg_tokens_override_warned", True)
+
+        try:
+            yield
+        finally:
+            if (
+                bool(changed)
+                and args is not None
+                and prev is not None
+                and hasattr(args, "average_tokens_across_devices")
+            ):
+                try:
+                    setattr(args, "average_tokens_across_devices", bool(prev))
+                except Exception:
+                    pass
+
     def _stage2_post_rollout_buffer(
         self, *, channel: str
     ) -> List[Tuple[Dict[str, Any], Dict[str, Any], int]]:
@@ -213,7 +289,13 @@ class Stage2ABChannelExecutorsMixin:
                 loss_cm = getattr(self, "compute_loss_context_manager", None)
                 loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
                 with loss_ctx:
-                    loss = self.compute_loss(model, batch)
+                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                        dist=dist,
+                        ddp_rank=int(ddp_rank),
+                        ddp_world_size=int(ddp_world_size),
+                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                    ):
+                        loss = self.compute_loss(model, batch)
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
@@ -244,11 +326,14 @@ class Stage2ABChannelExecutorsMixin:
         except (AttributeError, RuntimeError, TypeError, ValueError):
             dist = None  # type: ignore[assignment]
 
+        ddp_rank = 0
         ddp_world_size = 1
         if dist is not None and dist.is_available() and dist.is_initialized():
             try:
+                ddp_rank = int(dist.get_rank())
                 ddp_world_size = max(1, int(dist.get_world_size()))
             except (AttributeError, RuntimeError, TypeError, ValueError):
+                ddp_rank = 0
                 ddp_world_size = 1
 
         loss_total = None
@@ -587,7 +672,13 @@ class Stage2ABChannelExecutorsMixin:
                 loss_cm = getattr(self, "compute_loss_context_manager", None)
                 loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
                 with loss_ctx:
-                    loss = self.compute_loss(model, batch)
+                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                        dist=dist,
+                        ddp_rank=int(ddp_rank),
+                        ddp_world_size=int(ddp_world_size),
+                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                    ):
+                        loss = self.compute_loss(model, batch)
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
@@ -805,9 +896,15 @@ class Stage2ABChannelExecutorsMixin:
             raise producer_exc[0]
 
         if total_segments_target > 0 and seen_segments != total_segments_target:
-            raise ValueError(
-                "stage2-ab Channel-B pipeline produced unexpected segment count: "
-                f"seen={seen_segments} target={total_segments_target}"
+            # NOTE: In Channel-B we may intentionally drop some raw rollouts during
+            # parsing (malformed/strict-policy violations, ambiguous objects, etc.).
+            # In that case `seen_segments < total_segments_target` is expected and
+            # should not be fatal. Dropped rollouts contribute zero gradient for this
+            # step; we keep loss weighting normalized by the raw rollout budget.
+            logger.warning(
+                "stage2-ab Channel-B pipeline segment count mismatch (non-fatal): seen=%s target=%s",
+                int(seen_segments),
+                int(total_segments_target),
             )
 
         if loss_total is None:
