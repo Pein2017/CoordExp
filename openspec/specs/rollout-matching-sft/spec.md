@@ -182,10 +182,8 @@ Rollout-matching settings are a first-class top-level namespace:
 
 Backend selection MUST be YAML-driven under `rollout_matching`:
 - `rollout_backend` MUST accept `"vllm"` or `"hf"`.
-- `rollout_backend` MUST default to `"vllm"`.
-- `eval_rollout_backend` MUST accept `null`, `"hf"`, or `"vllm"` (case-insensitive). Missing MUST be treated as `null`.
-  - When `null`/missing, evaluation rollouts MUST inherit `rollout_backend`.
-  - When set to `"hf"` or `"vllm"`, evaluation rollouts MUST use `eval_rollout_backend` and MUST NOT affect training-time rollouts.
+- `rollout_backend` MUST default to `"hf"`.
+- `eval_rollout_backend` MUST be `"vllm"` for this stack (eval-step backend is fixed).
 
 Length-coherence guardrails (fail-fast):
 - If the effective rollout backend is `vllm` (training or eval), the system MUST enforce:
@@ -396,15 +394,17 @@ When rollout-matching training is enabled, the trainer SHALL support generating 
 
 Rollout config keys and nested structures MUST be validated through schema-derived strict contracts before runtime rollout execution.
 
-Normalized rollout knob (normative):
-- `decode_batch_size` (int) in the trainer’s injected rollout config contract.
+Normalized rollout knobs (normative):
+- `channel_b_decode_batch_size` (int) in the trainer’s injected rollout config contract for training-time Channel-B rollout decode.
+- `eval_decode_batch_size` (int) in the trainer’s injected rollout config contract for eval-time rollout decode.
 
 Config source semantics (normative):
 - For canonical grouped authoring, rollout backend selection MUST come from `rollout_matching.rollout_backend`.
-- For canonical grouped authoring, `decode_batch_size` MUST come from `rollout_matching.decode_batch_size`.
-- For Stage-2 AB rollout knobs that previously existed under `custom.extra.rollout_matching.*`, canonical migration MUST be path-only relocation to `rollout_matching.*` with the same subkey names.
+- For canonical grouped authoring, `channel_b_decode_batch_size` MUST come from `rollout_matching.channel_b_decode_batch_size`.
+- For canonical grouped authoring, `eval_decode_batch_size` MUST come from `rollout_matching.eval_decode_batch_size`.
+- For Stage-2 AB rollout knobs that previously existed under `custom.extra.rollout_matching.*`, canonical migration MUST target top-level `rollout_matching.*` keys defined by the strict schema.
 - Legacy Stage-2 alias keys under `custom.extra.rollout_matching.*` are unsupported and MUST fail fast with migration guidance.
-- The trainer/runtime contract MUST expose a single resolved `decode_batch_size` value to rollout execution code.
+- The trainer/runtime contract MUST expose resolved decode batch-size values for both rollout contexts (`channel_b_decode_batch_size`, `eval_decode_batch_size`).
 
 Schema-derived strictness (normative):
 - Rollout config key acceptance MUST be derived from typed schema definitions and enforced at config-load time.
@@ -415,32 +415,34 @@ Schema-derived strictness (normative):
 - Stage-2 launcher preflight MAY expose a projected `server_base_urls` array for launch wiring, but that projection MUST be derived from canonical `servers[]` entries and MUST NOT replace schema requirements for `base_url` + `group_port`.
 
 Semantics (normative):
-- `decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one generation call.
-- The trainer MUST enforce this bound for both HF and vLLM backends.
-- `decode_batch_size` is the single source of truth for rollout decode/evaluation microbatching in rollout-aware trainer variants.
+- `channel_b_decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one training-time Channel-B generation call.
+- `eval_decode_batch_size` denotes the maximum number of sequences decoded per rollout GPU in one eval-time generation call.
+- The trainer MUST enforce these bounds for both HF and vLLM backends where applicable.
+- These keys are the single source of truth for rollout decode/evaluation microbatching in rollout-aware trainer variants.
 - `training.per_device_eval_batch_size` and similar per-device eval knobs MUST NOT independently control rollout decode/evaluation batch behavior.
 
 Defaulting (normative):
-- If `decode_batch_size` is unset, the implementation MUST default it to `1` (conservative).
-- Higher-level experiment templates MAY set a larger default explicitly (e.g., Stage2-AB YAML under `configs/stage2_two_channel/**` uses `4`).
+- `rollout_matching.channel_b_decode_batch_size` MUST be provided explicitly.
+- `rollout_matching.eval_decode_batch_size` MUST be provided explicitly.
 
 #### Scenario: Canonical Stage-2 key controls decode microbatching
-- **WHEN** a Stage-2 AB config sets `rollout_matching.decode_batch_size: M` where `M > 1`
-- **THEN** rollout generation uses `M` as the resolved decode batch size in trainer rollout config.
+- **WHEN** a Stage-2 AB config sets `rollout_matching.channel_b_decode_batch_size: M` and `rollout_matching.eval_decode_batch_size: N` where `M > 1` and `N > 1`
+- **THEN** training-time rollout generation uses `M` as the resolved decode batch size
+- **AND** eval-time rollout generation uses `N` as the resolved decode batch size.
 
-#### Scenario: Microbatching increases decode parallelism without changing outputs format
-- **WHEN** rollout-matching training runs with resolved `decode_batch_size=M` where `M > 1`
-- **THEN** the trainer performs batched decode calls for up to `M` samples per rollout GPU
+#### Scenario: Channel-B microbatching increases decode parallelism without changing outputs format
+- **WHEN** rollout-matching training runs with resolved `channel_b_decode_batch_size=M` where `M > 1`
+- **THEN** the trainer performs batched Channel-B decode calls for up to `M` samples per rollout GPU
 - **AND** it returns per-sample `response_token_ids` suitable for strict token-aligned parsing.
 
 #### Scenario: Eval per-device knobs do not override rollout decode batching
-- **WHEN** rollout-matching training runs with `rollout_matching.decode_batch_size=M` and `training.per_device_eval_batch_size=N` where `M != N`
-- **THEN** rollout decode/evaluation microbatching follows `M`
+- **WHEN** rollout-matching training runs with `rollout_matching.eval_decode_batch_size=M` and `training.per_device_eval_batch_size=N` where `M != N`
+- **THEN** eval rollout decode microbatching follows `M`
 - **AND** `training.per_device_eval_batch_size` does not independently change rollout decode/evaluation behavior.
 
 #### Scenario: Legacy decode key path fails fast
-- **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.decode_batch_size`
-- **THEN** config loading fails fast with guidance to migrate to `rollout_matching.decode_batch_size`.
+- **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.channel_b_decode_batch_size`
+- **THEN** config loading fails fast with guidance to migrate to canonical top-level `rollout_matching.*` decode keys.
 
 #### Scenario: Legacy rollout backend key path fails fast
 - **WHEN** a Stage-2 config sets `custom.extra.rollout_matching.rollout_backend`
@@ -496,7 +498,9 @@ Normative behavior:
 - **AND** rollout trainers do not depend on alternative legacy config source paths.
 
 ### Requirement: Legacy rollout batch-size knobs fail fast
-The system MUST fail fast if a config provides any legacy rollout batch-size knob under `rollout_matching`, with actionable guidance to migrate to the unified decode batching knob `rollout_matching.decode_batch_size`.
+The system MUST fail fast if a config provides any legacy rollout batch-size knob under `rollout_matching`, with actionable guidance to migrate to canonical decode batching keys:
+- `rollout_matching.channel_b_decode_batch_size`
+- `rollout_matching.eval_decode_batch_size`
 
 Legacy knobs (normative):
 - `rollout_matching.rollout_generate_batch_size`
@@ -506,13 +510,13 @@ Legacy knobs (normative):
 - **GIVEN** rollout-matching training is enabled
 - **AND** the config provides `rollout_matching.rollout_generate_batch_size`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to remove it and use `rollout_matching.decode_batch_size`.
+- **THEN** config validation fails fast with guidance to remove it and use canonical decode keys.
 
 #### Scenario: rollout_infer_batch_size fails fast when present
 - **GIVEN** rollout-matching training is enabled
 - **AND** the config provides `rollout_matching.rollout_infer_batch_size`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to remove it and use `rollout_matching.decode_batch_size`.
+- **THEN** config validation fails fast with guidance to remove it and use canonical decode keys.
 
 ### Requirement: Window-aware post-rollout packing scope knob is removed
 The system MUST fail fast if a config provides `rollout_matching.post_rollout_pack_scope` (any value), with actionable guidance to remove it.
@@ -528,24 +532,24 @@ Normative behavior:
 - **THEN** config validation fails fast with guidance to remove `post_rollout_pack_scope`.
 
 ### Requirement: vLLM server mode derives per-rank request chunking from server world size
-When rollout-matching training uses vLLM server mode (`rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`), the trainer MUST derive per-rank request chunk sizing from the rollout server world size and learner DDP world size to preserve the per-rollout-GPU cap defined by `decode_batch_size`.
+When rollout-matching training uses vLLM server mode (`rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`), the trainer MUST derive per-rank request chunk sizing from the rollout server world size and learner DDP world size to preserve the per-rollout-GPU cap defined by `channel_b_decode_batch_size`.
 
 Semantics (normative):
 - The trainer MUST query each configured server’s `${base_url}/get_world_size/` endpoint and cache one `world_size` per server entry.
 - Let `server_world_sizes = [s_0, s_1, ...]` be those cached values, and define:
   - `S = sum(server_world_sizes)` (total rollout inference device count across servers; DP replicas)
   - `W = learner_world_size` (training DDP world size)
-- **Feasibility**: If `decode_batch_size * S < W`, the trainer MUST fail fast with actionable guidance (the cap cannot be preserved if every learner rank must issue at least one request concurrently).
+- **Feasibility**: If `channel_b_decode_batch_size * S < W`, the trainer MUST fail fast with actionable guidance (the cap cannot be preserved if every learner rank must issue at least one request concurrently).
 - Otherwise, the trainer MUST derive a per-learner-rank chunk size:
-  - `chunk = floor(decode_batch_size * S / W)`
+  - `chunk = floor(channel_b_decode_batch_size * S / W)`
 - The trainer MUST distribute requests across servers in a capacity-aware deterministic way (proportional to `server_world_sizes`) so that rollout GPUs are not overloaded when servers are heterogeneous.
 
 #### Scenario: vLLM server mode fails fast when cap is infeasible
 - **GIVEN** rollout-matching training is enabled
 - **AND** `rollout_backend=vllm` and `vllm.mode=server`
-- **AND** `decode_batch_size=1`, `S=2`, and `W=4`
+- **AND** `channel_b_decode_batch_size=1`, `S=2`, and `W=4`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to increase rollout server world size, reduce learner world size, or increase `decode_batch_size`.
+- **THEN** config validation fails fast with guidance to increase rollout server world size, reduce learner world size, or increase `channel_b_decode_batch_size`.
 
 ### Requirement: Legacy rollout_buffer configs fail fast
 The system MUST fail fast if a config provides `rollout_matching.rollout_buffer`, with actionable guidance to remove it (no backward compatibility).
@@ -953,19 +957,19 @@ These counters SHALL NOT include IoU/GIoU/maskIoU numeric metric logging (those 
 
 ### Requirement: Server/HF rollout sampling is configured under decoding.*
 Rollout decoding knobs MUST be expressed under:
-- `custom.extra.rollout_matching.decoding` (mapping)
+- `rollout_matching.decoding` (mapping)
 
 Supported decoding keys (v1):
-- `custom.extra.rollout_matching.decoding.temperature` (float, `>= 0`; greedy if `== 0`)
-- `custom.extra.rollout_matching.decoding.top_p` (float, `(0, 1]`, default `1.0`)
-- `custom.extra.rollout_matching.decoding.top_k` (int, default `-1`)
+- `rollout_matching.decoding.temperature` (float, `>= 0`; greedy if `== 0`)
+- `rollout_matching.decoding.top_p` (float, `(0, 1]`, default `1.0`)
+- `rollout_matching.decoding.top_k` (int, default `-1`)
 
 Legacy decoding keys are removed (breaking):
 - If a config provides any of:
-  - `custom.extra.rollout_matching.temperature`
-  - `custom.extra.rollout_matching.top_p`
-  - `custom.extra.rollout_matching.top_k`
-  the system MUST fail fast with guidance to migrate to `custom.extra.rollout_matching.decoding.*`.
+  - `rollout_matching.temperature`
+  - `rollout_matching.top_p`
+  - `rollout_matching.top_k`
+  the system MUST fail fast with guidance to migrate to `rollout_matching.decoding.*`.
 
 Robustness-first sampling note:
 - When sampling is enabled (e.g., `temperature > 0`) and the server backend retries/splits requests for robustness,
@@ -973,59 +977,20 @@ Robustness-first sampling note:
 
 #### Scenario: Legacy decoding keys fail fast
 - **GIVEN** rollout-matching training is enabled
-- **AND** the config provides `custom.extra.rollout_matching.temperature`
+- **AND** the config provides `rollout_matching.temperature`
 - **WHEN** training starts
-- **THEN** config validation fails fast with guidance to use `custom.extra.rollout_matching.decoding.temperature` instead.
+- **THEN** config validation fails fast with guidance to use `rollout_matching.decoding.temperature` instead.
 
-### Requirement: vLLM rollout backend supports repeat-aware per-sequence early termination
-When rollout generation uses vLLM server backend (`custom.extra.rollout_matching.rollout_backend: vllm` in rollout-server mode), the system MUST support repeat-aware termination semantics equivalent to the existing HF repeat guard.
-
-Normative behavior:
-- This requirement scope is vLLM rollout server mode used by Stage-2 AB; colocate/non-server vLLM paths are out of scope for this change and remain unchanged.
-- Repeat-aware termination MUST be controlled by `custom.extra.rollout_matching.repeat_terminate`.
-- On the current vLLM V1-default stack, when `repeat_terminate.enabled: true`, vLLM rollout serving MUST activate repeat-aware processing in server mode via startup-time plugin injection (e.g., launching `swift rollout` with `--external_plugins <repo-owned-plugin>`).
-  - The plugin MUST attach a repeat-aware logits processor on the server side via vLLM `SamplingParams.logits_processors` (or an equivalent vLLM-native hook) so the learner does not need to inject processors per request.
-- The vLLM rollout server MUST receive the full `repeat_terminate` subtree at startup (recommended: `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON=<json>` or `COORDEXP_VLLM_REPEAT_TERMINATE_CONFIG_JSON_PATH=<path>`).
-- Repeat-aware vLLM rollout termination MUST be implemented without modifying external library source code (e.g., ms-swift or vLLM). A compliant approach is to use `swift rollout --external_plugins` to import a repo-owned plugin at rollout-server startup.
-- The processor MUST evaluate the configured thresholds from the full subtree (`enabled`, `min_new_tokens`, `max_consecutive_token_repeats`, `ngram_size`, `ngram_repeats`, and optional `max_object_keys`).
-- Triggering repeat-aware termination for one sequence MUST NOT abort or cancel generation for unrelated sequences in the same rollout batch.
-- If repeat-aware processing is required by config but cannot be activated in vLLM rollout serving, startup MUST fail fast with actionable diagnostics.
-
-#### Scenario: Offending sequence is terminated without batch abort
-- **WHEN** vLLM rollout generation receives a batch and one sequence exceeds configured repeat thresholds
-- **THEN** that sequence is forced to EOS on the next decode step
-- **AND** remaining sequences continue generation normally in the same batch.
-
-#### Scenario: Config-required repeat-aware processor missing fails fast
-- **WHEN** `repeat_terminate.enabled` is true and vLLM rollout server cannot load repeat-aware processing
-- **THEN** rollout startup fails before training proceeds
-- **AND** the error reports the missing processor activation path.
-
-#### Scenario: vLLM V1 rollout does not rely on request-time logits processors
-- **GIVEN** vLLM V1-default rollout serving
-- **AND** `repeat_terminate.enabled: true`
-- **WHEN** rollout requests are issued
-- **THEN** repeat-aware behavior is provided by startup-loaded plugin state (server-side)
-- **AND** correctness does not depend on learner-provided per-request `logits_processors` fields.
-
-#### Scenario: Non-server vLLM paths are unchanged by this delta
-- **GIVEN** a non-server/colocate vLLM rollout path
-- **WHEN** this change is applied
-- **THEN** no new repeat-aware contract is imposed by this delta on that path.
-
-### Requirement: Repeat-termination contract is backend-parity and config-first
-The rollout-matching contract MUST keep repeat-termination behavior config-first and backend-parity.
+### Requirement: Repeat-terminate rollout knobs are unsupported
+The rollout-matching config contract MUST treat repeat-terminate keys as unsupported.
 
 Normative behavior:
-- The same YAML subtree (`custom.extra.rollout_matching.repeat_terminate`) MUST drive both HF and vLLM guard behavior.
-- vLLM mode MUST NOT require new standalone CLI flags for repeat-aware behavior.
-- Existing configs that set `repeat_terminate.enabled: true` MUST activate repeat-aware behavior in vLLM mode (i.e., vLLM MUST honor YAML when enabled; no extra knobs are required).
-- Legacy “repeat_terminate is HF-only / ignored by vLLM” config or docs statements MUST be removed or updated as part of migration.
+- `rollout_matching.repeat_terminate` MUST fail fast as an unknown/unsupported key.
+- Legacy placement under `custom.extra.rollout_matching.*` (including repeat-terminate subtrees) MUST fail fast with migration guidance to canonical top-level rollout keys.
 
-#### Scenario: Existing YAML enables repeat-aware behavior in vLLM mode
-- **GIVEN** a rollout-matching config with `repeat_terminate.enabled: true`
-- **WHEN** rollout backend is switched from HF to vLLM
-- **THEN** repeat-aware termination remains enabled without adding new CLI parameters.
+#### Scenario: Top-level repeat-terminate key fails fast
+- **WHEN** a rollout-matching config includes `rollout_matching.repeat_terminate`
+- **THEN** strict config parsing fails fast with unknown-key diagnostics.
 
 ### Requirement: Rollout-matching exposes stable submodule contracts by concern
 The rollout-matching capability SHALL expose stable public contracts for parsing, matching, packing, and backend orchestration via dedicated submodules.
@@ -1463,4 +1428,3 @@ Normative behavior:
 - **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
 - **AND WHEN** a later engine-level vLLM failure occurs
 - **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
-

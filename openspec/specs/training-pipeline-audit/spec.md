@@ -1,12 +1,12 @@
 # training-pipeline-audit Specification
 
 ## Purpose
-TBD - created by archiving change audit-training-pipeline-stage1-stage2-ab. Update Purpose after archive.
+Define audit contracts that keep Stage-1/Stage-2 training entrypoints reproducible, testable, and diagnosable as the codebase evolves.
 ## Requirements
 ### Requirement: Audit scope is anchored to operational entrypoints
 The audit process SHALL explicitly cover the pipeline exercised by the following operational entrypoints:
 - `scripts/train.sh` with `configs/stage1/ablation/geometry_first_coco80.yaml`
-- `scripts/train_stage2.sh` with `configs/stage2_ab/prod/ab_mixed.yaml`
+- `scripts/train_stage2.sh` with `configs/stage2_two_channel/prod/ab_mixed.yaml`
 
 The audit SHALL map `data -> transforms/packing -> training/inference -> artifacts` and SHALL enumerate
 code/module owners for each boundary.
@@ -53,7 +53,7 @@ Stage-2 AB training SHALL log sufficient aggregate diagnostics to support diagno
 - rollout timing/throughput metrics (when Channel-B executes).
 
 #### Scenario: Stage-2 AB emits required diagnostics keys
-- **WHEN** running `custom.trainer_variant: stage2_ab_training`
+- **WHEN** running `custom.trainer_variant: stage2_two_channel`
 - **THEN** the metrics payload includes:
   - `stage2_ab/b_ratio_realized`,
   - `stage2_ab/channel_b/invalid_rollout`,
@@ -86,4 +86,3 @@ The minimum contract-test coverage SHALL include:
 - **WHEN** running `PYTHONPATH=. conda run -n ms python -m pytest -q` on a CPU-only host
 - **THEN** upstream contract tests execute without importing CUDA-only modules
 - **AND** they fail with actionable diagnostics when a required upstream API surface is missing or incompatible.
-
