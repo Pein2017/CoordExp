@@ -378,7 +378,10 @@ class Stage2ABChannelExecutorsMixin:
         backend: str,
         mode: str,
     ) -> bool:
-        if str(backend).strip().lower() != "vllm" or str(mode).strip().lower() != "server":
+        if (
+            str(backend).strip().lower() != "vllm"
+            or str(mode).strip().lower() != "server"
+        ):
             return False
 
         rank = 0
@@ -504,7 +507,7 @@ class Stage2ABChannelExecutorsMixin:
         ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
         if ddp_phase_timeout_raw is None:
             ddp_phase_monitor_enabled = True
-            ddp_phase_timeout_s = 180.0
+            ddp_phase_timeout_s = 120.0
         else:
             try:
                 ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
@@ -610,9 +613,7 @@ class Stage2ABChannelExecutorsMixin:
                 return
 
             local_timeout_s = (
-                float(ddp_phase_timeout_s)
-                if timeout_s is None
-                else float(timeout_s)
+                float(ddp_phase_timeout_s) if timeout_s is None else float(timeout_s)
             )
             local_timeout_s = float(max(30.0, min(3600.0, local_timeout_s)))
 
@@ -636,7 +637,9 @@ class Stage2ABChannelExecutorsMixin:
                     "This indicates a cross-rank stage skew or deadlock after rollout."
                 ) from exc
 
-        def _split_metrics(metrics: Mapping[str, Any]) -> Tuple[Dict[str, float], Dict[str, float]]:
+        def _split_metrics(
+            metrics: Mapping[str, Any],
+        ) -> Tuple[Dict[str, float], Dict[str, float]]:
             rollout_static: Dict[str, float] = {}
             step_totals: Dict[str, float] = {}
             for k, v in metrics.items():

@@ -18,4 +18,4 @@ custom:
 stage2_ab:
   channel_b:
     # DO NOT set to 0 (disables monitored barriers and can hang forever under DDP).
-    ddp_phase_timeout_s: 180
+    ddp_phase_timeout_s: 120

@@ -54,7 +54,6 @@ def _get_env_str(*names: str, default: str | None = None) -> str | None:
     return default
 
 
-
 def _parse_seconds(raw: str | None, *, default: float) -> float:
     if raw is None:
         return float(default)
@@ -94,8 +93,7 @@ def validate_gpu_split(
 
     if int(server_tp) <= 0:
         raise ValueError(
-            "rollout_matching.vllm.tensor_parallel_size must be >= 1, "
-            f"got: {server_tp}"
+            f"rollout_matching.vllm.tensor_parallel_size must be >= 1, got: {server_tp}"
         )
 
     if len(server_gpus) % int(server_tp) != 0:
@@ -161,7 +159,9 @@ def parse_base_url(base_url: str) -> _BaseUrl:
         )
 
     normalized = f"{parsed.scheme}://{host}:{port}"
-    return _BaseUrl(base_url=normalized, scheme=parsed.scheme, host=host, port=int(port))
+    return _BaseUrl(
+        base_url=normalized, scheme=parsed.scheme, host=host, port=int(port)
+    )
 
 
 def _assert_port_free(host: str, port: int) -> None:
@@ -169,7 +169,9 @@ def _assert_port_free(host: str, port: int) -> None:
     try:
         sock.bind((host, int(port)))
     except OSError as exc:
-        raise OSError(f"Requested rollout server endpoint is already in use: {host}:{port}") from exc
+        raise OSError(
+            f"Requested rollout server endpoint is already in use: {host}:{port}"
+        ) from exc
     finally:
         sock.close()
 
@@ -280,9 +282,7 @@ def build_torchrun_cmd(
     ]
 
 
-def _http_get(
-    url: str, *, timeout_s: float
-) -> tuple[int, str]:
+def _http_get(url: str, *, timeout_s: float) -> tuple[int, str]:
     import urllib.error
     import urllib.request
 
@@ -433,7 +433,9 @@ def launch_swift_rollout_server(
         raise
 
 
-def _run_validate_jsonl(*, repo_root: Path, jsonl_path: str, max_pixels: int, mode: str, n: int) -> None:
+def _run_validate_jsonl(
+    *, repo_root: Path, jsonl_path: str, max_pixels: int, mode: str, n: int
+) -> None:
     cmd = [
         sys.executable,
         str(repo_root / "public_data" / "scripts" / "validate_jsonl.py"),
@@ -449,7 +451,6 @@ def _run_validate_jsonl(*, repo_root: Path, jsonl_path: str, max_pixels: int, mo
         str(int(n)),
     ]
     subprocess.run(cmd, cwd=str(repo_root), check=True)
-
 
 
 def main() -> int:
@@ -484,9 +485,7 @@ def main() -> int:
             _get_env_str("wait_interval", "WAIT_INTERVAL"), default=2.0
         )
 
-
         config_path = resolve_config_path(config_raw, repo_root=_REPO_ROOT)
-
 
         preflight = resolve_stage2_launcher_preflight(str(config_path))
 
@@ -565,25 +564,32 @@ def main() -> int:
 
         template_max_length_raw = preflight.get("server_max_length")
         template_max_length = None
-        if template_max_length_raw is not None and str(template_max_length_raw).strip() != "":
+        if (
+            template_max_length_raw is not None
+            and str(template_max_length_raw).strip() != ""
+        ):
             template_max_length = int(template_max_length_raw)
 
         truncation_strategy = (
             str(preflight.get("server_truncation_strategy") or "").strip() or None
         )
 
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
         _info(
             "[PRECHECK] Validating JSONL contracts + max_pixels before launching GPUs"
         )
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
         _info(f"[PRECHECK] train_jsonl: {train_jsonl}")
         _info(f"[PRECHECK] val_jsonl: {val_jsonl}")
-        _info(
-            f"[PRECHECK] max_pixels: {template_max_pixels} (expect 768*32*32=786432)"
-        )
+        _info(f"[PRECHECK] max_pixels: {template_max_pixels} (expect 768*32*32=786432)")
         _info("[PRECHECK] multiple_of: 32")
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
 
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
@@ -643,13 +649,15 @@ def main() -> int:
         _ensure_pythonpath(base_env, repo_root=_REPO_ROOT)
         _apply_no_proxy(base_env, hosts=[base_url.host, "127.0.0.1", "localhost"])
 
-        _set_default_env(base_env, "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        _set_default_env(
+            base_env, "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True"
+        )
         _set_default_env(base_env, "NCCL_ASYNC_ERROR_HANDLING", "1")
         _set_default_env(base_env, "TORCH_NCCL_TRACE_BUFFER_SIZE", "67108864")
         _set_default_env(base_env, "OMP_NUM_THREADS", "8")
 
         _set_default_env(base_env, "TORCH_NCCL_ENABLE_MONITORING", "1")
-        _set_default_env(base_env, "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC", "180")
+        _set_default_env(base_env, "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC", "120")
         _set_default_env(base_env, "TORCH_NCCL_DUMP_ON_TIMEOUT", "1")
 
         server_env = dict(base_env)
@@ -685,9 +693,13 @@ def main() -> int:
             }
         )
 
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
         _info("  Stage-2 AB vLLM Server + Learner Launcher (Python)")
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
         _info(f"[INFO] Config:      {config_path}")
         _info(f"[INFO] Server GPUs: {server_gpus_raw} (dp={server_dp}, tp={server_tp})")
         _info(f"[INFO] Train GPUs:  {train_gpus_raw} (world_size={train_world_size})")
@@ -708,7 +720,9 @@ def main() -> int:
                 base_env.get("TORCH_NCCL_DUMP_ON_TIMEOUT"),
             )
         )
-        _info("========================================================================")
+        _info(
+            "========================================================================"
+        )
 
         server_proc: subprocess.Popen[str] | None = None
         learner_proc: subprocess.Popen[str] | None = None
