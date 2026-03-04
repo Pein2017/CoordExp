@@ -1368,6 +1368,7 @@ class Stage2ABTrainingTrainer(
         invalid_rollout_total = 0
         parse_truncated_total = 0
         closure_supervision_drop_total = 0
+        prompt_tok_mismatch_total = 0
 
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
@@ -1666,10 +1667,16 @@ class Stage2ABTrainingTrainer(
 
             # Sanity: prompt prefix must exactly match the server-provided prompt_token_ids.
             # Without this, coord-position offsets can silently drift and corrupt supervision.
+            #
+            # In practice, vLLM server-mode can occasionally return prompt_token_ids that do not
+            # byte-for-byte match the local teacher-forced encoding (most commonly within the
+            # vision token region, e.g. extra `<|image_pad|>` padding). When this happens we do
+            # NOT have a safe way to reconcile offsets, so we drop the sample for this step.
             if isinstance(prompt_ids, list) and prompt_ids:
                 prompt_ids_int = [int(t) for t in prompt_ids]
                 teacher_prefix = enc_ids_list[: len(prompt_ids_int)]
                 if teacher_prefix != prompt_ids_int:
+                    prompt_tok_mismatch_total += 1
                     mismatch_at = next(
                         (
                             i
@@ -1680,22 +1687,30 @@ class Stage2ABTrainingTrainer(
                         ),
                         None,
                     )
-                    if mismatch_at is None:
-                        raise ValueError(
-                            "prompt tokenization mismatch between generation and teacher-forced encoding"
+                    lo = max(0, int(mismatch_at or 0) - 3)
+                    hi = min(int(len(prompt_ids_int)), int(mismatch_at or 0) + 4)
+                    rank, _world, _dist = self._dist_info()
+                    if int(rank) == 0:
+                        logger.warning(
+                            "stage2-ab Channel-B prompt tokenization mismatch; dropping sample. "
+                            "mismatch_at=%s teacher_ids=%s server_ids=%s",
+                            int(mismatch_at) if mismatch_at is not None else None,
+                            teacher_prefix[lo:hi],
+                            prompt_ids_int[lo:hi],
                         )
-                    lo = max(0, int(mismatch_at) - 3)
-                    hi = min(int(len(prompt_ids_int)), int(mismatch_at) + 4)
-                    raise ValueError(
-                        "prompt tokenization mismatch between generation and teacher-forced encoding; "
-                        f"mismatch_at={int(mismatch_at)} teacher_ids={teacher_prefix[lo:hi]} "
-                        f"server_ids={prompt_ids_int[lo:hi]}"
-                    )
+                    continue
                 if int(prompt_len) != int(len(prompt_ids_int)):
-                    raise ValueError(
-                        "stage2-ab prompt_len mismatch vs server prompt_token_ids length; "
-                        f"prompt_len={int(prompt_len)} server_prompt_len={int(len(prompt_ids_int))}"
-                    )
+                    prompt_tok_mismatch_total += 1
+                    rank, _world, _dist = self._dist_info()
+                    if int(rank) == 0:
+                        logger.warning(
+                            "stage2-ab Channel-B prompt_len mismatch vs server prompt_token_ids length; "
+                            "dropping sample. prompt_len=%s server_prompt_len=%s",
+                            int(prompt_len),
+                            int(len(prompt_ids_int)),
+                        )
+                    continue
+
 
             prompt_ids_local = enc_ids_list[:prompt_len]
             delta_prompt = int(prompt_len) - int(len(prompt_ids))
@@ -1826,6 +1841,14 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/closure_supervision/N_drop": float(
                 closure_supervision_drop_total
             ),
+            "stage2_ab/channel_b/prompt_tok_mismatch": float(prompt_tok_mismatch_total),
+            "stage2_ab/channel_b/prompt_tok_mismatch_rate": float(
+                (float(prompt_tok_mismatch_total) / float(len(rollout_results)))
+                if len(rollout_results) > 0
+                else 0.0
+            ),
+            "stage2_ab/channel_b/_prompt_tok_mismatch_num": float(prompt_tok_mismatch_total),
+            "stage2_ab/channel_b/_prompt_tok_mismatch_den": float(len(rollout_results)),
             "stage2/drop_poly": float(drop_poly_total),
             "stage2/drop_unknown": float(drop_unknown_total),
             "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),
