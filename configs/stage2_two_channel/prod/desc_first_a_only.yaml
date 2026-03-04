@@ -24,6 +24,8 @@ stage2_ab:
     b_ratio: 0.0
   n_softctx_iter: 2
   softctx_grad_mode: unroll
+  channel_b:
+    ddp_phase_timeout_s: 120.0
   pipeline:
     objective:
       - name: token_ce

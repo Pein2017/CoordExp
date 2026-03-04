@@ -1061,10 +1061,10 @@ class Stage2ABChannelBConfig:
                 raise TypeError(
                     "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
                 ) from exc
-            if ddp_phase_timeout_s < 0.0:
+            if ddp_phase_timeout_s <= 0.0:
                 raise ValueError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be >= 0 when set "
-                    "(use 0 to disable the optional DDP phase monitor)"
+                    "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 when set "
+                    "(bounded DDP phase barriers are required)"
                 )
 
         if data:

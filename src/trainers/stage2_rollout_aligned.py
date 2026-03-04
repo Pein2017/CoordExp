@@ -4752,22 +4752,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             and int(world_size) > 1
         ):
             try:
-                try:
-                    backend = str(dist.get_backend()).lower()
-                except (TypeError, ValueError):
-                    backend = ""
-
-                reduce_device = torch.device("cpu")
-                if backend == "nccl" and torch.cuda.is_available():
-                    reduce_device = self.model.device
-
-                flag = torch.tensor(
-                    [need_sync], device=reduce_device, dtype=torch.int32
-                )
-                dist.broadcast(flag, src=0)
-                need_sync = int(flag.item())
+                backend = str(dist.get_backend()).lower()
             except (TypeError, ValueError):
-                need_sync = int(step != last)
+                backend = ""
+
+            reduce_device = torch.device("cpu")
+            if backend == "nccl" and torch.cuda.is_available():
+                reduce_device = self.model.device
+
+            flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
+            dist.broadcast(flag, src=0)
+            need_sync = int(flag.item())
 
         if need_sync == 0:
             return
@@ -4803,11 +4798,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self._vllm_server_last_synced_step = step
             return
 
-        # Multi-process learner (DDP): rank0-only full sync with strict barrier ordering.
+        # Multi-process learner (DDP): rank0-only full sync with strict collective ordering.
         assert dist is not None and dist.is_initialized()
 
-        # IMPORTANT: no early returns after this point without symmetric barriers.
-        dist.barrier()
+        # IMPORTANT: no early returns after this point without symmetric collectives.
+        # The broadcasts below synchronize all ranks while rank0 performs the sync.
 
         sync_failed = 0
         sync_err_msg = ""
@@ -4848,7 +4843,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             dist.broadcast_object_list(msg_list, src=0)
         sync_err_msg = str(msg_list[0])
 
-        dist.barrier()
         if int(sync_failed) != 0:
             raise RuntimeError(
                 "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
@@ -7447,25 +7441,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             and dist.is_initialized()
             and int(world_size) > 1
         ):
-            try:
-                gathered_keys: List[Any] = [None] * int(world_size)
-                dist.all_gather_object(gathered_keys, metric_keys)
+            gathered_keys: List[Any] = [None] * int(world_size)
+            dist.all_gather_object(gathered_keys, metric_keys)
 
-                merged_keys: Dict[str, None] = {}
-                for item in gathered_keys:
-                    if not isinstance(item, (list, tuple)):
-                        continue
-                    for key_raw in item:
-                        key = str(key_raw)
-                        merged_keys[key] = None
-                        reduced.setdefault(key, 0.0)
-                metric_keys = sorted(merged_keys.keys())
-            except (TypeError, ValueError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "rollout metric key sync failed; proceeding without key union: %r",
-                        exc,
+            merged_keys: Dict[str, None] = {}
+            for item in gathered_keys:
+                if not isinstance(item, (list, tuple)):
+                    raise RuntimeError(
+                        "rollout metric key sync produced non-list keys "
+                        f"(rank={int(rank)}/{int(world_size)} type={type(item).__name__})"
                     )
+                for key_raw in item:
+                    key = str(key_raw)
+                    merged_keys[key] = None
+                    reduced.setdefault(key, 0.0)
+            metric_keys = sorted(merged_keys.keys())
 
         sum_key_set: set[str] = set()
         max_key_set: set[str] = set()
@@ -7564,12 +7554,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced.get(key, 0.0) / scale)
-            except (TypeError, ValueError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "rollout metric all-reduce failed; falling back to local metrics: %r",
-                        exc,
-                    )
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "rollout metric all-reduce failed (DDP is initialized); "
+                    f"rank={int(rank)}/{int(world_size)}"
+                ) from exc
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
 
@@ -9315,9 +9304,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     gathered_records, list(eval_detection_records_local)
                 )
                 eval_records_all = []
-                for part in gathered_records:
+                for src_rank, part in enumerate(gathered_records):
                     if not isinstance(part, list):
-                        continue
+                        raise TypeError(
+                            "eval_detection all_gather_object returned non-list part: "
+                            f"src_rank={int(src_rank)} type={type(part).__name__}"
+                        )
                     for rec in part:
                         if isinstance(rec, Mapping):
                             eval_records_all.append(dict(rec))
@@ -9333,6 +9325,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "counters": {},
                 "error": "",
             }
+            eval_det_exc: Exception | None = None
             if int(rank) == 0:
                 t_coco0 = time.perf_counter()
                 try:
@@ -9350,17 +9343,49 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         if isinstance(v, (int, float))
                     }
                 except Exception as exc:
+                    eval_det_exc = exc
                     eval_det_payload["error"] = repr(exc)
-                    logger.warning("Eval-step COCO/mAP failed: %r", exc)
+                    logger.exception("Eval-step COCO/mAP failed")
                 finally:
                     eval_det_payload["runtime_s"] = float(time.perf_counter() - t_coco0)
 
             if dist is not None and dist.is_available() and dist.is_initialized():
                 payload_list: List[Any] = [eval_det_payload]
-                dist.broadcast_object_list(payload_list, src=0)
-                recv_payload = (
-                    payload_list[0] if isinstance(payload_list[0], Mapping) else {}
-                )
+
+                backend = None
+                try:
+                    backend = str(dist.get_backend())
+                except Exception:
+                    backend = None
+
+                broadcast_device = torch.device("cpu")
+                if backend == "nccl":
+                    if not torch.cuda.is_available():
+                        raise RuntimeError(
+                            "torch.distributed backend is NCCL but CUDA is not available"
+                        )
+                    broadcast_device = torch.device(
+                        "cuda", int(torch.cuda.current_device())
+                    )
+
+                try:
+                    dist.broadcast_object_list(
+                        payload_list, src=0, device=broadcast_device
+                    )
+                except TypeError as exc:
+                    if backend == "nccl":
+                        raise RuntimeError(
+                            "broadcast_object_list(..., device=...) is required for NCCL; "
+                            "upgrade PyTorch to a version that supports the 'device' argument."
+                        ) from exc
+                    dist.broadcast_object_list(payload_list, src=0)
+
+                if not isinstance(payload_list[0], Mapping):
+                    raise TypeError(
+                        "eval_detection broadcast payload is not a Mapping: "
+                        f"type={type(payload_list[0]).__name__}"
+                    )
+                recv_payload = dict(payload_list[0])
             else:
                 recv_payload = eval_det_payload
 
@@ -9391,15 +9416,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metric_for_best_model_norm = str(metric_for_best_model)
             if metric_for_best_model_norm.startswith("eval_"):
                 metric_for_best_model_norm = metric_for_best_model_norm[len("eval_") :]
-            if metric_for_best_model_norm == "rollout/mAP":
-                coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
-                if coco_ok <= 0.0:
-                    coco_err = str(recv_payload.get("error", "") or "").strip()
-                    raise RuntimeError(
+            coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
+            if coco_ok <= 0.0:
+                coco_err = str(recv_payload.get("error", "") or "").strip()
+                if metric_for_best_model_norm == "rollout/mAP":
+                    msg = (
                         "Eval-step COCO/mAP failed while metric_for_best_model targets rollout/mAP; "
                         "aborting to avoid invalid best-checkpoint selection. "
                         f"error={coco_err or 'unknown'}"
                     )
+                else:
+                    msg = (
+                        "Eval-step COCO/mAP failed; aborting (fail-fast) to avoid silent metric corruption. "
+                        f"error={coco_err or 'unknown'}"
+                    )
+                if int(rank) == 0 and eval_det_exc is not None:
+                    raise RuntimeError(msg) from eval_det_exc
+                raise RuntimeError(msg)
 
             coco_counters_recv = recv_payload.get("counters", {})
             if isinstance(coco_counters_recv, Mapping):

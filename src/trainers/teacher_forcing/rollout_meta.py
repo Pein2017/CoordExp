@@ -106,6 +106,14 @@ def tail_closure_positions(
     assistant_span_ids: Sequence[int],
     prefix_len: int,
 ) -> List[int]:
+    """Return tail-local closure supervision positions.
+
+    This function is intentionally strict: it raises ValueError when it cannot locate
+    a top-level JSON close brace in the assistant span. Callers that enforce strict
+    rollout formatting should treat this as an invalid/malformed rollout and drop the
+    sample rather than training on ambiguous supervision.
+    """
+
     prefix_len_i = max(0, int(prefix_len))
 
     try:
@@ -161,7 +169,9 @@ def tail_closure_positions(
                 depth -= 1
 
     if close_char is None:
-        raise ValueError("could not locate top-level JSON closing brace for closure supervision")
+        raise ValueError(
+            "could not locate top-level JSON closing brace for closure supervision"
+        )
 
     close_toks = _tok_indices_overlapping(int(close_char), int(close_char) + 1)
     if not close_toks:
@@ -171,7 +181,9 @@ def tail_closure_positions(
     im_toks: List[int] = []
     im_pos = int(text.find(marker, int(close_char) + 1))
     if im_pos >= 0:
-        im_toks = _tok_indices_overlapping(int(im_pos), int(im_pos) + int(len(marker)))
+        im_toks = _tok_indices_overlapping(
+            int(im_pos), int(im_pos) + int(len(marker))
+        )
         if not im_toks:
             raise ValueError("could not map <|im_end|> to token indices")
 
@@ -187,7 +199,9 @@ def tail_closure_positions(
 
     closure_positions = sorted({int(p) for p in closure_positions})
     if not closure_positions:
-        raise ValueError("closure supervision produced no valid tail-local positions")
+        raise ValueError(
+            "closure supervision produced no valid tail-local positions"
+        )
 
     return closure_positions
 

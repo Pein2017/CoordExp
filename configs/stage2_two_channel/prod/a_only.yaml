@@ -4,3 +4,8 @@ extends: desc_first_a_only_eval_vllm_colocate.yaml
 # - training rollouts on HF (inherited)
 # - eval_step rollouts on vLLM colocate (inherited)
 # - sleep mode disabled by default (inherited)
+
+# Under DDP we require bounded phase barriers to prevent deadlocks/hangs if ranks diverge.
+stage2_ab:
+  channel_b:
+    ddp_phase_timeout_s: 120.0

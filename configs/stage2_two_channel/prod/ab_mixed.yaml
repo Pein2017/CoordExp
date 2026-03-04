@@ -7,7 +7,7 @@ model:
 
 training:
   num_train_epochs: 2
-  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2-l4a4
+  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2
   output_dir: output/stage2_ab/prod/ab_mixed
   logging_dir: tb/stage2_ab/prod/ab_mixed
   learning_rate: 2.0e-5
@@ -25,7 +25,7 @@ stage2_ab:
   schedule: {b_ratio: 0.75}
   n_softctx_iter: 2
   channel_b:
-    ddp_phase_timeout_s: 120
+    ddp_phase_timeout_s: 120.0
   pipeline:
     objective:
       - name: token_ce
@@ -85,8 +85,8 @@ rollout_matching:
   offload:
     enabled: false
   max_new_tokens: 2560
-  channel_b_decode_batch_size: 8
-  eval_decode_batch_size: 8
+  channel_b_decode_batch_size: 16
+  eval_decode_batch_size: 16
   monitor_dump:
     enabled: true
     every_steps: 100
@@ -97,16 +97,11 @@ rollout_matching:
   vllm:
     mode: server
     tensor_parallel_size: 1
-    enforce_eager: false
-    gpu_memory_utilization: 0.9
+    enforce_eager: true
+    gpu_memory_utilization: 0.8
     max_model_len: 14000
     enable_lora: false
     enable_prefix_caching: true
-    # IMPORTANT: Keep vLLM server-side prompt tokenization aligned with local teacher-forcing
-    # encode by disabling HF smart-resize. Our images are offline-rescaled and should not be
-    # upscaled at runtime (otherwise `<|image_pad|>` token counts can drift).
-    mm_processor_kwargs:
-      do_resize: false
     server:
       timeout_s: 240.0
       infer_timeout_s: 240.0

@@ -109,7 +109,10 @@ class AggregateTokenTypeMetricsMixin:
             name="aggregate_token_metrics",
             fn=lambda: self._log_aggregate_metrics(outputs, labels_for_metrics, token_types),
         )
-        best_effort(self, name="dataset_metric_key_sync", fn=self._sync_dataset_metrics)
+        if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
+            self._sync_dataset_metrics()
+        else:
+            best_effort(self, name="dataset_metric_key_sync", fn=self._sync_dataset_metrics)
 
         return (loss, outputs) if return_outputs else loss
 
@@ -267,24 +270,68 @@ class AggregateTokenTypeMetricsMixin:
             return
         if not dist.is_available() or not dist.is_initialized():
             return
+
+        world_size = int(dist.get_world_size())
+        if int(world_size) <= 1:
+            return
+
         mode = (
             "train"
             if getattr(self, "model", None) is None or self.model.training
             else "eval"
         )  # type: ignore[attr-defined]
+
         custom_metrics = getattr(self, "custom_metrics", None)
-        if custom_metrics is None or mode not in custom_metrics:
+        has_metrics_local = int(isinstance(custom_metrics, dict) and mode in custom_metrics)
+
+        backend = None
+        try:
+            backend = str(dist.get_backend())
+        except Exception:
+            backend = None
+
+        device = torch.device("cpu")
+        if backend == "nccl":
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "dataset metric key sync requires CUDA when using NCCL backend"
+                )
+            device = torch.device("cuda", int(torch.cuda.current_device()))
+
+        has_metrics = torch.tensor(
+            [has_metrics_local],
+            dtype=torch.int32,
+            device=device,
+        )
+        dist.all_reduce(has_metrics, op=dist.ReduceOp.SUM)
+        has_metrics_sum = int(has_metrics.item())
+        if has_metrics_sum == 0:
             return
+        if int(has_metrics_sum) != int(world_size):
+            rank = int(dist.get_rank())
+            raise RuntimeError(
+                "dataset metric key sync requires custom_metrics to be present on all ranks "
+                f"(mode={str(mode)} rank={int(rank)}/{int(world_size)} has_metrics_sum={int(has_metrics_sum)})."
+            )
+
         metrics = custom_metrics[mode]
 
         local_keys = list(metrics.keys())
         key_cache = getattr(self, "_dataset_metric_key_cache", {})
         cached = key_cache.get(mode, set())
         local_set = set(local_keys)
-        if local_set.issubset(cached):
+
+        needs_sync_local = not local_set.issubset(cached)
+        needs_sync = torch.tensor(
+            [1 if needs_sync_local else 0],
+            dtype=torch.int32,
+            device=device,
+        )
+        dist.all_reduce(needs_sync, op=dist.ReduceOp.MAX)
+        if int(needs_sync.item()) == 0:
             return
 
-        gathered_keys = [None] * dist.get_world_size()
+        gathered_keys = [None] * int(world_size)
         dist.all_gather_object(gathered_keys, local_keys)
 
         union_keys = set()
