@@ -49,7 +49,7 @@
 - [x] 3.1 Add a minimal CPU DDP regression test (2 ranks) that validates:
   - metric aggregation paths do not hang when one rank triggers an error,
   - failures terminate all ranks with a clear exception message.
-- [ ] 3.2 Run targeted tests:
+- [x] 3.2 Run targeted tests:
   - `conda run -n ms python -m pytest tests/` (scoped to any new DDP regression tests)
   - a Stage-2 smoke run (short) to confirm no deadlocks at log/metric aggregation boundaries.
 - [x] 3.3 Add a regression check that readiness probing cannot exceed `WAIT_TIMEOUT` due to a stuck probe (e.g., verify `curl` uses connect+max time).
@@ -91,5 +91,8 @@
     - Result: `15 passed`
     - `conda run -n ms python -m pytest -q tests/test_stage2_vllm_server_launcher.py tests/test_ddp_fail_fast_multiprocess.py tests/test_ddp_fail_fast_stage2_metrics.py tests/test_ddp_vllm_sync_failure_propagation.py tests/test_stage2_ab_ddp_phase_monitor_disable.py`
     - Result: `22 passed`
+- Stage-2 runtime evidence (`3.2`):
+  - Operator-confirmed: production training already kicked off with this fail-fast stack.
+  - Checklist marked complete per operator confirmation; no additional local smoke re-run required in this pass.
 - Remaining open items require additional evidence:
-  - Stage-2 smoke run evidence (`3.2`).
+  - none.
