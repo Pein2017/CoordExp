@@ -1,10 +1,10 @@
 ## 0. Audit (DDP-critical suppression inventory)
 
-- [ ] 0.1 Inventory all DDP collectives/barriers in core training paths and list the surrounding exception-handling behavior:
+- [x] 0.1 Inventory all DDP collectives/barriers in core training paths and list the surrounding exception-handling behavior:
   - `dist.all_reduce`, `dist.all_gather_object`, `dist.broadcast`, `dist.broadcast_object_list`, `dist.barrier`, `dist.monitored_barrier`
   - rank-local early returns / caches that can gate collectives
   - “warn and continue” patterns
-- [ ] 0.2 Record known high-risk sites (initial evidence):
+- [x] 0.2 Record known high-risk sites (initial evidence):
   - Stage-2 AB pending-metric reduction (`src/trainers/stage2_two_channel.py`)
   - rollout-aligned metric reduction (`src/trainers/stage2_rollout_aligned.py`)
   - dataset metric key sync (`src/trainers/metrics/mixins.py`)
@@ -59,6 +59,8 @@
 ## Evidence Notes (2026-03-04)
 
 - Completed task evidence:
+  - 0.1 inventory: `openspec/changes/fail-fast-ddp-enforcement/design.md` (section: `DDP-Critical Inventory (2026-03-04)`)
+  - 0.2 high-risk sites: `openspec/changes/fail-fast-ddp-enforcement/design.md` (section: `DDP-Critical Inventory (2026-03-04)`)
   - 0.3 incident note: `openspec/changes/fail-fast-ddp-enforcement/design.md`, `openspec/changes/fail-fast-ddp-enforcement/proposal.md`
   - 1.1: `openspec/changes/fail-fast-ddp-enforcement/specs/silent-failure-policy/spec.md`
   - 1.2: `openspec/changes/fail-fast-ddp-enforcement/specs/trainer-metrics-components/spec.md`

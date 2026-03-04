@@ -74,6 +74,41 @@ For server readiness, keep simple “wait until overall timeout” behavior, but
 
 No new early-abort rules are introduced beyond existing hard-error guards (e.g., invalid config, port already in use).
 
+## DDP-Critical Inventory (2026-03-04)
+
+Core training-path inventory (collectives + surrounding behavior):
+
+- `src/trainers/stage2_two_channel.py`:
+  - `_reduce_stage2_pending_metrics_global` uses `dist.all_gather_object` (key union) and `dist.all_reduce` (sum/max reductions).
+  - Behavior: strict under DDP; key-union failures and all-reduce failures raise immediately with rank/world-size context (no local fallback).
+
+- `src/trainers/stage2_rollout_aligned.py`:
+  - `_reduce_train_rollout_log_payload_global` uses `dist.all_gather_object` and `dist.all_reduce` for rollout metric synchronization.
+  - `_ddp_assert_all_ranks_true_or_raise` uses `dist.all_reduce` to enforce rank-symmetric readiness before metric collectives.
+  - Behavior: strict under DDP; failures raise with actionable context (no swallow-and-continue).
+
+- `src/trainers/metrics/mixins.py`:
+  - `_sync_dataset_metrics` uses `dist.all_reduce` (presence/needs-sync flags) and `dist.all_gather_object` (key union).
+  - Behavior: rank-symmetric gating via collective-reduced flags; mismatch/failure raises (no rank-local early-return divergence).
+
+- `src/trainers/stage2_two_channel/executors.py`:
+  - `_stage2_ab_ddp_monitored_barrier` and Channel-B `_ddp_phase_barrier` use `dist.monitored_barrier` with bounded timeouts.
+  - Behavior: if monitored barrier support or monitor-group init is unavailable under DDP, fail fast; no silent downgrade to unbounded barriers.
+
+- `src/utils/ddp_fail_fast.py`:
+  - `ddp_any_rank_fail_fast` uses `dist.all_reduce` to coordinate any-rank failure propagation.
+  - `ddp_rank0_coordinated_fail_fast` uses `dist.broadcast` + `dist.broadcast_object_list` (plus caller-provided bounded barriers) to coordinate rank0 side-effect failures across ranks.
+
+- `src/launchers/stage2_vllm_server.py`:
+  - `_wait_for_server_health` readiness loop now bounds each `_http_get` probe timeout by remaining `WAIT_TIMEOUT` budget.
+  - Behavior: a single stuck probe cannot overrun the global wait budget.
+
+High-risk sites recorded for this change (initial-evidence anchors):
+- Stage-2 AB pending-metric reduction (`src/trainers/stage2_two_channel.py`)
+- rollout-aligned metric reduction (`src/trainers/stage2_rollout_aligned.py`)
+- dataset metric key sync (`src/trainers/metrics/mixins.py`)
+- Stage-2 AB phase barriers / monitored-barrier fallback (`src/trainers/stage2_two_channel/executors.py`)
+
 ## Risks / Trade-offs
 
 - More runs will terminate earlier (intentional): this is preferable to silent divergence or deadlocks.
