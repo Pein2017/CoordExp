@@ -235,11 +235,55 @@ All backend runtimes MUST produce standardized prediction payloads consumed by s
 
 
 ### Requirement: Inference error reporting remains structured and sample-scoped
-Inference-engine SHALL preserve structured, per-sample error reporting in output artifacts and summary counters during internal refactor.
-Internal exceptions MUST map to explicit sample error entries rather than silent skips.
+Inference-engine SHALL preserve structured, per-sample error reporting in output artifacts and summary counters.
+
+Normative behavior:
+- Per-sample error metadata MUST use stable error codes and stage identifiers.
+- Run-level summaries MUST include machine-readable aggregate counters by error class/code.
+- Logs alone MUST NOT be the only error signal when structured artifacts are emitted.
 
 #### Scenario: Sample-level generation failure is reflected in structured errors
 - **GIVEN** generation fails for one sample
 - **WHEN** inference continues for the batch/run
 - **THEN** the failed sample includes a structured error entry
 - **AND** summary counters include the failure classification.
+
+### Requirement: Operator-controlled input violations fail fast in inference/eval
+Operator-controlled inference/eval input violations MUST terminate the run and MUST NOT be silently skipped.
+
+Normative behavior:
+- Input contract checks SHOULD run in a preflight phase before generation/evaluation work.
+- Violations (schema/JSONL/image/size/geometry contract failures) MUST terminate non-zero.
+- Implementations MAY aggregate a bounded set of actionable diagnostics before raising.
+
+#### Scenario: Missing required metadata terminates inference
+- **GIVEN** inference/eval input records
+- **WHEN** a required field such as `width`/`height` is missing or invalid
+- **THEN** inference terminates non-zero with actionable diagnostics
+- **AND** processing does not continue by silently skipping that sample.
+
+### Requirement: Model-output parse/validation failures are continue-but-observable
+Prediction parse/validation failures caused by model-generated output MAY continue per sample, but MUST remain observable.
+
+Normative behavior:
+- Parse/validation failures on already-produced `pred_text` MUST emit structured sample errors and increment run counters.
+- Invalid predicted objects MAY be dropped for that sample; subsequent samples MAY continue.
+- Continue-and-skip under this rule is limited to explicit model-output consumer behavior and does not apply to operator input contracts.
+
+#### Scenario: Invalid prediction text yields sample-scoped error and continue
+- **GIVEN** generation produced `pred_text` for a sample
+- **WHEN** parsing/validation of that `pred_text` fails
+- **THEN** the sample record includes structured error metadata and error counters increment
+- **AND** subsequent samples continue.
+
+### Requirement: Unexpected internal exceptions and unrecoverable generation failures terminate the run
+Unexpected internal exceptions during inference/eval, including generation failures that prevent usable `pred_text`, MUST terminate the run non-zero.
+
+Normative behavior:
+- Internal/runtime failures MUST NOT be converted into silent success outputs.
+- Unexpected exceptions MAY be annotated with diagnostics before re-raise, but the run MUST terminate.
+
+#### Scenario: Backend generation failure terminates inference
+- **WHEN** the generation backend fails for a sample before producing usable prediction text
+- **THEN** inference terminates non-zero
+- **AND** the failure is not converted into empty predictions with continued execution.

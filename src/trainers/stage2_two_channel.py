@@ -431,7 +431,7 @@ class Stage2ABTrainingTrainer(
             if bool(prev_avg):
                 try:
                     setattr(args_obj, "average_tokens_across_devices", False)
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     pass
                 else:
                     logger.warning(

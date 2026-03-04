@@ -2688,26 +2688,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         try:
             if bool(synchronize):
                 torch.cuda.synchronize()
-        except Exception:
+        except (AssertionError, RuntimeError):
             pass
 
         try:
             torch.cuda.empty_cache()
-        except Exception:
+        except (AssertionError, RuntimeError):
             pass
 
         try:
             ipc_collect = getattr(torch.cuda, "ipc_collect", None)
             if callable(ipc_collect):
                 ipc_collect()
-        except Exception:
+        except (AssertionError, RuntimeError):
             pass
 
         try:
             import gc
 
             gc.collect()
-        except Exception:
+        except RuntimeError:
             pass
 
     def _rollout_backend(self) -> Literal["hf", "vllm"]:
@@ -2804,7 +2804,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             try:
                 module = __import__(module_name, fromlist=["LLMEngine"])
                 candidate = getattr(module, "LLMEngine", None)
-            except Exception:
+            except (AttributeError, ImportError, ModuleNotFoundError):
                 continue
             if candidate is not None:
                 llm_engine_cls = candidate
@@ -2901,18 +2901,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             try:
                 atexit.unregister(mem_cleanup)
-            except Exception:
+            except (RuntimeError, TypeError, ValueError):
                 pass
             try:
                 atexit.unregister(alloc_cleanup)
-            except Exception:
+            except (RuntimeError, TypeError, ValueError):
                 pass
 
             # Register allocator cleanup first, then MemPool cleanup, so MemPool
             # runs first at exit.
             atexit.register(alloc_cleanup)
             atexit.register(mem_cleanup)
-        except Exception:
+        except (
+            AttributeError,
+            ImportError,
+            ModuleNotFoundError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             return
 
 
@@ -2960,7 +2967,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             setattr(_sleep_no_empty_cache, "_coordexp_no_empty_cache", True)
             CuMemAllocator.sleep = _sleep_no_empty_cache  # type: ignore[assignment]
-        except Exception:
+        except (
+            AttributeError,
+            ImportError,
+            ModuleNotFoundError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             return
 
 
@@ -2994,9 +3008,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if inst is not None:
                     try:
                         getattr(inst, "allocator_and_pools", {}).clear()
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
                         pass
-            except Exception:
+            except (AttributeError, ImportError, ModuleNotFoundError, RuntimeError):
                 pass
 
             # vLLM NCCL symmetric-memory allocator (if enabled).
@@ -3018,11 +3032,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     pynccl_allocator._allocator_wrapper = None
                 if getattr(pynccl_allocator, "_allocator", None) is not None:
                     pynccl_allocator._allocator = None
-            except Exception:
+            except (AttributeError, ImportError, ModuleNotFoundError, RuntimeError):
                 pass
 
             gc.collect()
-        except Exception:
+        except (
+            AttributeError,
+            ImportError,
+            ModuleNotFoundError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             return
 
     @contextmanager
@@ -5317,7 +5338,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             clean_up_tokenization_spaces=False,
                         )
                     )
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
             return [
                 str(

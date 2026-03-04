@@ -75,7 +75,7 @@ class Stage2ABChannelExecutorsMixin:
                 try:
                     setattr(args, "average_tokens_across_devices", False)
                     changed = True
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     changed = False
                 else:
                     warned = bool(
@@ -101,7 +101,7 @@ class Stage2ABChannelExecutorsMixin:
             ):
                 try:
                     setattr(args, "average_tokens_across_devices", bool(prev))
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     pass
 
     def _stage2_post_rollout_buffer(
@@ -553,7 +553,7 @@ class Stage2ABChannelExecutorsMixin:
                         backend="gloo",
                         timeout=timedelta(seconds=float(init_timeout_s)),
                     )
-                except Exception as exc:
+                except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                     warned = bool(
                         getattr(self, "_stage2_ab_ddp_monitor_group_warned", False)
                     )
@@ -590,7 +590,7 @@ class Stage2ABChannelExecutorsMixin:
                         backend="gloo",
                         timeout=timedelta(seconds=float(ddp_monitor_group_timeout_s)),
                     )
-                except Exception as exc:
+                except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                     warned = bool(
                         getattr(self, "_stage2_ab_ddp_monitor_group_warned", False)
                     )
