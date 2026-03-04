@@ -97,8 +97,8 @@ rollout_matching:
   vllm:
     mode: server
     tensor_parallel_size: 1
-    enforce_eager: true
-    gpu_memory_utilization: 0.8
+    enforce_eager: false
+    gpu_memory_utilization: 0.9
     max_model_len: 14000
     enable_lora: false
     enable_prefix_caching: true
