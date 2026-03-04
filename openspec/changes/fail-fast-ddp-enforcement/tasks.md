@@ -46,15 +46,15 @@
 
 ## 3. Tests / verification
 
-- [ ] 3.1 Add a minimal CPU DDP regression test (2 ranks) that validates:
+- [x] 3.1 Add a minimal CPU DDP regression test (2 ranks) that validates:
   - metric aggregation paths do not hang when one rank triggers an error,
   - failures terminate all ranks with a clear exception message.
 - [ ] 3.2 Run targeted tests:
   - `conda run -n ms python -m pytest tests/` (scoped to any new DDP regression tests)
   - a Stage-2 smoke run (short) to confirm no deadlocks at log/metric aggregation boundaries.
 - [ ] 3.3 Add a regression check that readiness probing cannot exceed `WAIT_TIMEOUT` due to a stuck probe (e.g., verify `curl` uses connect+max time).
-- [ ] 3.4 Add a CPU DDP test (2 ranks) that simulates a rank0-only side effect failure and asserts both ranks exit (non-zero) without hanging at the exit barrier.
-- [ ] 3.5 Add a CPU DDP test (2 ranks) that simulates a non-rank0 exception inside a DDP-critical aggregation step and asserts both ranks terminate (non-zero) without hanging at a later collective.
+- [x] 3.4 Add a CPU DDP test (2 ranks) that simulates a rank0-only side effect failure and asserts both ranks exit (non-zero) without hanging at the exit barrier.
+- [x] 3.5 Add a CPU DDP test (2 ranks) that simulates a non-rank0 exception inside a DDP-critical aggregation step and asserts both ranks terminate (non-zero) without hanging at a later collective.
 
 ## Evidence Notes (2026-03-04)
 
@@ -71,7 +71,16 @@
 - Targeted no-GPU checks run:
   - `conda run -n ms python -m pytest -q tests/test_ddp_fail_fast_stage2_metrics.py tests/test_ddp_vllm_sync_failure_propagation.py tests/test_stage2_vllm_server_launcher.py tests/test_stage2_ab_ddp_phase_monitor_disable.py`
   - Result: `18 passed`
+- True CPU 2-rank DDP process tests added:
+  - `tests/test_ddp_fail_fast_multiprocess.py`
+  - Covers:
+    - Stage-2 metric aggregation non-rank0 failure propagation (`3.1`, `3.5`)
+    - rank0-only side-effect coordinated failure propagation (`3.4`)
+  - Commands run:
+    - `conda run -n ms python -m pytest -q tests/test_ddp_fail_fast_multiprocess.py`
+    - Result: `3 passed`
+    - `conda run -n ms python -m pytest -q tests/test_ddp_fail_fast_multiprocess.py tests/test_ddp_fail_fast_stage2_metrics.py tests/test_ddp_vllm_sync_failure_propagation.py tests/test_stage2_ab_ddp_phase_monitor_disable.py`
+    - Result: `10 passed`
 - Remaining open items require additional evidence:
-  - true CPU 2-rank DDP process tests (`3.1`, `3.4`, `3.5`) rather than monkeypatched/fake-distributed tests,
   - Stage-2 smoke run evidence (`3.2`),
   - explicit timeout-bypass regression for readiness probing (`3.3`).
