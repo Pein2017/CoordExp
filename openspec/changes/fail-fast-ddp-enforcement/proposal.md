@@ -23,7 +23,7 @@ This change proposal enforces strict **fail-fast semantics** in DDP-critical cod
   - DDP-critical code MUST NOT catch exceptions and “proceed with local fallback” when a collective was expected.
   - “Best-effort” wrappers MUST NOT be used for code that can call `torch.distributed` collectives.
 - **Coordinated rank0-only operations** (canonical pattern):
-  - For rank0-only side effects that are surrounded by barriers (e.g., model sync, server sync, metric key union decisions), failures MUST be broadcast to all ranks so all ranks raise together.
+  - For rank0-only side effects that are surrounded by barriers (e.g., model sync, server sync, rank0-only filesystem writes/readiness markers, or rank0-only service coordination), failures MUST be broadcast to all ranks so all ranks raise together.
 - **Bounded waits (launcher)**:
   - Keep the existing “wait until overall timeout” semantics for server readiness, but ensure no single readiness probe can block indefinitely (e.g., bound `curl` duration so `WAIT_TIMEOUT` is meaningful).
 
@@ -40,4 +40,3 @@ This change proposal enforces strict **fail-fast semantics** in DDP-critical cod
   - DDP metrics aggregation paths (Stage-2 buffered metrics, rollout metrics, dataset metric key sync),
   - Stage-2 channel synchronization barriers / monitored barrier behavior,
   - Stage-2 launcher readiness checks (bounded waits).
-

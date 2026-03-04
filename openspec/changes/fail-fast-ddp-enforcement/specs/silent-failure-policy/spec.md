@@ -16,9 +16,9 @@ Normative behavior under DDP:
 - Any decision that gates whether a collective executes (enter vs skip) MUST be **rank-symmetric**:
   - it MUST NOT depend on rank-local caches or rank-local error handling,
   - it MUST be either unconditional (all ranks execute), or computed via a collective so all ranks agree.
-- Exception handling MAY catch exceptions **only** to coordinate a rank-symmetric termination:
-  - if an exception is caught on any rank, all ranks MUST still execute the same coordination collectives (e.g., reduce a failure-flag tensor and optionally exchange a short error summary),
-  - then all ranks MUST raise and terminate (non-zero).
+- Exception handling MAY catch exceptions **only** to coordinate a rank-symmetric termination for failures that occur **outside** distributed collectives (e.g., during local preprocessing before entering the next collective):
+  - if an exception is caught on any rank, all ranks MUST still execute the same coordination collectives (e.g., reduce a failure-flag tensor and optionally exchange a short error summary), then all ranks MUST raise and terminate (non-zero).
+  - Exceptions raised by `torch.distributed` collectives (or indicating process-group corruption) MUST NOT be caught for additional coordination collectives; doing so can deadlock. Such exceptions MUST be allowed to propagate.
 
 DDP-critical collectives include (non-exhaustive):
 - `dist.all_reduce`, `dist.all_gather_object`, `dist.broadcast`, `dist.broadcast_object_list`, `dist.barrier`, `dist.monitored_barrier`.
@@ -33,7 +33,7 @@ DDP-critical collectives include (non-exhaustive):
 
 #### Scenario: Any-rank exception is propagated without hang
 - **GIVEN** DDP is initialized with `world_size=2`
-- **WHEN** rank 1 encounters an unexpected exception inside a DDP-critical metric aggregation step
+- **WHEN** rank 1 encounters an unexpected exception during local preprocessing within a DDP-critical metric aggregation step (before entering the next distributed collective)
 - **THEN** both ranks execute the coordination step
 - **AND** all ranks terminate (non-zero) with an error that includes `where` and the failing rank
 - **AND** the run does not hang at a later collective.
@@ -46,7 +46,7 @@ DDP-critical collectives include (non-exhaustive):
 - **AND** all ranks raise and terminate together (no “rank0 fails, others hang”).
 
 ### Requirement: DDP coordination barriers MUST be bounded (no silent downgrade)
-When DDP is initialized, any barrier used to enforce rank-symmetric control flow or to coordinate rank0-only side effects MUST be **bounded** (e.g., via monitored barrier with a finite timeout, or an equivalent bounded mechanism).
+When DDP is initialized, any barrier used to enforce rank-symmetric control flow or to coordinate rank0-only side effects MUST be **bounded** with a **finite timeout** (e.g., via monitored barrier with a finite timeout, or an equivalent bounded mechanism that raises rather than waiting indefinitely).
 
 If the bounded barrier mechanism is enabled/configured but cannot be initialized, the run MUST fail fast with actionable guidance and MUST NOT silently downgrade to an unbounded barrier.
 

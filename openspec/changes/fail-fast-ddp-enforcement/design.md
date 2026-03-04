@@ -48,13 +48,15 @@ Rank0 MUST NOT raise (or return) before completing the broadcast and exit alignm
 
 If the bounded barrier mechanism (e.g., monitored barrier / monitor group) is enabled/configured but cannot be initialized, the system MUST fail fast with actionable guidance and MUST NOT silently downgrade to an unbounded barrier.
 
-2b) **Any-rank exceptions inside DDP-critical regions**
-If a DDP-critical operation is executed by all ranks and may raise, implementations MAY catch exceptions **only** to coordinate a rank-symmetric termination:
+2b) **Any-rank exceptions (pre-collective) inside DDP-critical regions**
+If a DDP-critical operation is executed by all ranks and may raise **before entering the next distributed collective**, implementations MAY catch exceptions **only** to coordinate a rank-symmetric termination:
 - execute the operation inside a local `try/except` on each rank (capture local failure flag + short summary),
 - perform a rank-symmetric failure coordination step (e.g., reduce a tensor failure flag so all ranks agree on “any failure happened”),
 - raise on all ranks if any failure occurred.
 
 This preserves rank symmetry and prevents hangs where “rank k fails, rank j continues into the next collective”.
+
+**Important:** this pattern MUST NOT wrap `torch.distributed` collectives. If a distributed collective itself raises (or indicates process-group corruption), do not attempt additional coordination collectives; re-raise and let the distributed backend error/timeout rather than risking a second deadlock.
 
 3) **No “best-effort” wrappers around collectives**
 Diagnostics-only wrappers (e.g., “warn once and disable diagnostic”) are allowed only when:
