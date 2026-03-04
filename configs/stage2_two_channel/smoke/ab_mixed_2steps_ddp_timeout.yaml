@@ -1,0 +1,21 @@
+extends: ../prod/ab_mixed.yaml
+
+training:
+  run_name: debug_ab_mixed_2steps_ddp_timeout
+  output_dir: output/stage2_ab/debug/ab_mixed_2steps_ddp_timeout
+  logging_dir: tb/stage2_ab/debug/ab_mixed_2steps_ddp_timeout
+  max_steps: 2
+  logging_steps: 1
+  do_eval: false
+  eval_strategy: "no"
+  save_strategy: "no"
+
+custom:
+  # Keep enough samples for 2 optimizer steps under DDP.
+  train_sample_limit: 512
+  val_sample_limit: 64
+
+stage2_ab:
+  channel_b:
+    # DO NOT set to 0 (disables monitored barriers and can hang forever under DDP).
+    ddp_phase_timeout_s: 180
