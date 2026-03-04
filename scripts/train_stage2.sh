@@ -391,6 +391,8 @@ SERVER_PGID=""
 TRAIN_PID=""
 TRAIN_PGID=""
 CLEANUP_DONE=0
+SERVER_STARTED=0
+TRAIN_STARTED=0
 
 _collect_descendants() {
   local root_pid="$1"
@@ -432,6 +434,16 @@ _collect_server_pids() {
       pid="${pid//[[:space:]]/}"
       [[ -n "${pid}" ]] && raw_pids+=("${pid}")
     done < <(lsof -t -iTCP:"${SERVER_PORT}" -sTCP:LISTEN 2>/dev/null || true)
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    while read -r pid; do
+      pid="${pid//[[:space:]]/}"
+      [[ -n "${pid}" ]] && raw_pids+=("${pid}")
+    done < <(
+      netstat -tulpn 2>/dev/null \
+        | awk -v port=":${SERVER_PORT}" '$4 ~ port && $6 == "LISTEN" {split($7,a,"/"); if (a[1] ~ /^[0-9]+$/) print a[1]}' \
+        || true
+    )
   fi
 
   local -A seen=()
@@ -499,15 +511,79 @@ cleanup() {
     return
   fi
   CLEANUP_DONE=1
-  trap - EXIT INT TERM
-  _stop_train_processes
-  _stop_server_processes
+  trap - EXIT INT TERM HUP QUIT PIPE
+
+  # Cleanup must be best-effort (never let `set -e` abort teardown).
+  set +e
+
+  if [[ "${TRAIN_STARTED}" -eq 1 ]]; then
+    _stop_train_processes
+  fi
+  if [[ "${SERVER_STARTED}" -eq 1 ]]; then
+    _stop_server_processes
+  fi
+
+  # Reap children if they are still ours.
+  if [[ -n "${TRAIN_PID:-}" ]]; then
+    wait "${TRAIN_PID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${SERVER_PID:-}" ]]; then
+    wait "${SERVER_PID}" >/dev/null 2>&1 || true
+  fi
+
+  # Ensure the rollout server port is actually released before returning, so reruns
+  # don't immediately fail the "port already in use" precheck after Ctrl+C.
+  if [[ "${SERVER_STARTED}" -eq 1 && -n "${SERVER_PORT:-}" ]]; then
+    local host="${SERVER_HOST:-127.0.0.1}"
+    if [[ "${host}" == "0.0.0.0" ]]; then
+      host="127.0.0.1"
+    fi
+    local port="${SERVER_PORT}"
+    local start_ts now_ts
+    start_ts=$(date +%s)
+    while true; do
+      if python - "${host}" "${port}" <<'PY'
+import socket
+import sys
+
+host = str(sys.argv[1]).strip() or "127.0.0.1"
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+      then
+        break
+      fi
+      now_ts=$(date +%s)
+      if (( now_ts - start_ts >= 15 )); then
+        echo "[WARN] Rollout server port still busy after cleanup timeout: ${host}:${port}" >&2
+        if command -v netstat >/dev/null 2>&1; then
+          netstat -tulpn 2>/dev/null | grep -E ":${port}\\b" >&2 || true
+        fi
+        break
+      fi
+      sleep 0.5
+    done
+  fi
 }
 
 on_interrupt() {
   local sig="$1"
   echo "[INFO] Received ${sig}; shutting down learner + vLLM server..."
-  exit 130
+  cleanup
+  case "${sig}" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    HUP) exit 129 ;;
+    QUIT) exit 131 ;;
+    PIPE) exit 141 ;;
+    *) exit 130 ;;
+  esac
 }
 
 _assert_server_port_free() {
@@ -541,9 +617,22 @@ PY
       ps -fp "${listener_pids[@]}" >&2 || true
     fi
   fi
+  if command -v netstat >/dev/null 2>&1; then
+    echo "[ERROR] netstat listeners on port ${port} (if any):" >&2
+    netstat -tulpn 2>/dev/null | grep -E ":${port}\\b" >&2 || true
+  fi
   echo "[ERROR] Refusing to continue: rollout server may auto-shift to another port, which desynchronizes trainer/server endpoints." >&2
   exit 2
 }
+
+# From this point onward, the launcher owns process lifecycle (server + learner) and must
+# terminate everything on error or Ctrl+C to avoid leaking a `swift rollout` server.
+trap cleanup EXIT
+trap 'on_interrupt INT' INT
+trap 'on_interrupt TERM' TERM
+trap 'on_interrupt HUP' HUP
+trap 'on_interrupt QUIT' QUIT
+trap 'on_interrupt PIPE' PIPE
 
 echo "[RUN] ${SERVER_ENV[*]} ${SERVER_CMD[*]}"
 HEALTH_HOST="${SERVER_HOST}"
@@ -555,16 +644,14 @@ _assert_server_port_free "${HEALTH_HOST}" "${SERVER_PORT}"
 if command -v setsid >/dev/null 2>&1; then
   setsid env "${SERVER_ENV[@]}" "${SERVER_CMD[@]}" &
   SERVER_PID=$!
+  SERVER_STARTED=1
   SERVER_PGID="$(ps -o pgid= "${SERVER_PID}" | tr -d ' ')"
 else
   env "${SERVER_ENV[@]}" "${SERVER_CMD[@]}" &
   SERVER_PID=$!
+  SERVER_STARTED=1
   SERVER_PGID=""
 fi
-
-trap cleanup EXIT
-trap 'on_interrupt INT' INT
-trap 'on_interrupt TERM' TERM
 
 HEALTH_URL="http://${HEALTH_HOST}:${SERVER_PORT}/health/"
 WORLD_URL="http://${HEALTH_HOST}:${SERVER_PORT}/get_world_size/"
@@ -658,6 +745,7 @@ else
   bash -lc "${TRAIN_CMD}" &
 fi
 TRAIN_PID=$!
+TRAIN_STARTED=1
 TRAIN_PGID="$(ps -o pgid= "${TRAIN_PID}" | tr -d ' ')"
 
 set +e
