@@ -1,155 +1,102 @@
 # coord-aux-loss Specification
 
 ## Purpose
-Define the canonical auxiliary geometry-loss contract for coord-token training, including configuration knobs, per-geometry loss behavior, and logging expectations.
+Define the canonical coord-token auxiliary supervision contract used in the current stack (`coord_soft_ce_w1`), including config surfaces, fail-fast guards, and logging expectations.
 
 ## Requirements
+### Requirement: Canonical config surface is `coord_soft_ce_w1`
+The system SHALL expose coord auxiliary supervision through `custom.coord_soft_ce_w1` with the following keys:
+- `enabled` (bool; default `false`)
+- `ce_weight` (float; default `0.0`)
+- `soft_ce_weight` (float; default `1.0`)
+- `w1_weight` (float; default `1.0`)
+- `gate_weight` (float; default `1.0`)
+- `temperature` (float; default `1.0`)
+- `target_sigma` (float; default `2.0`)
+- `target_truncate` (int or null; default `null`)
 
+Validation contract:
+- All weights MUST be `>= 0`.
+- `temperature` and `target_sigma` MUST be `> 0`.
+- `target_truncate` MUST be `null` or an integer `>= 0`.
+- If `enabled=true`, at least one of `ce_weight`, `soft_ce_weight`, `w1_weight`, `gate_weight` MUST be non-zero.
 
-### Requirement: Configurable coord auxiliary loss
-The system SHALL expose a long-term config block at `custom.coord_loss` for coord auxiliary loss that includes:
-- enable flag (default: false)
-- L1 weight (default: 0.0)
-- GIoU weight (default: 0.0)
-- coord CE weight (default: 1.0)
-- non-coord CE weight (default: 1.0)
-- top-k expectation parameters (top_k default: 0.1; temperature default: 1.0)
+Legacy compatibility:
+- `custom.coord_loss` is deprecated and SHALL be ignored (non-fatal) for config compatibility.
 
-#### Scenario: Aux loss disabled by default
-- **GIVEN** no coord auxiliary loss config is provided
-- **WHEN** training runs
-- **THEN** no auxiliary loss is computed and behavior matches current SFT.
+#### Scenario: Invalid `coord_soft_ce_w1` values fail fast
+- **GIVEN** `custom.coord_soft_ce_w1.enabled: true` and all loss weights set to `0`
+- **WHEN** config validation runs
+- **THEN** validation fails fast with actionable guidance.
 
-#### Scenario: CE weighting disabled when aux loss is off
-- **GIVEN** `custom.coord_loss.enabled` is false
-- **WHEN** training runs
-- **THEN** coord vs non-coord CE weights are not applied and base CE remains unchanged.
+#### Scenario: Deprecated `custom.coord_loss` does not define behavior
+- **GIVEN** a config that still includes `custom.coord_loss`
+- **WHEN** config validation runs
+- **THEN** the key is treated as deprecated compatibility input
+- **AND** canonical behavior is determined by `custom.coord_soft_ce_w1` (or pipeline `coord_reg` config when applicable).
 
+### Requirement: Pipeline module config takes precedence in pipeline-driven Stage-2
+When `stage2_ab.pipeline` or `rollout_matching.pipeline` is present, `custom.coord_soft_ce_w1.*` SHALL be disallowed.
 
-### Requirement: Top-k expectation decoding on coord tokens
-Expectation decoding SHALL operate over the ordered coord-token id list (`<|coord_0|>`..`<|coord_999|>`) and support top-k selection where `top_k` may be a fraction (0 < top_k < 1) or an integer count. Fractional values SHALL be converted via `ceil(top_k * 1000)` and clamped to [1, 1000]. Top-k selection SHALL use the highest logits; tie order is implementation-defined.
+Normative behavior:
+- Users MUST express coord auxiliary knobs in the `coord_reg` objective module config under the active pipeline (`stage2_ab.pipeline` or `rollout_matching.pipeline`).
+- If both a pipeline objective and `custom.coord_soft_ce_w1.*` are present, config validation MUST fail fast with migration guidance.
 
-#### Scenario: Fractional top_k
-- **GIVEN** `top_k = 0.1`
-- **WHEN** expectation decoding runs
-- **THEN** the top 10% of coord-token logits are used to compute E(top_k) over bins 0..999.
+#### Scenario: Pipeline + custom coord config fails fast
+- **GIVEN** `stage2_ab.pipeline` is configured
+- **AND** `custom.coord_soft_ce_w1` is also configured
+- **WHEN** config validation runs
+- **THEN** validation fails fast with guidance to move settings into `stage2_ab.pipeline.objective[*].config` for `coord_reg`.
 
+### Requirement: Coord auxiliary loss is coord-token supervision (not geometry IoU loss)
+The coord auxiliary objective SHALL supervise coord-token distributions using the coord vocabulary (`<|coord_0|>`..`<|coord_999|>`).
 
-### Requirement: L1 per coord token in normalized space
-The auxiliary L1 loss SHALL be computed per coord token using normalized targets in [0,1].
+Normative behavior:
+- The soft target distribution and W1 terms SHALL be computed through the shared `coord_soft_ce_w1` helper.
+- Optional hard CE and coord-vocab gate contributions SHALL be included according to configured weights.
+- The auxiliary objective SHALL apply at coord-token positions only.
+- This capability SHALL NOT define bbox/poly IoU geometry losses (those belong to other objective modules/capabilities).
 
-#### Scenario: L1 uses coord tokens
-- **GIVEN** coord tokens appear in the assistant sequence
-- **WHEN** aux loss is enabled
-- **THEN** L1 is computed per coord token using the expected coord value and the target coord token.
+#### Scenario: Coord-token positions receive softCE/W1 supervision
+- **GIVEN** coord-token targets are present in the batch
+- **AND** `custom.coord_soft_ce_w1.enabled: true`
+- **WHEN** loss is computed
+- **THEN** coord-token supervision includes weighted `soft_ce` and `w1` contributions (plus optional CE/gate terms).
 
+### Requirement: Runtime prerequisites are fail-fast when enabled
+If coord auxiliary supervision is enabled, missing runtime prerequisites MUST fail fast.
 
-### Requirement: GIoU for bbox_2d and poly via bbox
-This requirement MUST be interpreted as a legacy coord-loss formulation used by earlier experiments and retained for audit traceability.
+Fail-fast examples:
+- missing/invalid model logits for the active forward pass,
+- missing coord-token ids from tokenizer vocab,
+- coord-token ids outside model vocab size,
+- inability to build coord id map.
 
-Legacy behavior summary:
-- `bbox_2d` used GIoU directly.
-- `poly` was converted to axis-aligned bbox via min/max before GIoU.
-- `line` was excluded from GIoU.
+No-op behavior:
+- If enabled but the current batch has zero supervised coord-token positions, the aux term MAY be skipped for that batch (no additive loss contribution).
 
-Current canonical training behavior is defined by `Requirement: GIoU for bbox_2d and mask-IoU for poly` below and MUST take precedence whenever both contracts are visible in this file.
+#### Scenario: Missing coord vocab fails fast
+- **GIVEN** `coord_soft_ce_w1` is enabled
+- **AND** tokenizer does not provide coord token ids
+- **WHEN** loss computation runs
+- **THEN** training raises a fail-fast runtime error with actionable diagnostics.
 
-#### Scenario: Poly GIoU-style loss
-- **GIVEN** historical runs/logs produced before mask-IoU migration
-- **WHEN** those artifacts are interpreted
-- **THEN** poly loss entries can reflect bbox-converted GIoU semantics
-- **AND** current training configs MUST follow the mask-IoU requirement below.
+### Requirement: Logging keys are stable for coord aux observability
+When coord auxiliary supervision contributes to loss, the trainer SHALL emit stable metric keys:
+- `coord_softce_w1/loss`
+- `coord_softce_w1/soft_ce`
+- `coord_softce_w1/w1`
+- `coord_softce_w1/ce` (when hard CE is active)
+- `coord_softce_w1/gate` (when gate is active)
 
+The trainer SHALL also emit stable diagnostics keys under `coord_diag/*`, including:
+- `coord_diag/enabled`
+- `coord_diag/loss`
+- `coord_diag/coord_tokens`
+- `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/ce`, `coord_diag/gate` (as available)
+- distribution diagnostics such as `coord_diag/coord_vocab_mass`, `coord_diag/acc_top5`, `coord_diag/p_gt_mean`, `coord_diag/margin_mean`, `coord_diag/expected_bin_mae`, `coord_diag/expected_bin_abs_err_p90`, `coord_diag/w1_to_delta`, `coord_diag/coord_tokens_per_sample`.
 
-### Requirement: Packed and non-packed batch support
-Aux loss computation SHALL work in both packed and non-packed batches by carrying per-object coord spans through the collator and aligning them with coord-token positions in labels.
-
-#### Scenario: Packed coord spans
-- **GIVEN** packing is enabled and multiple samples are packed
-- **WHEN** the collator builds a batch
-- **THEN** coord spans are concatenated in pack order and the aux loss is computed correctly.
-
-
-### Requirement: Train/eval logging parity
-When enabled, aux loss components SHALL be logged for both train and eval with matching key names. Keys SHALL include:
-- `coord_loss/total`
-- `coord_loss/l1`
-- `coord_loss/giou`
-- `coord_loss/coord_ce`
-Eval logs SHALL use the framework prefix `eval_` (e.g., `eval_coord_loss/total`).
-
-#### Scenario: Eval logging
-- **GIVEN** evaluation runs with coord aux loss enabled
-- **WHEN** eval_step executes
-- **THEN** L1/GIoU/coord CE components are logged under eval metrics.
-
-
-### Requirement: Coord vs non-coord CE weighting
-The system SHALL allow separate CE weights for coord tokens vs non-coord tokens via loss scaling when `custom.coord_loss.enabled` is true.
-
-#### Scenario: Coord-weighted CE
-- **GIVEN** `custom.coord_loss.enabled` is true
-- **AND** coord_weight != non_coord_weight
-- **WHEN** training computes token CE
-- **THEN** coord tokens use coord_weight and non-coord tokens use non_coord_weight.
-
-
-### Requirement: GIoU for bbox_2d and mask-IoU for poly
-The auxiliary loss SHALL compute GIoU for `bbox_2d` spans only. For `poly` spans, it SHALL compute a mask-IoU loss from differentiable soft polygon rasterization and SHALL NOT convert polygons to bboxes for loss.
-
-#### Scenario: Poly uses mask IoU
-- **GIVEN** a `poly` object with at least 3 points
-- **WHEN** coord auxiliary loss runs
-- **THEN** the loss uses mask-IoU and does not use bbox GIoU for that polygon.
-
-
-### Requirement: Poly rasterization inputs
-Polygon coordinates used for mask-IoU SHALL be interpreted in normalized [0,1] space, clamped to [0,1], and rasterized on a fixed grid using cell centers.
-
-#### Scenario: Clamp normalized coords
-- **GIVEN** decoded polygon coords outside [0,1]
-- **WHEN** rasterization runs
-- **THEN** coords are clamped before mask generation.
-
-
-### Requirement: Poly mask configuration defaults
-The coord loss config SHALL include polygon mask parameters with defaults:
-- `poly_mask_size`: 64
-- `poly_sigma_mask`: 1.5 / `poly_mask_size`
-- `poly_tau_inside`: 0.08
-- `poly_beta_dist`: 100
-- `poly_smooth_weight`: 0.05
-
-#### Scenario: Defaults apply
-- **GIVEN** `custom.coord_loss.enabled` is true and no poly mask parameters are set
-- **WHEN** aux loss runs for polygons
-- **THEN** the defaults above are used.
-
-
-### Requirement: Poly smoothness
-The auxiliary loss SHALL add a closed-curve second-order smoothness term computed on predicted polygon vertices only and scaled by `poly_smooth_weight`.
-
-#### Scenario: Smoothness uses predicted vertices only
-- **GIVEN** a polygon prediction and GT polygon
-- **WHEN** aux loss runs
-- **THEN** smoothness is computed on the prediction only and added to the aux loss.
-
-
-### Requirement: Poly mask loss weighting
-Poly mask-IoU loss SHALL be scaled by `giou_weight`.
-
-#### Scenario: Shared poly weight
-- **GIVEN** `giou_weight = 1.0`
-- **WHEN** poly mask-IoU loss is computed
-- **THEN** the contribution is scaled by 1.0.
-
-
-### Requirement: Poly mask metrics
-The system SHALL log polygon metrics with keys:
-- `coord_loss/poly_mask_iou` (IoU value; higher is better)
-- `coord_loss/poly_smooth`
-
-#### Scenario: Eval logging
-- **GIVEN** evaluation with coord aux loss enabled
-- **WHEN** poly spans are present
-- **THEN** eval metrics include `eval_coord_loss/poly_mask_iou` and `eval_coord_loss/poly_smooth`.
+#### Scenario: Enabled coord aux emits stable metric namespaces
+- **GIVEN** a training step with coord-token supervision active
+- **WHEN** metrics are logged
+- **THEN** logs include `coord_softce_w1/*` and `coord_diag/*` keys for the computed terms.

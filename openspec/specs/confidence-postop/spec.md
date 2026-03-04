@@ -1,7 +1,7 @@
 # confidence-postop Specification
 
 ## Purpose
-TBD - created by archiving change map-confidence-foundation-2026-02-20. Update Purpose after archive.
+Define the confidence post-processing contract that joins inference artifacts with token-trace logprobs, computes auditable per-object confidence/score outputs, and produces the scored evaluation artifact.
 ## Requirements
 ### Requirement: Inputs and join keys
 The confidence post-operation SHALL consume:
@@ -186,4 +186,3 @@ The summary MUST be deterministic for the same inputs.
 - **GIVEN** a run where at least one sample lacks a trace record (`missing_trace`)
 - **WHEN** the post-op finishes
 - **THEN** `confidence_postop_summary.json` reports a non-zero `dropped_by_reason.missing_trace` and `kept_fraction < 1.0`.
-

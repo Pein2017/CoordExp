@@ -582,8 +582,8 @@ Normative behavior:
 - **THEN** appended object payloads place their concrete geometry key before `desc`
 - **AND** matching/masking logic remains unchanged.
 
-#### Scenario: Default desc-first behavior is preserved in both channels
-- **GIVEN** `custom.object_field_order` is omitted
+#### Scenario: Explicit desc-first behavior is preserved in both channels
+- **GIVEN** `custom.object_field_order: desc_first`
 - **WHEN** Channel-A or Channel-B serializes object payloads
 - **THEN** payloads remain `desc` before the concrete geometry key (`bbox_2d` or `poly`).
 

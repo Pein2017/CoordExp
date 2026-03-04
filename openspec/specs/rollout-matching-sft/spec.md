@@ -736,7 +736,7 @@ This requirement applies only to field order within each appended object payload
 - **AND** object keys still start at `max_object_index_in_prefix + 1`.
 
 #### Scenario: desc-first remains baseline append layout
-- **GIVEN** `custom.object_field_order` is omitted or set to `desc_first`
+- **GIVEN** `custom.object_field_order: desc_first`
 - **WHEN** FN append fragment is serialized
 - **THEN** appended object payloads keep `desc` before the concrete geometry key (`bbox_2d` or `poly`).
 
@@ -1302,31 +1302,29 @@ Normative behavior:
 - **AND** `stage2_ab.pipeline` is present
 - **THEN** config validation fails fast with guidance to use `rollout_matching.pipeline`.
 
-### Requirement: Evaluation can override rollout backend independently of training
-The system SHALL allow Stage-2 evaluation (`eval_step`) rollouts to select a rollout backend independently of the training-time rollout backend.
+### Requirement: Evaluation rollout backend is fixed to vLLM
+For this stack, Stage-2 evaluation (`eval_step`) rollouts SHALL use vLLM only.
 
 Normative behavior:
-- `rollout_matching.rollout_backend` continues to define the rollout backend for training-time rollouts (e.g., Stage-2 Channel-B).
-- A new optional key `rollout_matching.eval_rollout_backend` SHALL be supported:
-  - when `null` or missing, evaluation rollouts MUST use `rollout_matching.rollout_backend`,
-  - when set to `hf` or `vllm`, evaluation rollouts MUST use `rollout_matching.eval_rollout_backend` and MUST NOT affect training rollouts.
-- `rollout_matching.eval_rollout_backend` MUST accept only `null`, `hf`, or `vllm` (case-insensitive). Missing MUST be treated as `null`. Any other value MUST fail fast with actionable guidance.
-- If the effective evaluation rollout backend resolves to `vllm`, the system MUST enforce the same vLLM length-coherence guardrails as when `rollout_matching.rollout_backend: vllm`, including:
-  - `rollout_matching.max_new_tokens < rollout_matching.vllm.max_model_len` (to avoid truncation/overflow), and
-  - `rollout_matching.vllm.max_model_len >= global_max_length` (to avoid silent truncation drift between training and rollouts).
+- `rollout_matching.eval_rollout_backend` MUST resolve to `vllm`.
+- Non-`vllm` values (including `hf`, `null`, empty, or other values) MUST fail fast with actionable guidance.
+- Evaluation backend inheritance from `rollout_matching.rollout_backend` is unsupported.
+- `rollout_matching.rollout_backend` continues to control training-time rollout backend only.
+- Evaluation rollouts MUST enforce vLLM length-coherence guardrails:
+  - `rollout_matching.max_new_tokens < rollout_matching.vllm.max_model_len`,
+  - `rollout_matching.vllm.max_model_len >= global_max_length`.
 
-#### Scenario: Eval backend override uses vLLM while training uses HF
+#### Scenario: Evaluation uses vLLM while training backend remains configurable
 - **GIVEN** `rollout_matching.rollout_backend: hf`
 - **AND** `rollout_matching.eval_rollout_backend: vllm`
 - **WHEN** the trainer runs `evaluate()` at an `eval_step`
-- **THEN** evaluation rollouts are generated via the vLLM backend
-- **AND** training-time rollouts (if any) continue to use the HF backend.
+- **THEN** evaluation rollouts are generated via vLLM
+- **AND** training-time rollouts continue to use the configured training backend.
 
-#### Scenario: Missing eval override inherits training backend
-- **GIVEN** `rollout_matching.rollout_backend: vllm`
-- **AND** `rollout_matching.eval_rollout_backend` is missing (or null)
-- **WHEN** the trainer runs `evaluate()`
-- **THEN** evaluation rollouts use the vLLM backend.
+#### Scenario: Non-vLLM eval backend fails fast
+- **GIVEN** `rollout_matching.eval_rollout_backend: hf`
+- **WHEN** config validation runs
+- **THEN** validation fails fast with guidance that eval-step backend is fixed to `vllm`.
 
 ### Requirement: vLLM rollouts require full merged-weight sync (no adapter-only sync)
 In this stack, vLLM rollouts are supported only via full merged-weight synchronization into the vLLM engine ("full sync"). Adapter-only synchronization (vLLM LoRA upload / `add_lora`) is unsupported and MUST be rejected.

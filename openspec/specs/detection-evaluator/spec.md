@@ -145,8 +145,8 @@ If both CLI flags and YAML are provided, CLI flags SHALL override YAML values, a
 - **THEN** it produces `metrics.json`, `per_class.csv`, `per_image.json` under the configured output directory.
 
 #### Scenario: CLI run produces artifacts
-- GIVEN GT and prediction JSONL files and an output directory
-- WHEN `python -m src.eval.detection --gt_jsonl ... --pred_jsonl ... --out_dir ...` is executed
+- GIVEN a unified artifact JSONL (`gt`+`pred` inline) and an output directory
+- WHEN `python scripts/evaluate_detection.py --pred_jsonl ... --out_dir ...` is executed
 - THEN the output directory contains `metrics.json`, `per_class.csv`, and `per_image.json` (and overlays if enabled).
 
 ### Requirement: Tests and fixtures
@@ -253,24 +253,6 @@ The evaluator SHALL be callable as a stage from the unified inference pipeline r
 - **WHEN** the pipeline runner executes the eval stage
 - **THEN** evaluation outputs are written under the run directory (or a deterministic subdirectory) without requiring additional user inputs.
 
-### Requirement: Category mapping and unknown handling
-The evaluator SHALL support an `unknown_policy` configuration with modes:
-- `bucket`: map unknown desc to a synthetic `unknown` category id (COCO export only),
-- `drop`: drop unknown desc predictions (COCO export only),
-- `semantic`: keep predicted desc unchanged, but for COCO export MAY map unknown predicted desc to the nearest GT-desc category by embedding similarity.
-
-If `unknown_policy=semantic` is requested and the embedding model cannot be loaded, the evaluator SHALL fail loudly with a clear error message (it SHALL NOT silently degrade into bucketing).
-
-#### Scenario: Synonym without alias falls to unknown
-- GIVEN GT contains "traffic light" and a prediction uses desc "stoplight"
-- WHEN exported without alias/fuzzy mapping
-- THEN the prediction is assigned to category `unknown` unless `unknown` dropping is enabled, in which case it is dropped.
-
-#### Scenario: Semantic unknown handling fails loudly when model is missing
-- **GIVEN** `unknown_policy=semantic` and the configured semantic model is not available in local cache and cannot be downloaded
-- **WHEN** the evaluator is executed
-- **THEN** it raises a runtime error describing how to disable semantic mapping or provide the model.
-
 ### Requirement: Evaluator ingestion diagnostics are path-and-line explicit
 Detection-evaluator SHALL provide path-and-line explicit diagnostics for malformed JSONL ingestion failures.
 Diagnostics MUST identify source file and 1-based line number for parse failures.
@@ -348,4 +330,3 @@ Evaluator surfaces that resolve image paths (e.g., overlay rendering) SHALL dele
 - **GIVEN** an image field `images/foo.jpg` and an explicit base directory
 - **WHEN** the evaluator resolves the image path via the shared helper
 - **THEN** it deterministically resolves to `<base_dir>/images/foo.jpg` (absolute path).
-

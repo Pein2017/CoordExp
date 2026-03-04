@@ -1,7 +1,7 @@
 # teacher-forcing-objective-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change teacher-forcing-unified-loss-registry. Update Purpose after archive.
+Define the canonical teacher-forcing objective pipeline contract: ordered module execution, strict module configuration/registration, fail-fast objective behavior, and reproducible loss/diagnostic reporting.
 ## Requirements
 ### Requirement: Pipeline modules consume a teacher-forcing context contract
 The system SHALL execute pipeline modules against a shared `TeacherForcingContext` contract produced by the
@@ -148,4 +148,3 @@ Normative checksum definition (this repo; required for implementers):
 - **WHEN** training starts with a resolved module pipeline
 - **THEN** logs include a stable pipeline checksum
 - **AND** the checksum is identical across runs when the pipeline config and code version are identical.
-

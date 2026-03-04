@@ -10,10 +10,11 @@ The system SHALL expose `custom.object_field_order` as the single source of trut
 - rendered assistant message JSON text that is fed into the Qwen3-VL chat template.
 
 Allowed values:
-- `desc_first` (default)
+- `desc_first`
 - `geometry_first`
 
 Unknown values MUST fail fast during config loading with actionable guidance.
+Omission MUST fail fast; `custom.object_field_order` is required and must be set explicitly.
 
 Normative clarification:
 - `geometry_first` means "emit the object's existing geometry key (`bbox_2d` or `poly`) before `desc`."
@@ -21,11 +22,15 @@ Normative clarification:
 - `geometry_first` is the generalized term for the direction doc's "bbox-first"; they are equivalent when geometry is `bbox_2d`.
 - For a given sample, assistant payload per-object key order and rendered assistant JSON text per-object key order MUST be equivalent (no split-brain ordering between structured payload and emitted text).
 
-#### Scenario: Default behavior remains desc-first
+#### Scenario: Omitted object field order fails fast
 - **GIVEN** `custom.object_field_order` is omitted
-- **WHEN** training config is loaded and dataset serialization runs
-- **THEN** per-object payload order is `desc` before the concrete geometry key (`bbox_2d` or `poly`)
-- **AND** behavior matches legacy baseline.
+- **WHEN** training config is loaded
+- **THEN** config validation fails fast with guidance to set `custom.object_field_order` explicitly (`desc_first` or `geometry_first`).
+
+#### Scenario: Explicit desc-first preserves baseline layout
+- **GIVEN** `custom.object_field_order: desc_first`
+- **WHEN** dataset serialization runs
+- **THEN** per-object payload order is `desc` before the concrete geometry key (`bbox_2d` or `poly`).
 
 #### Scenario: geometry-first is accepted
 - **GIVEN** `custom.object_field_order: geometry_first`
@@ -104,4 +109,3 @@ Normative behavior:
 - **WHEN** dense prompt pair is resolved
 - **THEN** prompt text requests the geometry key (`bbox_2d` or `poly`) before `desc`
 - **AND** still states object instance order is random.
-

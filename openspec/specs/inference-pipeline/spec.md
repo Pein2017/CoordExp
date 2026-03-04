@@ -16,18 +16,20 @@ Per-record schema:
   - `mode` (string; `coord` or `text`),
   - `gt` (list[object]) and `pred` (list[object]),
   - `coord_mode` (string or null) set to `"pixel"` when `gt`/`pred` `points` are already pixel-space,
-  - `raw_output` (string; verbatim model text, or empty when inference is skipped),
-  - `errors` (list[string]; empty when none).
+  - `raw_output_json` (object or null; recoverable parsed model payload),
+  - `raw_special_tokens` (list[string]),
+  - `raw_ends_with_im_end` (bool),
+  - `errors` (list[string]; canonical error codes; empty when none),
+  - `error_entries` (list[object]; structured errors).
 - `gt` and `pred` objects SHALL use the canonical object schema:
   - `type`: one of `bbox_2d` or `poly`,
   - `points`: flat list of pixel coordinates (ints), length 4 for `bbox_2d`, length ≥ 6 and even for `poly`,
-  - `desc`: string (may be empty),
-  - `score`: number fixed at 1.0.
+  - `desc`: string (may be empty).
 - The inference stage SHALL NOT emit legacy top-level keys like `preds`.
 
 Geometry constraints:
 - Supported geometry types are limited to `bbox_2d` and `poly`.
-- Any `line` geometry present in model output SHALL be treated as invalid geometry and SHALL NOT appear in `pred` (but SHALL remain visible in `raw_output` for debugging).
+- Any `line` geometry present in model output SHALL be treated as invalid geometry and SHALL NOT appear in `pred`.
 
 Compatibility guidance (non-normative):
 - Downstream tools MAY accept legacy keys (e.g., `preds`, `predictions`) during a transition window, but `gt`/`pred` are canonical.
@@ -35,7 +37,7 @@ Compatibility guidance (non-normative):
 #### Scenario: Line in generation does not appear in pred
 - **GIVEN** a sample whose generated text contains a `line` object
 - **WHEN** the inference stage writes `gt_vs_pred.jsonl`
-- **THEN** it excludes the `line` object from `pred` while retaining the verbatim `raw_output`.
+- **THEN** it excludes the `line` object from `pred` and records invalid-geometry diagnostics.
 
 #### Scenario: Downstream tools consume pixel-ready geometry
 - **GIVEN** a pipeline artifact record with `coord_mode: "pixel"`
@@ -45,17 +47,12 @@ Compatibility guidance (non-normative):
 #### Scenario: Malformed generation still yields JSON
 - GIVEN a sample whose generated text is truncated mid-JSON
 - WHEN the inference runner processes it
-- THEN it writes a valid JSON line with `preds: []`, retains `raw_output`, sets `error`, `coord_mode: "norm1000"`, and the job continues.
+- THEN it writes a valid JSON line with `pred: []`, emits parse/validation errors via `errors`/`error_entries`, sets `coord_mode` consistently for downstream consumers, and the job continues.
 
-#### Scenario: Coord mode recorded for downstream scaling
-- GIVEN a model that outputs 0–999 coord tokens
-- WHEN the inference runner writes the JSONL
-- THEN it sets `coord_mode: "norm1000"` and includes `width`/`height`, enabling downstream tools to convert to pixels without guessing.
-
-#### Scenario: Line in generation does not appear in preds
-- GIVEN a sample whose generated text contains a `line` object
-- WHEN the inference runner processes it
-- THEN it excludes the `line` object from `preds` while retaining the verbatim `raw_output` for debugging.
+#### Scenario: Pixel coord mode recorded for downstream consumption
+- GIVEN a model output that may mix coord tokens and pixel-like values
+- WHEN the inference runner writes the standardized JSONL
+- THEN it emits pixel-space `gt`/`pred` points and sets `coord_mode: "pixel"` for downstream consumers.
 
 ### Requirement: Staged pipeline (inference → eval and/or viz)
 The system SHALL provide a unified pipeline runner that can execute stages:
@@ -117,7 +114,7 @@ Default artifact layout:
 - **THEN** visualization completes without loading the model.
 
 #### Scenario: One inference feed drives both eval and viz
-- GIVEN an inference run that produces `predictions.jsonl`
+- GIVEN an inference run that produces `gt_vs_pred.jsonl`
 - WHEN the user runs the detection evaluator and the visualization tool against that file
 - THEN both complete without invoking the model, using the same parsed geometry and metadata, enabling apples-to-apples comparison across checkpoints.
 
@@ -252,4 +249,3 @@ Inference-only or f1ish-only evaluation runs MAY proceed without running confide
 - **GIVEN** a pipeline config that requests only f1ish-style (non-COCO) evaluation
 - **WHEN** `gt_vs_pred_scored.jsonl` is not available
 - **THEN** the pipeline continues evaluation using the base inference artifact (`gt_vs_pred.jsonl`).
-

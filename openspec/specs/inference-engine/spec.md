@@ -50,7 +50,13 @@ Transition support:
 
 
 ### Requirement: Coord-mode scaling and validation
-In `coord` mode, the engine SHALL treat both GT and predictions as normalized (0-999) coordinates, enforce the 0-999 range, require `width` and `height`, denormalize to absolute pixels using those dimensions, and skip any sample with invalid coords or missing size while recording an error.
+In `coord` mode, the engine SHALL standardize both GT and predictions to pixel coordinates using per-sample `width`/`height`.
+
+Mode behavior:
+- GT MAY be represented as norm1000 (`<|coord_k|>` / 0..999 ints) or as pixel coordinates; the scaler SHALL auto-detect GT representation per geometry and convert to pixels.
+- Predictions default to norm1000 interpretation in `coord` mode unless `infer.pred_coord_mode` explicitly overrides prediction interpretation.
+- Operator-controlled input violations (e.g., missing/invalid `width` or `height`, unreadable image, invalid GT geometry) MUST fail fast during preflight before generation starts.
+- Prediction parsing/validation failures on otherwise valid input records (e.g., invalid predicted coord ranges) SHALL be emitted as sample-scoped errors and continue processing subsequent records.
 
 #### Scenario: Coord mode with valid tokens
 - **WHEN** GT and predictions contain coord tokens within 0-999 and width/height are present
@@ -61,7 +67,12 @@ In `coord` mode, the engine SHALL treat both GT and predictions as normalized (0
 - **THEN** the sample is skipped for predictions, an error is recorded for that sample, and processing continues.
 
 ### Requirement: Text-mode scaling and validation
-In `text` mode, the engine SHALL treat GT coordinates as absolute pixels (no scaling) and denormalize predictions that are expressed in norm1000 (tokens or 0-999 ints); predictions already in pixel-space MUST be accepted. Samples with malformed geometry (odd point counts, missing size) MUST be skipped with an error recorded. If GT is detected as normalized in text mode (or pixel GT in coord mode), the sample SHALL record a `mode_gt_mismatch` error and skip predictions.
+In `text` mode, the engine SHALL treat GT coordinates as absolute pixels (no scaling), and SHALL auto-detect prediction coordinates as pixel or norm1000 (unless overridden by `infer.pred_coord_mode`) before converting to pixels.
+
+Mode behavior:
+- GT containing coord tokens in `text` mode SHALL be rejected with `mode_gt_mismatch`.
+- Predictions expressed in norm1000 SHALL be denormalized to pixels; predictions already in pixel-space SHALL be accepted (with clamp/round normalization).
+- Operator-controlled input violations are handled by preflight fail-fast; prediction-side malformed geometry SHALL be emitted as sample-scoped errors.
 
 #### Scenario: Text mode with normalized preds
 - **WHEN** GT boxes are in pixels and predictions are 0-999 ints/tokens
@@ -76,24 +87,23 @@ Each output line in `gt_vs_pred.jsonl` SHALL contain:
 - `gt` and `pred` arrays of objects with fields:
   - `type` (`bbox_2d` or `poly`),
   - `points` (absolute pixel coordinates),
-  - `desc` (label string),
-  - `score` fixed at 1.0.
-- top-level `width` and `height` keys (keys SHALL be present; ints when available, null allowed on error records), `image`, `mode`, `coord_mode` (used as a downstream hint; may be null on error records), `raw_output`, and an `errors` list (empty when none).
+  - `desc` (label string).
+- top-level `width` and `height` keys (keys SHALL be present; ints when available, null allowed on error records), `image`, `mode`, `coord_mode` (used as a downstream hint; may be null on error records), `raw_output_json` (object or null), `raw_special_tokens` (list[string]), `raw_ends_with_im_end` (bool), an `errors` list (canonical error codes), and `error_entries` (structured error objects containing at least `code`, `message`, `stage`).
 
 Legacy mixed-format fields (e.g., raw norm `predictions`/dual schemas) SHALL NOT be emitted by the unified pipeline.
 
 #### Scenario: Successful sample output
 - **WHEN** a sample is processed without errors
-- **THEN** the JSONL line includes `gt` and `pred` arrays with pixel `points`, `desc`, `type`, `score:1.0`, along with `width`, `height`, `image`, `mode`, `coord_mode`, and an empty `errors` list.
+- **THEN** the JSONL line includes `gt` and `pred` arrays with pixel `points`, `desc`, `type`, along with `width`, `height`, `image`, `mode`, `coord_mode`, `raw_output_json`, and empty `errors`/`error_entries` lists.
 
 #### Scenario: Error sample output
-- **WHEN** a sample fails validation (e.g., missing height)
-- **THEN** the JSONL line contains an `errors` list describing the issue, `width`/`height` keys are present (values may be null), `pred` is empty, and processing continues for subsequent samples.
+- **WHEN** prediction output for a valid input sample fails validation (e.g., out-of-range predicted coord token)
+- **THEN** the JSONL line contains `errors`/`error_entries`, `pred` is empty, and processing continues for subsequent samples.
 
 #### Scenario: Line in raw output is dropped
 - **GIVEN** a generated JSON object that includes a `line` geometry
 - **WHEN** the inference engine parses and validates predictions
-- **THEN** the `line` object is excluded from `pred` and an error/counter reflects invalid geometry.
+- **THEN** the `line` object is excluded from `pred`, and an error/counter reflects invalid geometry.
 
 
 ### Requirement: Polygon preservation and evaluation
@@ -102,6 +112,21 @@ Polygons (`poly`) SHALL be preserved in outputs and evaluated via COCO-style pol
 #### Scenario: Polygon prediction
 - **WHEN** a prediction is a `poly` with valid vertices
 - **THEN** the output keeps the polygon vertex list in pixels, and downstream evaluation uses COCO segmentation/mask IoU derived from those vertices.
+
+### Requirement: Preflight input validation is fail-fast
+Before any model loading/generation work, inference SHALL run a strict preflight over operator-controlled inputs.
+
+Preflight contract:
+- GT JSONL records MUST be valid JSON objects (malformed/non-object records fail fast with file:line diagnostics).
+- `width` and `height` MUST be present and positive integers.
+- `images` MUST contain exactly one resolvable/readable image path per record.
+- GT geometry MUST pass mode-aware validation for the resolved mode.
+- If preflight finds any violations, inference MUST terminate before writing partial prediction artifacts.
+
+#### Scenario: Invalid operator input fails before generation
+- **GIVEN** an input JSONL containing an invalid `width` value
+- **WHEN** inference starts
+- **THEN** preflight fails fast with actionable diagnostics and no generation loop is executed.
 
 ### Requirement: Deterministic generation
 When a seed is provided, the engine SHALL produce deterministic results for a given backend and resolved generation configuration by seeding torch (and CUDA) in a way compatible with Qwen3-VL model implementations.
@@ -163,7 +188,8 @@ If `infer.mode` is set to `auto`, the engine SHALL resolve the effective mode de
 
 Auto-detect algorithm (normative):
 - Scan the first N records from `infer.gt_jsonl` (default N=128).
-- Ignore records that are invalid JSON, have no objects, or do not have valid integer `width` and `height`.
+- Malformed JSON, non-object records, or invalid/missing `width`/`height` MUST fail fast with file:line diagnostics.
+- Records with no GT objects MAY be skipped during scanning.
 - For each scanned record, inspect GT geometries from `objects` (or `gt` as a fallback):
   - If any geometry contains coord tokens (`"<|coord_...|>"`), resolve mode to `coord` with reason `coord_tokens_found`.
   - Else if any numeric coordinate value exceeds `max(width, height)`, resolve mode to `coord` with reason `points_exceed_image`.
@@ -194,12 +220,12 @@ Contract requirements (backend-agnostic):
 - **THEN** the pipeline produces the same prediction JSONL schema and artifact layout, enabling evaluation/visualization without schema translation.
 
 
-### Requirement: Line tolerance without metrics
-Line geometries MAY appear in input/output for forward compatibility, MUST pass through validation/clamping, but SHALL NOT be included in current metric computations.
+### Requirement: `line` geometry is rejected from standardized predictions
+Line geometries MAY appear in model output payloads, but they SHALL be treated as unsupported geometry for the standardized artifact contract.
 
 #### Scenario: Line present
 - **WHEN** a `line` object appears in predictions
-- **THEN** it is carried in the output schema (clamped to bounds) but excluded from metric scoring.
+- **THEN** it is not included in `pred`, and it contributes to invalid-geometry diagnostics/counters.
 
 
 ### Requirement: HF attention backend selection is resilient across environments
