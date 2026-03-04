@@ -9283,9 +9283,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     gathered_records, list(eval_detection_records_local)
                 )
                 eval_records_all = []
-                for part in gathered_records:
+                for src_rank, part in enumerate(gathered_records):
                     if not isinstance(part, list):
-                        continue
+                        raise TypeError(
+                            "eval_detection all_gather_object returned non-list part: "
+                            f"src_rank={int(src_rank)} type={type(part).__name__}"
+                        )
                     for rec in part:
                         if isinstance(rec, Mapping):
                             eval_records_all.append(dict(rec))
@@ -9301,6 +9304,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "counters": {},
                 "error": "",
             }
+            eval_det_exc: Exception | None = None
             if int(rank) == 0:
                 t_coco0 = time.perf_counter()
                 try:
@@ -9318,17 +9322,49 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         if isinstance(v, (int, float))
                     }
                 except Exception as exc:
+                    eval_det_exc = exc
                     eval_det_payload["error"] = repr(exc)
-                    logger.warning("Eval-step COCO/mAP failed: %r", exc)
+                    logger.exception("Eval-step COCO/mAP failed")
                 finally:
                     eval_det_payload["runtime_s"] = float(time.perf_counter() - t_coco0)
 
             if dist is not None and dist.is_available() and dist.is_initialized():
                 payload_list: List[Any] = [eval_det_payload]
-                dist.broadcast_object_list(payload_list, src=0)
-                recv_payload = (
-                    payload_list[0] if isinstance(payload_list[0], Mapping) else {}
-                )
+
+                backend = None
+                try:
+                    backend = str(dist.get_backend())
+                except Exception:
+                    backend = None
+
+                broadcast_device = torch.device("cpu")
+                if backend == "nccl":
+                    if not torch.cuda.is_available():
+                        raise RuntimeError(
+                            "torch.distributed backend is NCCL but CUDA is not available"
+                        )
+                    broadcast_device = torch.device(
+                        "cuda", int(torch.cuda.current_device())
+                    )
+
+                try:
+                    dist.broadcast_object_list(
+                        payload_list, src=0, device=broadcast_device
+                    )
+                except TypeError as exc:
+                    if backend == "nccl":
+                        raise RuntimeError(
+                            "broadcast_object_list(..., device=...) is required for NCCL; "
+                            "upgrade PyTorch to a version that supports the 'device' argument."
+                        ) from exc
+                    dist.broadcast_object_list(payload_list, src=0)
+
+                if not isinstance(payload_list[0], Mapping):
+                    raise TypeError(
+                        "eval_detection broadcast payload is not a Mapping: "
+                        f"type={type(payload_list[0]).__name__}"
+                    )
+                recv_payload = dict(payload_list[0])
             else:
                 recv_payload = eval_det_payload
 
@@ -9359,15 +9395,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metric_for_best_model_norm = str(metric_for_best_model)
             if metric_for_best_model_norm.startswith("eval_"):
                 metric_for_best_model_norm = metric_for_best_model_norm[len("eval_") :]
-            if metric_for_best_model_norm == "rollout/mAP":
-                coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
-                if coco_ok <= 0.0:
-                    coco_err = str(recv_payload.get("error", "") or "").strip()
-                    raise RuntimeError(
+            coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
+            if coco_ok <= 0.0:
+                coco_err = str(recv_payload.get("error", "") or "").strip()
+                if metric_for_best_model_norm == "rollout/mAP":
+                    msg = (
                         "Eval-step COCO/mAP failed while metric_for_best_model targets rollout/mAP; "
                         "aborting to avoid invalid best-checkpoint selection. "
                         f"error={coco_err or 'unknown'}"
                     )
+                else:
+                    msg = (
+                        "Eval-step COCO/mAP failed; aborting (fail-fast) to avoid silent metric corruption. "
+                        f"error={coco_err or 'unknown'}"
+                    )
+                if int(rank) == 0 and eval_det_exc is not None:
+                    raise RuntimeError(msg) from eval_det_exc
+                raise RuntimeError(msg)
 
             coco_counters_recv = recv_payload.get("counters", {})
             if isinstance(coco_counters_recv, Mapping):

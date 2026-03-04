@@ -192,7 +192,17 @@ def ddp_rank0_coordinated_fail_fast(
     ctx.dist.broadcast(failed_flag, src=0)
 
     msg_list: list[Any] = [local_msg]
-    ctx.dist.broadcast_object_list(msg_list, src=0)
+    try:
+        ctx.dist.broadcast_object_list(
+            msg_list, src=0, device=ctx.coordination_device
+        )
+    except TypeError as exc:
+        if ctx.backend == "nccl":
+            raise DDPFailFastError(
+                "broadcast_object_list(..., device=...) is required for NCCL DDP coordination; "
+                "upgrade PyTorch to a version that supports the 'device' argument."
+            ) from exc
+        ctx.dist.broadcast_object_list(msg_list, src=0)
     msg = str(msg_list[0])
 
     if barrier is not None:
