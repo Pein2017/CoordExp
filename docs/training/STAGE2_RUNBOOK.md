@@ -94,20 +94,17 @@ Key semantics:
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
 Rollout decode batching:
-- Explicit knobs:
-  - `rollout_matching.channel_b_decode_batch_size` (train-step Channel-B rollout decoding).
-  - `rollout_matching.eval_decode_batch_size` (eval-step rollout decoding).
-  - Definition: per rollout GPU cap for one `generation()` / `/infer/` call in the corresponding context.
-  - Note: the training entrypoint mirrors `eval_decode_batch_size` into `per_device_eval_batch_size` for Stage-2 trainer variants.
+- Canonical knob:
+  - `rollout_matching.decode_batch_size`: per-rollout-GPU cap for one `generation()` / `/infer/` call.
 - HF + vLLM colocate:
-  - Each learner rank chunks its local requests to the context-specific decode batch size.
+  - Each learner rank chunks its local requests to `decode_batch_size`.
 - vLLM server mode:
   - The learner queries each rollout server DP `world_size` via `/get_world_size/` and derives a per-rank request chunk size so the
     per-GPU cap holds when all learner ranks generate concurrently.
   - Pipeline overlap (produce segments while consuming packs) is enabled automatically in server mode.
 
 Worked example (default launcher):
-- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `channel_b_decode_batch_size=4`:
+- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `decode_batch_size=4`:
   - per-rank chunk size = `floor(4 * 6 / 2) = 12` requests per call.
   - Across 2 ranks: 24 requests per synchronized round; average 4 per rollout GPU.
 
@@ -199,7 +196,7 @@ Start from a template config and fill in dataset + rollout knobs:
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
-- Set top-level `rollout_matching.*` (including `decoding.*` + matching knobs).
+- Set top-level `rollout_matching.*` (including `rollout_matching.decoding.*` + matching knobs).
 - If using Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
 - Stage-2 pipelines are **required** (no implicit defaults):
@@ -401,8 +398,7 @@ custom:
 
 rollout_matching:
   rollout_backend: vllm
-  channel_b_decode_batch_size: 4
-  eval_decode_batch_size: 4
+  decode_batch_size: 4
   pipeline:
     objective:
       - name: token_ce
@@ -460,7 +456,7 @@ Geometry objective expectation:
 
 Breaking config migrations (no backward compatibility):
 - Rollout sampling knobs are configured under `rollout_matching.decoding.*`:
-  - `decoding.temperature`, `decoding.top_p`, `decoding.top_k`
+  - `rollout_matching.decoding.temperature`, `rollout_matching.decoding.top_p`, `rollout_matching.decoding.top_k`
 - Rollout-matching settings must be authored under top-level `rollout_matching.*`:
   - `custom.extra.rollout_matching.*` is removed and MUST fail fast if present.
 - Legacy keys are removed and MUST fail fast if present:
@@ -495,12 +491,15 @@ Notes:
 
 ### Fixed Stage-2 pipeline (no legacy fallback)
 
-Stage-2 now uses a single backend contract:
+Stage-2 supports configuring rollout backends separately for training and eval in YAML:
 
-- `rollout_matching.rollout_backend: hf` for **all train_step rollouts**.
-- `rollout_matching.eval_rollout_backend: vllm` for **all eval_step rollouts**.
+- `rollout_matching.rollout_backend`: training-time rollout backend (`hf` or `vllm`).
+- `rollout_matching.eval_rollout_backend`: optional eval override (`null`/missing, `hf`, or `vllm`).
+  - When `null`/missing, eval rollouts inherit `rollout_backend`.
 
-Legacy training-step vLLM rollouts are removed.
+Combined server-mode launcher contract (`scripts/train_stage2.sh`):
+- `rollout_matching.rollout_backend: vllm`
+- `rollout_matching.vllm.mode: server`
 
 ### Sleep-Mode Policy (colocate)
 
@@ -508,7 +507,7 @@ Legacy training-step vLLM rollouts are removed.
 - Do not set `rollout_matching.vllm.enable_sleep_mode`, `rollout_matching.vllm.reinit_each_eval`, or `rollout_matching.vllm.sleep_level`.
 - If you need memory headroom, prefer vLLM `server` mode (process isolation) or reduce rollout lengths/throughput knobs.
 
-### vLLM (eval_step only)
+### vLLM (colocate vs server)
 
 - `colocate` (default): learner instantiates a local vLLM engine on the same GPU(s) as training for eval_step.
   - Requires `rollout_matching.vllm.max_model_len`.
@@ -525,8 +524,8 @@ Legacy training-step vLLM rollouts are removed.
     - Only `sync.mode: full` is supported in this stack (full merged-weight sync; robust for multimodal + DoRA).
     - Adapter-only sync options are unsupported and will fail fast.
   - Deploy-readiness gates (enforced by `scripts/train_stage2.sh`):
-    - `rollout_matching.rollout_backend=hf`, `rollout_matching.eval_rollout_backend=vllm`, and `rollout_matching.vllm.mode=server`
-    - `rollout_matching.vllm.server.servers[0].base_url` must be `http(s)://<host>:<port>`
+    - `rollout_matching.rollout_backend=vllm` and `rollout_matching.vllm.mode=server`
+    - `rollout_matching.vllm.server.servers[0].base_url` must be `http://<host>:<port>` (YAML-only; no runtime overrides)
     - `model.model` must point to a local model directory (avoid accidental Hub-ID resolution)
     - `server_gpus` and `train_gpus` must be disjoint device sets
     - no external repeat-terminate plugin is required
@@ -535,11 +534,11 @@ Legacy training-step vLLM rollouts are removed.
 
 ## Decoding Tips
 
-- Start with deterministic non-beam decoding for stability: `decode_mode: greedy`, `decoding.temperature: 0.0`.
-- `decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `decoding.temperature/top_p/top_k`.
-  - `decode_mode: greedy` can still produce **sampling** rollouts when `decoding.temperature > 0.0`.
+- Start with deterministic non-beam decoding for stability: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
+- `rollout_matching.decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `rollout_matching.decoding.temperature/top_p/top_k`.
+  - `rollout_matching.decode_mode: greedy` can still produce **sampling** rollouts when `rollout_matching.decoding.temperature > 0.0`.
   - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_non_beam_count`.
-- vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_backend: hf` if you need beam search.
+- vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_matching.rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
 
@@ -578,7 +577,7 @@ Recommended starting points (when each GPU can fit the full model):
 
 - 8 GPUs (balanced; **server data-parallel**, learner DDP):
   - `server_gpus=0,1,2,3 train_gpus=4,5,6,7`
-  - Default launcher behavior: `server_tp=1` (so `server_dp=4`).
+  - Default config: `rollout_matching.vllm.tensor_parallel_size: 1` (so `server_dp=4`).
   - Why: maximizes rollout throughput while keeping learner throughput high.
 
 - 4 GPUs (minimal server, multi-GPU learner):
@@ -586,7 +585,8 @@ Recommended starting points (when each GPU can fit the full model):
   - Why: keeps rollouts on a dedicated GPU while preserving a multi-GPU learner.
 
 If the model / long-context KV cache does **not** fit as a single replica, use tensor-parallel server mode:
-- Example: `server_gpus=0,1,2,3 server_tp=4` -> `server_dp=1` (one sharded server engine).
+- Set `rollout_matching.vllm.tensor_parallel_size` in YAML (e.g., `4`) and allocate matching `server_gpus` (e.g., `0,1,2,3`).
+  - Derived: `server_dp = len(server_gpus) / tensor_parallel_size` (e.g., `1` sharded server engine).
 
 Notes:
 - Server and learner GPU sets must be disjoint.
@@ -597,23 +597,19 @@ Notes:
 
 ## Launch (vLLM Server Mode)
 
-Recommended launcher (starts server + learner, disables proxies, waits for `/health/`, cleans up on exit):
+Recommended launcher (starts server + learner, sets `NO_PROXY` for the rollout server host, waits for `/health/`, cleans up on exit):
 
 ```bash
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
-export NO_PROXY=127.0.0.1,localhost
-
 bash scripts/train_stage2.sh \
   server_gpus=0,1,2,3 train_gpus=4,5,6,7 \
-  vllm_gpu_memory_utilization=0.75 \
   config=configs/stage2_two_channel/prod/ab_mixed.yaml
 ```
 
-Launcher knobs (runtime-only; no YAML drift):
-- `server_tp=<int>`: tensor-parallel degree for vLLM rollout server (default: 1).
-- `server_dp=<int>`: data-parallel degree for vLLM rollout server (default: derived from `len(server_gpus) / server_tp`).
-- `server_torch_dtype=bfloat16|float16|float32|None`: server model dtype passed to `swift rollout` (default: `bfloat16`).
-- `server_vllm_enforce_eager=true|false`: eager mode for vLLM server (default: `true`).
+Launcher knobs (runtime-only; YAML remains the source of truth for rollout hyperparameters):
+- `server_gpus=<csv>` / `SERVER_GPUS=<csv>`: rollout server GPUs (required).
+- `train_gpus=<csv>` / `TRAIN_GPUS=<csv>`: learner GPUs (required).
+- `wait_timeout=<seconds>` / `WAIT_TIMEOUT=<seconds>`: server readiness timeout (default: 900).
+- `wait_interval=<seconds>` / `WAIT_INTERVAL=<seconds>`: readiness poll interval (default: 2).
 
 Image root contract (`ROOT_IMAGE_DIR`):
 - The learner and rollout server must resolve image paths identically, otherwise multimodal tokens will not correspond to the same pixels the labels were built from.
@@ -622,8 +618,8 @@ Image root contract (`ROOT_IMAGE_DIR`):
 - If you run `python -m src.sft --config ...` directly (no combined launcher), you must export `ROOT_IMAGE_DIR` yourself unless your JSONL uses absolute image paths.
 
 Multi-server note:
-- `scripts/train_stage2.sh` currently supports exactly 1 rollout server entry in `rollout_matching.vllm.server.servers`.
-  - If you want multiple rollout servers, orchestrate them externally and run the learner with a server list that matches the orchestration (do not rely on the combined launcher).
+- Multi-server rollout is unsupported in this stack.
+  - `rollout_matching.vllm.server.servers` MUST contain exactly 1 entry.
 
 Operational tip:
 - Run the launcher inside `tmux` so a single `Ctrl-C` cleanly terminates both learner and server and frees GPU memory quickly.
@@ -722,7 +718,7 @@ Checks:
    - `conda run -n ms python - <<'PY'\nimport socket\nhost='127.0.0.1'; port=51216\ns=socket.socket(); s.settimeout(2)\ntry:\n    s.connect((host, port))\n    print('group_port connect: ok')\nexcept Exception as e:\n    print('group_port connect: failed', e)\nfinally:\n    s.close()\nPY`
 
 Mitigations:
-- Change `vllm.server.servers[].group_port` to an unused port and restart server and learner.
+- Change `rollout_matching.vllm.server.servers[].group_port` to an unused port and restart server and learner.
 - Ensure localhost connections are not routed through proxies (prefer the helper launcher, or unset proxies + set `NO_PROXY`).
 
 ### Hard Abort at Process Exit (Colocate + Sleep Mode)
@@ -751,12 +747,10 @@ Checks:
 2) Confirm trainer variant:
    - `custom.trainer_variant: stage2_two_channel`
 
-Mitigations (smoke/debug runs):
+Mitigations (smoke runs):
 - Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
-- Reduce rollout decode batching by setting:
-  - `rollout_matching.channel_b_decode_batch_size: 1`
-  - `rollout_matching.eval_decode_batch_size: 1`
-- Lower `vllm_gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
+- Reduce rollout decode batching by setting `rollout_matching.decode_batch_size: 1`.
+- Lower `rollout_matching.vllm.gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)
 
