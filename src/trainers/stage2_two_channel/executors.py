@@ -533,6 +533,40 @@ class Stage2ABChannelExecutorsMixin:
             max(ddp_phase_timeout_s, ddp_phase_final_sync_timeout_s)
         )
 
+        # Eagerly initialize the optional gloo monitor group at a safe synchronized
+        # boundary (start of Channel-B step) so later monitored barriers can time out
+        # even if a rank stalls before reaching the first barrier. Lazy init inside
+        # `_ddp_phase_barrier` can itself hang waiting for the missing rank.
+        if (
+            dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+            and int(ddp_world_size) > 1
+            and bool(ddp_phase_monitor_enabled)
+            and hasattr(dist, "monitored_barrier")
+        ):
+            group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
+            if group is None:
+                try:
+                    init_timeout_s = float(max(30.0, min(120.0, ddp_phase_timeout_s)))
+                    group = dist.new_group(
+                        backend="gloo",
+                        timeout=timedelta(seconds=float(init_timeout_s)),
+                    )
+                except Exception as exc:
+                    warned = bool(
+                        getattr(self, "_stage2_ab_ddp_monitor_group_warned", False)
+                    )
+                    if int(ddp_rank) == 0 and not warned:
+                        logger.warning(
+                            "stage2-ab DDP phase monitor disabled (gloo group init failed): %r",
+                            exc,
+                        )
+                        setattr(self, "_stage2_ab_ddp_monitor_group_warned", True)
+                    setattr(self, "_stage2_ab_ddp_monitor_group", False)
+                else:
+                    setattr(self, "_stage2_ab_ddp_monitor_group", group)
+
         def _ddp_phase_barrier(phase: str, *, timeout_s: float | None = None) -> None:
             if (
                 dist is None
