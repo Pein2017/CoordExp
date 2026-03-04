@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the canonical training metrics/logging component contract, including required keys, aggregation semantics, and removal of legacy metrics.
-
 ## Requirements
 ### Requirement: Stable batch extras contract
 The system SHALL define a centralized contract for "batch extras" fields produced by collators and consumed by trainer hooks.
@@ -47,7 +46,6 @@ The system SHALL preserve the existing batch-extra key names listed in "Stable b
 - OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
 - AND removed legacy keys/aliases are absent (no duplicate emission)
 - AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
-
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)
 For registry-defined objective modules, trainers MUST emit only **atomic objective contributions** under canonical `loss/<provenance>/<atom>` keys and MUST NOT emit raw component loss keys by default.
@@ -176,7 +174,6 @@ Counter-like keys MUST remain additive totals.
 - WHEN step-level aggregation finalizes
 - THEN the logged value is `1.0` (not `1/32`).
 
-
 ### Requirement: Metrics consume neutral payload contracts
 Trainer metrics components SHALL consume neutral payload contracts/events rather than importing trainer-internal symbols.
 Metrics logic MUST remain executable in isolation from trainer implementation modules.
@@ -185,7 +182,6 @@ Metrics logic MUST remain executable in isolation from trainer implementation mo
 - **GIVEN** a valid neutral metrics payload contract
 - **WHEN** metric components compute and report metrics
 - **THEN** computation succeeds without importing trainer implementation internals.
-
 
 ### Requirement: Neutral metrics payload schema includes minimum fields and explicit versioning
 The neutral metrics payload contract SHALL include a version field and minimum required fields for compatibility checks.
@@ -211,7 +207,6 @@ Consumers MUST fail fast (or explicitly reject) unsupported major schema version
 - **THEN** the payload is rejected with explicit schema-version diagnostics
 - **AND** the consumer does not attempt fallback parsing.
 
-
 ### Requirement: Diagnostics remain best-effort with explicit first-failure signaling
 Diagnostics-only metric paths SHALL remain best-effort but MUST emit an explicit warning on first unexpected exception and disable only the failing diagnostic path.
 They MUST NOT silently suppress repeated failures with no signal.
@@ -221,7 +216,6 @@ They MUST NOT silently suppress repeated failures with no signal.
 - **WHEN** a training step executes
 - **THEN** a warning is emitted at first failure
 - **AND** only the failing diagnostic is disabled while training continues.
-
 
 ### Requirement: Canonical module ownership for metrics helpers is unambiguous
 Metrics helper implementations SHALL live under `src/metrics/*` and MUST remain importable without importing trainer implementation internals.
@@ -233,7 +227,6 @@ Legacy modules under `src/trainers/metrics/*` MAY exist as compatibility shims, 
 - **THEN** behavior matches the canonical `src.metrics.*` implementation
 - **AND** no duplicated metric logic exists in the legacy module.
 
-
 ### Requirement: Neutral payload contract has a single canonical implementation
 The neutral trainer-metrics payload contract SHALL have a single canonical implementation at `src/metrics/payload_contract.py`.
 Any legacy or trainer-side module paths MAY re-export the contract types/helpers for compatibility, but MUST NOT duplicate validation/building logic.
@@ -242,7 +235,6 @@ Any legacy or trainer-side module paths MAY re-export the contract types/helpers
 - **GIVEN** a consumer imports the payload contract from either canonical or legacy module path
 - **WHEN** payloads are validated/built
 - **THEN** the same implementation is used in both cases (re-export), preserving consistent validation semantics.
-
 
 ### Requirement: Metrics ownership remains authoritative across overlapping deltas
 Within active changes, this capability SHALL be authoritative for trainer-metrics ownership boundaries:
@@ -256,3 +248,44 @@ Other active deltas MUST NOT redefine a conflicting canonical home for metrics h
 - **WHEN** OpenSpec artifacts are reviewed together
 - **THEN** canonical ownership remains `src/metrics/*`
 - **AND** trainer-side paths are treated as shim/re-export paths only.
+
+### Requirement: DDP metric aggregation MUST be deterministic and strict
+When `torch.distributed` is initialized (`world_size > 1`), any cross-rank metric aggregation MUST satisfy:
+
+- **Deterministic key set**:
+  - Either the metric key set is statically known (preferred), OR
+  - the key set is computed via a distributed union step (e.g., `all_gather_object`) and MUST succeed on all ranks.
+- **Deterministic ordering**:
+  - the ordered key list used to build any reduction tensor MUST be identical on every rank (e.g., `sorted(keys)` after union).
+- **Strict failure semantics**:
+  - aggregation MUST NOT fall back to rank-local metrics when DDP is initialized,
+  - any unexpected exception in aggregation MUST abort all ranks with coordinated error propagation.
+  - all ranks MUST participate in union/reduction collectives even if their local metric set is empty (missing keys MUST reduce as zeros so tensor shapes match).
+
+#### Scenario: Metric key union failure aborts rather than “proceeding locally”
+- **GIVEN** DDP is initialized
+- **AND** aggregation requires a distributed key union step
+- **WHEN** the key union step fails on any rank
+- **THEN** all ranks terminate with a clear error message
+- **AND** the system does not continue with rank-local key lists.
+
+#### Scenario: All-reduce tensor shape is identical across ranks
+- **GIVEN** DDP is initialized
+- **WHEN** aggregation performs an `all_reduce` over a tensor built from metric keys
+- **THEN** the tensor length and key ordering are identical on every rank
+- **AND** ranks with empty local metrics still build the same ordered tensor length (zero-filled)
+- **AND** the system does not hang due to mismatched tensor shapes or skipped collectives.
+
+### Requirement: Best-effort diagnostics MUST NOT perform collective sync
+Diagnostics-only best-effort paths MUST be local-only and MUST NOT perform distributed collective sync.
+
+Under DDP, any diagnostic that requires collectives (e.g., key synchronization) MUST be:
+- strict (fail-fast), or
+- disabled globally via a rank-symmetric decision computed with collectives (so all ranks agree).
+
+#### Scenario: A diagnostics failure never causes collective divergence
+- **GIVEN** DDP is initialized
+- **WHEN** a diagnostics helper raises unexpectedly
+- **THEN** the system does not skip a required collective on only a subset of ranks
+- **AND** the job either fails fast or disables the diagnostic via a rank-symmetric decision.
+
