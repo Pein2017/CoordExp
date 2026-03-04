@@ -6,7 +6,7 @@ global_max_length: 8192
 # Under DDP we require bounded phase barriers to prevent deadlocks/hangs if ranks diverge.
 stage2_ab:
   channel_b:
-    ddp_phase_timeout_s: 180.0
+    ddp_phase_timeout_s: 120.0
 
 # Eval-only vLLM (colocate) rollout profile.
 #

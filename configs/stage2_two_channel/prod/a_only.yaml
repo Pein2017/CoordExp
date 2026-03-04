@@ -8,4 +8,4 @@ extends: desc_first_a_only_eval_vllm_colocate.yaml
 # Under DDP we require bounded phase barriers to prevent deadlocks/hangs if ranks diverge.
 stage2_ab:
   channel_b:
-    ddp_phase_timeout_s: 180.0
+    ddp_phase_timeout_s: 120.0

@@ -25,7 +25,7 @@ stage2_ab:
   schedule: {b_ratio: 0.75}
   n_softctx_iter: 2
   channel_b:
-    ddp_phase_timeout_s: 180.0
+    ddp_phase_timeout_s: 120.0
   pipeline:
     objective:
       - name: token_ce

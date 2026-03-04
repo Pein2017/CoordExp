@@ -331,7 +331,7 @@ class Stage2ABChannelExecutorsMixin:
             ):
                 # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
                 # when per-rank pack counts differ.
-                timeout_s = 180.0
+                timeout_s = 120.0
                 ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
                 if ddp_phase_timeout_raw is not None:
                     try:
@@ -354,7 +354,7 @@ class Stage2ABChannelExecutorsMixin:
                     rank=int(dist.get_rank()),
                     world_size=int(ddp_world_size),
                     timeout_s=float(timeout_s),
-                    monitor_group_timeout_s=float(max(timeout_s, 3600.0)),
+                    monitor_group_timeout_s=float(timeout_s),
                 )
             loss_pack = _train_one_pack(
                 selected=selected,
@@ -498,7 +498,7 @@ class Stage2ABChannelExecutorsMixin:
         ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
         if ddp_phase_timeout_raw is None:
             ddp_phase_monitor_enabled = True
-            ddp_phase_timeout_s = 180.0
+            ddp_phase_timeout_s = 120.0
         else:
             try:
                 ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
@@ -518,15 +518,10 @@ class Stage2ABChannelExecutorsMixin:
             else:
                 ddp_phase_monitor_enabled = True
                 ddp_phase_timeout_s = float(max(30.0, min(3600.0, ddp_phase_timeout_s)))
-        ddp_phase_final_sync_timeout_s = float(
-            max(ddp_phase_timeout_s, float(producer_wait_timeout_s) * 2.0)
-        )
-        ddp_phase_final_sync_timeout_s = float(
-            max(30.0, min(3600.0, ddp_phase_final_sync_timeout_s))
-        )
-        ddp_monitor_group_timeout_s = float(
-            max(ddp_phase_timeout_s, ddp_phase_final_sync_timeout_s)
-        )
+
+        # Keep all DDP coordination waits bounded and consistent.
+        ddp_phase_final_sync_timeout_s = float(ddp_phase_timeout_s)
+        ddp_monitor_group_timeout_s = float(ddp_phase_timeout_s)
 
         def _ddp_phase_barrier(phase: str, *, timeout_s: float | None = None) -> None:
             if (

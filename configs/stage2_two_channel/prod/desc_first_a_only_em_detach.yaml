@@ -8,4 +8,4 @@ training:
 stage2_ab:
   softctx_grad_mode: em_detach
   channel_b:
-    ddp_phase_timeout_s: 180.0
+    ddp_phase_timeout_s: 120.0
