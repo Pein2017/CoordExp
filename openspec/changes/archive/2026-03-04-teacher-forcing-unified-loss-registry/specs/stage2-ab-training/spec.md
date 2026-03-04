@@ -111,6 +111,11 @@ Normative behavior:
 - The system MUST reject `custom.trainer_variant: stage2_ab_training` (fail fast) with actionable guidance to use
   `stage2_two_channel`.
 
+#### Scenario: Legacy stage2_ab_training trainer alias is rejected
+- **WHEN** configuration sets `custom.trainer_variant: stage2_ab_training`
+- **THEN** config validation fails fast
+- **AND** the error recommends `custom.trainer_variant: stage2_two_channel`.
+
 ### Requirement: Stage-2 Two-Channel module names are stable and discoverable
 Stage-2 Two-Channel SHALL provide a strict module registry for its pipeline modules, and the module names SHALL be stable so
 YAML-declared experiments remain auditable.
@@ -126,6 +131,11 @@ Normative minimum module names (initial set; may be extended):
 Normative behavior:
 - Unknown module names MUST fail fast before training starts.
 - Error messages MUST list the unknown module name and available Stage-2 Two-Channel module names.
+
+#### Scenario: Unknown Stage-2 two-channel module names fail fast
+- **WHEN** `stage2_ab.pipeline` references an objective module name not present in the Stage-2 registry
+- **THEN** trainer initialization fails fast
+- **AND** the error includes the unknown name and allowed module names.
 
 ### Requirement: Stage-2 Two-Channel module configs are strict and typed
 Stage-2 Two-Channel SHALL validate module `config` payloads strictly so experiments are reproducible and fail fast on schema
@@ -166,6 +176,11 @@ Note:
 - When `stage2_ab.pipeline` is omitted, the effective defaults for the Stage-2 Two-Channel objective are defined by the Default
   Pipeline Manifest above (which sources values from the typed Stage-2 Two-Channel flat schema keys and `custom.coord_soft_ce_w1`
   as applicable).
+
+#### Scenario: Unknown Stage-2 module config keys fail fast
+- **WHEN** a Stage-2 module config includes a key outside its strict allowlist
+- **THEN** initialization fails fast before the first training step
+- **AND** diagnostics include the invalid key and allowed keys.
 
 
 ### Requirement: Stage-2 Two-Channel adheres to the unified loss registry contract

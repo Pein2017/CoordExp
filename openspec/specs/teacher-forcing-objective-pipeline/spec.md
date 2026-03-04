@@ -1,7 +1,8 @@
-# teacher-forcing-objective-pipeline Specification (Delta)
+# teacher-forcing-objective-pipeline Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change teacher-forcing-unified-loss-registry. Update Purpose after archive.
+## Requirements
 ### Requirement: Pipeline modules consume a teacher-forcing context contract
 The system SHALL execute pipeline modules against a shared `TeacherForcingContext` contract produced by the
 trainer/channel forward strategy.
@@ -20,6 +21,11 @@ Notes:
 - This capability defines pipeline execution mechanics and module contract shapes.
 - Canonical loss component names, token types/contexts, and Stage-1/Stage-2 mask semantics are defined by the
   `teacher-forcing-unified-loss-registry` capability.
+
+#### Scenario: Packed forwards preserve per-segment boundaries in context views
+- **WHEN** packed sequences are processed through the teacher-forcing pipeline
+- **THEN** derived masks and indices remain segment-local within `TeacherForcingContext`
+- **AND** no module can supervise tokens across segment boundaries.
 
 ### Requirement: Teacher-forcing objective is declared as an ordered YAML pipeline
 The system SHALL support a YAML-declared module pipeline for teacher-forcing training objectives and diagnostics.
@@ -57,7 +63,6 @@ Execution semantics:
 - **WHEN** a pipeline provides a module `config` containing an unknown key for that module
 - **THEN** config validation fails fast with guidance listing allowed keys for the module.
 
-
 ### Requirement: Module registry is strict and validated before training starts
 The system SHALL resolve module names via a strict registry.
 
@@ -69,7 +74,6 @@ Normative behavior:
 - **WHEN** a pipeline references an unknown module `name`
 - **THEN** training initialization fails fast
 - **AND** the error message lists the unknown name and available module names.
-
 
 ### Requirement: Objective modules are fail-fast and diagnostics modules are best-effort
 The system SHALL separate objective-changing modules from diagnostics-only modules.
@@ -90,7 +94,6 @@ Normative behavior:
 - **THEN** training continues
 - **AND** a warning is emitted indicating the diagnostics module failed.
 
-
 ### Requirement: Modules can be scoped to specific channels
 The system SHALL support channel applicability for modules where training has multiple channels (e.g., Channel-A vs
 Channel-B).
@@ -105,7 +108,6 @@ Normative behavior:
 - **AND** the current training step is Channel-B
 - **THEN** the module is skipped
 - **AND** it contributes neither loss nor metrics for that step.
-
 
 ### Requirement: Pipeline identity is recorded for reproducibility
 The system SHALL make the resolved pipeline auditable from logs and artifacts.
@@ -146,3 +148,4 @@ Normative checksum definition (this repo; required for implementers):
 - **WHEN** training starts with a resolved module pipeline
 - **THEN** logs include a stable pipeline checksum
 - **AND** the checksum is identical across runs when the pipeline config and code version are identical.
+

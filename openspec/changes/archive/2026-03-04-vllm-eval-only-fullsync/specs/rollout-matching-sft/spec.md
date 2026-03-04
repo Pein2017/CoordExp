@@ -119,3 +119,10 @@ Normative behavior:
     - and MUST NOT silently fall back to a different backend (e.g., HF) for that evaluation window.
 - This best-effort behavior is scoped to **evaluation only**. Training-time rollouts (e.g., Stage-2 Channel-B) MAY continue to fail fast to preserve training semantics.
 - This change intentionally does **not** define an "eval-window abort and continue training" metric path (e.g., no `eval/vllm_eval_aborted`). Engine-level vLLM failures are treated as fatal configuration/runtime errors and MUST fail fast.
+
+#### Scenario: Per-sample decode errors are skipped but engine failures are fatal
+- **GIVEN** evaluation backend resolves to `vllm`
+- **WHEN** one sample decode fails but the vLLM engine remains healthy
+- **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
+- **AND WHEN** a later engine-level vLLM failure occurs
+- **THEN** evaluation fails fast with an actionable error and does not fall back to HF.

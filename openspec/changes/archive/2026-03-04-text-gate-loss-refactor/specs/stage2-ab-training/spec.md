@@ -88,7 +88,7 @@ Normative behavior:
 - **AND** the increase is attributable to the `text_gate` sub-term inside `coord_reg`.
 
 ### Requirement: Coord diagnostics are attributed to A1 vs A2 logits in Channel-A
-Stage-2 AB SHOULD provide coord-distribution monitors that let operators compare the GT-anchor logits (`A1`) versus the final softctx logits (`A2`) on the same GT coord-token positions.
+Stage-2 AB SHALL provide coord-distribution monitors that let operators compare the GT-anchor logits (`A1`) versus the final softctx logits (`A2`) on the same GT coord-token positions.
 
 Normative behavior:
 - When `coord_diag` diagnostics module is enabled (non-zero effective weight for the current channel), the trainer MUST emit coord distribution monitor keys with explicit forward provenance:
@@ -100,6 +100,11 @@ Normative behavior:
   - `coord_diag/<prov>/expected_bin_mae`
 - These diagnostics MUST NOT affect the training objective (they are monitors only).
 - The trainer MUST NOT emit ambiguous bare `coord_diag/*` keys for these monitors in Stage-2 AB logs.
+
+#### Scenario: Channel-A diagnostics expose A1 and A2 provenance
+- **WHEN** Stage-2 AB runs with `n_softctx_iter > 1` and `coord_diag` enabled
+- **THEN** emitted coord diagnostics include `coord_diag/A1/*` and `coord_diag/A2/*`
+- **AND** no ambiguous bare `coord_diag/*` provenance-free keys are emitted.
 
 ## MODIFIED Requirements
 

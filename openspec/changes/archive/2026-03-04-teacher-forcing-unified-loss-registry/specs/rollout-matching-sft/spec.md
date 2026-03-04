@@ -108,6 +108,11 @@ Normative behavior:
 - Unknown module names MUST fail fast before training starts.
 - Error messages MUST list the unknown module name and available rollout-matching module names.
 
+#### Scenario: Unknown rollout module names are rejected with available options
+- **WHEN** `rollout_matching.pipeline` references an objective module name not in the rollout registry
+- **THEN** trainer initialization fails fast
+- **AND** the error message includes the unknown name and the allowed rollout module names.
+
 ### Requirement: Rollout-aligned Stage-2 module configs are strict and typed
 Rollout-aligned Stage-2 SHALL validate module `config` payloads strictly so experiments are reproducible and fail fast
 on schema drift.
@@ -139,6 +144,11 @@ Note:
 - When `rollout_matching.pipeline` is omitted, the effective defaults for the rollout-aligned objective are defined by
   the Default Pipeline Manifest above (which sources values from `custom.coord_soft_ce_w1` as applicable).
 
+#### Scenario: Unknown module config keys fail fast
+- **WHEN** a rollout module config includes a key outside the module allowlist
+- **THEN** initialization fails fast before the first training step
+- **AND** diagnostics include the invalid key and allowed keys.
+
 
 ### Requirement: Rollout-aligned Stage-2 adheres to the unified loss registry contract
 Rollout-aligned Stage-2 SHALL implement loss naming and masking semantics per the `teacher-forcing-unified-loss-registry`
@@ -165,6 +175,11 @@ Normative behavior:
 - The system MUST accept `custom.trainer_variant: stage2_rollout_aligned` as the canonical trainer variant string.
 - The system MUST reject `custom.trainer_variant: rollout_matching_sft` (fail fast) with actionable guidance to use
   `stage2_rollout_aligned`.
+
+#### Scenario: Legacy rollout-matching trainer alias is rejected
+- **WHEN** configuration sets `custom.trainer_variant: rollout_matching_sft`
+- **THEN** config validation fails fast
+- **AND** the error recommends `custom.trainer_variant: stage2_rollout_aligned`.
 
 ### Requirement: Rollout-aligned Stage-2 rollout-context semantics are coherent with the two-channel Rollout channel
 Rollout-aligned Stage-2 SHALL apply the same rollout-context masking semantics as the two-channel Rollout channel by default
@@ -211,6 +226,11 @@ Normative mapping / identity:
   (`stage2_ab.coord_decode_mode`).
 - The resolved value MUST be included in the pipeline identity checksum so ST-vs-exp differences are auditable even when
   the module list is unchanged.
+
+#### Scenario: Rollout decode mode contributes to pipeline identity
+- **WHEN** two runs are identical except `rollout_matching.coord_decode_mode` (`exp` vs `st`)
+- **THEN** both runs initialize successfully
+- **AND** their resolved pipeline identity payloads/checksums differ.
 
 ### Requirement: Eval-step supports COCO mAP when enabled
 Rollout-aligned Stage-2 SHALL support computing COCO-style bbox mAP during `eval_step` (config-driven) and MUST log the

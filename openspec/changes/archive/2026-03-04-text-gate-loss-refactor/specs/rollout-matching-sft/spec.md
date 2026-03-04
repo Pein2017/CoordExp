@@ -27,6 +27,11 @@ Normative behavior:
   - missing required keys MUST fail fast (no implicit defaults),
   - unknown keys MUST fail fast (no escape-hatch aliases).
 
+#### Scenario: Incomplete rollout module specification fails fast
+- **WHEN** a rollout pipeline entry omits one of the required fields (`name`, `enabled`, `weight`, `channels`, `config`)
+- **THEN** configuration parsing fails fast before trainer initialization
+- **AND** diagnostics identify the missing field path.
+
 ### Requirement: Rollout pipeline module configs are strict and canonical (no aliases)
 Rollout pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
 

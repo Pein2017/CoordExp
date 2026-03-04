@@ -49,6 +49,11 @@ Normative behavior:
   - `coord_diag/<prov>/{acc_top5,p_gt_mean,margin_mean,expected_bin_mae,expected_bin_abs_err_p90,coord_vocab_mass_mean}`
 - Stage-2 two-channel MUST NOT emit bare `coord_diag/*` keys for these monitors (ambiguous provenance is disallowed).
 
+#### Scenario: Provenance-split coord diagnostics include B when rollout runs
+- **WHEN** Stage-2 two-channel executes a Channel-B rollout step with coord diagnostics enabled
+- **THEN** coord diagnostics are emitted under `coord_diag/B/*`
+- **AND** the same step does not emit ambiguous bare `coord_diag/*` keys.
+
 ### Requirement: Rollout-only metrics are sparse-emitted
 Trainers MUST NOT emit rollout-specific monitor metrics on steps where no rollout was executed.
 
@@ -66,10 +71,15 @@ Normative behavior:
 - **THEN** the emitted training log line contains no `rollout/*` scalar keys (they are absent rather than constant zeros).
 
 ### Requirement: Zero-valued timing keys are sparse-emitted
-To reduce constant-noise monitors, trainers SHOULD omit timing keys that are identically `0.0` for the current run.
+To reduce constant-noise monitors, trainers SHALL omit timing keys that are identically `0.0` for the current run.
 
 Normative behavior:
 - `time/mask_build_s` MUST be omitted when it is not measured by the current trainer (`0.0` placeholder values are disallowed).
+
+#### Scenario: Unmeasured mask-build timing is omitted
+- **WHEN** a trainer does not measure mask-build timing for a step
+- **THEN** `time/mask_build_s` is absent from emitted metrics
+- **AND** a constant `0.0` placeholder is not emitted.
 
 ## REMOVED Requirements
 

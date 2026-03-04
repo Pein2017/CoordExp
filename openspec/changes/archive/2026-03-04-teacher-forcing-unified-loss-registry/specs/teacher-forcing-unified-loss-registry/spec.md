@@ -127,6 +127,11 @@ Normative behavior:
 - Any deviations for ablations (e.g., `fn_desc_weight=0`, `matched_prefix_struct_weight=0`) MUST be expressed via
   explicit, typed weights and MUST be logged as part of pipeline identity so runs are auditable.
 
+#### Scenario: Channel-B and rollout-matching share one rollout mask contract
+- **WHEN** both Stage-2 Channel-B and rollout-matching SFT are configured with default rollout semantics
+- **THEN** they apply the same FP-neutral, matched-prefix, FN, and EOS rollout mask rules
+- **AND** ablation differences appear only through explicit typed weights.
+
 
 ### Requirement: Channel-A CE anchoring and self-context geometry are separate contexts
 For Stage-2 Channel-A, the system SHALL treat:

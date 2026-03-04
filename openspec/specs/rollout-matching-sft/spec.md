@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the rollout-matching SFT trainer contract, including rollout generation backends, vLLM server/weight-sync behavior, decode microbatching, and matching/packing invariants.
-
 ## Requirements
 ### Requirement: Rollout-aligned Stage-2 uses explicit objective pipeline (no implicit defaults)
 When `custom.trainer_variant: stage2_rollout_aligned`, the rollout-aligned teacher-forcing objective MUST be fully determined by the declared module pipeline under:
@@ -29,6 +28,11 @@ Normative behavior:
   - missing required keys MUST fail fast (no implicit defaults),
   - unknown keys MUST fail fast (no escape-hatch aliases).
 
+#### Scenario: Incomplete rollout module specification fails fast
+- **WHEN** a rollout pipeline entry omits one of the required fields (`name`, `enabled`, `weight`, `channels`, `config`)
+- **THEN** configuration parsing fails fast before trainer initialization
+- **AND** diagnostics identify the missing field path.
+
 ### Requirement: Rollout pipeline module configs are strict and canonical (no aliases)
 Rollout pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
 
@@ -47,12 +51,24 @@ Normative behavior:
   - `target_truncate`
 - Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
 
+#### Scenario: Alias key in rollout module config fails fast
+- **WHEN** `rollout_matching.pipeline.objective[*].name=coord_reg`
+- **AND** the module config contains `coord_soft_ce_weight`
+- **THEN** configuration parsing fails fast
+- **AND** the error indicates `soft_ce_weight` is the only accepted key.
+
 ### Requirement: Rollout-aligned Stage-2 supports text_gate via coord_reg module config
 Rollout-aligned Stage-2 MUST support `text_gate` as part of `coord_reg` with a typed weight:
 - `rollout_matching.pipeline.objective[*].config.text_gate_weight`
 
 Normative behavior:
 - `text_gate_weight > 0` MUST introduce a non-zero `text_gate` contribution when coord-vocab mass appears at supervised text positions under `context=rollout` (FP-neutral).
+
+#### Scenario: FP-neutral text_gate is effective
+- **WHEN** rollout-context supervision includes both FN spans and FP spans
+- **AND** `text_gate_weight > 0`
+- **THEN** FP spans do not contribute to the emitted `text_gate` objective atom `loss/B_coord/text_gate`
+- **AND** FN text spans contribute to the `text_gate` sub-term and increase `loss/B_coord/text_gate` when they exhibit coord-vocab mass.
 
 ### Requirement: Stage-2 post-rollout packing selection uses deterministic ms-swift-like binpacking
 When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_aligned`) and post-rollout packing is enabled (`training.packing: true`), the trainer SHALL select which buffered segments are included in the packed teacher-forced forward pass using a deterministic, ms-swift-like constant-volume binpacking heuristic.
@@ -307,14 +323,12 @@ Determinism (server mode):
 - **AND** the existing prompt-prefix sanity check is applied using those token ids
 - **AND** the rest of parsing/matching/loss computation proceeds unchanged.
 
-
 #### Scenario: Invalid vLLM configuration fails fast
 - **GIVEN** rollout-matching training is enabled
 - **AND** the rollout backend is set to vLLM
 - **WHEN** vLLM is unavailable, tensor-parallel settings are incompatible, or LoRA sync is not possible
 - **THEN** the trainer fails fast with an actionable error message
 - **AND** the user can explicitly switch back to HF rollout via `rollout_backend: "hf"`.
-
 
 #### Scenario: Multi-process learner does not deadlock in server mode
 - **GIVEN** rollout-matching training is enabled
@@ -325,14 +339,12 @@ Determinism (server mode):
 - **THEN** rank0 performs the server weight sync and other ranks do not
 - **AND** all ranks proceed to issue rollout `/infer/` requests without deadlock.
 
-
 #### Scenario: Non-full sync mode fails fast (all learners)
 - **GIVEN** rollout-matching training is enabled
 - **AND** the effective rollout backend resolves to vLLM (training or eval)
 - **AND** `rollout_matching.vllm.sync.mode` is set to a non-`full` value (e.g., `adapter` or `auto`)
 - **WHEN** training starts (before the first vLLM rollout)
 - **THEN** configuration validation fails fast with actionable guidance to use `sync.mode: full`.
-
 
 ### Requirement: Stage_2 supports a 3v1 rollout-server + learner workflow (actors vs learner)
 The stage_2 rollout-matching trainer (`custom.trainer_variant: stage2_rollout_aligned`) MUST support a practical single-node workflow where rollout generation runs on dedicated GPUs via a vLLM server, and teacher-forced SFT training runs on a separate GPU.
@@ -604,6 +616,13 @@ Normative behavior:
 - When the effective evaluation rollout backend resolves to `vllm`:
   - If an individual sample fails to decode due to a sample-local runtime error, the evaluator MUST skip that sample and continue evaluation.
   - If evaluation rollouts cannot proceed due to an engine-level failure (engine init failure, missing required lifecycle APIs for the configured mode (e.g., sleep/wake when sleep mode is enabled), eval-time OOM, or other fatal runtime error), evaluation MUST fail fast with actionable guidance (no silent fallback to HF for that eval window).
+
+#### Scenario: Per-sample decode errors are skipped but engine failures are fatal
+- **GIVEN** evaluation backend resolves to `vllm`
+- **WHEN** one sample decode fails but the vLLM engine remains healthy
+- **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
+- **AND WHEN** a later engine-level vLLM failure occurs
+- **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
 
 ### Requirement: Rollout-matching trainer is YAML-gated
 The system SHALL provide an opt-in rollout-matching training mode (alias: `stage_2`) that is enabled via YAML by setting:
@@ -932,7 +951,6 @@ These counters SHALL NOT include IoU/GIoU/maskIoU numeric metric logging (those 
 - **THEN** invalid objects are dropped and counted
 - **AND** the training step completes without crashing due to mandatory FN append supervision in the tail.
 
-
 ### Requirement: Server/HF rollout sampling is configured under decoding.*
 Rollout decoding knobs MUST be expressed under:
 - `custom.extra.rollout_matching.decoding` (mapping)
@@ -958,7 +976,6 @@ Robustness-first sampling note:
 - **AND** the config provides `custom.extra.rollout_matching.temperature`
 - **WHEN** training starts
 - **THEN** config validation fails fast with guidance to use `custom.extra.rollout_matching.decoding.temperature` instead.
-
 
 ### Requirement: vLLM rollout backend supports repeat-aware per-sequence early termination
 When rollout generation uses vLLM server backend (`custom.extra.rollout_matching.rollout_backend: vllm` in rollout-server mode), the system MUST support repeat-aware termination semantics equivalent to the existing HF repeat guard.
@@ -996,7 +1013,6 @@ Normative behavior:
 - **WHEN** this change is applied
 - **THEN** no new repeat-aware contract is imposed by this delta on that path.
 
-
 ### Requirement: Repeat-termination contract is backend-parity and config-first
 The rollout-matching contract MUST keep repeat-termination behavior config-first and backend-parity.
 
@@ -1011,7 +1027,6 @@ Normative behavior:
 - **WHEN** rollout backend is switched from HF to vLLM
 - **THEN** repeat-aware termination remains enabled without adding new CLI parameters.
 
-
 ### Requirement: Rollout-matching exposes stable submodule contracts by concern
 The rollout-matching capability SHALL expose stable public contracts for parsing, matching, packing, and backend orchestration via dedicated submodules.
 The trainer-facing module MAY provide compatibility re-exports during migration, but behavior ownership MUST live in the dedicated submodules.
@@ -1020,7 +1035,6 @@ The trainer-facing module MAY provide compatibility re-exports during migration,
 - **WHEN** a consumer imports rollout parsing contracts for validation/testing
 - **THEN** it can do so without importing the trainer class implementation
 - **AND** parsed output contracts remain stable for downstream use.
-
 
 ### Requirement: Rollout backend orchestration uses a backend interface contract
 Rollout backend selection and synchronization SHALL be mediated through a backend interface contract rather than inline trainer branches.
@@ -1032,7 +1046,6 @@ Supported backend implementations MUST preserve existing rollout semantics and o
 - **THEN** returned rollout payload fields required by parsing/matching are preserved
 - **AND** trainer-side supervision construction remains valid.
 
-
 ### Requirement: Post-rollout packing scheduling is reusable and deterministic
 Post-rollout packing/window scheduling SHALL be implemented in reusable helpers consumable by rollout and Stage-2 paths.
 Given identical segment inputs and ordering, helper outputs MUST be deterministic.
@@ -1042,7 +1055,6 @@ Given identical segment inputs and ordering, helper outputs MUST be deterministi
 - **WHEN** the shared packing scheduler runs twice
 - **THEN** it yields the same selected segment set and order in both runs.
 
-
 ### Requirement: Coord-vocab gate math reuses the shared canonical helper
 When computing coord-vocab gate loss/mass terms (used as part of coord supervision and diagnostics), rollout-matching paths SHALL delegate to the shared helper used by training and metrics so numeric fences (NaN/Inf handling, clamping, temperature scaling) remain consistent across consumers.
 
@@ -1050,3 +1062,405 @@ When computing coord-vocab gate loss/mass terms (used as part of coord supervisi
 - **GIVEN** identical full-vocab logits, coord-vocab logits, and temperature
 - **WHEN** the gate term is computed in training/metrics and in rollout-matching
 - **THEN** the per-token gate-loss values match (up to floating-point tolerance) due to shared helper reuse.
+
+### Requirement: Rollout-aligned Stage-2 supports a config-declared objective and diagnostics pipeline
+When `custom.trainer_variant: stage2_rollout_aligned`, the system SHALL support a YAML-declared module pipeline for
+rollout-aligned teacher-forcing objective and diagnostics.
+
+Normative configuration shape:
+- The pipeline MUST be declared under the rollout-matching namespace:
+  - `rollout_matching.pipeline.objective`: ordered list of objective modules
+  - `rollout_matching.pipeline.diagnostics`: ordered list of diagnostics modules
+- Each module entry MUST follow the `teacher-forcing-objective-pipeline` capability contract.
+
+Normative behavior:
+- If `rollout_matching.pipeline` is provided, the trainer MUST interpret it according to the
+  `teacher-forcing-objective-pipeline` capability.
+- If `rollout_matching.pipeline` is absent, the trainer MUST construct and use a default pipeline that is coherent
+  with the unified teacher-forcing objective semantics.
+  - The default objective MUST include bbox geometry regression (`bbox_geo`) so the Stage-2 objective described in
+    `docs/training/STAGE2_RUNBOOK.md` applies consistently across `stage2_rollout_aligned` and `stage2_two_channel`.
+    Disabling geometry MUST be expressed explicitly via an authored pipeline (e.g., `bbox_geo.enabled=false` or
+    `bbox_geo` weights set to `0`).
+- Pipeline parsing and module resolution MUST be strict and MUST fail fast on unknown module names.
+- The resolved module list and a stable pipeline checksum MUST be logged at trainer initialization.
+
+#### Default Pipeline Manifest (when `rollout_matching.pipeline` is omitted)
+
+To eliminate ambiguity, the “pipeline omitted” behavior is defined as resolving to the following manifest.
+
+Normative default objective modules (ordered):
+1) `token_ce`
+2) `bbox_geo`
+3) `coord_reg`
+
+Normative default diagnostics modules (ordered):
+1) `coord_diag`
+
+Normative default module weights (all objective modules):
+- `weight = 1.0`
+
+Normative default module configs (effective values):
+- `token_ce` (rollout context):
+  - `rollout_fn_desc_weight = 1.0`
+  - `rollout_matched_prefix_struct_weight = 1.0`
+- `bbox_geo`:
+  - `smoothl1_weight = 1.0`
+  - `ciou_weight = 1.0`
+  - decode mode is controlled by `rollout_matching.coord_decode_mode` (default `exp`)
+- `coord_reg` (enabled only when `custom.coord_soft_ce_w1.enabled: true`):
+  - `coord_ce_weight = custom.coord_soft_ce_w1.ce_weight` (default `0.0`)
+  - `soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` (default `1.0`)
+  - `w1_weight = custom.coord_soft_ce_w1.w1_weight` (default `1.0`)
+  - `coord_gate_weight = custom.coord_soft_ce_w1.gate_weight` (default `1.0`)
+  - `text_gate_weight = 0.0` (default `0.0`; pipeline-only knob)
+  - `temperature = custom.coord_soft_ce_w1.temperature` (default `1.0`)
+  - `target_sigma = custom.coord_soft_ce_w1.target_sigma` (default `2.0`)
+  - `target_truncate = custom.coord_soft_ce_w1.target_truncate` (default `null`)
+
+Informative YAML expression (conceptual; values shown are symbolic):
+```yaml
+rollout_matching:
+  # pipeline omitted => resolves to the following manifest:
+  # pipeline:
+  #   objective:
+  #     - {name: token_ce, weight: 1.0}
+  #     - {name: bbox_geo, weight: 1.0}
+  #     - {name: coord_reg, weight: 1.0}
+  #   diagnostics:
+  #     - {name: coord_diag}
+```
+
+#### Scenario: Pipeline omitted uses latest defaults (coherent)
+- **WHEN** a rollout-matching SFT config does not define `rollout_matching.pipeline`
+- **THEN** training starts successfully
+- **AND** the rollout-matching objective matches the Default Pipeline Manifest
+- **AND** canonical `loss/<component>` keys are emitted (per `teacher-forcing-unified-loss-registry`)
+
+#### Scenario: Pipeline is applied when provided
+- **WHEN** a rollout-matching SFT config defines `rollout_matching.pipeline` with at least one objective module
+- **THEN** the trainer uses that declared module pipeline
+- **AND** the resolved module list and checksum are logged.
+
+#### Scenario: Pipeline mode rejects duplicated flat objective knobs
+- **WHEN** a rollout-matching SFT config defines `rollout_matching.pipeline`
+- **AND** the config also defines any objective-affecting flat knobs used by the default manifest (e.g.,
+  `custom.coord_soft_ce_w1.*`)
+- **THEN** config validation fails fast with guidance to move those values into the declared module configs.
+
+#### Scenario: Unknown module name fails fast
+- **WHEN** a rollout-matching SFT config defines `rollout_matching.pipeline` referencing an unknown module `name`
+- **THEN** training initialization fails fast with actionable diagnostics.
+
+### Requirement: Rollout-aligned Stage-2 module names are stable and share a registry with two-channel Stage-2
+Rollout-aligned Stage-2 SHALL provide a strict module registry for its pipeline modules. Module names SHALL be stable
+so YAML-declared experiments remain auditable, and the module registry SHOULD be shared with the two-channel Stage-2
+engine where possible to avoid duplicated implementations.
+
+Normative minimum module names (initial set; may be extended):
+- Objective modules:
+  - `token_ce` (masked/weighted CE per unified loss registry; includes EOS-enforced closure supervision)
+  - `coord_reg` (coord distribution regularizers; default includes softCE + W1 + gate behavior)
+  - `bbox_geo` (bbox SmoothL1 + CIoU on decoded boxes under rollout context)
+- Diagnostics modules:
+  - `coord_diag` (coord distribution diagnostics; best-effort)
+
+Normative behavior:
+- Unknown module names MUST fail fast before training starts.
+- Error messages MUST list the unknown module name and available rollout-matching module names.
+
+#### Scenario: Unknown rollout module names are rejected with available options
+- **WHEN** `rollout_matching.pipeline` references an objective module name not in the rollout registry
+- **THEN** trainer initialization fails fast
+- **AND** the error message includes the unknown name and the allowed rollout module names.
+
+### Requirement: Rollout-aligned Stage-2 module configs are strict and typed
+Rollout-aligned Stage-2 SHALL validate module `config` payloads strictly so experiments are reproducible and fail fast
+on schema drift.
+
+Normative behavior:
+- Module `config` mappings MUST be validated at trainer initialization (before training starts).
+- Unknown keys in a module `config` MUST fail fast with actionable diagnostics listing allowed keys.
+
+Normative config schemas (minimum set; may be extended):
+- `token_ce.config`:
+  - `rollout_fn_desc_weight: float` (default: `1.0`)
+  - `rollout_matched_prefix_struct_weight: float` (default: `1.0`)
+- `bbox_geo.config`:
+  - `smoothl1_weight: float` (default: `1.0`)
+  - `ciou_weight: float` (default: `1.0`)
+- `coord_reg.config`:
+  - `coord_ce_weight: float` (default: `0.0`)
+  - `soft_ce_weight: float` (default: `0.0`)
+  - `w1_weight: float` (default: `0.0`)
+  - `coord_gate_weight: float` (default: `0.0`)
+  - `text_gate_weight: float` (default: `0.0`)
+  - `temperature: float` (default: `1.0`)
+  - `target_sigma: float` (default: `2.0`)
+  - `target_truncate: int|null` (default: `null`)
+- `coord_diag.config`:
+  - (no required keys; implementations MAY accept a strict subset of the above for convenience, but MUST document them)
+
+Note:
+- When `rollout_matching.pipeline` is omitted, the effective defaults for the rollout-aligned objective are defined by
+  the Default Pipeline Manifest above (which sources values from `custom.coord_soft_ce_w1` as applicable).
+
+#### Scenario: Unknown module config keys fail fast
+- **WHEN** a rollout module config includes a key outside the module allowlist
+- **THEN** initialization fails fast before the first training step
+- **AND** diagnostics include the invalid key and allowed keys.
+
+### Requirement: Rollout-aligned Stage-2 adheres to the unified loss registry contract
+Rollout-aligned Stage-2 SHALL implement loss naming and masking semantics per the `teacher-forcing-unified-loss-registry`
+capability.
+
+Normative behavior:
+- Teacher-forced forward passes constructed from rollout prefix + mandatory FN append MUST be treated as
+  `context=rollout` for the purpose of token-type partitioning and masking.
+- The unified registry MUST be able to represent the rollout-matching supervision surface as a registry
+  instantiation (including ablation variants such as “FN desc unsupervised” or “matched-prefix struct CE disabled”).
+- When the module pipeline is enabled, objective/diagnostics modules MUST emit metric keys consistent with the
+  registry’s canonical component names.
+
+#### Scenario: Packing-safe registry masks do not leak across packed segments
+- **GIVEN** rollout-matching teacher-forced sequences are packed into a single forward pass
+- **WHEN** registry masks are built for `context=rollout`
+- **THEN** per-segment boundaries are respected
+- **AND** no supervised indices/masks cross segment boundaries.
+
+### Requirement: Trainer variant naming is clear and stable
+To reduce public-facing confusion, the system SHALL support clear trainer variant naming for rollout-aligned Stage-2.
+
+Normative behavior:
+- The system MUST accept `custom.trainer_variant: stage2_rollout_aligned` as the canonical trainer variant string.
+- The system MUST reject `custom.trainer_variant: rollout_matching_sft` (fail fast) with actionable guidance to use
+  `stage2_rollout_aligned`.
+
+#### Scenario: Legacy rollout-matching trainer alias is rejected
+- **WHEN** configuration sets `custom.trainer_variant: rollout_matching_sft`
+- **THEN** config validation fails fast
+- **AND** the error recommends `custom.trainer_variant: stage2_rollout_aligned`.
+
+### Requirement: Rollout-aligned Stage-2 rollout-context semantics are coherent with the two-channel Rollout channel
+Rollout-aligned Stage-2 SHALL apply the same rollout-context masking semantics as the two-channel Rollout channel by default
+(`progress/full_idea.md`), so teacher-forcing objectives do not drift across code paths.
+
+Normative behavior:
+- Rollout-context token supervision MUST enforce:
+  - matched prefix: `CE_struct=1`, `CE_desc=0`, `CE_coord=0`,
+  - FP spans: fully masked (`0`) for CE and excluded from geometry/coord-dist losses,
+  - FN injected: `CE_struct=1`, `CE_desc=1` by default (configurable weight), `CE_coord=0`,
+  - closure/EOS: supervised (EOS-enforced).
+- The system MUST expose typed configuration to ablate (at minimum):
+  - FN `desc` supervision weight, and
+  - matched-prefix struct CE weight,
+  via YAML diffs (no trainer code edits).
+- When these weights differ from defaults, the resolved effective values MUST be logged as part of pipeline identity so
+  runs are auditable.
+
+Recommended expression (module config on `token_ce`, strict + typed):
+- `rollout_matching.pipeline.objective[].config.rollout_fn_desc_weight: float`
+- `rollout_matching.pipeline.objective[].config.rollout_matched_prefix_struct_weight: float`
+
+#### Scenario: FN `desc` supervision can be disabled via YAML (ablation)
+- **WHEN** a rollout-matching SFT config sets `rollout_fn_desc_weight: 0`
+- **THEN** FN-injected `desc` tokens do not contribute to token CE
+- **AND** FP-neutral and EOS-enforced semantics remain intact.
+
+### Requirement: Rollout-matching SFT exposes ST geometry decode mode as typed YAML config
+Rollout-matching SFT SHALL expose a typed config knob to select geometry coord decode mode when geometry losses are
+enabled (either directly in trainer code or via the pipeline).
+
+Normative behavior:
+- Config MUST be expressed under the typed rollout-matching namespace (`rollout_matching.*`) and MUST be strict
+  (unknown keys fail fast).
+- When the key is omitted, defaults MUST preserve current behavior.
+- When enabled, ST decode MUST follow the ST semantics defined by `teacher-forcing-unified-loss-registry`.
+
+Normative key name:
+- `rollout_matching.coord_decode_mode: exp|st`
+
+Normative mapping / identity:
+- The resolved value MUST feed the same internal decode enum used by the two-channel Stage-2 engine
+  (`stage2_ab.coord_decode_mode`).
+- The resolved value MUST be included in the pipeline identity checksum so ST-vs-exp differences are auditable even when
+  the module list is unchanged.
+
+#### Scenario: Rollout decode mode contributes to pipeline identity
+- **WHEN** two runs are identical except `rollout_matching.coord_decode_mode` (`exp` vs `st`)
+- **THEN** both runs initialize successfully
+- **AND** their resolved pipeline identity payloads/checksums differ.
+
+### Requirement: Eval-step supports COCO mAP when enabled
+Rollout-aligned Stage-2 SHALL support computing COCO-style bbox mAP during `eval_step` (config-driven) and MUST log the
+results under stable metric keys so training runs are paper-ready.
+
+Normative behavior:
+- COCO/mAP evaluation MUST be controlled by the typed config surface:
+  - `rollout_matching.eval_detection.enabled: bool`
+- For Stage-2 trainers, `rollout_matching.eval_detection.enabled` MUST default to `true` so COCO `mAP` is a standard
+  eval metric like `rollout/f1`. Disabling it MUST be explicit via YAML (`enabled: false`).
+- The eval-step COCO evaluation implementation MUST reuse the same detection evaluator modules used by offline
+  evaluation (see `openspec/specs/detection-evaluator`), rather than re-implementing COCO preparation/scoring logic in
+  trainer code.
+- When `rollout_matching.eval_detection.enabled=true`, the trainer MUST attempt to compute COCO bbox AP/mAP for the
+  eval-step rollouts and MUST emit, at minimum:
+  - `rollout/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
+- The trainer MUST NOT emit additional COCO summary metric keys during eval-step (e.g., `rollout/bbox_AP50`,
+  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `rollout/mAP`. Full metric reports remain available via the offline
+  evaluation pipeline.
+- If COCO eval fails unexpectedly (missing dependencies, invalid records, etc.), the trainer MUST:
+  - emit `rollout/mAP=0.0` (so the key is always present when enabled), and
+  - surface the failure as a warning (not silent).
+
+#### Scenario: Rollout-aligned eval reports mAP
+- **GIVEN** `rollout_matching.eval_detection.enabled=true`
+- **WHEN** `eval_step` runs
+- **THEN** `rollout/mAP` is present in the eval metrics payload
+
+### Requirement: Trainer-variant guardrails prevent ambiguous pipeline configuration
+To avoid “config declared but ignored” ambiguity, the system SHALL enforce strict guardrails:
+
+Normative behavior:
+- If `custom.trainer_variant: stage2_two_channel`, the presence of `rollout_matching.pipeline` MUST fail fast with
+  guidance to use `stage2_ab.pipeline`.
+- If `custom.trainer_variant: stage2_rollout_aligned`, the presence of `stage2_ab.pipeline` MUST fail fast with guidance
+  to use `rollout_matching.pipeline`.
+
+#### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
+- **WHEN** `custom.trainer_variant=stage2_two_channel`
+- **AND** `rollout_matching.pipeline` is present
+- **THEN** config validation fails fast with guidance to use `stage2_ab.pipeline`.
+
+#### Scenario: Rollout-matching rejects stage2_ab pipeline keys
+- **WHEN** `custom.trainer_variant=stage2_rollout_aligned`
+- **AND** `stage2_ab.pipeline` is present
+- **THEN** config validation fails fast with guidance to use `rollout_matching.pipeline`.
+
+### Requirement: Evaluation can override rollout backend independently of training
+The system SHALL allow Stage-2 evaluation (`eval_step`) rollouts to select a rollout backend independently of the training-time rollout backend.
+
+Normative behavior:
+- `rollout_matching.rollout_backend` continues to define the rollout backend for training-time rollouts (e.g., Stage-2 Channel-B).
+- A new optional key `rollout_matching.eval_rollout_backend` SHALL be supported:
+  - when `null` or missing, evaluation rollouts MUST use `rollout_matching.rollout_backend`,
+  - when set to `hf` or `vllm`, evaluation rollouts MUST use `rollout_matching.eval_rollout_backend` and MUST NOT affect training rollouts.
+- `rollout_matching.eval_rollout_backend` MUST accept only `null`, `hf`, or `vllm` (case-insensitive). Missing MUST be treated as `null`. Any other value MUST fail fast with actionable guidance.
+- If the effective evaluation rollout backend resolves to `vllm`, the system MUST enforce the same vLLM length-coherence guardrails as when `rollout_matching.rollout_backend: vllm`, including:
+  - `rollout_matching.max_new_tokens < rollout_matching.vllm.max_model_len` (to avoid truncation/overflow), and
+  - `rollout_matching.vllm.max_model_len >= global_max_length` (to avoid silent truncation drift between training and rollouts).
+
+#### Scenario: Eval backend override uses vLLM while training uses HF
+- **GIVEN** `rollout_matching.rollout_backend: hf`
+- **AND** `rollout_matching.eval_rollout_backend: vllm`
+- **WHEN** the trainer runs `evaluate()` at an `eval_step`
+- **THEN** evaluation rollouts are generated via the vLLM backend
+- **AND** training-time rollouts (if any) continue to use the HF backend.
+
+#### Scenario: Missing eval override inherits training backend
+- **GIVEN** `rollout_matching.rollout_backend: vllm`
+- **AND** `rollout_matching.eval_rollout_backend` is missing (or null)
+- **WHEN** the trainer runs `evaluate()`
+- **THEN** evaluation rollouts use the vLLM backend.
+
+### Requirement: vLLM rollouts require full merged-weight sync (no adapter-only sync)
+In this stack, vLLM rollouts are supported only via full merged-weight synchronization into the vLLM engine ("full sync"). Adapter-only synchronization (vLLM LoRA upload / `add_lora`) is unsupported and MUST be rejected.
+
+Normative behavior:
+- When the effective rollout backend is `vllm` (training or eval):
+  - The system MUST perform a full merged-weight sync into vLLM before issuing rollouts.
+  - The system MUST NOT use vLLM adapter-only sync (no `add_lora` / adapter-only upload path).
+- If configuration requests vLLM adapter-only sync while the effective backend is vLLM (e.g., `rollout_matching.vllm.enable_lora: true`), the run MUST fail fast before starting rollouts with actionable guidance.
+
+#### Scenario: Adapter-only sync is rejected for vLLM rollouts
+- **GIVEN** a config where the effective rollout backend is `vllm`
+- **AND** config requests vLLM LoRA / adapter-only sync for rollout weights
+- **WHEN** rollout generation begins (training or eval)
+- **THEN** the run fails fast with an error stating that vLLM rollouts require full merged-weight sync.
+
+### Requirement: Eval-only colocate vLLM MAY release GPU memory after evaluation (optional sleep-after-eval)
+When evaluation rollouts use vLLM in colocate mode, the system MUST preserve training correctness and MUST be DDP-safe. vLLM sleep mode is an optional/advanced optimization and MUST be disabled by default in standard colocate mode due to observed teardown incompatibilities in our environment.
+
+Normative behavior:
+- When `rollout_matching.vllm.mode: colocate` and the effective evaluation rollout backend resolves to `vllm`:
+  - The system MUST NOT attempt to "shutdown" vLLM in-process as part of the evaluation lifecycle (DDP safety).
+  - Default behavior MUST NOT require vLLM sleep mode:
+    - The system MUST NOT force vLLM sleep mode enablement at engine construction time (e.g., do not unconditionally set `enable_sleep_mode=true`).
+    - Absence of vLLM sleep/wake APIs MUST NOT fail the run.
+  - If vLLM sleep mode is explicitly enabled for the run (advanced / operator-controlled):
+    - The system MUST ensure the vLLM engine is awake before issuing any evaluation rollouts.
+      - If the engine was previously slept, the system MUST call `LLMEngine.wake_up()` (or a version-equivalent wake method) before generating any evaluation rollouts.
+    - The system SHOULD call vLLM sleep at the end of `evaluate()` to release GPU allocations between eval windows.
+      - Recommended: `LLMEngine.sleep(level=2)` (or a version-equivalent sleep method).
+    - The system MUST ensure vLLM is configured to support sleep mode so sleep/wake actually affects GPU allocations.
+      - This MUST be enabled at engine construction time (e.g., `EngineArgs(enable_sleep_mode=true)` in vLLM 0.11.x).
+      - Failure to enable sleep mode (or lack of required vLLM APIs) MUST fail fast with actionable guidance *before training begins*, so the run cannot silently proceed with incorrect memory expectations.
+
+#### Scenario: Optional colocated vLLM sleep-after-eval lifecycle
+- **GIVEN** evaluation rollouts use `vllm` with `vllm.mode: colocate`
+- **AND** vLLM sleep mode is enabled for the run (advanced)
+- **WHEN** `evaluate()` completes
+- **THEN** vLLM engine resources are transitioned to a low-GPU-memory state (recommended: sleep level `2`)
+- **AND** the next `evaluate()` call wakes the vLLM engine before issuing rollouts.
+
+### Requirement: Optional HF offload is supported for vLLM evaluation rollouts under plain DDP (colocate vLLM)
+To reduce peak GPU memory when evaluation uses vLLM colocate mode, the system SHALL support offloading HF training state under operator control **when training runs under plain DDP** (one full model replica per rank).
+
+Normative behavior:
+- The system MUST support `rollout_matching.offload.enabled: true` during evaluation-only colocate vLLM.
+- If `rollout_matching.offload.enabled: true`, the system MUST offload the requested training state before issuing vLLM rollouts and MUST restore the requested state after evaluation completes.
+- Offload defaults:
+  - When `rollout_matching.offload.enabled: true` and `rollout_matching.offload.offload_model` is missing, it MUST default to `true`.
+  - When `rollout_matching.offload.enabled: true` and `rollout_matching.offload.offload_optimizer` is missing, it MUST default to `true`.
+- Offloading MUST NOT be enabled under runtimes that partition or alias optimizer/model state (e.g., DeepSpeed/ZeRO). In particular, if `deepspeed.enabled: true` and rollout offload is requested for vLLM colocate (train or eval), the run MUST fail fast before starting rollouts with actionable guidance.
+
+#### Scenario: DeepSpeed is rejected for eval-time offload under colocate vLLM
+- **GIVEN** `deepspeed.enabled: true`
+- **AND** evaluation rollouts use `vllm` with `vllm.mode: colocate`
+- **AND** rollout offload is enabled
+- **WHEN** evaluation begins
+- **THEN** the run fails fast with an error stating that eval-time offload is only supported under plain DDP (no DeepSpeed/ZeRO).
+
+### Requirement: vLLM traced rollouts satisfy token-trace invariants for confidence scoring (eval-safe fallback)
+When evaluation requests confidence scoring derived from token logprob traces, vLLM traced rollouts MUST produce a well-formed trace for every sample. If traces are invalid during evaluation, the system MUST degrade gracefully so training can continue.
+
+Normative behavior:
+- If eval-step scoring mode requires token traces (e.g., confidence post-op scoring), vLLM evaluation MUST request logprobs and MUST run in greedy mode (`temperature=0`).
+- For each evaluated sample, the vLLM backend MUST return:
+  - `token_ids` (generated completion token ids),
+  - `token_logprobs` (list[number]),
+  - `generated_token_text` (list[string]),
+  and MUST satisfy `len(token_ids) == len(token_logprobs) == len(generated_token_text)`.
+- If any sample violates these invariants during **evaluation**, the system MUST:
+  - emit a warning (rate-limited) that confidence scoring fell back due to invalid token traces,
+  - increment an explicit metric/counter `eval/trace_fallback_count` by 1 for each affected sample, and
+  - continue evaluation (do not abort training), falling back to a safe score policy equivalent to `score_mode: constant` using `constant_score` for the affected evaluation window.
+
+#### Scenario: Trace length mismatch falls back during evaluation
+- **GIVEN** eval-step confidence scoring is enabled
+- **AND** evaluation backend is `vllm`
+- **WHEN** any vLLM rollout returns `len(token_ids) != len(token_logprobs)` or `len(token_ids) != len(generated_token_text)`
+- **THEN** evaluation continues and uses constant-score fallback for confidence scoring, and a warning is emitted indicating a token-trace invariant violation.
+
+### Requirement: Eval-only vLLM rollouts MUST skip per-sample decode failures; engine-level failures MUST fail fast
+Evaluation rollouts are observability and model-quality measurement. This stack MUST be robust to rare sample-level decode failures, but MUST fail fast on engine-level failures (which indicate misconfiguration or an environment/runtime problem and should not be silently ignored).
+
+Normative behavior:
+- When the effective evaluation rollout backend resolves to `vllm`:
+  - If an individual sample fails to decode/roll out due to a runtime error localized to that sample, the system MUST:
+    - skip that sample (exclude it from downstream eval aggregation),
+    - increment `eval/vllm_decode_error_count` by 1,
+    - and continue evaluation.
+  - If evaluation rollouts cannot proceed due to a vLLM engine-level failure (e.g., engine construction failure, missing/unsupported required lifecycle APIs for the configured mode (e.g., wake/sleep when sleep mode is enabled), OOM during eval, or a fatal runtime error), the system MUST:
+    - fail fast with an actionable error message (do not hang),
+    - and MUST NOT silently fall back to a different backend (e.g., HF) for that evaluation window.
+- This best-effort behavior is scoped to **evaluation only**. Training-time rollouts (e.g., Stage-2 Channel-B) MAY continue to fail fast to preserve training semantics.
+- This change intentionally does **not** define an "eval-window abort and continue training" metric path (e.g., no `eval/vllm_eval_aborted`). Engine-level vLLM failures are treated as fatal configuration/runtime errors and MUST fail fast.
+
+#### Scenario: Per-sample decode errors are skipped but engine failures are fatal
+- **GIVEN** evaluation backend resolves to `vllm`
+- **WHEN** one sample decode fails but the vLLM engine remains healthy
+- **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
+- **AND WHEN** a later engine-level vLLM failure occurs
+- **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
+
