@@ -7539,7 +7539,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced.get(key, 0.0) / scale)
-            except (TypeError, ValueError) as exc:
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "rollout metric all-reduce failed (DDP is initialized); "
                     f"rank={int(rank)}/{int(world_size)}"
