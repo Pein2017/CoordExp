@@ -410,7 +410,7 @@ Hardlink materialization contract:
 - **THEN** hardlink materialization fails fast with actionable guidance to co-locate outputs on one filesystem.
 
 ### Requirement: Preset Image Immutability and Fresh Rescale Targets
-Preset `images/` are immutable once written by the rescale stage.
+Preset `images/` SHALL be immutable once written by the rescale stage.
 
 Rescale/full execution MUST require a fresh preset target and MUST NOT overwrite existing preset artifacts in place.
 
