@@ -1,13 +1,8 @@
 import pytest
 
 
-def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch):
-    """`ddp_phase_timeout_s: 0` should disable the optional monitored barriers.
-
-    The monitored barriers provide timeouts and nicer error messages, but Stage2-AB still
-    needs a plain `dist.barrier()` for correctness when Channel-B pack counts differ
-    across ranks (DDP no_sync skew).
-    """
+def test_stage2_ab_channel_b_ddp_phase_timeout_zero_rejected_under_ddp(monkeypatch):
+    """`ddp_phase_timeout_s: 0` is invalid when running with DDP."""
 
     import torch.distributed as dist
 
@@ -58,7 +53,6 @@ def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch
             return [({}, {}, 1)], {}
 
         def _stage2_append_post_rollout_segments(self, *, channel: str, segments):
-            # Intentionally skip appending so the step exits before any forward/backward.
             return None
 
     monkeypatch.setattr(dist, "is_available", lambda: True)
@@ -82,10 +76,10 @@ def test_stage2_ab_channel_b_ddp_phase_timeout_zero_disables_monitor(monkeypatch
     monkeypatch.setattr(dist, "monitored_barrier", _boom)
 
     t = DummyTrainer()
-    with pytest.raises(AssertionError, match="produced no packs"):
+    with pytest.raises(ValueError, match=r"ddp_phase_timeout_s must be > 0 under DDP"):
         t._stage2_b_step_budgeted_train(
             t.model,
             raw_samples=[{"messages": []}],
             global_step=1,
         )
-    assert barrier_calls["n"] == 1
+    assert barrier_calls["n"] == 0

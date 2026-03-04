@@ -113,12 +113,15 @@ def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
     ):
         Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": "oops"})
 
-    cfg = Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": 0})
-    assert cfg.ddp_phase_timeout_s == pytest.approx(0.0)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.ddp_phase_timeout_s must be > 0",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": 0})
 
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.channel_b\.ddp_phase_timeout_s must be >= 0",
+        match=r"stage2_ab\.channel_b\.ddp_phase_timeout_s must be > 0",
     ):
         Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": -1})
 
