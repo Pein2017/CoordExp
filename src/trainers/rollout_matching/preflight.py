@@ -286,6 +286,52 @@ def build_stage2_launcher_preflight(
         else:
             server_truncation_strategy = trunc
 
+    # Optional vLLM EngineArgs passthrough for server launches.
+    #
+    # This is the only reliable way to keep vLLM server-side prompt tokenization
+    # identical to local teacher-forcing encode for Qwen3-VL, since the HF
+    # processor defaults to do_resize=True (which can upscale small images and
+    # change the number of `<|image_pad|>` tokens).
+    vllm_engine_kwargs: dict[str, Any] = {}
+    mm_processor_kwargs_raw = vllm_cfg.get("mm_processor_kwargs")
+    if mm_processor_kwargs_raw is not None:
+        if not isinstance(mm_processor_kwargs_raw, Mapping):
+            raise TypeError(
+                "rollout_matching.vllm.mm_processor_kwargs must be a mapping when provided"
+            )
+        mm_processor_kwargs: dict[str, Any] = dict(mm_processor_kwargs_raw)
+        allowed_keys = {"do_resize"}
+        unknown_keys = set(mm_processor_kwargs.keys()) - set(allowed_keys)
+        if unknown_keys:
+            raise ValueError(
+                "rollout_matching.vllm.mm_processor_kwargs contains unsupported keys: "
+                f"{sorted(unknown_keys)} (allowed: {sorted(allowed_keys)})"
+            )
+
+        if "do_resize" in mm_processor_kwargs:
+            raw = mm_processor_kwargs.get("do_resize")
+            if isinstance(raw, bool):
+                do_resize = raw
+            elif isinstance(raw, int) and raw in {0, 1}:
+                do_resize = bool(raw)
+            elif isinstance(raw, str):
+                raw_s = raw.strip().lower()
+                if raw_s in {"true", "1", "yes"}:
+                    do_resize = True
+                elif raw_s in {"false", "0", "no"}:
+                    do_resize = False
+                else:
+                    raise TypeError(
+                        "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
+                    )
+            else:
+                raise TypeError(
+                    "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
+                )
+            mm_processor_kwargs["do_resize"] = do_resize
+
+        vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
+
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "eval_rollout_backend": rollout_contract["eval_rollout_backend"],
@@ -304,6 +350,7 @@ def build_stage2_launcher_preflight(
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
         "vllm_gpu_memory_utilization": gpu_memory_utilization,
+        "vllm_engine_kwargs": vllm_engine_kwargs,
         "server_torch_dtype": server_torch_dtype,
     }
 

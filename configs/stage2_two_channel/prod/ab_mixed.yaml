@@ -102,6 +102,11 @@ rollout_matching:
     max_model_len: 14000
     enable_lora: false
     enable_prefix_caching: true
+    # IMPORTANT: Keep vLLM server-side prompt tokenization aligned with local teacher-forcing
+    # encode by disabling HF smart-resize. Our images are offline-rescaled and should not be
+    # upscaled at runtime (otherwise `<|image_pad|>` token counts can drift).
+    mm_processor_kwargs:
+      do_resize: false
     server:
       timeout_s: 240.0
       infer_timeout_s: 240.0

@@ -230,6 +230,11 @@ class VllmConfig:
     mm_encoder_tp_mode: Optional[str] = None
     skip_mm_profiling: Optional[bool] = None
 
+    # Optional HF multimodal processor kwargs forwarded into vLLM.
+    # Use this to keep server-side prompt tokenization consistent with teacher-forcing
+    # encode (e.g., disable smart-resize when images are already offline-rescaled).
+    mm_processor_kwargs: Optional[Mapping[str, Any]] = None
+
     server: Optional[VllmServerConfig] = None
     sync: Optional[VllmSyncConfig] = None
 

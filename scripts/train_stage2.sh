@@ -139,6 +139,13 @@ emit(
 )
 emit("VLLM_MAX_MODEL_LEN", int(preflight["vllm_max_model_len"]))
 emit("VLLM_ENABLE_LORA", "true" if bool(preflight["vllm_enable_lora"]) else "false")
+engine_kwargs = preflight.get("vllm_engine_kwargs") or {}
+emit(
+    "VLLM_ENGINE_KWARGS_JSON",
+    ""
+    if not engine_kwargs
+    else json.dumps(engine_kwargs, ensure_ascii=False, separators=(",", ":")),
+)
 gpu_mem = preflight.get("vllm_gpu_memory_utilization")
 emit("VLLM_GPU_MEMORY_UTILIZATION_CFG", "" if gpu_mem is None else gpu_mem)
 emit("SERVER_TORCH_DTYPE_CFG", preflight.get("server_torch_dtype") or "")
@@ -346,6 +353,9 @@ echo "[INFO] torch_dtype: ${SERVER_TORCH_DTYPE}"
 echo "[INFO] eager:       ${SERVER_VLLM_ENFORCE_EAGER}"
 echo "[INFO] max_model_len:${VLLM_MAX_MODEL_LEN}"
 echo "[INFO] enable_lora: ${VLLM_ENABLE_LORA} (full-sync-only; adapter sync unsupported)"
+if [[ -n "${VLLM_ENGINE_KWARGS_JSON:-}" ]]; then
+  echo "[INFO] engine_kwargs:${VLLM_ENGINE_KWARGS_JSON}"
+fi
 echo "[INFO] disable_proxy:${DISABLE_PROXY}"
 echo "[INFO] nccl_monitor:${TORCH_NCCL_ENABLE_MONITORING} heartbeat_s:${TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC} dump_on_timeout:${TORCH_NCCL_DUMP_ON_TIMEOUT}"
 echo "========================================================================"
@@ -368,6 +378,9 @@ SERVER_CMD=(swift rollout \
   --vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
   --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
   --vllm_enable_lora "${VLLM_ENABLE_LORA}")
+if [[ -n "${VLLM_ENGINE_KWARGS_JSON:-}" ]]; then
+  SERVER_CMD+=(--vllm_engine_kwargs "${VLLM_ENGINE_KWARGS_JSON}")
+fi
 
 # Keep server prompt encoding identical to learner template.encode:
 # - `--template` pins the exact chat template (e.g. qwen3_vl).

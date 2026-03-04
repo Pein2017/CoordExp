@@ -168,6 +168,11 @@ rollout_matching:
     max_model_len: 14000
     enable_lora: false
     enable_prefix_caching: true
+    # IMPORTANT: keep vLLM server preprocessing aligned with teacher-forcing encode.
+    # HF processor defaults to do_resize=True, which can upscale small images and change
+    # the number of `<|image_pad|>` tokens (prompt_token_ids drift → DDP deadlocks).
+    mm_processor_kwargs:
+      do_resize: false
     server:
       timeout_s: 240.0
       infer_timeout_s: 240.0
