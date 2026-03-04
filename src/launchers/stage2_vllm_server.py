@@ -365,6 +365,8 @@ def _wait_for_server_health(
     _info(f"Waiting for vLLM server readiness: {health_url}")
 
     start_ts = time.monotonic()
+    deadline_ts = float(start_ts + float(wait_timeout_s))
+    poll_interval_s = float(max(0.0, float(wait_interval_s)))
     last_status = 0
     last_body = ""
     while True:
@@ -374,15 +376,32 @@ def _wait_for_server_health(
                 f"return_code={server_proc.returncode}"
             )
 
-        last_status, last_body = _http_get(health_url, timeout_s=5.0)
-        if last_status == 200:
-            return
-        if time.monotonic() - start_ts > wait_timeout_s:
+        now_ts = time.monotonic()
+        remaining_s = float(deadline_ts - now_ts)
+        if remaining_s <= 0.0:
             raise TimeoutError(
                 f"vLLM server did not become ready within {wait_timeout_s}s: {health_url} "
                 f"(last status={last_status}, body={last_body!r})"
             )
-        time.sleep(wait_interval_s)
+
+        # Bound each probe by the remaining readiness budget so one stuck call
+        # cannot exceed WAIT_TIMEOUT by itself.
+        probe_timeout_s = float(min(5.0, max(1e-3, remaining_s)))
+        last_status, last_body = _http_get(health_url, timeout_s=probe_timeout_s)
+        if last_status == 200:
+            return
+
+        now_ts = time.monotonic()
+        remaining_s = float(deadline_ts - now_ts)
+        if remaining_s <= 0.0:
+            raise TimeoutError(
+                f"vLLM server did not become ready within {wait_timeout_s}s: {health_url} "
+                f"(last status={last_status}, body={last_body!r})"
+            )
+
+        sleep_s = float(min(poll_interval_s, remaining_s))
+        if sleep_s > 0.0:
+            time.sleep(sleep_s)
 
 
 def _query_server_world_size(*, world_url: str) -> int:

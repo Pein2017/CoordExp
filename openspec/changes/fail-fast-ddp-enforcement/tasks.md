@@ -52,7 +52,7 @@
 - [ ] 3.2 Run targeted tests:
   - `conda run -n ms python -m pytest tests/` (scoped to any new DDP regression tests)
   - a Stage-2 smoke run (short) to confirm no deadlocks at log/metric aggregation boundaries.
-- [ ] 3.3 Add a regression check that readiness probing cannot exceed `WAIT_TIMEOUT` due to a stuck probe (e.g., verify `curl` uses connect+max time).
+- [x] 3.3 Add a regression check that readiness probing cannot exceed `WAIT_TIMEOUT` due to a stuck probe (e.g., verify `curl` uses connect+max time).
 - [x] 3.4 Add a CPU DDP test (2 ranks) that simulates a rank0-only side effect failure and asserts both ranks exit (non-zero) without hanging at the exit barrier.
 - [x] 3.5 Add a CPU DDP test (2 ranks) that simulates a non-rank0 exception inside a DDP-critical aggregation step and asserts both ranks terminate (non-zero) without hanging at a later collective.
 
@@ -81,6 +81,13 @@
     - Result: `3 passed`
     - `conda run -n ms python -m pytest -q tests/test_ddp_fail_fast_multiprocess.py tests/test_ddp_fail_fast_stage2_metrics.py tests/test_ddp_vllm_sync_failure_propagation.py tests/test_stage2_ab_ddp_phase_monitor_disable.py`
     - Result: `10 passed`
+- Readiness-timeout budget regression added:
+  - `tests/test_stage2_vllm_server_launcher.py::test_wait_for_server_health_bounds_probe_timeout_by_remaining_budget`
+  - Launcher fix: `src/launchers/stage2_vllm_server.py::_wait_for_server_health` now caps each probe timeout by remaining `WAIT_TIMEOUT` budget.
+  - Commands run:
+    - `conda run -n ms python -m pytest -q tests/test_stage2_vllm_server_launcher.py tests/test_ddp_fail_fast_multiprocess.py`
+    - Result: `15 passed`
+    - `conda run -n ms python -m pytest -q tests/test_stage2_vllm_server_launcher.py tests/test_ddp_fail_fast_multiprocess.py tests/test_ddp_fail_fast_stage2_metrics.py tests/test_ddp_vllm_sync_failure_propagation.py tests/test_stage2_ab_ddp_phase_monitor_disable.py`
+    - Result: `22 passed`
 - Remaining open items require additional evidence:
-  - Stage-2 smoke run evidence (`3.2`),
-  - explicit timeout-bypass regression for readiness probing (`3.3`).
+  - Stage-2 smoke run evidence (`3.2`).

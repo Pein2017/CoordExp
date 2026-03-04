@@ -153,3 +153,42 @@ def test_launch_swift_rollout_server_cleans_up_on_health_timeout(monkeypatch) ->
 
     assert terminated["called"] is True
     assert terminated["proc"] is fake_proc
+
+
+def test_wait_for_server_health_bounds_probe_timeout_by_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProc:
+        returncode = None
+
+        def poll(self) -> None:
+            return None
+
+    proc = FakeProc()
+    now = {"t": 0.0}
+    probe_timeouts: list[float] = []
+
+    def fake_monotonic() -> float:
+        return float(now["t"])
+
+    def fake_http_get(_url: str, *, timeout_s: float) -> tuple[int, str]:
+        probe_timeouts.append(float(timeout_s))
+        # Simulate a stuck probe consuming exactly the provided timeout budget.
+        now["t"] += float(timeout_s)
+        return 503, "pending"
+
+    monkeypatch.setattr(launcher.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(launcher.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(launcher, "_http_get", fake_http_get)
+
+    with pytest.raises(TimeoutError, match=r"did not become ready within 0.2s"):
+        launcher._wait_for_server_health(
+            server_proc=proc,
+            health_url="http://127.0.0.1:8000/health/",
+            wait_timeout_s=0.2,
+            wait_interval_s=0.1,
+        )
+
+    assert probe_timeouts
+    assert max(probe_timeouts) <= 0.200001
+    assert max(probe_timeouts) < 5.0
