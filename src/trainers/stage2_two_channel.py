@@ -558,14 +558,8 @@ class Stage2ABTrainingTrainer(
             dist = None  # type: ignore[assignment]
 
         if dist is not None and dist.is_available() and dist.is_initialized():
-            try:
-                world_size = int(dist.get_world_size())
-            except RuntimeError:
-                world_size = 1
-            try:
-                rank = int(dist.get_rank())
-            except RuntimeError:
-                rank = 0
+            world_size = int(dist.get_world_size())
+            rank = int(dist.get_rank())
 
         return int(rank), int(world_size), dist
 
@@ -606,26 +600,22 @@ class Stage2ABTrainingTrainer(
         metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
 
         if dist is not None and int(world_size) > 1:
-            try:
-                gathered_keys: List[Any] = [None] * int(world_size)
-                dist.all_gather_object(gathered_keys, metric_keys)
+            gathered_keys: List[Any] = [None] * int(world_size)
+            dist.all_gather_object(gathered_keys, metric_keys)
 
-                merged_keys: Dict[str, None] = {}
-                for item in gathered_keys:
-                    if not isinstance(item, (list, tuple)):
-                        continue
-                    for key_raw in item:
-                        key = str(key_raw)
-                        merged_keys[key] = None
-                        reduced.setdefault(key, 0.0)
-
-                metric_keys = sorted(merged_keys.keys())
-            except (AttributeError, RuntimeError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "stage2-ab metric key sync failed; proceeding without key union: %r",
-                        exc,
+            merged_keys: Dict[str, None] = {}
+            for item in gathered_keys:
+                if not isinstance(item, (list, tuple)):
+                    raise RuntimeError(
+                        "stage2-ab metric key sync produced non-list keys "
+                        f"(rank={int(rank)}/{int(world_size)} type={type(item).__name__})"
                     )
+                for key_raw in item:
+                    key = str(key_raw)
+                    merged_keys[key] = None
+                    reduced.setdefault(key, 0.0)
+
+            metric_keys = sorted(merged_keys.keys())
 
         sum_key_set: set[str] = set()
         max_key_set: set[str] = set()
@@ -742,11 +732,10 @@ class Stage2ABTrainingTrainer(
                         for key in mean_keys:
                             reduced[key] = float(reduced[key] / scale)
             except (AttributeError, RuntimeError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "stage2-ab metric all-reduce failed; falling back to local metrics: %r",
-                        exc,
-                    )
+                raise RuntimeError(
+                    "stage2-ab metric all-reduce failed (DDP is initialized); "
+                    f"rank={int(rank)}/{int(world_size)}"
+                ) from exc
 
         if has_rollout_parse_inputs:
             trunc_num = float(

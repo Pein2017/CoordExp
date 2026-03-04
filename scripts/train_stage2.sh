@@ -572,7 +572,12 @@ WORLD_URL="http://${HEALTH_HOST}:${SERVER_PORT}/get_world_size/"
 echo "[INFO] Waiting for vLLM server readiness: ${HEALTH_URL}"
 start_ts=$(date +%s)
 while true; do
-  http_code=$(curl --noproxy "*" -s -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || true)
+  http_code=$(
+    curl --noproxy "*" -s \
+      --connect-timeout 2 --max-time 5 \
+      -o /dev/null -w '%{http_code}' \
+      "${HEALTH_URL}" || true
+  )
   if [[ "${http_code}" == "200" ]]; then
     break
   fi
@@ -584,7 +589,11 @@ while true; do
   sleep "${WAIT_INTERVAL}"
 done
 
-SERVER_WORLD_RAW="$(curl --noproxy "*" -s "${WORLD_URL}" || true)"
+SERVER_WORLD_RAW="$(
+  curl --noproxy "*" -s \
+    --connect-timeout 2 --max-time 5 \
+    "${WORLD_URL}" || true
+)"
 SERVER_WORLD_SIZE="$(
   SERVER_WORLD_RAW="${SERVER_WORLD_RAW}" python - <<'PY'
 import json

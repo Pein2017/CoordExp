@@ -7426,25 +7426,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             and dist.is_initialized()
             and int(world_size) > 1
         ):
-            try:
-                gathered_keys: List[Any] = [None] * int(world_size)
-                dist.all_gather_object(gathered_keys, metric_keys)
+            gathered_keys: List[Any] = [None] * int(world_size)
+            dist.all_gather_object(gathered_keys, metric_keys)
 
-                merged_keys: Dict[str, None] = {}
-                for item in gathered_keys:
-                    if not isinstance(item, (list, tuple)):
-                        continue
-                    for key_raw in item:
-                        key = str(key_raw)
-                        merged_keys[key] = None
-                        reduced.setdefault(key, 0.0)
-                metric_keys = sorted(merged_keys.keys())
-            except (TypeError, ValueError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "rollout metric key sync failed; proceeding without key union: %r",
-                        exc,
+            merged_keys: Dict[str, None] = {}
+            for item in gathered_keys:
+                if not isinstance(item, (list, tuple)):
+                    raise RuntimeError(
+                        "rollout metric key sync produced non-list keys "
+                        f"(rank={int(rank)}/{int(world_size)} type={type(item).__name__})"
                     )
+                for key_raw in item:
+                    key = str(key_raw)
+                    merged_keys[key] = None
+                    reduced.setdefault(key, 0.0)
+            metric_keys = sorted(merged_keys.keys())
 
         sum_key_set: set[str] = set()
         max_key_set: set[str] = set()
@@ -7544,11 +7540,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     for key in mean_keys:
                         reduced[key] = float(reduced.get(key, 0.0) / scale)
             except (TypeError, ValueError) as exc:
-                if int(rank) == 0:
-                    logger.warning(
-                        "rollout metric all-reduce failed; falling back to local metrics: %r",
-                        exc,
-                    )
+                raise RuntimeError(
+                    "rollout metric all-reduce failed (DDP is initialized); "
+                    f"rank={int(rank)}/{int(world_size)}"
+                ) from exc
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
 
