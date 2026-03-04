@@ -4731,22 +4731,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             and int(world_size) > 1
         ):
             try:
-                try:
-                    backend = str(dist.get_backend()).lower()
-                except (TypeError, ValueError):
-                    backend = ""
-
-                reduce_device = torch.device("cpu")
-                if backend == "nccl" and torch.cuda.is_available():
-                    reduce_device = self.model.device
-
-                flag = torch.tensor(
-                    [need_sync], device=reduce_device, dtype=torch.int32
-                )
-                dist.broadcast(flag, src=0)
-                need_sync = int(flag.item())
+                backend = str(dist.get_backend()).lower()
             except (TypeError, ValueError):
-                need_sync = int(step != last)
+                backend = ""
+
+            reduce_device = torch.device("cpu")
+            if backend == "nccl" and torch.cuda.is_available():
+                reduce_device = self.model.device
+
+            flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
+            dist.broadcast(flag, src=0)
+            need_sync = int(flag.item())
 
         if need_sync == 0:
             return
@@ -4782,11 +4777,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             self._vllm_server_last_synced_step = step
             return
 
-        # Multi-process learner (DDP): rank0-only full sync with strict barrier ordering.
+        # Multi-process learner (DDP): rank0-only full sync with strict collective ordering.
         assert dist is not None and dist.is_initialized()
 
-        # IMPORTANT: no early returns after this point without symmetric barriers.
-        dist.barrier()
+        # IMPORTANT: no early returns after this point without symmetric collectives.
+        # The broadcasts below synchronize all ranks while rank0 performs the sync.
 
         sync_failed = 0
         sync_err_msg = ""
@@ -4827,7 +4822,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             dist.broadcast_object_list(msg_list, src=0)
         sync_err_msg = str(msg_list[0])
 
-        dist.barrier()
         if int(sync_failed) != 0:
             raise RuntimeError(
                 "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
