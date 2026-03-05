@@ -417,17 +417,26 @@ This document previously used multiple names for the same concepts. The unified 
 
 ## 6. Stage-2: EM-ish Training Loop (Rollout → Match → Update)
 
-### 6.1 Two-channel schedule (recommended)
-We run Stage-2 as a **mixture** over steps / samples:
-- **Channel-A (hot path, e.g., 95% steps):** no rollout; always available and fast.
-- **Channel-B (cold path, e.g., 5% steps or 1/P batches):** true rollout + Hungarian + FN injection + one-pass teacher-forced update to fix discrete/set-level failure modes.
+### 6.1 Two-channel schedule (tunable `b_ratio`)
+We run Stage-2 as a **mixture** over optimizer steps / samples:
+- **Channel-A (hot path):** no rollout; always available and fast.
+- **Channel-B (cold path):** true rollout + Hungarian + FN injection + one-pass teacher-forced update to fix discrete/set-level failure modes.
+
+The mixture ratio is controlled by `b_ratio` (a.k.a. `ρ`): the target fraction of Channel-B steps.
+This is a **hyperparameter** and should be treated as *tunable per experiment* (dataset/model/packing regime),
+not a fixed “recommended default”.
+
+Practical tuning signals (non-exhaustive):
+- If set-level errors dominate (missed objects, extra objects, ordering/format issues), higher `b_ratio` usually helps because Channel-B directly trains on rollout prefixes + matching.
+- If training shows strong "near-duplication" pressure (same `desc` repeated many times with near-identical boxes), `b_ratio` interacts with how often the model is exposed to self-generated prefixes; see `progress/stage2_ab_near_duplication_diagnosis_2026-03-05.md` for a concrete observed failure mode to watch for.
+- If throughput / queue availability is limiting (actor cannot keep up), `b_ratio` should be chosen to avoid implicit fallback behavior; prefer strict fail-fast semantics to keep `ρ_hat` well-defined (Section 6.1.1).
 
 Rationale:
 - In practice, “hard CE on coord tokens” is already strong in Stage-1/SFT, so Stage-2 should not assume coord-distribution losses will dominate.
 - The main remaining instability is typically **self-context generation** (long JSON, permutation, missing/extras/format).
   Channel-B targets that directly; Channel-A provides a cheap, smooth geometry signal to stabilize coord decoding and reduce drift.
 
-Default Stage-2 settings:
+Core Stage-2 knobs (independent of `b_ratio`):
 - Channel-A (default): `stage2_ab.coord_ctx_embed_mode="st"`, `stage2_ab.coord_decode_mode="exp"`, `stage2_ab.softctx_grad_mode="unroll"`, `stage2_ab.n_softctx_iter=2`.
 - Channel-A fallback when unstable: `softctx_grad_mode=em_detach`.
 - Channel-B: Unified one-pass update (rollout prefix + FN injection + single teacher-forced forward).
@@ -716,7 +725,7 @@ Combine both channels:
 
 - Stage-2 is a mixture objective:
   - `L_stage2 = (1-ρ) * L_A + ρ * L_B`
-  - where `ρ` is the Channel-B frequency/probability (small, e.g. 0.05).
+  - where `ρ` is the Channel-B frequency/probability (a tunable hyperparameter; `ρ=b_ratio` in configs).
   - **Implementation note:** in code, the mixture is implemented by deterministic step-level routing
     (Bresenham on `global_step`). Under strict fail-fast, realized `ρ_hat` tracks the scheduler target;
     under explicit fallback modes, realized `ρ_hat` tracks executed B-steps after reroutes.
