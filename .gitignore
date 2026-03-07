@@ -44,6 +44,8 @@
 !.codex_config/pein/
 !.codex_config/pein/skills/
 !.codex_config/pein/skills/**
+# Ignore downloaded/installed skill system runtime artifacts
+.codex_config/pein/skills/.system/
 
 # Ignore common Python cache folders
 **/__pycache__/**
@@ -99,3 +101,6 @@
 **/*.pt
 **/*.bin
 **/*.safetensors
+
+# Ignore generated/managed local Codex skill runtime artifacts
+.codex_config/pein/skills/.system/
