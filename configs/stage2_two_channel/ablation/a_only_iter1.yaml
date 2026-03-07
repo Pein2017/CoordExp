@@ -9,6 +9,8 @@ extends: ../prod/desc_first_a_only.yaml
 # Loss-composition guardrails (explicit, to avoid accidental drift via inheritance):
 # - bbox_geo: SmoothL1 (+ CIoU)
 # - coord_reg: hardCE (coord_token_ce) + softCE + W1 + coord/text gating
+model:
+  model: output/stage1_2b/hardce_softce-ckpt_1344-merged
 
 training:
   run_name: epoch_2-eff_size_64-n_softctx_iter_1-a_only

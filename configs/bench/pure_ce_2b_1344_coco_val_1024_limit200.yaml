@@ -1,0 +1,28 @@
+run:
+  name: pure_ce_2b_1344_coco_val_limit200_res1024
+  output_dir: output/bench
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: output/stage1_2b/pure_ce-ckpt_1344-merged/
+  mode: auto
+  pred_coord_mode: auto
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  backend:
+    type: hf
+  generation:
+    temperature: 0.1
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 16
+    seed: 42
+  device: cuda:0
+  limit: 200
+  detect_samples: 128
