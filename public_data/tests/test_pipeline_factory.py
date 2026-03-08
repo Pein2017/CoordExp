@@ -1021,3 +1021,37 @@ def test_run_pipeline_factory_cli_rejects_max_objects_outside_coord(
         with pytest.raises(SystemExit) as exc_info:
             run_pipeline_factory.parse_args()
         assert int(exc_info.value.code) == 2
+
+
+def test_run_pipeline_factory_cli_defaults_to_eight_workers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from public_data.pipeline import DEFAULT_NUM_WORKERS
+    from public_data.scripts import run_pipeline_factory
+
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = dataset_dir / "raw"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_pipeline_factory.py",
+            "--mode",
+            "rescale",
+            "--dataset-id",
+            "coco",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--raw-dir",
+            str(raw_dir),
+            "--preset",
+            "rescale_32_1024_bbox",
+        ],
+    )
+
+    args = run_pipeline_factory.parse_args()
+    assert args.num_workers == DEFAULT_NUM_WORKERS == 8

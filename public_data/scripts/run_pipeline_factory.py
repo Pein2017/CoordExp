@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from public_data.defaults import DEFAULT_NUM_WORKERS
 from public_data.pipeline import PipelineConfig, PipelinePlanner
 from public_data.pipeline.adapters import build_default_registry
 
@@ -28,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-factor", type=int, default=32)
     parser.add_argument("--max-pixels", type=int, default=32 * 32 * 768)
     parser.add_argument("--min-pixels", type=int, default=32 * 32 * 4)
-    parser.add_argument("--num-workers", type=int, default=1)
+    parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
 
     parser.add_argument("--assume-normalized", action="store_true")
     parser.add_argument("--compact", action="store_true")

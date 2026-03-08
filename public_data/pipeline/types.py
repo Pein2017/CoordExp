@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
+from public_data.defaults import DEFAULT_NUM_WORKERS
+
 SPLITS: tuple[str, ...] = ("train", "val")
 
 
@@ -17,7 +19,7 @@ class PipelineConfig:
     image_factor: int = 32
     max_pixels: int = 32 * 32 * 768
     min_pixels: int = 32 * 32 * 4
-    num_workers: int = 1
+    num_workers: int = DEFAULT_NUM_WORKERS
     relative_images: bool = True
     assume_normalized: bool = False
     compact_json: bool = False

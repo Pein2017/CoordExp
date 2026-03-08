@@ -13,6 +13,7 @@ from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, MutableMapping, cast
 
+from public_data.defaults import DEFAULT_NUM_WORKERS
 from PIL import Image
 
 from src.common.paths import resolve_image_path_best_effort
@@ -304,7 +305,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-images", type=Path, required=True)
     p.add_argument("--image-root", type=Path, help="Override root for resolving image paths")
     p.add_argument("--target-size", type=int, default=1024, help="Target width/height in pixels")
-    p.add_argument("--num-workers", type=int, default=1)
+    p.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
     p.add_argument("--relative-images", action="store_true", help="Relativize image paths to output JSONL dir")
     return p.parse_args()
 

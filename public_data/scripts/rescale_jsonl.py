@@ -26,6 +26,7 @@ from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any, Dict, Iterator, MutableMapping, cast
 
+from public_data.defaults import DEFAULT_NUM_WORKERS
 from src.datasets.preprocessors.resize import SmartResizeParams, SmartResizePreprocessor
 
 
@@ -187,7 +188,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--image-factor", type=int, default=SmartResizeParams().image_factor, help="Grid factor (e.g., 32)")
     p.add_argument("--max-pixels", type=int, default=SmartResizeParams().max_pixels, help="Max pixel budget after resize")
     p.add_argument("--min-pixels", type=int, default=SmartResizeParams().min_pixels, help="Min pixel budget after resize")
-    p.add_argument("--num-workers", type=int, default=1, help="Parallel workers (<= CPU cores)")
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=DEFAULT_NUM_WORKERS,
+        help="Parallel workers (<= CPU cores)",
+    )
     p.add_argument("--relative-images", action="store_true", help="Rewrite image paths to be relative to output JSONL dir")
     return p.parse_args()
 
