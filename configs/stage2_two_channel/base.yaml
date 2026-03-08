@@ -97,7 +97,11 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: duplicate_ul
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -135,7 +139,8 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         config: {}
-  channel_b: {}
+  channel_b:
+    duplicate_iou_threshold: 0.90
 
 custom:
   json_format: standard

@@ -289,7 +289,10 @@ def test_unknown_stage2_ab_key_fails_fast():
     payload = _base_training_payload()
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
+        "pipeline": {
+            "objective": _canonical_stage2_two_channel_objective(),
+            "diagnostics": [],
+        },
         "unknown_top": 1,
     }
 
@@ -401,7 +404,7 @@ def _base_stage2_two_channel_payload() -> dict:
     }
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
+        "pipeline": {"objective": _canonical_stage2_two_channel_objective(), "diagnostics": []},
         "channel_b": {},
     }
     return payload
@@ -425,7 +428,6 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
         "self_context_struct_ce_weight": 0.1,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
-        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
     }
     if isinstance(config, dict):
         token_ce_cfg.update(dict(config))
@@ -438,21 +440,92 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
     }
 
 
+def _pipeline_duplicate_ul_spec(
+    *, channels: list[str] | None = None, config: dict | None = None
+) -> dict:
+    return {
+        "name": "duplicate_ul",
+        "enabled": True,
+        "weight": 1.0,
+        "channels": list(channels) if channels is not None else ["B"],
+        "config": dict(config or {}),
+    }
+
+
+def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
+    bbox_geo_cfg = {
+        "smoothl1_weight": 0.0,
+        "ciou_weight": 0.0,
+        "a1_smoothl1_weight": 0.0,
+        "a1_ciou_weight": 0.0,
+    }
+    if isinstance(config, dict):
+        bbox_geo_cfg.update(dict(config))
+    return {
+        "name": "bbox_geo",
+        "enabled": True,
+        "weight": 0.0,
+        "channels": ["A", "B"],
+        "config": bbox_geo_cfg,
+    }
+
+
+def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
+    coord_reg_cfg = {
+        "coord_ce_weight": 0.0,
+        "coord_el1_weight": 0.0,
+        "coord_ehuber_weight": 0.0,
+        "coord_huber_delta": 0.001,
+        "coord_entropy_weight": 0.0,
+        "coord_gate_weight": 0.0,
+        "text_gate_weight": 0.0,
+        "soft_ce_weight": 0.0,
+        "self_context_soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "a1_soft_ce_weight": 0.0,
+        "a1_w1_weight": 0.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+        "target_truncate": None,
+    }
+    if isinstance(config, dict):
+        coord_reg_cfg.update(dict(config))
+    return {
+        "name": "coord_reg",
+        "enabled": True,
+        "weight": 0.0,
+        "channels": ["A", "B"],
+        "config": coord_reg_cfg,
+    }
+
+
+def _canonical_stage2_two_channel_objective() -> list[dict]:
+    return [
+        _pipeline_token_ce_spec(),
+        _pipeline_duplicate_ul_spec(),
+        _pipeline_bbox_geo_spec(),
+        _pipeline_coord_reg_spec(),
+    ]
+
+
 def test_stage2_pipeline_unknown_module_name_fails_fast():
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
+            _pipeline_token_ce_spec(),
             {
                 "name": "unknown_module",
                 "enabled": True,
                 "weight": 1.0,
-                "channels": ["A", "B"],
+                "channels": ["B"],
                 "config": {},
-            }
+            },
+            _pipeline_bbox_geo_spec(),
+            _pipeline_coord_reg_spec(),
         ],
     }
 
-    with pytest.raises(ValueError, match=r"stage2_ab\.pipeline\.objective\[0\]\.name"):
+    with pytest.raises(ValueError, match=r"stage2_ab\.pipeline\.objective\[1\]\.name"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -462,6 +535,8 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
         "objective": [
             _pipeline_token_ce_spec(),
             _pipeline_token_ce_spec(),
+            _pipeline_bbox_geo_spec(),
+            _pipeline_coord_reg_spec(),
         ],
     }
 
@@ -469,22 +544,15 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-@pytest.mark.parametrize(
-    "channels, expected",
-    [(["A"], ("A",)), (["B"], ("B",)), (["A", "B", "A"], ("A", "B"))],
-)
-def test_stage2_pipeline_channels_scope_parses(channels: list[str], expected: tuple[str, ...]):
+def test_stage2_pipeline_canonical_channels_scope_parses():
     payload = _base_stage2_two_channel_payload()
-    payload["stage2_ab"]["pipeline"] = {
-        "objective": [
-            _pipeline_token_ce_spec(channels=list(channels)),
-        ]
-    }
+    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.stage2_ab is not None
     assert cfg.stage2_ab.pipeline is not None
-    assert cfg.stage2_ab.pipeline.objective[0].channels == expected
+    assert cfg.stage2_ab.pipeline.objective[0].channels == ("A", "B")
+    assert cfg.stage2_ab.pipeline.objective[1].channels == ("B",)
 
 
 def test_stage2_pipeline_module_config_unknown_key_fails_fast():
@@ -492,6 +560,9 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
+            _pipeline_duplicate_ul_spec(),
+            _pipeline_bbox_geo_spec(),
+            _pipeline_coord_reg_spec(),
         ]
     }
 
@@ -514,7 +585,10 @@ def test_guardrail_rollout_aligned_rejects_stage2_pipeline():
     payload = _base_stage2_rollout_aligned_payload()
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
+        "pipeline": {
+            "objective": _canonical_stage2_two_channel_objective(),
+            "diagnostics": [],
+        },
     }
 
     with pytest.raises(ValueError, match=r"stage2_ab\.pipeline is not allowed"):

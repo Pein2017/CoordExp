@@ -10,6 +10,7 @@ from .modules import (
     run_bbox_geo_module,
     run_coord_diag_module,
     run_coord_reg_module,
+    run_duplicate_ul_module,
     run_token_ce_module,
 )
 
@@ -46,6 +47,7 @@ def run_teacher_forcing_pipeline(
 
     objective_registry = {
         "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
+        "duplicate_ul": lambda spec: run_duplicate_ul_module(context=context, spec=spec),
         "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
         "coord_reg": lambda spec: run_coord_reg_module(context=context, spec=spec, state=state),
     }

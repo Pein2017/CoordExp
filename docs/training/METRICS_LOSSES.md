@@ -33,7 +33,7 @@ Key replacements (non-exhaustive):
       - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
       - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
     - Channel-B:
-      - `loss/B_rollout_text/{struct_ce,desc_ce}`
+      - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}`
       - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
       - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 - Old provenance prefix: `obj/<provenance>/<atom>` (removed) -> `loss/<provenance>/<atom>`
@@ -70,12 +70,13 @@ ST bridge diagnostics surface:
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
   - Channel-B:
-    - `loss/B_rollout_text/{struct_ce,desc_ce}`
+    - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}`
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 
 Reduction/naming contract:
 - `loss/*` keys are mean-like scalars (comparable across packing/batch shapes).
+- `dup/max_desc_count` and `dup/saturation_rate` are mean-like duplicate-collapse gauges.
 - Counter-like totals must use explicit suffixes (`*_total`, `*_count`, `*_sum`, `*_num`, `*_den`).
 - Ratio-like keys should use `*_rate` / `*_frac`.
 - Internal reduction helpers are underscore-prefixed (for example `rollout/_...`) and are removed
@@ -121,14 +122,18 @@ Stage-2 coord-distribution diagnostics (`coord_diag/<provenance>/*`):
   - `coord_diag/<prov>/{acc_top5,p_gt_mean,margin_mean,expected_bin_mae,expected_bin_abs_err_p90,coord_vocab_mass_mean}`
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
-- Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) uses unified Channel-B by default:
-  rollout prefix + FN injection + one teacher-forced forward with explicit CE masks.
+- Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) now uses canonical clean-prefix Channel-B:
+  raw rollout -> strict accepted bbox objects -> sequential dedup -> clean teacher-forced prefix + FN injection + duplicate UL.
 - Channel-B CE/geometry semantics:
-  - matched prefix: structure CE ON, desc/coord CE OFF,
-  - FP prefix: structure/desc/coord CE OFF,
+  - matched clean prefix: structure CE ON, desc/coord CE OFF,
+  - generic unmatched clean prefix extras: structure/desc/coord CE OFF,
   - FN-injected: structure+desc CE ON, coord CE OFF,
-  - geometry loss on matched + FN, FP geometry OFF.
-- Legacy `reordered_gt_sft` has been removed (unified Channel-B only).
+  - geometry loss on matched clean prefix objects + FN, generic unmatched clean extras OFF.
+- Duplicate handling:
+  - `loss/B_rollout_text/duplicate_ul` is the explicit Channel-B duplicate-unlikelihood atom,
+  - duplicates are removed from the positive clean prefix and folded into boundary-local UL targets,
+  - same-boundary duplicates that share the same divergence token collapse to one UL term.
+- Legacy `reordered_gt_sft` and `rollout_drop_invalid_struct_ce_multiplier` have been removed.
 
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
 
@@ -285,13 +290,51 @@ These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Ch
   - **Why:** identifies dominant failure modes in rollout outputs.
 
 - `stage2_ab/channel_b/closure_supervision/N_drop`
-  - **What:** number of samples dropped because deterministic closure-marker resolution failed (`}` / `<|im_end|>` alignment).
-  - **Why:** should remain ~0; non-zero indicates truncation or marker alignment issues.
+  - **What:** legacy-named counter for samples that hit closure-resolution fallback because deterministic closure-marker bookkeeping failed (`}` / `<|im_end|>` alignment).
+  - **Why:** should remain ~0; non-zero indicates truncation or marker-alignment issues, but the sample is still kept on the normal FN-tail supervision path.
 
 - `stage2/invalid_rollout`, `stage2_ab/channel_b/invalid_rollout`
   - **What:** number of samples in this step where the rollout was marked invalid for Channel-B supervision construction.
-    - Includes parser-level invalid rollouts (container/prefix parse fallback) and samples dropped due to closure-marker resolution failure (also counted by `stage2_ab/channel_b/closure_supervision/N_drop`).
-  - **Why:** tracks sample-level rollout/container failures that force FN-only completion supervision or drop the sample entirely.
+    - Includes parser-level invalid rollouts that fall back to the canonical empty prefix.
+    - Does **not** include closure-resolution fallback activations; those stay under `stage2_ab/channel_b/closure_supervision/N_drop`.
+  - **Why:** tracks parser/container failures that force FN-only completion supervision on an empty clean prefix.
+
+### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B duplicate-collapse diagnostics
+
+- `dup/max_desc_count`
+  - **What:** batch-mean of the per-sample maximum normalized-desc multiplicity in raw bbox-valid Channel-B predictions.
+  - **Why:** a direct near-duplication gauge; should fall when clean-prefix training is working.
+
+- `dup/saturation_rate`
+  - **What:** batch-mean fraction of raw bbox-valid Channel-B predictions containing at least one coord at `0` or `999`.
+  - **Why:** boundary-drift / saturation proxy that often rises with duplicate-heavy truncation.
+
+- `dup/near_iou90_pairs_same_desc_count`
+  - **What:** count of raw bbox-valid prediction pairs with identical normalized desc and `IoU >= 0.90`.
+  - **Why:** targeted duplicate counter.
+
+- `dup/near_iou90_pairs_any_desc_count`
+  - **What:** count of raw bbox-valid prediction pairs with `IoU >= 0.90` regardless of desc.
+  - **Why:** broader self-collision counter.
+
+- `stage2_ab/channel_b/dup/N_raw_bbox_valid`
+  - **What:** total number of raw bbox-valid parsed Channel-B predictions before sequential dedup.
+
+- `stage2_ab/channel_b/dup/N_clean_accepted`
+  - **What:** total number of deduplicated clean accepted Channel-B objects used for matching and positive teacher forcing.
+
+- `stage2_ab/channel_b/dup/N_duplicates`
+  - **What:** total number of duplicate objects removed from the positive clean prefix.
+
+- `stage2_ab/channel_b/dup/N_duplicate_bursts`
+  - **What:** total number of clean boundaries that received at least one duplicate burst.
+
+- `stage2_ab/channel_b/dup/N_ul_boundaries`
+  - **What:** total number of clean boundaries that contributed at least one retained duplicate-UL term.
+
+- `stage2_ab/channel_b/dup/N_ul_skipped_no_divergence`
+  - **What:** total number of duplicate continuations skipped because no safe divergence token could be used.
+  - **Why:** tokenizer/serialization safety check; should stay low.
 
 ### Stage-2 Two-Channel Rollout Tags (Channel-B Steps Only)
 

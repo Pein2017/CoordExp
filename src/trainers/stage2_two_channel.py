@@ -4,7 +4,7 @@ import math
 import os
 import time
 import logging
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
 
+from src.common.semantic_desc import normalize_desc
 from src.common.object_field_order import build_object_payload
 from src.utils.assistant_json import dumps_coordjson
 
@@ -80,6 +81,8 @@ class _PendingStage2Log:
 
     @staticmethod
     def _is_counter_like_key(key: str) -> bool:
+        if key in {"dup/max_desc_count"}:
+            return False
         if key in {
             "stage2/raw_rollouts",
             "stage2/invalid_rollout",
@@ -105,6 +108,7 @@ class _PendingStage2Log:
     def _is_mean_like_key(key: str) -> bool:
         return (
             key.startswith("loss/")
+            or key in {"dup/max_desc_count", "dup/saturation_rate"}
             or key.startswith("stage2/channel_")
             or key.startswith("rollout/")
             or key.startswith("coord_diag/")
@@ -399,6 +403,379 @@ def _matched_prefix_structure_positions(
         prefix_text=prefix_text,
         matched_pred_objects=matched_pred_objects,
     )
+
+
+@dataclass(frozen=True)
+class _ValueSpanObject:
+    value_span: Tuple[int, int]
+
+
+@dataclass(frozen=True)
+class _CanonicalPrefixData:
+    prefix_text: str
+    prefix_token_ids: List[int]
+    boundary_prefix_texts: List[str]
+    object_value_spans: List[Tuple[int, int]]
+
+
+def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float:
+    if len(box_a) != 4 or len(box_b) != 4:
+        return 0.0
+    try:
+        ax1, ay1, ax2, ay2 = [int(v) for v in box_a]
+        bx1, by1, bx2, by2 = [int(v) for v in box_b]
+    except (TypeError, ValueError):
+        return 0.0
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+    inter_w = max(0, inter_x2 - inter_x1)
+    inter_h = max(0, inter_y2 - inter_y1)
+    inter = float(inter_w * inter_h)
+    area_a = float(max(0, ax2 - ax1) * max(0, ay2 - ay1))
+    area_b = float(max(0, bx2 - bx1) * max(0, by2 - by1))
+    union = float(area_a + area_b - inter)
+    if union <= 0.0:
+        return 0.0
+    return float(inter / union)
+
+
+def _serialize_gt_object_entry(
+    *,
+    obj: GTObject,
+    object_field_order: str,
+) -> str:
+    if str(obj.geom_type) != "bbox_2d":
+        raise ValueError(
+            f"Channel-B clean-prefix v1 only supports bbox_2d objects; got {obj.geom_type!r}"
+        )
+    if len(obj.points_norm1000) != 4:
+        raise ValueError(
+            "Channel-B clean-prefix v1 requires bbox_2d objects with four coord bins"
+        )
+
+    payload = build_object_payload(
+        desc=str(obj.desc),
+        geometry_key="bbox_2d",
+        geometry_value=[f"<|coord_{int(v)}|>" for v in obj.points_norm1000],
+        object_field_order=object_field_order,
+    )
+    return dumps_coordjson(payload)
+
+
+def _build_canonical_prefix_text_data(
+    *,
+    objects: Sequence[GTObject],
+    object_field_order: str,
+) -> Tuple[str, List[str], List[Tuple[int, int]]]:
+    empty_container = dumps_coordjson({"objects": []})
+    if not str(empty_container).endswith("]}"):
+        raise ValueError(
+            "unexpected canonical CoordJSON container rendering for empty objects list"
+        )
+
+    prefix_text = str(empty_container[:-2])
+    boundary_prefix_texts: List[str] = [str(prefix_text)]
+    object_value_spans: List[Tuple[int, int]] = []
+
+    for obj in objects:
+        entry_text = _serialize_gt_object_entry(
+            obj=obj,
+            object_field_order=object_field_order,
+        )
+        if not prefix_text.endswith("["):
+            prefix_text = prefix_text + ", "
+        start = int(len(prefix_text))
+        prefix_text = prefix_text + str(entry_text)
+        object_value_spans.append((start, int(len(prefix_text))))
+        boundary_prefix_texts.append(str(prefix_text))
+
+    return prefix_text, boundary_prefix_texts, object_value_spans
+
+
+def _build_canonical_prefix_data(
+    *,
+    tokenizer: Any,
+    objects: Sequence[GTObject],
+    object_field_order: str,
+) -> _CanonicalPrefixData:
+    prefix_text, boundary_prefix_texts, object_value_spans = (
+        _build_canonical_prefix_text_data(
+            objects=objects,
+            object_field_order=object_field_order,
+        )
+    )
+    prefix_token_ids = [
+        int(t) for t in tokenizer.encode(prefix_text, add_special_tokens=False)
+    ]
+    return _CanonicalPrefixData(
+        prefix_text=str(prefix_text),
+        prefix_token_ids=prefix_token_ids,
+        boundary_prefix_texts=[str(t) for t in boundary_prefix_texts],
+        object_value_spans=[tuple(span) for span in object_value_spans],
+    )
+
+
+def _build_canonical_closed_container_text(
+    *,
+    objects: Sequence[GTObject],
+    object_field_order: str,
+) -> str:
+    prefix_text, _boundary_prefix_texts, _value_spans = _build_canonical_prefix_text_data(
+        objects=objects,
+        object_field_order=object_field_order,
+    )
+    return str(prefix_text) + "]}"
+
+
+def _prefix_token_ids_from_char_cut(
+    *,
+    tokenizer: Any,
+    token_ids: Sequence[int],
+    cut_char_pos: int,
+) -> List[int]:
+    pieces = decode_pieces(tokenizer, token_ids)
+    token_start_chars: List[int] = []
+    cursor = 0
+    for piece in pieces:
+        token_start_chars.append(int(cursor))
+        cursor += int(len(piece))
+
+    if cut_char_pos <= 0 or not token_ids:
+        return []
+    if cut_char_pos >= int(cursor):
+        return [int(t) for t in token_ids]
+
+    lo = 0
+    hi = len(token_start_chars) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        start = int(token_start_chars[mid])
+        next_start = int(token_start_chars[mid + 1])
+        if start <= int(cut_char_pos) < next_start:
+            lo = int(mid)
+            break
+        if int(cut_char_pos) < start:
+            hi = int(mid - 1)
+        else:
+            lo = int(mid + 1)
+
+    i = int(lo)
+    start = int(token_start_chars[i])
+    offset = max(0, min(int(cut_char_pos - start), len(pieces[i])))
+
+    prefix = [int(t) for t in token_ids[:i]]
+    if offset == 0:
+        return prefix
+    if offset == len(pieces[i]):
+        prefix.append(int(token_ids[i]))
+        return prefix
+
+    piece_prefix = str(pieces[i][:offset])
+    new_tail = tokenizer.encode(piece_prefix, add_special_tokens=False)
+    decoded = tokenizer.decode(
+        new_tail,
+        skip_special_tokens=False,
+        clean_up_tokenization_spaces=False,
+    )
+    if decoded != piece_prefix:
+        raise ValueError(
+            "Failed to retokenize a token-internal clean-prefix cut boundary. "
+            f"expected={piece_prefix!r} got={decoded!r}"
+        )
+    prefix.extend(int(t) for t in new_tail)
+    return prefix
+
+
+def _compute_duplicate_diagnostics(
+    parsed_bbox_objects_raw: Sequence[GTObject],
+) -> Dict[str, float]:
+    norm_descs = [normalize_desc(obj.desc) for obj in parsed_bbox_objects_raw]
+    max_desc_count = 0
+    if norm_descs:
+        counts = Counter(norm_descs)
+        max_desc_count = int(max(counts.values()))
+
+    saturated = 0
+    for obj in parsed_bbox_objects_raw:
+        if any(int(v) in {0, 999} for v in obj.points_norm1000):
+            saturated += 1
+
+    near_same_desc = 0
+    near_any_desc = 0
+    for i, obj_i in enumerate(parsed_bbox_objects_raw):
+        for j in range(int(i + 1), int(len(parsed_bbox_objects_raw))):
+            obj_j = parsed_bbox_objects_raw[j]
+            iou = _bbox_iou_norm1000_xyxy(obj_i.points_norm1000, obj_j.points_norm1000)
+            if iou < 0.90:
+                continue
+            near_any_desc += 1
+            if norm_descs[i] == norm_descs[j]:
+                near_same_desc += 1
+
+    n_raw = int(len(parsed_bbox_objects_raw))
+    saturation_rate = (float(saturated) / float(n_raw)) if n_raw > 0 else 0.0
+    return {
+        "dup/max_desc_count": float(max_desc_count),
+        "dup/saturation_rate": float(saturation_rate),
+        "dup/near_iou90_pairs_same_desc_count": float(near_same_desc),
+        "dup/near_iou90_pairs_any_desc_count": float(near_any_desc),
+    }
+
+
+def _sequential_dedup_bbox_objects(
+    *,
+    parsed_bbox_objects_raw: Sequence[GTObject],
+    duplicate_iou_threshold: float,
+) -> Tuple[List[GTObject], Dict[int, List[GTObject]]]:
+    accepted_objects_clean: List[GTObject] = []
+    accepted_norm_descs: List[str] = []
+    duplicate_bursts_by_boundary: Dict[int, List[GTObject]] = {}
+
+    for obj in parsed_bbox_objects_raw:
+        boundary = int(len(accepted_objects_clean))
+        obj_norm_desc = normalize_desc(obj.desc)
+        is_duplicate = False
+
+        for accepted, accepted_norm_desc in zip(
+            accepted_objects_clean,
+            accepted_norm_descs,
+        ):
+            if obj_norm_desc != accepted_norm_desc:
+                continue
+            if (
+                _bbox_iou_norm1000_xyxy(
+                    obj.points_norm1000,
+                    accepted.points_norm1000,
+                )
+                < float(duplicate_iou_threshold)
+            ):
+                continue
+            duplicate_bursts_by_boundary.setdefault(boundary, []).append(obj)
+            is_duplicate = True
+            break
+
+        if is_duplicate:
+            continue
+
+        accepted_objects_clean.append(obj)
+        accepted_norm_descs.append(obj_norm_desc)
+
+    return accepted_objects_clean, duplicate_bursts_by_boundary
+
+
+def _build_duplicate_ul_targets(
+    *,
+    tokenizer: Any,
+    y_train_ids: Sequence[int],
+    clean_target_text: str,
+    accepted_objects_clean: Sequence[GTObject],
+    fn_objects: Sequence[GTObject],
+    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
+    boundary_prefix_texts: Sequence[str],
+    object_field_order: str,
+) -> Tuple[List[Dict[str, int]], int, int]:
+    targets_by_boundary_token: Dict[Tuple[int, int], Dict[str, int]] = {}
+    skipped_no_divergence = 0
+
+    y_train_ids_list = [int(t) for t in y_train_ids]
+    clean_target_text_s = str(clean_target_text)
+
+    for boundary, duplicates in sorted(duplicate_bursts_by_boundary.items()):
+        boundary_i = int(boundary)
+        if boundary_i < 0 or boundary_i >= len(boundary_prefix_texts):
+            raise ValueError(
+                f"duplicate burst boundary is outside clean-prefix range: {boundary_i}"
+            )
+
+        boundary_prefix_text = str(boundary_prefix_texts[boundary_i])
+        if not clean_target_text_s.startswith(boundary_prefix_text):
+            raise ValueError(
+                "clean teacher-forced target does not share the declared boundary prefix"
+            )
+
+        boundary_prefix_ids = _prefix_token_ids_from_char_cut(
+            tokenizer=tokenizer,
+            token_ids=y_train_ids_list,
+            cut_char_pos=len(boundary_prefix_text),
+        )
+        clean_continuation_text = clean_target_text_s[len(boundary_prefix_text) :]
+        clean_continuation_ids = [
+            int(t)
+            for t in tokenizer.encode(
+                clean_continuation_text,
+                add_special_tokens=False,
+            )
+        ]
+
+        for dup in duplicates:
+            duplicate_target_text = _build_canonical_closed_container_text(
+                objects=(
+                    list(accepted_objects_clean[:boundary_i])
+                    + [dup]
+                    + list(accepted_objects_clean[boundary_i:])
+                    + list(fn_objects)
+                ),
+                object_field_order=object_field_order,
+            )
+            if not duplicate_target_text.startswith(boundary_prefix_text):
+                raise ValueError(
+                    "duplicate continuation does not preserve the declared clean boundary prefix"
+                )
+
+            duplicate_continuation_text = duplicate_target_text[len(boundary_prefix_text) :]
+            duplicate_continuation_ids = [
+                int(t)
+                for t in tokenizer.encode(
+                    duplicate_continuation_text,
+                    add_special_tokens=False,
+                )
+            ]
+
+            lcp = 0
+            max_shared = min(
+                len(clean_continuation_ids),
+                len(duplicate_continuation_ids),
+            )
+            while (
+                lcp < max_shared
+                and clean_continuation_ids[lcp] == duplicate_continuation_ids[lcp]
+            ):
+                lcp += 1
+
+            if lcp >= max_shared:
+                skipped_no_divergence += 1
+                continue
+
+            rel_pos = int(len(boundary_prefix_ids) + lcp)
+            if rel_pos < 0 or rel_pos >= len(y_train_ids_list):
+                skipped_no_divergence += 1
+                continue
+
+            clean_token_id = int(clean_continuation_ids[lcp])
+            if int(y_train_ids_list[rel_pos]) != clean_token_id:
+                skipped_no_divergence += 1
+                continue
+
+            bad_token_id = int(duplicate_continuation_ids[lcp])
+            candidate = {
+                "boundary": int(boundary_i),
+                "rel_pos": int(rel_pos),
+                "token_id": int(bad_token_id),
+            }
+            key = (int(boundary_i), int(bad_token_id))
+            existing = targets_by_boundary_token.get(key)
+            if existing is None or int(candidate["rel_pos"]) < int(existing["rel_pos"]):
+                targets_by_boundary_token[key] = candidate
+
+    targets = sorted(
+        targets_by_boundary_token.values(),
+        key=lambda item: (int(item["boundary"]), int(item["rel_pos"]), int(item["token_id"])),
+    )
+    ul_boundary_count = len({int(item["boundary"]) for item in targets})
+    return targets, int(ul_boundary_count), int(skipped_no_divergence)
 
 
 class Stage2ABTrainingTrainer(
@@ -1269,13 +1646,12 @@ class Stage2ABTrainingTrainer(
         fn_cost = float(self._cfg("fn_cost", 1.0))
 
         # Stage-2 AB contract: FN append is always enabled in Channel-B.
-
-        # Optional weak correction when strict-drop removes invalid predicted instances.
-        drop_invalid_struct_ce_multiplier = float(
-            self._ab_channel_b_get("drop_invalid_struct_ce_multiplier", 1.0) or 1.0
+        duplicate_iou_threshold_raw = self._ab_channel_b_get(
+            "duplicate_iou_threshold",
+            0.90,
         )
-        drop_invalid_struct_ce_multiplier = float(
-            max(1.0, min(4.0, drop_invalid_struct_ce_multiplier))
+        duplicate_iou_threshold = float(
+            0.90 if duplicate_iou_threshold_raw is None else duplicate_iou_threshold_raw
         )
 
 
@@ -1362,6 +1738,17 @@ class Stage2ABTrainingTrainer(
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
         strict_drop_by_reason_total: Dict[str, int] = {}
+        dup_max_desc_count_sum = 0.0
+        dup_saturation_rate_sum = 0.0
+        dup_near_same_desc_pairs_total = 0
+        dup_near_any_desc_pairs_total = 0
+        dup_raw_bbox_valid_total = 0
+        dup_clean_accepted_total = 0
+        dup_duplicates_total = 0
+        dup_duplicate_bursts_total = 0
+        dup_ul_boundaries_total = 0
+        dup_ul_skipped_no_divergence_total = 0
+        dup_metric_samples = 0
 
         for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
             inputs_for_rollout,
@@ -1394,12 +1781,8 @@ class Stage2ABTrainingTrainer(
 
             parse_truncated_total += int(1 if bool(parse.truncated) else 0)
 
-            # Strict format policy: drop malformed rollouts early (no segment emitted).
-            # This intentionally allows segment_count < raw_n for the step.
-            if int(invalid_rollout) != 0:
-                invalid_rollout_total += 1
-                continue
-
+            # Invalid rollouts keep the sample: the parser already falls back to the
+            # canonical empty prefix, so Channel-B can still train on FN-only recovery.
             gts = _extract_gt_bboxonly(sample)
 
             # Filter preds to bbox-only and accumulate strict-drop diagnostics.
@@ -1419,8 +1802,7 @@ class Stage2ABTrainingTrainer(
             drop_unknown = 0
             drop_bbox_invalid = 0
 
-            pred_meta = []
-            preds: List[GTObject] = []
+            parsed_bbox_objects_raw: List[GTObject] = []
             for pobj in list(parse.valid_objects):
                 if pobj.geom_type != "bbox_2d":
                     if pobj.geom_type == "poly":
@@ -1446,13 +1828,12 @@ class Stage2ABTrainingTrainer(
                     drop_bbox_invalid += 1
                     continue
 
-                pred_meta.append(pobj)
-                preds.append(
+                parsed_bbox_objects_raw.append(
                     GTObject(
                         index=int(pobj.index),
                         geom_type="bbox_2d",
                         points_norm1000=[x1, y1, x2, y2],
-                        desc="",
+                        desc=str(pobj.desc),
                     )
                 )
 
@@ -1473,7 +1854,7 @@ class Stage2ABTrainingTrainer(
                     drop_reasons.get("bbox_invalid", 0)
                 ) + int(drop_bbox_invalid)
 
-            n_valid_pred = int(len(preds))
+            n_valid_pred = int(len(parsed_bbox_objects_raw))
             n_drop_invalid = (
                 int(getattr(parse, "dropped_invalid", 0) or 0)
                 + int(getattr(parse, "dropped_ambiguous", 0) or 0)
@@ -1495,8 +1876,40 @@ class Stage2ABTrainingTrainer(
                     strict_drop_by_reason_total.get(str(rk), 0)
                 ) + int(rvi)
 
+            accepted_objects_clean, duplicate_bursts_by_boundary = (
+                _sequential_dedup_bbox_objects(
+                    parsed_bbox_objects_raw=parsed_bbox_objects_raw,
+                    duplicate_iou_threshold=duplicate_iou_threshold,
+                )
+            )
+            duplicate_metrics = _compute_duplicate_diagnostics(parsed_bbox_objects_raw)
+            duplicate_count = int(
+                sum(len(burst) for burst in duplicate_bursts_by_boundary.values())
+            )
+            duplicate_burst_count = int(len(duplicate_bursts_by_boundary))
+
+            dup_max_desc_count_sum += float(
+                duplicate_metrics.get("dup/max_desc_count", 0.0) or 0.0
+            )
+            dup_saturation_rate_sum += float(
+                duplicate_metrics.get("dup/saturation_rate", 0.0) or 0.0
+            )
+            dup_near_same_desc_pairs_total += int(
+                duplicate_metrics.get("dup/near_iou90_pairs_same_desc_count", 0.0)
+                or 0.0
+            )
+            dup_near_any_desc_pairs_total += int(
+                duplicate_metrics.get("dup/near_iou90_pairs_any_desc_count", 0.0)
+                or 0.0
+            )
+            dup_raw_bbox_valid_total += int(len(parsed_bbox_objects_raw))
+            dup_clean_accepted_total += int(len(accepted_objects_clean))
+            dup_duplicates_total += int(duplicate_count)
+            dup_duplicate_bursts_total += int(duplicate_burst_count)
+            dup_metric_samples += 1
+
             match = hungarian_match_maskiou(
-                preds=preds,
+                preds=accepted_objects_clean,
                 gts=gts,
                 top_k=match_top_k,
                 gate_threshold=gate_thr,
@@ -1511,42 +1924,69 @@ class Stage2ABTrainingTrainer(
             prefix_bins: List[int] = []
             matched_gt_for_supervision: set[int] = set()
 
-            prefix_len_raw_local = int(len(parse.prefix_token_ids))
-
             prefix_struct_pos: List[int] = []
 
             fn_count_for_meta = 0
 
-            matched_pred_indices: set[int] = set()
-            for pred_i, gt_i in match.matched_pairs:
-                if pred_i < 0 or pred_i >= len(pred_meta):
+            clean_prefix = _build_canonical_prefix_data(
+                tokenizer=tok,
+                objects=accepted_objects_clean,
+                object_field_order=self._object_field_order(),
+            )
+            prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
+
+            prefix_coord_positions_all = [
+                int(i)
+                for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
+                if int(tok_id) in coord_id_set
+            ]
+            expected_prefix_coord_slots = int(len(accepted_objects_clean) * 4)
+            if len(prefix_coord_positions_all) != expected_prefix_coord_slots:
+                raise ValueError(
+                    "clean-prefix canonical serialization produced an unexpected number "
+                    "of coord tokens for accepted Channel-B bbox objects: "
+                    f"got={len(prefix_coord_positions_all)} expected={expected_prefix_coord_slots}"
+                )
+
+            matched_clean_indices: List[int] = []
+            for pred_i, gt_i in sorted(match.matched_pairs, key=lambda item: int(item[0])):
+                if pred_i < 0 or pred_i >= len(accepted_objects_clean):
                     continue
                 if gt_i < 0 or gt_i >= len(gts):
                     continue
-                pobj = pred_meta[pred_i]
-                if len(pobj.coord_token_indices) != 4:
-                    continue
+
                 matched_gt_for_supervision.add(int(gt_i))
-                matched_pred_indices.add(int(pred_i))
-                gt_bins = list(gts[gt_i].points_norm1000)
-                pos_seg = [
-                    int(len(prompt_ids) + int(p)) for p in pobj.coord_token_indices
+                matched_clean_indices.append(int(pred_i))
+
+                coord_group = prefix_coord_positions_all[
+                    int(pred_i) * 4 : int(pred_i + 1) * 4
                 ]
-                prefix_bbox_groups.append({"pos": pos_seg, "gt_bins": gt_bins})
-                for local_idx, tbin in zip(pobj.coord_token_indices, gt_bins):
+                if len(coord_group) != 4:
+                    raise ValueError(
+                        "clean-prefix Channel-B expected exactly four coord slots per bbox object"
+                    )
+
+                gt_bins = list(gts[gt_i].points_norm1000)
+                prefix_bbox_groups.append(
+                    {
+                        "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                        "gt_bins": gt_bins,
+                    }
+                )
+                for local_idx, tbin in zip(coord_group, gt_bins):
                     prefix_pos.append(int(local_idx))
                     prefix_bins.append(int(tbin))
 
-            matched_pred_objects = [
-                pred_meta[int(i)]
-                for i in sorted(matched_pred_indices)
-                if 0 <= int(i) < len(pred_meta)
+            matched_prefix_objects = [
+                _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
+                for i in matched_clean_indices
+                if 0 <= int(i) < len(clean_prefix.object_value_spans)
             ]
             prefix_struct_pos = _matched_prefix_structure_positions(
                 tokenizer=tok,
-                prefix_token_ids=parse.prefix_token_ids,
-                prefix_text=parse.prefix_text,
-                matched_pred_objects=matched_pred_objects,
+                prefix_token_ids=clean_prefix.prefix_token_ids,
+                prefix_text=clean_prefix.prefix_text,
+                matched_pred_objects=matched_prefix_objects,
             )
 
             fn_gt_indices_final = [
@@ -1557,7 +1997,7 @@ class Stage2ABTrainingTrainer(
 
             append_text = serialize_append_fragment(
                 fn_objects=fn_objs,
-                prefix_text=parse.prefix_text,
+                prefix_text=clean_prefix.prefix_text,
                 object_field_order=self._object_field_order(),
             )
             append_ids = tok.encode(append_text, add_special_tokens=False)
@@ -1566,9 +2006,25 @@ class Stage2ABTrainingTrainer(
                 tokenizer=tok, token_ids=append_ids
             )
 
-            y_train_ids = list(parse.prefix_token_ids) + [
+            y_train_ids = list(clean_prefix.prefix_token_ids) + [
                 int(t) for t in append_ids
             ]
+
+            clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+            duplicate_ul_targets, ul_boundary_count, ul_skipped_no_divergence = (
+                _build_duplicate_ul_targets(
+                    tokenizer=tok,
+                    y_train_ids=y_train_ids,
+                    clean_target_text=clean_target_text,
+                    accepted_objects_clean=accepted_objects_clean,
+                    fn_objects=fn_objs,
+                    duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+                    boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+                    object_field_order=self._object_field_order(),
+                )
+            )
+            dup_ul_boundaries_total += int(ul_boundary_count)
+            dup_ul_skipped_no_divergence_total += int(ul_skipped_no_divergence)
 
             # FN bbox groups in the appended tail.
             rel_groups = _bbox_groups_from_token_ids(
@@ -1580,7 +2036,7 @@ class Stage2ABTrainingTrainer(
                         "pos": [
                             int(
                                 len(prompt_ids)
-                                + int(len(parse.prefix_token_ids))
+                                + int(prefix_len_raw_local)
                                 + int(p)
                             )
                             for p in rel_pos
@@ -1758,15 +2214,13 @@ class Stage2ABTrainingTrainer(
             tail_desc_pos_eff: List[int] = []
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
 
-            # Stop/closure supervision is active (no stop-neutral masking), but we still
-            # require deterministic closure-marker resolution for contract validation.
+            # Stop/closure supervision is active (no stop-neutral masking). If
+            # deterministic closure-marker resolution fails, keep the sample and
+            # fall back to the normal FN-tail supervision path instead of dropping it.
             tail_ignore_pos_eff: List[int] = []
             assistant_span_ids = enc_ids_list[
                 int(prompt_len) : int(prompt_len) + int(train_len_eff)
             ]
-            # Under strict rollout-format policies, malformed/truncated generations can
-            # make closure-marker resolution ambiguous. We intentionally drop the sample
-            # (emit no segment) and let the Channel-B executor tolerate segment_count < raw_n.
             try:
                 tail_closure_pos_eff = _stage2_ab_tail_closure_positions(
                     tokenizer=tok,
@@ -1775,8 +2229,7 @@ class Stage2ABTrainingTrainer(
                 )
             except ValueError:
                 closure_supervision_drop_total += 1
-                invalid_rollout_total += 1
-                continue
+                tail_closure_pos_eff = []
 
             for rel in tail_desc_pos:
                 try:
@@ -1803,10 +2256,7 @@ class Stage2ABTrainingTrainer(
                 "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
                 "parse_truncated": bool(parse.truncated),
                 "drop_invalid_total": int(n_drop_invalid),
-                "drop_invalid_struct_ce_multiplier": float(
-                    drop_invalid_struct_ce_multiplier
-                ),
-                "valid_pred_objects": int(len(preds)),
+                "valid_pred_objects": int(len(parsed_bbox_objects_raw)),
                 "matched_for_supervision": int(len(matched_gt_for_supervision)),
                 "matched_maskiou_sum": float(match.matched_maskiou_sum),
                 "matched_maskiou_count": int(match.matched_maskiou_count),
@@ -1822,6 +2272,16 @@ class Stage2ABTrainingTrainer(
                 "tail_desc_pos": tail_desc_pos_eff,
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
+                "duplicate_ul_targets": [
+                    {
+                        "boundary": int(item["boundary"]),
+                        "rel_pos": int(item["rel_pos"]),
+                        "token_id": int(item["token_id"]),
+                    }
+                    for item in duplicate_ul_targets
+                ],
+                "duplicate_ul_boundary_count": int(ul_boundary_count),
+                "duplicate_ul_skipped_no_divergence": int(ul_skipped_no_divergence),
             }
 
             segments.append((encoded, meta_entry, int(encoded_len)))
@@ -1873,6 +2333,36 @@ class Stage2ABTrainingTrainer(
             ),
             "rollout/_parse_truncated_num": float(parse_truncated_total),
             "rollout/_parse_truncated_den": float(len(rollout_results)),
+            "dup/max_desc_count": float(
+                dup_max_desc_count_sum / float(dup_metric_samples)
+                if dup_metric_samples > 0
+                else 0.0
+            ),
+            "dup/saturation_rate": float(
+                dup_saturation_rate_sum / float(dup_metric_samples)
+                if dup_metric_samples > 0
+                else 0.0
+            ),
+            "dup/near_iou90_pairs_same_desc_count": float(
+                dup_near_same_desc_pairs_total
+            ),
+            "dup/near_iou90_pairs_any_desc_count": float(
+                dup_near_any_desc_pairs_total
+            ),
+            "stage2_ab/channel_b/dup/N_raw_bbox_valid": float(dup_raw_bbox_valid_total),
+            "stage2_ab/channel_b/dup/N_clean_accepted": float(
+                dup_clean_accepted_total
+            ),
+            "stage2_ab/channel_b/dup/N_duplicates": float(dup_duplicates_total),
+            "stage2_ab/channel_b/dup/N_duplicate_bursts": float(
+                dup_duplicate_bursts_total
+            ),
+            "stage2_ab/channel_b/dup/N_ul_boundaries": float(
+                dup_ul_boundaries_total
+            ),
+            "stage2_ab/channel_b/dup/N_ul_skipped_no_divergence": float(
+                dup_ul_skipped_no_divergence_total
+            ),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),
@@ -1920,7 +2410,7 @@ class Stage2ABTrainingTrainer(
         if not encoded_batch:
             raise ValueError(
                 "stage2-ab Channel-B produced no usable segments (all samples were skipped/dropped); "
-                "this can happen when closure-marker resolution fails due to truncation/misalignment."
+                "this usually indicates prompt-token mismatch or another strict sample-level gating failure."
             )
 
         with self._template_packing_disabled():
@@ -2058,6 +2548,12 @@ class Stage2ABTrainingTrainer(
             channel_name=channel,
             default=0.0,
         )
+        duplicate_ul_module_w = _module_weight(
+            objective_specs,
+            name="duplicate_ul",
+            channel_name=channel,
+            default=0.0,
+        )
         coord_reg_module_w = _module_weight(
             objective_specs,
             name="coord_reg",
@@ -2126,13 +2622,6 @@ class Stage2ABTrainingTrainer(
             default=token_desc_ce_weight,
             min_value=0.0,
         )
-        rollout_drop_invalid_struct_ce_multiplier_cfg = _cfg_float(
-            token_cfg,
-            keys=("rollout_drop_invalid_struct_ce_multiplier",),
-            default=1.0,
-            min_value=1.0,
-        )
-
         bbox_smoothl1_w = _cfg_float(
             bbox_cfg,
             keys=("smoothl1_weight",),
@@ -2759,6 +3248,11 @@ class Stage2ABTrainingTrainer(
                             float(token_ce_module_w) * float(token_desc)
                         )
 
+                if float(duplicate_ul_module_w) != 0.0:
+                    stage2_logs["loss/B_rollout_text/duplicate_ul"] = float(
+                        pipeline_metrics_ctx.get("loss/duplicate_ul", 0.0) or 0.0
+                    )
+
                 if float(bbox_geo_module_w) != 0.0:
                     smoothl1 = float(
                         pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
@@ -2912,7 +3406,7 @@ class Stage2ABTrainingTrainer(
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
 
                 for k, v in batch_metrics.items():
-                    if str(k).startswith("stage2_ab/"):
+                    if str(k).startswith("stage2_ab/") or str(k).startswith("dup/"):
                         stage2_logs[str(k)] = float(v or 0.0)
 
             if isinstance(batch_metrics, Mapping):

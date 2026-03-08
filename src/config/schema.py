@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
+import math
 from pathlib import Path
 from typing import (
     Any,
@@ -974,6 +975,7 @@ class Stage2ABScheduleConfig:
 
 @dataclass(frozen=True)
 class Stage2ABChannelBConfig:
+    duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
 
@@ -1016,8 +1018,8 @@ class Stage2ABChannelBConfig:
         if "drop_invalid_struct_ce_multiplier" in data:
             raise ValueError(
                 "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier has been removed. "
-                "Move it into stage2_ab.pipeline.objective[*].config as "
-                "token_ce.rollout_drop_invalid_struct_ce_multiplier."
+                "Legacy raw-prefix invalid-structure amplification is not part of the "
+                "canonical clean-prefix Channel-B contract."
             )
 
         # Removed keys (legacy/ablation-only behavior is now deleted).
@@ -1035,6 +1037,25 @@ class Stage2ABChannelBConfig:
             raise ValueError(
                 "stage2_ab.channel_b.semantic_desc_gate has been removed. "
                 "Remove this key (training-time semantic gating is unsupported)."
+            )
+
+        duplicate_iou_threshold_raw = data.pop(
+            "duplicate_iou_threshold",
+            cls.duplicate_iou_threshold,
+        )
+        try:
+            duplicate_iou_threshold = float(duplicate_iou_threshold_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.duplicate_iou_threshold must be a float/int"
+            ) from exc
+        if not math.isfinite(duplicate_iou_threshold):
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_iou_threshold must be finite"
+            )
+        if duplicate_iou_threshold < 0.0 or duplicate_iou_threshold > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_iou_threshold must be in [0, 1]"
             )
 
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
@@ -1073,6 +1094,7 @@ class Stage2ABChannelBConfig:
             )
 
         return cls(
+            duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
         )
@@ -1215,7 +1237,25 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
+        canonical_objective_order = ["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"]
+        authored_objective_order = [str(spec.name) for spec in objective_specs]
+        if authored_objective_order != canonical_objective_order:
+            raise ValueError(
+                "stage2_ab.pipeline.objective must use the canonical module order "
+                f"{canonical_objective_order}; got {authored_objective_order}"
+            )
+
         for idx, spec in enumerate(objective_specs):
+            if (
+                str(spec.name) == "token_ce"
+                and "rollout_drop_invalid_struct_ce_multiplier" in spec.config
+            ):
+                raise ValueError(
+                    "stage2_ab.pipeline.objective[%d].config.rollout_drop_invalid_struct_ce_multiplier "
+                    "has been removed. Legacy raw-prefix invalid-structure amplification "
+                    "is not part of the canonical clean-prefix Channel-B contract."
+                    % int(idx)
+                )
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
@@ -1243,6 +1283,18 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
+        duplicate_ul = specs_by_name.get("duplicate_ul")
+        if duplicate_ul is None:
+            raise ValueError(
+                "stage2_ab.pipeline.objective requires duplicate_ul in the canonical "
+                "clean-prefix Channel-B contract."
+            )
+        if tuple(str(ch) for ch in duplicate_ul.channels) != ("B",):
+            raise ValueError(
+                "stage2_ab.pipeline.objective duplicate_ul must declare channels ['B'] "
+                f"for the canonical clean-prefix Channel-B contract; got {list(duplicate_ul.channels)!r}"
+            )
+
         bbox_geo = specs_by_name.get("bbox_geo")
         coord_reg = specs_by_name.get("coord_reg")
         if coord_reg is not None and bool(coord_reg.enabled):

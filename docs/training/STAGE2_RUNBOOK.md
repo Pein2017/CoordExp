@@ -56,17 +56,18 @@ Where this lives in code:
 
 Stage-2 performs:
 
-rollout (no grad) -> strict parse -> match -> build one teacher-forced target -> masked losses
+rollout (no grad) -> bounded container salvage + strict record acceptance -> teacher-forced target construction -> masked losses
 
-The canonical assistant training target is:
+For `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B assistant target is:
 
-`Y_train = Y_rollout_prefix + SerializeAppend(FN_gt_objects) + EOS`
+`Y_train = Y_clean_prefix + SerializeAppend(FN_gt_objects) + EOS`
 
 Key policies:
-- Rollout parsing is STRICT (no JSON repair). Invalid predicted objects are dropped.
+- Rollout parsing uses bounded container salvage plus strict record acceptance. Invalid predicted objects are dropped deterministically and never repaired into positives.
 - Missing GT objects (FN) are always appended in the tail (recall recovery stays mandatory).
 - Bbox geometry loss uses **SmoothL1 + CIoU** on expectation-decoded coords (no GIoU; boxes are canonicalized for CIoU stability).
-- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B supervises top-level `}` + `<|im_end|>` and supports semantic-tolerant matched desc masking).
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B now rebuilds its positive prefix from the deduplicated clean accepted sequence, not from raw rollout token ids.
+- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B uses clean-prefix CE plus duplicate UL on duplicate-certified continuations).
 
 ---
 
@@ -113,23 +114,51 @@ Worked example (default launcher):
 - Default grad semantics: `stage2_ab.softctx_grad_mode: unroll` (no detach anywhere in the soft self-context loop). Use `em_detach` only for explicit ablations.
 - CE anchor split: Channel-A computes CE on the **A1** teacher-forced logits and computes geometry (bbox loss + coord regularizers) from the **final** softctx iteration logits.
 
-### Channel-B Contract (FP-neutral + Closure Supervision)
+### Channel-B Contract (Clean-prefix + Duplicate UL)
 
-- Unified Channel-B is the only supported contract (rollout prefix + FN injection; no reorder path).
-- CE masking policy (unified Channel-B):
-  - matched prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
-  - FP prefix objects: structure/desc/coord CE all OFF;
-  - FN-injected objects: structure CE ON, desc CE ON, coord CE OFF.
-- FP-neutral geometry: Channel-B geometry loss includes matched prefix objects and FN-injected objects; FP objects contribute no geometry loss.
+- Clean-prefix Channel-B is the only supported `stage2_two_channel` contract.
+- Canonical Channel-B flow:
+  - raw rollout
+  - bounded container salvage + strict record acceptance
+  - bbox-valid filtering
+  - sequential dedup
+  - `accepted_objects_clean + duplicate_bursts_by_boundary`
+  - Hungarian on `accepted_objects_clean`
+  - clean-prefix teacher forcing + duplicate UL
+- Sequential dedup is bbox-only in v1:
+  - compare each candidate against previously accepted clean bbox objects only,
+  - duplicate iff `normalize_desc(desc)` matches exactly and `IoU >= stage2_ab.channel_b.duplicate_iou_threshold`,
+  - default `duplicate_iou_threshold: 0.90`.
+- Matching / FN detection / matched geometry all run on `accepted_objects_clean`, not on the raw duplicate-heavy parsed list.
+- Positive teacher-forced prefix:
+  - `Y_clean_prefix` is the canonical assistant serialization of `accepted_objects_clean`,
+  - later true positives are teacher-forced on that clean prefix, not on a duplicate-contaminated raw rollout prefix,
+  - raw rollout token spans are diagnostic-only; they are not the positive-prefix source of truth.
+- CE masking policy (clean-prefix Channel-B):
+  - matched clean prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
+  - generic unmatched clean prefix extras: structure/desc/coord CE all OFF (neutral context only);
+  - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF.
+- FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; generic unmatched clean extras contribute no geometry loss.
+- Duplicate UL:
+  - `duplicate_ul` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
+  - duplicates are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
+  - the bad token is the first true LCP-divergence token of the duplicate continuation relative to the canonical clean continuation,
+  - same-boundary duplicates sharing the same divergence token collapse to one UL term.
 - Deterministic FN injection:
-  - retain an append-ready rollout prefix inside `{"objects": [ ...`,
+  - retain an append-ready canonical clean prefix inside `{"objects": [ ...`,
   - append unmatched GT records as extra `objects[]` elements,
-  - insert a leading comma iff the retained prefix body already has object entries.
+  - insert a leading comma iff the retained clean prefix body already has object entries.
 - Closure supervision: keep CE ON for the same outermost `}` used as FN injection anchor, and keep CE ON for `<|im_end|>` (no stop-neutral masking).
 - Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
   - `stage2_ab/channel_b/strict_drop/reason/<bucket>`
+- Duplicate-collapse diagnostics are also emitted:
+  - `dup/max_desc_count`
+  - `dup/saturation_rate`
+  - `dup/near_iou90_pairs_same_desc_count`
+  - `dup/near_iou90_pairs_any_desc_count`
+  - `stage2_ab/channel_b/dup/N_{raw_bbox_valid,clean_accepted,duplicates,duplicate_bursts,ul_boundaries,ul_skipped_no_divergence}`
 - Optional Channel-B runtime timeouts:
   - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). Must be `> 0` under DDP; `120` is the default/recommended fail-fast setting for faster error exposure.
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
@@ -153,8 +182,9 @@ Packing is supported post-rollout only:
   - `stage2_rollout_aligned`: carries leftover segments across optimizer steps (carry-only buffer).
   - `stage2_two_channel`: the per-step pool is fully consumed by contract (no cross-step carry), but `packing_drop_last` remains required for stable semantics.
 
-The rollout prefix is treated as immutable in token space:
-- Only suffix-only trimming is allowed (no decode+re-encode of earlier tokens).
+The raw rollout prefix is no longer the positive teacher-forced prefix for `stage2_two_channel` Channel-B:
+- raw rollout token space is still parsed/trimmed conservatively for diagnostics and strict acceptance,
+- the positive Channel-B prefix is canonically reserialized from `accepted_objects_clean`.
 
 ---
 
@@ -208,9 +238,11 @@ Objective pipeline declaration (required, ordered):
 - `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
 - `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
 - Canonical module names:
-  - objective: `token_ce`, `bbox_geo`, `coord_reg`
+  - objective: `token_ce`, `duplicate_ul`, `bbox_geo`, `coord_reg`
   - diagnostics: `coord_diag`
-- **Order matters**: `bbox_geo` MUST run before `coord_reg` (coord_reg consumes bbox_geo state).
+- **Order matters**:
+  - `stage2_two_channel`: `token_ce -> duplicate_ul -> bbox_geo -> coord_reg`
+  - `stage2_rollout_aligned`: `bbox_geo` MUST run before `coord_reg` when both are enabled (coord_reg consumes bbox_geo state).
 - Pipeline module specs are strict and explicit (no silent defaults):
   - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
   - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
@@ -223,12 +255,14 @@ Optional Channel-A A1 anchor losses (ablation knobs):
 
 ### Stage-2 Two-Channel examples (A-only / B-only / AB-mixed)
 
-AB-mixed (typical production):
+AB-mixed (recommended A-hot / B-cold production starting point):
 
 ```yaml
 stage2_ab:
-  schedule: {b_ratio: 0.85}
+  schedule: {b_ratio: 0.05}
   n_softctx_iter: 2
+  channel_b:
+    duplicate_iou_threshold: 0.90
   pipeline:
     objective:
       - name: token_ce
@@ -240,7 +274,11 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: duplicate_ul
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -284,6 +322,8 @@ A-only (disable rollouts; keep Channel-A expectation loop + self-context objecti
 stage2_ab:
   schedule: {b_ratio: 0.0}
   n_softctx_iter: 2
+  channel_b:
+    duplicate_iou_threshold: 0.90
   pipeline:
     objective:
       - name: token_ce
@@ -295,7 +335,11 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: duplicate_ul
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -339,6 +383,8 @@ B-only (always rollouts; skip Channel-A steps via scheduler):
 stage2_ab:
   schedule: {b_ratio: 1.0}
   n_softctx_iter: 2
+  channel_b:
+    duplicate_iou_threshold: 0.90
   pipeline:
     objective:
       - name: token_ce
@@ -350,7 +396,11 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: duplicate_ul
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -410,7 +460,6 @@ rollout_matching:
           self_context_struct_ce_weight: 0.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -671,8 +720,8 @@ Throughput (both variants; Channel-B steps only for two-channel):
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras (Channel-B steps):
 - `stage2_ab/channel_b/strict_drop/*` (strict-drop diagnostics; see Channel-B contract above)
-- `stage2_ab/channel_b/closure_supervision/N_drop` (closure-marker resolution drops; should stay near 0)
-- `stage2/invalid_rollout` (alias: `stage2_ab/channel_b/invalid_rollout`; rollout invalid/fallback/drop count; should stay near 0)
+- `stage2_ab/channel_b/closure_supervision/N_drop` (legacy-named counter for closure-resolution fallback activations; should stay near 0)
+- `stage2/invalid_rollout` (alias: `stage2_ab/channel_b/invalid_rollout`; parser-level invalid rollout fallback count; should stay near 0)
 - `stage2/drop_poly`, `stage2/drop_unknown`, `stage2/drop_bbox_invalid` (strict-drop breakdown; should stay near 0 in bbox-only rollouts)
 - `rollout/backend_{hf,vllm}` and `rollout/decode_mode_{greedy,beam}` (backend/decode provenance tags)
 

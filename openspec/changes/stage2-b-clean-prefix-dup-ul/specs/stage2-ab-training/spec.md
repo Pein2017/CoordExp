@@ -101,6 +101,13 @@ When Channel-B is selected and a rollout response cannot be recovered into an ap
 - **AND** it uses `{"objects": [` as the prefix and FN-appends all GT objects
 - **AND** the sample is still included in teacher-forced training.
 
+#### Scenario: Closure-resolution ambiguity keeps the sample on the FN-tail fallback path
+- **GIVEN** Channel-B has already built a deterministic clean-prefix teacher-forced target
+- **AND** explicit closure-marker bookkeeping cannot be resolved unambiguously for that target
+- **WHEN** the trainer finalizes per-sample Channel-B supervision metadata
+- **THEN** it keeps the sample in teacher-forced training
+- **AND** it falls back to the normal FN-tail supervision path without dropping the sample.
+
 ## ADDED Requirements
 
 ### Requirement: Channel-B clean boundaries and duplicate bursts are canonical

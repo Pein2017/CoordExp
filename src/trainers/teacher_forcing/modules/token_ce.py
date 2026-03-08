@@ -51,14 +51,6 @@ def run_token_ce_module(
             1.0,
         ),
     )
-    drop_invalid_struct_ce_multiplier_cfg = max(
-        1.0,
-        _coerce_float(
-            cfg.get("rollout_drop_invalid_struct_ce_multiplier", 1.0),
-            1.0,
-        ),
-    )
-
     self_context_struct_ce_weight = max(
         0.0,
         _coerce_float(cfg.get("self_context_struct_ce_weight", 0.0), 0.0),
@@ -96,12 +88,6 @@ def run_token_ce_module(
         tail_ignore_pos = [int(p) for p in (seg.get("tail_ignore_pos") or [])]
         tail_desc_pos = [int(p) for p in (seg.get("tail_desc_pos") or [])]
         tail_closure_pos = [int(p) for p in (seg.get("tail_closure_pos") or [])]
-
-        drop_invalid_total = int(seg.get("drop_invalid_total", 0) or 0)
-        drop_invalid_struct_ce_multiplier = max(
-            1.0,
-            _coerce_float(seg.get("drop_invalid_struct_ce_multiplier", 1.0), 1.0),
-        )
 
         seg_start_i = int(seg_start)
         seg_end_i = int(seg_end)
@@ -160,23 +146,6 @@ def run_token_ce_module(
             labels_masked[b, p] = input_ids[b, p]
             weights[b, p] = max(float(weights[b, p].item()), 1.0)
             struct_weights[b, p] = max(float(struct_weights[b, p].item()), 1.0)
-
-        if (
-            channel == "B"
-            and int(drop_invalid_total) > 0
-            and float(drop_invalid_struct_ce_multiplier) != 1.0
-        ):
-            mult = float(drop_invalid_struct_ce_multiplier) * float(
-                drop_invalid_struct_ce_multiplier_cfg
-            )
-            for p in range(int(tail_start), int(tail_end)):
-                if int(labels_masked[b, p].item()) == -100:
-                    continue
-                rel = int(p - tail_start)
-                if rel in tail_ignore or rel in tail_desc:
-                    continue
-                struct_weights[b, p] = struct_weights[b, p] * mult
-                weights[b, p] = weights[b, p] * mult
 
     bsz, _, vocab = logits_ce.shape
     logits_next = logits_ce[:, :-1, :]

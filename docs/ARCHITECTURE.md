@@ -70,6 +70,10 @@ Common ones you may see in logs/artifacts:
 - `DetectionEvalCallback`: offline detection evaluation helper; logs `eval_det_*` keys (see `docs/eval/README.md`).
 
 Stage-2 trainers also emit rollout-specific metrics directly (see `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS_LOSSES.md`).
+- `stage2_two_channel` now includes clean-prefix Channel-B duplicate-collapse diagnostics under:
+  - `dup/*`
+  - `stage2_ab/channel_b/dup/N_*`
+  - `loss/B_rollout_text/duplicate_ul`
 
 ---
 

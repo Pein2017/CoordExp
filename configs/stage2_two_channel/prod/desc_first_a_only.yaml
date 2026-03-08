@@ -25,6 +25,7 @@ stage2_ab:
   n_softctx_iter: 2
   softctx_grad_mode: unroll
   channel_b:
+    duplicate_iou_threshold: 0.90
     ddp_phase_timeout_s: 120.0
   pipeline:
     objective:
@@ -37,7 +38,11 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
+      - name: duplicate_ul
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0

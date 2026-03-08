@@ -893,8 +893,6 @@ def _build_pipeline_manifest(
         coord_soft_enabled = bool(coord_soft_cfg.get("enabled", False))
 
         if variant == "stage2_two_channel":
-            channel_b_raw = cfg.get("channel_b", {})
-            channel_b = channel_b_raw if isinstance(channel_b_raw, Mapping) else {}
             desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
 
             if name == "token_ce":
@@ -906,11 +904,10 @@ def _build_pipeline_manifest(
                     ),
                     "rollout_fn_desc_weight": desc_w,
                     "rollout_matched_prefix_struct_weight": 1.0,
-                    "rollout_drop_invalid_struct_ce_multiplier": _finite_float(
-                        channel_b.get("drop_invalid_struct_ce_multiplier", 1.0),
-                        1.0,
-                    ),
                 }
+
+            if name == "duplicate_ul":
+                return {}
 
             if name == "bbox_geo":
                 return {
@@ -2539,7 +2536,7 @@ def main():
 
         stage2_manifest = _resolve_pipeline_manifest(
             stage2_ab_cfg,
-            default_objective=["token_ce", "bbox_geo", "coord_reg"],
+            default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
             default_diagnostics=["coord_diag"],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )
