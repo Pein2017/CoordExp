@@ -1,10 +1,16 @@
 # Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)
 
 Date: 2026-03-05  
-Last updated: 2026-03-05  
+Last updated: 2026-03-06  
 Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 
 This note records a concrete failure mode observed in a Stage-2 AB run: **near-duplicate object enumeration** (same `desc` with highly-overlapping boxes, repeated many times in the same rollout). It summarizes evidence from monitor dumps + scalar logs, and frames the failure mode in an **EM-ish / maximum-likelihood** perspective so we can explore *learning-based* fixes (not just decode-time policies).
+
+Update scope for 2026-03-06:
+- Re-read `logging.jsonl` through the latest available step in this run (`global_step=1280`).
+- Added the new eval checkpoint at **step 1200**.
+- Added the new eval monitor dump at **`monitor_dumps/step_001200.json`**.
+- Main new finding: the run is **not** a simple monotone collapse after step 900; it enters a late **oscillatory / two-mode regime** where average eval can improve while a few catastrophic duplicate-heavy samples remain or worsen.
 
 Related notes:
 - Design intent / algorithm: `progress/full_idea.md`
@@ -18,7 +24,7 @@ Related notes:
 Run (train + eval + monitor dumps):
 - Run dir: `output/stage2_ab/prod/ab_mixed/eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2/v0-20260304-150926/`
 - Train/eval scalars: `.../logging.jsonl`
-- Eval monitor dumps: `.../monitor_dumps/step_000300.json`, `.../monitor_dumps/step_000600.json`
+- Eval monitor dumps: `.../monitor_dumps/step_000300.json`, `.../monitor_dumps/step_000600.json`, `.../monitor_dumps/step_000900.json`, `.../monitor_dumps/step_001200.json`
 - Config: `configs/stage2_two_channel/prod/ab_mixed.yaml` (extends `configs/stage2_two_channel/base.yaml`)
 - Metadata: `.../run_metadata.json` (git SHA `854195f...`, seed `17`)
 
@@ -95,6 +101,34 @@ Again, this is a "same-class repeated object list" behavior, not invalid JSON or
 At both steps 300 and 600, the near-duplicate pairs are highly concentrated in 1-2 "hard" scenes (crowded instances like books/bats).
 This suggests the failure is not simply "overall model is unstable"; it is a **specific attractor** triggered by certain image/prompt regimes.
 
+### 2.4 Step 1200: new best eval checkpoint still contains catastrophic outliers
+
+The extended run adds `monitor_dumps/step_001200.json`, and the surprising result is:
+
+- **Eval mAP improves to a new best** at step 1200: `eval_rollout/mAP = 0.39849211`
+- Yet the monitor dump still contains extremely degenerate samples, including cases that are clearly not explained by ordinary under-annotation.
+
+Top step-1200 outliers (10-sample monitor dump):
+
+- `base_idx=238`, `sample_id=87140591468782`
+  - `pred=106`, `gt=16`, `fp=99`, `fn=9`, `parse_truncated=True`
+  - repeated label: `book` **101 times**
+  - same-desc IoU>=0.9 pairs: **793**
+- `base_idx=190`, `sample_id=87140591468734`
+  - `pred=105`, `gt=27`, `fp=98`, `fn=20`, `parse_truncated=True`
+  - repeated label: `chair` **68 times**
+  - same-desc IoU>=0.9 pairs: **174**
+- `base_idx=307`, `sample_id=87140591468851`
+  - `pred=106`, `gt=13`, `fp=98`, `fn=5`, `parse_truncated=True`
+  - repeated label: `person` **92 times**
+  - same-desc IoU>=0.9 pairs: **7**
+
+Interpretation:
+- The `book=101` and `chair=68` cases are unmistakable same-class repetition loops.
+- The `person=92` street-scene case reinforces the earlier conclusion that this is **not mostly a dense-scene annotation issue**; the model is capable of entering a chaotic object-enumeration mode even when the image does not plausibly support that count.
+
+So the new best checkpoint is "better on average" but **not clean in the tail**.
+
 ---
 
 ## 3) Scalar Signature: A Phase Transition Around Step ~530
@@ -121,6 +155,113 @@ Importantly, localization quality on matched predictions stays relatively stable
 - `coord_diag/B/expected_bin_mae` improves over time (coord distributions get sharper/more accurate).
 
 So the bottleneck is **set/cardinality** (duplicate enumeration), not geometry calibration.
+
+### 3.1 Extended log read (through step 1280): late training is oscillatory, not purely monotone
+
+The original read through step 900 suggested a late over-generation regime. The extended log confirms that regime, but adds an important refinement:
+
+- after step 900, the run does **not** simply diverge monotonically,
+- instead it **oscillates** between a "moderately bad" mode and a "catastrophically verbose" mode.
+
+Aggregate train-rollout windows:
+
+- Steps **300-890** (60 logged train windows):
+  - `pred_per_sample_mean = 16.07`
+  - `fp_total_mean = 1011.42`
+  - `fn_total_mean = 173.40`
+  - `precision_mean = 0.3903`
+  - `recall_mean = 0.7562`
+  - `parse_truncated_rate_mean = 0.0712`
+  - `gen_new_tokens_p90_mean = 1607.26`
+- Steps **900-1280** (39 logged train windows):
+  - `pred_per_sample_mean = 24.13`
+  - `fp_total_mean = 1755.00`
+  - `fn_total_mean = 140.36`
+  - `precision_mean = 0.2457`
+  - `recall_mean = 0.8000`
+  - `parse_truncated_rate_mean = 0.1534`
+  - `gen_new_tokens_p90_mean = 2526.24`
+
+So the late regime is still clearly worse on cardinality / truncation. But within that regime, the model keeps switching between two behaviors.
+
+Examples of the "catastrophically verbose" mode:
+
+- Step `1000`: `pred_per_sample=30.21`, `fp_total=2243`, `parse_truncated_rate=0.208`, `gen_new_tokens_p90=2560`
+- Step `1010`: `pred_per_sample=30.89`, `fp_total=2308`, `parse_truncated_rate=0.229`, `gen_new_tokens_p90=2560`
+- Step `1160`: `pred_per_sample=29.02`, `fp_total=2201`, `parse_truncated_rate=0.208`, `gen_new_tokens_p90=2560`
+- Step `1260`: `pred_per_sample=28.31`, `fp_total=2165`, `parse_truncated_rate=0.219`, `gen_new_tokens_p90=2560`
+
+Examples of the "moderately bad but partially recovered" mode:
+
+- Step `930`: `pred_per_sample=16.27`, `fp_total=1135`, `parse_truncated_rate=0.073`, `gen_new_tokens_p90=2253.4`
+- Step `1130`: `pred_per_sample=17.40`, `fp_total=1144`, `parse_truncated_rate=0.073`, `gen_new_tokens_p90=1586.9`
+- Step `1170`: `pred_per_sample=17.80`, `fp_total=1251`, `parse_truncated_rate=0.073`, `gen_new_tokens_p90=2522.9`
+- Step `1270`: `pred_per_sample=20.48`, `fp_total=1398`, `parse_truncated_rate=0.115`, `gen_new_tokens_p90=2560`
+
+This is better described as a **bimodal / metastable decode regime** than as a one-way drift.
+
+The important invariant across both modes is that matched localization quality stays fairly stable:
+
+- post-900 `matched_maskiou_mean` still lives in a narrow band around `~0.78-0.80`
+
+So again, the instability is mainly in **whether the model decides to keep enumerating objects**, not in where the matched boxes land.
+
+### 3.2 Eval can improve while train-time rollout diagnostics still look chaotic
+
+The new eval checkpoint at step 1200 is the clearest example of this decoupling.
+
+Eval checkpoints so far:
+
+- Step `300`: `mAP=0.39153625`, `precision=0.58327`, `recall=0.67597`, `pred/gt=3945/3404 = 1.1589`
+- Step `600`: `mAP=0.38329532`, `precision=0.74130`, `recall=0.64483`, `pred/gt=2961/3404 = 0.8699`
+- Step `900`: `mAP=0.38624761`, `precision=0.65900`, `recall=0.66539`, `pred/gt=3437/3404 = 1.0097`
+- Step `1200`: `mAP=0.39849211`, `precision=0.64038`, `recall=0.67274`, `pred/gt=3576/3404 = 1.0505`
+
+Step 1200 is therefore a real average-case improvement over step 300:
+
+- `mAP`: `0.39849` vs `0.39154`
+- `precision`: `0.64038` vs `0.58327`
+- `recall`: `0.67274` vs `0.67597` (almost unchanged)
+
+But the train-side rollout windows around that same region still show heavy over-generation, and the step-1200 monitor dump still has extreme tail failures.
+
+Interpretation:
+- the run is **not globally broken on every sample**,
+- average eval quality can still improve,
+- but the pathological duplicate-enumeration attractor remains alive on a subset of scenes and is strong enough to produce catastrophic outliers.
+
+This means `train` rollout metrics are useful as an **online canary** for entering the bad basin, but they are **not a calibrated proxy** for eval mAP.
+
+### 3.3 Train vs Eval FP/FN Can Flip (And Look Negatively Correlated)
+
+In this run, the *training* rollout FP/FN (measured on the current training micro-window) and the *eval* rollout FP/FN (measured on `val_sample_limit=504`) move in opposite directions between the first two eval checkpoints:
+
+- Eval step **300**:
+  - **train** `rollout/fp_total=309`, `rollout/fn_total=239`
+  - **eval** `eval_rollout/fp_total=1644`, `eval_rollout/fn_total=1103`
+- Eval step **600**:
+  - **train** `rollout/fp_total=962`, `rollout/fn_total=138`
+  - **eval** `eval_rollout/fp_total=766`, `eval_rollout/fn_total=1209`
+
+This can look "negatively correlated", but it is not necessarily a contradiction, because:
+
+1. **They are different distributions.**
+   - Train metrics are computed on a single rollout batch (`stage2/raw_rollouts=96`) at that training step.
+   - Eval metrics are computed on a fixed validation slice (504 samples here), and are therefore much lower variance.
+
+2. **Both are largely driven by a cardinality/verbosity shift (predicted count), not just geometry quality.**
+   - At train step 300: `rollout/pred_per_sample ~ 8.17`
+   - At train step 600: `rollout/pred_per_sample ~ 15.17`
+   - Meanwhile eval predicted objects moved the *other* direction:
+     - step 300: `eval_rollout/pred_objects=3945` (~7.83 preds/sample)
+     - step 600: `eval_rollout/pred_objects=2961` (~5.88 preds/sample)
+
+So train moving toward "over-generate to kill FN" (FP up, FN down) while eval moving toward "under-generate / more conservative" (FP down, FN up) is consistent with the numbers.
+
+Practical takeaway:
+- Treat *train* FP/FN primarily as an online diagnostic for **length/cardinality collapse** (over-generation regime),
+  and treat *eval* FP/FN + mAP as the generalization signal.
+- With only two eval points, do not over-interpret the sign; add more eval points (or a fixed train-eval slice) if we want to reason about correlations.
 
 ---
 
@@ -181,6 +322,16 @@ Aggregates:
 - mean/p90 of these metrics over the rollout batch
 - correlate with `rollout/pred_per_sample`, `rollout/rollout_len_mean`, `rollout/parse_truncated_rate`
 
+New recommendation from the extended log:
+- track **tail-risk** metrics, not just means.
+- The step-1200 checkpoint has the best eval mAP so far, yet still contains samples with `book=101`, `chair=68`, `person=92`.
+
+So add at least:
+- `dup/max_desc_count_max_over_batch`
+- `dup/near_iou90_pairs_same_desc_max_over_batch`
+- `dup/pred_objects_max_over_batch`
+- `dup/parse_truncated_and_pred_gt_gt2_rate` (fraction of samples that are both truncated and >2x over GT count)
+
 Acceptance check:
 - these should drop sharply if we have a real fix (even if recall stays similar).
 
@@ -202,6 +353,11 @@ Procedure (Channel-B, after matching):
    - find `m = argmax_{m in M_p} IoU(bbox(p), bbox(m))` among *matched* preds with same `desc`
    - if IoU>=tau (e.g., 0.9), mark `p` as `dup_of_matched`
 3. Apply a small penalty only to these `dup_of_matched` objects.
+
+Note (empirical, this run only):
+- In the step-300 monitor dump (10 eval samples), only **1** FP satisfied `(same desc, IoU>=0.9) w.r.t. a matched prediction`.
+- In the step-600 monitor dump, this count was **0**.
+So this rule targets a very specific duplicate subtype; it is still conceptually clean, but may not address the dominant "FP-FP near-dup jitter loops" by itself.
 
 Why this is EM-ish / MLE-aligned:
 - The "dup vs unlabeled-true" label is a latent variable.
@@ -259,7 +415,8 @@ Verify:
 2. `rollout/pred_per_sample` stops growing in late training.
 3. `rollout/parse_truncated_rate` does not trend upward with step.
 4. Matched localization metrics (`matched_maskiou_mean`) remain stable (do not regress geometry).
+5. Worst-sample tail metrics improve even when mean eval mAP is flat or slightly improved.
 
 Qualitative:
 - monitor dump rollouts should no longer show 20-60 repeats of the same class with jittered boxes.
-
+- specifically, the known hard scenes should stop showing patterns like `book~101`, `chair~68`, `person~92` in a single sample.
