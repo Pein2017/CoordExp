@@ -10,8 +10,11 @@ extends: ../prod/desc_first_a_only.yaml
 # - bbox_geo: SmoothL1 (+ CIoU)
 # - coord_reg: hardCE (coord_token_ce) + softCE + W1 + coord/text gating
 
+model:
+  model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_3-a_only
+  run_name: epoch_2-eff_size_64-n_softctx_iter_3-a_only-from_stage1_2B
   output_dir: output/stage2_ab/coco_bbox_max60/a_only_iter3
   logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_iter3
 

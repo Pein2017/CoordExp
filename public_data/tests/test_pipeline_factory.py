@@ -551,6 +551,36 @@ def test_full_pipeline_emits_jsonl_norm_coord(tmp_path: Path) -> None:
     assert manifest.is_file()
 
 
+def test_rescale_stage_upscales_low_resolution_images_toward_cap(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "public_data" / "coco"
+    raw_dir = _setup_dataset(dataset_dir)
+
+    planner = PipelinePlanner()
+    cfg = PipelineConfig(
+        dataset_id="coco",
+        dataset_dir=dataset_dir,
+        raw_dir=raw_dir,
+        preset="rescale_32_1024_bbox_smoke",
+        max_pixels=32 * 32 * 1024,
+        num_workers=1,
+        run_validation_stage=False,
+    )
+    result = planner.run(config=cfg, mode="rescale")
+
+    train_jsonl = result.split_artifacts["train"].raw
+    with train_jsonl.open("r", encoding="utf-8") as f:
+        first = json.loads(next(line for line in f if line.strip()))
+
+    assert first["width"] == 1152
+    assert first["height"] == 864
+    assert first["objects"][0]["bbox_2d"] == [90, 108, 720, 540]
+
+    resized_image = result.preset_dir / first["images"][0]
+    assert resized_image.is_file()
+    with Image.open(resized_image) as img:
+        assert img.size == (1152, 864)
+
+
 @pytest.mark.parametrize("mode", ["rescale", "coord", "full"])
 def test_optional_validation_stage_wiring(tmp_path: Path, mode: str) -> None:
     dataset_dir = tmp_path / "public_data" / "coco"

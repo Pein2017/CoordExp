@@ -51,6 +51,14 @@ Optional: run the shared pipeline to generate training-ready preset artifacts
 ./public_data/run.sh coco all --preset rescale_32_768_bbox
 ```
 
+COCO-specific note:
+- Native COCO-2017 image sizes vary a lot, and some images are fairly low-resolution.
+- The shared `rescale` stage now fills the available `max_pixels` budget: each image is
+  resized to the largest 32-aligned resolution under the cap while keeping the original
+  aspect ratio as closely as possible.
+- If you want to align with 1024-budget baselines, prefer a dedicated `rescale` preset
+  over reusing the older 768-budget artifacts.
+
 Canonical preset artifacts:
 - `train.jsonl` / `val.jsonl` (pixel-space)
 - `train.norm.jsonl` / `val.norm.jsonl` (norm1000 integers)
@@ -58,9 +66,20 @@ Canonical preset artifacts:
 
 Optional max-object filter (off by default):
 ```bash
-PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco all --preset rescale_32_768_bbox
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_768_bbox
 ```
 When enabled, output preset naming uses canonical suffix `..._max60`.
+
+Recommended 1024-budget + `max_objects<=60` flow:
+```bash
+./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- \
+  --image-factor 32 --max-pixels $((32*32*1024))
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_1024_bbox
+./public_data/run.sh coco validate --preset rescale_32_1024_bbox_max60 --skip-image-check
+```
+This emits:
+- `public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
+- `public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
 
 ## Prompt Variant for COCO-80
 

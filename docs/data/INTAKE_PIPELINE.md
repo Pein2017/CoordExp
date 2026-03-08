@@ -49,7 +49,7 @@ The preferred way to prepare public datasets is the unified runner:
 
 ## Manual Pipeline Steps
 
-### 1. Smart Resize (Budget + Grid)
+### 1. Smart Resize (Budget-Filling + Grid)
 
 ```bash
 PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
@@ -62,7 +62,11 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
   --relative-images
 ```
 - Uses `SmartResizePreprocessor` to resize images and geometry together.
-- Dimensions snap to `image_factor`; pixel budget enforced by `max_pixels`.
+- Each image is resized to the largest `image_factor`-aligned shape that stays under
+  `max_pixels`, while preserving the original aspect ratio as closely as possible.
+- This intentionally upsamples low-resolution sources (including some native COCO-2017
+  images) so evaluation/training can use the available visual budget instead of only
+  treating `max_pixels` as a hard cap.
 
 ### 2. Tiny Subset (Smoke Tests)
 

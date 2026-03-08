@@ -1,0 +1,17 @@
+extends: a_only_iter1.yaml
+
+# Override to use the 32x32x1024 COCO path and explicit budget.
+model:
+  model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+
+training:
+  run_name: epoch_2-eff_size_64-n_softctx_iter_1-a_only
+  output_dir: output/stage2_ab/2b_1024/a_only_iter1
+  logging_dir: tb/stage2_ab/2b_1024/a_only_iter1
+
+template:
+  max_pixels: 1048576
+
+custom:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl

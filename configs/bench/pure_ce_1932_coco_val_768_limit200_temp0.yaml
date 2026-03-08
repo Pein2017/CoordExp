@@ -1,0 +1,30 @@
+run:
+  name: pure_ce_1932_merged_coco_val_limit200_res768_temp0
+  output_dir: output/bench
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  model_checkpoint: output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce/ckpt-1932_merged
+  mode: auto
+  pred_coord_mode: auto
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  backend:
+    type: hf
+  generation:
+    # Greedy decoding: do_sample=false when temperature <= 0.
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 16
+    seed: 42
+  device: cuda:7
+  limit: 200
+  detect_samples: 128
+

@@ -1,0 +1,30 @@
+run:
+  name: softce_hardce_mixed_1344_merged_coco_val_limit200_res768_temp0
+  output_dir: output/bench
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  # NOTE: despite the "stage1_2b" path component, this merged checkpoint is 4B-sized.
+  model_checkpoint: output/stage1_2b/hardce_softce-ckpt_1344-merged
+  mode: auto
+  pred_coord_mode: auto
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  backend:
+    type: hf
+  generation:
+    # Greedy decoding: do_sample=false when temperature <= 0.
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 16
+    seed: 42
+  device: cuda:6
+  limit: 200
+  detect_samples: 128
