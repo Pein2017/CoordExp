@@ -1,6 +1,8 @@
 ## Why
 
-Stage-2 Channel-B currently strict-parses the raw rollout, matches parsed objects, and builds the teacher-forced target from the raw accepted prefix plus FN append. In the duplicate-heavy failure mode, this leaves a cheap object-level escape hatch:
+Stage-2 Channel-B currently strict-parses the raw rollout, bbox-filters the parsed records, matches directly on that raw filtered list, and builds the teacher-forced target from the raw accepted prefix plus FN append.
+
+In the duplicate-heavy failure mode, that leaves a cheap object-level escape hatch:
 
 - near-duplicate bbox objects can repeat many times with the same normalized description,
 - Hungarian can still salvage one matched localization,
@@ -9,43 +11,52 @@ Stage-2 Channel-B currently strict-parses the raw rollout, matches parsed object
 
 The practical result is the known high-cardinality local optimum documented in the project notes: matched localization stays fairly stable, while prediction count, duplicate density, and truncation worsen.
 
-We need a minimal Stage-2 Channel-B v2 contract that:
+We need a Stage-2 Channel-B contract that:
 
 - preserves Stage-1, CoordExp, desc-first generation, and no-extra-objectness-head philosophy,
 - keeps generic unmatched accepted objects FP-neutral by default,
 - adds targeted negative signal only for duplicate-certified continuations,
 - rebuilds Channel-B teacher forcing around a clean deduplicated prefix,
+- removes the old raw-prefix/immutable-prefix Channel-B contract rather than carrying compatibility baggage,
 - keeps Channel-A behavior as stable as possible.
 
 ## What Changes
 
-- Add a new Channel-B v2 training contract:
-  - `raw rollout -> strict parse -> bbox-valid filtering -> sequential dedup -> clean accepted sequence + duplicate bursts -> Hungarian on clean accepted -> clean-prefix CE + duplicate UL`
-- Formally allow Channel-B v2 to rebuild a deduplicated clean assistant target, superseding the older immutable-rollout-prefix rule for this path only.
-- Add deterministic sequential dedup for bbox records using shared `normalize_desc` plus a configurable near-duplicate IoU threshold.
-- Match GT against the clean accepted sequence, not the raw duplicate-heavy parsed list.
-- Rebuild Channel-B positive supervision from the clean accepted sequence so later correct objects use clean prefixes rather than duplicate-contaminated prefixes.
-- Add a new explicit Stage-2 objective atom for duplicate-start unlikelihood:
+- Replace the Stage-2 two-channel Channel-B raw-prefix contract with a single canonical clean-prefix contract:
+  - `raw rollout -> container salvage + strict record acceptance -> bbox-valid filtering -> sequential dedup -> clean accepted sequence + duplicate bursts -> Hungarian on clean accepted -> clean-prefix CE + duplicate UL`
+- Remove the old immutable-rollout-prefix rule for Stage-2 two-channel Channel-B and do not provide a compatibility mode, version selector, or dedup enable/disable escape hatch.
+- Make clean-prefix training semantics mandatory:
+  - later correct objects are teacher-forced on the clean accepted prefix,
+  - duplicates are removed from the positive teacher-forced sequence and reintroduced only as boundary-local duplicate-UL targets,
+  - generic unmatched clean accepted objects remain neutral context.
+- Establish a canonical config hierarchy:
+  - `stage2_ab.channel_b.*` owns Channel-B rollout-prep invariants,
+  - `stage2_ab.pipeline.objective[]` owns objective weights,
+  - `duplicate_ul` is a first-class B-only objective module with no extra flat weight surface.
+- Add a new explicit Stage-2 objective atom for duplicate unlikelihood:
   - target only duplicate-certified continuations,
   - define the bad token as the first true LCP-divergence token relative to the clean continuation,
-  - aggregate as one UL term per unique divergence token per clean boundary, with unit weight in v1.
-- Extend diagnostics/config surfaces for duplicate collapse monitoring, including duplicate counts, burst counts, UL-application counts, and near-duplicate set metrics.
-- Add a safer recommended Stage-2 v2 config that stays A-hot / B-cold and reduces overly permissive long-rollout behavior.
+  - aggregate as one UL term per unique divergence token per clean boundary,
+  - intentionally collapse same-boundary duplicates that share the same divergence token so duplicate-burst length does not scale the loss by repeated identical bad continuations.
+- Extend diagnostics/config surfaces for duplicate collapse monitoring, including duplicate gauges, duplicate/UL counters, and safer A-hot/B-cold recommended profiles.
+- Add a docs-sync requirement after implementation:
+  - update `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS_LOSSES.md`,
+  - then review `docs/eval/README.md`, `docs/ARCHITECTURE.md`, and `docs/README.md` for contract/index/artifact sync.
 
 ## Capabilities
 
-### New Capabilities
-- `stage2-b-clean-prefix-dup-ul`: Stage-2 Channel-B clean-prefix duplicate suppression with duplicate-only unlikelihood.
-
 ### Modified Capabilities
-- `stage2-ab-training`: Channel-B matching and teacher-forced target construction move from raw-prefix semantics to clean-prefix semantics under the v2 contract.
-- `teacher-forcing-unified-loss-registry`: add a new explicit duplicate UL objective atom for Stage-2 Channel-B without changing existing `token_ce` semantics.
-- `trainer-metrics-components`: extend the metrics surface with duplicate-collapse diagnostics and boundary-level duplicate UL counters.
+- `stage2-ab-training`: replace Channel-B raw-prefix semantics with a canonical clean-prefix contract and typed hierarchy for dedup + duplicate UL.
+- `teacher-forcing-objective-pipeline`: add `duplicate_ul` as a strict B-only objective module in the ordered pipeline surface.
+- `teacher-forcing-unified-loss-registry`: define duplicate-only rollout semantics, clean-boundary divergence targeting, and duplicate UL behavior without changing existing positive `token_ce` semantics.
+- `trainer-metrics-components`: extend the metrics surface with duplicate-collapse gauges, Channel-B duplicate/UL counters, and canonical logging keys for the new objective atom.
 
 ## Impact
 
 - Default Stage-1 behavior is unchanged.
-- Channel-A behavior remains unchanged except for small integration updates required to coexist with the new Channel-B atom/config plumbing.
-- Stage-2 Channel-B becomes stricter only for duplicate-certified bbox continuations; generic unmatched accepted objects remain neutral.
+- Channel-A behavior remains unchanged except for small shared pipeline/config plumbing updates required to host the new Channel-B objective atom and metrics.
+- Stage-2 two-channel Channel-B becomes a breaking contract change by design:
+  - clean-prefix Channel-B is the only supported path after this change,
+  - there is no backward-compatibility mode for the old raw-prefix contract.
 - Matching, FN detection, and downstream positive CE become more semantically consistent because they operate on the clean accepted sequence.
-- New configs, metrics, and tests make the duplicate-collapse behavior auditable before broader experimentation.
+- New configs, metrics, tests, and doc-sync tasks make the duplicate-collapse behavior auditable before broader experimentation.
