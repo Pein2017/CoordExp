@@ -65,6 +65,10 @@ Tune shared preprocessing options (run steps separately; args after `--` go to t
 Notes:
 - For `all`, args after `--` are forwarded only to dataset-specific steps (`download`/`convert`) to avoid ambiguity.
 - `validate` also runs a best-effort prompt/template sanity check on `train.coord.jsonl` (it warns+skips if no cached model is available under `model_cache/`).
+- Shared `rescale` now treats `max_pixels` as a budget-filling target: each image is
+  resized to the largest 32-aligned shape under the cap while keeping aspect ratio as
+  close as possible. This is especially important for low-resolution datasets/splits
+  such as parts of COCO-2017.
 
 ## Unified Internal Architecture
 `public_data/run.sh` keeps the same external command grammar, while shared internals are now routed through a modular pipeline/factory:

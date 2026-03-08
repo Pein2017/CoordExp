@@ -59,6 +59,88 @@ def _floor_by_factor(number: int, factor: int) -> int:
     return math.floor(number / factor) * factor
 
 
+def _aligned_candidates(value: float, factor: int) -> set[int]:
+    """Return a small neighborhood of factor-aligned candidates around ``value``."""
+    value_int = max(1, int(round(value)))
+    floor_value = max(factor, _floor_by_factor(value_int, factor))
+    ceil_value = max(factor, _ceil_by_factor(value_int, factor))
+    return {
+        candidate
+        for candidate in {
+            floor_value - factor,
+            floor_value,
+            ceil_value,
+            ceil_value + factor,
+        }
+        if candidate >= factor
+    }
+
+
+def _maximize_aligned_size(
+    *,
+    height: int,
+    width: int,
+    factor: int,
+    max_pixels: int,
+) -> tuple[int, int]:
+    """Return the closest aspect-preserving aligned size under ``max_pixels``.
+
+    The search stays local around the continuous optimum, then prefers the candidate
+    with the smallest aspect-ratio error and, among ties, the largest area.
+    """
+    area = height * width
+    scale = math.sqrt(max_pixels / area)
+    ideal_h = height * scale
+    ideal_w = width * scale
+    aspect = float(width) / float(height)
+
+    candidates: set[tuple[int, int]] = set()
+
+    def _add_candidate(candidate_h: int, candidate_w: int) -> None:
+        if candidate_h < factor or candidate_w < factor:
+            return
+        if candidate_h % factor != 0 or candidate_w % factor != 0:
+            return
+        if candidate_h * candidate_w > max_pixels:
+            return
+        candidates.add((candidate_h, candidate_w))
+
+    for candidate_h in _aligned_candidates(ideal_h, factor):
+        max_w_budget = max(factor, _floor_by_factor(max_pixels // candidate_h, factor))
+        for candidate_w in _aligned_candidates(candidate_h * aspect, factor) | {
+            max_w_budget,
+            max_w_budget - factor,
+        }:
+            bounded_w = min(max_w_budget, candidate_w)
+            if bounded_w >= factor:
+                _add_candidate(candidate_h, bounded_w)
+
+    for candidate_w in _aligned_candidates(ideal_w, factor):
+        max_h_budget = max(factor, _floor_by_factor(max_pixels // candidate_w, factor))
+        for candidate_h in _aligned_candidates(candidate_w / aspect, factor) | {
+            max_h_budget,
+            max_h_budget - factor,
+        }:
+            bounded_h = min(max_h_budget, candidate_h)
+            if bounded_h >= factor:
+                _add_candidate(bounded_h, candidate_w)
+
+    floor_h = max(factor, _floor_by_factor(int(ideal_h), factor))
+    floor_w = max(factor, _floor_by_factor(int(ideal_w), factor))
+    _add_candidate(floor_h, floor_w)
+
+    if not candidates:
+        return factor, factor
+
+    def _score(size: tuple[int, int]) -> tuple[float, int, float]:
+        candidate_h, candidate_w = size
+        ratio_error = abs(math.log((candidate_w / candidate_h) / aspect))
+        ideal_error = abs(candidate_h - ideal_h) + abs(candidate_w - ideal_w)
+        return (ratio_error, -(candidate_h * candidate_w), ideal_error)
+
+    return min(candidates, key=_score)
+
+
 def smart_resize(
     *,
     height: int,
@@ -68,13 +150,17 @@ def smart_resize(
     max_pixels: int = MAX_PIXELS,
     max_ratio: int = MAX_RATIO,
 ) -> tuple[int, int]:
-    """Compute resized dimensions that satisfy the detection pixel budget.
+    """Compute resized dimensions under the detection pixel budget.
 
     The resized dimensions:
-    - Respect the :data:`max_pixels` budget while staying above :data:`min_pixels`
-    - Preserve aspect ratio
+    - Preserve aspect ratio as closely as grid alignment allows
     - Snap to multiples of :data:`factor`
+    - Maximize resolution under :data:`max_pixels`
     - Reject extreme aspect ratios that would break patch grids
+
+    ``min_pixels`` is retained for API compatibility with existing callers. Under
+    the current maximize-under-cap policy, practical configs are expected to keep
+    ``max_pixels >= min_pixels``.
     """
     height = int(height)
     width = int(width)
@@ -82,23 +168,31 @@ def smart_resize(
     min_pixels = int(min_pixels)
     max_pixels = int(max_pixels)
 
+    if height <= 0 or width <= 0:
+        raise ValueError(f"height/width must be positive, got {(height, width)}")
+    if factor <= 0:
+        raise ValueError(f"factor must be positive, got {factor}")
+    if max_pixels <= 0:
+        raise ValueError(f"max_pixels must be positive, got {max_pixels}")
+    if min_pixels <= 0:
+        raise ValueError(f"min_pixels must be positive, got {min_pixels}")
+    if max_pixels < min_pixels:
+        raise ValueError(
+            f"max_pixels must be >= min_pixels, got max_pixels={max_pixels}, min_pixels={min_pixels}"
+        )
+
     if max(height, width) / min(height, width) > max_ratio:
         raise ValueError(
             f"absolute aspect ratio must be smaller than {max_ratio}, "
             f"got {max(height, width) / min(height, width)}"
         )
 
-    h_bar = max(factor, _round_by_factor(height, factor))
-    w_bar = max(factor, _round_by_factor(width, factor))
-    if h_bar * w_bar > max_pixels:
-        beta = math.sqrt((height * width) / max_pixels)
-        h_bar = max(factor, _floor_by_factor(int(height / beta), factor))
-        w_bar = max(factor, _floor_by_factor(int(width / beta), factor))
-    elif h_bar * w_bar < min_pixels:
-        beta = math.sqrt(min_pixels / (height * width))
-        h_bar = _ceil_by_factor(int(height * beta), factor)
-        w_bar = _ceil_by_factor(int(width * beta), factor)
-    return h_bar, w_bar
+    return _maximize_aligned_size(
+        height=height,
+        width=width,
+        factor=factor,
+        max_pixels=max_pixels,
+    )
 
 
 def _scale_and_clamp_geometry(

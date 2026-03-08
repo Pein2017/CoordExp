@@ -1,6 +1,7 @@
 import pytest
 
 from src.datasets.dense_caption import BaseCaptionDataset
+from src.datasets.preprocessors.resize import smart_resize
 
 
 class DummyTemplate:
@@ -56,6 +57,34 @@ def test_max_pixels_guard_allows_record_at_cap() -> None:
     assert out["dataset"] == "unit"
     assert out["base_idx"] == 0
     assert "sample_id" in out
+
+
+def test_smart_resize_upscales_low_resolution_images_toward_cap() -> None:
+    target_h, target_w = smart_resize(
+        height=96,
+        width=128,
+        factor=32,
+        max_pixels=32 * 32 * 1024,
+        min_pixels=32 * 32 * 4,
+    )
+    assert (target_h, target_w) == (864, 1152)
+    assert target_h * target_w <= 32 * 32 * 1024
+    assert target_h * target_w > 96 * 128
+
+
+def test_smart_resize_keeps_aspect_ratio_for_common_low_res_shapes() -> None:
+    target_h, target_w = smart_resize(
+        height=480,
+        width=640,
+        factor=32,
+        max_pixels=32 * 32 * 1024,
+        min_pixels=32 * 32 * 4,
+    )
+    assert target_h % 32 == 0
+    assert target_w % 32 == 0
+    assert target_h * target_w <= 32 * 32 * 1024
+    assert (target_w / target_h) == pytest.approx(640 / 480)
+    assert target_h * target_w > 480 * 640
 
 
 def test_dataset_requires_width_and_height_at_init() -> None:
