@@ -9,6 +9,7 @@ Welcome to the CoordExp documentation. This index will help you navigate the doc
 3) **Train**:
    - Stage-1 / baseline SFT: start from `configs/base.yaml` and follow [`docs/data/README.md`](data/README.md)
    - Stage-2 / rollout-matching + AB: [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
+     - Includes the canonical clean-prefix Channel-B contract (`duplicate_ul`, dedup-before-Hungarian, and duplicate-collapse diagnostics)
 4) **Infer + evaluate**: [`docs/eval/README.md`](eval/README.md)
 5) **Interpret logs**: [`docs/training/METRICS_LOSSES.md`](training/METRICS_LOSSES.md)
 
@@ -40,8 +41,8 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.
 *   **[Fusion Dataset](data/FUSION_DATASET.md)**: Guide to multi-dataset fusion.
 
 ## [Training](training/)
-*   **[Stage-2 Runbook](training/STAGE2_RUNBOOK.md)**: Runbook for Rollout-Matching and Stage-2 AB training.
-*   **[Metrics & Losses](training/METRICS_LOSSES.md)**: Detailed explanation of training metrics and loss functions.
+*   **[Stage-2 Runbook](training/STAGE2_RUNBOOK.md)**: Runbook for rollout-matching, Stage-2 AB training, and the clean-prefix Channel-B duplicate-UL contract.
+*   **[Metrics & Losses](training/METRICS_LOSSES.md)**: Detailed explanation of training metrics, loss functions, and duplicate-collapse diagnostics.
 *   **[Coord Objective & Adapter](training/COORD_OBJECTIVE_AND_ADAPTER.md)**: SoftCE/W1 losses and offset adapters.
 *   **[Architecture (Logging & Reproducibility)](ARCHITECTURE.md)**: What files/logs a run produces and how to keep runs paper-ready.
 

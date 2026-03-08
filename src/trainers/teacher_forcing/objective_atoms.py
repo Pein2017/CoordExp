@@ -226,6 +226,50 @@ def project_stage2_objective_atoms(
                         atol=atol,
                     )
 
+    # duplicate_ul -> {duplicate_ul}
+    if "duplicate_ul" in module_losses:
+        duplicate_spec = _spec("duplicate_ul")
+        duplicate_w = float(duplicate_spec.weight)
+        weighted_loss = module_losses.get("duplicate_ul")
+        if weighted_loss is None:
+            raise ValueError("pipeline_result.module_losses missing duplicate_ul")
+
+        if (not emit_text) or not text_provenance:
+            if require_additive:
+                got = _as_scalar_tensor(weighted_loss)
+                if got is None:
+                    raise ValueError(
+                        "pipeline_result.module_losses['duplicate_ul'] must be a scalar tensor"
+                    )
+                _assert_allclose(
+                    where="duplicate_ul disabled emission",
+                    got=got,
+                    expected=weighted_loss.new_tensor(0.0),
+                    rtol=rtol,
+                    atol=atol,
+                )
+        elif duplicate_w != 0.0:
+            duplicate_contrib = _as_scalar_tensor(state.get("duplicate_ul_contrib"))
+            if duplicate_contrib is None:
+                if require_additive:
+                    raise ValueError(
+                        "duplicate_ul module did not expose duplicate_ul_contrib tensor in pipeline state"
+                    )
+            else:
+                _maybe_add(
+                    f"loss/{str(text_provenance)}/duplicate_ul",
+                    _weighted(duplicate_contrib, module_weight=duplicate_w),
+                )
+
+                if require_additive:
+                    _assert_allclose(
+                        where="duplicate_ul",
+                        got=_weighted(duplicate_contrib, module_weight=duplicate_w),
+                        expected=weighted_loss,
+                        rtol=rtol,
+                        atol=atol,
+                    )
+
     # coord_reg -> {coord_*, *_gate}
     if "coord_reg" in module_losses:
         coord_spec = _spec("coord_reg")

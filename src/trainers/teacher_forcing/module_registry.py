@@ -8,7 +8,7 @@ schema validation without pulling in torch/trainer runtime code.
 
 from typing import Final
 
-ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {"token_ce", "bbox_geo", "coord_reg"}
+ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {"token_ce", "duplicate_ul", "bbox_geo", "coord_reg"}
 ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = {"coord_diag"}
 
 OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
@@ -17,8 +17,8 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "self_context_struct_ce_weight",
         "rollout_fn_desc_weight",
         "rollout_matched_prefix_struct_weight",
-        "rollout_drop_invalid_struct_ce_multiplier",
     },
+    "duplicate_ul": set(),
     "bbox_geo": {
         "smoothl1_weight",
         "ciou_weight",
@@ -47,4 +47,3 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
 DIAGNOSTIC_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "coord_diag": set(),
 }
-

@@ -15,13 +15,6 @@ class _FakeTrainArguments:
 
 
 def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
-    token_ce_cfg = {
-        "desc_ce_weight": 1.0,
-        "self_context_struct_ce_weight": 0.1,
-        "rollout_fn_desc_weight": 1.0,
-        "rollout_matched_prefix_struct_weight": 1.0,
-        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
-    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -40,23 +33,91 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "config": dict(token_ce_cfg),
-                    }
-                ],
-                "diagnostics": [],
-            },
+            "pipeline": _canonical_stage2_pipeline(),
             "channel_b": {},
         },
     }
     prompts = ConfigLoader.resolve_prompts(raw)
     return TrainingConfig.from_mapping(raw, prompts)
+
+
+def _canonical_stage2_pipeline(
+    *,
+    token_ce_cfg: dict | None = None,
+    duplicate_ul_cfg: dict | None = None,
+    duplicate_ul_channels: list[str] | None = None,
+    bbox_geo_cfg: dict | None = None,
+    coord_reg_cfg: dict | None = None,
+) -> dict:
+    if token_ce_cfg is None:
+        token_ce_cfg = {
+            "desc_ce_weight": 1.0,
+            "self_context_struct_ce_weight": 0.1,
+            "rollout_fn_desc_weight": 1.0,
+            "rollout_matched_prefix_struct_weight": 1.0,
+        }
+    if duplicate_ul_cfg is None:
+        duplicate_ul_cfg = {}
+    if duplicate_ul_channels is None:
+        duplicate_ul_channels = ["B"]
+    if bbox_geo_cfg is None:
+        bbox_geo_cfg = {
+            "smoothl1_weight": 0.0,
+            "ciou_weight": 0.0,
+            "a1_smoothl1_weight": 0.0,
+            "a1_ciou_weight": 0.0,
+        }
+    if coord_reg_cfg is None:
+        coord_reg_cfg = {
+            "coord_ce_weight": 0.0,
+            "coord_el1_weight": 0.0,
+            "coord_ehuber_weight": 0.0,
+            "coord_huber_delta": 0.001,
+            "coord_entropy_weight": 0.0,
+            "coord_gate_weight": 0.0,
+            "text_gate_weight": 0.0,
+            "soft_ce_weight": 0.0,
+            "self_context_soft_ce_weight": 0.0,
+            "w1_weight": 0.0,
+            "a1_soft_ce_weight": 0.0,
+            "a1_w1_weight": 0.0,
+            "temperature": 1.0,
+            "target_sigma": 2.0,
+            "target_truncate": None,
+        }
+    return {
+        "objective": [
+            {
+                "name": "token_ce",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "config": dict(token_ce_cfg),
+            },
+            {
+                "name": "duplicate_ul",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": list(duplicate_ul_channels),
+                "config": dict(duplicate_ul_cfg),
+            },
+            {
+                "name": "bbox_geo",
+                "enabled": True,
+                "weight": 0.0,
+                "channels": ["A", "B"],
+                "config": dict(bbox_geo_cfg),
+            },
+            {
+                "name": "coord_reg",
+                "enabled": True,
+                "weight": 0.0,
+                "channels": ["A", "B"],
+                "config": dict(coord_reg_cfg),
+            },
+        ],
+        "diagnostics": [],
+    }
 
 
 def _patch_loader_runtime(monkeypatch: pytest.MonkeyPatch, *, world_size: int) -> None:
@@ -88,8 +149,13 @@ def test_stage2_ab_channel_b_removed_keys_fail_fast(payload: dict, expected_msg:
 
 def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
-        {"producer_wait_timeout_s": 0, "ddp_phase_timeout_s": 600}
+        {
+            "duplicate_iou_threshold": 0.9,
+            "producer_wait_timeout_s": 0,
+            "ddp_phase_timeout_s": 600,
+        }
     )
+    assert cfg.duplicate_iou_threshold == pytest.approx(0.9)
     assert cfg.producer_wait_timeout_s == pytest.approx(0.0)
     assert cfg.ddp_phase_timeout_s == pytest.approx(600.0)
 
@@ -125,6 +191,24 @@ def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
     ):
         Stage2ABChannelBConfig.from_mapping({"ddp_phase_timeout_s": -1})
 
+    with pytest.raises(
+        TypeError,
+        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be a float/int",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": "oops"})
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be in \[0, 1\]",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": -0.1})
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be in \[0, 1\]",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": 1.1})
+
 
 def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     cfg = _make_stage2_training_config(
@@ -152,25 +236,9 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "config": {
-                            "desc_ce_weight": 1.0,
-                            "self_context_struct_ce_weight": 0.1,
-                            "rollout_fn_desc_weight": 1.0,
-                            "rollout_matched_prefix_struct_weight": 1.0,
-                            "rollout_drop_invalid_struct_ce_multiplier": 1.0,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
+            "pipeline": _canonical_stage2_pipeline(),
             "channel_b": {
+                "duplicate_iou_threshold": 0.85,
                 "producer_wait_timeout_s": 120.0,
                 "ddp_phase_timeout_s": 900.0,
             },
@@ -179,18 +247,84 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     parsed = TrainingConfig.from_mapping(raw, prompts)
     assert parsed.stage2_ab is not None
+    assert parsed.stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.85)
     assert parsed.stage2_ab.channel_b.producer_wait_timeout_s == pytest.approx(120.0)
     assert parsed.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(900.0)
 
 
 def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> None:
-    token_ce_cfg = {
-        "desc_ce_weight": 1.0,
-        "self_context_struct_ce_weight": 0.1,
-        "rollout_fn_desc_weight": 1.0,
-        "rollout_matched_prefix_struct_weight": 1.0,
-        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(),
+            "channel_b": {"drop_invalid_struct_ce_multiplier": 2.0},
+        },
     }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.drop_invalid_struct_ce_multiplier",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                token_ce_cfg={
+                    "desc_ce_weight": 1.0,
+                    "self_context_struct_ce_weight": 0.1,
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_drop_invalid_struct_ce_multiplier": 1.0,
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[0\]\.config\.rollout_drop_invalid_struct_ce_multiplier",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_requires_duplicate_ul_in_canonical_order() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -210,37 +344,88 @@ def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> N
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "config": dict(token_ce_cfg),
-                    }
-                ],
+                "objective": _canonical_stage2_pipeline()["objective"][:1],
                 "diagnostics": [],
             },
-            "channel_b": {"drop_invalid_struct_ce_multiplier": 2.0},
+            "channel_b": {},
         },
     }
 
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.channel_b\.drop_invalid_struct_ce_multiplier",
+        match=r"canonical module order",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_requires_duplicate_ul_channels_b_only() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(duplicate_ul_channels=["A", "B"]),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"duplicate_ul must declare channels \['B'\]",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_requires_empty_duplicate_ul_config() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                duplicate_ul_cfg={"unknown_weight": 1.0}
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
 
 def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
-    token_ce_cfg = {
-        "desc_ce_weight": 1.0,
-        "self_context_struct_ce_weight": 0.1,
-        "rollout_fn_desc_weight": 1.0,
-        "rollout_matched_prefix_struct_weight": 1.0,
-        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
-    }
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -260,18 +445,7 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "config": dict(token_ce_cfg),
-                    }
-                ],
-                "diagnostics": [],
-            },
+            "pipeline": _canonical_stage2_pipeline(),
             "channel_b": {},
         },
     }
@@ -287,7 +461,6 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
         "self_context_struct_ce_weight": 0.0,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
-        "rollout_drop_invalid_struct_ce_multiplier": 1.0,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -361,33 +534,9 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "bbox_geo",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "config": {
-                            "smoothl1_weight": 0.0,
-                            "ciou_weight": 0.0,
-                            "a1_smoothl1_weight": 0.0,
-                            "a1_ciou_weight": 0.0,
-                        },
-                    },
-                    {
-                        "name": "coord_reg",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "config": {
-                            **coord_reg_cfg,
-                            "unknown_weight": 1.0,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
+            "pipeline": _canonical_stage2_pipeline(
+                coord_reg_cfg={**coord_reg_cfg, "unknown_weight": 1.0}
+            ),
             "channel_b": {},
         },
     }
@@ -395,7 +544,7 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
+        match=r"Unknown stage2_ab\.pipeline\.objective\[3\]\.config keys.*unknown_weight",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -609,7 +758,7 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
     with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):
         _build_pipeline_manifest(
             cfg,
-            default_objective=["token_ce", "bbox_geo", "coord_reg"],
+            default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
             default_diagnostics=["coord_diag"],
             trainer_variant="stage2_two_channel",
             config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
@@ -633,6 +782,13 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
                     "channels": ("A", "B"),
                     "config": {},
                 },
+                {
+                    "name": "duplicate_ul",
+                    "enabled": True,
+                    "weight": 1.0,
+                    "channels": ("B",),
+                    "config": {},
+                },
             ),
             "diagnostics": (),
         }
@@ -640,7 +796,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
 
     manifest = _build_pipeline_manifest(
         cfg,
-        default_objective=["token_ce", "bbox_geo", "coord_reg"],
+        default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
         default_diagnostics=["coord_diag"],
         trainer_variant="stage2_two_channel",
         config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
@@ -649,5 +805,5 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         coord_soft_cfg=None,
     )
 
-    assert [m["name"] for m in manifest["objective"]] == ["token_ce"]
+    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "duplicate_ul"]
     assert manifest["diagnostics"] == []

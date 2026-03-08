@@ -31,7 +31,6 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
             "tail_closure_pos": [],
             "prefix_struct_pos": [],
             "drop_invalid_total": 0,
-            "drop_invalid_struct_ce_multiplier": 1.0,
         }
     ]
 

@@ -15,11 +15,16 @@ from src.trainers.stage2_rollout_aligned import (
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
+    _bbox_groups_from_token_ids,
     _bbox_smoothl1_ciou_loss,
+    _build_canonical_prefix_data,
+    _build_duplicate_ul_targets,
     _build_teacher_forced_payload,
+    _compute_duplicate_diagnostics,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
     _matched_prefix_structure_positions,
+    _sequential_dedup_bbox_objects,
     _stage2_ab_tail_closure_positions,
 )
 
@@ -425,6 +430,8 @@ def _make_stage2_pipeline_manifest(
     *,
     token_ce_enabled: bool = True,
     token_ce_weight: float = 1.0,
+    duplicate_ul_enabled: bool = False,
+    duplicate_ul_weight: float = 1.0,
     desc_ce_weight: float = 1.0,
     self_context_struct_ce_weight: float = 0.1,
     rollout_fn_desc_weight: float | None = None,
@@ -460,6 +467,13 @@ def _make_stage2_pipeline_manifest(
                 "weight": float(token_ce_weight),
                 "channels": ["A", "B"],
                 "config": token_cfg,
+            },
+            {
+                "name": "duplicate_ul",
+                "enabled": bool(duplicate_ul_enabled),
+                "weight": float(duplicate_ul_weight),
+                "channels": ["B"],
+                "config": {},
             },
             {
                 "name": "bbox_geo",
@@ -784,6 +798,438 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         t._prepare_batch_inputs_b([sample], _segments_only=True)
 
     assert captured["top_k"] == 7
+
+
+def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = lambda key, default=None: default
+
+    tok = _DummyTokenizer()
+    t.template = types.SimpleNamespace(tokenizer=tok)
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 64
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._dist_info = lambda: (0, 1, None)
+    t._object_field_order = lambda: "desc_first"
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=list(tok.encode('{"objects": [', add_special_tokens=False)),
+        prefix_text='{"objects": [',
+        response_token_ids=[],
+        response_text="",
+        valid_objects=[],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=True,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+
+    captured = {}
+
+    class _StopAfterMatch(RuntimeError):
+        pass
+
+    def _fake_match(*, preds, gts, **kwargs):
+        captured["n_pred"] = int(len(preds))
+        captured["n_gt"] = int(len(gts))
+        raise _StopAfterMatch("stop after invalid-rollout fallback reaches matcher")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        _fake_match,
+    )
+
+    sample = {
+        "messages": [],
+        "assistant_payload": {
+            "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "x"}],
+        },
+    }
+    with pytest.raises(_StopAfterMatch):
+        t._prepare_batch_inputs_b([sample], _segments_only=True)
+
+    assert captured == {"n_pred": 0, "n_gt": 1}
+
+
+def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = lambda key, default=None: default
+
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+
+    class _FakeTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            assistant_ids = [int(x) for x in data["messages"][-1]["content"]]
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _FakeTemplate()
+    t._template_train_mode = lambda: nullcontext()
+    t._extract_encoded_len = lambda encoded: int(len(encoded["input_ids"]))
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 256
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._dist_info = lambda: (0, 1, None)
+    t._object_field_order = lambda: "desc_first"
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=[],
+        prefix_text='{"objects": [',
+        response_token_ids=[],
+        response_text="",
+        valid_objects=[],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel._stage2_ab_tail_closure_positions",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("synthetic closure ambiguity")),
+    )
+
+    sample = {
+        "messages": [],
+        "assistant_payload": {
+            "objects": [{"bbox_2d": [9, 9, 10, 10], "desc": "fn"}],
+        },
+    }
+
+    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+
+    assert len(segments) == 1
+    meta = segments[0][1]
+    assert meta["tail_closure_pos"] == []
+    assert batch_metrics["stage2_ab/channel_b/closure_supervision/N_drop"] == pytest.approx(1.0)
+    assert batch_metrics["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
+
+
+def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = (
+        lambda key, default=None: 0.0 if key == "duplicate_iou_threshold" else default
+    )
+
+    tok = _DummyTokenizer()
+    t.template = types.SimpleNamespace(tokenizer=tok)
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 64
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=[],
+        prefix_text='{"objects": [',
+        response_token_ids=[],
+        response_text="",
+        valid_objects=[],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+
+    captured = {}
+
+    class _StopAfterDedup(RuntimeError):
+        pass
+
+    def _fake_dedup(*, parsed_bbox_objects_raw, duplicate_iou_threshold):
+        captured["threshold"] = float(duplicate_iou_threshold)
+        raise _StopAfterDedup("stop after dedup threshold capture")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel._sequential_dedup_bbox_objects",
+        _fake_dedup,
+    )
+
+    sample = {
+        "messages": [],
+        "assistant_payload": {
+            "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "x"}],
+        },
+    }
+    with pytest.raises(_StopAfterDedup):
+        t._prepare_batch_inputs_b([sample], _segments_only=True)
+
+    assert captured["threshold"] == pytest.approx(0.0)
+
+
+def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = lambda key, default=None: default
+
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+
+    class _FakeTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            assistant_ids = [int(x) for x in data["messages"][-1]["content"]]
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _FakeTemplate()
+    t._template_train_mode = lambda: nullcontext()
+    t._extract_encoded_len = lambda encoded: int(len(encoded["input_ids"]))
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 256
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._dist_info = lambda: (0, 1, None)
+    t._object_field_order = lambda: "desc_first"
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=[2000 + i for i in range(64)],
+        prefix_text="unused-raw-prefix",
+        response_token_ids=[10, 10, 20, 20, 10, 10, 20, 20],
+        response_text="",
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            ),
+            types.SimpleNamespace(
+                index=1,
+                geom_type="bbox_2d",
+                coord_token_indices=[4, 5, 6, 7],
+                desc="cat",
+            ),
+        ],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        lambda **kwargs: types.SimpleNamespace(
+            matched_pairs=[],
+            fn_gt_indices=[0],
+            fp_pred_indices=[0],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+    )
+
+    sample = {
+        "messages": [],
+        "assistant_payload": {
+            "objects": [{"bbox_2d": [9, 9, 10, 10], "desc": "fn"}],
+        },
+    }
+
+    segments, _batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    meta = segments[0][1]
+
+    clean_prefix = _build_canonical_prefix_data(
+        tokenizer=tok,
+        objects=[
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 10, 20, 20],
+                desc="cat",
+            )
+        ],
+        object_field_order="desc_first",
+    )
+    fn_obj = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[9, 9, 10, 10],
+        desc="fn",
+    )
+    append_text = _serialize_append_fragment(
+        fn_objects=[fn_obj],
+        prefix_text=clean_prefix.prefix_text,
+    )
+    rel_groups = _bbox_groups_from_token_ids(
+        token_ids=list(tok.encode(append_text)),
+        coord_id_set=set(range(1000)),
+        gt_objs=[fn_obj],
+    )
+    expected_pos = [int(meta["prompt_len"] + meta["prefix_len"] + p) for p in rel_groups[0]]
+
+    assert len(fake_parse.prefix_token_ids) > int(meta["prefix_len"])
+    assert meta["bbox_groups_fn"][0]["pos"] == expected_pos
 
 
 def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
@@ -1921,6 +2367,153 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
     assert ignore_rel == [len(json_text) - 1, len(json_text)]
 
 
+def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() -> None:
+    raw = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
+        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
+        GTObject(index=2, geom_type="bbox_2d", points_norm1000=[100, 100, 150, 150], desc="dog"),
+        GTObject(index=3, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
+    ]
+
+    accepted, bursts = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=raw,
+        duplicate_iou_threshold=0.90,
+    )
+
+    assert [obj.desc for obj in accepted] == ["cat", "dog"]
+    assert sorted(bursts.keys()) == [1, 2]
+    assert [obj.index for obj in bursts[1]] == [1]
+    assert [obj.index for obj in bursts[2]] == [3]
+
+    diag = _compute_duplicate_diagnostics(raw)
+    assert diag["dup/max_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/near_iou90_pairs_same_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/near_iou90_pairs_any_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/saturation_rate"] == pytest.approx(0.0)
+
+
+def test_duplicate_ul_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
+    tok = _DummyTokenizer()
+    accepted_clean = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="cat"),
+        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
+    ]
+    duplicate_bursts = {
+        1: [
+            GTObject(index=2, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
+            GTObject(index=3, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
+        ]
+    }
+
+    clean_prefix = _build_canonical_prefix_data(
+        tokenizer=tok,
+        objects=accepted_clean,
+        object_field_order="desc_first",
+    )
+    y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
+    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+        tokenizer=tok,
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_prefix.prefix_text + "]}",
+        accepted_objects_clean=accepted_clean,
+        fn_objects=[],
+        duplicate_bursts_by_boundary=duplicate_bursts,
+        boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+        object_field_order="desc_first",
+    )
+
+    assert len(targets) == 1
+    assert ul_boundaries == 1
+    assert skipped == 0
+
+    target = targets[0]
+    assert target["boundary"] == 1
+    assert tok.decode([target["token_id"]]) == "1"
+    assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
+
+
+def test_duplicate_ul_targets_skip_when_no_safe_divergence_exists() -> None:
+    tok = _DummyTokenizer()
+    accepted_clean = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
+    ]
+    duplicate_bursts = {
+        0: [
+            GTObject(index=1, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
+        ]
+    }
+
+    clean_prefix = _build_canonical_prefix_data(
+        tokenizer=tok,
+        objects=accepted_clean,
+        object_field_order="desc_first",
+    )
+    y_train_ids = []
+    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+        tokenizer=tok,
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_prefix.prefix_text + "]}",
+        accepted_objects_clean=accepted_clean,
+        fn_objects=[],
+        duplicate_bursts_by_boundary=duplicate_bursts,
+        boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+        object_field_order="desc_first",
+    )
+
+    assert targets == []
+    assert ul_boundaries == 0
+    assert skipped == 1
+
+
+def test_stage2_channel_b_duplicate_ul_logs_weighted_objective_atom() -> None:
+    t = _make_min_trainer(n_softctx_iter=1)
+    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+        token_ce_enabled=False,
+        token_ce_weight=0.0,
+        duplicate_ul_enabled=True,
+        duplicate_ul_weight=2.0,
+        bbox_geo_enabled=False,
+        bbox_geo_weight=0.0,
+        coord_reg_enabled=False,
+        coord_reg_weight=0.0,
+    )
+    model = _DummyAlwaysTokenModel(pred_id=7)
+    input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
+    meta = [
+        {
+            "stage2_channel": "B",
+            "prompt_len": 2,
+            "prefix_len": 0,
+            "train_len": 2,
+            "encoded_len": 4,
+            "prefix_struct_pos": [],
+            "prefix_coord_pos": [],
+            "tail_desc_pos": [],
+            "tail_ignore_pos": [],
+            "tail_closure_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+            "duplicate_ul_targets": [
+                {"boundary": 0, "rel_pos": 0, "token_id": 7},
+            ],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss.detach().cpu().item()) > 0.0
+    pending = t._stage2_pending_train_logs[1].finalize()
+    assert "loss/B_rollout_text/duplicate_ul" in pending
+    assert pending["loss/B_rollout_text/duplicate_ul"] > 0.0
+
+
 def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> None:
     pending = _PendingStage2Log()
     pending.add(
@@ -2006,6 +2599,10 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_
 
     class _FakeDist:
         ReduceOp = _FakeReduceOp
+
+        def all_gather_object(self, gathered: list[object], obj: object) -> None:
+            for i in range(len(gathered)):
+                gathered[i] = list(obj) if isinstance(obj, list) else obj
 
         def all_reduce(self, tensor: torch.Tensor, op: str) -> None:
             if op == self.ReduceOp.SUM:
@@ -2263,7 +2860,7 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(monkeypatch
     assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
 
 
-def test_stage2_two_channel_eval_sets_map_zero_when_coco_eval_fails(monkeypatch) -> None:
+def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> None:
     trainer = _make_eval_ready_stage2_ab_trainer()
 
     parse_obj = types.SimpleNamespace(
@@ -2320,9 +2917,5 @@ def test_stage2_two_channel_eval_sets_map_zero_when_coco_eval_fails(monkeypatch)
         _raise_coco_eval,
     )
 
-    metrics = trainer.evaluate(metric_key_prefix="eval")
-
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(0.0)
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    with pytest.raises(RuntimeError, match=r"Eval-step COCO/mAP failed"):
+        trainer.evaluate(metric_key_prefix="eval")

@@ -19,6 +19,13 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
             "config": {},
         },
         {
+            "name": "duplicate_ul",
+            "enabled": True,
+            "weight": 0.25,
+            "channels": ["B"],
+            "config": {},
+        },
+        {
             "name": "bbox_geo",
             "enabled": True,
             "weight": 2.0,
@@ -37,6 +44,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     state = {
         "token_ce_struct_contrib": _t(0.3),
         "token_ce_desc_contrib": _t(0.2),
+        "duplicate_ul_contrib": _t(0.4),
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
         "coord_token_ce_contrib": _t(0.05),
@@ -50,15 +58,22 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     }
 
     token_loss = _t(0.3 + 0.2)
+    duplicate_ul_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
         "token_ce": 1.0 * token_loss,
+        "duplicate_ul": 0.25 * duplicate_ul_loss,
         "bbox_geo": 2.0 * bbox_loss,
         "coord_reg": 0.5 * coord_loss,
     }
-    total_loss = module_losses["token_ce"] + module_losses["bbox_geo"] + module_losses["coord_reg"]
+    total_loss = (
+        module_losses["token_ce"]
+        + module_losses["duplicate_ul"]
+        + module_losses["bbox_geo"]
+        + module_losses["coord_reg"]
+    )
 
     pipeline_result = PipelineResult(
         total_loss=total_loss,
@@ -79,6 +94,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
 
     assert atoms["loss/B_rollout_text/struct_ce"] == pytest.approx(0.3)
     assert atoms["loss/B_rollout_text/desc_ce"] == pytest.approx(0.2)
+    assert atoms["loss/B_rollout_text/duplicate_ul"] == pytest.approx(0.25 * 0.4)
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
     assert atoms["loss/B_coord/coord_token_ce"] == pytest.approx(0.5 * 0.05)
@@ -86,6 +102,38 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert atoms["loss/B_coord/coord_entropy"] == pytest.approx(0.5 * -0.02)
 
     assert sum(atoms.values()) == pytest.approx(float(total_loss.detach().cpu().item()))
+
+
+def test_project_stage2_objective_atoms_emits_duplicate_ul_text_atom() -> None:
+    objective_specs = [
+        {
+            "name": "duplicate_ul",
+            "enabled": True,
+            "weight": 1.5,
+            "channels": ["B"],
+            "config": {},
+        },
+    ]
+
+    pipeline_result = PipelineResult(
+        total_loss=_t(0.3),
+        module_losses={"duplicate_ul": _t(0.3)},
+        metrics={},
+        state={"duplicate_ul_contrib": _t(0.2)},
+    )
+
+    atoms = project_stage2_objective_atoms(
+        pipeline_result=pipeline_result,
+        objective_specs=objective_specs,
+        text_provenance="B_rollout_text",
+        coord_provenance=None,
+        emit_text=True,
+        emit_coord=False,
+        require_additive=False,
+    )
+
+    assert set(atoms.keys()) == {"loss/B_rollout_text/duplicate_ul"}
+    assert atoms["loss/B_rollout_text/duplicate_ul"] == pytest.approx(0.3)
 
 
 def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> None:

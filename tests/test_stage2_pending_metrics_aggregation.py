@@ -130,3 +130,35 @@ def test_stage2_pending_log_emits_canonical_loss_prefix_only() -> None:
     assert "loss/token_ce_obj" not in out
     assert "loss/bbox_geo_obj" not in out
     assert "loss/coord_reg_obj" not in out
+
+
+def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_semantics() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "dup/max_desc_count": 2.0,
+            "dup/saturation_rate": 0.25,
+            "dup/near_iou90_pairs_same_desc_count": 3.0,
+            "stage2_ab/channel_b/dup/N_duplicates": 4.0,
+            "stage2_ab/channel_b/dup/N_ul_boundaries": 1.0,
+            "stage2/_log_weight": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "dup/max_desc_count": 6.0,
+            "dup/saturation_rate": 0.75,
+            "dup/near_iou90_pairs_same_desc_count": 5.0,
+            "stage2_ab/channel_b/dup/N_duplicates": 7.0,
+            "stage2_ab/channel_b/dup/N_ul_boundaries": 2.0,
+            "stage2/_log_weight": 3.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["dup/max_desc_count"] == pytest.approx((2.0 * 1.0 + 6.0 * 3.0) / 4.0)
+    assert out["dup/saturation_rate"] == pytest.approx((0.25 * 1.0 + 0.75 * 3.0) / 4.0)
+    assert out["dup/near_iou90_pairs_same_desc_count"] == pytest.approx(8.0)
+    assert out["stage2_ab/channel_b/dup/N_duplicates"] == pytest.approx(11.0)
+    assert out["stage2_ab/channel_b/dup/N_ul_boundaries"] == pytest.approx(3.0)
