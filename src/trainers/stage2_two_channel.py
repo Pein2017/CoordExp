@@ -530,63 +530,39 @@ def _build_canonical_closed_container_text(
     return str(prefix_text) + "]}"
 
 
-def _prefix_token_ids_from_char_cut(
+def _token_piece_char_spans(
+    *,
+    tokenizer: Any,
+    token_ids: Sequence[int],
+ ) -> List[Tuple[int, int]]:
+    pieces = decode_pieces(tokenizer, token_ids)
+    spans: List[Tuple[int, int]] = []
+    cursor = 0
+    for piece in pieces:
+        start = int(cursor)
+        cursor += int(len(piece))
+        spans.append((start, int(cursor)))
+    return spans
+
+
+def _first_safe_token_index_from_char_cut(
     *,
     tokenizer: Any,
     token_ids: Sequence[int],
     cut_char_pos: int,
-) -> List[int]:
-    pieces = decode_pieces(tokenizer, token_ids)
-    token_start_chars: List[int] = []
-    cursor = 0
-    for piece in pieces:
-        token_start_chars.append(int(cursor))
-        cursor += int(len(piece))
-
+) -> int:
     if cut_char_pos <= 0 or not token_ids:
-        return []
-    if cut_char_pos >= int(cursor):
-        return [int(t) for t in token_ids]
+        return 0
 
-    lo = 0
-    hi = len(token_start_chars) - 1
-    while lo < hi:
-        mid = (lo + hi) // 2
-        start = int(token_start_chars[mid])
-        next_start = int(token_start_chars[mid + 1])
-        if start <= int(cut_char_pos) < next_start:
-            lo = int(mid)
-            break
-        if int(cut_char_pos) < start:
-            hi = int(mid - 1)
-        else:
-            lo = int(mid + 1)
-
-    i = int(lo)
-    start = int(token_start_chars[i])
-    offset = max(0, min(int(cut_char_pos - start), len(pieces[i])))
-
-    prefix = [int(t) for t in token_ids[:i]]
-    if offset == 0:
-        return prefix
-    if offset == len(pieces[i]):
-        prefix.append(int(token_ids[i]))
-        return prefix
-
-    piece_prefix = str(pieces[i][:offset])
-    new_tail = tokenizer.encode(piece_prefix, add_special_tokens=False)
-    decoded = tokenizer.decode(
-        new_tail,
-        skip_special_tokens=False,
-        clean_up_tokenization_spaces=False,
-    )
-    if decoded != piece_prefix:
-        raise ValueError(
-            "Failed to retokenize a token-internal clean-prefix cut boundary. "
-            f"expected={piece_prefix!r} got={decoded!r}"
-        )
-    prefix.extend(int(t) for t in new_tail)
-    return prefix
+    # Keep any token that starts before the clean boundary in the prefix/context.
+    # This avoids retokenizing token-internal char cuts into synthetic positions that
+    # do not exist in the actual teacher-forced target tokenization.
+    for idx, (start, _end) in enumerate(
+        _token_piece_char_spans(tokenizer=tokenizer, token_ids=token_ids)
+    ):
+        if int(start) >= int(cut_char_pos):
+            return int(idx)
+    return int(len(token_ids))
 
 
 def _compute_duplicate_diagnostics(
@@ -696,19 +672,12 @@ def _build_duplicate_ul_targets(
                 "clean teacher-forced target does not share the declared boundary prefix"
             )
 
-        boundary_prefix_ids = _prefix_token_ids_from_char_cut(
+        boundary_char_pos = int(len(boundary_prefix_text))
+        clean_boundary_token_idx = _first_safe_token_index_from_char_cut(
             tokenizer=tokenizer,
             token_ids=y_train_ids_list,
-            cut_char_pos=len(boundary_prefix_text),
+            cut_char_pos=boundary_char_pos,
         )
-        clean_continuation_text = clean_target_text_s[len(boundary_prefix_text) :]
-        clean_continuation_ids = [
-            int(t)
-            for t in tokenizer.encode(
-                clean_continuation_text,
-                add_special_tokens=False,
-            )
-        ]
 
         for dup in duplicates:
             duplicate_target_text = _build_canonical_closed_container_text(
@@ -725,41 +694,37 @@ def _build_duplicate_ul_targets(
                     "duplicate continuation does not preserve the declared clean boundary prefix"
                 )
 
-            duplicate_continuation_text = duplicate_target_text[len(boundary_prefix_text) :]
-            duplicate_continuation_ids = [
+            duplicate_target_ids = [
                 int(t)
                 for t in tokenizer.encode(
-                    duplicate_continuation_text,
+                    duplicate_target_text,
                     add_special_tokens=False,
                 )
             ]
-
-            lcp = 0
-            max_shared = min(
-                len(clean_continuation_ids),
-                len(duplicate_continuation_ids),
+            duplicate_boundary_token_idx = _first_safe_token_index_from_char_cut(
+                tokenizer=tokenizer,
+                token_ids=duplicate_target_ids,
+                cut_char_pos=boundary_char_pos,
             )
+
+            clean_pos = int(clean_boundary_token_idx)
+            duplicate_pos = int(duplicate_boundary_token_idx)
             while (
-                lcp < max_shared
-                and clean_continuation_ids[lcp] == duplicate_continuation_ids[lcp]
+                clean_pos < len(y_train_ids_list)
+                and duplicate_pos < len(duplicate_target_ids)
+                and y_train_ids_list[clean_pos] == duplicate_target_ids[duplicate_pos]
             ):
-                lcp += 1
+                clean_pos += 1
+                duplicate_pos += 1
 
-            if lcp >= max_shared:
+            if clean_pos >= len(y_train_ids_list) or duplicate_pos >= len(
+                duplicate_target_ids
+            ):
                 skipped_no_divergence += 1
                 continue
 
-            rel_pos = int(len(boundary_prefix_ids) + lcp)
-            if rel_pos < 0 or rel_pos >= len(y_train_ids_list):
-                skipped_no_divergence += 1
-                continue
-
-            clean_token_id = int(clean_continuation_ids[lcp])
-            if int(y_train_ids_list[rel_pos]) != clean_token_id:
-                skipped_no_divergence += 1
-                continue
-
-            bad_token_id = int(duplicate_continuation_ids[lcp])
+            rel_pos = int(clean_pos)
+            bad_token_id = int(duplicate_target_ids[duplicate_pos])
             candidate = {
                 "boundary": int(boundary_i),
                 "rel_pos": int(rel_pos),

@@ -349,6 +349,39 @@ class _PieceFrameMismatchTokenizer(_DummyTokenizer):
         return "".join(out)
 
 
+class _BoundaryMergingTokenizer(_DummyTokenizer):
+    def encode(self, text: str, add_special_tokens: bool = False):
+        if (
+            isinstance(text, str)
+            and text.startswith("<|coord_")
+            and text.endswith("|>")
+        ):
+            return super().encode(text, add_special_tokens=add_special_tokens)
+
+        s = str(text)
+        merged_pieces = (
+            '[{"desc": "book", "bbox_2d": [',
+            ', {"desc": "book", "bbox_2d": [',
+            "]}",
+        )
+        out: list[int] = []
+        i = 0
+        while i < len(s):
+            match = None
+            for piece in merged_pieces:
+                if s.startswith(piece, i) and (
+                    match is None or len(piece) > len(match)
+                ):
+                    match = piece
+            if match is not None:
+                out.append(self._id_for(match))
+                i += len(match)
+                continue
+            out.append(self._id_for(s[i]))
+            i += 1
+        return out
+
+
 def test_b_ratio_schedule_is_deterministic():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.5}}
@@ -2463,6 +2496,54 @@ def test_duplicate_ul_targets_skip_when_no_safe_divergence_exists() -> None:
     assert targets == []
     assert ul_boundaries == 0
     assert skipped == 1
+
+
+def test_duplicate_ul_targets_resolve_boundary_crossing_tokenization() -> None:
+    tok = _BoundaryMergingTokenizer()
+    accepted_clean = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[5, 5, 6, 6],
+            desc="book",
+        ),
+    ]
+    duplicate_bursts = {
+        0: [
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[1, 1, 2, 2],
+                desc="book",
+            ),
+        ]
+    }
+
+    clean_prefix = _build_canonical_prefix_data(
+        tokenizer=tok,
+        objects=accepted_clean,
+        object_field_order="desc_first",
+    )
+    y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
+    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+        tokenizer=tok,
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_prefix.prefix_text + "]}",
+        accepted_objects_clean=accepted_clean,
+        fn_objects=[],
+        duplicate_bursts_by_boundary=duplicate_bursts,
+        boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+        object_field_order="desc_first",
+    )
+
+    assert len(targets) == 1
+    assert ul_boundaries == 1
+    assert skipped == 0
+
+    target = targets[0]
+    assert target["boundary"] == 0
+    assert tok.decode([target["token_id"]]) == "1"
+    assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
 def test_stage2_channel_b_duplicate_ul_logs_weighted_objective_atom() -> None:
