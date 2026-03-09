@@ -1,0 +1,24 @@
+extends: ./common_b_majority_coco1024_prodlike.yaml
+
+training:
+  run_name: smoke_b_majority_coco1024_train_only_4steps_ebs8
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/train_only_4steps_ebs8
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/train_only_4steps_ebs8
+  effective_batch_size: 8
+  max_steps: 4
+  do_eval: false
+  eval_strategy: "no"
+  save_strategy: "no"
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8
+
+rollout_matching:
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  vllm:
+    server:
+      servers:
+        - base_url: http://127.0.0.1:8014
+          group_port: 51314

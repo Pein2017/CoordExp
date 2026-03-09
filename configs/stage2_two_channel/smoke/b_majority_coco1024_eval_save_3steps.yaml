@@ -1,0 +1,19 @@
+extends: ./common_b_majority_coco1024_prodlike.yaml
+
+training:
+  run_name: smoke_b_majority_coco1024_eval_save_3steps
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/eval_save_3steps
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/eval_save_3steps
+  max_steps: 3
+  do_eval: true
+  eval_strategy: steps
+  eval_steps: 1
+  save_strategy: steps
+  save_steps: 1
+
+rollout_matching:
+  vllm:
+    server:
+      servers:
+        - base_url: http://127.0.0.1:8013
+          group_port: 51313
