@@ -30,6 +30,10 @@ from .rollout_matching.parsing import (
     serialize_append_fragment,
 )
 from .rollout_matching.telemetry import PendingTrainRolloutLog
+from .monitoring.loss_gradient_monitor import (
+    build_stage2_two_channel_coord_monitor_terms,
+    get_loss_gradient_monitor,
+)
 from ..common.geometry.coord_utils import decode_coord
 
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
@@ -69,6 +73,7 @@ class _PendingStage2Log:
 
     n_micro: int = 0
     weight_sum: float = 0.0
+    gradmon_weight_sum: float = 0.0
     sums: Dict[str, float] = field(default_factory=dict)
 
     _COUNTER_SUFFIXES: ClassVar[tuple[str, ...]] = (
@@ -108,6 +113,7 @@ class _PendingStage2Log:
     def _is_mean_like_key(key: str) -> bool:
         return (
             key.startswith("loss/")
+            or key.startswith("gradmon/")
             or key in {"dup/max_desc_count", "dup/saturation_rate"}
             or key.startswith("stage2/channel_")
             or key.startswith("rollout/")
@@ -133,6 +139,7 @@ class _PendingStage2Log:
             )
 
         self.weight_sum += float(weight)
+        saw_gradmon = False
 
         for k, v in metrics.items():
             ks = str(k)
@@ -154,11 +161,16 @@ class _PendingStage2Log:
                 continue
 
             if self._is_mean_like_key(ks):
+                if ks.startswith("gradmon/"):
+                    saw_gradmon = True
                 # Means: segment-weighted when stage2/_log_weight is provided.
                 self.sums[ks] = float(self.sums.get(ks, 0.0)) + float(fv) * float(weight)
             else:
                 # Unknown/non-contract keys default to sum semantics.
                 self.sums[ks] = float(self.sums.get(ks, 0.0)) + float(fv)
+
+        if saw_gradmon:
+            self.gradmon_weight_sum += float(weight)
 
     def finalize(self, *, drop_internal: bool = True) -> Dict[str, float]:
         if self.n_micro <= 0:
@@ -177,12 +189,22 @@ class _PendingStage2Log:
                 continue
 
             if self._is_mean_like_key(k):
-                out[k] = float(v) / float(denom)
+                if k.startswith("gradmon/"):
+                    gradmon_denom = (
+                        float(self.gradmon_weight_sum)
+                        if float(self.gradmon_weight_sum) > 0.0
+                        else float(denom)
+                    )
+                    out[k] = float(v) / float(gradmon_denom)
+                else:
+                    out[k] = float(v) / float(denom)
             else:
                 out[k] = float(v)
 
         # Internal: used for DDP-weighted mean reduction.
         out["stage2/_log_weight_total"] = float(denom)
+        if float(self.gradmon_weight_sum) > 0.0:
+            out["gradmon/_log_weight_total"] = float(self.gradmon_weight_sum)
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
@@ -216,6 +238,7 @@ class _PendingStage2Log:
             out.pop(trunc_num_key, None)
             out.pop(trunc_den_key, None)
             out.pop("stage2/_log_weight_total", None)
+            out.pop("gradmon/_log_weight_total", None)
 
         return out
 
@@ -949,6 +972,7 @@ class Stage2ABTrainingTrainer(
 
         trunc_num_key = "rollout/_parse_truncated_num"
         trunc_den_key = "rollout/_parse_truncated_den"
+        gradmon_weight_key = "gradmon/_log_weight_total"
         has_rollout_parse_inputs = any(
             key in reduced
             for key in {
@@ -1008,6 +1032,9 @@ class Stage2ABTrainingTrainer(
             if key == "stage2/_log_weight_total":
                 sum_key_set.add(key)
                 continue
+            if key == gradmon_weight_key:
+                sum_key_set.add(key)
+                continue
 
             if key in {
                 "stage2/raw_rollouts",
@@ -1039,6 +1066,7 @@ class Stage2ABTrainingTrainer(
 
         # Stable key ordering for all-reduce tensors (important for reproducibility).
         sum_priority = [
+            gradmon_weight_key,
             trunc_num_key,
             trunc_den_key,
             "stage2/raw_rollouts",
@@ -1081,11 +1109,21 @@ class Stage2ABTrainingTrainer(
 
                 weight_key = "stage2/_log_weight_total"
                 local_weight_total = float(reduced.get(weight_key, 0.0))
+                local_gradmon_weight_total = float(reduced.get(gradmon_weight_key, 0.0))
 
                 if weight_key in reduced and mean_keys:
                     # Convert local means into local numerators before reduction.
                     for key in mean_keys:
+                        if key.startswith("gradmon/"):
+                            continue
                         reduced[key] = float(reduced.get(key, 0.0)) * float(local_weight_total)
+                if gradmon_weight_key in reduced and mean_keys:
+                    for key in mean_keys:
+                        if not key.startswith("gradmon/"):
+                            continue
+                        reduced[key] = float(reduced.get(key, 0.0)) * float(
+                            local_gradmon_weight_total
+                        )
 
                 _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
                 _all_reduce(max_keys, dist.ReduceOp.MAX)
@@ -1094,14 +1132,34 @@ class Stage2ABTrainingTrainer(
                     global_weight_total = float(reduced.get(weight_key, 0.0))
                     if global_weight_total > 0.0:
                         for key in mean_keys:
+                            if key.startswith("gradmon/"):
+                                continue
                             reduced[key] = float(reduced.get(key, 0.0) / global_weight_total)
                     else:
                         for key in mean_keys:
+                            if key.startswith("gradmon/"):
+                                continue
+                            reduced[key] = 0.0
+                if gradmon_weight_key in reduced and mean_keys:
+                    global_gradmon_weight_total = float(reduced.get(gradmon_weight_key, 0.0))
+                    if global_gradmon_weight_total > 0.0:
+                        for key in mean_keys:
+                            if not key.startswith("gradmon/"):
+                                continue
+                            reduced[key] = float(
+                                reduced.get(key, 0.0) / global_gradmon_weight_total
+                            )
+                    else:
+                        for key in mean_keys:
+                            if not key.startswith("gradmon/"):
+                                continue
                             reduced[key] = 0.0
                 else:
                     scale = float(world_size)
                     if scale > 0.0:
                         for key in mean_keys:
+                            if key.startswith("gradmon/"):
+                                continue
                             reduced[key] = float(reduced[key] / scale)
             except (AttributeError, RuntimeError) as exc:
                 raise RuntimeError(
@@ -1128,6 +1186,7 @@ class Stage2ABTrainingTrainer(
         reduced.pop(trunc_num_key, None)
         reduced.pop(trunc_den_key, None)
         reduced.pop("stage2/_log_weight_total", None)
+        reduced.pop(gradmon_weight_key, None)
 
         return reduced
 
@@ -2922,18 +2981,19 @@ class Stage2ABTrainingTrainer(
                 spec2["config"] = cfg2
                 objective_specs_ctx.append(spec2)
 
-        pipeline_ctx = run_teacher_forcing_pipeline(
+        pipeline_ctx_result = run_teacher_forcing_pipeline(
             context=tf_context,
             objective_specs=objective_specs_ctx,
             diagnostics_specs=diagnostic_specs,
             initial_state=None,
             warn_once_cache=warn_once,
         )
-        pipeline_metrics_ctx = dict(pipeline_ctx.metrics)
-        pipeline_ctx_total_loss = pipeline_ctx.total_loss
-        del pipeline_ctx
+        pipeline_metrics_ctx = dict(pipeline_ctx_result.metrics)
+        pipeline_ctx_total_loss = pipeline_ctx_result.total_loss
 
         pipeline_metrics_gt: Dict[str, float] = {}
+        a1_bbox_state: Optional[Mapping[str, Any]] = None
+        a1_coord_state: Optional[Mapping[str, Any]] = None
         if channel == "A":
             token_ctx_gt = TeacherForcingContext(
                 channel="A",
@@ -3022,6 +3082,7 @@ class Stage2ABTrainingTrainer(
                 a1_bbox_metrics = {
                     str(k): float(v) for k, v in dict(bbox_out_a1.metrics or {}).items()
                 }
+                a1_bbox_state = dict(bbox_out_a1.state or {})
 
                 if float(a1_soft_ce_w) != 0.0 or float(a1_w1_w) != 0.0:
                     coord_spec_a1 = PipelineModuleSpec(
@@ -3052,6 +3113,7 @@ class Stage2ABTrainingTrainer(
                         str(k): float(v)
                         for k, v in dict(coord_out_a1.metrics or {}).items()
                     }
+                    a1_coord_state = dict(coord_out_a1.state or {})
 
             total = (
                 pipeline_gt_total_loss
@@ -3061,6 +3123,29 @@ class Stage2ABTrainingTrainer(
             )
         else:
             total = pipeline_ctx_total_loss
+
+        from src.metrics.reporter import best_effort_value
+
+        monitor = get_loss_gradient_monitor(self)
+        gradmon_metrics = {}
+        if monitor is not None:
+            gradmon_metrics = best_effort_value(
+                self,
+                name="loss_gradient_monitor",
+                fn=lambda: monitor.measure(
+                    model=model,
+                    loss_terms=build_stage2_two_channel_coord_monitor_terms(
+                        channel=channel,
+                        pipeline_result=pipeline_ctx_result,
+                        objective_specs=objective_specs_ctx,
+                        bbox_module_weight=float(bbox_geo_module_w),
+                        coord_module_weight=float(coord_reg_module_w),
+                        a1_bbox_state=a1_bbox_state,
+                        a1_coord_state=a1_coord_state,
+                    ),
+                ),
+                default={},
+            )
 
         # Buffer Stage-2 logs to merge into post-optimizer-step train log line.
         try:
@@ -3254,6 +3339,13 @@ class Stage2ABTrainingTrainer(
                     _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
                     _emit_b("text_gate", text_gate_w, "loss/text_gate")
 
+            if isinstance(gradmon_metrics, Mapping):
+                for k, v in gradmon_metrics.items():
+                    try:
+                        stage2_logs[str(k)] = float(v)
+                    except (TypeError, ValueError):
+                        continue
+
             pack_segments = int(len(meta))
             if pack_segments <= 0:
                 raise ValueError(
@@ -3401,6 +3493,7 @@ class Stage2ABTrainingTrainer(
             pending.add_micro(
                 meta=meta,
                 objective_atoms=None,
+                gradmon_metrics=None,
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),
                 batch_metrics=batch_metrics

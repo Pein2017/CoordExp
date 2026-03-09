@@ -41,6 +41,13 @@ Read metric keys left-to-right:
   - Stage-1 uses bare `coord_diag/<metric>`.
   - Stage-2 two-channel uses provenance-split `coord_diag/A1/*`, `coord_diag/A2/*`, and `coord_diag/B/*`.
 
+- `gradmon/<metric>` and `gradmon/<group>/<term>`
+  - Optional loss-gradient monitoring diagnostics (sparse-emitted on monitor steps only).
+  - `gradmon/loss_raw/*`, `gradmon/loss_ema_norm/*`, `gradmon/grad_norm/*`, and
+    `gradmon/cos_to_total/*` are per-term gauges.
+  - Aggregate keys such as `gradmon/neg_cosine_pair_frac` and
+    `gradmon/grad_norm_ratio_max_over_median` summarize gradient domination/conflict.
+
 - `rollout/<metric>` and `eval_rollout/<metric>`
   - Training-time rollout telemetry uses `rollout/*`.
   - Eval-step rollout telemetry uses `eval_rollout/*`.
@@ -165,6 +172,67 @@ Stage-2 coord-distribution diagnostics (`coord_diag/<provenance>/*`):
 - Canonical keys under each provenance include:
   - `coord_diag/<prov>/coord_tokens_total`
   - `coord_diag/<prov>/{acc_top5,p_gt_mean,margin_mean,expected_bin_mae,expected_bin_abs_err_p90,coord_vocab_mass_mean}`
+
+## Loss-Gradient Monitor (`gradmon/*`)
+
+Enablement:
+- Disabled by default.
+- Opt in via `custom.extra.loss_gradient_monitor`.
+- Sparse emission: keys appear only on monitor steps (default every 100 optimizer steps).
+
+Canonical keys:
+- Per-term gauges:
+  - `gradmon/loss_raw/<term>`
+  - `gradmon/loss_ema_norm/<term>`
+  - `gradmon/grad_norm/<term>`
+  - `gradmon/cos_to_total/<term>`
+- Aggregate diagnostics:
+  - `gradmon/grad_norm_ratio_max_over_median`
+  - `gradmon/neg_cosine_pair_frac`
+  - `gradmon/neg_cosine_pair_pct`
+  - `gradmon/neg_cos_to_total_frac`
+  - `gradmon/num_terms`
+  - `gradmon/shared_param_count`
+  - `gradmon/shared_param_numel`
+- Timing:
+  - `time/gradmon_s`
+
+Term naming:
+- Stage-1 coord-only monitor terms use:
+  - `S1/coord_soft_ce`
+  - `S1/coord_w1`
+  - optional `S1/coord_ce`
+  - optional `S1/coord_gate`
+- Stage-2 rollout-aligned uses coord/geo atoms under `B_coord/*`.
+- Stage-2 two-channel uses provenance-split coord/geo atoms:
+  - `A1_coord/*`
+  - `A2_coord/*`
+  - `B_coord/*`
+- Text CE and `text_gate` are excluded from `gradmon/*`.
+
+Reduction contract:
+- `gradmon/*` keys are best-effort diagnostics and do not affect optimization.
+- Stage-2 trainers compute monitor metrics locally first, buffer them with the existing pending-log structures, and synchronize them only at the optimizer-step log boundary.
+- `gradmon/*` gauges use the same observation-weighted reducer family as other mean-like diagnostics, without diluting sparse monitor steps across unobserved micro-packs.
+- `time/gradmon_s` follows the active trainer's existing `time/*` reduction semantics.
+
+Example config:
+
+```yaml
+custom:
+  extra:
+    loss_gradient_monitor:
+      enabled: true
+      interval_steps: 100
+      ema_beta: 0.98
+      require_sync_gradients: true
+      coord_only: true
+      granularity: atomic
+      param_block:
+        strategy: auto_last_lm_layernorm
+        max_params: 64
+        max_numel: 200000
+```
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) now uses canonical clean-prefix Channel-B:

@@ -162,3 +162,30 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
     assert out["dup/near_iou90_pairs_same_desc_count"] == pytest.approx(8.0)
     assert out["stage2_ab/channel_b/dup/N_duplicates"] == pytest.approx(11.0)
     assert out["stage2_ab/channel_b/dup/N_ul_boundaries"] == pytest.approx(3.0)
+
+
+def test_stage2_pending_log_preserves_sparse_gradmon_weighting() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "loss/B_coord/bbox_smoothl1": 1.0,
+            "stage2/_log_weight": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "gradmon/neg_cosine_pair_frac": 0.75,
+            "gradmon/num_terms": 4.0,
+            "time/gradmon_s": 0.2,
+            "stage2/_log_weight": 3.0,
+        }
+    )
+
+    out = pending.finalize(drop_internal=False)
+
+    assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx(0.25)
+    assert out["gradmon/neg_cosine_pair_frac"] == pytest.approx(0.75)
+    assert out["gradmon/num_terms"] == pytest.approx(4.0)
+    assert out["time/gradmon_s"] == pytest.approx(0.2)
+    assert out["stage2/_log_weight_total"] == pytest.approx(4.0)
+    assert out["gradmon/_log_weight_total"] == pytest.approx(3.0)

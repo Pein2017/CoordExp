@@ -1,17 +1,17 @@
 ## 1. Config Surface + Injection (YAML-First)
 
-- [ ] 1.1 Add `custom.extra.loss_gradient_monitor` parsing/injection in `src/sft.py`:
+- [x] 1.1 Add `custom.extra.loss_gradient_monitor` parsing/injection in `src/sft.py`:
   - Read a mapping from `custom.extra["loss_gradient_monitor"]` when present.
   - Attach it to every trainer instance as `trainer.loss_gradient_monitor_cfg` (Stage-1 and Stage-2 variants).
   - Log a single init line on rank0 when enabled (interval, param selector strategy).
 
-- [ ] 1.2 Keep schema changes minimal:
+- [x] 1.2 Keep schema changes minimal:
   - Do not add new CLI flags.
   - Keep the config under `custom.extra` (freeform mapping), but validate required fields at runtime in the monitor (fail closed: warn-once + disable monitor, do not crash training).
 
 ## 2. Implement The Monitoring Component
 
-- [ ] 2.1 Add `src/trainers/monitoring/loss_gradient_monitor.py` implementing `LossGradientMonitor`:
+- [x] 2.1 Add `src/trainers/monitoring/loss_gradient_monitor.py` implementing `LossGradientMonitor`:
   - Inputs:
     - `loss_terms: Mapping[str, torch.Tensor]` (additive scalars before summation; require-grad),
     - `model` (possibly DDP-wrapped),
@@ -36,11 +36,11 @@
   - Reliability:
     - best-effort: unexpected exceptions warn once and disable monitor for the rest of the run.
 
-- [ ] 2.2 Optional: export `LossGradientMonitor` from `src/trainers/monitoring/__init__.py`.
+- [x] 2.2 Optional: export `LossGradientMonitor` from `src/trainers/monitoring/__init__.py`.
 
 ## 3. Stage Integrations (Minimal Changes)
 
-- [ ] 3.1 Stage-1 integration (SFT path):
+- [x] 3.1 Stage-1 integration (SFT path):
   - Hook point: `CoordSoftCEW1LossMixin._maybe_add_coord_softce_w1_loss` in `src/trainers/metrics/mixins.py`.
   - Build `loss_terms` dict *before* summation:
     - Coord-only atoms from `CoordSoftCEW1Result`:
@@ -49,7 +49,7 @@
     - Reuse the existing additive tensors; do not add a second coord-token position gatherer.
   - Call monitor only when enabled; merge returned metrics into the existing reporter flow.
 
-- [ ] 3.2 Stage-2 rollout-aligned integration:
+- [x] 3.2 Stage-2 rollout-aligned integration:
   - Hook point: `RolloutMatchingSFTTrainer.compute_loss` in `src/trainers/stage2_rollout_aligned.py`.
   - Term discovery:
     - derive **atomic coord/geo tensors** from `pipeline_result.state` (module-provided contrib tensors):
@@ -65,7 +65,7 @@
     - aggregate monitor metrics locally across packed forwards using the same sample weighting as existing `loss/*` telemetry,
     - let `_reduce_train_rollout_log_payload_global(...)` synchronize them across ranks at the optimizer-step log boundary.
 
-- [ ] 3.3 Stage-2 two-channel integration:
+- [x] 3.3 Stage-2 two-channel integration:
   - Hook point: `Stage2ABTrainingTrainer.compute_loss` in `src/trainers/stage2_two_channel.py`.
   - Term discovery:
     - Channel-B step: same as rollout-aligned (`B_coord/*` atomic coord/geo terms from `pipeline_ctx.state`, module-weighted),
@@ -81,17 +81,17 @@
       - local packed-forward monitor values are buffered on each rank,
       - `_reduce_stage2_pending_metrics_global(...)` performs the cross-rank sync at step log time.
 
-- [ ] 3.4 Guardrails:
+- [x] 3.4 Guardrails:
   - Ensure monitor logic never touches rollout generation/parsing/matching code paths.
   - Ensure all ranks take the same “monitor or skip” branch for a given optimizer step to avoid DDP mismatches.
 
 ## 4. Logging Contract + Docs
 
-- [ ] 4.1 Update `docs/training/METRICS.md`:
+- [x] 4.1 Update `docs/training/METRICS.md`:
   - Document `gradmon/*` keys, their meanings, sparse emission semantics, and DDP reduction policy.
   - Include a short enable/disable snippet for `custom.extra.loss_gradient_monitor`.
 
-- [ ] 4.2 Update `openspec/specs/trainer-metrics-components/spec.md`:
+- [x] 4.2 Update `openspec/specs/trainer-metrics-components/spec.md`:
   - Register `gradmon/*` as an optional diagnostics surface with best-effort semantics.
   - Clarify aggregation semantics:
     - local compute on each rank first,
@@ -102,19 +102,19 @@
 
 ## 5. Verification (Unit Tests + Smoke)
 
-- [ ] 5.1 Add unit tests for monitor math on a tiny toy model (CPU is fine):
+- [x] 5.1 Add unit tests for monitor math on a tiny toy model (CPU is fine):
   - Construct two loss terms with known gradient directions on a shared parameter vector:
     - expect `neg_cosine_pair_frac` to be `1.0` when gradients oppose,
     - expect `0.0` when gradients align.
   - Verify `cos_to_total` signs match expectations (e.g., one term negative when it opposes the summed direction).
   - Verify gradient norms are positive and stable.
 
-- [ ] 5.2 Add a unit test that enabling the monitor does not change the objective:
+- [x] 5.2 Add a unit test that enabling the monitor does not change the objective:
   - Run one training-step forward/backward with monitor off vs on,
   - Assert the returned scalar loss is identical (or within tight tolerance),
   - Assert parameter grads (after real backward) match within tolerance.
 
-- [ ] 5.3 Add a Stage-2-focused unit test for term discovery:
+- [x] 5.3 Add a Stage-2-focused unit test for term discovery:
   - Verify that the monitor sees exactly the additive terms that are summed into `total`
     for both Channel-A and Channel-B steps (coord-only atomic terms with provenance split: `A1_coord/*`, `A2_coord/*`, `B_coord/*`).
   - Verify packed-sequence execution does not require any second token-position gatherer.

@@ -83,6 +83,17 @@ custom:
   val_sample_limit: 504
   extra:
     prompt_variant: coco_80
+    loss_gradient_monitor:
+      enabled: true
+      interval_steps: 100
+      ema_beta: 0.98
+      require_sync_gradients: true
+      coord_only: true
+      granularity: atomic
+      param_block:
+        strategy: auto_last_lm_layernorm
+        max_params: 64
+        max_numel: 200000
 
 rollout_matching:
   rollout_backend: vllm

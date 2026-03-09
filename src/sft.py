@@ -2224,11 +2224,15 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
+    loss_gradient_monitor_cfg = None
     extra_cfg = getattr(custom_config, "extra", None)
     if isinstance(extra_cfg, Mapping):
         raw_instab = extra_cfg.get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
+        raw_gradmon = extra_cfg.get("loss_gradient_monitor")
+        if isinstance(raw_gradmon, Mapping):
+            loss_gradient_monitor_cfg = dict(raw_gradmon)
     if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
@@ -2564,6 +2568,23 @@ def main():
         setattr(trainer, "instability_train_jsonl", str(train_jsonl))
         if val_jsonl:
             setattr(trainer, "instability_val_jsonl", str(val_jsonl))
+    if loss_gradient_monitor_cfg is not None:
+        setattr(trainer, "loss_gradient_monitor_cfg", dict(loss_gradient_monitor_cfg))
+        if bool(loss_gradient_monitor_cfg.get("enabled", False)) and int(
+            os.environ.get("RANK", "0") or "0"
+        ) == 0:
+            param_block = loss_gradient_monitor_cfg.get("param_block", {})
+            param_strategy = (
+                str(param_block.get("strategy", "auto_last_lm_layernorm"))
+                if isinstance(param_block, Mapping)
+                else "auto_last_lm_layernorm"
+            )
+            logger.info(
+                "LossGradientMonitor enabled: interval_steps=%s require_sync_gradients=%s param_strategy=%s",
+                loss_gradient_monitor_cfg.get("interval_steps", 100),
+                loss_gradient_monitor_cfg.get("require_sync_gradients", True),
+                param_strategy,
+            )
 
 
     # Start training
