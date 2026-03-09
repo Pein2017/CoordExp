@@ -192,10 +192,10 @@ rollout_matching:
     top_k: -1
   repetition_penalty: 1.1
   candidate_top_k: 5
-  maskiou_gate: 0.3
+  maskiou_gate: 0.5
   maskiou_resolution: 256
-  fp_cost: 0.5
-  fn_cost: 2
+  fp_cost: 1
+  fn_cost: 1.2
   eval_detection:
     # Run COCO mAP during trainer eval_step on the same eval cadence as rollout/f1.
     enabled: true
