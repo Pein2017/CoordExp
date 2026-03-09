@@ -28,7 +28,7 @@ class _DummyMetric:
 
 def _load_doc_keys() -> set[str]:
     # tests/ -> repo root
-    doc_path = Path(__file__).resolve().parents[1] / "docs/training/METRICS_LOSSES.md"
+    doc_path = Path(__file__).resolve().parents[1] / "docs/training/METRICS.md"
     text = doc_path.read_text(encoding="utf-8")
     keys: set[str] = set()
 

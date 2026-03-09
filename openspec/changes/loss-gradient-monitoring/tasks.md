@@ -27,9 +27,11 @@
       - `cos_to_total(term) = cos(g_term, g_total)` where `g_total = Σ g_term`.
   - Performance/compat:
     - only run every `interval_steps` optimizer steps (default 100),
-    - only run on last gradient-accumulation micro-step when available (`accelerator.sync_gradients`) when `require_sync_gradients=true`,
+    - only run on the trainer's final synchronized micro/pack step when `require_sync_gradients=true`,
+      - Stage-2 two-channel MUST use the existing executor sync decision rather than assuming `accelerator.sync_gradients` is authoritative,
     - wrap extra autograd grad calls in `model.no_sync()` when available (DDP) to avoid extra allreduces,
     - cast grad tensors to `float32` for norm/dot,
+    - compute monitor metrics locally on each rank first; do **not** introduce a separate in-monitor all-reduce path,
     - never write into `.grad`, never call optimizer hooks, never change the returned training loss.
   - Reliability:
     - best-effort: unexpected exceptions warn once and disable monitor for the rest of the run.
@@ -44,6 +46,7 @@
     - Coord-only atoms from `CoordSoftCEW1Result`:
       - `S1/coord_soft_ce`, `S1/coord_w1`, optional `S1/coord_ce`, optional `S1/coord_gate`.
     - Exclude base text CE (monitor is coord-only by requirement).
+    - Reuse the existing additive tensors; do not add a second coord-token position gatherer.
   - Call monitor only when enabled; merge returned metrics into the existing reporter flow.
 
 - [ ] 3.2 Stage-2 rollout-aligned integration:
@@ -56,8 +59,11 @@
     - multiply each atom by the corresponding objective module `spec.weight` so the monitored term matches the additive contribution in `total_loss`,
     - name terms under Stage-2 provenance keys, e.g. `B_coord/bbox_smoothl1`, `B_coord/coord_soft_ce`, etc,
     - exclude `token_ce` atoms and exclude `text_gate_contrib` (coord-only).
+    - Reuse pipeline/module tensors directly; do not reconstruct packed supervision spans from token ids.
   - Logging:
-    - add monitor metrics into the existing pending micro-batch buffer so they are logged once per optimizer step.
+    - extend `PendingTrainRolloutLog` to carry arbitrary mean-like `gradmon/*` scalars in addition to `objective_atoms`,
+    - aggregate monitor metrics locally across packed forwards using the same sample weighting as existing `loss/*` telemetry,
+    - let `_reduce_train_rollout_log_payload_global(...)` synchronize them across ranks at the optimizer-step log boundary.
 
 - [ ] 3.3 Stage-2 two-channel integration:
   - Hook point: `Stage2ABTrainingTrainer.compute_loss` in `src/trainers/stage2_two_channel.py`.
@@ -68,8 +74,12 @@
         - `A2_coord/*` atoms from the self-context pathway (`pipeline_ctx.state`, module-weighted),
         - `A1_coord/*` atoms from the optional A1 anchor pathway (the explicit `run_bbox_geo_module` / `run_coord_reg_module` calls), weighted by the trainer’s module-weight multipliers and the anchor sub-weights already baked into contrib tensors.
       - exclude all text CE atoms; exclude `text_gate_contrib` (coord-only).
+      - reuse existing tensors / metadata; do not add a second packed-token span gatherer.
   - Logging:
-    - add monitor metrics into the Stage-2 pending log buffer (`_PendingStage2Log`) as mean-like keys.
+    - add monitor metrics into the Stage-2 pending log buffer (`_PendingStage2Log`) as mean-like keys,
+    - keep the current local-first -> global-reduce policy:
+      - local packed-forward monitor values are buffered on each rank,
+      - `_reduce_stage2_pending_metrics_global(...)` performs the cross-rank sync at step log time.
 
 - [ ] 3.4 Guardrails:
   - Ensure monitor logic never touches rollout generation/parsing/matching code paths.
@@ -77,13 +87,18 @@
 
 ## 4. Logging Contract + Docs
 
-- [ ] 4.1 Update `docs/training/METRICS_LOSSES.md`:
-  - Document `gradmon/*` keys, their meanings, and sparse emission semantics.
+- [ ] 4.1 Update `docs/training/METRICS.md`:
+  - Document `gradmon/*` keys, their meanings, sparse emission semantics, and DDP reduction policy.
   - Include a short enable/disable snippet for `custom.extra.loss_gradient_monitor`.
 
 - [ ] 4.2 Update `openspec/specs/trainer-metrics-components/spec.md`:
   - Register `gradmon/*` as an optional diagnostics surface with best-effort semantics.
-  - Clarify aggregation semantics: mean-like, sparse-emitted, no per-dataset buckets.
+  - Clarify aggregation semantics:
+    - local compute on each rank first,
+    - step-boundary synchronization through the existing reducers,
+    - `gradmon/*` mean-like gauges,
+    - `time/gradmon_s` following current `time/*` reducer semantics,
+    - no per-dataset buckets.
 
 ## 5. Verification (Unit Tests + Smoke)
 
@@ -102,12 +117,15 @@
 - [ ] 5.3 Add a Stage-2-focused unit test for term discovery:
   - Verify that the monitor sees exactly the additive terms that are summed into `total`
     for both Channel-A and Channel-B steps (coord-only atomic terms with provenance split: `A1_coord/*`, `A2_coord/*`, `B_coord/*`).
+  - Verify packed-sequence execution does not require any second token-position gatherer.
 
 - [ ] 5.4 Add smoke YAML configs enabling the monitor with `interval_steps: 1`:
   - One Stage-1 smoke under `configs/stage1/smoke/`,
   - One Stage-2 two-channel smoke under `configs/stage2_two_channel/smoke/`,
-  - Optional: rollout-aligned smoke under `configs/stage2_rollout_aligned/smoke/` (if available in the repo).
-  - Run for a few optimizer steps and verify `gradmon/*` keys appear.
+  - One rollout-aligned verification run using either:
+    - an existing rollout-aligned YAML plus a small `temp/` override, or
+    - a dedicated smoke config if that config tree is added in the same change.
+  - Run for a few optimizer steps and verify `gradmon/*` keys appear with the expected local-first -> step-reduced aggregation semantics.
 
 Validation commands (examples):
 - `conda run -n ms python -m pytest -q tests/test_loss_gradient_monitor.py`

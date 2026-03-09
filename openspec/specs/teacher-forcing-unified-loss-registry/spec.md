@@ -110,7 +110,7 @@ Normative behavior:
 - Module pipelines and trainers MUST use these stable canonical component names for registry identity and objective semantics.
 - Public training logs for registry-defined objective modules MUST follow the canonical metric emission contract in
   `trainer-metrics-components` (for example `loss/<provenance>/<atom>` objective atoms), rather than inventing trainer-specific aliases.
-- This change MUST update `docs/training/METRICS_LOSSES.md` and `docs/training/STAGE2_RUNBOOK.md` to reflect the
+- This change MUST update `docs/training/METRICS.md` and `docs/training/STAGE2_RUNBOOK.md` to reflect the
   canonical metric key contract introduced by the unified registry/pipeline.
 
 #### Scenario: Shared naming prevents silent drift

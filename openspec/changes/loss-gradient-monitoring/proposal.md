@@ -24,11 +24,15 @@ We need a lightweight, opt-in, monitoring-only tool to measure domination vs con
     - Only **coordinate-token supervision terms** are included (coord/geo). Text CE terms are excluded.
   - **Stage-1 (coord-only):**
     - Monitor only coordinate-token supervision terms from `CoordSoftCEW1Result` (softCE, W1, gate, optional coord-CE).
+  - **Packed-sequence contract:**
+    - The monitor reuses the additive scalar tensors already produced by the active loss helpers / objective modules.
+    - It does **not** introduce a second packed-token position gatherer or reconstruct supervision spans from `input_ids` after the fact.
+    - For Stage-2 packed trainers, monitor values are computed on each participating packed forward and then aggregated into the optimizer-step log using the existing per-step metric buffers / reducers.
 
 - Integrate into training loops:
   - Stage-1 (SFT path): integrate into the existing metrics/loss mixin stack without refactoring trainers.
-  - Stage-2 two-channel (`custom.trainer_variant: stage2_two_channel`): integrate into its compute_loss path where per-surface pipeline results exist.
-  - Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_aligned`): integrate into its compute_loss path after the teacher-forced forward.
+  - Stage-2 two-channel (`custom.trainer_variant: stage2_two_channel`): integrate into its packed-forward `compute_loss` path, then feed the existing `_PendingStage2Log` step reducer.
+  - Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_aligned`): integrate into its packed-forward `compute_loss` path, then feed the existing `PendingTrainRolloutLog` step reducer.
 
 - Configuration and activation:
   - Config-first enable/disable via `custom.extra.loss_gradient_monitor` (disabled by default).
@@ -48,4 +52,5 @@ We need a lightweight, opt-in, monitoring-only tool to measure domination vs con
 
 - Default behavior is unchanged (monitor is off by default).
 - Opt-in runs add minor overhead only on monitor steps (default: once per 100 optimizer steps).
-- Adds new diagnostic metric keys under `gradmon/*` and a short enablement section in training docs.
+- Adds new diagnostic metric keys under `gradmon/*` and a short enablement section in [docs/training/METRICS.md](../../docs/training/METRICS.md).
+- Under DDP, monitor metrics are computed locally on each rank first, buffered locally for the step, and then synchronized at the same optimizer-step reducer boundary used by the current training metrics.

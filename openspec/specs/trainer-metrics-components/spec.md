@@ -27,14 +27,14 @@ The contract MUST define the canonical set of batch extras keys. At minimum, it 
 - AND the trainer strips it before model forward
 
 ### Requirement: Stable metric and batch key names
-The system SHALL preserve the semantics documented in `docs/training/METRICS_LOSSES.md`.
+The system SHALL preserve the semantics documented in `docs/training/METRICS.md`.
 The system MAY remove low-signal or duplicated metric keys when the docs are updated to the new canonical set.
 Compatibility aliases are optional and MAY be omitted.
 
 The system SHALL preserve the existing batch-extra key names listed in "Stable batch extras contract".
 
 Normative behavior for the clean-prefix Channel-B contract:
-- `docs/training/METRICS_LOSSES.md` MUST define the canonical training keys added by this contract.
+- `docs/training/METRICS.md` MUST define the canonical training keys added by this contract.
 - `docs/training/STAGE2_RUNBOOK.md` MUST define the corresponding Channel-B behavior and interpretation.
 - Removed raw-prefix wording and removed legacy metric names MUST NOT linger in the canonical docs after implementation lands.
 
@@ -47,7 +47,7 @@ Normative behavior for the clean-prefix Channel-B contract:
 #### Scenario: Key parity
 - GIVEN a run with some features enabled/disabled (e.g. token-type metrics, coord loss, packing)
 - WHEN running training/evaluation with the refactor enabled
-- THEN every emitted metric key matches a documented train key in `docs/training/METRICS_LOSSES.md`
+- THEN every emitted metric key matches a documented train key in `docs/training/METRICS.md`
 - OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
 - AND removed legacy keys/aliases are absent (no duplicate emission)
 - AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
@@ -55,8 +55,24 @@ Normative behavior for the clean-prefix Channel-B contract:
 #### Scenario: Canonical duplicate metrics are documented
 - **GIVEN** a training run after the clean-prefix Channel-B feature lands
 - **WHEN** duplicate-ul and duplicate-collapse metrics are emitted
-- **THEN** their canonical key names are documented in `docs/training/METRICS_LOSSES.md`
+- **THEN** their canonical key names are documented in `docs/training/METRICS.md`
 - **AND** the Channel-B contract that produces them is documented in `docs/training/STAGE2_RUNBOOK.md`.
+
+### Requirement: Metric namespace hierarchy is explicit and stable
+The system SHALL keep the metric namespace hierarchy explicit so operators can infer meaning from the key shape alone.
+
+Normative behavior:
+- `loss/<provenance>/<atom>` denotes a post-weighting objective atom.
+- `coord_diag/<metric>` is reserved for Stage-1-style bare coord diagnostics.
+- `coord_diag/<provenance>/<metric>` is reserved for provenance-split Stage-2 coord diagnostics.
+- `rollout/*` and `eval_rollout/*` remain distinct training-vs-eval families.
+- Internal reducer-helper keys MUST remain underscore-prefixed and MUST NOT appear in the final logged payload.
+
+#### Scenario: Key shape disambiguates objective atoms vs diagnostics
+- **WHEN** a log record contains `loss/B_coord/coord_soft_ce` and `coord_diag/B/expected_bin_mae`
+- **THEN** the former is understood as a training objective atom
+- **AND** the latter is understood as a diagnostic-only monitor
+- **AND** the two are not ambiguous despite sharing the same provenance token.
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)
 For registry-defined objective modules, trainers MUST emit only **atomic objective contributions** under canonical `loss/<provenance>/<atom>` keys and MUST NOT emit raw component loss keys by default.

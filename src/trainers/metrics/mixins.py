@@ -67,7 +67,7 @@ class AggregateTokenTypeMetricsMixin:
     - Skips metrics when no supervised tokens to avoid NaNs
 
     Metric key reference:
-      - docs/training/METRICS_LOSSES.md
+      - docs/training/METRICS.md
     """
 
     label_field = "dataset_labels"

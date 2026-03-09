@@ -22,6 +22,41 @@ Notes:
   `schema_version` (integer major, current `1`), `mode` (`train|eval`), `global_step`,
   and `metrics` (key/value map). Missing/non-integer/unsupported schema versions are rejected.
 
+## Namespace Hierarchy
+
+Read metric keys left-to-right:
+
+- `loss/<provenance>/<atom>`
+  - Objective atoms that directly participate in the training loss.
+  - `provenance` identifies the forward surface or supervision family, for example:
+    - `A1_text`
+    - `A1_coord`
+    - `A2_text`
+    - `A2_coord`
+    - `B_rollout_text`
+    - `B_coord`
+  - `atom` is the post-weighting contribution name, for example `struct_ce`, `bbox_smoothl1`, or `coord_soft_ce`.
+
+- `coord_diag/<metric>` and `coord_diag/<provenance>/<metric>`
+  - Stage-1 uses bare `coord_diag/<metric>`.
+  - Stage-2 two-channel uses provenance-split `coord_diag/A1/*`, `coord_diag/A2/*`, and `coord_diag/B/*`.
+
+- `rollout/<metric>` and `eval_rollout/<metric>`
+  - Training-time rollout telemetry uses `rollout/*`.
+  - Eval-step rollout telemetry uses `eval_rollout/*`.
+
+- `packing/<metric>`, `time/<metric>`, `train/<metric>`, `accum/<metric>`
+  - Operational telemetry families for packing, timing, sample accounting, and grad-accum/runtime state.
+
+- `stage2/<metric>`, `stage2_ab/<...>`, `dup/<metric>`
+  - Stage-2 scheduler / rollout-health tags, Channel-B-specific counters, and duplicate-collapse diagnostics.
+
+Naming rules:
+- `/` separates namespace levels.
+- `_` inside a leaf name is part of the metric name, not a hierarchy split.
+- Suffixes like `_total`, `_count`, `_sum`, `_num`, `_den`, `_rate`, and `_frac` signal aggregation intent.
+- Internal reducer helpers are underscore-prefixed path segments or leaf names such as `rollout/_parse_truncated_num`; they are not part of the final logged payload.
+
 ## Breaking change note (Stage-2 loss keys)
 
 Stage-2 trainers (`custom.trainer_variant: stage2_two_channel|stage2_rollout_aligned`) now emit only
@@ -160,8 +195,10 @@ not reported for this trainer variant.
 Important semantics:
 - **Aggregated logging:** metrics are accumulated across gradient-accumulation micro-batches and
   logged once per optimizer step (same step index as `train/loss`).
-- **Rank-local (training logs):** `rollout/*` keys logged during training are
-  rank-local (not all-reduced), so they can vary across GPUs.
+- **Buffered local -> globally reduced (training logs):** each rank computes and buffers training metrics locally during the step, then the trainer synchronizes the finalized step payload across DDP ranks at log time.
+  - Counter-like keys reduce by global sum.
+  - Mean-like `loss/*` / rollout gauges use the trainer's existing weighted-mean policy.
+  - `time/*` tags follow the reducer family used by the active trainer (for example max-style reduction where the reducer already does that).
 - **All-reduced (eval):** `eval_rollout/*` keys are aggregated over the full
   evaluation dataset and summed across ranks.
 

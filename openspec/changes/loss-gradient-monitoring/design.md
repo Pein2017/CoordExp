@@ -40,6 +40,10 @@ Constraints:
 - Must not change objective or optimizer behavior.
 - Must work under AMP and DDP.
 - Must not interfere with rollout parsing, matching, or masking semantics.
+- Must align with the current packed-step execution model:
+  - Stage-2 trainers may execute multiple packed forwards per optimizer step,
+  - per-rank metrics are buffered locally first,
+  - DDP synchronization happens at the existing optimizer-step log reducers.
 
 ## Goals / Non-Goals
 
@@ -52,6 +56,7 @@ Constraints:
   - per-term gradient norm `||∇θ_shared Li||_2`,
   - percentage of negative cosine similarity across all loss-pairs.
 - Log every `interval_steps` optimizer steps (default `100`), using the existing reporting/logging stack.
+- Support packed-sequence execution without introducing a second token-position discovery implementation.
 - Keep overhead small by:
   - activating only every N steps,
   - probing only a small, output-adjacent parameter block by default.
@@ -64,7 +69,7 @@ Constraints:
 
 ## Decisions
 
-### 1) Define “Loss Terms” as Atomic Coord/Geo Contributions (Coord-Only)
+### 1) Define “Loss Terms” as Existing Atomic Coord/Geo Contributions (Coord-Only)
 
 We define the monitored terms `Li` as the **atomic, additive, coordinate-token supervision contributions** that are summed (possibly after weighting) into the trainer’s total loss for the step.
 
@@ -120,6 +125,31 @@ Rationale:
 - This matches the question we care about for instability diagnosis in grounding: "which coordinate supervision atoms dominate/conflict in the *actual* gradient update?"
 - The term count remains bounded (typically `2 + up to ~7` atoms per provenance), and monitoring is sparse.
 
+Packed-sequence corollary:
+- The monitor SHALL reuse the additive scalar tensors already produced by:
+  - `CoordSoftCEW1Result` in Stage-1, and
+  - teacher-forcing objective modules / A1 helper calls in Stage-2.
+- The monitor SHALL NOT re-scan packed `input_ids` / labels to rebuild coord/text spans.
+- No dedicated packed-token position gatherer is required for this change; the existing loss paths already encode the correct segment-aware masking and grouping semantics.
+
+### 1.1) Packed-Sequence Semantics Are Per-Packed-Forward, Then Aggregated To The Step Log
+
+Current Stage-2 execution is step-budgeted:
+- a single optimizer step may contain multiple packed forwards/backwards,
+- each packed forward has its own `compute_loss(...)`,
+- executor-level logic applies the packed-forward weight before backward.
+
+Normative decision for this change:
+- The monitor computes local diagnostics from the additive loss terms visible in each packed forward.
+- For Stage-2, the optimizer-step log value is the weighted aggregate of those packed-forward diagnostics through the trainer’s existing pending-log buffer:
+  - `stage2_two_channel`: segment-weighted `_PendingStage2Log`,
+  - `stage2_rollout_aligned`: sample-weighted `PendingTrainRolloutLog`.
+- This change does **not** attempt to reconstruct a single cross-pack gradient vector for the full optimizer step.
+
+Rationale:
+- This preserves the current execution architecture and aligns with how existing `loss/*`, rollout, and timing metrics are already aggregated.
+- It avoids moving monitor logic into executor-specific backward orchestration unless a future change explicitly requires exact whole-step gradient geometry.
+
 ### 2) A Small, Output-Adjacent Shared Parameter Probe Block (Default)
 
 We must pick `θ_shared` such that:
@@ -154,7 +184,9 @@ Key properties:
 DDP considerations:
 - Computing per-term grads should not trigger extra allreduces.
 - When the model exposes `no_sync()` (DDP), monitoring gradient calls run inside `model.no_sync()` so that autograd does not synchronize gradients across ranks on these extra backward computations.
-- Monitor activation is gated deterministically by `global_step` and (when available) `accelerator.sync_gradients`, so all ranks either run or skip together.
+- Monitor activation is gated deterministically so all ranks either run or skip together for the same optimizer step.
+- For `stage2_two_channel`, the “final synchronized pack” signal MUST come from the trainer/executor’s existing pack-level sync decision, not solely from `accelerator.sync_gradients`.
+- The monitor computes metrics locally on each rank first; synchronization remains the responsibility of the existing step-boundary metric reducers.
 
 AMP considerations:
 - Monitoring computations operate on the same loss tensors used for training (pre-GradScaler).
@@ -218,6 +250,11 @@ Keys are emitted only on monitor steps. Proposed canonical keys:
 
 Stage-2 integration respects the existing “micro-batch aggregation -> optimizer-step log” contract:
 - Monitor metrics are added into the same pending log buffers as other mean-like scalars so they are logged once per optimizer step.
+- Under DDP, synchronization SHALL align with the current reducers:
+  - `gradmon/*` scalars are treated as mean-like gauge values,
+  - counter-like fields remain additive if any are introduced in the future,
+  - `time/gradmon_s` follows the existing `time/*` reducer behavior.
+- The monitor itself does not own a separate `reduce_across_ranks` policy knob.
 
 ### 7) Enablement Surface (Config-First)
 
@@ -235,7 +272,7 @@ custom:
       coord_only: true
       # Stage-2 Channel-A uses atomic provenance split (A1_coord/* vs A2_coord/*).
       granularity: atomic
-      # Optional: only compute on last accumulation micro-step.
+      # Optional: only compute on the trainer's final synchronized micro/pack step.
       require_sync_gradients: true
       param_block:
         strategy: auto_last_lm_layernorm
@@ -244,7 +281,6 @@ custom:
         # exclude: "visual|vision|embed"
         max_params: 64
         max_numel: 200000
-      reduce_across_ranks: false
 ```
 
 Parsing/injection:
@@ -258,6 +294,8 @@ Parsing/injection:
   - Mitigation: allow regex-based selection and caps; document that it is a diagnostic probe.
 - **DDP interaction with extra backward passes:** must avoid unexpected gradient synchronization or reducer state issues.
   - Mitigation: deterministic gating, `no_sync()` wrapping, best-effort failure policy.
+- **Packed-step approximation:** for Stage-2, logged optimizer-step monitor values are weighted aggregates of packed-forward diagnostics, not a freshly recomputed whole-step gradient decomposition.
+  - Mitigation: make this contract explicit in specs/docs/tasks and keep the per-pack weights aligned with existing reducer weights.
 - **Key sprawl:** per-term keys can grow if term naming is too granular.
   - Mitigation: define terms as a fixed coord-only atom allowlist (no text CE atoms; no full cosine matrix by default).
 
@@ -272,4 +310,3 @@ No migration required.
 - Default `param_block.strategy`:
   - confirm the most stable “small but representative” block across Qwen3-VL variants (final LM layernorm is the current recommendation).
 - Should Stage-1 always split coord auxiliary terms into atoms (softCE/W1/gate/coordCE), or allow a `granularity: total` option to group them into `S1/coord_total`?
-- Should we optionally all-reduce some statistics across ranks (e.g. negative pair numerator/denominator) for less noisy logs in DDP?
