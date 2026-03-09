@@ -1117,6 +1117,39 @@ def _build_pipeline_manifest(
     }
 
 
+def _scope_logging_dir_under_run_name(train_args: Any) -> str | None:
+    """Nest explicit TensorBoard roots under `run_name`.
+
+    ms-swift versions `output_dir` when `add_version` is enabled, but it leaves an
+    authored `logging_dir` untouched. Without this alignment, `tensorboard --logdir`
+    sees event files directly under the root and labels the run as `.` instead of
+    the authored `training.run_name`.
+    """
+    training_args = getattr(train_args, "training_args", None)
+    run_name = getattr(train_args, "run_name", None)
+    if not run_name and training_args is not None:
+        run_name = getattr(training_args, "run_name", None)
+
+    base_logging_dir = getattr(train_args, "logging_dir", None)
+    if base_logging_dir is None and training_args is not None:
+        base_logging_dir = getattr(training_args, "logging_dir", None)
+
+    if not run_name or not base_logging_dir:
+        return None
+
+    run_name_str = str(run_name)
+    base_logging_dir_str = str(base_logging_dir)
+    base_logging_dir_norm = os.path.normpath(base_logging_dir_str)
+    if os.path.basename(base_logging_dir_norm) == run_name_str:
+        final_logging_dir = base_logging_dir_str
+    else:
+        final_logging_dir = os.path.join(base_logging_dir_str, run_name_str)
+        setattr(train_args, "logging_dir", final_logging_dir)
+        if training_args is not None:
+            setattr(training_args, "logging_dir", final_logging_dir)
+    return final_logging_dir
+
+
 def main():
     """Main training entry point - pure config-driven."""
     args = parse_args()
@@ -1149,6 +1182,7 @@ def main():
     # Keep directory targets aligned across ms-swift wrappers.
     run_name = getattr(train_args, "run_name", None)
     training_args = getattr(train_args, "training_args", None)
+    debug_output_override_applied = False
 
     def _set_train_dir_attr(attr_name: str, value: str) -> None:
         setattr(train_args, attr_name, value)
@@ -1166,22 +1200,10 @@ def main():
             )
             _set_train_dir_attr("output_dir", debug_output_dir_s)
             _set_train_dir_attr("logging_dir", debug_output_dir_s)
+            debug_output_override_applied = True
 
-    add_version = getattr(train_args, "add_version", None)
-    if add_version is None and training_args is not None:
-        add_version = getattr(training_args, "add_version", None)
-    add_version_enabled = bool(add_version) if add_version is not None else False
-
-    # add_version already scopes output/logging under a versioned run dir in ms-swift.
-    if run_name and not add_version_enabled:
-        base_logging_dir = getattr(train_args, "logging_dir", None)
-        if base_logging_dir is None and training_args is not None:
-            base_logging_dir = getattr(training_args, "logging_dir", None)
-        if base_logging_dir:
-            base_logging_dir_norm = os.path.normpath(base_logging_dir)
-            if os.path.basename(base_logging_dir_norm) != str(run_name):
-                final_logging_dir = os.path.join(base_logging_dir, str(run_name))
-                _set_train_dir_attr("logging_dir", final_logging_dir)
+    if run_name and not debug_output_override_applied:
+        _scope_logging_dir_under_run_name(train_args)
 
     # Optional: mirror logs into output_dir for quick review (rank 0 only).
     try:

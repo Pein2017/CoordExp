@@ -220,6 +220,57 @@ class _PendingStage2Log:
         return out
 
 
+def _stage2_latest_snapshot_key(metric_key: str) -> str | None:
+    key = str(metric_key)
+
+    if (
+        key.startswith(("loss/A1_", "loss/A2_"))
+        or key.startswith(("coord_diag/A1/", "coord_diag/A2/"))
+        or key.startswith("time/channel_a_")
+        or key == "stage2/channel_a"
+    ):
+        return f"latest/{key}"
+
+    if (
+        key.startswith("loss/B_")
+        or key.startswith("coord_diag/B/")
+        or key.startswith("stage2_ab/channel_b/")
+        or key.startswith("dup/")
+        or key.startswith("rollout/")
+        or key.startswith("time/rollout_")
+        or key
+        in {
+            "stage2/channel_b",
+            "stage2/raw_rollouts",
+            "stage2/invalid_rollout",
+            "stage2/drop_poly",
+            "stage2/drop_unknown",
+            "stage2/drop_bbox_invalid",
+        }
+    ):
+        return f"latest/{key}"
+
+    return None
+
+
+def _merge_latest_stage2_metric_snapshots(
+    latest_snapshots: MutableMapping[str, float],
+    metrics: Mapping[str, Any],
+) -> Dict[str, float]:
+    for key_raw, value in metrics.items():
+        snapshot_key = _stage2_latest_snapshot_key(str(key_raw))
+        if snapshot_key is None:
+            continue
+        try:
+            latest_snapshots[snapshot_key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return {
+        str(key): float(value)
+        for key, value in sorted(latest_snapshots.items(), key=lambda item: item[0])
+    }
+
+
 
 
 def _expectation_decode_coords(
@@ -786,6 +837,7 @@ class Stage2ABTrainingTrainer(
         setattr(self, "_coordexp_disable_dataset_metric_key_sync", True)
 
         self._stage2_pending_train_logs: Dict[int, _PendingStage2Log] = {}
+        self._stage2_latest_metric_snapshots: Dict[str, float] = {}
         self._stage2_channel_override: Optional[str] = None
 
         # Keep per-channel packing buffers so mixed schedules never pack A/B segments together.
@@ -1141,6 +1193,12 @@ class Stage2ABTrainingTrainer(
         ):
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
             pending = self._stage2_pending_train_logs.get(step)
+            latest_snapshot_state = getattr(
+                self, "_stage2_latest_metric_snapshots", None
+            )
+            if not isinstance(latest_snapshot_state, dict):
+                latest_snapshot_state = {}
+                setattr(self, "_stage2_latest_metric_snapshots", latest_snapshot_state)
 
             # IMPORTANT (DDP contract): stage2-ab log() merges buffered per-step
             # debug metrics via distributed collectives.
@@ -1155,6 +1213,7 @@ class Stage2ABTrainingTrainer(
                 global_step=step,
             )
             pending = self._stage2_pending_train_logs.pop(step, None)
+            latest_snapshots: Dict[str, float] = {}
             if pending is not None:
                 reduced = self._reduce_stage2_pending_metrics_global(
                     pending.finalize(drop_internal=False)
@@ -1162,6 +1221,19 @@ class Stage2ABTrainingTrainer(
                 reduced.pop("rollout/_parse_truncated_num", None)
                 reduced.pop("rollout/_parse_truncated_den", None)
                 logs.update(reduced)
+                latest_snapshots = _merge_latest_stage2_metric_snapshots(
+                    latest_snapshot_state,
+                    reduced,
+                )
+            elif latest_snapshot_state:
+                latest_snapshots = {
+                    str(key): float(value)
+                    for key, value in sorted(
+                        latest_snapshot_state.items(), key=lambda item: item[0]
+                    )
+                }
+            if latest_snapshots:
+                logs.update(latest_snapshots)
         return super().log(logs)
 
     def training_step(self, model, inputs, *args, **kwargs):

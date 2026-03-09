@@ -736,6 +736,46 @@ def test_rollout_eval_decode_batch_size_overrides_eval_batch_size_when_mismatche
     assert train_args.per_device_eval_batch_size == 3
 
 
+def test_scope_logging_dir_under_run_name_keeps_tensorboard_runs_named() -> None:
+    from src.sft import _scope_logging_dir_under_run_name
+
+    train_args = types.SimpleNamespace(
+        run_name="tb_named_run",
+        logging_dir="tb/stage2_ab/prod",
+        add_version=True,
+        training_args=types.SimpleNamespace(
+            run_name="tb_named_run",
+            logging_dir="tb/stage2_ab/prod",
+            add_version=True,
+        ),
+    )
+
+    resolved = _scope_logging_dir_under_run_name(train_args)
+
+    assert resolved == "tb/stage2_ab/prod/tb_named_run"
+    assert train_args.logging_dir == resolved
+    assert train_args.training_args.logging_dir == resolved
+
+
+def test_scope_logging_dir_under_run_name_is_idempotent() -> None:
+    from src.sft import _scope_logging_dir_under_run_name
+
+    train_args = types.SimpleNamespace(
+        run_name="tb_named_run",
+        logging_dir="tb/stage2_ab/prod/tb_named_run",
+        training_args=types.SimpleNamespace(
+            run_name="tb_named_run",
+            logging_dir="tb/stage2_ab/prod/tb_named_run",
+        ),
+    )
+
+    resolved = _scope_logging_dir_under_run_name(train_args)
+
+    assert resolved == "tb/stage2_ab/prod/tb_named_run"
+    assert train_args.logging_dir == resolved
+    assert train_args.training_args.logging_dir == resolved
+
+
 def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
     from src.sft import _build_pipeline_manifest
 

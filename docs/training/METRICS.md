@@ -51,6 +51,13 @@ Read metric keys left-to-right:
 - `stage2/<metric>`, `stage2_ab/<...>`, `dup/<metric>`
   - Stage-2 scheduler / rollout-health tags, Channel-B-specific counters, and duplicate-collapse diagnostics.
 
+- `latest/<train-key>`
+  - Train-only dense snapshots for channel-specific Stage-2 metrics.
+  - These mirror the most recently observed Channel-A / Channel-B values into every `logging_step`,
+    even when the current interval only contained the other channel.
+  - Use `latest/*` for continuous TensorBoard monitoring; keep the original non-prefixed keys for
+    interval-local semantics.
+
 Naming rules:
 - `/` separates namespace levels.
 - `_` inside a leaf name is part of the metric name, not a hierarchy split.

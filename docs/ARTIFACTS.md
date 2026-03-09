@@ -42,6 +42,9 @@ During training (`python -m src.sft ...`), rank 0 writes reproducibility artifac
 
 Notes:
 - If `training.add_version: true` (default in `configs/base.yaml`), ms-swift scopes outputs under a versioned run directory.
+- If `training.logging_dir` is explicitly set together with `training.run_name`, CoordExp writes TensorBoard
+  event files under `<logging_dir>/<run_name>/` so `tensorboard --logdir <logging_dir>` shows the authored run
+  name instead of a bare `.` root entry.
 - If `training.output_dir` is not set, training fails fast (we treat these artifacts as required for reproducibility).
 
 ---
