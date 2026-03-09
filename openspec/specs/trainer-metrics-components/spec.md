@@ -33,6 +33,11 @@ Compatibility aliases are optional and MAY be omitted.
 
 The system SHALL preserve the existing batch-extra key names listed in "Stable batch extras contract".
 
+Normative behavior for the clean-prefix Channel-B contract:
+- `docs/training/METRICS_LOSSES.md` MUST define the canonical training keys added by this contract.
+- `docs/training/STAGE2_RUNBOOK.md` MUST define the corresponding Channel-B behavior and interpretation.
+- Removed raw-prefix wording and removed legacy metric names MUST NOT linger in the canonical docs after implementation lands.
+
 #### Scenario: Canonical-only metric contract
 - GIVEN a training run after metric minimalization
 - WHEN only canonical keys are emitted
@@ -46,6 +51,12 @@ The system SHALL preserve the existing batch-extra key names listed in "Stable b
 - OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
 - AND removed legacy keys/aliases are absent (no duplicate emission)
 - AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
+
+#### Scenario: Canonical duplicate metrics are documented
+- **GIVEN** a training run after the clean-prefix Channel-B feature lands
+- **WHEN** duplicate-ul and duplicate-collapse metrics are emitted
+- **THEN** their canonical key names are documented in `docs/training/METRICS_LOSSES.md`
+- **AND** the Channel-B contract that produces them is documented in `docs/training/STAGE2_RUNBOOK.md`.
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)
 For registry-defined objective modules, trainers MUST emit only **atomic objective contributions** under canonical `loss/<provenance>/<atom>` keys and MUST NOT emit raw component loss keys by default.
@@ -63,7 +74,7 @@ Normative behavior:
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
   - Channel-B (rollout context):
-    - `loss/B_rollout_text/{struct_ce,desc_ce}` (rollout-context forward; token CE objective atoms)
+    - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (rollout-context forward; geometry objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - Raw/duplicate loss keys MUST NOT be emitted by default (non-exhaustive):
@@ -75,6 +86,37 @@ Normative behavior:
 - **WHEN** a Stage-2 or rollout-aligned training step emits objective metrics
 - **THEN** emitted keys include only canonical `loss/<provenance>/<atom>` keys for registry-defined objective modules
 - **AND** raw component loss keys and legacy aliases are absent.
+
+#### Scenario: Channel-B emits duplicate_ul as a canonical objective atom
+- **WHEN** a Channel-B training step applies duplicate unlikelihood
+- **THEN** the emitted objective key is `loss/B_rollout_text/duplicate_ul`
+- **AND** no raw alias key for duplicate-unlikelihood is emitted.
+
+### Requirement: Channel-B duplicate-collapse metrics are explicit and aggregation-safe
+The trainer metrics contract SHALL expose duplicate-collapse diagnostics with explicit gauge-vs-counter naming.
+
+Normative gauges:
+- `dup/max_desc_count`
+- `dup/saturation_rate`
+
+Normative count-like metrics:
+- `dup/near_iou90_pairs_same_desc_count`
+- `dup/near_iou90_pairs_any_desc_count`
+- `stage2_ab/channel_b/dup/N_raw_bbox_valid`
+- `stage2_ab/channel_b/dup/N_clean_accepted`
+- `stage2_ab/channel_b/dup/N_duplicates`
+- `stage2_ab/channel_b/dup/N_duplicate_bursts`
+- `stage2_ab/channel_b/dup/N_ul_boundaries`
+- `stage2_ab/channel_b/dup/N_ul_skipped_no_divergence`
+
+Normative behavior:
+- Count-like metrics MUST use `/N_`, `_count`, `_total`, `_sum`, `_num`, or `_den` naming so optimizer-step aggregation treats them as additive totals.
+- Gauge-like metrics MUST remain mean-like and MUST NOT masquerade as counters.
+
+#### Scenario: Duplicate counters aggregate additively across micro-steps
+- **WHEN** duplicate count-like metrics are emitted from multiple micro-steps in one optimizer step
+- **THEN** the finalized step metric is the additive total
+- **AND** the result is not diluted by mean-style aggregation.
 
 ### Requirement: Coord distribution diagnostics are provenance-split in Stage-2 two-channel
 When Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) emits coord-distribution diagnostics, it MUST attribute them to the forward surface that produced the logits used for the coord-vocab slice.
@@ -288,4 +330,3 @@ Under DDP, any diagnostic that requires collectives (e.g., key synchronization) 
 - **WHEN** a diagnostics helper raises unexpectedly
 - **THEN** the system does not skip a required collective on only a subset of ranks
 - **AND** the job either fails fast or disables the diagnostic via a rank-symmetric decision.
-

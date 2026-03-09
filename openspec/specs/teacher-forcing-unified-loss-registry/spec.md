@@ -9,7 +9,7 @@ The system SHALL define canonical teacher-forcing contexts and token types that 
 Normative contexts:
 - `gt`: pure GT teacher forcing (CE anchor).
 - `self_context`: Channel-A final-iteration logits under coord-slot self-context.
-- `rollout`: Channel-B teacher-forced logits under rollout-prefix + FN injection.
+- `rollout`: Channel-B clean-prefix teacher-forced logits under clean accepted prefix + FN injection.
 
 Normative token types (mutually exclusive):
 - `struct`: JSON syntax + keys/punctuation and other non-desc, non-coord content.
@@ -20,6 +20,7 @@ Normative token types (mutually exclusive):
 Normative minimum canonical loss component names (metrics use these names when emitted):
 - `struct_ce`
 - `desc_ce`
+- `duplicate_ul`
 - `geo`
 - `coord_reg`
 
@@ -31,6 +32,11 @@ NOTE (logging contract):
 - **WHEN** token-type masks are built for a sequence containing `<|im_end|>`
 - **THEN** the EOS token receives `type=eos`
 - **AND** it does not receive any other token type.
+
+#### Scenario: duplicate_ul is a canonical registry loss component name
+- **WHEN** the clean-prefix Channel-B objective is reported through the unified registry
+- **THEN** the duplicate-unlikelihood component is identified canonically as `duplicate_ul`
+- **AND** it is not folded into `struct_ce` or `desc_ce`.
 
 ### Requirement: Gate terms are logit-derived and require no new heads
 The registry SHALL support two complementary vocab-partition gate sub-terms inside `coord_reg`:
@@ -87,12 +93,13 @@ Stage-2 code paths.
 Normative contexts:
 - `gt`: pure GT teacher forcing logits/targets (Stage-1; also the CE anchor for Stage-2 Channel-A).
 - `self_context`: Channel-A final-iteration logits under soft/ST coord-slot self-context.
-- `rollout`: Channel-B one-pass teacher-forced logits under rollout-prefix + FN injection.
+- `rollout`: Channel-B clean-prefix teacher-forced logits under clean accepted prefix + FN injection.
 
 Normative loss component names (minimum set; can be extended):
 - `struct_ce`: token cross entropy on structure tokens, including EOS enforcement (EOS is a distinct token type but its
   CE contribution is accounted under `struct_ce`).
 - `desc_ce`: token cross entropy on description tokens.
+- `duplicate_ul`: duplicate-certified unlikelihood over clean-boundary divergence tokens in Channel-B rollout context.
 - `coord_token_ce`: token cross entropy on coord vocabulary tokens (optional; typically GT context only).
 - `coord_reg`: coord-subspace regularizers computed from logits/probabilities (optional; includes distribution/ordinal
   terms on coord positions and vocab-partition gate terms).
@@ -100,10 +107,9 @@ Normative loss component names (minimum set; can be extended):
 
 Normative behavior:
 - A single implementation of the above components MUST be reused across stages/channels (no duplicated definitions).
-- Any module pipeline or trainer mixin that emits per-step metrics MUST use stable metric key prefixes derived from the
-  canonical component names (e.g., `loss/geo`, `loss/struct_ce`).
-- Trainers MUST emit only canonical `loss/<component>` keys for registry-defined loss components; trainer-specific loss
-  aliases MUST NOT be emitted.
+- Module pipelines and trainers MUST use these stable canonical component names for registry identity and objective semantics.
+- Public training logs for registry-defined objective modules MUST follow the canonical metric emission contract in
+  `trainer-metrics-components` (for example `loss/<provenance>/<atom>` objective atoms), rather than inventing trainer-specific aliases.
 - This change MUST update `docs/training/METRICS_LOSSES.md` and `docs/training/STAGE2_RUNBOOK.md` to reflect the
   canonical metric key contract introduced by the unified registry/pipeline.
 
@@ -153,48 +159,59 @@ Normative behavior:
 - **AND** it receives `type!=struct` (no double counting).
 
 ### Requirement: Channel-B rollout context is FP-neutral and EOS-enforced
-For Stage-2 Channel-B (`context=rollout`), the system SHALL apply FP-neutral masking while enforcing EOS/closure
-supervision.
+For Stage-2 Channel-B (`context=rollout`), the rollout-context contract SHALL be defined over the clean accepted sequence rather than the raw rollout prefix.
 
-Definitions (rollout context object subsets; stop-grad alignment via parse/match):
-- `matched`: predicted prefix objects accepted into ValidMatched.
-- `fp`: predicted prefix objects not matched / dropped-invalid treated as FP.
+Normative rollout object subsets:
+- `matched_clean`: clean accepted objects matched to GT.
+- `unmatched_clean`: clean accepted objects not matched to GT.
+- `duplicate`: duplicate-certified objects removed from the positive clean prefix.
 - `fn`: GT objects injected into the same top-level `objects[]` container for supervision.
 
-Normative behavior (rollout context masks):
-- FP spans MUST receive zero CE weight and MUST NOT contribute to geometry/coord distribution losses.
-- Matched prefix objects MUST receive **struct-only** CE (desc CE weight = 0).
-- FN injected objects MUST receive struct+desc CE (desc CE weight = 1 by default, configurable via desc weight).
-- The outermost JSON closure `}` and `<|im_end|>` MUST remain supervised (EOS-enforced), even when other spans are
-  masked (this prevents stop-neutral regressions).
+Normative behavior:
+- `duplicate` objects MUST NOT appear in the positive teacher-forced prefix.
+- `matched_clean` objects receive matched-prefix structure supervision and positive geometry/coord supervision as defined by the Channel-B contract.
+- `unmatched_clean` objects MAY remain in the clean prefix as context but MUST remain neutral.
+- `fn` objects remain positively supervised.
+- Closure / EOS remain supervised.
 
-#### Scenario: FP-neutral does not disable EOS supervision
-- **GIVEN** a rollout prefix with at least one FP object span
-- **WHEN** rollout-context CE masks are built
-- **THEN** FP spans are masked out
-- **AND** the top-level closure token(s) remain supervised.
+#### Scenario: Duplicate-certified objects are removed from the positive prefix
+- **WHEN** a rollout object is classified as `duplicate`
+- **THEN** it does not contribute to the positive teacher-forced prefix
+- **AND** it is represented only through duplicate-ul supervision and diagnostics.
 
 ### Requirement: Rollout-context semantics are explicit, auditable, and coherent across trainers
-The system SHALL make rollout-context supervision semantics explicit and auditable so that:
-- Stage-2 Channel-B and rollout-matching SFT use a coherent rollout-context masking contract by default, and
-- any ablations are expressible via typed configuration (not trainer-specific forks).
+The unified loss registry SHALL treat clean-prefix rollout semantics as the canonical Channel-B rollout contract.
 
 Normative behavior:
-- The unified loss registry MUST provide a single rollout-context mask builder that enforces the
-  `progress/full_idea.md` rollout semantics:
-  - FP-neutral masking: FP spans have zero CE weight and are excluded from geometry/coord-dist losses,
-  - matched prefix objects: struct-only CE (desc weight = 0),
-  - FN injected objects: struct CE + desc CE (desc supervised by default, configurable via an explicit weight),
-  - closure/EOS: supervised (EOS-enforced).
-- Stage-2 Channel-B and rollout-matching SFT MUST both consume this same rollout-context mask builder (no duplicated
-  rollout-context masking logic in trainer code).
-- Any deviations for ablations (e.g., `fn_desc_weight=0`, `matched_prefix_struct_weight=0`) MUST be expressed via
-  explicit, typed weights and MUST be logged as part of pipeline identity so runs are auditable.
+- Channel-B positive masks are built from the clean teacher-forced target, not the raw rollout prefix.
+- Neutral unmatched clean extras MUST stay outside matched-prefix struct masks, coord supervision groups, and duplicate-ul positives.
+- Duplicate-ul supervision MUST be boundary-local and explicit rather than encoded through hidden token-ce behavior.
 
-#### Scenario: Channel-B and rollout-matching share one rollout mask contract
-- **WHEN** both Stage-2 Channel-B and rollout-matching SFT are configured with default rollout semantics
-- **THEN** they apply the same FP-neutral, matched-prefix, FN, and EOS rollout mask rules
-- **AND** ablation differences appear only through explicit typed weights.
+#### Scenario: Neutral unmatched clean extras remain context-only
+- **WHEN** a clean accepted object is unmatched after Hungarian
+- **THEN** it may remain in the clean prefix as context
+- **AND** it contributes no positive CE/geo/coord or duplicate-ul target.
+
+### Requirement: Duplicate UL is boundary-local and LCP-defined
+The unified loss registry SHALL define duplicate unlikelihood as a boundary-local objective over canonical clean vs duplicate continuations.
+
+Normative behavior:
+- For each clean boundary `b`, define `clean_continuation(b)` from the canonical clean teacher-forced target.
+- For each duplicate attached to boundary `b`, define `duplicate_continuation(b, dup)` as canonical serialization of that duplicate object at boundary `b`, followed by the same canonical clean suffix.
+- The target token is the first true divergence token of `duplicate_continuation(b, dup)` relative to `clean_continuation(b)`.
+- Duplicate-ul aggregation is one unit term per unique divergence token per boundary.
+- If no safe divergence token exists for a continuation, that continuation is skipped and counted in diagnostics.
+- This deduplicated-per-boundary aggregation is intentional: the canonical v1 contract does not sum one UL term per duplicate object when multiple duplicates encode the same divergence token at the same clean boundary.
+
+#### Scenario: Same-class-next-object cases do not blindly suppress the first desc token
+- **WHEN** a duplicate continuation shares a non-empty token prefix with the clean continuation
+- **THEN** duplicate-ul targets the first true LCP-divergence token
+- **AND** it does not blindly suppress the first desc token.
+
+#### Scenario: Unsafe or unavailable divergence token is skipped and counted
+- **WHEN** a duplicate continuation yields no safe divergence token relative to the clean continuation
+- **THEN** duplicate-ul does not contribute a loss term for that continuation
+- **AND** the skipped continuation is counted in the corresponding duplicate-ul diagnostics counter.
 
 ### Requirement: Channel-A CE anchoring and self-context geometry are separate contexts
 For Stage-2 Channel-A, the system SHALL treat:
@@ -271,12 +288,12 @@ Normative behavior:
   - CIoU on the same canonicalized box representation.
 - The system MUST aggregate `geo` as a mean over the supervised object set for the current context:
   - Stage-2 Channel-A `self_context`: identity-aligned GT objects,
-  - Stage-2 Channel-B `rollout`: `matched` + `fn` objects (FP excluded).
+  - Stage-2 Channel-B `rollout`: `matched_clean` + `fn` objects (`duplicate` and `unmatched_clean` excluded).
 
-#### Scenario: FP objects do not contribute to geometry loss
-- **WHEN** Stage-2 Channel-B runs with FP objects present in the rollout prefix
-- **THEN** FP objects contribute `0` to `geo`
-- **AND** only `matched` and `fn` objects contribute to `geo`.
+#### Scenario: Duplicate and unmatched clean extras do not contribute to geometry loss
+- **WHEN** Stage-2 Channel-B runs with duplicate-certified continuations and unmatched clean extras present
+- **THEN** those objects contribute `0` to `geo`
+- **AND** only `matched_clean` and `fn` objects contribute to `geo`.
 
 ### Requirement: Coord regularizer loss (`coord_reg`) is explicit and strictly configured
 The system SHALL treat coord regularization (`coord_reg`) as an optional component computed directly from logits and/or
@@ -316,4 +333,3 @@ Normative behavior:
   - FP-neutral in `context=rollout` (FP spans excluded),
   - matched-prefix `desc` excluded where `CE_desc=0`,
   - closure/EOS supervision remains unchanged (gate terms MAY ignore `type=eos`).
-

@@ -30,7 +30,7 @@ Always pass explicit paths. Prefer directories for reproducibility.
 
 ## 1) Run standard checks directly (recommended)
 
-Run these from the repo root (`/data/CoordExp`) or any directory; just pass paths that exist in the repo.
+Run these from the repo root (`.`) or any directory; just pass paths that exist in the repo.
 
 **Formatter drift (no writes):**
 ```bash

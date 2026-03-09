@@ -1,3 +1,13 @@
+---
+doc_id: docs.standards.porting
+layer: docs
+doc_type: standard
+status: canonical
+domain: standards
+summary: Porting guidance and compatibility notes.
+updated: 2026-03-09
+---
+
 # Porting notes between Qwen3-VL and CoordExp
 
 ## Token-type metrics (desc/coord/format)

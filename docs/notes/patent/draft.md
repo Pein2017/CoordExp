@@ -1,3 +1,13 @@
+---
+doc_id: docs.notes.patent-draft
+layer: docs
+doc_type: supplemental-note
+status: supplemental
+domain: notes
+summary: Supplemental patent-draft material outside the main operator workflow.
+updated: 2026-03-09
+---
+
 ## 二、详细介绍技术背景
 
 近年来，开放词汇目标检测（open-vocabulary object detection）与视觉-语言大模型（Vision-Language Large Model，简称 V-LLM）的结合逐渐成为研究热点。传统目标检测框架（如 Faster R-CNN、YOLO、DETR 及其变体）通常采用“视觉骨干网络 + 检测头”的架构，即：

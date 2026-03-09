@@ -1,6 +1,16 @@
+---
+doc_id: docs.data.visual-genome
+layer: docs
+doc_type: dataset-note
+status: canonical
+domain: data
+summary: Visual Genome-specific preparation notes for CoordExp JSONL.
+updated: 2026-03-09
+---
+
 # Visual Genome (VG) -> CoordExp JSONL
 
-This repo consumes detection/grounding data via a single JSONL contract (`JSONL_CONTRACT.md`).
+This repo consumes detection/grounding data via a single JSONL contract (`CONTRACT.md`).
 Visual Genome is supported via a downloader + converter script that follows the HuggingFace dataset loader:
 `ranjaykrishna/visual_genome` (the HF repo hosts the loader; the data are downloaded from the official VG mirrors).
 
@@ -76,7 +86,7 @@ Outputs:
 
 ### 2) Smart-resize (recommended)
 
-Follow the shared intake pipeline (**[`INTAKE_PIPELINE.md`](INTAKE_PIPELINE.md)**).
+Follow the shared intake pipeline (**[`PREPARATION.md`](PREPARATION.md)**).
 
 Example:
 
@@ -115,7 +125,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.
   --output-tokens public_data/vg/rescale_32_768_bbox/train.coord.jsonl
 ```
 
-Training config knobs (already set in `configs/dlora/sft_base.yaml`):
+Training config knobs (already set in the current Stage-1 baseline tree such as `configs/stage1/sft_base.yaml`):
 - `custom.coord_tokens.enabled: true`
 - `custom.coord_tokens.skip_bbox_norm: true`
 
@@ -135,7 +145,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/merge_jsonl.py \
   --strategy round_robin
 ```
 
-Then point training to the merged file (see `configs/dlora/sft_lvis_vg_mix.yaml`).
+Then point your current training config under `configs/stage1/` or `configs/stage2_two_channel/` to the merged file.
 
 ## Dataset-specific Notes
 

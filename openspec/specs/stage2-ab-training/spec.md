@@ -209,6 +209,7 @@ Normative behavior:
   - `stage2_ab.channel_b.reordered_gt_sft`
   - `stage2_ab.channel_b.desc_ce_weight_matched`
   - `stage2_ab.channel_b.semantic_desc_gate`
+  - `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
 - Any legacy Stage-2 rollout key placement under `custom.extra.rollout_matching.*` remains unsupported and MUST fail fast with actionable migration guidance to `rollout_matching.*`.
 - `src/sft.py` rollout normalization/injection path remains authoritative for trainer wiring:
   - normalized top-level `rollout_matching` is injected as `rollout_matching_cfg`,
@@ -337,6 +338,12 @@ Normative behavior:
 - **WHEN** a config includes `stage2_ab.channel_b.desc_ce_weight_matched`
 - **THEN** loader fails fast before trainer init
 - **AND** error includes dotted path `stage2_ab.channel_b.desc_ce_weight_matched`
+- **AND** error message indicates removed-or-unknown key with actionable removal guidance.
+
+#### Scenario: Removed Channel-B invalid-structure multiplier key fails fast
+- **WHEN** a config includes `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
+- **THEN** loader fails fast before trainer init
+- **AND** error includes dotted path `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
 - **AND** error message indicates removed-or-unknown key with actionable removal guidance.
 
 #### Scenario: Extension bucket accepts minor residual keys
@@ -544,17 +551,21 @@ When Channel-A uses `inputs_embeds` to implement iterative soft self-context:
 - **WHEN** the model is forwarded with `inputs_embeds` (and `input_ids=None`)
 - **THEN** the forward pass succeeds without placeholder-count mismatch errors.
 
-### Requirement: Channel-B reuses rollout-matching infra (strict parse/match + mandatory FN append)
-Channel-B MUST reuse the rollout-matching pipeline:
-- Rollout generation MUST be configured under `rollout_matching` (backend `hf` or `vllm`).
-- Parsing MUST be strict and token-aligned (no re-tokenization of the rollout prefix), except for a possible token-internal cut on the final token where the trainer MAY retokenize only the final token as a shorter tokenization that decodes exactly to the original substring.
-- Matching MUST be deterministic.
-- FN append MUST be performed (mandatory) to ensure all GT objects are present in `Y_train`.
+### Requirement: Channel-B reuses rollout-matching infra (clean-prefix parse/match + mandatory FN append)
+Channel-B MUST reuse rollout generation and matching infrastructure, but its positive supervision contract is now clean-prefix based rather than raw-prefix based.
 
-#### Scenario: Rollout prefix + FN append produces a valid teacher-forced target
+Normative behavior:
+- Rollout generation MUST remain configured under `rollout_matching`.
+- Parsing MUST use bounded container salvage plus strict record acceptance.
+- Matching MUST be deterministic and MUST operate on `accepted_objects_clean`, not on the raw parsed bbox list.
+- The positive teacher-forced prefix MUST be canonical serialization of `accepted_objects_clean`.
+- FN append MUST remain mandatory so all GT objects are present in the final teacher-forced target.
+
+#### Scenario: Channel-B teacher-forced target uses the clean accepted prefix
 - **GIVEN** Channel-B is selected and rollout generation succeeds
-- **WHEN** the trainer builds `Y_train` for teacher forcing
-- **THEN** `Y_train` contains the rollout prefix (suffix-trimmed only) followed by a JSON-only FN append fragment.
+- **WHEN** the trainer builds the teacher-forced target
+- **THEN** the positive prefix is canonical serialization of `accepted_objects_clean`
+- **AND** later correct objects are teacher-forced on that clean prefix rather than the raw rollout prefix.
 
 ### Requirement: Stage-2 serialized object field order follows shared config
 Stage-2 AB serialization paths SHALL honor `custom.object_field_order` exactly as stage-1 serialization does.
@@ -602,23 +613,55 @@ Normative behavior:
 - **AND** only field order inside serialized object payloads differs.
 
 ### Requirement: Channel-B invalid rollouts fall back deterministically (no silent skips)
-When Channel-B is selected and a rollout response cannot be parsed into an append-ready JSON prefix (e.g., there is no top-level `{` in the response), the trainer MUST:
-- Mark the rollout as invalid for that sample and expose an `invalid_rollout` counter/metric.
-- Fall back to a canonical empty JSON prefix of exactly `{` (as token ids) so FN append can proceed.
-- Treat the rollout as containing zero valid predicted objects for matching/supervision purposes.
-- Continue training that sample by FN-appending all GT objects and running the normal teacher-forced loss (i.e., the sample is not skipped and the trainer does not raise).
+When Channel-B is selected and a rollout response cannot be recovered into an append-ready `{"objects": [...]}` prefix, the trainer MUST:
 
-This fallback MUST be deterministic given the same `response_token_ids` and tokenizer.
+- mark the rollout invalid for that sample,
+- fall back to the canonical empty prefix `{"objects": [`,
+- treat the rollout as containing zero valid predicted objects,
+- append all GT objects as FN and continue training that sample.
 
-Normative minimum: this requirement MUST at least cover the case where the rollout response contains no top-level `{` (equivalent to the current strict parser’s “completely malformed rollout” condition).
-
-#### Scenario: Missing opening brace falls back to `{` and trains
+#### Scenario: Invalid rollout falls back to the canonical empty objects prefix
 - **GIVEN** Channel-B is selected for a sample
-- **AND** the rollout response text contains no top-level `{`
+- **AND** the rollout response does not yield an append-ready `{"objects": [...]}` prefix
 - **WHEN** the trainer parses the rollout for matching
 - **THEN** it marks the rollout invalid for that sample
-- **AND** it uses `{` as the prefix and FN-appends all GT objects
+- **AND** it uses `{"objects": [` as the prefix and FN-appends all GT objects
 - **AND** the sample is still included in teacher-forced training.
+
+#### Scenario: Closure-resolution ambiguity keeps the sample on the FN-tail fallback path
+- **GIVEN** Channel-B has already built a deterministic clean-prefix teacher-forced target
+- **AND** explicit closure-marker bookkeeping cannot be resolved unambiguously for that target
+- **WHEN** the trainer finalizes per-sample Channel-B supervision metadata
+- **THEN** it keeps the sample in teacher-forced training
+- **AND** it falls back to the normal FN-tail supervision path without dropping the sample.
+
+### Requirement: Channel-B clean boundaries and duplicate bursts are canonical
+The clean-prefix Channel-B contract SHALL define boundary-indexed duplicate bursts over the deduplicated clean sequence.
+
+Normative behavior:
+- Clean boundaries are indexed by insertion position in `accepted_objects_clean`:
+  - boundary `0` before the first clean object,
+  - boundary `N` after the last clean object, where `N = len(accepted_objects_clean)`.
+- If `accepted_objects_clean` is empty, exactly one boundary exists: `0`.
+- Duplicate bursts MUST attach to these canonical clean boundaries.
+
+#### Scenario: Empty clean sequence still exposes one valid boundary
+- **WHEN** sequential dedup yields `accepted_objects_clean = []`
+- **THEN** duplicate bursts are still indexed against boundary `0`
+- **AND** duplicate-ul target construction remains well-defined.
+
+### Requirement: Generic unmatched clean extras remain neutral context
+Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain neutral with respect to supervision.
+
+Normative behavior:
+- Unmatched clean extras MUST NOT populate matched-prefix struct masks.
+- Unmatched clean extras MUST NOT populate coord/bbox supervision groups.
+- Unmatched clean extras MUST NOT create duplicate-ul positives.
+
+#### Scenario: Unmatched clean extra stays in context but produces no positive supervision
+- **WHEN** Channel-B retains an unmatched clean accepted object in the clean prefix
+- **THEN** that object remains visible in the canonical teacher-forced prefix
+- **AND** it contributes zero matched-prefix CE, zero bbox loss, zero coord loss, and zero duplicate-ul positives.
 
 ### Requirement: Channel-B rollout seeding is deterministic and logged
 Channel-B rollouts MUST be fully deterministic under greedy decoding given the same model weights, the same training seed, and the same `global_step`.
@@ -648,39 +691,32 @@ The trainer MUST log (or expose via metrics) the effective `rollout_seed_base` a
 - **THEN** both runs produce the same `rollout_seed_base`
 - **AND** the derived `rollout_seed_base` is logged for reproducibility.
 
-### Requirement: Hybrid objective preserves JSON structure CE and adds bbox geometry losses
+### Requirement: Hybrid objective preserves Channel-A anchoring and uses clean-prefix Channel-B supervision
 The Stage-2 AB trainer MUST compute a hybrid objective with:
 
 Channel-A:
 - **Token CE anchor at A1**:
   - CE on non-coord tokens MUST be computed from the teacher-forced logits of the first forward (`z^(0)`; GT context).
-  - Coord tokens MUST NOT contribute to CE (they are masked out), to avoid double-supervision.
+  - Coord tokens MUST NOT contribute to CE, to avoid double-supervision.
 - **Geometry + distribution regularizers from final softctx logits**:
   - Geometry losses and any distribution-level losses MUST be computed from the final-iteration logits `z^(n_softctx_iter-1)`.
 
 Channel-B:
-- **Matched-only geometry**:
-  - Geometry losses MUST be computed only for matched `(pred_i -> gt_j)` pairs.
-  - Unmatched predicted objects (FP under Hungarian) MUST NOT receive geometric gradients.
-- **Stop-neutral CE**:
-  - Channel-B CE MUST NOT supervise the stop/continue decision.
-  - The trainer MUST mask CE on:
-    - the top-level JSON closing brace `}` (the brace that closes the outermost assistant JSON object), and
-    - `<|im_end|>` (the only turn-end token).
-  - Top-level brace identification MUST be robust and deterministic:
-    - the trainer MUST identify the token position of the `}` that closes the **outermost** JSON object in the rendered Channel-B teacher-forced assistant span,
-    - and MUST NOT rely on “the last `}` token id in the whole sequence” without verifying it corresponds to the outermost close brace of the assistant JSON.
-    - A compliant approach is to decode the assistant-span token pieces and locate the outermost close brace via a brace-depth scan, then map the character span back to token positions.
-- **FN append always**:
-  - FN objects MUST be appended to the B3 target so they are supervised even when they were missing from rollout.
-  - If `N_valid_pred == 0` after strict validation, the trainer MUST treat all GT objects as FN (canonical GT order) and append them, which is equivalent to “FN append all GT objects”.
-  - Optional weak correction: when `N_drop_invalid > 0`, the trainer MAY upweight Channel-B’s B3 structure-token CE weights to discourage “escaping supervision via invalid instances”.
-    - This upweight MUST be controlled by `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier` (float).
-    - The multiplier MUST default to `1.0` (no effect) and MUST be constrained to a safe range `[1.0, 4.0]` (clamp or fail fast).
-    - “Structure-token CE weights” refers to Channel-B CE-supervised tokens excluding:
-      - coord tokens,
-      - desc value tokens, and
-      - stop-neutral masked token positions (`}` and `<|im_end|>`).
+- **Clean-prefix positive supervision**:
+  - the positive teacher-forced prefix MUST be canonical serialization of `accepted_objects_clean`,
+  - matched clean prefix objects MUST receive structure-only CE,
+  - generic unmatched clean extras MAY remain in the clean prefix as context but MUST remain neutral,
+  - FN objects MUST be appended to the clean target and receive structure+desc CE.
+- **FP-neutral geometry**:
+  - geometry losses MUST be computed for matched clean prefix objects and FN-injected objects,
+  - generic unmatched clean extras MUST NOT receive geometric gradients.
+- **Duplicate-ul supervision**:
+  - duplicate-certified continuations MUST be removed from the positive clean prefix,
+  - duplicate UL MUST target the first true LCP-divergence token relative to the clean continuation at the same clean boundary,
+  - same-boundary duplicates that share the same divergence token MUST collapse to one UL term.
+- **Closure supervision stays on**:
+  - the outermost JSON closure `}` and `<|im_end|>` MUST remain CE-supervised,
+  - if closure-marker bookkeeping becomes ambiguous after the clean target is built, the sample MUST stay on the deterministic FN-tail fallback path rather than being dropped.
 
 Configurable desc supervision (both channels):
 - Desc CE weights MUST be expressed via the declared pipeline module configs:
@@ -698,7 +734,7 @@ Bbox geometry losses (both channels) are computed from coord distributions:
   - Predicted bbox coords MUST be the decoded normalized floats from `c_hat` above.
 - Geometry loss MUST use logits from:
   - the final iteration `z^(n_softctx_iter-1)` in Channel-A, and
-  - the Channel-B teacher-forced logits under the rollout scaffold (or B2 refined logits when enabled).
+  - the Channel-B clean-prefix teacher-forced logits.
 
 Loss form (normative):
 - The trainer MUST use SmoothL1 (Huber) + CIoU as the bbox regression terms.
@@ -708,21 +744,6 @@ Numerical stability (normative):
 - The trainer MUST canonicalize predicted boxes before CIoU:
   - `(x1,x2) := (min(x1,x2), max(x1,x2))`, `(y1,y2) := (min(y1,y2), max(y1,y2))`.
 - The trainer MUST ensure the geometry losses do not produce NaNs/Infs, including early training when predictions are degenerate.
-
-Efficiency rule (normative):
-- If Channel-B has no valid matched pairs for a sample/batch, the trainer MUST skip the B2 forward (geo-only) and run B3 only.
-
-#### Scenario: Channel-B is stop-neutral for `}` and `<|im_end|>`
-- **GIVEN** Channel-B builds a teacher-forced target that ends with a top-level `}` followed by `<|im_end|>`
-- **WHEN** the trainer builds CE labels/weights for Channel-B
-- **THEN** it masks CE on that top-level `}` token position
-- **AND** it masks CE on `<|im_end|>`.
-
-#### Scenario: Dropped invalid instances may upweight B3 structure CE
-- **GIVEN** a Channel-B rollout with `N_drop_invalid > 0`
-- **AND** `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier: 1.5`
-- **WHEN** Channel-B builds CE weights for structure tokens in B3
-- **THEN** it MAY multiply the structure-token CE weights by `1.5` (bounded) for that sample/window.
 
 #### Scenario: Desc can be fully masked while keeping structure CE
 - **GIVEN** `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight: 0`
@@ -742,17 +763,11 @@ Efficiency rule (normative):
 - **THEN** the converted value is `999/999 = 1.0`
 - **AND** geometry losses are computed using normalized floats in `[0, 1]`.
 
-#### Scenario: Channel-B geometry includes matched and FN but excludes FP
-- **GIVEN** Channel-B where matching yields non-empty matched, FP, and FN sets
+#### Scenario: Channel-B geometry includes matched clean prefix objects and FN but excludes unmatched clean extras
+- **GIVEN** Channel-B where clean-prefix matching yields non-empty matched clean objects, unmatched clean extras, and FN sets
 - **WHEN** Channel-B losses are computed
-- **THEN** geometry loss is accumulated for matched and FN-injected objects
-- **AND** FP objects contribute zero geometry loss.
-
-#### Scenario: Start key avoids collision even when highest key object is invalid
-- **GIVEN** retained rollout prefix contains keys `object_2` (valid) and `object_7` (invalid and dropped by strict validation)
-- **WHEN** FN entries are injected
-- **THEN** `max_object_index_in_prefix` is `7`
-- **AND** FN key assignment starts at `object_8`.
+- **THEN** geometry loss is accumulated for matched clean prefix objects and FN-injected objects
+- **AND** unmatched clean extras contribute zero geometry loss.
 
 #### Scenario: Closure-supervision brace target is the same brace used for injection
 - **GIVEN** Channel-B injects FN entries before the outermost close brace resolved by brace-depth scan
@@ -760,11 +775,11 @@ Efficiency rule (normative):
 - **THEN** that same outermost close brace token position remains CE-supervised
 - **AND** `<|im_end|>` remains CE-supervised.
 
-#### Scenario: CE masking follows matched/FP/FN policy
-- **GIVEN** Channel-B contains one matched object, one FP object, and one FN-injected object
+#### Scenario: CE masking follows matched-clean / unmatched-clean / FN policy
+- **GIVEN** Channel-B contains one matched clean object, one unmatched clean extra, and one FN-injected object
 - **WHEN** CE weights are materialized
-- **THEN** matched structure tokens are supervised while matched desc tokens are masked
-- **AND** FP structure/desc/coord tokens are all masked
+- **THEN** matched clean structure tokens are supervised while matched clean desc tokens are masked
+- **AND** unmatched clean extra structure/desc/coord tokens are all masked
 - **AND** FN-injected structure and desc tokens are supervised.
 
 #### Scenario: Channel-B supervises top-level closure and `<|im_end|>`
@@ -773,41 +788,17 @@ Efficiency rule (normative):
 - **THEN** it keeps CE supervision on that top-level `}` token position
 - **AND** it keeps CE supervision on `<|im_end|>`.
 
-#### Scenario: Stop-neutral masking is not applied
-- **GIVEN** Stage-2 AB Channel-B configuration
-- **WHEN** CE masks are constructed for Channel-B
-- **THEN** top-level `}` and `<|im_end|>` are not masked out by any stop-neutral branch
-- **AND** FP-neutral masking remains limited to unmatched predicted object spans.
+#### Scenario: Closure marker resolution fallback keeps the sample in training
+- **GIVEN** a Channel-B sample where the trainer cannot deterministically locate the outermost `}` / `<|im_end|>` marker positions after building the clean target
+- **WHEN** the trainer finalizes CE labels/weights for Channel-B
+- **THEN** it keeps the sample in Channel-B supervision
+- **AND** it increments `stage2_ab/channel_b/closure_supervision/N_drop` as the legacy-named fallback-activation counter.
 
-#### Scenario: Legacy stop-neutral config keys fail fast
-- **GIVEN** Stage-2 AB config includes legacy stop-neutral keys under Channel-B
-- **WHEN** trainer configuration is validated
-- **THEN** startup fails fast before training
-- **AND** the error indicates stop-neutral knobs are unsupported under the typed contract.
-
-#### Scenario: Closure marker resolution failure is dropped and counted
-- **GIVEN** a Channel-B sample where the trainer cannot deterministically locate the outermost `}` / `<|im_end|>` marker positions (e.g., truncation)
-- **WHEN** the trainer constructs CE labels/weights for Channel-B
-- **THEN** it drops the sample from Channel-B supervision for that step
-- **AND** it increments `stage2_ab/channel_b/closure_supervision/N_drop`.
-
-#### Scenario: No valid predictions fall back to canonical GT order
+#### Scenario: No valid predictions fall back to the canonical empty clean prefix
 - **GIVEN** strict validation yields `N_valid_pred == 0`
-- **WHEN** Channel-B builds `y_GT_reordered` for B3
-- **THEN** it sets `y_GT_reordered := y_GT_canonical`
+- **WHEN** Channel-B builds the clean teacher-forced target
+- **THEN** it uses the canonical empty clean prefix `{"objects": [`
 - **AND** this is equivalent to appending all GT objects as FN-supervised targets.
-
-#### Scenario: Out-of-range struct CE multiplier is handled safely
-- **GIVEN** `stage2_ab.pipeline.objective[name=token_ce].config.rollout_drop_invalid_struct_ce_multiplier` is outside `[1.0, 4.0]`
-- **WHEN** trainer parses Channel-B config
-- **THEN** it clamps the value into `[1.0, 4.0]` or fails fast (implementation choice)
-- **AND** it MUST NOT run with an effective multiplier outside the safe range `[1.0, 4.0]`.
-
-#### Scenario: B2 forward is skipped when there are no valid matched pairs
-- **GIVEN** Channel-B sample/batch has zero valid matched pairs
-- **WHEN** trainer executes Channel-B steps
-- **THEN** it skips B2 geo-only forward
-- **AND** runs B3 only.
 
 ### Requirement: Coord quantization is globally consistent (k/999 only)
 The Stage-2 AB trainer MUST use a single consistent coord quantization scheme:
@@ -963,6 +954,7 @@ Legacy guardrail (v1):
 Legacy Channel-B ablation knobs are removed and MUST NOT be configurable:
 - `stage2_ab.channel_b.reordered_gt_sft`
 - `stage2_ab.channel_b.desc_ce_weight_matched`
+- `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
 
 #### Scenario: Removed reordered-gt knob fails fast
 - **WHEN** a config includes `stage2_ab.channel_b.reordered_gt_sft`
@@ -970,6 +962,10 @@ Legacy Channel-B ablation knobs are removed and MUST NOT be configurable:
 
 #### Scenario: Removed desc-ce-weight knob fails fast
 - **WHEN** a config includes `stage2_ab.channel_b.desc_ce_weight_matched`
+- **THEN** config loading fails fast with actionable removal guidance.
+
+#### Scenario: Removed invalid-structure multiplier knob fails fast
+- **WHEN** a config includes `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
 - **THEN** config loading fails fast with actionable removal guidance.
 
 ### Requirement: Repeat-terminate rollout knobs are unsupported in Stage-2 AB
@@ -1089,95 +1085,31 @@ Canonical prod overrides (pipeline-only):
 - **THEN** effective Stage-2 loss defaults include canonical base CIoU downweight and non-zero soft-CE/W1 terms.
 
 ### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
-When `custom.trainer_variant: stage2_two_channel`, the system SHALL support a
-YAML-declared module pipeline for the Stage-2 two-channel training objective and diagnostics.
+When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an explicit YAML-declared objective/diagnostics pipeline for the canonical clean-prefix Channel-B contract.
 
 Normative behavior:
-- If `stage2_ab.pipeline` is provided, the trainer MUST interpret it according to the
-  `teacher-forcing-objective-pipeline` capability.
-- If `stage2_ab.pipeline` is absent, the trainer MUST construct and use a default pipeline that preserves the current
-  Stage-2 two-channel objective semantics, by resolving to the **Default Pipeline Manifest** defined below.
-- Pipeline parsing and module resolution MUST be strict and MUST fail fast on unknown module names.
-- The pipeline identity (module list + checksum) MUST be recorded in logs for reproducibility.
+- `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
+- Canonical Stage-2 AB objective ordering for this contract is:
+  1. `token_ce`
+  2. `duplicate_ul`
+  3. `bbox_geo`
+  4. `coord_reg`
+- Canonical Stage-2 AB diagnostics MAY include `coord_diag`.
+- `duplicate_ul` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
+- `duplicate_ul` module `weight` is the only v1 scaling surface for duplicate UL.
+- The old raw-prefix Channel-B contract is removed; there is no contract toggle or compatibility mode.
 
-#### Default Pipeline Manifest (when `stage2_ab.pipeline` is omitted)
+#### Scenario: Missing stage2_ab.pipeline fails fast
+- **WHEN** a Stage-2 AB config sets `custom.trainer_variant: stage2_two_channel`
+- **AND** `stage2_ab.pipeline` is absent
+- **THEN** config loading fails fast before trainer init
+- **AND** the error indicates `stage2_ab.pipeline` is required.
 
-To eliminate ambiguity, the “pipeline omitted” behavior is defined as resolving to the following manifest.
-
-Normative default objective modules (ordered):
-1) `token_ce`
-2) `bbox_geo`
-3) `coord_reg`
-
-Normative default diagnostics modules (ordered):
-1) `coord_diag`
-
-Normative default module weights (all objective modules):
-- `weight = 1.0`
-
-Normative default module configs (effective values):
-- `token_ce`:
-  - Channel-A (Expectation):
-    - `desc_ce_weight = stage2_ab.desc_ce_weight` (default `1.0`)
-    - `self_context_struct_ce_weight = stage2_ab.fmt_struct_ce_weight` (default `0.1`)
-  - Channel-B (Rollout):
-    - `rollout_fn_desc_weight = stage2_ab.desc_ce_weight` (default `1.0`)
-    - `rollout_matched_prefix_struct_weight = 1.0`
-    - `rollout_drop_invalid_struct_ce_multiplier = stage2_ab.channel_b.drop_invalid_struct_ce_multiplier` (default `1.0`)
-- `bbox_geo`:
-  - `smoothl1_weight = stage2_ab.bbox_smoothl1_weight` (default `1.0`)
-  - `ciou_weight = stage2_ab.bbox_ciou_weight` (default `1.0`)
-  - decode mode is controlled by `stage2_ab.coord_decode_mode` (default `exp`)
-- `coord_reg`:
-  - Coord-shape terms (rollout-context; enabled only when `custom.coord_soft_ce_w1.enabled: true`):
-    - `soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` (default `1.0`)
-    - `w1_weight = custom.coord_soft_ce_w1.w1_weight` (default `1.0`)
-    - `temperature = custom.coord_soft_ce_w1.temperature` (default `1.0`)
-    - `target_sigma = custom.coord_soft_ce_w1.target_sigma` (default `2.0`)
-    - `target_truncate = custom.coord_soft_ce_w1.target_truncate` (default `null`)
-  - Coord-shape terms (Channel-A self_context regularizer; default-on small weight):
-    - `self_context_soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` when enabled, else `0.05`
-  - Additional coord terms (Stage-2 Two-Channel typed knobs):
-    - `coord_ce_weight = stage2_ab.coord_ce_weight` (default `0.0`)
-    - `coord_el1_weight = stage2_ab.coord_el1_weight` (default `0.0`)
-    - `coord_ehuber_weight = stage2_ab.coord_ehuber_weight` (default `0.0`)
-    - `coord_huber_delta = stage2_ab.coord_huber_delta` (default `0.001`)
-    - `coord_entropy_weight = stage2_ab.coord_entropy_weight` (default `0.0`)
-    - `coord_gate_weight = stage2_ab.coord_gate_weight` (default `0.0`)
-    - `text_gate_weight = stage2_ab.text_gate_weight` (default `0.0`)
-
-Informative YAML expression (conceptual; values shown are symbolic):
-```yaml
-stage2_ab:
-  # pipeline omitted => resolves to the following manifest:
-  # pipeline:
-  #   objective:
-  #     - {name: token_ce, weight: 1.0}
-  #     - {name: bbox_geo, weight: 1.0}
-  #     - {name: coord_reg, weight: 1.0}
-  #   diagnostics:
-  #     - {name: coord_diag}
-```
-
-#### Scenario: Pipeline omitted uses current (full_idea-aligned) defaults
-- **WHEN** a Stage-2 Two-Channel config does not define `stage2_ab.pipeline`
-- **THEN** training starts successfully
-- **AND** the Stage-2 Two-Channel objective matches the Default Pipeline Manifest (and is aligned to `full_idea`)
-- **AND** canonical `loss/<component>` keys are emitted (per `teacher-forcing-unified-loss-registry`)
-
-#### Scenario: Pipeline is applied when provided
-- **WHEN** a Stage-2 Two-Channel config defines `stage2_ab.pipeline` with at least one objective module
-- **THEN** the trainer uses that declared module pipeline
-- **AND** the resolved module list and checksum are logged.
-
-#### Scenario: Pipeline mode rejects duplicated flat objective knobs
-- **WHEN** a Stage-2 Two-Channel config defines `stage2_ab.pipeline`
-- **AND** the config also defines any objective-affecting flat knobs used by the default manifest (e.g.,
-  `stage2_ab.desc_ce_weight`, `stage2_ab.fmt_struct_ce_weight`, `stage2_ab.bbox_smoothl1_weight`, `stage2_ab.bbox_ciou_weight`,
-  `stage2_ab.coord_ce_weight`, `stage2_ab.coord_entropy_weight`, `stage2_ab.coord_gate_weight`,
-  `stage2_ab.text_gate_weight`,
-  `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`, or `custom.coord_soft_ce_w1.*`)
-- **THEN** config validation fails fast with guidance to move those values into the declared module configs.
+#### Scenario: Missing duplicate_ul in the canonical Channel-B pipeline fails fast
+- **WHEN** a Stage-2 AB config declares `stage2_ab.pipeline.objective`
+- **AND** the objective list omits `duplicate_ul`
+- **THEN** config validation fails fast
+- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `duplicate_ul`.
 
 #### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
 - **WHEN** `custom.trainer_variant=stage2_two_channel`
@@ -1206,13 +1138,14 @@ Normative behavior:
 Stage-2 Two-Channel SHALL provide a strict module registry for its pipeline modules, and the module names SHALL be stable so
 YAML-declared experiments remain auditable.
 
-Normative minimum module names (initial set; may be extended):
-- Objective modules:
-  - `token_ce` (masked/weighted CE per unified loss registry; includes EOS-enforced closure supervision)
-  - `bbox_geo` (bbox SmoothL1 + CIoU on decoded boxes; FP-neutral in rollout context)
-  - `coord_reg` (coord distribution regularizers: coord CE / softCE / W1 / entropy / gate / EL1/EHuber)
-- Diagnostics modules:
-  - `coord_diag` (coord distribution diagnostics; best-effort)
+Normative minimum objective module names for this contract:
+- `token_ce`
+- `duplicate_ul`
+- `bbox_geo`
+- `coord_reg`
+
+Normative minimum diagnostics module names:
+- `coord_diag`
 
 Normative behavior:
 - Unknown module names MUST fail fast before training starts.
@@ -1224,49 +1157,27 @@ Normative behavior:
 - **AND** the error includes the unknown name and allowed module names.
 
 ### Requirement: Stage-2 Two-Channel module configs are strict and typed
-Stage-2 Two-Channel SHALL validate module `config` payloads strictly so experiments are reproducible and fail fast on schema
-drift.
+Stage-2 Two-Channel SHALL validate module `config` payloads and `stage2_ab.channel_b` payloads strictly so experiments are reproducible and fail fast on schema drift.
 
 Normative behavior:
-- Module `config` mappings MUST be validated at trainer initialization (before training starts).
-- Unknown keys in a module `config` MUST fail fast with actionable diagnostics listing allowed keys.
+- `duplicate_ul.config` MUST be an empty mapping in v1.
+- `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
+- `stage2_ab.channel_b` MUST accept only:
+  - `duplicate_iou_threshold`
+  - `producer_wait_timeout_s`
+  - `ddp_phase_timeout_s`
+- Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
-Normative config schemas (minimum set; may be extended):
-- `token_ce.config`:
-  - `desc_ce_weight: float` (default: `1.0`)
-  - `self_context_struct_ce_weight: float` (default: `0.1`)
-  - `rollout_fn_desc_weight: float` (default: `1.0`)
-  - `rollout_matched_prefix_struct_weight: float` (default: `1.0`)
-  - `rollout_drop_invalid_struct_ce_multiplier: float` (default: `1.0`)
-- `bbox_geo.config`:
-  - `smoothl1_weight: float` (default: `1.0`)
-  - `ciou_weight: float` (default: `1.0`)
-- `coord_reg.config`:
-  - `coord_ce_weight: float` (default: `0.0`)
-  - `coord_el1_weight: float` (default: `0.0`)
-  - `coord_ehuber_weight: float` (default: `0.0`)
-  - `coord_huber_delta: float` (default: `0.001`)
-  - `coord_entropy_weight: float` (default: `0.0`)
-  - `coord_gate_weight: float` (default: `0.0`)
-  - `text_gate_weight: float` (default: `0.0`)
-  - `soft_ce_weight: float` (default: `0.0`)
-  - `self_context_soft_ce_weight: float` (default: `0.05`)
-  - `w1_weight: float` (default: `0.0`)
-  - `temperature: float` (default: `1.0`)
-  - `target_sigma: float` (default: `2.0`)
-  - `target_truncate: int|null` (default: `null`)
-- `coord_diag.config`:
-  - (no required keys; implementations MAY accept a strict subset of the above for convenience, but MUST document them)
+#### Scenario: Non-empty duplicate_ul.config fails fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name=duplicate_ul`
+- **AND** its `config` mapping contains any key
+- **THEN** configuration parsing fails fast
+- **AND** the error indicates `duplicate_ul.config` must be empty for v1.
 
-Note:
-- When `stage2_ab.pipeline` is omitted, the effective defaults for the Stage-2 Two-Channel objective are defined by the Default
-  Pipeline Manifest above (which sources values from the typed Stage-2 Two-Channel flat schema keys and `custom.coord_soft_ce_w1`
-  as applicable).
-
-#### Scenario: Unknown Stage-2 module config keys fail fast
-- **WHEN** a Stage-2 module config includes a key outside its strict allowlist
-- **THEN** initialization fails fast before the first training step
-- **AND** diagnostics include the invalid key and allowed keys.
+#### Scenario: Legacy invalid-structure multiplier placement fails fast
+- **WHEN** a Stage-2 AB config sets `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
+- **THEN** configuration parsing fails fast
+- **AND** the error indicates that legacy raw-prefix invalid-structure amplification is not part of the canonical clean-prefix contract.
 
 ### Requirement: Stage-2 Two-Channel adheres to the unified loss registry contract
 Stage-2 Two-Channel training SHALL implement loss naming and masking semantics per the `teacher-forcing-unified-loss-registry`

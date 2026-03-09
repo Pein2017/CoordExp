@@ -1,57 +1,50 @@
-# Progress Notes Conventions (Suggested)
+---
+doc_id: progress.index
+layer: progress
+doc_type: router
+status: canonical
+domain: research-history
+summary: Human router for historical directions, diagnostics, audits, benchmarks, and exploratory notes.
+tags: [progress, history, research]
+updated: 2026-03-09
+---
 
-This folder contains research notes and experiment records written along the way.
-The goal is to keep them:
+# Progress Index
 
-- paper-ready (clear provenance, decisions, and verification steps),
-- reproducible where possible,
-- robust to cleanup (some run artifacts may be pruned over time).
+This directory is the historical and evidence layer for CoordExp.
 
-## Minimal Header (Recommended)
+Current behavior belongs in `docs/`.
+Historical motivation and empirical evidence belong here.
 
-At the top of each progress note (`*.md`), add a small metadata block right after the title:
+## Directory Layout
 
-```text
-Date: YYYY-MM-DD
-Last updated: YYYY-MM-DD
-Note: referenced run artifacts may be pruned; paths are best-effort pointers.
-```
+- `progress/directions/`
+  - long-form design history and superseded research directions
+- `progress/diagnostics/`
+  - failure analyses and behavior investigations
+- `progress/audits/`
+  - structured review notes and decision audits
+- `progress/benchmarks/`
+  - measured results and comparison reports
+- `progress/explorations/`
+  - exploratory requests and infrastructure probes
+- `progress/pretrain/`
+  - Stage-1 background and pretraining history
 
-Guidance:
+## Human Read Order
 
-- `Date` is the anchor date of the experiment/idea being recorded (often matches the filename date).
-- `Last updated` is the canonical "last written" sort key.
-  Update it whenever you make a meaningful edit (new results, revised conclusions, new decisions).
-- The `Note` line is optional but recommended because `output/` and external checkouts can be cleaned.
+1. [docs/PROJECT_CONTEXT.md](../docs/PROJECT_CONTEXT.md)
+2. [docs/SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md)
+3. [docs/training/STAGE2_DESIGN.md](../docs/training/STAGE2_DESIGN.md)
+4. [progress/index.yaml](index.yaml)
+5. the specific historical note you need
 
-## Filenames
+## Rules
 
-We prefer stable filenames to avoid breaking cross-references.
-
-- If a note is tied to a particular day or run, include the date in the filename, e.g.
-  `stage2_ab_softctx_discretization_vs_stage1_bbox_losses_2026-02-22.md`.
-- If a note becomes long-lived (living document), keep the original name but use `Last updated` to reflect recency.
-
-## What To Record (Practical)
-
-When you reference artifacts/configs, include handles that make the note usable even if some paths are missing:
-
-- config path(s): `configs/...yaml`
-- checkpoint/run dir (best-effort): `output/...`
-- evaluation settings (seed, decoding params, dataset slice/limit)
-- a short decision + verification checklist
-
-Avoid relying on fragile context like "the latest run" without an explicit date or directory name.
-
-## Document "Types" (Informal)
-
-We tend to write a few recurring types of notes:
-
-- Bench / comparison: measured tables + fixed eval settings + provenance directories
-- Audit: loss/logging alignment, diagnosis of scalars, efficiency notes, recommended ablations
-- Diagnosis: failure modes, root causes, and config-first mitigation plans
-- Runbook pointer: short stubs that point to authoritative docs under `docs/`
-- Infra request: exploration tasks / integration plans (may later be promoted into `docs/` if they become stable guidance)
-
-You don't need to label types explicitly, but keeping the structure consistent makes notes easier to scan later.
-
+- Do not treat `progress/` as normative by itself.
+- Prefer `docs/` for current workflows and stable interfaces.
+- Use `progress/` when you need:
+  - historical derivation
+  - experiment evidence
+  - audits or diagnostics
+  - benchmark context

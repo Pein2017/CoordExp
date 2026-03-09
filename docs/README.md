@@ -1,59 +1,54 @@
+---
+doc_id: docs.index
+layer: docs
+doc_type: router
+status: canonical
+domain: repo
+summary: Human-first router for the stable CoordExp documentation layer.
+tags: [entrypoint, docs]
+updated: 2026-03-09
+---
+
 # Documentation Index
 
-Welcome to the CoordExp documentation. This index will help you navigate the documentation structure.
+Use this page as the human starting point for current CoordExp behavior.
 
-## Start Here (5-10 minutes)
+For machine-readable routing, use [docs/catalog.yaml](catalog.yaml).
+For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 
-1) **Understand the data contract**: [`docs/data/JSONL_CONTRACT.md`](data/JSONL_CONTRACT.md)
-2) **Prepare data (public or private)**: [`docs/data/INTAKE_PIPELINE.md`](data/INTAKE_PIPELINE.md)
-3) **Train**:
-   - Stage-1 / baseline SFT: start from `configs/base.yaml` and follow [`docs/data/README.md`](data/README.md)
-   - Stage-2 / rollout-matching + AB: [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
-     - Includes the canonical clean-prefix Channel-B contract (`duplicate_ul`, dedup-before-Hungarian, and duplicate-collapse diagnostics)
-4) **Infer + evaluate**: [`docs/eval/README.md`](eval/README.md)
-5) **Interpret logs**: [`docs/training/METRICS_LOSSES.md`](training/METRICS_LOSSES.md)
+## Start Here
 
-All runnable commands in this repo assume repo root (`/data/CoordExp`) and prefer:
+1. [Project Context & Precedence](PROJECT_CONTEXT.md)
+2. [System Overview](SYSTEM_OVERVIEW.md)
+3. [Implementation Map](IMPLEMENTATION_MAP.md)
 
-```bash
-PYTHONPATH=. conda run -n ms python ...
-```
+## Domain Routers
 
-## Quick Commands (Copy/Paste)
+- Data and dataset interfaces:
+  - [docs/data/README.md](data/README.md)
+- Training behavior and runbooks:
+  - [docs/training/README.md](training/README.md)
+- Inference and evaluation:
+  - [docs/eval/README.md](eval/README.md)
+- Standards and repo policy:
+  - [docs/standards/README.md](standards/README.md)
 
-```bash
-# Train (YAML-first)
-PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug] [--verbose]
+## Cross-Cutting Docs
 
-# Inspect how one JSONL record renders under the current Qwen3-VL chat template
-PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path.jsonl> --index 0
+- [ARTIFACTS.md](ARTIFACTS.md): runtime artifacts, provenance, and logging surfaces
+- [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
+- [catalog.yaml](catalog.yaml): machine-readable catalog for `docs/` and `progress/`
 
-# Validate JSONL structure (public_data validator)
-PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py <path.jsonl>
-```
+## Research History
 
-## [Data & Datasets](data/README.md)
-*   **[README](data/README.md)**: Main guide to data format, schema, and dataset pipeline.
-*   **[JSONL Contract](data/JSONL_CONTRACT.md)**: The authoritative schema for JSONL records.
-*   **[Intake Pipeline](data/INTAKE_PIPELINE.md)**: Guide to raw annotation intake, conversion, and preprocessing.
-*   **[Packing](data/PACKING.md)**: Guide to packing modes for efficient training.
-*   **[Visual Genome](data/VISUAL_GENOME.md)**: Specifics for Visual Genome data.
-*   **[Fusion Dataset](data/FUSION_DATASET.md)**: Guide to multi-dataset fusion.
+- [progress/README.md](../progress/README.md): human router for historical notes
+- [progress/index.yaml](../progress/index.yaml): machine-readable progress catalog
 
-## [Training](training/)
-*   **[Stage-2 Runbook](training/STAGE2_RUNBOOK.md)**: Runbook for rollout-matching, Stage-2 AB training, and the clean-prefix Channel-B duplicate-UL contract.
-*   **[Metrics & Losses](training/METRICS_LOSSES.md)**: Detailed explanation of training metrics, loss functions, and duplicate-collapse diagnostics.
-*   **[Coord Objective & Adapter](training/COORD_OBJECTIVE_AND_ADAPTER.md)**: SoftCE/W1 losses and offset adapters.
-*   **[Architecture (Logging & Reproducibility)](ARCHITECTURE.md)**: What files/logs a run produces and how to keep runs paper-ready.
+## Read Order Rule
 
-## [Evaluation](eval/README.md)
-*   **[Detection Evaluator](eval/README.md)**: Guide to the offline detection evaluator.
+Read current behavior in this order:
 
-## [Standards & Meta](standards/)
-*   **[Repo Hygiene](standards/REPO_HYGIENE.md)**: Constitution for repository hygiene and best practices.
-*   **[Code & Architecture Style](standards/CODE_STYLE.md)**: Transformers-inspired style guidelines (Option A).
-*   **[Upstream Dependencies](standards/UPSTREAM.md)**: Information about upstream dependencies (HF Qwen3-VL, ms-swift).
-*   **[Porting](standards/PORTING.md)**: Guide for porting features or models.
-
-## [Notes](notes/)
-*   **[Patent](notes/patent/draft.md)**: Patent draft notes.
+1. `openspec/specs/` when exact semantics matter
+2. `docs/`
+3. `openspec/changes/<active-change>/`
+4. `progress/`

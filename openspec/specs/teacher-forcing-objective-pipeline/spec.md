@@ -28,7 +28,7 @@ Notes:
 - **AND** no module can supervise tokens across segment boundaries.
 
 ### Requirement: Teacher-forcing objective is declared as an ordered YAML pipeline
-The system SHALL support a YAML-declared module pipeline for teacher-forcing training objectives and diagnostics.
+The teacher-forcing pipeline SHALL support the explicit `duplicate_ul` objective module for the canonical clean-prefix Channel-B contract.
 
 Normative configuration shape (conceptual):
 - A pipeline definition contains two ordered lists:
@@ -49,6 +49,10 @@ Execution semantics:
 - Module `config` payloads MUST be validated strictly by the owning module implementation at trainer initialization:
   - unknown config keys MUST fail fast with actionable diagnostics,
   - missing optional keys MUST resolve to documented defaults.
+- `duplicate_ul` is a valid objective module name.
+- `duplicate_ul` MUST be declared with `channels: [B]`.
+- `duplicate_ul.config` MUST be validated strictly and MUST be `{}` in v1.
+- For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `duplicate_ul` after `token_ce` and before `bbox_geo`.
 
 #### Scenario: Ordered pipeline executes deterministically
 - **WHEN** a pipeline defines objective modules `[m1, m2, m3]` in that order
@@ -63,17 +67,29 @@ Execution semantics:
 - **WHEN** a pipeline provides a module `config` containing an unknown key for that module
 - **THEN** config validation fails fast with guidance listing allowed keys for the module.
 
+#### Scenario: duplicate_ul is accepted as a Channel-B-only objective module
+- **WHEN** a teacher-forcing pipeline declares `{name: duplicate_ul, channels: [B], config: {}}`
+- **THEN** pipeline validation succeeds for module naming/channel shape
+- **AND** the module is eligible to run only on Channel-B steps.
+
 ### Requirement: Module registry is strict and validated before training starts
-The system SHALL resolve module names via a strict registry.
+The strict teacher-forcing module registry SHALL include `duplicate_ul` as an objective module and fail fast when its prerequisites are unavailable.
 
 Normative behavior:
 - Unknown module names MUST fail fast before the first training step.
 - Registry resolution MUST be deterministic and MUST NOT depend on runtime reflection of unrelated modules.
+- `duplicate_ul` MUST fail fast if the runtime context does not provide the canonical duplicate-ul supervision metadata required by the clean-prefix Channel-B contract.
 
 #### Scenario: Unknown module name fails fast
 - **WHEN** a pipeline references an unknown module `name`
 - **THEN** training initialization fails fast
 - **AND** the error message lists the unknown name and available module names.
+
+#### Scenario: duplicate_ul fails fast when duplicate-ul metadata is missing
+- **WHEN** a pipeline enables `duplicate_ul`
+- **AND** the runtime context lacks canonical duplicate-ul supervision metadata
+- **THEN** the training step raises with actionable diagnostics
+- **AND** training does not proceed with a silently altered objective.
 
 ### Requirement: Objective modules are fail-fast and diagnostics modules are best-effort
 The system SHALL separate objective-changing modules from diagnostics-only modules.

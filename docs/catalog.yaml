@@ -1,0 +1,218 @@
+schema_version: 1
+updated: 2026-03-09
+
+entrypoints:
+  human:
+    docs: docs/README.md
+    progress: progress/README.md
+  agent:
+    router: docs/AGENT_INDEX.md
+    catalog: docs/catalog.yaml
+    progress: progress/index.yaml
+
+precedence:
+  - openspec/specs/
+  - docs/
+  - openspec/changes/<active-change>/
+  - progress/
+
+docs:
+  repo:
+    - path: docs/README.md
+      title: Documentation Index
+      type: router
+      status: canonical
+    - path: docs/AGENT_INDEX.md
+      title: Agent Index
+      type: agent-router
+      status: canonical
+    - path: docs/PROJECT_CONTEXT.md
+      title: Project Context & Precedence
+      type: root-context
+      status: canonical
+    - path: docs/SYSTEM_OVERVIEW.md
+      title: System Overview
+      type: overview
+      status: canonical
+    - path: docs/IMPLEMENTATION_MAP.md
+      title: Implementation Map
+      type: implementation-map
+      status: canonical
+    - path: docs/ARTIFACTS.md
+      title: Artifacts & Provenance
+      type: artifacts-reference
+      status: canonical
+  data:
+    - path: docs/data/README.md
+      title: Data & Datasets
+      type: router
+      status: canonical
+    - path: docs/data/CONTRACT.md
+      title: Data JSONL Contract (Global)
+      type: contract
+      status: canonical
+    - path: docs/data/PREPARATION.md
+      title: Data Preprocessing & Intake Pipeline
+      type: workflow
+      status: canonical
+    - path: docs/data/PACKING.md
+      title: Packing Mode Guide (Default: 12k, eff_bs=12)
+      type: reference
+      status: canonical
+    - path: docs/data/FUSION.md
+      title: Fusion Dataset (Multi-JSONL Training)
+      type: reference
+      status: canonical
+    - path: docs/data/VISUAL_GENOME.md
+      title: Visual Genome (VG) -> CoordExp JSONL
+      type: dataset-note
+      status: canonical
+  training:
+    - path: docs/training/README.md
+      title: Training Docs
+      type: router
+      status: canonical
+    - path: docs/training/STAGE1_OBJECTIVE.md
+      title: Coord Objective & Adapter
+      type: reference
+      status: canonical
+    - path: docs/training/STAGE2_DESIGN.md
+      title: Full Idea v2
+      type: design
+      status: canonical
+    - path: docs/training/STAGE2_RUNBOOK.md
+      title: Stage-2 Training Runbook (Rollout-Aligned + Two-Channel)
+      type: runbook
+      status: canonical
+    - path: docs/training/METRICS.md
+      title: Training Metrics and Losses (Quick Reference)
+      type: reference
+      status: canonical
+  eval:
+    - path: docs/eval/README.md
+      title: Evaluation & Inference
+      type: router
+      status: canonical
+    - path: docs/eval/CONTRACT.md
+      title: Evaluation Contract
+      type: contract
+      status: canonical
+    - path: docs/eval/WORKFLOW.md
+      title: Evaluation Workflow
+      type: runbook
+      status: canonical
+  standards:
+    - path: docs/standards/README.md
+      title: Standards
+      type: router
+      status: canonical
+    - path: docs/standards/REPO_HYGIENE.md
+      title: Repo Hygiene Constitution (CoordExp)
+      type: standard
+      status: canonical
+    - path: docs/standards/CODE_STYLE.md
+      title: Code & Architecture Style (Transformers-Inspired, Option A)
+      type: standard
+      status: canonical
+    - path: docs/standards/UPSTREAM.md
+      title: Upstream Dependencies
+      type: standard
+      status: canonical
+    - path: docs/standards/PORTING.md
+      title: Porting notes between Qwen3-VL and CoordExp
+      type: standard
+      status: canonical
+  notes:
+    - path: docs/notes/patent/draft.md
+      title: Patent Draft
+      type: supplemental-note
+      status: supplemental
+
+progress:
+  root:
+    - path: progress/README.md
+      title: Progress Index
+      type: router
+      status: canonical
+  directions:
+    - path: progress/directions/stage2_clean_prefix_v2.md
+      title: Full Idea v2
+      type: direction
+      status: active-reference
+    - path: progress/directions/stage2_clean_prefix_v2_longform.md
+      title: CoordExp v2: Clean-Prefix Training + Duplicate Unlikelihood for V-LLM Detection
+      type: longform
+      status: active-reference
+    - path: progress/directions/stage2_emish_set_supervision_v1.md
+      title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
+      type: historical-direction
+      status: historical
+  diagnostics:
+    - path: progress/diagnostics/stage2_near_duplication_2026-03-05.md
+      title: Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)
+      type: diagnosis
+      status: active-diagnostic
+    - path: progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md
+      title: Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash
+      type: diagnosis
+      status: historical-diagnostic
+    - path: progress/diagnostics/stage2_channel_a_coord_gate_2026-02-21.md
+      title: Stage-2 (AB) Channel-A Only — COCO Parseability Degradation Diagnosis + Coord-Vocab Gate (2026-02-21)
+      type: diagnosis
+      status: historical-diagnostic
+    - path: progress/diagnostics/stage2_channel_a_coord_loss_2026-02-25.md
+      title: Stage-2 (Channel-A only) Diagnosis: Coord Loss Dynamics from Monitor Dumps (2026-02-25)
+      type: diagnosis
+      status: historical-diagnostic
+    - path: progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md
+      title: Stage-2 (Channel-A Only) Visual Audit: Coord Token Drift, Duplicate Boxes, and A1 Coord-Loss Decision (2026-02-25)
+      type: visual-audit
+      status: historical-diagnostic
+    - path: progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md
+      title: Stage-2 AB: Continuous Soft-Context Mismatch vs Discrete Rollouts (and Stage-1 Loss Alignment)
+      type: diagnosis
+      status: historical-diagnostic
+  audits:
+    - path: progress/audits/stage1_softce_logging_2026-01-22.md
+      title: Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)
+      type: audit
+      status: historical-audit
+    - path: progress/audits/stage2_channel_a_coord_loss_2026-02-25.md
+      title: Stage-2 AB (Channel-A only) — Coord Loss Dynamics + “A1 coord loss?” Decision Note (2026-02-25)
+      type: audit
+      status: historical-audit
+  benchmarks:
+    - path: progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md
+      title: COCO80 Bench (200 samples): 4B Checkpoints @ max_pixels=32*32*{768,1024} (2026-02-26)
+      type: benchmark
+      status: historical-benchmark
+    - path: progress/benchmarks/stage1_coco80_temp0_compare_2026-02-26.md
+      title: Detection Run Comparison
+      type: benchmark
+      status: historical-benchmark
+    - path: progress/benchmarks/stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md
+      title: COCO Bench (200 samples): 2B Mixed CE+softCE Checkpoint @ max_pixels=32*32*{768,1024} (2026-02-27)
+      type: benchmark
+      status: historical-benchmark
+    - path: progress/benchmarks/stage1_training_dynamics_4b_2026-02-26.md
+      title: Stage-1 Training Dynamics (4B): soft_ce_only vs pure_ce_only vs soft_ce_hard_ce_mixed (2026-02-26)
+      type: benchmark
+      status: historical-benchmark
+    - path: progress/benchmarks/stage2_channel_a_infer_eval_2026-02-01.md
+      title: Stage-2 (AB) Channel-A Only — Inference/Eval Notes (2026-02-01)
+      type: benchmark
+      status: historical-benchmark
+  explorations:
+    - path: progress/explorations/stage2_infrastructure_2026-01-26.md
+      title: Stage-2 Infrastructure Exploration Request
+      type: exploration
+      status: historical-exploration
+  pretrain:
+    - path: progress/pretrain/stage1_foundation.md
+      title: Phase 1 / Stage-1 Training: Coord-Token SFT (Distribution Supervision)
+      type: historical-reference
+      status: historical-reference
+    - path: progress/pretrain/stage1_ablation_2026-01-26.md
+      title: Stage-1 Pretraining Ablation (2026-01-26/27)
+      type: benchmark
+      status: historical-reference

@@ -1,3 +1,13 @@
+---
+doc_id: docs.standards.code-style
+layer: docs
+doc_type: standard
+status: canonical
+domain: standards
+summary: Code and architecture style guidance for CoordExp.
+updated: 2026-03-09
+---
+
 # Code & Architecture Style (Transformers-Inspired, Option A)
 
 This document captures a **medium-weight** set of style/architecture guidelines inspired by Hugging Face

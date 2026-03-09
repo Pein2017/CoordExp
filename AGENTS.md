@@ -2,7 +2,7 @@
 
 ## Mission
 - Evolve CoordExp into a general grounding/detection research stack; keep runs reproducible and paper-ready.
-- Direction: `progress/full_idea.md`. Prefer YAML-first experiments in `configs/` over ad-hoc scripts.
+- Direction: `docs/PROJECT_CONTEXT.md` for precedence/read-order, `docs/SYSTEM_OVERVIEW.md` for end-to-end flow, and `docs/IMPLEMENTATION_MAP.md` for code/test routing. Use `progress/README.md` and the linked notes only for background and historical reasoning. Prefer YAML-first experiments in `configs/` over ad-hoc scripts.
 - Defaults: single-dataset training; packing is the primary efficiency lever; fusion-config training is legacy/experimental.
 
 ## Working Style (Research-Grade)
@@ -30,7 +30,9 @@
 
 ## Navigation (Progressive)
 - Source of truth: `docs/` (do not duplicate docs into global instructions).
+- For whole-project background or historical context, start with `docs/PROJECT_CONTEXT.md`, then `docs/SYSTEM_OVERVIEW.md`, then `docs/IMPLEMENTATION_MAP.md`. Open `progress/README.md` only when you need historical context or design archaeology.
 - Use the `coordexp-codebase` skill for doc index, entrypoints, and config workflow pointers.
+- Use the `coordexp-research-context` skill when you need broad project background, read-order, grep seeds, or historical Stage-2 context before implementation/audit work.
 - For any file matching `*.py`, **Serena MCP is mandatory** for exploration and editing (symbol-aware navigation and edits). Serena MCP is the authoritative and precise method for all Python code operations.
 - For Serena searches (`find_symbol`, `search_for_pattern`, `find_referencing_symbols`), **never** use `"relative_path": "."` or omit `relative_path` (repo-wide scan is extremely slow). First use CLI search (e.g. `rg`) to narrow candidate files/dirs, then re-run Serena with the smallest viable `relative_path` (single file or tight subdir).
 - Do **not** use Serena MCP for non-Python files (e.g., `*.md`, `*.sh`, `*.json`, `*.txt`). Use standard tools such as `rg`, `cat`, or appropriate editors for those.

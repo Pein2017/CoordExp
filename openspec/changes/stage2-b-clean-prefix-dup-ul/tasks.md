@@ -125,3 +125,4 @@ Validation commands expected after implementation:
 - [x] 8.4 Review `docs/eval/README.md` if eval-side duplicate diagnostics or duplicate-analysis artifacts land as part of this feature.
   Reviewed: no eval-side duplicate diagnostics or duplicate-analysis artifacts landed, so no doc change was required.
 - [x] 8.5 Update `docs/README.md` if the docs index or recommended reading order needs to surface any newly added/renamed training guidance.
+- [x] 8.6 Sync the landed clean-prefix contract into main `openspec/specs/*` and refresh the `coordexp-codebase` skill guidance so repo navigation points to the v2 Channel-B surfaces.

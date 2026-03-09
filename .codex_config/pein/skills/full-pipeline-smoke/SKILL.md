@@ -153,8 +153,8 @@ export WORKTREE_DATA_DIR="/path/to/worktree/data"
 ## Runtime Guardrails (CoordExp defaults)
 
 - Prefer YAML-first changes over adding new CLI flags.
+- For current Stage-1 baseline work, prefer `configs/stage1/`; treat `configs/dlora/` as historical lineage only.
 - If local HTTP services are involved (server-mode rollouts), ensure proxy is disabled:
   - `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY`
   - ensure `NO_PROXY` contains `127.0.0.1,localhost`
 - Avoid destructive git commands unless explicitly requested by the user.
-

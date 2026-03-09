@@ -1,3 +1,13 @@
+---
+doc_id: docs.training.stage2-runbook
+layer: docs
+doc_type: runbook
+status: canonical
+domain: training
+summary: Operational Stage-2 workflow and YAML-first run guidance.
+updated: 2026-03-09
+---
+
 # Stage-2 Training Runbook (Rollout-Aligned + Two-Channel)
 
 This document is the consolidated runbook for Stage-2 training workflows in CoordExp:
@@ -45,6 +55,8 @@ Requirements:
 Where this lives in code:
 - Stage-2 Rollout-Aligned Teacher Forcing trainer: `src/trainers/stage2_rollout_aligned.py`
 - Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) trainer: `src/trainers/stage2_two_channel.py`
+- Channel-B rollout parsing + matching helpers: `src/trainers/rollout_matching/parsing.py`, `src/trainers/rollout_matching/matching.py`
+- Explicit duplicate UL module: `src/trainers/teacher_forcing/modules/duplicate_ul.py`
 - Training entrypoint (YAML loader + wiring): `src/sft.py`
 - Import note: `src/trainers/stage2_two_channel/__init__.py` intentionally uses a proxy-style dynamic loader
   to preserve monkeypatch/import compatibility with the historical single-file module; avoid "simplifying"
@@ -117,6 +129,7 @@ Worked example (default launcher):
 ### Channel-B Contract (Clean-prefix + Duplicate UL)
 
 - Clean-prefix Channel-B is the only supported `stage2_two_channel` contract.
+- This is the chosen v2 training contract for CoordExp Stage-2 Channel-B; it is not a claim that other mathematical formulations are invalid, only that this is the canonical repo contract.
 - Canonical Channel-B flow:
   - raw rollout
   - bounded container salvage + strict record acceptance
@@ -141,6 +154,7 @@ Worked example (default launcher):
 - FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; generic unmatched clean extras contribute no geometry loss.
 - Duplicate UL:
   - `duplicate_ul` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
+  - `duplicate_ul.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
   - duplicates are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
   - the bad token is the first true LCP-divergence token of the duplicate continuation relative to the canonical clean continuation,
   - same-boundary duplicates sharing the same divergence token collapse to one UL term.
@@ -149,6 +163,7 @@ Worked example (default launcher):
   - append unmatched GT records as extra `objects[]` elements,
   - insert a leading comma iff the retained clean prefix body already has object entries.
 - Closure supervision: keep CE ON for the same outermost `}` used as FN injection anchor, and keep CE ON for `<|im_end|>` (no stop-neutral masking).
+- Closure bookkeeping fallback: if explicit closure-marker bookkeeping becomes ambiguous after the clean target is built, keep the sample on the deterministic FN-tail supervision path and increment `stage2_ab/channel_b/closure_supervision/N_drop`.
 - Strict-drop diagnostics: invalid predicted objects are dropped deterministically (no repair) but counted in metrics:
   - `stage2_ab/channel_b/strict_drop/N_valid_pred`
   - `stage2_ab/channel_b/strict_drop/N_drop_invalid`
@@ -836,6 +851,6 @@ General expectations:
 
 ## See Also
 
-- **Metrics Guide**: [`METRICS_LOSSES.md`](METRICS_LOSSES.md)
+- **Metrics Guide**: [`METRICS.md`](METRICS.md)
 - **Packing Guide**: [`../data/PACKING.md`](../data/PACKING.md)
 - **Stage-1 SFT**: [`../data/README.md`](../data/README.md)

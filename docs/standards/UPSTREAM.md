@@ -1,3 +1,13 @@
+---
+doc_id: docs.standards.upstream
+layer: docs
+doc_type: standard
+status: canonical
+domain: standards
+summary: Upstream dependency boundaries and maintenance notes.
+updated: 2026-03-09
+---
+
 # Upstream Dependencies
 
 Background on the two primary libraries this project builds on: Hugging Face's Qwen3-VL implementation and the ms-swift training framework. Use this as a quick reference when you need to trace behavior into upstream code or reason about configuration limits.
@@ -6,7 +16,7 @@ Background on the two primary libraries this project builds on: Hugging Face's Q
 
 ## Hugging Face Qwen3-VL Model
 
-_Source: `transformers.models.qwen3_vl` (installed under `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/`)._
+_Source: `transformers.models.qwen3_vl` in the active `ms` environment._
 
 ### Architecture Highlights
 - **Config class**: `Qwen3VLConfig` glues together a text config (`Qwen3VLTextConfig`) and a vision config (`Qwen3VLVisionConfig`). It also stores multimodal token ids (`vision_start_token_id`, `vision_end_token_id`, `image_token_id`, `video_token_id`).
@@ -65,7 +75,7 @@ tuner:
 
 ## ms-swift Training Framework
 
-_Source: `/data/home/xiaoyan/AIteam/data/ms-swift` (notably `swift/llm/train/sft.py` and `swift/llm/argument/train_args.py`)._
+_Source: local `ms-swift` checkout or installed package (notably `swift/llm/train/sft.py` and `swift/llm/argument/train_args.py`)._
 
 ### SwiftSft Pipeline
 - **Entry point**: `SwiftSft` (inherits `SwiftPipeline` + `TunerMixin`) orchestrates loading the model/processor, template, datasets, collator, and trainer.

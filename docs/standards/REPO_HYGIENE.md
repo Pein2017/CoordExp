@@ -1,3 +1,13 @@
+---
+doc_id: docs.standards.repo-hygiene
+layer: docs
+doc_type: standard
+status: canonical
+domain: standards
+summary: Repo layout, promotion rules, and reproducibility hygiene.
+updated: 2026-03-09
+---
+
 # Repo Hygiene Constitution (CoordExp)
 
 This document defines **where things go**, **what gets tracked**, and **how one-shot work gets promoted** so the repo stays reproducible and paper-ready.

@@ -1,3 +1,13 @@
+---
+doc_id: docs.data.packing
+layer: docs
+doc_type: reference
+status: canonical
+domain: data
+summary: Packing policy, defaults, and efficiency tradeoffs.
+updated: 2026-03-09
+---
+
 # Packing Mode Guide (Default: 12k, eff_bs=12)
 
 Note:
@@ -7,6 +17,7 @@ Note:
   **post-rollout packing inside the trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
+  - for `stage2_two_channel` clean-prefix v2, that packed Channel-B segment is built from the canonical clean teacher-forced target derived from `accepted_objects_clean`, not from the raw rollout prefix token ids,
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
   - `training.packing_drop_last: true` is required (no end-of-run flush steps; `stage2_rollout_aligned` uses a carry buffer).
   - `stage2_two_channel` (step-budgeted) uses a *pool-aware* selector that prioritizes minimizing the total number of packed
@@ -53,7 +64,7 @@ eval_packing: true
 ## How to regenerate stats
 ```
 conda run -n ms python scripts/analysis/token_length_analysis.py \
-  --config configs/dlora/sft_text_only.yaml --binsize 512
+  --config configs/stage1/sft_base.yaml --binsize 512
 ```
 - Outputs mean/median/p95/p99, histograms, and packing sims for 12k/16k/20k with world=4, per_device=1.
 - Adjust `--pack-lengths` to explore other caps; set `--per-device-train-batch` if changing per-device batch.
@@ -63,7 +74,7 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 - Expect fewer opt steps (~688/epoch) but heavier attention; watch for OOM and step-time regression.
 
 ## Migration checklist
-1) Update configs to the defaults above (already applied to `configs/dlora/sft_text_only.yaml`).
+1) Update configs to the defaults above in the current Stage-1 tree (`configs/stage1/`).
 2) Align `eval_steps`/`save_steps` to ~80 and `save_delay_steps` to ~200 for 4-epoch runs.
 3) Monitor GPU memory; if headroom shrinks, drop to `global_max_length: 12000` and keep eff_bs=12.
 4) Keep ROOT_IMAGE_DIR set for dataset paths; packing requires non-lazy tokenize.
