@@ -855,6 +855,7 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0}],
         objective_atoms={"loss/B_rollout_text/struct_ce": 10.0},
+        gradmon_metrics=None,
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
@@ -862,6 +863,7 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
         objective_atoms={"loss/B_rollout_text/struct_ce": 20.0},
+        gradmon_metrics=None,
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
@@ -874,6 +876,40 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
+
+
+def test_build_train_rollout_log_payload_preserves_sparse_gradmon_weight() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    pending = _PendingTrainRolloutLog()
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0}],
+        objective_atoms=None,
+        gradmon_metrics=None,
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
+        objective_atoms=None,
+        gradmon_metrics={
+            "gradmon/neg_cosine_pair_frac": 0.5,
+            "gradmon/num_terms": 4.0,
+            "time/gradmon_s": 0.125,
+        },
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+
+    out = trainer._build_train_rollout_log_payload(pending)
+
+    assert out["train/samples_total"] == pytest.approx(4.0)
+    assert out["gradmon/neg_cosine_pair_frac"] == pytest.approx(0.5)
+    assert out["gradmon/num_terms"] == pytest.approx(4.0)
+    assert out["gradmon/_log_weight_total"] == pytest.approx(3.0)
+    assert out["time/gradmon_s"] == pytest.approx(0.125)
 
 
 def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(

@@ -79,6 +79,8 @@ class PendingTrainRolloutLog:
     # Segment-weighted objective sums (weight = number of meta entries in the micro-pack).
     objective_atom_weighted_sum: Dict[str, float] = field(default_factory=dict)
     loss_weight_sum: float = 0.0
+    gradmon_weighted_sum: Dict[str, float] = field(default_factory=dict)
+    gradmon_weight_sum: float = 0.0
 
     n_micro: int = 0
 
@@ -89,6 +91,7 @@ class PendingTrainRolloutLog:
     time_rollout_generate_s: float = 0.0
     time_rollout_parse_match_s: float = 0.0
     time_rollout_teacher_encode_s: float = 0.0
+    time_gradmon_s: float = 0.0
 
     # Packing/collation timing.
     time_post_rollout_pack_s: float = 0.0
@@ -105,6 +108,7 @@ class PendingTrainRolloutLog:
         *,
         meta: List[Mapping[str, Any]],
         objective_atoms: Optional[Mapping[str, Any]],
+        gradmon_metrics: Optional[Mapping[str, Any]],
         time_forward_s: float,
         time_mask_build_s: float,
         batch_metrics: Optional[Mapping[str, Any]],
@@ -139,6 +143,21 @@ class PendingTrainRolloutLog:
                     float(self.objective_atom_weighted_sum.get(k, 0.0))
                     + float(v) * float(micro_weight)
                 )
+            if isinstance(gradmon_metrics, Mapping) and gradmon_metrics:
+                self.time_gradmon_s += float(gradmon_metrics.get("time/gradmon_s", 0.0) or 0.0)
+                self.gradmon_weight_sum += float(micro_weight)
+                for k, v in gradmon_metrics.items():
+                    if str(k).startswith("time/"):
+                        continue
+                    try:
+                        fv = float(v)
+                    except (TypeError, ValueError):
+                        continue
+                    ks = str(k)
+                    self.gradmon_weighted_sum[ks] = float(
+                        float(self.gradmon_weighted_sum.get(ks, 0.0))
+                        + float(fv) * float(micro_weight)
+                    )
 
         if not isinstance(batch_metrics, Mapping):
             return

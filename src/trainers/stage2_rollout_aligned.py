@@ -76,6 +76,10 @@ from .rollout_matching.parsing import (
 from .rollout_matching.telemetry import (
     PendingTrainRolloutLog as _PendingTrainRolloutLog,
 )
+from .monitoring.loss_gradient_monitor import (
+    build_stage2_coord_monitor_terms_from_pipeline,
+    get_loss_gradient_monitor,
+)
 from .teacher_forcing.contracts import ModuleResult, TeacherForcingContext
 from .teacher_forcing.forwards import (
     assert_unsliced_logits,
@@ -7417,6 +7421,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             reduced[total_key] = float(float(reduced.get(key, 0.0)) * loss_weight)
             reduced.pop(key, None)
 
+        gradmon_weight_key = "gradmon/_log_weight_total"
+        gradmon_mean_keys = [
+            str(k)
+            for k in list(reduced.keys())
+            if str(k).startswith("gradmon/")
+            and str(k) != gradmon_weight_key
+            and not str(k).endswith("_total")
+            and not str(k).endswith("_sum")
+            and not str(k).endswith("_count")
+            and not str(k).endswith("_num")
+            and not str(k).endswith("_den")
+        ]
+
         try:
             import torch.distributed as dist
         except (TypeError, ValueError):
@@ -7463,6 +7480,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         sum_explicit = {
             sample_total_key,
+            gradmon_weight_key,
             "rollout/parse_truncated",
             "rollout/parse_dropped_invalid",
             "rollout/parse_dropped_ambiguous",
@@ -7506,6 +7524,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if key.startswith("time/"):
                 max_key_set.add(key)
                 continue
+            if key.startswith("gradmon/") and key != gradmon_weight_key:
+                continue
             if key in max_explicit:
                 max_key_set.add(key)
                 continue
@@ -7517,6 +7537,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         sum_keys = sorted(sum_key_set)
         max_keys = sorted(max_key_set)
         mean_keys = sorted(mean_key_set)
+        gradmon_keys = sorted(gradmon_mean_keys)
 
         if (
             dist is not None
@@ -7547,13 +7568,31 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     for i, key_i in enumerate(keys):
                         reduced[key_i] = float(values[i].item())
 
+                local_gradmon_weight = float(reduced.get(gradmon_weight_key, 0.0))
+                if local_gradmon_weight > 0.0 and gradmon_keys:
+                    for key in gradmon_keys:
+                        reduced[key] = float(reduced.get(key, 0.0)) * float(
+                            local_gradmon_weight
+                        )
+
                 _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
+                _all_reduce(gradmon_keys, dist.ReduceOp.SUM)
                 _all_reduce(max_keys, dist.ReduceOp.MAX)
 
                 scale = float(world_size)
                 if scale > 0.0:
                     for key in mean_keys:
                         reduced[key] = float(reduced.get(key, 0.0) / scale)
+                global_gradmon_weight = float(reduced.get(gradmon_weight_key, 0.0))
+                if gradmon_keys:
+                    if global_gradmon_weight > 0.0:
+                        for key in gradmon_keys:
+                            reduced[key] = float(
+                                reduced.get(key, 0.0) / global_gradmon_weight
+                            )
+                    else:
+                        for key in gradmon_keys:
+                            reduced[key] = 0.0
             except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "rollout metric all-reduce failed (DDP is initialized); "
@@ -7706,6 +7745,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             trunc_num_key,
             trunc_den_key,
             *sorted(loss_total_keys.keys()),
+            gradmon_weight_key,
             "rollout/_matched_maskiou_sum",
             "rollout/_sample_valid_pred_num",
             "rollout/_sample_any_match_num",
@@ -8130,10 +8170,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         float(getattr(pending, "objective_atom_sum", {}).get(key, 0.0))
                         / denom
                     )
+        if float(getattr(pending, "gradmon_weight_sum", 0.0)) > 0.0:
+            gradmon_denom = float(getattr(pending, "gradmon_weight_sum", 0.0))
+            for key in sorted(getattr(pending, "gradmon_weighted_sum", {}).keys()):
+                payload[str(key)] = float(
+                    float(getattr(pending, "gradmon_weighted_sum", {}).get(key, 0.0))
+                    / gradmon_denom
+                )
+            payload["gradmon/_log_weight_total"] = float(gradmon_denom)
 
         payload["time/forward_s"] = float(pending.time_forward_s)
         if float(pending.time_mask_build_s) > 0.0:
             payload["time/mask_build_s"] = float(pending.time_mask_build_s)
+        if float(getattr(pending, "time_gradmon_s", 0.0)) > 0.0:
+            payload["time/gradmon_s"] = float(getattr(pending, "time_gradmon_s", 0.0))
 
         # Rollout pipeline timings are only meaningful when we actually ran a rollout.
         ran_rollout = bool(
@@ -8333,6 +8383,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             emit_text=True,
             emit_coord=True,
         )
+        from src.metrics.reporter import best_effort_value
+
+        monitor = get_loss_gradient_monitor(self)
+        gradmon_metrics = {}
+        if monitor is not None:
+            gradmon_metrics = best_effort_value(
+                self,
+                name="loss_gradient_monitor",
+                fn=lambda: monitor.measure(
+                    model=model,
+                    loss_terms=build_stage2_coord_monitor_terms_from_pipeline(
+                        pipeline_result=pipeline_result,
+                        objective_specs=objective_specs,
+                        coord_provenance="B_coord",
+                    ),
+                ),
+                default={},
+            )
 
         try:
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -8344,6 +8412,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             pending.add_micro(
                 meta=meta,
                 objective_atoms=objective_atoms,
+                gradmon_metrics=gradmon_metrics if isinstance(gradmon_metrics, Mapping) else None,
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),
                 batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,

@@ -1,0 +1,20 @@
+extends: ./smoke_stage2_rollout_matching_ckpt3106.yaml
+
+training:
+  run_name: smoke_stage2_rollout_matching_ckpt3106_gradmon
+  output_dir: output/rollout_matching_sft/smoke_stage2_ckpt3106_gradmon
+  logging_dir: tb/rollout_matching_sft/smoke_stage2_ckpt3106_gradmon
+
+custom:
+  extra:
+    loss_gradient_monitor:
+      enabled: true
+      interval_steps: 1
+      ema_beta: 0.98
+      require_sync_gradients: true
+      coord_only: true
+      granularity: atomic
+      param_block:
+        strategy: auto_last_lm_layernorm
+        max_params: 64
+        max_numel: 200000

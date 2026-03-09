@@ -350,14 +350,35 @@ class Stage2ABChannelExecutorsMixin:
             with cm:
                 loss_cm = getattr(self, "compute_loss_context_manager", None)
                 loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
-                with loss_ctx:
-                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
-                        dist=dist,
-                        ddp_rank=int(ddp_rank),
-                        ddp_world_size=int(ddp_world_size),
-                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
-                    ):
-                        loss = self.compute_loss(model, batch)
+                prev_gradmon_sync = getattr(
+                    self, "_loss_gradient_monitor_sync_gradients", None
+                )
+                setattr(
+                    self,
+                    "_loss_gradient_monitor_sync_gradients",
+                    bool(sync_gradients),
+                )
+                try:
+                    with loss_ctx:
+                        with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                            dist=dist,
+                            ddp_rank=int(ddp_rank),
+                            ddp_world_size=int(ddp_world_size),
+                            where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                        ):
+                            loss = self.compute_loss(model, batch)
+                finally:
+                    if prev_gradmon_sync is None:
+                        try:
+                            delattr(self, "_loss_gradient_monitor_sync_gradients")
+                        except AttributeError:
+                            pass
+                    else:
+                        setattr(
+                            self,
+                            "_loss_gradient_monitor_sync_gradients",
+                            prev_gradmon_sync,
+                        )
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
@@ -783,14 +804,35 @@ class Stage2ABChannelExecutorsMixin:
             with cm:
                 loss_cm = getattr(self, "compute_loss_context_manager", None)
                 loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
-                with loss_ctx:
-                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
-                        dist=dist,
-                        ddp_rank=int(ddp_rank),
-                        ddp_world_size=int(ddp_world_size),
-                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
-                    ):
-                        loss = self.compute_loss(model, batch)
+                prev_gradmon_sync = getattr(
+                    self, "_loss_gradient_monitor_sync_gradients", None
+                )
+                setattr(
+                    self,
+                    "_loss_gradient_monitor_sync_gradients",
+                    bool(sync_gradients),
+                )
+                try:
+                    with loss_ctx:
+                        with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                            dist=dist,
+                            ddp_rank=int(ddp_rank),
+                            ddp_world_size=int(ddp_world_size),
+                            where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                        ):
+                            loss = self.compute_loss(model, batch)
+                finally:
+                    if prev_gradmon_sync is None:
+                        try:
+                            delattr(self, "_loss_gradient_monitor_sync_gradients")
+                        except AttributeError:
+                            pass
+                    else:
+                        setattr(
+                            self,
+                            "_loss_gradient_monitor_sync_gradients",
+                            prev_gradmon_sync,
+                        )
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 

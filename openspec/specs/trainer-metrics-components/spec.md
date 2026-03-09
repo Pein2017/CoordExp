@@ -65,6 +65,7 @@ Normative behavior:
 - `loss/<provenance>/<atom>` denotes a post-weighting objective atom.
 - `coord_diag/<metric>` is reserved for Stage-1-style bare coord diagnostics.
 - `coord_diag/<provenance>/<metric>` is reserved for provenance-split Stage-2 coord diagnostics.
+- `gradmon/<metric>` and `gradmon/<group>/<term>` are reserved for optional loss-gradient diagnostics.
 - `rollout/*` and `eval_rollout/*` remain distinct training-vs-eval families.
 - Internal reducer-helper keys MUST remain underscore-prefixed and MUST NOT appear in the final logged payload.
 
@@ -73,6 +74,42 @@ Normative behavior:
 - **THEN** the former is understood as a training objective atom
 - **AND** the latter is understood as a diagnostic-only monitor
 - **AND** the two are not ambiguous despite sharing the same provenance token.
+
+### Requirement: Loss-gradient monitor diagnostics are optional, sparse, and aggregation-safe
+When `custom.extra.loss_gradient_monitor.enabled=true`, the system SHALL expose optional `gradmon/*`
+diagnostics without changing the training objective or optimizer behavior.
+
+Normative behavior:
+- Per-term monitor keys MAY include:
+  - `gradmon/loss_raw/<term>`
+  - `gradmon/loss_ema_norm/<term>`
+  - `gradmon/grad_norm/<term>`
+  - `gradmon/cos_to_total/<term>`
+- Aggregate monitor keys MAY include:
+  - `gradmon/grad_norm_ratio_max_over_median`
+  - `gradmon/neg_cosine_pair_frac`
+  - `gradmon/neg_cosine_pair_pct`
+  - `gradmon/neg_cos_to_total_frac`
+  - `gradmon/num_terms`
+  - `gradmon/shared_param_count`
+  - `gradmon/shared_param_numel`
+- `gradmon/*` keys are diagnostics-only, sparse-emitted on monitor steps, and MUST be absent rather than emitted as placeholder zeros on non-monitor steps.
+- For Stage-2 training logs, `gradmon/*` gauges MUST be computed locally first and synchronized only through the existing optimizer-step reducers.
+- Sparse `gradmon/*` gauges MUST preserve their observation-weighted value at the finalized optimizer-step log boundary (no dilution across unobserved micro-steps or packed forwards).
+- `time/gradmon_s` MAY be emitted and MUST follow the active trainer's existing `time/*` reducer semantics.
+- `gradmon/*` keys MUST NOT introduce per-dataset buckets.
+
+#### Scenario: Sparse gradmon keys are not diluted
+- **GIVEN** gradient accumulation or packed-forward execution where `gradmon/*` keys appear on only a subset of micro-steps
+- **WHEN** the optimizer-step payload is finalized
+- **THEN** the finalized `gradmon/*` value reflects only the observed monitor steps
+- **AND** the value is not divided by the total number of unobserved micro-steps.
+
+#### Scenario: Non-monitor steps omit gradmon keys
+- **GIVEN** `loss_gradient_monitor.interval_steps` is greater than `1`
+- **WHEN** a training step is not a monitor step
+- **THEN** the step log omits `gradmon/*` keys
+- **AND** `time/gradmon_s` is absent for that step.
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)
 For registry-defined objective modules, trainers MUST emit only **atomic objective contributions** under canonical `loss/<provenance>/<atom>` keys and MUST NOT emit raw component loss keys by default.
