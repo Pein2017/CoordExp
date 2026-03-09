@@ -28,7 +28,10 @@ from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
     assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
-    assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
+    assert (
+        Stage2ABTrainingTrainer.prediction_step
+        is RolloutMatchingSFTTrainer.prediction_step
+    )
 
 
 class _DummyTokenizerRM:
@@ -499,7 +502,9 @@ def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
     }
 
     token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw, tokenizer=_Tok())
+        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(
+            raw, tokenizer=_Tok()
+        )
     )
 
     assert prompt_ids == [1, 2]
@@ -526,7 +531,9 @@ def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
         trainer._rollout_decode_batch_size_per_rank(rollout_backend="vllm")
 
 
-def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> None:
+def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> (
+    None
+):
     # Regression for the [1, 1] two-server topology where each rank must still
     # receive one request when per-rank chunk is 1.
     caps_rank0 = _per_server_rank_request_caps(
@@ -579,7 +586,10 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": f"prompt-{i}"},
-                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
+                {
+                    "role": "assistant",
+                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
+                },
             ]
         }
         for i in range(5)
@@ -665,7 +675,10 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": "prompt"},
-                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
+                {
+                    "role": "assistant",
+                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
+                },
             ]
         }
     ]
@@ -806,7 +819,9 @@ def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
     assert "rollout/fn_appended" not in metrics
 
 
-def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
+def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> (
+    None
+):
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     out = trainer._reduce_train_rollout_log_payload_global(
@@ -821,7 +836,9 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
     assert "rollout/parse_truncated_rate" not in out
 
 
-def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> None:
+def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> (
+    None
+):
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer._cfg = lambda _k, default=None: default
 
@@ -973,12 +990,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         100: types.SimpleNamespace(
             response_token_ids=[100],
             valid_objects=[
-                    types.SimpleNamespace(
-                        index=0,
-                        geom_type="bbox_2d",
-                        coord_token_indices=[0, 1, 2, 3],
-                        desc="",
-                    )
+                types.SimpleNamespace(
+                    index=0,
+                    geom_type="bbox_2d",
+                    coord_token_indices=[0, 1, 2, 3],
+                    desc="",
+                )
             ],
             dropped_invalid=0,
             dropped_ambiguous=0,
@@ -987,12 +1004,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         101: types.SimpleNamespace(
             response_token_ids=[101],
             valid_objects=[
-                    types.SimpleNamespace(
-                        index=0,
-                        geom_type="bbox_2d",
-                        coord_token_indices=[0, 1, 2, 3],
-                        desc="",
-                    )
+                types.SimpleNamespace(
+                    index=0,
+                    geom_type="bbox_2d",
+                    coord_token_indices=[0, 1, 2, 3],
+                    desc="",
+                )
             ],
             dropped_invalid=1,
             dropped_ambiguous=1,
@@ -1229,9 +1246,7 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
         lambda *_args, **_kwargs: nullcontext(_DummyUnwrapped()),
     )
 
-    outs = trainer._rollout_many_hf(
-        [{"messages": [{"role": "user", "content": "q"}]}]
-    )
+    outs = trainer._rollout_many_hf([{"messages": [{"role": "user", "content": "q"}]}])
 
     assert len(outs) == 1
     assert len(offload_calls) == 1
@@ -1301,7 +1316,9 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], "{}", "greedy", []) for _ in batch
+    ]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -1681,6 +1698,17 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
+def test_effective_rollout_backend_allows_hf_eval_override() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+    }
+
+    assert trainer._effective_rollout_backend(context="train") == "hf"
+    assert trainer._effective_rollout_backend(context="eval") == "hf"
+
+
 def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
@@ -1702,7 +1730,9 @@ def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> 
         trainer._validate_rollout_matching_cfg()
 
 
-def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> None:
+def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> (
+    None
+):
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -1742,7 +1772,9 @@ def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> Non
     trainer._validate_rollout_matching_cfg()
 
 
-def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> None:
+def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> (
+    None
+):
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -1982,11 +2014,12 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
 
     metrics = trainer.evaluate()
     assert metrics["eval/trace_fallback_count"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/effective_score_mode_is_constant"] == pytest.approx(1.0)
-    assert (
-        metrics["eval_rollout/effective_score_mode_is_confidence_postop"]
-        == pytest.approx(0.0)
+    assert metrics["eval_rollout/effective_score_mode_is_constant"] == pytest.approx(
+        1.0
     )
+    assert metrics[
+        "eval_rollout/effective_score_mode_is_confidence_postop"
+    ] == pytest.approx(0.0)
 
 
 def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
@@ -2175,7 +2208,9 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
 
     sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], "{}", "greedy", []) for _ in batch
+    ]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2291,7 +2326,9 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
 
     sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], "{}", "greedy", []) for _ in batch
+    ]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2395,14 +2432,12 @@ def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
         return nullcontext()
 
     trainer._maybe_rollout_offload_context = _offload_ctx
-    trainer._ensure_vllm_engine = lambda: events.__setitem__(
-        "ensure", int(events["ensure"]) + 1
-    ) or object()
-    trainer._shutdown_vllm_colocate_engine = (
-        lambda *, wake_before_release: events["shutdown"].append(
-            bool(wake_before_release)
-        )
+    trainer._ensure_vllm_engine = (
+        lambda: events.__setitem__("ensure", int(events["ensure"]) + 1) or object()
     )
+    trainer._shutdown_vllm_colocate_engine = lambda *, wake_before_release: events[
+        "shutdown"
+    ].append(bool(wake_before_release))
     trainer._cuda_memory_drain = lambda *, synchronize=False: events["drain"].append(
         bool(synchronize)
     )
@@ -2481,7 +2516,9 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], "{}", "greedy", []) for _ in batch
+    ]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2609,9 +2646,9 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = (
-        lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
-    )
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], "{}", "greedy", []) for _ in batch
+    ]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2667,7 +2704,9 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    with pytest.raises(RuntimeError, match=r"metric_for_best_model targets rollout/mAP"):
+    with pytest.raises(
+        RuntimeError, match=r"metric_for_best_model targets rollout/mAP"
+    ):
         trainer.evaluate()
 
 
@@ -2809,7 +2848,7 @@ def test_rollout_parse_drops_invalid_objects_without_repair():
         '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
         '{"desc": "b", "bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>]}, '
         '{"desc": "c", "bbox_2d": [<|coord_8|>, <|coord_9|>, <|coord_10|>, <|coord_11|>]}'
-        ']}'
+        "]}"
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
@@ -2823,7 +2862,7 @@ def test_rollout_parse_drops_order_violation_for_geometry_first():
         '{"objects": ['
         '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
         '{"bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>], "desc": "b"}'
-        ']}'
+        "]}"
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(
@@ -2867,9 +2906,7 @@ def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
     assert frag_empty.startswith('{"')
     assert frag_empty.endswith("]}")
 
-    prefix_with_entry = (
-        '{"objects": [{"desc": "p", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}'
-    )
+    prefix_with_entry = '{"objects": [{"desc": "p", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}'
     frag_non_empty = _serialize_append_fragment(
         fn_objects=fn_objs,
         prefix_text=prefix_with_entry,
@@ -2912,7 +2949,7 @@ def test_rollout_parse_poly_captures_coord_indices_for_flat_arrays():
     tok = _DummyTokenizerRM()
     text = (
         '{"objects": [{"desc": "p", "poly": [<|coord_1|>, <|coord_2|>, <|coord_3|>, '
-        '<|coord_4|>, <|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}'
+        "<|coord_4|>, <|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}"
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
@@ -3162,25 +3199,29 @@ def test_rollout_context_masking_full_idea_semantics_prefix_fn_fp_and_closure():
 
     # assistant span: [2, 10)
     # prefix: [2, 6), tail: [6, 10)
-    input_ids = torch.tensor([1, 2, 30, 31, 32, 33, 40, 41, 10, 42, 0, 0], dtype=torch.long)
+    input_ids = torch.tensor(
+        [1, 2, 30, 31, 32, 33, 40, 41, 10, 42, 0, 0], dtype=torch.long
+    )
 
-    labels, coord_pos, coord_bins, coord_is_prefix = _build_labels_and_coord_targets_for_sample(
-        input_ids_1d=input_ids,
-        prompt_len=prompt_len,
-        prefix_len=prefix_len,
-        train_len=train_len,
-        coord_id_set=coord_id_set,
-        coord_id_to_bin=coord_id_to_bin,
-        prefix_coord_pos=[],
-        prefix_coord_target_bins=[],
-        # ignore tail rel=0 and rel=3, but rel=3 is closure and must stay supervised
-        tail_ignore_pos=[0, 3],
-        # matched-prefix struct-only CE
-        prefix_struct_pos=[0, 2],
-        # FN desc token rel=1 is supervised by default
-        tail_desc_pos=[1],
-        # closure/EOS supervision (tail rel=3)
-        tail_closure_pos=[3],
+    labels, coord_pos, coord_bins, coord_is_prefix = (
+        _build_labels_and_coord_targets_for_sample(
+            input_ids_1d=input_ids,
+            prompt_len=prompt_len,
+            prefix_len=prefix_len,
+            train_len=train_len,
+            coord_id_set=coord_id_set,
+            coord_id_to_bin=coord_id_to_bin,
+            prefix_coord_pos=[],
+            prefix_coord_target_bins=[],
+            # ignore tail rel=0 and rel=3, but rel=3 is closure and must stay supervised
+            tail_ignore_pos=[0, 3],
+            # matched-prefix struct-only CE
+            prefix_struct_pos=[0, 2],
+            # FN desc token rel=1 is supervised by default
+            tail_desc_pos=[1],
+            # closure/EOS supervision (tail rel=3)
+            tail_closure_pos=[3],
+        )
     )
 
     # Prefix matched-struct CE on rel=0,2 only (FP prefix spans masked).
@@ -3191,9 +3232,11 @@ def test_rollout_context_masking_full_idea_semantics_prefix_fn_fp_and_closure():
 
     # Tail FN semantics: desc token is supervised, coord token masked, closure supervised.
     assert labels[6].item() == -100  # ignored non-closure
-    assert labels[7].item() == 41    # desc supervised by default
+    assert labels[7].item() == 41  # desc supervised by default
     assert labels[8].item() == -100  # coord
-    assert labels[9].item() == 42    # closure supervised even if listed in tail_ignore_pos
+    assert (
+        labels[9].item() == 42
+    )  # closure supervised even if listed in tail_ignore_pos
 
     # Tail coord token still contributes to coord supervision targets.
     assert coord_pos == [8]

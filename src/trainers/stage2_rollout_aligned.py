@@ -45,7 +45,10 @@ from swift.trainers.rlhf_trainer.utils import (
 )
 from swift.utils import get_logger, unwrap_model_for_generation
 
-from src.common.object_field_order import build_object_payload, normalize_object_field_order
+from src.common.object_field_order import (
+    build_object_payload,
+    normalize_object_field_order,
+)
 from src.common.geometry import bbox_from_points, flatten_points
 from src.config.prompts import (
     build_dense_system_prompt,
@@ -247,7 +250,9 @@ def _per_server_rank_request_caps(
 
     out: List[int] = []
     for start, end in server_slices:
-        overlap = max(0, min(int(rank_end), int(end)) - max(int(rank_start), int(start)))
+        overlap = max(
+            0, min(int(rank_end), int(end)) - max(int(rank_start), int(start))
+        )
         out.append(int(overlap))
 
     if int(sum(out)) != int(chunk):
@@ -1384,11 +1389,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             allow_none=False,
         )
         assert eval_backend is not None
-        if eval_backend != "vllm":
-            raise ValueError(
-                "Eval backend is fixed to vLLM in the Stage-2 pipeline; "
-                "set rollout_matching.eval_rollout_backend='vllm'."
-            )
 
         return train_backend if context == "train" else eval_backend
 
@@ -1498,9 +1498,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.channel_b_decode_batch_size must be an int"
             ) from exc
         if channel_b_decode_bs <= 0:
-            raise ValueError(
-                "rollout_matching.channel_b_decode_batch_size must be > 0"
-            )
+            raise ValueError("rollout_matching.channel_b_decode_batch_size must be > 0")
 
         eval_decode_bs_raw = cfg.get("eval_decode_batch_size", None)
         if eval_decode_bs_raw is None:
@@ -1514,17 +1512,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.eval_decode_batch_size must be an int"
             ) from exc
         if eval_decode_bs <= 0:
-            raise ValueError(
-                "rollout_matching.eval_decode_batch_size must be > 0"
-            )
+            raise ValueError("rollout_matching.eval_decode_batch_size must be > 0")
 
         dec = cfg.get("decoding", None)
         if dec is None:
             dec = {}
         if not isinstance(dec, Mapping):
-            raise TypeError(
-                "rollout_matching.decoding must be a mapping when provided"
-            )
+            raise TypeError("rollout_matching.decoding must be a mapping when provided")
 
         # Validate decoding ranges (robust defaults).
         try:
@@ -1534,36 +1528,30 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.decoding.temperature must be a float"
             ) from exc
         if temperature < 0.0:
-            raise ValueError(
-                "rollout_matching.decoding.temperature must be >= 0"
-            )
+            raise ValueError("rollout_matching.decoding.temperature must be >= 0")
 
         try:
             top_p = float(
                 dec.get("top_p", 1.0) if dec.get("top_p", None) is not None else 1.0
             )
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_p must be a float"
-            ) from exc
+            raise TypeError("rollout_matching.decoding.top_p must be a float") from exc
         if not (0.0 < top_p <= 1.0):
-            raise ValueError(
-                "rollout_matching.decoding.top_p must be in (0, 1]"
-            )
+            raise ValueError("rollout_matching.decoding.top_p must be in (0, 1]")
 
         top_k_raw = dec.get("top_k", -1)
         try:
             top_k = int(top_k_raw)
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_k must be an int"
-            ) from exc
+            raise TypeError("rollout_matching.decoding.top_k must be an int") from exc
         if top_k != -1 and top_k < 1:
             raise ValueError(
                 "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
             )
 
-        coord_decode_mode = str(cfg.get("coord_decode_mode", "exp") or "exp").strip().lower()
+        coord_decode_mode = (
+            str(cfg.get("coord_decode_mode", "exp") or "exp").strip().lower()
+        )
         if coord_decode_mode not in {"exp", "st"}:
             raise ValueError(
                 "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
@@ -1604,15 +1592,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         reinit_each_eval_raw = vllm_cfg.get("reinit_each_eval", False)
         if not isinstance(reinit_each_eval_raw, bool):
-            raise TypeError(
-                "rollout_matching.vllm.reinit_each_eval must be a bool"
-            )
+            raise TypeError("rollout_matching.vllm.reinit_each_eval must be a bool")
         if bool(reinit_each_eval_raw):
             if eval_backend != "vllm":
                 raise ValueError(
                     "rollout_matching.vllm.reinit_each_eval requires eval_rollout_backend=vllm."
                 )
-            mode_raw = str(vllm_cfg.get("mode", "colocate") or "colocate").strip().lower()
+            mode_raw = (
+                str(vllm_cfg.get("mode", "colocate") or "colocate").strip().lower()
+            )
             if mode_raw != "colocate":
                 raise ValueError(
                     "rollout_matching.vllm.reinit_each_eval requires rollout_matching.vllm.mode=colocate."
@@ -1644,7 +1632,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if not isinstance(pipeline_raw, Mapping):
                 raise TypeError("rollout_matching.pipeline must be a mapping")
 
-            def _validate_pipeline_specs(items: Any, *, path: str, allowed_names: set[str]) -> None:
+            def _validate_pipeline_specs(
+                items: Any, *, path: str, allowed_names: set[str]
+            ) -> None:
                 if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
                     raise TypeError(f"{path} must be a list")
                 seen: set[str] = set()
@@ -1679,12 +1669,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         try:
                             weight = float(spec.get("weight"))
                         except (TypeError, ValueError) as exc:
-                            raise TypeError(f"{path}[{idx}].weight must be numeric") from exc
+                            raise TypeError(
+                                f"{path}[{idx}].weight must be numeric"
+                            ) from exc
                         if weight < 0.0:
                             raise ValueError(f"{path}[{idx}].weight must be >= 0")
 
                     channels_raw = spec.get("channels", ["A", "B"])
-                    if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
+                    if not isinstance(channels_raw, Sequence) or isinstance(
+                        channels_raw, (str, bytes)
+                    ):
                         raise TypeError(f"{path}[{idx}].channels must be a list")
                     if len(channels_raw) == 0:
                         raise ValueError(f"{path}[{idx}].channels must not be empty")
@@ -1727,16 +1721,18 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if eval_det_raw is not None:
             if not isinstance(eval_det_raw, Mapping):
                 raise TypeError("rollout_matching.eval_detection must be a mapping")
-            metrics_mode = str(
-                eval_det_raw.get("metrics", "coco") or "coco"
-            ).strip().lower()
+            metrics_mode = (
+                str(eval_det_raw.get("metrics", "coco") or "coco").strip().lower()
+            )
             if metrics_mode not in {"coco", "both"}:
                 raise ValueError(
                     "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
                 )
-            score_mode = str(
-                eval_det_raw.get("score_mode", "constant") or "constant"
-            ).strip().lower()
+            score_mode = (
+                str(eval_det_raw.get("score_mode", "constant") or "constant")
+                .strip()
+                .lower()
+            )
             if score_mode not in {"constant", "confidence_postop"}:
                 raise ValueError(
                     "rollout_matching.eval_detection.score_mode must be one of {'constant', 'confidence_postop'}"
@@ -1751,9 +1747,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 raise ValueError(
                     "rollout_matching.eval_detection.constant_score must satisfy 0.0 <= score <= 1.0"
                 )
-            score_source = str(
-                eval_det_raw.get("pred_score_source", "") or ""
-            ).strip()
+            score_source = str(eval_det_raw.get("pred_score_source", "") or "").strip()
             if not score_source:
                 raise ValueError(
                     "rollout_matching.eval_detection.pred_score_source must be non-empty"
@@ -1771,9 +1765,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if raw is None:
             return {}
         if not isinstance(raw, Mapping):
-            raise TypeError(
-                "rollout_matching.decoding must be a mapping when provided"
-            )
+            raise TypeError("rollout_matching.decoding must be a mapping when provided")
         return raw
 
     def _decoding_params(self) -> Tuple[float, float, int]:
@@ -1787,29 +1779,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.decoding.temperature must be a float"
             ) from exc
         if temperature < 0.0:
-            raise ValueError(
-                "rollout_matching.decoding.temperature must be >= 0"
-            )
+            raise ValueError("rollout_matching.decoding.temperature must be >= 0")
 
         top_p_raw = dec.get("top_p", 1.0)
         try:
             top_p = float(top_p_raw if top_p_raw is not None else 1.0)
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_p must be a float"
-            ) from exc
+            raise TypeError("rollout_matching.decoding.top_p must be a float") from exc
         if not (0.0 < top_p <= 1.0):
-            raise ValueError(
-                "rollout_matching.decoding.top_p must be in (0, 1]"
-            )
+            raise ValueError("rollout_matching.decoding.top_p must be in (0, 1]")
 
         top_k_raw = dec.get("top_k", -1)
         try:
             top_k = int(top_k_raw)
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_k must be an int"
-            ) from exc
+            raise TypeError("rollout_matching.decoding.top_k must be an int") from exc
         if top_k != -1 and top_k < 1:
             raise ValueError(
                 "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
@@ -1852,7 +1836,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "stop": [_IM_END],
             "return_details": True,
         }
-
 
     @staticmethod
     def _parse_vllm_server_output(raw: Any) -> Tuple[List[int], str, List[int]]:
@@ -1902,9 +1885,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return token_ids, text, prompt_ids
 
-
     @staticmethod
-    def _extract_swift_choice_logprobs(logprobs_raw: Any) -> Tuple[List[float], List[str]]:
+    def _extract_swift_choice_logprobs(
+        logprobs_raw: Any,
+    ) -> Tuple[List[float], List[str]]:
         if not isinstance(logprobs_raw, Mapping):
             raise RuntimeError(
                 "Missing vLLM logprobs in server response; ensure request_config.logprobs=true"
@@ -1938,7 +1922,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return token_logprobs, generated_token_text
 
-
     @staticmethod
     def _strip_left_padding_token_ids(
         token_ids: Sequence[int],
@@ -1961,7 +1944,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         trimmed = ids[i:]
         return trimmed if trimmed else ids
-
 
     @staticmethod
     def _parse_vllm_server_output_traced(
@@ -2017,7 +1999,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         token_ids = [int(t) for t in token_ids_raw]
 
         token_logprobs, generated_token_text = (
-            RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(ch0.get("logprobs"))
+            RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(
+                ch0.get("logprobs")
+            )
         )
         if len(token_logprobs) != len(generated_token_text):
             pair_len = min(len(token_logprobs), len(generated_token_text))
@@ -2067,7 +2051,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return token_ids, text, prompt_ids, token_logprobs, generated_token_text
 
-
     def _build_vllm_server_infer_requests(
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -2077,7 +2060,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         for s in samples:
             msgs = s.get("messages")
             if not isinstance(msgs, list):
-                raise ValueError("rollout-matching samples must contain messages (list)")
+                raise ValueError(
+                    "rollout-matching samples must contain messages (list)"
+                )
             try:
                 msgs_json = json.loads(json.dumps(msgs))
             except Exception as exc:
@@ -2131,9 +2116,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         try:
             from src.metrics.semantic_desc import SemanticDescEncoder
         except (ImportError, OSError, RuntimeError) as exc:
-            warned = bool(
-                getattr(self, "_coordexp_desc_semantic_import_warned", False)
-            )
+            warned = bool(getattr(self, "_coordexp_desc_semantic_import_warned", False))
             if not warned:
                 logger.warning(
                     "Semantic desc encoder disabled (import failed): %r",
@@ -2223,7 +2206,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if len(s) <= max_chars:
             return s
         return s[:max_chars] + "...<truncated>"
-
 
     def _dump_warn_once(self, key: str, message: str, *args: object) -> None:
         warned = getattr(self, "_coordexp_dump_warned_once", None)
@@ -2522,18 +2504,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 True if offload_model_raw is None else bool(offload_model_raw)
             )
             offload_optimizer = (
-                True
-                if offload_optimizer_raw is None
-                else bool(offload_optimizer_raw)
+                True if offload_optimizer_raw is None else bool(offload_optimizer_raw)
             )
         else:
             offload_model = (
                 False if offload_model_raw is None else bool(offload_model_raw)
             )
             offload_optimizer = (
-                False
-                if offload_optimizer_raw is None
-                else bool(offload_optimizer_raw)
+                False if offload_optimizer_raw is None else bool(offload_optimizer_raw)
             )
         return enabled, offload_model, offload_optimizer
 
@@ -2583,9 +2561,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             if rollout_backend is not None
             else self._effective_rollout_backend(context="train")
         )
-        is_vllm_colocate = bool(
-            backend == "vllm" and self._vllm_mode() == "colocate"
-        )
+        is_vllm_colocate = bool(backend == "vllm" and self._vllm_mode() == "colocate")
 
         # Model offload is only safe/needed for colocate vLLM windows.
         if offload_model and not is_vllm_colocate:
@@ -2737,14 +2713,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
         return mode  # type: ignore[return-value]
 
-
     def _vllm_sleep_mode_enabled(self) -> bool:
         """Whether colocate vLLM should use sleep-mode lifecycle hooks."""
         vcfg_raw = self._cfg("vllm", {}) or {}
         if not isinstance(vcfg_raw, Mapping):
             raise ValueError("rollout_matching.vllm must be a mapping")
         return bool(vcfg_raw.get("enable_sleep_mode", False))
-
 
     def _vllm_reinit_each_eval(self) -> bool:
         """Whether colocate vLLM engine should be rebuilt every eval window."""
@@ -2753,9 +2727,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise ValueError("rollout_matching.vllm must be a mapping")
         raw_reinit = vcfg_raw.get("reinit_each_eval", False)
         if not isinstance(raw_reinit, bool):
-            raise ValueError(
-                "rollout_matching.vllm.reinit_each_eval must be a bool"
-            )
+            raise ValueError("rollout_matching.vllm.reinit_each_eval must be a bool")
         return bool(raw_reinit)
 
     def _vllm_sleep_level(self, *, default: int = 0) -> int:
@@ -2869,7 +2841,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 f"Failed to sleep vLLM engine at level={int(level)}."
             ) from exc
 
-
     @staticmethod
     def _best_effort_fix_vllm_nccl_allocator_atexit_order() -> None:
         """Best-effort mitigation for vLLM CUDAPluggableAllocator teardown crashes.
@@ -2921,7 +2892,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ValueError,
         ):
             return
-
 
     @staticmethod
     def _best_effort_patch_vllm_cumem_sleep_no_empty_cache() -> None:
@@ -2976,7 +2946,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ValueError,
         ):
             return
-
 
     @staticmethod
     def _best_effort_cleanup_vllm_sleep_mode_pools() -> None:
@@ -3090,9 +3059,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise ValueError("rollout_matching.vllm must be a mapping")
         scfg_raw = vcfg_raw.get("server", {}) or {}
         if not isinstance(scfg_raw, Mapping):
-            raise ValueError(
-                "rollout_matching.vllm.server must be a mapping"
-            )
+            raise ValueError("rollout_matching.vllm.server must be a mapping")
         return scfg_raw
 
     def _vllm_server_specs(self) -> List[Dict[str, Any]]:
@@ -3172,9 +3139,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "rollout_matching.vllm.server.timeout_s must be a float/int"
                 ) from exc
         if timeout_s <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.server.timeout_s must be > 0"
-            )
+            raise ValueError("rollout_matching.vllm.server.timeout_s must be > 0")
 
         # Infer (read) timeout for /infer/ requests:
         # - null/unset: no timeout (allows long rollouts without client-side aborts)
@@ -3246,7 +3211,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         logger.info("vLLM rollout server world_size(s): %s", out)
         return list(out)
 
-
     def _rollout_decode_batch_size_per_rank(
         self,
         *,
@@ -3269,9 +3233,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         """
         context_norm = str(rollout_context).strip().lower()
         if context_norm not in {"train", "eval"}:
-            raise ValueError(
-                "rollout_context must be one of {'train', 'eval'}"
-            )
+            raise ValueError("rollout_context must be one of {'train', 'eval'}")
 
         cap = int(
             self._decode_batch_size(
@@ -3405,9 +3367,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         if context_norm == "train":
             raw = self._cfg("channel_b_decode_batch_size", None)
-            missing_msg = (
-                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
-            )
+            missing_msg = "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
             type_msg = "rollout_matching.channel_b_decode_batch_size must be an int"
             positive_msg = "rollout_matching.channel_b_decode_batch_size must be > 0"
         else:
@@ -3482,7 +3442,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _packing_drop_last(self) -> bool:
         return bool(self._cfg("packing_drop_last", True))
-
 
     @staticmethod
     def _extract_encoded_len(encoded: Mapping[str, Any]) -> int:
@@ -3705,9 +3664,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         default_tp = 4 if world_size == 4 else 1
         tp_size = int(vcfg.get("tensor_parallel_size", default_tp))
         if tp_size <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.tensor_parallel_size must be > 0"
-            )
+            raise ValueError("rollout_matching.vllm.tensor_parallel_size must be > 0")
         if world_size % tp_size != 0:
             raise ValueError(
                 f"vLLM colocate requires world_size % tp == 0; world_size={world_size} tp={tp_size}"
@@ -3721,9 +3678,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
         max_model_len = int(max_model_len_raw)
         if max_model_len <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.max_model_len must be > 0"
-            )
+            raise ValueError("rollout_matching.vllm.max_model_len must be > 0")
 
         enable_lora = bool(vcfg.get("enable_lora", False))
         if enable_lora:
@@ -3738,9 +3693,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # from disk is unnecessary; dummy init reduces overhead.
             load_format = "dummy"
         if not isinstance(load_format, str):
-            raise ValueError(
-                "rollout_matching.vllm.load_format must be a string"
-            )
+            raise ValueError("rollout_matching.vllm.load_format must be a string")
         load_format = load_format.strip()
 
         gpu_mem = float(vcfg.get("gpu_memory_utilization", 0.45))
@@ -3775,9 +3728,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "rollout_matching.vllm.max_num_seqs must be an int"
                 ) from exc
             if max_num_seqs <= 0:
-                raise ValueError(
-                    "rollout_matching.vllm.max_num_seqs must be > 0"
-                )
+                raise ValueError("rollout_matching.vllm.max_num_seqs must be > 0")
 
         # Extra vLLM engine kwargs (passed through to vLLM EngineArgs by ms-swift VllmEngine).
         # This is useful to avoid hard-coded vLLM defaults that can break long-context multimodal rollouts.
@@ -3825,9 +3776,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "rollout_matching.vllm.cpu_offload_gb must be a float"
                 ) from exc
             if cpu_offload_gb < 0:
-                raise ValueError(
-                    "rollout_matching.vllm.cpu_offload_gb must be >= 0"
-                )
+                raise ValueError("rollout_matching.vllm.cpu_offload_gb must be >= 0")
             vllm_engine_kwargs["cpu_offload_gb"] = cpu_offload_gb
         if "swap_space" in vcfg and vcfg.get("swap_space") is not None:
             try:
@@ -3837,9 +3786,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "rollout_matching.vllm.swap_space must be a float"
                 ) from exc
             if swap_space < 0:
-                raise ValueError(
-                    "rollout_matching.vllm.swap_space must be >= 0"
-                )
+                raise ValueError("rollout_matching.vllm.swap_space must be >= 0")
             vllm_engine_kwargs["swap_space"] = swap_space
         if (
             "limit_mm_per_prompt" in vcfg
@@ -4007,7 +3954,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         Full merged-weight sync is the only supported mode in this stack.
         """
         vcfg = self._cfg("vllm", {}) or {}
-        enable_lora = bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
+        enable_lora = (
+            bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
+        )
         if enable_lora:
             raise RuntimeError(
                 "vLLM rollouts require full merged-weight sync in this stack: "
@@ -4422,11 +4371,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             del engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+        except (
+            AttributeError,
+            NameError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             pass
         try:
             del raw_engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+        except (
+            AttributeError,
+            NameError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             pass
 
         # Sleep-mode globals can retain mempools even when sleep mode is disabled.
@@ -4707,7 +4670,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     len(samples_dump),
                 )
             except Exception as exc:
-                logger.warning("Failed to write vLLM server debug dump %s: %r", path, exc)
+                logger.warning(
+                    "Failed to write vLLM server debug dump %s: %r", path, exc
+                )
 
         self._submit_dump_write(
             kind="vllm_server_debug_dump",
@@ -5088,9 +5053,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+            raise ValueError("rollout_matching.repetition_penalty must be > 0")
 
         # Build GenerationConfig from model defaults.
         gen_cfg = getattr(self.model, "generation_config", None)
@@ -5122,7 +5085,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         from swift.llm import to_device
 
         # Optional: offload training state during rollout generation (config-controlled).
-        with self._maybe_rollout_offload_context(rollout_backend="hf"): 
+        with self._maybe_rollout_offload_context(rollout_backend="hf"):
             idx = 0
             while idx < len(samples):
                 chunk = list(samples[idx : idx + mb])
@@ -5512,7 +5475,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
         return self._rollout_many_vllm_colocate(samples)
 
-
     @torch.no_grad()
     def _rollout_many_vllm_traced(
         self,
@@ -5573,9 +5535,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+            raise ValueError("rollout_matching.repetition_penalty must be > 0")
 
         if with_logprobs and float(temperature) > 0.0:
             raise ValueError(
@@ -5670,9 +5630,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     )
                 )
                 if len(token_logprobs) != len(generated_token_text):
-                    trace_pair_len = min(
-                        len(token_logprobs), len(generated_token_text)
-                    )
+                    trace_pair_len = min(len(token_logprobs), len(generated_token_text))
                     logger.warning(
                         "vLLM rollout trace payload length mismatch; clamping to common length. "
                         "sample_idx=%s token_ids=%s logprobs=%s text=%s",
@@ -5767,9 +5725,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         temperature, top_p, top_k = self._decoding_params()
         repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
         if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+            raise ValueError("rollout_matching.repetition_penalty must be > 0")
 
         if with_logprobs and float(temperature) > 0.0:
             raise ValueError(
@@ -5918,7 +5874,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         results: List[Any] = [None] * len(infer_requests)
 
-
         def _infer_on_server(server_idx: int, start: int, end: int) -> None:
             if start >= end:
                 return
@@ -5927,7 +5882,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # Derive per-server-call seed so per-request seeds are stable.
             req_cfg = dict(base_request_config_dict)
             req_cfg["seed"] = int(
-                self._normalize_rollout_seed_int32(int(effective_seed_base + int(start)))
+                self._normalize_rollout_seed_int32(
+                    int(effective_seed_base + int(start))
+                )
             )
 
             payload = {
@@ -6025,7 +5982,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         generated_token_text,
                     )
                 else:
-                    token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
+                    token_ids, text, prompt_ids = self._parse_vllm_server_output(
+                        raw_out
+                    )
                     prompt_ids = self._strip_left_padding_token_ids(
                         prompt_ids,
                         pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
@@ -6087,7 +6046,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         return out
-
 
     def _prepare_samples_for_rollout(
         self,
@@ -7016,7 +6974,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     fn_bbox_groups.append(
                         {
                             "pos": [
-                                int(len(prompt_ids) + int(len(parse.prefix_token_ids)) + int(p))
+                                int(
+                                    len(prompt_ids)
+                                    + int(len(parse.prefix_token_ids))
+                                    + int(p)
+                                )
                                 for p in rel_pos
                             ],
                             "gt_bins": [int(x) for x in obj.points_norm1000],
@@ -7846,8 +7808,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         rollout_active = any(
             int(m.get("rollout_len", 0)) > 0
-            or str(m.get("decode_mode", "none") or "none").strip().lower()
-            != "none"
+            or str(m.get("decode_mode", "none") or "none").strip().lower() != "none"
             for m in meta
         )
         if not rollout_active:
@@ -7991,7 +7952,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "rollout/parse_obj_drop_frac": float(obj_drop_frac),
             "rollout/sample_valid_pred_rate": float(sample_valid_pred_rate),
             "rollout/sample_any_match_rate": float(sample_any_match_rate),
-            "rollout/fn_appended_total": float(sum(int(m.get("fn_count", 0)) for m in meta)),
+            "rollout/fn_appended_total": float(
+                sum(int(m.get("fn_count", 0)) for m in meta)
+            ),
             "rollout/gating_rejections": float(gate_rejections_total),
             "rollout/gating_rejection_rate": float(gate_rejection_rate),
             "rollout/valid_pred_objects_total": float(pred_total),
@@ -8106,7 +8069,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             float(sample_total / float(pending.n_micro)) if pending.n_micro > 0 else 0.0
         )
 
-
         if sample_total > 0.0:
             if float(getattr(pending, "loss_weight_sum", 0.0)) > 0.0:
                 denom = float(pending.loss_weight_sum)
@@ -8116,7 +8078,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 )
                 for key in atom_keys:
                     payload[str(key)] = float(
-                        float(getattr(pending, "objective_atom_weighted_sum", {}).get(key, 0.0))
+                        float(
+                            getattr(pending, "objective_atom_weighted_sum", {}).get(
+                                key, 0.0
+                            )
+                        )
                         / denom
                     )
             elif pending.n_micro > 0:
@@ -8150,12 +8116,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 payload["rollout/_parse_truncated_den"] = float(sample_total)
 
             payload["time/rollout_generate_s"] = float(pending.time_rollout_generate_s)
-            payload["time/rollout_parse_match_s"] = float(pending.time_rollout_parse_match_s)
+            payload["time/rollout_parse_match_s"] = float(
+                pending.time_rollout_parse_match_s
+            )
             payload["time/rollout_teacher_encode_s"] = float(
                 pending.time_rollout_teacher_encode_s
             )
         if pending.time_post_rollout_pack_s > 0:
-            payload["time/post_rollout_pack_s"] = float(pending.time_post_rollout_pack_s)
+            payload["time/post_rollout_pack_s"] = float(
+                pending.time_post_rollout_pack_s
+            )
 
         if pending.packing_count > 0:
             payload["packing/post_rollout_fill"] = float(
@@ -8258,7 +8228,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         coord_token_ids = self._get_coord_token_ids()
         coord_id_set = {int(i) for i in coord_token_ids if int(i) >= 0}
 
-        coord_decode_mode = str(self._cfg("coord_decode_mode", "exp") or "exp").strip().lower()
+        coord_decode_mode = (
+            str(self._cfg("coord_decode_mode", "exp") or "exp").strip().lower()
+        )
         if coord_decode_mode not in {"exp", "st"}:
             raise ValueError(
                 "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
@@ -8346,7 +8318,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 objective_atoms=objective_atoms,
                 time_forward_s=float(t_fwd_s),
                 time_mask_build_s=float(0.0),
-                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
+                batch_metrics=batch_metrics
+                if isinstance(batch_metrics, Mapping)
+                else None,
             )
         except (TypeError, ValueError):
             raise
@@ -8431,9 +8405,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         eval_prompt_variant = self._eval_prompt_variant()
         eval_detection_cfg = self._eval_detection_cfg()
         eval_detection_enabled = bool(eval_detection_cfg.get("enabled", True))
-        eval_detection_score_mode = str(
-            eval_detection_cfg.get("score_mode", "constant") or "constant"
-        ).strip().lower()
+        eval_detection_score_mode = (
+            str(eval_detection_cfg.get("score_mode", "constant") or "constant")
+            .strip()
+            .lower()
+        )
         eval_detection_const_score = float(
             eval_detection_cfg.get("constant_score", 1.0) or 1.0
         )
@@ -8575,8 +8551,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             # Mark early to avoid duplicate dumps in the same global_step.
             self._monitor_dump_last_step = int(gs)
 
-        with torch.no_grad(), self._maybe_eval_vllm_colocate_window(
-            rollout_backend=eval_rollout_backend
+        with (
+            torch.no_grad(),
+            self._maybe_eval_vllm_colocate_window(rollout_backend=eval_rollout_backend),
         ):
             for batch in dl:
                 # For rollout-matching, we expect identity_data_collator to yield a
@@ -8600,7 +8577,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         rollout_backend=eval_rollout_backend,
                     )
                     if eval_rollout_backend == "hf":
-                        rollout_results = self._rollout_many_hf_traced(batch_for_rollout)
+                        rollout_results = self._rollout_many_hf_traced(
+                            batch_for_rollout
+                        )
                         if len(rollout_results) != len(batch):
                             raise RuntimeError(
                                 "rollout backend returned unexpected number of results"
@@ -8792,9 +8771,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             trace_invalid_reason: Optional[str] = None
                             trace_fallback_counted_this_sample = False
                             if confidence_postop_opts is None:
-                                trace_invalid_reason = (
-                                    "confidence_postop_opts missing for eval-step scoring"
-                                )
+                                trace_invalid_reason = "confidence_postop_opts missing for eval-step scoring"
                             elif token_logprobs is None or generated_token_text is None:
                                 trace_invalid_reason = (
                                     "eval-step confidence scoring requires token traces"
@@ -8853,11 +8830,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                         object_field_order=object_field_order,
                                         record_index=eval_record_index,
                                     )
-                                    confidence_objects = _compute_sample_confidence_objects(
-                                        line_idx=int(eval_record_index),
-                                        record=record,
-                                        trace=trace,
-                                        options=confidence_postop_opts,
+                                    confidence_objects = (
+                                        _compute_sample_confidence_objects(
+                                            line_idx=int(eval_record_index),
+                                            record=record,
+                                            trace=trace,
+                                            options=confidence_postop_opts,
+                                        )
                                     )
                                     scored_record = _build_scored_record(
                                         record=record,
@@ -8952,7 +8931,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             prec_local = (matched_n / pred_n) if pred_n > 0 else 0.0
                             rec_local = (matched_n / gt_n) if gt_n > 0 else 0.0
                             f1_local = (
-                                (2.0 * prec_local * rec_local / (prec_local + rec_local))
+                                (
+                                    2.0
+                                    * prec_local
+                                    * rec_local
+                                    / (prec_local + rec_local)
+                                )
                                 if (prec_local + rec_local) > 0.0
                                 else 0.0
                             )
@@ -8990,7 +8974,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                         "matched_pairs": list(match.matched_pairs),
                                         "fn_gt_indices": list(match.fn_gt_indices),
                                         "fp_pred_indices": list(match.fp_pred_indices),
-                                        "gating_rejections": int(match.gating_rejections),
+                                        "gating_rejections": int(
+                                            match.gating_rejections
+                                        ),
                                     },
                                     "stats": {
                                         "decode_mode": str(_decode_mode),
@@ -9263,7 +9249,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 eval_detection_use_confidence_postop
                 and not trace_fallback_window_active
             )
-            eff_mode = "confidence_postop" if effective_confidence_postop else "constant"
+            eff_mode = (
+                "confidence_postop" if effective_confidence_postop else "constant"
+            )
             metrics[_k("rollout/effective_score_mode_is_constant")] = float(
                 1.0 if eff_mode == "constant" else 0.0
             )
@@ -9274,24 +9262,28 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metrics[_k("rollout/config_pred_score_version")] = float(
                 int(eval_detection_score_version)
             )
-            eff_version = 2 if effective_confidence_postop else int(
-                eval_detection_score_version
+            eff_version = (
+                2 if effective_confidence_postop else int(eval_detection_score_version)
             )
-            metrics[_k("rollout/effective_pred_score_version")] = float(int(eff_version))
+            metrics[_k("rollout/effective_pred_score_version")] = float(
+                int(eff_version)
+            )
 
             cfg_source = str(eval_detection_score_source or "").strip()
-            eff_source = "confidence_postop" if effective_confidence_postop else cfg_source
-            metrics[_k("rollout/config_pred_score_source_is_eval_rollout_constant")] = float(
-                1.0 if cfg_source == "eval_rollout_constant" else 0.0
+            eff_source = (
+                "confidence_postop" if effective_confidence_postop else cfg_source
             )
-            metrics[_k("rollout/config_pred_score_source_is_confidence_postop")] = float(
-                1.0 if cfg_source == "confidence_postop" else 0.0
+            metrics[_k("rollout/config_pred_score_source_is_eval_rollout_constant")] = (
+                float(1.0 if cfg_source == "eval_rollout_constant" else 0.0)
             )
-            metrics[_k("rollout/effective_pred_score_source_is_eval_rollout_constant")] = float(
-                1.0 if eff_source == "eval_rollout_constant" else 0.0
+            metrics[_k("rollout/config_pred_score_source_is_confidence_postop")] = (
+                float(1.0 if cfg_source == "confidence_postop" else 0.0)
             )
-            metrics[_k("rollout/effective_pred_score_source_is_confidence_postop")] = float(
-                1.0 if eff_source == "confidence_postop" else 0.0
+            metrics[
+                _k("rollout/effective_pred_score_source_is_eval_rollout_constant")
+            ] = float(1.0 if eff_source == "eval_rollout_constant" else 0.0)
+            metrics[_k("rollout/effective_pred_score_source_is_confidence_postop")] = (
+                float(1.0 if eff_source == "confidence_postop" else 0.0)
             )
 
         if eval_detection_enabled:
@@ -9404,7 +9396,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             metrics[_k("rollout/mAP")] = 0.0
             coco_metrics_recv = recv_payload.get("metrics", {})
-            if isinstance(coco_metrics_recv, Mapping) and "bbox_AP" in coco_metrics_recv:
+            if (
+                isinstance(coco_metrics_recv, Mapping)
+                and "bbox_AP" in coco_metrics_recv
+            ):
                 try:
                     metrics[_k("rollout/mAP")] = float(coco_metrics_recv["bbox_AP"])
                 except (TypeError, ValueError):

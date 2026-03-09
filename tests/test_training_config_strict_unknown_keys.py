@@ -179,6 +179,21 @@ def test_rollout_eval_rollout_backend_null_inherits() -> None:
     assert "must be one of" in msg
 
 
+def test_rollout_eval_rollout_backend_accepts_hf() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.eval_rollout_backend == "hf"
+
+
 def test_rollout_eval_rollout_backend_invalid_value_fails_fast() -> None:
     payload = _base_training_payload()
     payload["rollout_matching"] = {
@@ -193,6 +208,8 @@ def test_rollout_eval_rollout_backend_invalid_value_fails_fast() -> None:
 
     msg = str(exc.value)
     assert "rollout_matching.eval_rollout_backend" in msg
+    assert "must be one of" in msg
+    assert "hf" in msg.lower()
     assert "vllm" in msg.lower()
 
 
@@ -404,7 +421,10 @@ def _base_stage2_two_channel_payload() -> dict:
     }
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": _canonical_stage2_two_channel_objective(), "diagnostics": []},
+        "pipeline": {
+            "objective": _canonical_stage2_two_channel_objective(),
+            "diagnostics": [],
+        },
         "channel_b": {},
     }
     return payload
@@ -422,7 +442,9 @@ def _base_stage2_rollout_aligned_payload() -> dict:
     return payload
 
 
-def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict | None = None) -> dict:
+def _pipeline_token_ce_spec(
+    *, channels: list[str] | None = None, config: dict | None = None
+) -> dict:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
         "self_context_struct_ce_weight": 0.1,
@@ -540,13 +562,17 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
         ],
     }
 
-    with pytest.raises(ValueError, match=r"Duplicate module name in stage2_ab\.pipeline\.objective"):
+    with pytest.raises(
+        ValueError, match=r"Duplicate module name in stage2_ab\.pipeline\.objective"
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage2_pipeline_canonical_channels_scope_parses():
     payload = _base_stage2_two_channel_payload()
-    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.stage2_ab is not None
@@ -604,5 +630,7 @@ def test_stage2_pipeline_disallows_flat_objective_knobs():
         }
     )
 
-    with pytest.raises(ValueError, match=r"Flat stage2_ab objective knobs have been removed"):
+    with pytest.raises(
+        ValueError, match=r"Flat stage2_ab objective knobs have been removed"
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
