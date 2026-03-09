@@ -2,53 +2,36 @@
 
 ## Mission
 - Evolve CoordExp into a general grounding/detection research stack; keep runs reproducible and paper-ready.
-- Direction: `docs/PROJECT_CONTEXT.md` for precedence/read-order, `docs/SYSTEM_OVERVIEW.md` for end-to-end flow, and `docs/IMPLEMENTATION_MAP.md` for code/test routing. Use `progress/README.md` and the linked notes only for background and historical reasoning. Prefer YAML-first experiments in `configs/` over ad-hoc scripts.
-- Defaults: single-dataset training; packing is the primary efficiency lever; fusion-config training is legacy/experimental.
+- Follow precedence: `docs/PROJECT_CONTEXT.md` -> `docs/SYSTEM_OVERVIEW.md` -> `docs/IMPLEMENTATION_MAP.md`.
+- Use `progress/README.md` only for historical context.
 
-## Working Style (Research-Grade)
-- Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability; keep rationales short.
-- State assumptions when underspecified; choose the simplest viable approach; do not invent metrics/results.
-- Fail fast: surface unexpected errors or behavior immediately.
-- Do not let unexpected errors or behavior slide away; document and resolve the root cause before moving on.
-- Code & architecture style guidance: `docs/standards/CODE_STYLE.md` (Transformers-inspired “Option A”)
+## Defaults
+- Single-dataset training.
+- Packing is the primary efficiency lever.
+- Fusion-config training is legacy/experimental.
 
 ## Guardrails
 - Config-first; avoid new CLI flags; keep Qwen3-VL chat-template compatibility.
 - Preserve geometry (never drop/reorder coords); use `src/datasets/geometry.py`; training uses `do_resize=false`.
-- Do not edit upstream HF model files like `modeling_qwen3_vl.py` (off-limits).
+- Do not edit upstream HF model files like `modeling_qwen3_vl.py`.
 - For architectural/contract changes, follow OpenSpec governance.
 
-## Repo Safety (Prevent Data Loss)
-- Never run destructive cleanup commands unless the user explicitly asked (examples: `git restore`, `git clean -fd`, `git reset --hard`, `git checkout -- <path>`, `rm -rf`). If suggesting such a command, warn that it can delete uncommitted/untracked work.
-- This is a concurrent developing environment—dirty changes from parallel work are always expected and acceptable. Focus only on your own edited changes.
-- Prefer small, incremental commits (or a `git stash`) during large refactors so work can’t be accidentally discarded.
+## Workflow
+- Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability.
+- State assumptions when underspecified; choose the simplest viable approach; do not invent metrics/results.
+- Fail fast on unexpected behavior and resolve root causes.
+
+## Repo Safety
+- Never run destructive cleanup commands unless explicitly asked.
+- Dirty changes from parallel work are expected; focus only on your edits.
+- Prefer small, incremental commits during large refactors.
+
+## Navigation
+- Use `coordexp-codebase` for entrypoints and workflow pointers.
+- Use `coordexp-research-context` for broad background, read-order, and historical Stage-2 context.
+- For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 
 ## Environment
-- Repo root: `.`.
-- Use `conda run -n ms python ...` for commands (e.g., tests).
+- Repo root: `.`
+- Use `conda run -n ms python ...` for tests.
 - Use `temp/` for one-off debug artifacts; clean up when done.
-
-## Navigation (Progressive)
-- Source of truth: `docs/` (do not duplicate docs into global instructions).
-- For whole-project background or historical context, start with `docs/PROJECT_CONTEXT.md`, then `docs/SYSTEM_OVERVIEW.md`, then `docs/IMPLEMENTATION_MAP.md`. Open `progress/README.md` only when you need historical context or design archaeology.
-- Use the `coordexp-codebase` skill for doc index, entrypoints, and config workflow pointers.
-- Use the `coordexp-research-context` skill when you need broad project background, read-order, grep seeds, or historical Stage-2 context before implementation/audit work.
-- For any file matching `*.py`, **Serena MCP is mandatory** for exploration and editing (symbol-aware navigation and edits). Serena MCP is the authoritative and precise method for all Python code operations.
-- For Serena searches (`find_symbol`, `search_for_pattern`, `find_referencing_symbols`), **never** use `"relative_path": "."` or omit `relative_path` (repo-wide scan is extremely slow). First use CLI search (e.g. `rg`) to narrow candidate files/dirs, then re-run Serena with the smallest viable `relative_path` (single file or tight subdir).
-- Do **not** use Serena MCP for non-Python files (e.g., `*.md`, `*.sh`, `*.json`, `*.txt`). Use standard tools such as `rg`, `cat`, or appropriate editors for those.
-- Use Serena MCP’s `activate_project` when exploring Python code in external libraries or repositories outside the current working directory.
-
-## Codex Sub-Agents (Async Reviews)
-- Prioritize quality first, then speed.
-- Spawn sub-agents whenever parallel work can improve correctness or throughput.
-- No fixed cap: use as many sub-agents as needed.
-- Each agent must report only high-confidence findings with file:line evidence.
-- Main agent must verify sub-agent findings against repo sources before final response.
-- Main agent owns final decisions, edits, and output quality.
-
-## Scope
-- In: coord vocab/expectation decoding, set matching losses, rollout-based consistency, grounding evaluation.
-- Out (unless approved): large architecture forks, bespoke RL loops, custom vision backbones.
-
-**Always leverage `Sub-Agents` whenever appropriate**
-**Always leverage `Sub-Agents` whenever appropriate**
