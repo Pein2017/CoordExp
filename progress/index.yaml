@@ -65,7 +65,7 @@ notes:
     title: Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun
     kind: diagnosis
     status: active-diagnostic
-    summary: Pre-fix baseline plus post-fix rerun showing UL capture largely fixed while broader over-generation remains unresolved.
+    summary: Pre-fix baseline plus post-fix rerun showing UL capture largely fixed; labeled eval overlays suggest many apparent FPs are unlabeled real objects while train-side over-generation remains unresolved.
   - path: progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md
     title: Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash
     kind: diagnosis

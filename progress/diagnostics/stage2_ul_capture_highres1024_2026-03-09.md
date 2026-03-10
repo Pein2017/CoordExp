@@ -349,8 +349,10 @@ Post-fix rerun artifact:
 
 Important limitation:
 
-- this update is based on `logging.jsonl`,
-- not on a new post-fix monitor dump.
+- this update now combines:
+  - rerun train / eval scalars from `logging.jsonl`,
+  - the rerun eval monitor dump `.../monitor_dumps/step_000300.json`,
+  - and labeled overlay renders under `temp/monitor_vis_step300_labeled/`.
 
 ### 6.1 The old duplicate-capture failure is mainly gone
 
@@ -463,7 +465,52 @@ Interpretation:
 
 This is a monitor-based hypothesis, not a proven causal conclusion, but it is the strongest new clue in the rerun.
 
-### 6.5 Updated conclusion
+### 6.5 Labeled rerun overlays correct the earlier “hallucination / mislocalized” read
+
+The first unlabeled visual pass on the rerun step-300 monitor dump was too harsh.
+
+After adding per-box `desc` labels and rechecking the rerun overlays in `temp/monitor_vis_step300_labeled/`, the dominant interpretation is:
+
+- many unmatched red boxes correspond to **real visible objects or real object regions**,
+- several apparent eval `FP`s are better explained as **unlabeled real objects** or **class ambiguity on real objects**,
+- and there is **no strong visual evidence of systematic mislocalization** in the sampled rerun eval images.
+
+Representative rerun examples:
+
+- `noncrowded_kitchen_87140591468869.png`
+  - the extra countertop predictions mostly land on real visible small objects / clutter,
+  - this is better explained by under-labeling plus ontology ambiguity than by hallucination.
+- `lowobj_semantic_overlap_87140591468709.png`
+  - the extra `dining table` / `couch` predictions land on real furniture / table regions,
+  - so this is a semantic-label ambiguity case, not a wrong-location case.
+- `bookshelf_books_87140591468546.png`
+  - many extra `book` boxes correspond to real visible books on the shelf,
+  - some boxes remain coarse or redundant, but the dominant issue is **not** obvious bed-region hallucination.
+- `crowd_person_87140591468885.png`
+  - many unmatched `person` boxes still sit on visible spectators along the ridge,
+  - so the residual issue is better described as crowded-scene proposal density / redundancy than hallucination.
+- `baseball_bats_87140591469043.png`
+  - many extra `baseball bat` boxes still correspond to real visible bats in the pile,
+  - with some coarse or oversized proposals rather than clearly spurious objects.
+
+What still looks trustworthy after the labeled review:
+
+- the sampled rerun eval images still contain real `FN` misses,
+- some predictions are too coarse or redundant,
+- and class ambiguity remains in a few scenes.
+
+What the labeled rerun overlays do **not** support:
+
+- a broad “non-crowded hallucination” story,
+- or a broad “boxes are landing on the wrong place” story.
+
+So the most reliable eval-image failure signal in the rerun is now:
+
+- real `FN` misses,
+- plus dense-scene redundant / coarse proposals,
+- rather than generic hallucination or systematic mislocalization.
+
+### 6.6 Updated conclusion
 
 The note’s original crowded-scene caution still matters.
 
@@ -471,8 +518,10 @@ The rerun sharpens the story:
 
 1. the old duplicate-capture failure is **mainly gone**,
 2. average-case eval is still good,
-3. but the real issue is still unsolved because train-side rollout remains in a severe over-generation regime,
-4. and the remaining pathology no longer looks primarily like missing same-desc duplicate UL capture.
+3. the rerun eval-monitor images do **not** provide strong evidence for broad hallucination or systematic mislocalization,
+4. many apparent eval `FP`s are plausibly unlabeled real objects or class-ambiguous real regions,
+5. but the real issue is still unsolved because train-side rollout remains in a severe over-generation regime,
+6. and the remaining pathology no longer looks primarily like missing same-desc duplicate UL capture.
 
 So the post-fix question is no longer:
 
@@ -480,9 +529,10 @@ So the post-fix question is no longer:
 
 It is now closer to:
 
-> why does the model still over-generate so aggressively even when duplicate-target capture is mostly fixed?
+> why does the model still over-generate so aggressively in train windows even when duplicate-target capture is mostly fixed, while sampled eval images often show real-but-unlabeled objects rather than pure hallucination?
 
 The most plausible next diagnostic targets are:
 
 - broad overlap / cardinality control beyond same-desc duplicate certification,
-- and the balance among `coord_soft_ce`, `coord_token_ce`, `bbox_ciou`, and `bbox_smoothl1`.
+- the balance among `coord_soft_ce`, `coord_token_ce`, `bbox_ciou`, and `bbox_smoothl1`,
+- and the gap between train-batch overlap metrics and the cleaner-looking sampled eval overlays.
