@@ -1,0 +1,23 @@
+# Export an official COCO detection submission JSON from scored CoordExp predictions.
+#
+# Run:
+#   PYTHONPATH=. conda run -n ms python scripts/export_coco_submission.py \
+#     --config configs/eval/coco_submission.yaml
+
+# Required inputs.
+# `pred_jsonl` should come from the 1024-budget resized infer run.
+pred_jsonl: output/infer/example_coco_testdev_res1024_run/gt_vs_pred_scored.jsonl
+# `source_jsonl` must stay at the original COCO test-dev resolution so the exporter
+# can project predictions back before writing the official submission JSON.
+source_jsonl: public_data/coco/raw/test-dev.jsonl
+categories_json: public_data/coco/raw/categories.json
+
+# Output artifact written in official COCO detection format.
+out_json: output/infer/example_coco_testdev_res1024_run/coco_submission.json
+
+# Parsing / label mapping policy.
+strict_parse: true
+semantic_model: sentence-transformers/all-MiniLM-L6-v2
+semantic_threshold: 0.6
+semantic_device: auto
+semantic_batch_size: 64

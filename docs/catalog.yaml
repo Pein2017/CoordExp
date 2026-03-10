@@ -101,6 +101,10 @@ docs:
       title: Evaluation Workflow
       type: runbook
       status: canonical
+    - path: docs/eval/COCO_TEST_SUBMISSION.md
+      title: COCO Test-Dev Submission
+      type: runbook
+      status: canonical
   standards:
     - path: docs/standards/README.md
       title: Standards

@@ -14,6 +14,7 @@ from src.eval.detection import (
     _prepare_all_separate,
     _prepare_pred_objects,
     evaluate_and_save,
+    export_coco_submission,
     preds_to_gt_records,
 )
 
@@ -231,8 +232,11 @@ def test_evaluate_and_save_fails_when_semantic_encoder_unavailable(
         semantic_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
-    with pytest.raises(RuntimeError, match="Description matching requires the semantic encoder"):
+    with pytest.raises(
+        RuntimeError, match="Description matching requires the semantic encoder"
+    ):
         evaluate_and_save(pred_path, options=options)
+
 
 def test_evaluate_and_save_f1ish_fails_when_semantic_encoder_unavailable(
     tmp_path: Path, monkeypatch
@@ -262,8 +266,11 @@ def test_evaluate_and_save_f1ish_fails_when_semantic_encoder_unavailable(
         semantic_model="sentence-transformers/all-MiniLM-L6-v2",
     )
 
-    with pytest.raises(RuntimeError, match="F1-ish semantic filtering requires the semantic encoder"):
+    with pytest.raises(
+        RuntimeError, match="F1-ish semantic filtering requires the semantic encoder"
+    ):
         evaluate_and_save(pred_path, options=options)
+
 
 def test_eval_options_rejects_empty_semantic_model() -> None:
     with pytest.raises(ValueError, match="semantic_model must be a non-empty"):
@@ -363,13 +370,149 @@ def test_coco_export_preserves_input_order_on_score_ties(tmp_path: Path) -> None
     )
     evaluate_and_save(pred_path, options=options)
 
-    coco_preds = json.loads((options.output_dir / "coco_preds.json").read_text(encoding="utf-8"))
+    coco_preds = json.loads(
+        (options.output_dir / "coco_preds.json").read_text(encoding="utf-8")
+    )
     assert [entry["bbox"] for entry in coco_preds] == [[0, 0, 20, 20], [10, 10, 20, 20]]
+
+
+def test_export_coco_submission_uses_source_image_ids(tmp_path: Path) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    pred_records = [
+        _one_record(image="images/test2017/000000000101.jpg"),
+        _one_record(image="images/test2017/000000000202.jpg"),
+    ]
+    pred_records[0]["pred"][0]["points"] = [10, 5, 30, 20]
+    pred_records[1]["pred"][0]["points"] = [4, 8, 14, 18]
+    _write_jsonl(
+        pred_path,
+        pred_records,
+    )
+
+    source_path = tmp_path / "test-dev.jsonl"
+    _write_jsonl(
+        source_path,
+        [
+            {
+                "images": ["images/test2017/000000000101.jpg"],
+                "objects": [],
+                "width": 128,
+                "height": 96,
+                "image_id": 101,
+            },
+            {
+                "images": ["images/test2017/000000000202.jpg"],
+                "objects": [],
+                "width": 128,
+                "height": 96,
+                "image_id": 202,
+            },
+        ],
+    )
+
+    categories_json = tmp_path / "categories.json"
+    categories_json.write_text(
+        json.dumps([{"id": 7, "name": "box"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    out_json = tmp_path / "submission" / "coco_submission.json"
+
+    summary = export_coco_submission(
+        pred_path,
+        source_jsonl=source_path,
+        categories_json=categories_json,
+        out_json=out_json,
+        options=EvalOptions(
+            metrics="coco",
+            strict_parse=True,
+            use_segm=False,
+            output_dir=out_json.parent,
+            overlay=False,
+            num_workers=0,
+        ),
+    )
+
+    exported = json.loads(out_json.read_text(encoding="utf-8"))
+    assert [row["image_id"] for row in exported] == [101, 202]
+    assert [row["category_id"] for row in exported] == [7, 7]
+    assert [row["bbox"] for row in exported] == [
+        [20.0, 10.0, 40.0, 30.0],
+        [8.0, 16.0, 20.0, 20.0],
+    ]
+    assert summary["predictions_total"] == 2
+    assert (out_json.parent / "submission_summary.json").exists()
+
+
+def test_export_coco_submission_semantic_maps_unknown_desc(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    record = _one_record(image="images/test2017/000000000303.jpg", pred_desc="kitten")
+    _write_jsonl(pred_path, [record])
+
+    source_path = tmp_path / "test-dev.jsonl"
+    _write_jsonl(
+        source_path,
+        [
+            {
+                "images": ["images/test2017/000000000303.jpg"],
+                "objects": [],
+                "width": 64,
+                "height": 48,
+                "image_id": 303,
+            }
+        ],
+    )
+
+    categories_json = tmp_path / "categories.json"
+    categories_json.write_text(
+        json.dumps([{"id": 11, "name": "cat"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class _StubEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            import numpy as np
+
+            if "kitten" in texts:
+                return {
+                    "kitten": np.array([1.0, 0.0], dtype=np.float32),
+                    "cat": np.array([1.0, 0.0], dtype=np.float32),
+                }
+            return {str(t): np.array([1.0, 0.0], dtype=np.float32) for t in texts}
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _StubEncoder)
+
+    out_json = tmp_path / "submission" / "coco_submission.json"
+    export_coco_submission(
+        pred_path,
+        source_jsonl=source_path,
+        categories_json=categories_json,
+        out_json=out_json,
+        options=EvalOptions(
+            metrics="coco",
+            strict_parse=True,
+            use_segm=False,
+            output_dir=out_json.parent,
+            overlay=False,
+            num_workers=0,
+            semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+        ),
+    )
+
+    exported = json.loads(out_json.read_text(encoding="utf-8"))
+    assert exported[0]["image_id"] == 303
+    assert exported[0]["category_id"] == 11
 
 
 def test_prepare_pred_objects_rejects_nested_points_by_default() -> None:
     counters = EvalCounters()
-    options = EvalOptions(strict_parse=False, use_segm=False, output_dir=Path("eval_out"))
+    options = EvalOptions(
+        strict_parse=False, use_segm=False, output_dir=Path("eval_out")
+    )
 
     preds, invalid = _prepare_pred_objects(
         {

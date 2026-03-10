@@ -17,7 +17,8 @@ Use this folder for the current infer -> score -> evaluate workflow.
 
 1. [CONTRACT.md](CONTRACT.md)
 2. [WORKFLOW.md](WORKFLOW.md)
-3. [../ARTIFACTS.md](../ARTIFACTS.md)
+3. [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md) for official test-dev benchmarking
+4. [../ARTIFACTS.md](../ARTIFACTS.md)
 
 ## Page Roles
 
@@ -25,6 +26,8 @@ Use this folder for the current infer -> score -> evaluate workflow.
   - evaluator inputs, outputs, invariants, and failure modes
 - [WORKFLOW.md](WORKFLOW.md)
   - YAML-first operational flow from inference to visualization
+- [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
+  - end-to-end runbook for 1024-budget COCO test-dev inference and official submission export
 - [../ARTIFACTS.md](../ARTIFACTS.md)
   - run artifacts and provenance surfaces
 
@@ -32,4 +35,5 @@ Use this folder for the current infer -> score -> evaluate workflow.
 
 - "What JSONL does the evaluator expect?"
 - "What is the current production workflow?"
+- "How do I run a real COCO test-dev benchmark and upload it?"
 - "Which artifacts should exist after a valid infer/eval run?"

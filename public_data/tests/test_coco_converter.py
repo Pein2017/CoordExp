@@ -43,11 +43,29 @@ def test_coco_converter_and_validator_smoke():
             "categories": _make_80_categories(),
             "annotations": [
                 # valid
-                {"id": 10, "image_id": 1, "category_id": 1, "iscrowd": 0, "bbox": [10, 20, 30, 10]},
+                {
+                    "id": 10,
+                    "image_id": 1,
+                    "category_id": 1,
+                    "iscrowd": 0,
+                    "bbox": [10, 20, 30, 10],
+                },
                 # out-of-bounds (should be skipped by default)
-                {"id": 11, "image_id": 1, "category_id": 2, "iscrowd": 0, "bbox": [-1, 0, 10, 10]},
+                {
+                    "id": 11,
+                    "image_id": 1,
+                    "category_id": 2,
+                    "iscrowd": 0,
+                    "bbox": [-1, 0, 10, 10],
+                },
                 # crowd (skipped by default)
-                {"id": 12, "image_id": 1, "category_id": 3, "iscrowd": 1, "bbox": [0, 0, 1, 1]},
+                {
+                    "id": 12,
+                    "image_id": 1,
+                    "category_id": 3,
+                    "iscrowd": 1,
+                    "bbox": [0, 0, 1, 1],
+                },
             ],
         }
         ann_path.write_text(json.dumps(coco) + "\n", encoding="utf-8")
@@ -105,7 +123,53 @@ def test_coco_converter_and_validator_smoke():
         assert sample_out.exists()
 
 
+def test_coco_converter_supports_testdev_image_info() -> None:
+    from public_data.scripts import convert_coco2017_instances
+
+    with tempfile.TemporaryDirectory() as tmp:
+        raw_dir = Path(tmp) / "raw"
+        (raw_dir / "annotations").mkdir(parents=True, exist_ok=True)
+
+        ann_path = raw_dir / "annotations" / "image_info_test-dev2017.json"
+        out_jsonl = raw_dir / "test-dev.jsonl"
+
+        payload = {
+            "images": [
+                {
+                    "id": 42,
+                    "file_name": "000000000042.jpg",
+                    "width": 128,
+                    "height": 96,
+                }
+            ],
+            "categories": _make_80_categories(),
+            "licenses": [],
+            "info": {"description": "COCO 2017 test-dev"},
+        }
+        ann_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+        rc = _run_main(
+            convert_coco2017_instances,
+            [
+                "--split",
+                "test-dev",
+                "--raw_dir",
+                str(raw_dir),
+                "--output",
+                str(out_jsonl),
+                "--require-80-categories",
+            ],
+        )
+        assert rc == 0
+        row = json.loads(out_jsonl.read_text(encoding="utf-8").strip())
+        assert row["images"] == ["images/test2017/000000000042.jpg"]
+        assert row["objects"] == []
+        assert row["image_id"] == 42
+        assert row["metadata"]["split"] == "test-dev"
+
+
 if __name__ == "__main__":
     # Keep parity with existing public_data/tests/*.py style.
     test_coco_converter_and_validator_smoke()
+    test_coco_converter_supports_testdev_image_info()
     print("✓ COCO converter/validator smoke test passed")

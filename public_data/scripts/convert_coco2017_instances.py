@@ -6,6 +6,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, List, Sequence, Tuple
 
+_SPLIT_TO_ANNOTATION = {
+    "train": "instances_train2017.json",
+    "val": "instances_val2017.json",
+    "test": "image_info_test2017.json",
+    "test-dev": "image_info_test-dev2017.json",
+}
+
+_SPLIT_TO_IMAGE_DIR = {
+    "train": "train2017",
+    "val": "val2017",
+    "test": "test2017",
+    "test-dev": "test2017",
+}
+
+_TEST_SPLITS = {"test", "test-dev"}
+
 
 @dataclass
 class ConvertStats:
@@ -48,7 +64,9 @@ def _clip_xyxy(
     )
 
 
-def _is_bbox_valid(x1: float, y1: float, x2: float, y2: float, *, eps: float = 1e-6) -> bool:
+def _is_bbox_valid(
+    x1: float, y1: float, x2: float, y2: float, *, eps: float = 1e-6
+) -> bool:
     return (x2 - x1) > eps and (y2 - y1) > eps
 
 
@@ -95,9 +113,9 @@ Notes:
     parser.add_argument(
         "--split",
         type=str,
-        choices=["train", "val"],
+        choices=sorted(_SPLIT_TO_ANNOTATION.keys()),
         required=True,
-        help="Dataset split for provenance/logging only",
+        help="Dataset split used for default annotation lookup and provenance",
     )
 
     parser.add_argument(
@@ -111,14 +129,20 @@ Notes:
         "--annotation",
         type=str,
         default=None,
-        help="Path to instances_*.json (defaults to <raw_dir>/annotations/instances_<split>2017.json)",
+        help=(
+            "Path to COCO annotations/image-info JSON "
+            "(defaults to <raw_dir>/annotations/<split-specific-default>.json)"
+        ),
     )
 
     parser.add_argument(
         "--image_dir_name",
         type=str,
-        required=True,
-        help='Directory name under raw/images (e.g. "train2017" or "val2017") used to build relative paths',
+        default=None,
+        help=(
+            "Directory name under raw/images used to build relative paths "
+            '(defaults by split, e.g. "train2017", "val2017", or "test2017")'
+        ),
     )
 
     parser.add_argument(
@@ -139,6 +163,25 @@ Notes:
         "--keep-empty",
         action="store_true",
         help="Keep images with zero kept objects (default: drop them)",
+    )
+
+    parser.add_argument(
+        "--include-test",
+        action="store_true",
+        help=(
+            "No-op for the direct converter. The public_data COCO plugin uses this flag "
+            "to request additional test/test-dev JSONL exports."
+        ),
+    )
+
+    parser.add_argument(
+        "--test-split",
+        choices=["test", "test-dev", "both"],
+        default="test-dev",
+        help=(
+            "No-op for the direct converter. The public_data COCO plugin uses this flag "
+            "to choose which test JSONL(s) to materialize."
+        ),
     )
 
     parser.add_argument(
@@ -169,9 +212,11 @@ Notes:
 
     raw_dir = Path(args.raw_dir)
     output_path = Path(args.output)
+    image_dir_name = args.image_dir_name or _SPLIT_TO_IMAGE_DIR[args.split]
+    keep_empty_effective = bool(args.keep_empty or args.split in _TEST_SPLITS)
 
     if args.annotation is None:
-        annotation_path = raw_dir / "annotations" / f"instances_{args.split}2017.json"
+        annotation_path = raw_dir / "annotations" / _SPLIT_TO_ANNOTATION[args.split]
     else:
         annotation_path = Path(args.annotation)
 
@@ -210,7 +255,9 @@ Notes:
             continue
         anns_by_image_id[int(ann["image_id"])].append(ann)
 
-    stats = ConvertStats(images_total=len(image_id_to_image), anns_total=len(annotations))
+    stats = ConvertStats(
+        images_total=len(image_id_to_image), anns_total=len(annotations)
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -220,9 +267,9 @@ Notes:
     print(f"  split: {args.split}")
     print(f"  annotation: {annotation_path}")
     print(f"  output: {output_path}")
-    print(f"  image_dir_name: {args.image_dir_name}")
+    print(f"  image_dir_name: {image_dir_name}")
     print(f"  max_samples: {args.max_samples}")
-    print(f"  keep_empty: {args.keep_empty}")
+    print(f"  keep_empty: {keep_empty_effective}")
     print(f"  keep_crowd: {args.keep_crowd}")
     print(f"  clip_boxes: {args.clip_boxes}")
     print(f"  keep_outside: {args.keep_outside}")
@@ -248,7 +295,7 @@ Notes:
             if not file_name or width <= 0 or height <= 0:
                 continue
 
-            rel_image_path = str(Path("images") / args.image_dir_name / file_name)
+            rel_image_path = str(Path("images") / image_dir_name / file_name)
 
             objs: List[Dict[str, Any]] = []
             for ann in sorted(anns_by_image_id.get(image_id, []), key=_ann_sort_key):
@@ -272,7 +319,9 @@ Notes:
                     continue
 
                 if args.clip_boxes:
-                    x1, y1, x2, y2 = _clip_xyxy(x1, y1, x2, y2, width=width, height=height)
+                    x1, y1, x2, y2 = _clip_xyxy(
+                        x1, y1, x2, y2, width=width, height=height
+                    )
                     if not _is_bbox_valid(x1, y1, x2, y2):
                         stats.anns_skipped_invalid_bbox += 1
                         continue
@@ -308,7 +357,7 @@ Notes:
                 )
                 stats.anns_kept += 1
 
-            if not objs and not args.keep_empty:
+            if not objs and not keep_empty_effective:
                 stats.images_skipped_empty += 1
                 continue
 
@@ -334,7 +383,8 @@ Notes:
 
     categories_out = output_path.parent / "categories.json"
     categories_payload = [
-        {"id": cid, "name": name} for cid, name in sorted(cat_id_to_name.items(), key=lambda x: x[0])
+        {"id": cid, "name": name}
+        for cid, name in sorted(cat_id_to_name.items(), key=lambda x: x[0])
     ]
     _write_json(categories_out, categories_payload)
 
