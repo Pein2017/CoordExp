@@ -1010,7 +1010,7 @@ class Stage2ABTrainingTrainer(
         self._stage2_train_monitor_candidates = []
 
     def _stage2_train_monitor_step_allowed(self, *, global_step: int) -> bool:
-        cfg = self._monitor_dump_cfg()
+        cfg = self._train_monitor_dump_cfg()
         if not bool(cfg.get("enabled", False)):
             return False
         if (
@@ -1029,6 +1029,24 @@ class Stage2ABTrainingTrainer(
         gs = int(global_step)
         last_step = getattr(self, "_stage2_train_monitor_dump_last_step", None)
         if last_step is not None and int(last_step) == gs:
+            return False
+
+        every = cfg.get("every_steps", None)
+        if every is None:
+            args_obj = getattr(self, "args", None)
+            every = int(getattr(args_obj, "logging_steps", 1) or 1)
+        every = max(1, int(every))
+
+        args_obj = getattr(self, "args", None)
+        dump_first = bool(
+            cfg.get(
+                "dump_first_step",
+                bool(getattr(args_obj, "logging_first_step", False)),
+            )
+        )
+        if gs == 0 and not dump_first:
+            return False
+        if gs % every != 0:
             return False
         return True
 
@@ -1084,7 +1102,7 @@ class Stage2ABTrainingTrainer(
             if not self._stage2_train_monitor_step_allowed(global_step=global_step):
                 return
 
-            dump_cfg = self._monitor_dump_cfg()
+            dump_cfg = self._train_monitor_dump_cfg()
             dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
             selected = sorted(
                 (dict(sample) for sample in candidates),

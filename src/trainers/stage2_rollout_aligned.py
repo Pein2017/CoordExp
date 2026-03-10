@@ -1311,9 +1311,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Keyed by the *post-optimizer* global_step (HF logs after increment).
         self._rm_pending_train_logs: Dict[int, _PendingTrainRolloutLog] = {}
 
-        # Periodic qualitative dumps (rank0 only): rollout vs GT vs training target.
+        # Qualitative train dumps (rank0 only): rollout vs GT vs training target.
         self._monitor_dump_last_step: Optional[int] = None
         self._monitor_dump_count: int = 0
+        # Qualitative eval dumps use a separate cadence and budget namespace.
+        self._eval_monitor_dump_eval_index: int = 0
+        self._eval_monitor_dump_last_eval: Optional[int] = None
+        self._eval_monitor_dump_count: int = 0
 
         # Optional semantic desc monitoring (lazy init; metrics only).
         self._desc_semantic_encoder: Any = None
@@ -2118,8 +2122,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return infer_requests
 
     def _monitor_dump_cfg(self) -> Mapping[str, Any]:
-        cfg = self._cfg("monitor_dump", {}) or {}
+        return self._train_monitor_dump_cfg()
+
+    def _train_monitor_dump_cfg(self) -> Mapping[str, Any]:
+        cfg = self._cfg("train_monitor_dump", None)
+        if cfg is None:
+            cfg = self._cfg("monitor_dump", {}) or {}
         return cfg if isinstance(cfg, Mapping) else {}
+
+    def _eval_monitor_dump_cfg(self) -> Mapping[str, Any]:
+        cfg = self._cfg("eval_monitor_dump", None)
+        if cfg is None:
+            cfg = self._cfg("monitor_dump", {}) or {}
+        return cfg if isinstance(cfg, Mapping) else {}
+
+    def _monitor_dump_cfg_for_payload(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        kind = str(payload.get("kind", "") or "").strip().lower()
+        if kind == "eval_monitor_dump":
+            return self._eval_monitor_dump_cfg()
+        return self._train_monitor_dump_cfg()
 
     def _desc_monitor_cfg(self) -> Mapping[str, Any]:
         cfg = self._cfg("desc_monitor", {}) or {}
@@ -2179,7 +2200,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return bool(getattr(self, "is_world_process_zero", False))
 
     def _monitor_dump_step_allowed(self, *, global_step: int) -> bool:
-        cfg = self._monitor_dump_cfg()
+        cfg = self._train_monitor_dump_cfg()
         if not bool(cfg.get("enabled", False)):
             return False
         if (
@@ -2203,22 +2224,54 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not self._monitor_dump_step_allowed(global_step=global_step):
             return False
 
-        cfg = self._monitor_dump_cfg()
+        cfg = self._train_monitor_dump_cfg()
         gs = int(global_step)
 
         every = cfg.get("every_steps", None)
         if every is None:
-            every = int(getattr(self.args, "logging_steps", 1) or 1)
+            args_obj = getattr(self, "args", None)
+            every = int(getattr(args_obj, "logging_steps", 1) or 1)
         every = max(1, int(every))
 
+        args_obj = getattr(self, "args", None)
         dump_first = bool(
             cfg.get(
-                "dump_first_step", bool(getattr(self.args, "logging_first_step", False))
+                "dump_first_step",
+                bool(getattr(args_obj, "logging_first_step", False)),
             )
         )
         if gs == 0 and not dump_first:
             return False
         if gs % every != 0:
+            return False
+        return True
+
+    def _should_eval_monitor_dump(self, *, global_step: int, eval_index: int) -> bool:
+        cfg = self._eval_monitor_dump_cfg()
+        if not bool(cfg.get("enabled", False)):
+            return False
+        if (
+            bool(cfg.get("only_world_process_zero", True))
+            and not self._is_main_process()
+        ):
+            return False
+
+        max_events = int(cfg.get("max_events", 20) or 0)
+        eval_dump_count = int(getattr(self, "_eval_monitor_dump_count", 0) or 0)
+        if max_events > 0 and eval_dump_count >= max_events:
+            return False
+
+        last_eval = getattr(self, "_eval_monitor_dump_last_eval", None)
+        if last_eval is not None and int(last_eval) == int(eval_index):
+            return False
+
+        every_evals_raw = cfg.get("every_evals", 1)
+        try:
+            every_evals = int(every_evals_raw) if every_evals_raw is not None else 1
+        except Exception:
+            every_evals = 1
+        every_evals = max(1, int(every_evals))
+        if int(eval_index) % every_evals != 0:
             return False
         return True
 
@@ -2355,7 +2408,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _write_monitor_dump(
         self, *, global_step: int, payload: Mapping[str, Any]
     ) -> None:
-        cfg = self._monitor_dump_cfg()
+        cfg = self._monitor_dump_cfg_for_payload(payload)
         out_dir = cfg.get("out_dir")
         if not isinstance(out_dir, str) or not out_dir.strip():
             out_dir = os.path.join(
@@ -2448,7 +2501,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if kind == "train_monitor_dump":
             max_chars = 0
         else:
-            max_chars_raw = self._monitor_dump_cfg().get("max_text_chars", 4000)
+            cfg = self._monitor_dump_cfg_for_payload(payload)
+            max_chars_raw = cfg.get("max_text_chars", 4000)
             try:
                 # Contract: <=0 disables clipping (full text).
                 max_chars = int(max_chars_raw) if max_chars_raw is not None else 4000
@@ -6754,7 +6808,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         # Optional qualitative monitoring dumps: rollout vs GT vs training target.
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
         do_dump = False
-        dump_cfg = self._monitor_dump_cfg()
+        dump_cfg = self._train_monitor_dump_cfg()
         dump_max_samples = 0
         dump_max_chars = 0
         dump_samples: List[Dict[str, Any]] = []
@@ -8647,13 +8701,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Optional qualitative monitor dumps during eval (rank0 only).
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        eval_dump_index = int(getattr(self, "_eval_monitor_dump_eval_index", 0) or 0) + 1
+        self._eval_monitor_dump_eval_index = int(eval_dump_index)
         do_dump = False
-        dump_cfg = self._monitor_dump_cfg()
+        dump_cfg = self._eval_monitor_dump_cfg()
         dump_max_samples = 0
         dump_max_chars = 0
         dump_fail_samples: List[Dict[str, Any]] = []
         dump_other_samples: List[Dict[str, Any]] = []
-        if self._should_monitor_dump(global_step=gs):
+        if self._should_eval_monitor_dump(global_step=gs, eval_index=eval_dump_index):
             do_dump = True
             dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
             dump_max_chars_raw = dump_cfg.get("max_text_chars", 4000)
@@ -8664,8 +8720,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             except Exception:
                 dump_max_chars = 4000
             dump_max_chars = max(0, int(dump_max_chars))
-            # Mark early to avoid duplicate dumps in the same global_step.
-            self._monitor_dump_last_step = int(gs)
+            # Mark early to avoid duplicate dumps in the same eval invocation.
+            self._eval_monitor_dump_last_eval = int(eval_dump_index)
 
         with torch.no_grad(), self._maybe_eval_vllm_colocate_window(
             rollout_backend=eval_rollout_backend
@@ -9580,7 +9636,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "samples": samples_out,
                 }
                 self._write_monitor_dump(global_step=int(gs), payload=payload)
-                self._monitor_dump_count += 1
+                self._eval_monitor_dump_count += 1
             except Exception as exc:
                 logger.warning(
                     "Failed to write eval monitor dump at global_step=%s: %r",

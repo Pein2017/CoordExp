@@ -1124,7 +1124,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         "max_new_tokens": 8,
         "num_beams": 1,
         "repetition_penalty": 1.0,
-        "monitor_dump": {
+        "train_monitor_dump": {
             "enabled": True,
             "max_samples": 1,
             "max_text_chars": 32,
@@ -1297,7 +1297,11 @@ def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
         "decode_mode": "greedy",
-        "monitor_dump": {"enabled": True, "max_samples": 1, "write_markdown": False},
+        "train_monitor_dump": {
+            "enabled": True,
+            "max_samples": 1,
+            "write_markdown": False,
+        },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._rollout_backend = lambda: "hf"
@@ -1341,12 +1345,13 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
         "decode_mode": "greedy",
-        "monitor_dump": {
+        "train_monitor_dump": {
             "enabled": True,
             "max_events": 1,
             "max_samples": 1,
             "write_markdown": False,
         },
+        "eval_monitor_dump": {"enabled": True, "every_evals": 1},
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._rollout_backend = lambda: "hf"
@@ -1381,7 +1386,7 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
     assert t._stage2_train_monitor_dump_last_step == 11
     assert t._monitor_dump_count == 0
     assert t._monitor_dump_last_step is None
-    assert t._should_monitor_dump(global_step=11) is True
+    assert t._should_eval_monitor_dump(global_step=11, eval_index=1) is True
 
 
 def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):

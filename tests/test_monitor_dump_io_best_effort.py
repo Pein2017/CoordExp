@@ -38,7 +38,7 @@ def test_monitor_dump_does_not_raise_on_markdown_format_error(tmp_path) -> None:
 def test_train_monitor_dump_markdown_keeps_full_text(tmp_path) -> None:
     t = object.__new__(RolloutMatchingSFTTrainer)
     t.args = types.SimpleNamespace(output_dir=str(tmp_path))
-    t.rollout_matching_cfg = {"monitor_dump": {"max_text_chars": 8}}
+    t.rollout_matching_cfg = {"train_monitor_dump": {"max_text_chars": 8}}
 
     full_text = "very long rollout text that should stay intact"
     md = t._format_monitor_dump_markdown(
@@ -66,3 +66,16 @@ def test_train_monitor_dump_markdown_keeps_full_text(tmp_path) -> None:
 
     assert full_text in md
     assert "...<truncated>" not in md
+
+
+def test_eval_monitor_dump_uses_every_evals_cadence() -> None:
+    t = object.__new__(RolloutMatchingSFTTrainer)
+    t.rollout_matching_cfg = {
+        "eval_monitor_dump": {"enabled": True, "every_evals": 2}
+    }
+    t.is_world_process_zero = True
+    t._eval_monitor_dump_count = 0
+    t._eval_monitor_dump_last_eval = None
+
+    assert t._should_eval_monitor_dump(global_step=300, eval_index=1) is False
+    assert t._should_eval_monitor_dump(global_step=600, eval_index=2) is True

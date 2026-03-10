@@ -260,6 +260,32 @@ def test_unknown_rollout_monitor_dump_key_fails_fast():
     assert "rollout_matching.monitor_dump.unknown" in str(exc.value)
 
 
+def test_unknown_rollout_train_monitor_dump_key_fails_fast():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "train_monitor_dump": {"unknown": True},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.train_monitor_dump.unknown" in str(exc.value)
+
+
+def test_unknown_rollout_eval_monitor_dump_key_fails_fast():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_monitor_dump": {"unknown": True},
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.eval_monitor_dump.unknown" in str(exc.value)
+
+
 def test_unknown_rollout_vllm_sync_key_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {

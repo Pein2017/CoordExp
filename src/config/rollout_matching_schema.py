@@ -62,6 +62,21 @@ class RolloutMonitorDumpConfig:
 
 
 @dataclass(frozen=True)
+class RolloutEvalMonitorDumpConfig:
+    enabled: bool = False
+    every_evals: int = 1
+    only_world_process_zero: bool = True
+    max_events: int = 20
+    max_samples: int = 1
+    max_text_chars: int = 4000
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
+    out_dir: Optional[str] = None
+    write_markdown: bool = True
+
+
+@dataclass(frozen=True)
 class RolloutDescMonitorConfig:
     enabled: bool = False
     every_steps: int = 0
@@ -285,7 +300,10 @@ class RolloutMatchingConfig:
 
     # Nested namespaces.
     offload: Optional[RolloutOffloadConfig] = None
+    # Legacy shared namespace retained as a fallback for older configs.
     monitor_dump: Optional[RolloutMonitorDumpConfig] = None
+    train_monitor_dump: Optional[RolloutMonitorDumpConfig] = None
+    eval_monitor_dump: Optional[RolloutEvalMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
     pipeline: Optional[RolloutPipelineConfig] = None
     eval_detection: RolloutEvalDetectionConfig = field(default_factory=RolloutEvalDetectionConfig)
