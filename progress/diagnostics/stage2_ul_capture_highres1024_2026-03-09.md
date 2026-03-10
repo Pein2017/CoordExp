@@ -1,5 +1,5 @@
 ---
-title: Stage-2 AB Continuation @ ~1024px Before UL Boundary Fix
+title: Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun
 status: active-diagnostic
 scope: stage2-channel-b
 topics: [stage2, channel-b, duplicate-ul, diagnostics, resolution-1024]
@@ -10,12 +10,13 @@ references:
   - progress/diagnostics/stage2_near_duplication_2026-03-05.md
 ---
 
-# Stage-2 AB Continuation @ ~1024px: Pre-Fix UL Capture Gaps and Crowded-Scene Drop Risk (2026-03-09)
+# Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun (2026-03-09/10)
 
 Date: 2026-03-09  
-Status note: this document captures the run **before** the UL boundary-position fix was retrained into the model. It should be treated as the baseline to compare against the next post-fix continuation.
+Last updated: 2026-03-10  
+Status note: this document records both the **pre-fix baseline** and the first **post-fix rerun** for the ~1024px setup.
 
-This note records a continuation run that combines:
+The baseline portion of this note records a continuation run that combines:
 
 - a **higher image-resolution cap** (`max_pixels = 32*32*1024 = 1048576`) with the COCO JSONL prepared under `rescale_32_1024_bbox_max60`,
 - continuation from a previous Stage-2 checkpoint,
@@ -144,11 +145,22 @@ Across the 10 monitored eval samples:
 - every sample has `parse_truncated = False`,
 - same-desc `IoU >= 0.9` duplicate pairs are `0` for every sample in this dump.
 
+Additional important clarification from a direct recomputation on the dump:
+
+- the dump does **not** reproduce the huge train-side `dup/near_iou90_pairs_any_desc_count` values seen in some training windows,
+- total `near_iou90_pairs_any_desc_count` over these 10 eval-monitor samples is only `1`,
+- and that single `IoU>=0.9` case is a cross-class semantic overlap (`couch` vs `chair`), not same-desc duplication.
+
+So this monitor dump should be interpreted as:
+
+- a qualitative window into eval-time failure modes,
+- **not** as a direct reproduction of the large train-batch overlap counts seen in `logging.jsonl`.
+
 So the main dataset-level problem at this checkpoint is subtler:
 
 - crowded same-class scenes,
 - with many plausible same-class instances,
-- plus a smaller number of true unhealthy over-enumeration cases.
+- plus a smaller number of truly unhealthy over-enumeration or semantic-overlap cases.
 
 ### 2.1 Clearly unhealthy over-enumeration
 
@@ -183,13 +195,6 @@ These are the most important counterexamples.
 - predicted `baseball bat` count = `12`
 - GT `baseball bat` count = `13`
 
-`sample_id = 87140591468885`, `base_idx = 341`
-
-- `pred = 18`, `gt = 15`, `matched = 10`, `fp = 8`, `fn = 5`
-- dominant class: `person`
-- predicted `person` count = `16`
-- GT `person` count = `13`
-
 `sample_id = 87140591468935`, `base_idx = 391`
 
 - `pred = 15`, `gt = 11`, `matched = 8`, `fp = 7`, `fn = 3`
@@ -202,7 +207,28 @@ Interpretation:
 - high same-class multiplicity is often **correct** in this dataset,
 - so a naive “many same-desc objects == unhealthy duplication” rule is wrong.
 
-### 2.3 The most dangerous ambiguous case for `dup_drop_N`
+### 2.3 Crowded-scene malformed localization / repeated nearby proposals
+
+`sample_id = 87140591468885`, `base_idx = 341`
+
+- `pred = 18`, `gt = 15`, `matched = 10`, `fp = 8`, `fn = 5`
+- dominant class: `person`
+- predicted `person` count = `16`
+- GT `person` count = `13`
+- same-desc overlap counts are low (`near50_same = 1`, `near70_same = 1`, `near90_same = 0`)
+
+Interpretation:
+
+- this is **not** a clean “healthy crowded-person” case,
+- the scene really does contain many people, but several predicted boxes are poorly anchored on the slope / ridge region,
+- so the residual failure is better described as **crowded-scene malformed localization with repeated nearby proposals**, not as benign same-class multiplicity.
+
+This matters because:
+
+- duplicate-drop logic alone will not solve it,
+- the model is also failing at instance-atomic localization in a dense scene.
+
+### 2.4 The most dangerous ambiguous case for `dup_drop_N`
 
 `sample_id = 87140591468546`, `base_idx = 2`
 
@@ -216,12 +242,14 @@ Interpretation:
 
 - this is **not** a simple clone-spam case,
 - the book multiplicity is actually close to GT,
-- but matching quality is poor.
+- but matching quality is poor because many actual bookshelf books are **not correctly located**,
+- and several predicted `book` boxes are misplaced onto nearby regions such as the bed / quilt area.
 
 This is exactly the kind of scene where a too-high duplicate drop rate can make the dataset-level problem worse:
 
 - many same-class candidates are legitimate,
-- but localization / instance separation is messy,
+- but the deeper issue is **crowded-scene grounding incapacity** rather than just raw duplicate count,
+- localization / instance separation is messy,
 - so over-dropping may remove healthy crowded-instance coverage rather than just deleting junk.
 
 ---
@@ -247,7 +275,8 @@ The later UL boundary-position fix should, in theory, increase the fraction of d
 Success is:
 
 - reduce unhealthy over-enumeration like `sample_id = 87140591468782`,
-- while preserving healthy crowded-instance multiplicity like `sheep x5`, `baseball bat x12/13`, `person x16/13`, `bowl x5/6`.
+- preserve clearly healthy crowded-instance multiplicity like `sheep x5`, `baseball bat x12/13`, `bowl x5/6`,
+- and improve crowded-scene grounding failures like the bookshelf / skier-person cases rather than “solving” them by simply dropping more boxes.
 
 ---
 
@@ -264,7 +293,8 @@ Because the user planned to retrain after fixing a bug that made `dup_drop_N` to
 ### 4.2 What should **not** get worse
 
 - healthy crowded same-class scenes should keep their multiplicity,
-- samples like `87140591469043` and `87140591468885` should not be “fixed” by over-dropping valid same-class instances,
+- samples like `87140591469043` should not be “fixed” by over-dropping valid same-class instances,
+- samples like `87140591468885` and `87140591468546` should improve via better grounding / localization, not just lower prediction count,
 - `matched` should stay stable or improve on crowded scenes rather than collapsing with a lower `pred` count.
 
 ### 4.3 Recommended scorecard for the post-fix run
@@ -274,10 +304,11 @@ Check the next step-300 monitor dump for these sample archetypes:
 - unhealthy over-enumeration:
   - `sample_id = 87140591468782`
 - crowded same-class but plausibly healthy:
-  - `sample_id = 87140591468546`
-  - `sample_id = 87140591468885`
   - `sample_id = 87140591469043`
   - `sample_id = 87140591468935`
+- crowded-scene grounding / localization failures:
+  - `sample_id = 87140591468546`
+  - `sample_id = 87140591468885`
 
 Desired direction:
 
@@ -301,4 +332,157 @@ This ~1024px continuation run is a useful baseline because it shows two things a
 
 So the next retrain should be judged not only by “fewer duplicates”, but by the more precise question:
 
-> did we reduce the unhealthy duplicate / over-enumeration cases **without** suppressing legitimate crowded same-class instance coverage?
+> did we reduce the unhealthy duplicate / over-enumeration cases **without** suppressing legitimate crowded same-class instance coverage, and did we improve crowded-scene grounding rather than merely dropping boxes?
+
+---
+
+## 6) Update 2026-03-10: First Post-Fix Rerun From Checkpoint 300
+
+Post-fix rerun artifact:
+
+- Run dir: `output/stage2_ab/prod/ul-res_1024-continued-from-ckpt-300/eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_1/v0-20260309-155752/`
+- Scalars used here: `.../logging.jsonl`
+- Resolved config still uses the same ~1024px setup:
+  - `template.max_pixels = 1048576`
+  - `custom.train_jsonl = public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
+  - `custom.val_jsonl = public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
+
+Important limitation:
+
+- this update is based on `logging.jsonl`,
+- not on a new post-fix monitor dump.
+
+### 6.1 The old duplicate-capture failure is mainly gone
+
+The strongest positive result from the rerun is:
+
+- `stage2_ab/channel_b/dup/N_ul_skipped_no_divergence = 0.0` in the sampled Channel-B rows so far.
+
+Recent examples:
+
+- `230/1221`: `N_duplicates = 4`, `N_ul_boundaries = 4`, `N_ul_skipped_no_divergence = 0`
+- `240/1221`: `N_duplicates = 7`, `N_ul_boundaries = 6`, `N_ul_skipped_no_divergence = 0`
+- `250/1221`: `N_duplicates = 14`, `N_ul_boundaries = 14`, `N_ul_skipped_no_divergence = 0`
+- `300/1221`: `N_duplicates = 1`, `N_ul_boundaries = 1`, `N_ul_skipped_no_divergence = 0`
+
+Interpretation:
+
+- the original UL boundary-position capture problem is largely fixed in the retrained process,
+- duplicate-certified continuations are now becoming explicit UL targets instead of being lost to skip accounting.
+
+### 6.2 But the real issue is still unsolved
+
+Despite the improvement above, the train-side rollout windows remain very unhealthy by step 300.
+
+At `global_step = 300` in the rerun:
+
+- `N_duplicates = 1`
+- `dup/near_iou90_pairs_same_desc_count = 1`
+- `dup/near_iou90_pairs_any_desc_count = 1228`
+- `rollout/pred_per_sample = 33.65625`
+- `rollout/precision = 0.19034355`
+- `rollout/recall = 0.86134454`
+- `rollout/f1 = 0.31178707`
+- `rollout/parse_truncated_rate = 0.29166667`
+
+Last-5 train-rollout window summary:
+
+- `N_duplicates` mean = `4.8`
+- `near_iou90_pairs_same_desc_count` mean = `5.0`
+- `pred/gt` mean = `4.059`
+- `precision` mean = `0.2076`
+- `recall` mean = `0.8349`
+- `f1` mean = `0.3317`
+- `rollout_len_mean` mean = `785.70`
+- `parse_truncated_rate` mean = `0.2375`
+
+Interpretation:
+
+- the train pathology is no longer dominated by same-desc duplicate certification,
+- but the model is still badly over-generating,
+- and the overlap problem is now much more visible in `near_iou90_pairs_any_desc_count` than in `same_desc` duplicate counters.
+
+So the failure has changed shape:
+
+- **before:** many duplicate-certified continuations were found but failed to become UL targets,
+- **after:** UL capture is working, but the model is still finding another route to over-predict.
+
+### 6.3 Eval at step 300 remains strong
+
+From the rerun eval row at `global_step = 300`:
+
+- `eval_rollout/mAP = 0.43964541`
+- `eval_rollout/precision = 0.75966070`
+- `eval_rollout/recall = 0.71034078`
+- `eval_rollout/f1 = 0.73417337`
+- `eval_rollout/pred_objects = 3183`
+- `eval_rollout/gt_objects_total = 3404`
+- `eval_rollout/parse_truncated_rate = 0.0`
+- `eval_rollout/matched_maskiou_mean = 0.83076695`
+
+Compared with the pre-fix ~1024px run at step 300:
+
+- `mAP` is essentially unchanged (`0.43965` vs `0.43986`)
+- `precision` is slightly better
+- `recall` is slightly lower
+- `f1` is slightly better
+
+Interpretation:
+
+- the post-fix rerun has **not regressed** at the first eval checkpoint,
+- but the fix by itself did **not** solve the broader rollout instability.
+
+### 6.4 Gradmon suggests domination is now a more relevant suspect than missed UL
+
+The rerun enables `custom.extra.loss_gradient_monitor`, and sparse gradmon rows appear at `100`, `200`, and `300`.
+
+Key monitor snapshots:
+
+- `100/1221`
+  - `grad_norm_ratio_max_over_median = 51.44`
+  - `neg_cosine_pair_frac = 0.126`
+  - domination-heavy, limited conflict
+- `200/1221`
+  - `grad_norm_ratio_max_over_median = 17.45`
+  - `neg_cosine_pair_frac = 0.373`
+  - conflict becomes visible
+  - `cos_to_total/B_coord/bbox_smoothl1 = -0.4568`
+- `300/1221`
+  - `grad_norm_ratio_max_over_median = 54.46`
+  - `neg_cosine_pair_frac = 0.163`
+  - `grad_norm/B_coord/coord_soft_ce = 0.004893`
+  - `grad_norm/B_coord/bbox_smoothl1 = 0.000261`
+  - `cos_to_total/B_coord/coord_soft_ce = 0.9449`
+  - `cos_to_total/B_coord/bbox_smoothl1 = 0.1706`
+
+Interpretation:
+
+- by step 300, the monitor suggests **domination** is a stronger issue than pairwise conflict,
+- `coord_soft_ce` appears to dominate the monitored coord/geo update direction,
+- so the post-fix run may now be limited more by loss-balance / optimization geometry than by duplicate-target construction itself.
+
+This is a monitor-based hypothesis, not a proven causal conclusion, but it is the strongest new clue in the rerun.
+
+### 6.5 Updated conclusion
+
+The note’s original crowded-scene caution still matters.
+
+The rerun sharpens the story:
+
+1. the old duplicate-capture failure is **mainly gone**,
+2. average-case eval is still good,
+3. but the real issue is still unsolved because train-side rollout remains in a severe over-generation regime,
+4. and the remaining pathology no longer looks primarily like missing same-desc duplicate UL capture.
+
+So the post-fix question is no longer:
+
+> are duplicates being captured into UL targets?
+
+It is now closer to:
+
+> why does the model still over-generate so aggressively even when duplicate-target capture is mostly fixed?
+
+The most plausible next diagnostic targets are:
+
+- broad overlap / cardinality control beyond same-desc duplicate certification,
+- and the balance among `coord_soft_ce`, `coord_token_ce`, `bbox_ciou`, and `bbox_smoothl1`.
