@@ -1,4 +1,3 @@
 # Moved
 
-See docs/ARCHITECTURE.md (Logging & callbacks) for the unified guidance.
-
+See docs/ARTIFACTS.md (logging, callbacks, and provenance) for the unified guidance.

@@ -40,8 +40,8 @@ We need a Stage-2 Channel-B contract that:
   - intentionally collapse same-boundary duplicates that share the same divergence token so duplicate-burst length does not scale the loss by repeated identical bad continuations.
 - Extend diagnostics/config surfaces for duplicate collapse monitoring, including duplicate gauges, duplicate/UL counters, and safer A-hot/B-cold recommended profiles.
 - Add a docs-sync requirement after implementation:
-  - update `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS_LOSSES.md`,
-  - then review `docs/eval/README.md`, `docs/ARCHITECTURE.md`, and `docs/README.md` for contract/index/artifact sync.
+  - update `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS.md`,
+  - then review `docs/eval/README.md`, `docs/ARTIFACTS.md`, and `docs/README.md` for contract/index/artifact sync.
 
 ## Capabilities
 

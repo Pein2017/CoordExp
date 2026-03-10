@@ -12,7 +12,7 @@ Normative behavior:
 #### Scenario: Gradient-monitor keys are documented on the canonical metrics page
 - **WHEN** `gradmon/*` metrics are emitted
 - **THEN** their canonical key names are documented in `docs/training/METRICS.md`
-- **AND** stale references to `docs/training/METRICS_LOSSES.md` are absent from the live contract.
+- **AND** stale references to the retired metrics doc path are absent from the live contract.
 
 ## ADDED Requirements
 

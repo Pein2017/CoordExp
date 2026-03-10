@@ -249,11 +249,11 @@ This change affects repo source-of-truth docs, not just code.
 Minimum docs expected to change once implementation lands:
 
 - `docs/training/STAGE2_RUNBOOK.md`
-- `docs/training/METRICS_LOSSES.md`
+- `docs/training/METRICS.md`
 
 Conditionally update when their documented surfaces change during implementation:
 
-- `docs/ARCHITECTURE.md`
+- `docs/ARTIFACTS.md`
 - `docs/eval/README.md`
 - `docs/README.md`
 

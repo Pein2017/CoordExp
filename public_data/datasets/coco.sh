@@ -32,7 +32,7 @@ Notes:
   - Passthrough args after `--` are forwarded to:
     - download: public_data/scripts/download_coco2017.py
     - convert:  public_data/scripts/convert_coco2017_instances.py (for both train + val)
-  - Converter outputs JSONL that follows docs/data/JSONL_CONTRACT.md (images/objects/width/height),
+  - Converter outputs JSONL that follows docs/data/CONTRACT.md (images/objects/width/height),
     with extra COCO provenance fields (image_id/file_name/category_id/category_name) that downstream
     code should safely ignore.
 EOF

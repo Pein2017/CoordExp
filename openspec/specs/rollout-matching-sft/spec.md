@@ -1208,7 +1208,7 @@ Normative behavior:
 
 ### Requirement: Rollout-aligned Stage-2 rollout-context semantics are coherent with the two-channel Rollout channel
 Rollout-aligned Stage-2 SHALL apply the same rollout-context masking semantics as the two-channel Rollout channel by default
-(`progress/full_idea.md`), so teacher-forcing objectives do not drift across code paths.
+(`docs/training/STAGE2_DESIGN.md`), so teacher-forcing objectives do not drift across code paths.
 
 Normative behavior:
 - Rollout-context token supervision MUST enforce:

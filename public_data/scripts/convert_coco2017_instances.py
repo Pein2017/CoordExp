@@ -80,7 +80,7 @@ def main() -> None:
         description="Convert COCO 2017 instances annotations to CoordExp JSONL contract",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Output contract: docs/data/JSONL_CONTRACT.md
+Output contract: docs/data/CONTRACT.md
 - images: ["images/<split>/<file_name>"] (relative to JSONL directory)
 - objects: [{"bbox_2d": [x1,y1,x2,y2], "desc": "category_name", ...}]
 

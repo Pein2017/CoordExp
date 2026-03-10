@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   CoordExp is a grounding/detection research stack using Qwen3-VL + CoordExp (norm1000 coordinates) with reproducible, paper-ready runs.
-  Direction and semantic baseline live in progress/full_idea.md.
+  Stable Stage-2 design context lives in docs/training/STAGE2_DESIGN.md; use progress/directions/ only for historical derivation.
   Prefer YAML-first experiments in configs/ over ad-hoc scripts; avoid adding new CLI flags.
   Defaults: single-dataset training; packing is the primary efficiency lever; fusion-config training is legacy/experimental.
   Preserve geometry invariants via src/datasets/geometry.py (never drop/reorder coords); training uses do_resize=false.
@@ -16,7 +16,7 @@ rules:
     - For architecture/contract changes, include required OpenSpec spec updates.
   specs:
     - Encode coordinate and geometry invariants explicitly (no coord drop/reorder/semantic drift).
-    - Keep contract semantics aligned with progress/full_idea.md.
+    - Keep contract semantics aligned with docs/training/STAGE2_DESIGN.md.
   design:
     - Describe data flow as data -> transforms/packing -> training/inference -> artifacts.
     - Document compatibility constraints (Qwen3 template, do_resize=false, upstream HF internals off-limits).

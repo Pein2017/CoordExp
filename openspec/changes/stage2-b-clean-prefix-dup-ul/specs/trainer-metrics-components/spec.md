@@ -6,14 +6,14 @@
 The canonical metric docs SHALL include the clean-prefix Channel-B duplicate-ul and duplicate-collapse metrics introduced by this change.
 
 Normative behavior:
-- `docs/training/METRICS_LOSSES.md` MUST define the canonical training keys added by this contract.
+- `docs/training/METRICS.md` MUST define the canonical training keys added by this contract.
 - `docs/training/STAGE2_RUNBOOK.md` MUST define the corresponding Channel-B behavior and interpretation.
 - Removed raw-prefix wording and removed legacy metric names MUST NOT linger in the canonical docs after implementation lands.
 
 #### Scenario: Canonical duplicate metrics are documented
 - **GIVEN** a training run after the clean-prefix Channel-B feature lands
 - **WHEN** duplicate-ul and duplicate-collapse metrics are emitted
-- **THEN** their canonical key names are documented in `docs/training/METRICS_LOSSES.md`
+- **THEN** their canonical key names are documented in `docs/training/METRICS.md`
 - **AND** the Channel-B contract that produces them is documented in `docs/training/STAGE2_RUNBOOK.md`.
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)

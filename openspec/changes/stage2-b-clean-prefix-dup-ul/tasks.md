@@ -117,11 +117,11 @@ Validation commands expected after implementation:
 ## 8. Docs Sync After Implementation
 
 - [x] 8.1 Update `docs/training/STAGE2_RUNBOOK.md` to describe the canonical clean-prefix Channel-B contract and remove the raw-prefix / immutable-prefix wording.
-- [x] 8.2 Update `docs/training/METRICS_LOSSES.md` with:
+- [x] 8.2 Update `docs/training/METRICS.md` with:
   - `loss/B_rollout_text/duplicate_ul`
   - duplicate-collapse gauges and counters
   - any changed Channel-B target-construction wording
-- [x] 8.3 Update `docs/ARCHITECTURE.md` if the implementation changes documented run artifacts, metric families, or reproducibility surfaces.
+- [x] 8.3 Update `docs/ARTIFACTS.md` if the implementation changes documented run artifacts, metric families, or reproducibility surfaces.
 - [x] 8.4 Review `docs/eval/README.md` if eval-side duplicate diagnostics or duplicate-analysis artifacts land as part of this feature.
   Reviewed: no eval-side duplicate diagnostics or duplicate-analysis artifacts landed, so no doc change was required.
 - [x] 8.5 Update `docs/README.md` if the docs index or recommended reading order needs to surface any newly added/renamed training guidance.
