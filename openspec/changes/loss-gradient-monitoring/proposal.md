@@ -51,6 +51,6 @@ We need a lightweight, opt-in, monitoring-only tool to measure domination vs con
 ## Impact
 
 - Default behavior is unchanged (monitor is off by default).
-- Opt-in runs add minor overhead only on monitor steps (default: once per 100 optimizer steps).
+- Opt-in runs add minor overhead only on monitor steps (default: once per 50 optimizer steps).
 - Adds new diagnostic metric keys under `gradmon/*` and a short enablement section in [docs/training/METRICS.md](../../docs/training/METRICS.md).
 - Under DDP, monitor metrics are computed locally on each rank first, buffered locally for the step, and then synchronized at the same optimizer-step reducer boundary used by the current training metrics.

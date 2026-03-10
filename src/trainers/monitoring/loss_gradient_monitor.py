@@ -215,7 +215,7 @@ class LossGradientMonitor:
     @classmethod
     def from_cfg(cls, *, trainer: Any, cfg: Mapping[str, Any]) -> "LossGradientMonitor":
         try:
-            interval_steps = int(cfg.get("interval_steps", 100) or 100)
+            interval_steps = int(cfg.get("interval_steps", 50) or 50)
         except (TypeError, ValueError) as exc:
             raise ValueError("loss_gradient_monitor.interval_steps must be a positive int") from exc
         if interval_steps <= 0:

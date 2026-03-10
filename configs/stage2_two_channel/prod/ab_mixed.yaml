@@ -85,7 +85,7 @@ custom:
     prompt_variant: coco_80
     loss_gradient_monitor:
       enabled: true
-      interval_steps: 100
+      interval_steps: 50
       ema_beta: 0.98
       require_sync_gradients: true
       coord_only: true

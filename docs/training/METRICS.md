@@ -185,7 +185,7 @@ Stage-2 coord-distribution diagnostics (`coord_diag/<provenance>/*`):
 Enablement:
 - Disabled by default.
 - Opt in via `custom.extra.loss_gradient_monitor`.
-- Sparse emission: keys appear only on monitor steps (default every 100 optimizer steps).
+- Sparse emission: keys appear only on monitor steps (default every 50 optimizer steps).
 
 Canonical keys:
 - Per-term gauges:
@@ -230,7 +230,7 @@ custom:
   extra:
     loss_gradient_monitor:
       enabled: true
-      interval_steps: 100
+      interval_steps: 50
       ema_beta: 0.98
       require_sync_gradients: true
       coord_only: true

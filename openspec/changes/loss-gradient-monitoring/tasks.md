@@ -26,7 +26,7 @@
     - per-term cosine similarity to net coord update direction:
       - `cos_to_total(term) = cos(g_term, g_total)` where `g_total = Σ g_term`.
   - Performance/compat:
-    - only run every `interval_steps` optimizer steps (default 100),
+    - only run every `interval_steps` optimizer steps (default 50),
     - only run on the trainer's final synchronized micro/pack step when `require_sync_gradients=true`,
       - Stage-2 two-channel MUST use the existing executor sync decision rather than assuming `accelerator.sync_gradients` is authoritative,
     - wrap extra autograd grad calls in `model.no_sync()` when available (DDP) to avoid extra allreduces,

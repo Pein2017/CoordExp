@@ -2603,7 +2603,7 @@ def main():
             )
             logger.info(
                 "LossGradientMonitor enabled: interval_steps=%s require_sync_gradients=%s param_strategy=%s",
-                loss_gradient_monitor_cfg.get("interval_steps", 100),
+                loss_gradient_monitor_cfg.get("interval_steps", 50),
                 loss_gradient_monitor_cfg.get("require_sync_gradients", True),
                 param_strategy,
             )

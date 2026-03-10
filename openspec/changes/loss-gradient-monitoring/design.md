@@ -55,7 +55,7 @@ Constraints:
 - Compute, on a shared parameter probe block `θ_shared`:
   - per-term gradient norm `||∇θ_shared Li||_2`,
   - percentage of negative cosine similarity across all loss-pairs.
-- Log every `interval_steps` optimizer steps (default `100`), using the existing reporting/logging stack.
+- Log every `interval_steps` optimizer steps (default `50`), using the existing reporting/logging stack.
 - Support packed-sequence execution without introducing a second token-position discovery implementation.
 - Keep overhead small by:
   - activating only every N steps,
@@ -266,7 +266,7 @@ custom:
   extra:
     loss_gradient_monitor:
       enabled: true
-      interval_steps: 100
+      interval_steps: 50
       ema_beta: 0.98
       # Coord-only monitor (exclude text CE and text_gate).
       coord_only: true
