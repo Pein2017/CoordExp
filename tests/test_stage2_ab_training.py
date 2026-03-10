@@ -1110,6 +1110,280 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
     assert captured["threshold"] == pytest.approx(0.0)
 
 
+def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
+    monkeypatch,
+):
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 8,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+        "monitor_dump": {
+            "enabled": True,
+            "max_samples": 1,
+            "max_text_chars": 32,
+            "write_markdown": True,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._ab_channel_b_get = lambda key, default=None: default
+
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+
+    class _FakeTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            assistant_ids = [int(x) for x in data["messages"][-1]["content"]]
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _FakeTemplate()
+    t._template_train_mode = lambda: nullcontext()
+    t._extract_encoded_len = lambda encoded: int(len(encoded["input_ids"]))
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 256
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._decoding_params = lambda: (0.7, 0.95, -1)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._dist_info = lambda: (0, 1, None)
+    t._object_field_order = lambda: "desc_first"
+    t.state = types.SimpleNamespace(global_step=7, epoch=1.5)
+    t.is_world_process_zero = True
+    t._monitor_dump_count = 0
+    t._monitor_dump_last_step = None
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    full_rollout_text = "rollout:" + (" very-duplicated" * 128)
+    fake_parse = types.SimpleNamespace(
+        prefix_token_ids=[],
+        prefix_text='{"objects": [',
+        response_token_ids=list(range(12)),
+        response_text=full_rollout_text,
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="person",
+            ),
+            types.SimpleNamespace(
+                index=1,
+                geom_type="bbox_2d",
+                coord_token_indices=[4, 5, 6, 7],
+                desc="person",
+            ),
+            types.SimpleNamespace(
+                index=2,
+                geom_type="bbox_2d",
+                coord_token_indices=[8, 9, 10, 11],
+                desc="book",
+            ),
+        ],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: fake_parse,
+    )
+
+    coord_lookup = {
+        (0, 1, 2, 3): [10, 10, 20, 20],
+        (4, 5, 6, 7): [10, 10, 20, 20],
+        (8, 9, 10, 11): [40, 40, 60, 60],
+    }
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        lambda **kwargs: list(coord_lookup[tuple(kwargs["coord_token_indices"])]),
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        lambda **kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[],
+            fp_pred_indices=[1],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    sample = {
+        "sample_id": "sample-314",
+        "image_id": 314,
+        "images": ["scene_314.jpg"],
+        "width": 1000,
+        "height": 1000,
+        "messages": [],
+        "assistant_payload": {
+            "objects": [{"bbox_2d": [10, 10, 20, 20], "desc": "person"}],
+        },
+    }
+
+    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    assert len(segments) == 1
+    assert batch_metrics["stage2_ab/channel_b/dup/N_duplicates"] == pytest.approx(1.0)
+    assert len(t._stage2_train_monitor_candidates) == 1
+
+    captured = {}
+    t._write_monitor_dump = lambda *, global_step, payload: captured.update(
+        {"global_step": int(global_step), "payload": payload}
+    )
+    t._stage2_flush_train_monitor_dump(global_step=7)
+
+    dumped = captured["payload"]["samples"][0]
+    assert captured["global_step"] == 7
+    assert captured["payload"]["kind"] == "train_monitor_dump"
+    assert dumped["image_id"] == 314
+    assert dumped["gt"] == [{"desc": "person", "bbox_2d": [10, 10, 20, 20]}]
+    assert dumped["pred"] == [
+        {"desc": "person", "bbox_2d": [10, 10, 20, 20]},
+        {"desc": "person", "bbox_2d": [10, 10, 20, 20]},
+        {"desc": "book", "bbox_2d": [40, 40, 60, 60]},
+    ]
+    assert dumped["duplication"]["duplicates"] == 1
+    assert dumped["duplication"]["clean_accepted"] == 2
+    assert dumped["match"]["fp_pred_indices"] == [1]
+    assert dumped["rollout_text"] == full_rollout_text
+    assert "...<truncated>" not in dumped["rollout_text"]
+
+
+def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "decode_mode": "greedy",
+        "monitor_dump": {"enabled": True, "max_samples": 1, "write_markdown": False},
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._rollout_backend = lambda: "hf"
+    t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
+    t.is_world_process_zero = True
+    t._monitor_dump_count = 0
+    t._monitor_dump_last_step = None
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+
+    captured = {}
+    t._write_monitor_dump = lambda *, global_step, payload: captured.update(
+        {"global_step": int(global_step), "payload": payload}
+    )
+
+    t._stage2_reset_train_monitor_dump(global_step=11)
+    t._stage2_note_train_monitor_candidate(
+        global_step=11,
+        sample={
+            "sample_id": "low",
+            "duplication": {"duplicates": 1, "duplicate_bursts": 1},
+            "stats": {"fp_count": 0, "raw_valid_pred_objects": 2},
+        },
+    )
+    t._stage2_note_train_monitor_candidate(
+        global_step=11,
+        sample={
+            "sample_id": "high",
+            "duplication": {"duplicates": 3, "duplicate_bursts": 2},
+            "stats": {"fp_count": 1, "raw_valid_pred_objects": 5},
+        },
+    )
+
+    t._stage2_flush_train_monitor_dump(global_step=11)
+
+    assert captured["global_step"] == 11
+    assert captured["payload"]["samples"][0]["sample_id"] == "high"
+
+
+def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "decode_mode": "greedy",
+        "monitor_dump": {
+            "enabled": True,
+            "max_events": 1,
+            "max_samples": 1,
+            "write_markdown": False,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._rollout_backend = lambda: "hf"
+    t.args = types.SimpleNamespace(logging_steps=1, logging_first_step=True)
+    t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
+    t.is_world_process_zero = True
+    t._monitor_dump_count = 0
+    t._monitor_dump_last_step = None
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+    t._stage2_train_monitor_dump_count = 0
+    t._stage2_train_monitor_dump_last_step = None
+
+    captured = {}
+    t._write_monitor_dump = lambda *, global_step, payload: captured.update(
+        {"global_step": int(global_step), "payload": payload}
+    )
+
+    t._stage2_reset_train_monitor_dump(global_step=11)
+    t._stage2_note_train_monitor_candidate(
+        global_step=11,
+        sample={
+            "sample_id": "dup-heavy",
+            "duplication": {"duplicates": 4, "duplicate_bursts": 2},
+            "stats": {"fp_count": 1, "raw_valid_pred_objects": 5},
+        },
+    )
+    t._stage2_flush_train_monitor_dump(global_step=11)
+
+    assert captured["global_step"] == 11
+    assert t._stage2_train_monitor_dump_count == 1
+    assert t._stage2_train_monitor_dump_last_step == 11
+    assert t._monitor_dump_count == 0
+    assert t._monitor_dump_last_step is None
+    assert t._should_monitor_dump(global_step=11) is True
+
+
 def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {

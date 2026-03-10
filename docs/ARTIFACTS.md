@@ -39,6 +39,10 @@ During training (`python -m src.sft ...`), rank 0 writes reproducibility artifac
     - launcher metadata (Stage-2 server/learner topology), when present
 - `config_source.yaml` / `base_config_source.yaml`
   - Best-effort copies of the YAML sources used to build the run (optional; failures do not abort training).
+- `monitor_dumps/` when `rollout_matching.monitor_dump.enabled: true`
+  - Qualitative rollout diagnostics written as `.json` and optional `.md`.
+  - `eval_step` uses the configured periodic cadence.
+  - `stage2_two_channel` Channel-B `train_step` writes only suspicious duplicate-heavy rollouts for the current optimizer step.
 
 Notes:
 - If `training.add_version: true` (default in `configs/base.yaml`), ms-swift scopes outputs under a versioned run directory.

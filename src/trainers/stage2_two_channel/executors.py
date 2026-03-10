@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 
 
 class Stage2ABChannelExecutorsMixin:
+    def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
+        """Best-effort hook for subclasses that collect suspicious train dumps.
+
+        The main Stage-2 trainer overrides this with real buffering logic. Keep a
+        no-op default here so executor-level tests and lightweight subclasses can
+        reuse the mixin without implementing the monitoring helpers.
+        """
+
+        return None
+
+    def _stage2_flush_train_monitor_dump(self, *, global_step: int) -> None:
+        """Best-effort hook for subclasses that collect suspicious train dumps."""
+
+        return None
+
     def _stage2_post_rollout_channel(self, channel: str) -> Literal["A", "B"]:
         s = str(channel).strip().upper()
         return "A" if s == "A" else "B"
@@ -544,6 +559,8 @@ class Stage2ABChannelExecutorsMixin:
                 "stage2-ab Channel-B step mode requires non-empty raw_samples"
             )
 
+        self._stage2_reset_train_monitor_dump(global_step=global_step)
+
         # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
         model.train()
 
@@ -850,6 +867,7 @@ class Stage2ABChannelExecutorsMixin:
             segments, batch_metrics = self._prepare_batch_inputs_b(
                 list(raw_samples), _segments_only=True
             )
+            self._stage2_flush_train_monitor_dump(global_step=global_step)
             if not isinstance(segments, list) or not segments:
                 raise ValueError(
                     "stage2-ab Channel-B step mode produced no post-rollout segments; "
@@ -1057,6 +1075,8 @@ class Stage2ABChannelExecutorsMixin:
             raise RuntimeError(
                 "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
             )
+
+        self._stage2_flush_train_monitor_dump(global_step=global_step)
 
         if producer_exc:
             # Re-raise the first producer exception.

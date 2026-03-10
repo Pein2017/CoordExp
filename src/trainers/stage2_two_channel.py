@@ -408,6 +408,101 @@ def _extract_gt_bboxonly(sample: Mapping[str, Any]) -> List[GTObject]:
     return objs
 
 
+def _sample_monitor_images(sample: Mapping[str, Any]) -> List[str]:
+    images_raw = sample.get("images")
+    images: List[str] = []
+    if isinstance(images_raw, Sequence) and not isinstance(images_raw, (str, bytes)):
+        for value in images_raw:
+            if isinstance(value, str) and value.strip():
+                images.append(str(value))
+    if images:
+        return images
+
+    image_one = sample.get("image")
+    if isinstance(image_one, str) and image_one.strip():
+        return [str(image_one)]
+    return []
+
+
+def _sample_monitor_image_id(sample: Mapping[str, Any]) -> Any:
+    for key in ("image_id", "sample_id", "base_idx"):
+        value = sample.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _serialize_monitor_object(obj: GTObject) -> Dict[str, Any]:
+    return {
+        "index": int(obj.index),
+        "geom_type": str(obj.geom_type),
+        "points_norm1000": [int(x) for x in obj.points_norm1000],
+        "desc": str(obj.desc),
+    }
+
+
+def _build_stage2_train_monitor_record(
+    *,
+    sample: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    preds: Sequence[GTObject],
+    object_field_order: str,
+) -> Dict[str, Any]:
+    images = _sample_monitor_images(sample)
+
+    width = sample.get("width")
+    height = sample.get("height")
+    try:
+        width = int(width) if width is not None else None
+    except (TypeError, ValueError):
+        width = None
+    try:
+        height = int(height) if height is not None else None
+    except (TypeError, ValueError):
+        height = None
+    if width is None:
+        width = 1000
+    if height is None:
+        height = 1000
+
+    def _geometry_key(value: Any) -> str:
+        key = str(value or "").strip().lower()
+        if key == "bbox":
+            return "bbox_2d"
+        return key
+
+    gt_payload = [
+        build_object_payload(
+            desc=str(obj.desc),
+            geometry_key=_geometry_key(obj.geom_type),
+            geometry_value=[int(x) for x in obj.points_norm1000],
+            object_field_order=object_field_order,
+        )
+        for obj in gts
+    ]
+    pred_payload = [
+        build_object_payload(
+            desc=str(obj.desc),
+            geometry_key=_geometry_key(obj.geom_type),
+            geometry_value=[int(x) for x in obj.points_norm1000],
+            object_field_order=object_field_order,
+        )
+        for obj in preds
+    ]
+
+    return {
+        "image_id": _sample_monitor_image_id(sample),
+        "images": images,
+        "width": int(width),
+        "height": int(height),
+        "gt": gt_payload,
+        "pred": pred_payload,
+    }
+
+
 def _build_teacher_forced_payload(
     *, gt_objects: Sequence[GTObject], object_field_order: str
 ) -> Dict[str, Any]:
@@ -884,6 +979,10 @@ class Stage2ABTrainingTrainer(
         # Rolling realized B-step ratio diagnostics (optimizer-step granularity).
         self._stage2_ab_realized_last_gs: Optional[int] = None
         self._stage2_ab_realized_recent: Deque[int] = deque(maxlen=200)
+        self._stage2_train_monitor_pending_gs: Optional[int] = None
+        self._stage2_train_monitor_candidates: List[Dict[str, Any]] = []
+        self._stage2_train_monitor_dump_last_step: Optional[int] = None
+        self._stage2_train_monitor_dump_count: int = 0
 
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
@@ -905,6 +1004,119 @@ class Stage2ABTrainingTrainer(
         for k, v in metrics.items():
             out[str(k)] = v
         batch["_rollout_matching_batch_metrics"] = out
+
+    def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
+        self._stage2_train_monitor_pending_gs = int(global_step)
+        self._stage2_train_monitor_candidates = []
+
+    def _stage2_train_monitor_step_allowed(self, *, global_step: int) -> bool:
+        cfg = self._monitor_dump_cfg()
+        if not bool(cfg.get("enabled", False)):
+            return False
+        if (
+            bool(cfg.get("only_world_process_zero", True))
+            and not self._is_main_process()
+        ):
+            return False
+
+        max_events = int(cfg.get("max_events", 20) or 0)
+        train_dump_count = int(
+            getattr(self, "_stage2_train_monitor_dump_count", 0) or 0
+        )
+        if max_events > 0 and train_dump_count >= max_events:
+            return False
+
+        gs = int(global_step)
+        last_step = getattr(self, "_stage2_train_monitor_dump_last_step", None)
+        if last_step is not None and int(last_step) == gs:
+            return False
+        return True
+
+    @staticmethod
+    def _stage2_train_monitor_sort_key(
+        sample: Mapping[str, Any],
+    ) -> Tuple[int, int, int, int, float, float, int, int]:
+        duplication = sample.get("duplication")
+        if not isinstance(duplication, Mapping):
+            duplication = {}
+        stats = sample.get("stats")
+        if not isinstance(stats, Mapping):
+            stats = {}
+        return (
+            int(duplication.get("duplicates", 0) or 0),
+            int(duplication.get("near_iou90_pairs_same_desc_count", 0) or 0),
+            int(duplication.get("duplicate_bursts", 0) or 0),
+            int(duplication.get("near_iou90_pairs_any_desc_count", 0) or 0),
+            float(duplication.get("saturation_rate", 0.0) or 0.0),
+            float(duplication.get("max_desc_count", 0.0) or 0.0),
+            int(stats.get("fp_count", 0) or 0),
+            int(stats.get("raw_valid_pred_objects", 0) or 0),
+        )
+
+    def _stage2_note_train_monitor_candidate(
+        self, *, global_step: int, sample: Mapping[str, Any]
+    ) -> None:
+        if not self._stage2_train_monitor_step_allowed(global_step=global_step):
+            return
+
+        pending_gs = getattr(self, "_stage2_train_monitor_pending_gs", None)
+        if pending_gs is None or int(pending_gs) != int(global_step):
+            self._stage2_reset_train_monitor_dump(global_step=global_step)
+
+        candidates = getattr(self, "_stage2_train_monitor_candidates", None)
+        if not isinstance(candidates, list):
+            candidates = []
+            setattr(self, "_stage2_train_monitor_candidates", candidates)
+        candidates.append(dict(sample))
+
+    def _stage2_flush_train_monitor_dump(self, *, global_step: int) -> None:
+        pending_gs = getattr(self, "_stage2_train_monitor_pending_gs", None)
+        candidates = getattr(self, "_stage2_train_monitor_candidates", None)
+        if (
+            pending_gs is None
+            or int(pending_gs) != int(global_step)
+            or not isinstance(candidates, list)
+            or not candidates
+        ):
+            return
+
+        try:
+            if not self._stage2_train_monitor_step_allowed(global_step=global_step):
+                return
+
+            dump_cfg = self._monitor_dump_cfg()
+            dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
+            selected = sorted(
+                (dict(sample) for sample in candidates),
+                key=self._stage2_train_monitor_sort_key,
+                reverse=True,
+            )[:dump_max_samples]
+
+            payload = {
+                "kind": "train_monitor_dump",
+                "global_step": int(global_step),
+                "epoch": float(
+                    getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                ),
+                "time": float(time.time()),
+                "meta": {
+                    "phase": "train",
+                    "stage2_channel": "B",
+                    "selection": "suspicious_duplication",
+                    "candidate_count": int(len(candidates)),
+                    "rollout_backend": str(self._rollout_backend()),
+                    "decode_mode": str(self._cfg("decode_mode", "greedy")),
+                },
+                "metrics": {},
+                "samples": selected,
+            }
+            self._stage2_train_monitor_dump_last_step = int(global_step)
+            self._write_monitor_dump(global_step=int(global_step), payload=payload)
+            self._stage2_train_monitor_dump_count = int(
+                getattr(self, "_stage2_train_monitor_dump_count", 0) or 0
+            ) + 1
+        finally:
+            self._stage2_reset_train_monitor_dump(global_step=global_step)
 
     def train(self, *args, **kwargs):
         """Run training and ensure rollout resources shut down cleanly."""
@@ -1766,6 +1978,10 @@ class Stage2ABTrainingTrainer(
             )
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        object_field_order = self._object_field_order()
+        track_monitor_candidates = bool(
+            self._stage2_train_monitor_step_allowed(global_step=gs)
+        )
         seed_base = int(self._derive_rollout_seed_base(global_step=gs))
 
         backend = self._rollout_backend()
@@ -1979,25 +2195,29 @@ class Stage2ABTrainingTrainer(
                 )
             )
             duplicate_metrics = _compute_duplicate_diagnostics(parsed_bbox_objects_raw)
+            dup_max_desc_count = float(
+                duplicate_metrics.get("dup/max_desc_count", 0.0) or 0.0
+            )
+            dup_saturation_rate = float(
+                duplicate_metrics.get("dup/saturation_rate", 0.0) or 0.0
+            )
+            dup_near_same_desc_pairs = int(
+                duplicate_metrics.get("dup/near_iou90_pairs_same_desc_count", 0.0)
+                or 0.0
+            )
+            dup_near_any_desc_pairs = int(
+                duplicate_metrics.get("dup/near_iou90_pairs_any_desc_count", 0.0)
+                or 0.0
+            )
             duplicate_count = int(
                 sum(len(burst) for burst in duplicate_bursts_by_boundary.values())
             )
             duplicate_burst_count = int(len(duplicate_bursts_by_boundary))
 
-            dup_max_desc_count_sum += float(
-                duplicate_metrics.get("dup/max_desc_count", 0.0) or 0.0
-            )
-            dup_saturation_rate_sum += float(
-                duplicate_metrics.get("dup/saturation_rate", 0.0) or 0.0
-            )
-            dup_near_same_desc_pairs_total += int(
-                duplicate_metrics.get("dup/near_iou90_pairs_same_desc_count", 0.0)
-                or 0.0
-            )
-            dup_near_any_desc_pairs_total += int(
-                duplicate_metrics.get("dup/near_iou90_pairs_any_desc_count", 0.0)
-                or 0.0
-            )
+            dup_max_desc_count_sum += float(dup_max_desc_count)
+            dup_saturation_rate_sum += float(dup_saturation_rate)
+            dup_near_same_desc_pairs_total += int(dup_near_same_desc_pairs)
+            dup_near_any_desc_pairs_total += int(dup_near_any_desc_pairs)
             dup_raw_bbox_valid_total += int(len(parsed_bbox_objects_raw))
             dup_clean_accepted_total += int(len(accepted_objects_clean))
             dup_duplicates_total += int(duplicate_count)
@@ -2027,7 +2247,7 @@ class Stage2ABTrainingTrainer(
             clean_prefix = _build_canonical_prefix_data(
                 tokenizer=tok,
                 objects=accepted_objects_clean,
-                object_field_order=self._object_field_order(),
+                object_field_order=object_field_order,
             )
             prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
 
@@ -2094,7 +2314,7 @@ class Stage2ABTrainingTrainer(
             append_text = serialize_append_fragment(
                 fn_objects=fn_objs,
                 prefix_text=clean_prefix.prefix_text,
-                object_field_order=self._object_field_order(),
+                object_field_order=object_field_order,
             )
             append_ids = tok.encode(append_text, add_special_tokens=False)
 
@@ -2116,11 +2336,145 @@ class Stage2ABTrainingTrainer(
                     fn_objects=fn_objs,
                     duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
                     boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
-                    object_field_order=self._object_field_order(),
+                    object_field_order=object_field_order,
                 )
             )
             dup_ul_boundaries_total += int(ul_boundary_count)
             dup_ul_skipped_no_divergence_total += int(ul_skipped_no_divergence)
+
+            if track_monitor_candidates and (
+                duplicate_count > 0
+                or dup_near_same_desc_pairs > 0
+                or dup_near_any_desc_pairs > 0
+            ):
+                duplicate_bursts_dump = {
+                    str(boundary): [
+                        _serialize_monitor_object(obj) for obj in burst
+                    ]
+                    for boundary, burst in sorted(duplicate_bursts_by_boundary.items())
+                }
+                match_details: List[Dict[str, Any]] = []
+                for pred_i, gt_i in match.matched_pairs:
+                    if pred_i < 0 or pred_i >= len(accepted_objects_clean):
+                        continue
+                    if gt_i < 0 or gt_i >= len(gts):
+                        continue
+                    match_details.append(
+                        {
+                            "pred_i": int(pred_i),
+                            "gt_i": int(gt_i),
+                            "bbox_iou_norm1000": float(
+                                _bbox_iou_norm1000_xyxy(
+                                    accepted_objects_clean[pred_i].points_norm1000,
+                                    gts[gt_i].points_norm1000,
+                                )
+                            ),
+                            "pred_index": int(accepted_objects_clean[pred_i].index),
+                            "gt_index": int(gts[gt_i].index),
+                            "pred_desc": str(accepted_objects_clean[pred_i].desc),
+                            "gt_desc": str(gts[gt_i].desc),
+                        }
+                    )
+
+                clean_pred_n = float(len(accepted_objects_clean))
+                gt_n = float(len(gts))
+                matched_n = float(len(match.matched_pairs))
+                prec_local = (matched_n / clean_pred_n) if clean_pred_n > 0 else 0.0
+                rec_local = (matched_n / gt_n) if gt_n > 0 else 0.0
+                f1_local = (
+                    (2.0 * prec_local * rec_local / (prec_local + rec_local))
+                    if (prec_local + rec_local) > 0.0
+                    else 0.0
+                )
+
+                monitor_record = _build_stage2_train_monitor_record(
+                    sample=sample,
+                    gts=gts,
+                    preds=parsed_bbox_objects_raw,
+                    object_field_order=object_field_order,
+                )
+                self._stage2_note_train_monitor_candidate(
+                    global_step=gs,
+                    sample={
+                        "sample_id": sample.get("sample_id"),
+                        "base_idx": sample.get("base_idx"),
+                        "image_id": monitor_record.get("image_id"),
+                        "image": sample.get("image"),
+                        "images": monitor_record.get("images"),
+                        "width": monitor_record.get("width"),
+                        "height": monitor_record.get("height"),
+                        "messages": sample.get("messages"),
+                        "rollout_text": str(getattr(parse, "response_text", "") or ""),
+                        "prefix_text": str(clean_prefix.prefix_text),
+                        "append_text": str(append_text),
+                        "train_text": str(clean_target_text),
+                        "gt": monitor_record.get("gt"),
+                        "pred": monitor_record.get("pred"),
+                        "gt_objects": [
+                            _serialize_monitor_object(obj) for obj in gts
+                        ],
+                        "pred_objects": [
+                            _serialize_monitor_object(obj)
+                            for obj in parsed_bbox_objects_raw
+                        ],
+                        "match": {
+                            "match_domain": "clean_accepted_vs_gt",
+                            "matched_pairs": [
+                                [int(pred_i), int(gt_i)]
+                                for pred_i, gt_i in match.matched_pairs
+                            ],
+                            "matched_pair_details": match_details,
+                            "fn_gt_indices": [
+                                int(idx) for idx in match.fn_gt_indices
+                            ],
+                            "fp_pred_indices": [
+                                int(idx) for idx in match.fp_pred_indices
+                            ],
+                            "gating_rejections": int(match.gating_rejections),
+                        },
+                        "duplication": {
+                            "raw_bbox_valid": int(len(parsed_bbox_objects_raw)),
+                            "clean_accepted": int(len(accepted_objects_clean)),
+                            "duplicates": int(duplicate_count),
+                            "duplicate_bursts": int(duplicate_burst_count),
+                            "near_iou90_pairs_same_desc_count": int(
+                                dup_near_same_desc_pairs
+                            ),
+                            "near_iou90_pairs_any_desc_count": int(
+                                dup_near_any_desc_pairs
+                            ),
+                            "max_desc_count": float(dup_max_desc_count),
+                            "saturation_rate": float(dup_saturation_rate),
+                            "clean_accepted_objects": [
+                                _serialize_monitor_object(obj)
+                                for obj in accepted_objects_clean
+                            ],
+                            "duplicate_bursts_by_boundary": duplicate_bursts_dump,
+                        },
+                        "stats": {
+                            "decode_mode": str(decode_mode),
+                            "parse_invalid_rollout": bool(invalid_rollout),
+                            "parse_dropped_invalid": int(parse.dropped_invalid),
+                            "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
+                            "parse_truncated": bool(parse.truncated),
+                            "raw_valid_pred_objects": int(len(parsed_bbox_objects_raw)),
+                            "clean_accepted_pred_objects": int(
+                                len(accepted_objects_clean)
+                            ),
+                            "gt_objects": int(len(gts)),
+                            "matched": int(len(match.matched_pairs)),
+                            "fp_count": int(len(match.fp_pred_indices)),
+                            "fn_count": int(len(match.fn_gt_indices)),
+                            "precision": float(prec_local),
+                            "recall": float(rec_local),
+                            "f1": float(f1_local),
+                            "duplicate_ul_boundary_count": int(ul_boundary_count),
+                            "duplicate_ul_skipped_no_divergence": int(
+                                ul_skipped_no_divergence
+                            ),
+                        },
+                    },
+                )
 
             # FN bbox groups in the appended tail.
             rel_groups = _bbox_groups_from_token_ids(

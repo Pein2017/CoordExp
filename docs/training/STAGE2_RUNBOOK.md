@@ -742,25 +742,46 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras (Channel-B step
 
 ### Qualitative Monitoring Dumps
 
-Enable periodic dumps of (Prompt, Rollout, Target) triplets (rank0 only):
+`monitor_dump` uses the shared dump writer under `<training.output_dir>/monitor_dumps/`
+and writes both `.json` and `.md` files (rank 0 only).
+
+Behavior depends on the execution path:
+
+- `eval_step` keeps the existing periodic cadence controlled by `every_steps`.
+- `stage2_two_channel` Channel-B `train_step` does **not** dump on a fixed cadence.
+  Instead, it buffers the current optimizer step, selects suspicious duplicate-heavy
+  rollouts only, and writes the top `max_samples` candidates for that step.
+- Suspicious Channel-B train dumps keep the same top-level dump hierarchy as eval
+  (`kind`, `global_step`, `epoch`, `time`, `meta`, `metrics`, `samples`) and each
+  sample includes:
+  - image handle / `image_id`
+  - `gt`
+  - `pred`
+  - full rollout / prefix / train-target text
+  - duplicate diagnostics (`duplicates`, duplicate bursts, near-IoU duplicate counts)
+- For those suspicious Channel-B train dumps, text is written in full even if
+  `max_text_chars` is configured. `max_text_chars` still applies to the periodic
+  eval-side monitor dumps.
+
+Example config:
 
 ```yaml
 rollout_matching:
   monitor_dump:
     enabled: true
-    # If omitted, follows training.logging_steps.
+    # Eval-step cadence. Channel-B train-step suspicious dumps ignore cadence and
+    # dump only when duplicate-heavy rollouts are detected.
     every_steps: 4
     max_events: 50
     max_samples: 1
-    # <=0 disables clipping (full text dumps).
+    # <=0 disables clipping for periodic/eval dumps. Suspicious Channel-B train dumps
+    # are always written with full text.
     max_text_chars: 4000
     # Safety rails: do not let dumps stall training or brick runs when disks are low.
     async_write: true
     max_pending_writes: 2
     min_free_gb: 2.0
 ```
-
-Outputs land in `<training.output_dir>/monitor_dumps/` (both `.json` and `.md` per dump).
 
 ---
 

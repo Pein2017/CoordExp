@@ -33,3 +33,36 @@ def test_monitor_dump_does_not_raise_on_markdown_format_error(tmp_path) -> None:
     t._format_monitor_dump_markdown = _fmt  # type: ignore[assignment]
 
     t._write_monitor_dump(global_step=0, payload={"global_step": 0})
+
+
+def test_train_monitor_dump_markdown_keeps_full_text(tmp_path) -> None:
+    t = object.__new__(RolloutMatchingSFTTrainer)
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path))
+    t.rollout_matching_cfg = {"monitor_dump": {"max_text_chars": 8}}
+
+    full_text = "very long rollout text that should stay intact"
+    md = t._format_monitor_dump_markdown(
+        {
+            "kind": "train_monitor_dump",
+            "global_step": 3,
+            "samples": [
+                {
+                    "sample_id": "sample-1",
+                    "base_idx": 1,
+                    "image_id": 99,
+                    "images": ["img.jpg"],
+                    "messages": [],
+                    "rollout_text": full_text,
+                    "prefix_text": full_text,
+                    "train_text": full_text,
+                    "gt": [{"desc": "person", "bbox_2d": [1, 2, 3, 4]}],
+                    "pred": [{"desc": "person", "bbox_2d": [1, 2, 3, 4]}],
+                    "match": {},
+                    "stats": {},
+                }
+            ],
+        }
+    )
+
+    assert full_text in md
+    assert "...<truncated>" not in md

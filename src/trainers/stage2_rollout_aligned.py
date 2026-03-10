@@ -2178,7 +2178,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 raise
         return bool(getattr(self, "is_world_process_zero", False))
 
-    def _should_monitor_dump(self, *, global_step: int) -> bool:
+    def _monitor_dump_step_allowed(self, *, global_step: int) -> bool:
         cfg = self._monitor_dump_cfg()
         if not bool(cfg.get("enabled", False)):
             return False
@@ -2189,15 +2189,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return False
 
         max_events = int(cfg.get("max_events", 20) or 0)
-        if max_events > 0 and self._monitor_dump_count >= max_events:
+        monitor_dump_count = int(getattr(self, "_monitor_dump_count", 0) or 0)
+        if max_events > 0 and monitor_dump_count >= max_events:
             return False
 
         gs = int(global_step)
-        if (
-            self._monitor_dump_last_step is not None
-            and int(self._monitor_dump_last_step) == gs
-        ):
+        last_step = getattr(self, "_monitor_dump_last_step", None)
+        if last_step is not None and int(last_step) == gs:
             return False
+        return True
+
+    def _should_monitor_dump(self, *, global_step: int) -> bool:
+        if not self._monitor_dump_step_allowed(global_step=global_step):
+            return False
+
+        cfg = self._monitor_dump_cfg()
+        gs = int(global_step)
 
         every = cfg.get("every_steps", None)
         if every is None:
@@ -2437,13 +2444,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _format_monitor_dump_markdown(self, payload: Mapping[str, Any]) -> str:
         # Human-readable dump; keep it ASCII-safe to avoid surprising tooling issues.
-        max_chars_raw = self._monitor_dump_cfg().get("max_text_chars", 4000)
-        try:
-            # Contract: <=0 disables clipping (full text).
-            max_chars = int(max_chars_raw) if max_chars_raw is not None else 4000
-        except Exception:
-            max_chars = 4000
-        max_chars = max(0, int(max_chars))
+        kind = str(payload.get("kind", "") or "").strip().lower()
+        if kind == "train_monitor_dump":
+            max_chars = 0
+        else:
+            max_chars_raw = self._monitor_dump_cfg().get("max_text_chars", 4000)
+            try:
+                # Contract: <=0 disables clipping (full text).
+                max_chars = int(max_chars_raw) if max_chars_raw is not None else 4000
+            except Exception:
+                max_chars = 4000
+            max_chars = max(0, int(max_chars))
 
         def _j(obj: Any) -> str:
             try:
@@ -2467,9 +2478,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             lines.append(f"## Sample {i}\n")
             sid = s.get("sample_id")
             bidx = s.get("base_idx")
+            image_id = s.get("image_id")
             img = s.get("image") or s.get("images")
             lines.append(f"- sample_id: `{sid}`\n")
             lines.append(f"- base_idx: `{bidx}`\n")
+            lines.append(f"- image_id: `{image_id}`\n")
             lines.append(f"- image(s): `{img}`\n\n")
 
             lines.append("### Messages\n")
@@ -2500,10 +2513,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 + "\n```\n"
             )
 
-            lines.append("### GT Objects\n")
-            lines.append("```json\n" + _j(s.get("gt_objects")) + "\n```\n")
-            lines.append("### Pred Objects (valid)\n")
-            lines.append("```json\n" + _j(s.get("pred_objects")) + "\n```\n")
+            gt_payload = s.get("gt")
+            if gt_payload is None:
+                gt_payload = s.get("gt_objects")
+            pred_payload = s.get("pred")
+            if pred_payload is None:
+                pred_payload = s.get("pred_objects")
+
+            lines.append("### GT\n")
+            lines.append("```json\n" + _j(gt_payload) + "\n```\n")
+            lines.append("### Pred\n")
+            lines.append("```json\n" + _j(pred_payload) + "\n```\n")
+            if s.get("duplication") is not None:
+                lines.append("### Duplication\n")
+                lines.append("```json\n" + _j(s.get("duplication")) + "\n```\n")
             lines.append("### Match\n")
             lines.append("```json\n" + _j(s.get("match")) + "\n```\n")
             lines.append("### Stats\n")
