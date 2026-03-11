@@ -27,8 +27,8 @@ Normative behavior:
 - **THEN** it may remain in the edited clean prefix
 - **AND** it contributes no positive CE/geo/coord terms.
 
-### Requirement: duplicate_ul is first-divergence suppression for dead anchor-side continuations
-The unified loss registry SHALL treat `duplicate_ul` as the canonical first-divergence local suppression objective for dead anchor-side continuations in v3.
+### Requirement: loss_dead_anchor_suppression is first-divergence suppression for dead anchor-side continuations
+The unified loss registry SHALL treat `loss_dead_anchor_suppression` as the canonical first-divergence local suppression objective for dead anchor-side continuations in v3.
 
 Normative behavior:
 
@@ -39,7 +39,7 @@ Normative behavior:
 #### Scenario: Explorer-only dead object does not create a second suppression branch
 - **WHEN** an object exists only in the explorer rollout and is classified as dead
 - **THEN** it does not create a separate explore-side UL path in the canonical v1 contract
-- **AND** only anchor-side dead continuations may produce `duplicate_ul` targets.
+- **AND** only anchor-side dead continuations may produce `loss_dead_anchor_suppression` targets.
 
 ## ADDED Requirements
 

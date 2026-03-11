@@ -19,7 +19,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
             "config": {},
         },
         {
-            "name": "duplicate_ul",
+            "name": "loss_dead_anchor_suppression",
             "enabled": True,
             "weight": 0.25,
             "channels": ["B"],
@@ -44,7 +44,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     state = {
         "token_ce_struct_contrib": _t(0.3),
         "token_ce_desc_contrib": _t(0.2),
-        "duplicate_ul_contrib": _t(0.4),
+        "loss_dead_anchor_suppression_contrib": _t(0.4),
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
         "coord_token_ce_contrib": _t(0.05),
@@ -58,19 +58,19 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     }
 
     token_loss = _t(0.3 + 0.2)
-    duplicate_ul_loss = _t(0.4)
+    dead_anchor_suppression_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
         "token_ce": 1.0 * token_loss,
-        "duplicate_ul": 0.25 * duplicate_ul_loss,
+        "loss_dead_anchor_suppression": 0.25 * dead_anchor_suppression_loss,
         "bbox_geo": 2.0 * bbox_loss,
         "coord_reg": 0.5 * coord_loss,
     }
     total_loss = (
         module_losses["token_ce"]
-        + module_losses["duplicate_ul"]
+        + module_losses["loss_dead_anchor_suppression"]
         + module_losses["bbox_geo"]
         + module_losses["coord_reg"]
     )
@@ -94,7 +94,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
 
     assert atoms["loss/B_rollout_text/struct_ce"] == pytest.approx(0.3)
     assert atoms["loss/B_rollout_text/desc_ce"] == pytest.approx(0.2)
-    assert atoms["loss/B_rollout_text/duplicate_ul"] == pytest.approx(0.25 * 0.4)
+    assert atoms["loss/B_rollout_text/loss_dead_anchor_suppression"] == pytest.approx(0.25 * 0.4)
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
     assert atoms["loss/B_coord/coord_token_ce"] == pytest.approx(0.5 * 0.05)
@@ -104,10 +104,10 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert sum(atoms.values()) == pytest.approx(float(total_loss.detach().cpu().item()))
 
 
-def test_project_stage2_objective_atoms_emits_duplicate_ul_text_atom() -> None:
+def test_project_stage2_objective_atoms_emits_dead_anchor_suppression_text_atom() -> None:
     objective_specs = [
         {
-            "name": "duplicate_ul",
+            "name": "loss_dead_anchor_suppression",
             "enabled": True,
             "weight": 1.5,
             "channels": ["B"],
@@ -117,9 +117,9 @@ def test_project_stage2_objective_atoms_emits_duplicate_ul_text_atom() -> None:
 
     pipeline_result = PipelineResult(
         total_loss=_t(0.3),
-        module_losses={"duplicate_ul": _t(0.3)},
+        module_losses={"loss_dead_anchor_suppression": _t(0.3)},
         metrics={},
-        state={"duplicate_ul_contrib": _t(0.2)},
+        state={"loss_dead_anchor_suppression_contrib": _t(0.2)},
     )
 
     atoms = project_stage2_objective_atoms(
@@ -132,8 +132,8 @@ def test_project_stage2_objective_atoms_emits_duplicate_ul_text_atom() -> None:
         require_additive=False,
     )
 
-    assert set(atoms.keys()) == {"loss/B_rollout_text/duplicate_ul"}
-    assert atoms["loss/B_rollout_text/duplicate_ul"] == pytest.approx(0.3)
+    assert set(atoms.keys()) == {"loss/B_rollout_text/loss_dead_anchor_suppression"}
+    assert atoms["loss/B_rollout_text/loss_dead_anchor_suppression"] == pytest.approx(0.3)
 
 
 def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> None:

@@ -20,7 +20,7 @@ from src.trainers.stage2_two_channel import (
     _bbox_groups_from_token_ids,
     _bbox_smoothl1_ciou_loss,
     _build_canonical_prefix_data,
-    _build_duplicate_ul_targets,
+    _build_dead_anchor_suppression_targets,
     _build_teacher_forced_payload,
     _compute_duplicate_diagnostics,
     _expectation_decode_coords,
@@ -465,8 +465,8 @@ def _make_stage2_pipeline_manifest(
     *,
     token_ce_enabled: bool = True,
     token_ce_weight: float = 1.0,
-    duplicate_ul_enabled: bool = False,
-    duplicate_ul_weight: float = 1.0,
+    dead_anchor_suppression_enabled: bool = False,
+    dead_anchor_suppression_weight: float = 1.0,
     desc_ce_weight: float = 1.0,
     self_context_struct_ce_weight: float = 0.1,
     rollout_fn_desc_weight: float | None = None,
@@ -504,9 +504,9 @@ def _make_stage2_pipeline_manifest(
                 "config": token_cfg,
             },
             {
-                "name": "duplicate_ul",
-                "enabled": bool(duplicate_ul_enabled),
-                "weight": float(duplicate_ul_weight),
+                "name": "loss_dead_anchor_suppression",
+                "enabled": bool(dead_anchor_suppression_enabled),
+                "weight": float(dead_anchor_suppression_weight),
                 "channels": ["B"],
                 "config": {},
             },
@@ -1577,7 +1577,7 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
     assert meta["bbox_groups_fn"][0]["pos"] == expected_pos
 
 
-def test_channel_b_dual_rollout_triage_emits_recovered_fn_weights(
+def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multipliers(
     monkeypatch,
 ) -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -1594,11 +1594,11 @@ def test_channel_b_dual_rollout_triage_emits_recovered_fn_weights(
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
-        "v3_k2.explorer_temperature": 0.7,
-        "v3_k2.explorer_top_p": 0.9,
-        "v3_k2.explorer_top_k": 12,
-        "v3_k2.consistent_iou_threshold": 0.8,
-        "v3_k2.recovered_fn_weight": 2.5,
+        "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.explorer_top_p": 0.9,
+        "triage_posterior.explorer_top_k": 12,
+        "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
+        "triage_posterior.recovered_ground_truth_weight_multiplier": 2.5,
     }.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -1768,15 +1768,15 @@ def test_channel_b_dual_rollout_triage_emits_recovered_fn_weights(
     assert meta["bbox_groups_fn"][0]["weight"] == pytest.approx(2.5)
     assert meta["tail_desc_weights"]
     assert set(float(x) for x in meta["tail_desc_weights"]) == {2.5}
-    assert meta["duplicate_ul_targets"]
+    assert meta["dead_anchor_suppression_targets"]
 
-    assert batch_metrics["stage2_ab/channel_b/triage/N_dead_anchor"] == pytest.approx(
+    assert batch_metrics["train/triage/dead_anchor_count"] == pytest.approx(
         1.0
     )
-    assert batch_metrics["stage2_ab/channel_b/triage/N_recovered_gt"] == pytest.approx(
+    assert batch_metrics["train/triage/recovered_ground_truth_count"] == pytest.approx(
         1.0
     )
-    assert batch_metrics["stage2_ab/channel_b/triage/recovered_gt_den"] == pytest.approx(
+    assert batch_metrics["train/triage/recovered_ground_truth_rate_den"] == pytest.approx(
         1.0
     )
 
@@ -1932,7 +1932,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
     ]
 
 
-def test_channel_b_v3_k2_nested_config_reaches_live_accessor_and_vllm_offsets(
+def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,
 ) -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -1953,11 +1953,11 @@ def test_channel_b_v3_k2_nested_config_reaches_live_accessor_and_vllm_offsets(
         "configs/stage2_two_channel/base.yaml"
     )
     t.stage2_ab_cfg = asdict(training_cfg.stage2_ab)
-    t.stage2_ab_cfg["channel_b"]["v3_k2"]["explorer_temperature"] = 0.55
-    t.stage2_ab_cfg["channel_b"]["v3_k2"]["explorer_top_p"] = 0.91
-    t.stage2_ab_cfg["channel_b"]["v3_k2"]["explorer_top_k"] = 7
-    t.stage2_ab_cfg["channel_b"]["v3_k2"]["consistent_iou_threshold"] = 0.82
-    t.stage2_ab_cfg["channel_b"]["v3_k2"]["recovered_fn_weight"] = 3.0
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_temperature"] = 0.55
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_p"] = 0.91
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_k"] = 7
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["unlabeled_consistent_iou_threshold"] = 0.82
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["recovered_ground_truth_weight_multiplier"] = 3.0
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -2091,10 +2091,10 @@ def test_channel_b_v3_k2_nested_config_reaches_live_accessor_and_vllm_offsets(
             _segments_only=True,
         )
 
-    assert t._ab_channel_b_get("v3_k2.explorer_temperature", None) == pytest.approx(
+    assert t._ab_channel_b_get("triage_posterior.explorer_temperature", None) == pytest.approx(
         0.55
     )
-    assert t._ab_channel_b_get("v3_k2.recovered_fn_weight", None) == pytest.approx(
+    assert t._ab_channel_b_get("triage_posterior.recovered_ground_truth_weight_multiplier", None) == pytest.approx(
         3.0
     )
     assert rollout_calls == [
@@ -2124,8 +2124,8 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
-        "v3_k2.explorer_temperature": 0.7,
-        "v3_k2.consistent_iou_threshold": 0.8,
+        "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -2258,7 +2258,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     assert meta["dead_anchor_indices"] == []
     assert meta["fn_object_weights"] == []
     assert meta["bbox_groups_prefix"]
-    assert batch_metrics["stage2_ab/channel_b/triage/N_anchor_gt_backed"] == pytest.approx(
+    assert batch_metrics["train/triage/gt_backed_count"] == pytest.approx(
         1.0
     )
 
@@ -2278,8 +2278,8 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
-        "v3_k2.explorer_temperature": 0.7,
-        "v3_k2.consistent_iou_threshold": 0.8,
+        "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -2394,7 +2394,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     assert meta["prefix_struct_pos"] == []
     assert meta["bbox_groups_prefix"] == []
     assert meta["bbox_groups_fn"] == []
-    assert batch_metrics["stage2_ab/channel_b/triage/N_shielded_anchor"] == pytest.approx(
+    assert batch_metrics["train/triage/unlabeled_consistent_count"] == pytest.approx(
         1.0
     )
 
@@ -2414,8 +2414,8 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
-        "v3_k2.explorer_temperature": 0.7,
-        "v3_k2.consistent_iou_threshold": 0.8,
+        "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -2546,13 +2546,13 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     assert meta["dead_anchor_indices"] == []
     assert meta["bbox_groups_prefix"] == []
     assert meta["bbox_groups_fn"] == []
-    assert meta["duplicate_ul_targets"] == []
-    assert batch_metrics["stage2_ab/channel_b/triage/N_dead_explorer"] == pytest.approx(
+    assert meta["dead_anchor_suppression_targets"] == []
+    assert batch_metrics["train/triage/explorer_only_dead_count"] == pytest.approx(
         1.0
     )
 
 
-def test_channel_b_recovered_fn_weights_only_apply_to_recovered_tail_objects(
+def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recovered_tail_objects(
     monkeypatch,
 ) -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -2569,9 +2569,9 @@ def test_channel_b_recovered_fn_weights_only_apply_to_recovered_tail_objects(
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
-        "v3_k2.explorer_temperature": 0.7,
-        "v3_k2.recovered_fn_weight": 2.5,
-        "v3_k2.consistent_iou_threshold": 0.8,
+        "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.recovered_ground_truth_weight_multiplier": 2.5,
+        "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -4093,7 +4093,7 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
     assert diag["dup/saturation_rate"] == pytest.approx(0.0)
 
 
-def test_duplicate_ul_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
+def test_dead_anchor_suppression_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
     tok = _DummyTokenizer()
     accepted_clean = [
         GTObject(index=0, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="cat"),
@@ -4112,7 +4112,7 @@ def test_duplicate_ul_targets_use_lcp_divergence_and_collapse_same_boundary_toke
         object_field_order="desc_first",
     )
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
-    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -4133,7 +4133,7 @@ def test_duplicate_ul_targets_use_lcp_divergence_and_collapse_same_boundary_toke
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_duplicate_ul_targets_skip_when_no_safe_divergence_exists() -> None:
+def test_dead_anchor_suppression_targets_skip_when_no_safe_divergence_exists() -> None:
     tok = _DummyTokenizer()
     accepted_clean = [
         GTObject(index=0, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
@@ -4150,7 +4150,7 @@ def test_duplicate_ul_targets_skip_when_no_safe_divergence_exists() -> None:
         object_field_order="desc_first",
     )
     y_train_ids = []
-    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -4166,7 +4166,7 @@ def test_duplicate_ul_targets_skip_when_no_safe_divergence_exists() -> None:
     assert skipped == 1
 
 
-def test_duplicate_ul_targets_resolve_boundary_crossing_tokenization() -> None:
+def test_dead_anchor_suppression_targets_resolve_boundary_crossing_tokenization() -> None:
     tok = _BoundaryMergingTokenizer()
     accepted_clean = [
         GTObject(
@@ -4193,7 +4193,7 @@ def test_duplicate_ul_targets_resolve_boundary_crossing_tokenization() -> None:
         object_field_order="desc_first",
     )
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
-    targets, ul_boundaries, skipped = _build_duplicate_ul_targets(
+    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -4214,13 +4214,13 @@ def test_duplicate_ul_targets_resolve_boundary_crossing_tokenization() -> None:
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_stage2_channel_b_duplicate_ul_logs_weighted_objective_atom() -> None:
+def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom() -> None:
     t = _make_min_trainer(n_softctx_iter=1)
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
-        duplicate_ul_enabled=True,
-        duplicate_ul_weight=2.0,
+        dead_anchor_suppression_enabled=True,
+        dead_anchor_suppression_weight=2.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -4242,7 +4242,7 @@ def test_stage2_channel_b_duplicate_ul_logs_weighted_objective_atom() -> None:
             "tail_closure_pos": [],
             "bbox_groups_prefix": [],
             "bbox_groups_fn": [],
-            "duplicate_ul_targets": [
+            "dead_anchor_suppression_targets": [
                 {"boundary": 0, "rel_pos": 0, "token_id": 7},
             ],
         }
@@ -4259,8 +4259,8 @@ def test_stage2_channel_b_duplicate_ul_logs_weighted_objective_atom() -> None:
 
     assert float(loss.detach().cpu().item()) > 0.0
     pending = t._stage2_pending_train_logs[1].finalize()
-    assert "loss/B_rollout_text/duplicate_ul" in pending
-    assert pending["loss/B_rollout_text/duplicate_ul"] > 0.0
+    assert "train/optimization/loss_dead_anchor_suppression" in pending
+    assert pending["train/optimization/loss_dead_anchor_suppression"] > 0.0
 
 
 def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> None:
@@ -4603,10 +4603,10 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(monkeypatch
 
     assert trainer.model.training is True
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.25)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.25)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert all(not k.startswith("eval/detection/bbox_") for k in metrics)
+    assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
 
 def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> None:

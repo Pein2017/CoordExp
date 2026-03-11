@@ -8,7 +8,7 @@ Stage-2 Channel-B currently follows the landed v2 clean-prefix contract:
 - match the clean accepted set against GT,
 - build one clean teacher-forced target,
 - append FN GT objects,
-- apply `duplicate_ul` only to duplicate-certified continuations.
+- apply `loss_dead_anchor_suppression` only to duplicate-certified continuations.
 
 That was the right minimal correction for the raw-prefix duplication failure mode, but the latest evidence shows the residual problem is broader than same-desc duplicate cleanup:
 
@@ -56,7 +56,7 @@ while remaining a **minimal perturbation of v2**:
   - one merged teacher-forced forward on the single edited target,
   - no separate explore teacher-forced pass,
   - no recovered-prefix distillation in v1.
-- Reuse the existing `duplicate_ul` module slot and logging key for the local negative signal, but broaden its semantic source from “duplicate-certified continuation” to **dead anchor-side continuation** chosen by the new triage stage.
+- Reuse the existing `loss_dead_anchor_suppression` module slot and logging key for the local negative signal, but broaden its semantic source from “duplicate-certified continuation” to **dead anchor-side continuation** chosen by the new triage stage.
 - Add typed config for the explorer rollout and v3 triage thresholds under `stage2_ab.channel_b`.
 - Require a per-call rollout decode-override seam so both HF and vLLM backends can issue greedy anchor and stochastic explorer requests in the same B step.
 - Add triage metrics, monitor-dump payloads, and docs/spec updates so the new behavior is auditable and reproducible.
@@ -66,9 +66,9 @@ while remaining a **minimal perturbation of v2**:
 ### Modified Capabilities
 - `stage2-ab-training`: replace single-rollout duplicate-only Channel-B correction with the canonical K=2 anchor-edited triage contract.
 - `rollout-matching-sft`: add per-call decode overrides for dual-policy Channel-B rollouts across HF and vLLM backends.
-- `teacher-forcing-objective-pipeline`: keep `duplicate_ul` as the canonical B-only objective module but broaden its prerequisite metadata from duplicate-only to dead-anchor continuation targets.
+- `teacher-forcing-objective-pipeline`: keep `loss_dead_anchor_suppression` as the canonical B-only objective module but broaden its prerequisite metadata from duplicate-only to dead-anchor continuation targets.
 - `teacher-forcing-unified-loss-registry`: define `gt_backed`, `shielded`, `dead_anchor`, and `recovered_fn` rollout semantics under one merged clean-prefix forward.
-- `trainer-metrics-components`: add triage counts plus aggregation-safe numerators/denominators and clarify that `loss/B_rollout_text/duplicate_ul` now covers dead anchor-side continuation suppression, not only same-desc duplicate cleanup.
+- `trainer-metrics-components`: add triage counts plus aggregation-safe numerators/denominators and clarify that `train/optimization/loss_dead_anchor_suppression` now covers dead anchor-side continuation suppression, not only same-desc duplicate cleanup.
 
 ## Impact
 

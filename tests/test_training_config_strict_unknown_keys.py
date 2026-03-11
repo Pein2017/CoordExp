@@ -466,11 +466,11 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
     }
 
 
-def _pipeline_duplicate_ul_spec(
+def _pipeline_loss_dead_anchor_suppression_spec(
     *, channels: list[str] | None = None, config: dict | None = None
 ) -> dict:
     return {
-        "name": "duplicate_ul",
+        "name": "loss_dead_anchor_suppression",
         "enabled": True,
         "weight": 1.0,
         "channels": list(channels) if channels is not None else ["B"],
@@ -528,7 +528,7 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
 def _canonical_stage2_two_channel_objective() -> list[dict]:
     return [
         _pipeline_token_ce_spec(),
-        _pipeline_duplicate_ul_spec(),
+        _pipeline_loss_dead_anchor_suppression_spec(),
         _pipeline_bbox_geo_spec(),
         _pipeline_coord_reg_spec(),
     ]
@@ -586,7 +586,7 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
-            _pipeline_duplicate_ul_spec(),
+            _pipeline_loss_dead_anchor_suppression_spec(),
             _pipeline_bbox_geo_spec(),
             _pipeline_coord_reg_spec(),
         ]

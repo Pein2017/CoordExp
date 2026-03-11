@@ -3,17 +3,17 @@
 ## MODIFIED Requirements
 
 ### Requirement: Canonical metric docs and logs reflect v3 triage semantics
-The canonical metric docs SHALL describe the v3 K=2 triage metrics and the broadened meaning of `loss/B_rollout_text/duplicate_ul`.
+The canonical metric docs SHALL describe the v3 K=2 triage metrics and the broadened meaning of `train/optimization/loss_dead_anchor_suppression`.
 
 Normative behavior:
 
 - `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS.md` MUST describe the anchor/explorer K=2 target-construction flow,
-- the docs MUST state that `loss/B_rollout_text/duplicate_ul` covers dead anchor-side continuation suppression in the v3 contract,
+- the docs MUST state that `train/optimization/loss_dead_anchor_suppression` covers dead anchor-side continuation suppression in the v3 contract,
 - legacy duplicate metrics MAY remain documented as supporting diagnostics.
 
-#### Scenario: duplicate_ul docs reflect dead-anchor suppression semantics
+#### Scenario: loss_dead_anchor_suppression docs reflect dead-anchor suppression semantics
 - **WHEN** v3 triage lands
-- **THEN** the canonical docs describe `loss/B_rollout_text/duplicate_ul` as the dead-anchor continuation suppression atom for Channel-B
+- **THEN** the canonical docs describe `train/optimization/loss_dead_anchor_suppression` as the dead-anchor continuation suppression atom for Channel-B
 - **AND** they do not describe it as same-desc duplicate-only cleanup.
 
 ## ADDED Requirements
@@ -23,18 +23,18 @@ The trainer metrics contract SHALL expose the v3 triage bookkeeping separately f
 
 Normative count-like metrics:
 
-- `stage2_ab/channel_b/triage/N_anchor_gt_backed`
-- `stage2_ab/channel_b/triage/N_shielded_anchor`
-- `stage2_ab/channel_b/triage/N_dead_anchor`
-- `stage2_ab/channel_b/triage/N_dead_explorer`
-- `stage2_ab/channel_b/triage/N_recovered_gt`
+- `train/triage/gt_backed_count`
+- `train/triage/unlabeled_consistent_count`
+- `train/triage/dead_anchor_count`
+- `train/triage/explorer_only_dead_count`
+- `train/triage/recovered_ground_truth_count`
 
 Normative numerator / denominator metrics:
 
-- `stage2_ab/channel_b/triage/recovered_gt_num`
-- `stage2_ab/channel_b/triage/recovered_gt_den`
-- `stage2_ab/channel_b/triage/dead_anchor_num`
-- `stage2_ab/channel_b/triage/dead_anchor_den`
+- `train/triage/recovered_ground_truth_rate_num`
+- `train/triage/recovered_ground_truth_rate_den`
+- `train/triage/dead_anchor_rate_num`
+- `train/triage/dead_anchor_rate_den`
 
 Normative behavior:
 

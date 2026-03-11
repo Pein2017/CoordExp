@@ -8,7 +8,7 @@ import pytest
 from src.config.loader import ConfigLoader
 from src.config.schema import (
     Stage2ABChannelBConfig,
-    Stage2ABChannelBV3K2Config,
+    Stage2ABChannelBTriagePosteriorConfig,
     TrainingConfig,
 )
 
@@ -49,8 +49,8 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
 def _canonical_stage2_pipeline(
     *,
     token_ce_cfg: dict | None = None,
-    duplicate_ul_cfg: dict | None = None,
-    duplicate_ul_channels: list[str] | None = None,
+    dead_anchor_suppression_cfg: dict | None = None,
+    dead_anchor_suppression_channels: list[str] | None = None,
     bbox_geo_cfg: dict | None = None,
     coord_reg_cfg: dict | None = None,
 ) -> dict:
@@ -61,10 +61,10 @@ def _canonical_stage2_pipeline(
             "rollout_fn_desc_weight": 1.0,
             "rollout_matched_prefix_struct_weight": 1.0,
         }
-    if duplicate_ul_cfg is None:
-        duplicate_ul_cfg = {}
-    if duplicate_ul_channels is None:
-        duplicate_ul_channels = ["B"]
+    if dead_anchor_suppression_cfg is None:
+        dead_anchor_suppression_cfg = {}
+    if dead_anchor_suppression_channels is None:
+        dead_anchor_suppression_channels = ["B"]
     if bbox_geo_cfg is None:
         bbox_geo_cfg = {
             "smoothl1_weight": 0.0,
@@ -100,11 +100,11 @@ def _canonical_stage2_pipeline(
                 "config": dict(token_ce_cfg),
             },
             {
-                "name": "duplicate_ul",
+                "name": "loss_dead_anchor_suppression",
                 "enabled": True,
                 "weight": 1.0,
-                "channels": list(duplicate_ul_channels),
-                "config": dict(duplicate_ul_cfg),
+                "channels": list(dead_anchor_suppression_channels),
+                "config": dict(dead_anchor_suppression_cfg),
             },
             {
                 "name": "bbox_geo",
@@ -166,26 +166,26 @@ def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     assert cfg.duplicate_iou_threshold == pytest.approx(0.9)
     assert cfg.producer_wait_timeout_s == pytest.approx(0.0)
     assert cfg.ddp_phase_timeout_s == pytest.approx(600.0)
-    assert cfg.v3_k2 == Stage2ABChannelBV3K2Config()
+    assert cfg.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
 
 
-def test_stage2_ab_channel_b_v3_k2_keys_are_supported() -> None:
+def test_stage2_ab_channel_b_triage_posterior_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
         {
-            "v3_k2": {
+            "triage_posterior": {
                 "explorer_temperature": 0.6,
                 "explorer_top_p": 0.95,
                 "explorer_top_k": 32,
-                "consistent_iou_threshold": 0.8,
-                "recovered_fn_weight": 1.5,
+                "unlabeled_consistent_iou_threshold": 0.8,
+                "recovered_ground_truth_weight_multiplier": 1.5,
             }
         }
     )
-    assert cfg.v3_k2.explorer_temperature == pytest.approx(0.6)
-    assert cfg.v3_k2.explorer_top_p == pytest.approx(0.95)
-    assert cfg.v3_k2.explorer_top_k == 32
-    assert cfg.v3_k2.consistent_iou_threshold == pytest.approx(0.8)
-    assert cfg.v3_k2.recovered_fn_weight == pytest.approx(1.5)
+    assert cfg.triage_posterior.explorer_temperature == pytest.approx(0.6)
+    assert cfg.triage_posterior.explorer_top_p == pytest.approx(0.95)
+    assert cfg.triage_posterior.explorer_top_k == 32
+    assert cfg.triage_posterior.unlabeled_consistent_iou_threshold == pytest.approx(0.8)
+    assert cfg.triage_posterior.recovered_ground_truth_weight_multiplier == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize(
@@ -193,35 +193,35 @@ def test_stage2_ab_channel_b_v3_k2_keys_are_supported() -> None:
     [
         (
             {"explorer_temperature": "oops"},
-            r"stage2_ab\.channel_b\.v3_k2\.explorer_temperature must be a float/int",
+            r"stage2_ab\.channel_b\.triage_posterior\.explorer_temperature must be a float/int",
         ),
         (
             {"explorer_top_p": 0.0},
-            r"stage2_ab\.channel_b\.v3_k2\.explorer_top_p must be in \(0, 1\]",
+            r"stage2_ab\.channel_b\.triage_posterior\.explorer_top_p must be in \(0, 1\]",
         ),
         (
             {"explorer_top_k": 0},
-            r"stage2_ab\.channel_b\.v3_k2\.explorer_top_k must be -1 \(disabled\) or >= 1",
+            r"stage2_ab\.channel_b\.triage_posterior\.explorer_top_k must be -1 \(disabled\) or >= 1",
         ),
         (
-            {"consistent_iou_threshold": 1.1},
-            r"stage2_ab\.channel_b\.v3_k2\.consistent_iou_threshold must be in \[0, 1\]",
+            {"unlabeled_consistent_iou_threshold": 1.1},
+            r"stage2_ab\.channel_b\.triage_posterior\.unlabeled_consistent_iou_threshold must be in \[0, 1\]",
         ),
         (
-            {"recovered_fn_weight": 0.9},
-            r"stage2_ab\.channel_b\.v3_k2\.recovered_fn_weight must be >= 1.0",
+            {"recovered_ground_truth_weight_multiplier": 0.9},
+            r"stage2_ab\.channel_b\.triage_posterior\.recovered_ground_truth_weight_multiplier must be >= 1.0",
         ),
         (
             {"unknown_key": 1.0},
-            r"Unknown stage2_ab\.channel_b\.v3_k2 keys",
+            r"Unknown stage2_ab\.channel_b\.triage_posterior keys",
         ),
     ],
 )
-def test_stage2_ab_channel_b_v3_k2_invalid_values_fail_fast(
+def test_stage2_ab_channel_b_triage_posterior_invalid_values_fail_fast(
     payload: dict, expected_msg: str
 ) -> None:
     with pytest.raises((ValueError, TypeError), match=expected_msg):
-        Stage2ABChannelBV3K2Config.from_mapping(payload)
+        Stage2ABChannelBTriagePosteriorConfig.from_mapping(payload)
 
 
 def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
@@ -281,7 +281,7 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert cfg.stage2_ab is not None
     assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s is None
     assert cfg.stage2_ab.channel_b.producer_wait_timeout_s is None
-    assert cfg.stage2_ab.channel_b.v3_k2 == Stage2ABChannelBV3K2Config()
+    assert cfg.stage2_ab.channel_b.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
 
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -306,12 +306,12 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
                 "duplicate_iou_threshold": 0.85,
                 "producer_wait_timeout_s": 120.0,
                 "ddp_phase_timeout_s": 900.0,
-                "v3_k2": {
+                "triage_posterior": {
                     "explorer_temperature": 0.5,
                     "explorer_top_p": 0.92,
                     "explorer_top_k": 16,
-                    "consistent_iou_threshold": 0.82,
-                    "recovered_fn_weight": 1.75,
+                    "unlabeled_consistent_iou_threshold": 0.82,
+                    "recovered_ground_truth_weight_multiplier": 1.75,
                 },
             },
         },
@@ -322,13 +322,13 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert parsed.stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.85)
     assert parsed.stage2_ab.channel_b.producer_wait_timeout_s == pytest.approx(120.0)
     assert parsed.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(900.0)
-    assert parsed.stage2_ab.channel_b.v3_k2.explorer_temperature == pytest.approx(0.5)
-    assert parsed.stage2_ab.channel_b.v3_k2.explorer_top_p == pytest.approx(0.92)
-    assert parsed.stage2_ab.channel_b.v3_k2.explorer_top_k == 16
-    assert parsed.stage2_ab.channel_b.v3_k2.consistent_iou_threshold == pytest.approx(
+    assert parsed.stage2_ab.channel_b.triage_posterior.explorer_temperature == pytest.approx(0.5)
+    assert parsed.stage2_ab.channel_b.triage_posterior.explorer_top_p == pytest.approx(0.92)
+    assert parsed.stage2_ab.channel_b.triage_posterior.explorer_top_k == 16
+    assert parsed.stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold == pytest.approx(
         0.82
     )
-    assert parsed.stage2_ab.channel_b.v3_k2.recovered_fn_weight == pytest.approx(
+    assert parsed.stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier == pytest.approx(
         1.75
     )
 
@@ -405,7 +405,7 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_duplicate_ul_in_canonical_order() -> None:
+def test_stage2_pipeline_requires_loss_dead_anchor_suppression_in_canonical_order() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -440,7 +440,7 @@ def test_stage2_pipeline_requires_duplicate_ul_in_canonical_order() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_duplicate_ul_channels_b_only() -> None:
+def test_stage2_pipeline_requires_dead_anchor_suppression_channels_b_only() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -459,7 +459,7 @@ def test_stage2_pipeline_requires_duplicate_ul_channels_b_only() -> None:
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(duplicate_ul_channels=["A", "B"]),
+            "pipeline": _canonical_stage2_pipeline(dead_anchor_suppression_channels=["A", "B"]),
             "channel_b": {},
         },
     }
@@ -467,12 +467,12 @@ def test_stage2_pipeline_requires_duplicate_ul_channels_b_only() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"duplicate_ul must declare channels \['B'\]",
+        match=r"loss_dead_anchor_suppression must declare channels \['B'\]",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_empty_duplicate_ul_config() -> None:
+def test_stage2_pipeline_requires_empty_loss_dead_anchor_suppression_config() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -492,7 +492,7 @@ def test_stage2_pipeline_requires_empty_duplicate_ul_config() -> None:
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": _canonical_stage2_pipeline(
-                duplicate_ul_cfg={"unknown_weight": 1.0}
+                dead_anchor_suppression_cfg={"unknown_weight": 1.0}
             ),
             "channel_b": {},
         },
@@ -879,7 +879,7 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
     with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):
         _build_pipeline_manifest(
             cfg,
-            default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
+            default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
             default_diagnostics=["coord_diag"],
             trainer_variant="stage2_two_channel",
             config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
@@ -904,7 +904,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
                     "config": {},
                 },
                 {
-                    "name": "duplicate_ul",
+                    "name": "loss_dead_anchor_suppression",
                     "enabled": True,
                     "weight": 1.0,
                     "channels": ("B",),
@@ -917,7 +917,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
 
     manifest = _build_pipeline_manifest(
         cfg,
-        default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
+        default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
         default_diagnostics=["coord_diag"],
         trainer_variant="stage2_two_channel",
         config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
@@ -926,7 +926,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         coord_soft_cfg=None,
     )
 
-    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "duplicate_ul"]
+    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "loss_dead_anchor_suppression"]
     assert manifest["diagnostics"] == []
 
 

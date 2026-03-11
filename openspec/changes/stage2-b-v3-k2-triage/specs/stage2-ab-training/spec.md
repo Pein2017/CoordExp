@@ -6,7 +6,7 @@
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from two rollout views:
 
 - one anchor rollout using greedy / deterministic decoding,
-- one explorer rollout using stochastic decoding configured under `stage2_ab.channel_b.v3_k2`.
+- one explorer rollout using stochastic decoding configured under `stage2_ab.channel_b.triage_posterior`.
 
 Normative behavior:
 
@@ -30,21 +30,21 @@ Normative behavior:
 - **AND** the bad anchor object is not kept as an anchor GT-backed positive.
 
 ### Requirement: Stage-2 AB Channel-B v3-specific knobs are typed and grouped
-The Stage-2 AB config SHALL expose v3-specific K=2 rollout knobs under `stage2_ab.channel_b.v3_k2`.
+The Stage-2 AB config SHALL expose v3-specific K=2 rollout knobs under `stage2_ab.channel_b.triage_posterior`.
 
 Normative behavior:
 
-- `stage2_ab.channel_b.v3_k2` MUST be a typed mapping,
+- `stage2_ab.channel_b.triage_posterior` MUST be a typed mapping,
 - the mapping MUST accept only:
   - `explorer_temperature`
   - `explorer_top_p`
   - `explorer_top_k`
-  - `consistent_iou_threshold`
-  - `recovered_fn_weight`
-- unknown keys under `stage2_ab.channel_b.v3_k2` MUST fail fast.
+  - `unlabeled_consistent_iou_threshold`
+  - `recovered_ground_truth_weight_multiplier`
+- unknown keys under `stage2_ab.channel_b.triage_posterior` MUST fail fast.
 
-#### Scenario: Unknown v3_k2 key fails fast
-- **WHEN** a Stage-2 AB config includes an unknown key under `stage2_ab.channel_b.v3_k2`
+#### Scenario: Unknown triage_posterior key fails fast
+- **WHEN** a Stage-2 AB config includes an unknown key under `stage2_ab.channel_b.triage_posterior`
 - **THEN** config loading fails fast with the full dotted path.
 
 ### Requirement: Recovered GT objects stay on the FN injection path with higher weight
@@ -54,7 +54,7 @@ Normative behavior:
 
 - `recovered GT` means “missed in anchor accepted-clean matching and hit in explorer accepted-clean matching,”
 - recovered GT objects MUST remain on the same FN injection path used by ordinary FN objects,
-- the configured `recovered_fn_weight` MUST increase their desc+geo+coord supervision weight relative to ordinary FN objects,
+- the configured `recovered_ground_truth_weight_multiplier` MUST increase their desc+geo+coord supervision weight relative to ordinary FN objects,
 - recovered-prefix distillation MUST NOT be part of the canonical v1 contract.
 
 #### Scenario: Recovered GT object uses weighted FN injection
@@ -71,7 +71,7 @@ The canonical v1 v3 contract SHALL associate anchor and explorer accepted object
 Normative behavior:
 
 - candidate cross-rollout pairs MUST be scored by IoU,
-- only pairs with `IoU >= consistent_iou_threshold` are eligible,
+- only pairs with `IoU >= unlabeled_consistent_iou_threshold` are eligible,
 - the chosen association MUST be one-to-one and maximize IoU,
 - if multiple assignments achieve the same maximum total IoU, the chosen assignment MUST be the one whose sorted pair list `[(anchor_index, explorer_index), ...]` is lexicographically smallest.
 

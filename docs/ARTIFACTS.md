@@ -141,7 +141,7 @@ Stage-2 trainers also emit rollout-specific metrics directly (see `docs/training
 - `stage2_two_channel` now includes clean-prefix Channel-B duplicate-collapse diagnostics under:
   - `dup/*`
   - `stage2_ab/channel_b/dup/N_*`
-  - `loss/B_rollout_text/duplicate_ul`
+  - `train/optimization/loss_dead_anchor_suppression`
   - `stage2_ab/channel_b/closure_supervision/N_drop` for the legacy-named closure-resolution fallback activation counter
 
 ---

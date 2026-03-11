@@ -906,7 +906,7 @@ def _build_pipeline_manifest(
                     "rollout_matched_prefix_struct_weight": 1.0,
                 }
 
-            if name == "duplicate_ul":
+            if name == "loss_dead_anchor_suppression":
                 return {}
 
             if name == "bbox_geo":
@@ -2566,7 +2566,7 @@ def main():
 
         stage2_manifest = _resolve_pipeline_manifest(
             stage2_ab_cfg,
-            default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
+            default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
             default_diagnostics=["coord_diag"],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )

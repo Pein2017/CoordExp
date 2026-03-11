@@ -226,44 +226,46 @@ def project_stage2_objective_atoms(
                         atol=atol,
                     )
 
-    # duplicate_ul -> {duplicate_ul}
-    if "duplicate_ul" in module_losses:
-        duplicate_spec = _spec("duplicate_ul")
+    # loss_dead_anchor_suppression -> {loss_dead_anchor_suppression}
+    if "loss_dead_anchor_suppression" in module_losses:
+        duplicate_spec = _spec("loss_dead_anchor_suppression")
         duplicate_w = float(duplicate_spec.weight)
-        weighted_loss = module_losses.get("duplicate_ul")
+        weighted_loss = module_losses.get("loss_dead_anchor_suppression")
         if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing duplicate_ul")
+            raise ValueError("pipeline_result.module_losses missing loss_dead_anchor_suppression")
 
         if (not emit_text) or not text_provenance:
             if require_additive:
                 got = _as_scalar_tensor(weighted_loss)
                 if got is None:
                     raise ValueError(
-                        "pipeline_result.module_losses['duplicate_ul'] must be a scalar tensor"
+                        "pipeline_result.module_losses['loss_dead_anchor_suppression'] must be a scalar tensor"
                     )
                 _assert_allclose(
-                    where="duplicate_ul disabled emission",
+                    where="loss_dead_anchor_suppression disabled emission",
                     got=got,
                     expected=weighted_loss.new_tensor(0.0),
                     rtol=rtol,
                     atol=atol,
                 )
         elif duplicate_w != 0.0:
-            duplicate_contrib = _as_scalar_tensor(state.get("duplicate_ul_contrib"))
+            duplicate_contrib = _as_scalar_tensor(
+                state.get("loss_dead_anchor_suppression_contrib")
+            )
             if duplicate_contrib is None:
                 if require_additive:
                     raise ValueError(
-                        "duplicate_ul module did not expose duplicate_ul_contrib tensor in pipeline state"
+                        "loss_dead_anchor_suppression module did not expose loss_dead_anchor_suppression_contrib tensor in pipeline state"
                     )
             else:
                 _maybe_add(
-                    f"loss/{str(text_provenance)}/duplicate_ul",
+                    f"loss/{str(text_provenance)}/loss_dead_anchor_suppression",
                     _weighted(duplicate_contrib, module_weight=duplicate_w),
                 )
 
                 if require_additive:
                     _assert_allclose(
-                        where="duplicate_ul",
+                        where="loss_dead_anchor_suppression",
                         got=_weighted(duplicate_contrib, module_weight=duplicate_w),
                         expected=weighted_loss,
                         rtol=rtol,

@@ -19,7 +19,7 @@ training:
   save_steps: 300
   do_eval: true
   eval_steps: 300
-  metric_for_best_model: rollout/mAP
+  metric_for_best_model: eval/detection/mAP
 
 stage2_ab:
   schedule: {b_ratio: 0.05}
@@ -38,7 +38,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]

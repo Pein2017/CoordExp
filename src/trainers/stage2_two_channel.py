@@ -814,7 +814,7 @@ def _sequential_dedup_bbox_objects(
     return accepted_objects_clean, duplicate_bursts_by_boundary
 
 
-def _build_duplicate_ul_targets(
+def _build_dead_anchor_suppression_targets(
     *,
     tokenizer: Any,
     y_train_ids: Sequence[int],
@@ -911,8 +911,8 @@ def _build_duplicate_ul_targets(
         targets_by_boundary_token.values(),
         key=lambda item: (int(item["boundary"]), int(item["rel_pos"]), int(item["token_id"])),
     )
-    ul_boundary_count = len({int(item["boundary"]) for item in targets})
-    return targets, int(ul_boundary_count), int(skipped_no_divergence)
+    dead_anchor_suppression_boundary_count = len({int(item["boundary"]) for item in targets})
+    return targets, int(dead_anchor_suppression_boundary_count), int(skipped_no_divergence)
 
 
 def _desc_tail_positions_and_weights(
@@ -2015,17 +2015,17 @@ class Stage2ABTrainingTrainer(
         duplicate_iou_threshold = float(
             0.90 if duplicate_iou_threshold_raw is None else duplicate_iou_threshold_raw
         )
-        consistent_iou_threshold = float(
-            self._ab_channel_b_get("v3_k2.consistent_iou_threshold", 0.85)
+        unlabeled_consistent_iou_threshold = float(
+            self._ab_channel_b_get("triage_posterior.unlabeled_consistent_iou_threshold", 0.85)
         )
-        recovered_fn_weight = float(
-            self._ab_channel_b_get("v3_k2.recovered_fn_weight", 2.0)
+        recovered_ground_truth_weight_multiplier = float(
+            self._ab_channel_b_get("triage_posterior.recovered_ground_truth_weight_multiplier", 2.0)
         )
         explorer_temperature = float(
-            self._ab_channel_b_get("v3_k2.explorer_temperature", 0.7)
+            self._ab_channel_b_get("triage_posterior.explorer_temperature", 0.7)
         )
-        explorer_top_p = float(self._ab_channel_b_get("v3_k2.explorer_top_p", 1.0))
-        explorer_top_k = int(self._ab_channel_b_get("v3_k2.explorer_top_k", -1))
+        explorer_top_p = float(self._ab_channel_b_get("triage_posterior.explorer_top_p", 1.0))
+        explorer_top_k = int(self._ab_channel_b_get("triage_posterior.explorer_top_k", -1))
 
 
         packing_enabled = self._packing_enabled()
@@ -2191,7 +2191,7 @@ class Stage2ABTrainingTrainer(
         dup_duplicates_total = 0
         dup_duplicate_bursts_total = 0
         dup_ul_boundaries_total = 0
-        dup_ul_skipped_no_divergence_total = 0
+        dup_dead_anchor_suppression_skipped_no_divergence_total = 0
         dup_metric_samples = 0
         triage_anchor_gt_backed_total = 0
         triage_shielded_anchor_total = 0
@@ -2447,7 +2447,7 @@ class Stage2ABTrainingTrainer(
             association_pairs = associate_one_to_one_max_iou(
                 anchors=accepted_objects_clean,
                 explorers=explorer_accepted_objects_clean,
-                min_iou=float(consistent_iou_threshold),
+                min_iou=float(unlabeled_consistent_iou_threshold),
             )
             anchor_to_explorer = {
                 int(anchor_i): int(explorer_i)
@@ -2470,7 +2470,7 @@ class Stage2ABTrainingTrainer(
                             anchor_obj.points_norm1000,
                             accepted_objects_clean[int(gt_anchor_i)].points_norm1000,
                         )
-                        >= float(consistent_iou_threshold)
+                        >= float(unlabeled_consistent_iou_threshold)
                         for gt_anchor_i in anchor_gt_backed_indices
                     )
                     if not conflicts_gt_backed:
@@ -2587,7 +2587,7 @@ class Stage2ABTrainingTrainer(
             ]
             fn_objs = [gts[i] for i in fn_gt_indices_final]
             fn_object_weights = [
-                float(recovered_fn_weight)
+                float(recovered_ground_truth_weight_multiplier)
                 if int(gt_i) in recovered_gt_indices
                 else 1.0
                 for gt_i in fn_gt_indices_final
@@ -2613,8 +2613,8 @@ class Stage2ABTrainingTrainer(
             ]
 
             clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
-            duplicate_ul_targets, ul_boundary_count, ul_skipped_no_divergence = (
-                _build_duplicate_ul_targets(
+            dead_anchor_suppression_targets, dead_anchor_suppression_boundary_count, dead_anchor_suppression_skipped_no_divergence = (
+                _build_dead_anchor_suppression_targets(
                     tokenizer=tok,
                     y_train_ids=y_train_ids,
                     clean_target_text=clean_target_text,
@@ -2625,8 +2625,8 @@ class Stage2ABTrainingTrainer(
                     object_field_order=object_field_order,
                 )
             )
-            dup_ul_boundaries_total += int(ul_boundary_count)
-            dup_ul_skipped_no_divergence_total += int(ul_skipped_no_divergence)
+            dup_ul_boundaries_total += int(dead_anchor_suppression_boundary_count)
+            dup_dead_anchor_suppression_skipped_no_divergence_total += int(dead_anchor_suppression_skipped_no_divergence)
 
             if track_monitor_candidates and (
                 duplicate_count > 0
@@ -2807,9 +2807,9 @@ class Stage2ABTrainingTrainer(
                             "precision": float(prec_local),
                             "recall": float(rec_local),
                             "f1": float(f1_local),
-                            "duplicate_ul_boundary_count": int(ul_boundary_count),
-                            "duplicate_ul_skipped_no_divergence": int(
-                                ul_skipped_no_divergence
+                            "dead_anchor_suppression_boundary_count": int(dead_anchor_suppression_boundary_count),
+                            "dead_anchor_suppression_skipped_no_divergence": int(
+                                dead_anchor_suppression_skipped_no_divergence
                             ),
                         },
                     },
@@ -3092,16 +3092,20 @@ class Stage2ABTrainingTrainer(
                 "recovered_gt_indices": [
                     int(idx) for idx in recovered_gt_indices
                 ],
-                "duplicate_ul_targets": [
+                "dead_anchor_suppression_targets": [
                     {
                         "boundary": int(item["boundary"]),
                         "rel_pos": int(item["rel_pos"]),
                         "token_id": int(item["token_id"]),
                     }
-                    for item in duplicate_ul_targets
+                    for item in dead_anchor_suppression_targets
                 ],
-                "duplicate_ul_boundary_count": int(ul_boundary_count),
-                "duplicate_ul_skipped_no_divergence": int(ul_skipped_no_divergence),
+                "dead_anchor_suppression_boundary_count": int(
+                    dead_anchor_suppression_boundary_count
+                ),
+                "dead_anchor_suppression_skipped_no_divergence": int(
+                    dead_anchor_suppression_skipped_no_divergence
+                ),
             }
 
             segments.append((encoded, meta_entry, int(encoded_len)))
@@ -3188,34 +3192,34 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/dup/N_ul_boundaries": float(
                 dup_ul_boundaries_total
             ),
-            "stage2_ab/channel_b/dup/N_ul_skipped_no_divergence": float(
-                dup_ul_skipped_no_divergence_total
+            "stage2_ab/channel_b/dup/N_dead_anchor_suppression_skipped_no_divergence": float(
+                dup_dead_anchor_suppression_skipped_no_divergence_total
             ),
-            "stage2_ab/channel_b/triage/N_anchor_gt_backed": float(
+            "train/triage/gt_backed_count": float(
                 triage_anchor_gt_backed_total
             ),
-            "stage2_ab/channel_b/triage/N_shielded_anchor": float(
+            "train/triage/unlabeled_consistent_count": float(
                 triage_shielded_anchor_total
             ),
-            "stage2_ab/channel_b/triage/N_dead_anchor": float(
+            "train/triage/dead_anchor_count": float(
                 triage_dead_anchor_total
             ),
-            "stage2_ab/channel_b/triage/N_dead_explorer": float(
+            "train/triage/explorer_only_dead_count": float(
                 triage_dead_explorer_total
             ),
-            "stage2_ab/channel_b/triage/N_recovered_gt": float(
+            "train/triage/recovered_ground_truth_count": float(
                 triage_recovered_gt_total
             ),
-            "stage2_ab/channel_b/triage/recovered_gt_num": float(
+            "train/triage/recovered_ground_truth_rate_num": float(
                 triage_recovered_gt_total
             ),
-            "stage2_ab/channel_b/triage/recovered_gt_den": float(
+            "train/triage/recovered_ground_truth_rate_den": float(
                 triage_recovered_gt_den_total
             ),
-            "stage2_ab/channel_b/triage/dead_anchor_num": float(
+            "train/triage/dead_anchor_rate_num": float(
                 triage_dead_anchor_total
             ),
-            "stage2_ab/channel_b/triage/dead_anchor_den": float(
+            "train/triage/dead_anchor_rate_den": float(
                 triage_dead_anchor_den_total
             ),
             "time/rollout_generate_s": float(t_gen_s),
@@ -3403,9 +3407,9 @@ class Stage2ABTrainingTrainer(
             channel_name=channel,
             default=0.0,
         )
-        duplicate_ul_module_w = _module_weight(
+        dead_anchor_suppression_module_w = _module_weight(
             objective_specs,
-            name="duplicate_ul",
+            name="loss_dead_anchor_suppression",
             channel_name=channel,
             default=0.0,
         )
@@ -4129,9 +4133,12 @@ class Stage2ABTrainingTrainer(
                             float(token_ce_module_w) * float(token_desc)
                         )
 
-                if float(duplicate_ul_module_w) != 0.0:
-                    stage2_logs["loss/B_rollout_text/duplicate_ul"] = float(
-                        pipeline_metrics_ctx.get("loss/duplicate_ul", 0.0) or 0.0
+                if float(dead_anchor_suppression_module_w) != 0.0:
+                    stage2_logs["train/optimization/loss_dead_anchor_suppression"] = float(
+                        pipeline_metrics_ctx.get(
+                            "train/optimization/loss_dead_anchor_suppression", 0.0
+                        )
+                        or 0.0
                     )
 
                 if float(bbox_geo_module_w) != 0.0:

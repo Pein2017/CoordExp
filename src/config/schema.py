@@ -992,23 +992,36 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBV3K2Config:
+class Stage2ABChannelBTriagePosteriorConfig:
+    num_rollouts: int = 2
     explorer_temperature: float = 0.7
     explorer_top_p: float = 1.0
     explorer_top_k: int = -1
-    consistent_iou_threshold: float = 0.85
-    recovered_fn_weight: float = 2.0
+    unlabeled_consistent_iou_threshold: float = 0.85
+    recovered_ground_truth_weight_multiplier: float = 2.0
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBV3K2Config":
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBTriagePosteriorConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2 must be a mapping when provided"
+                "stage2_ab.channel_b.triage_posterior must be a mapping when provided"
             )
 
         data: MutableMapping[str, Any] = dict(payload)
+
+        num_rollouts_raw = data.pop("num_rollouts", cls.num_rollouts)
+        try:
+            num_rollouts = int(num_rollouts_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be an int"
+            ) from exc
+        if num_rollouts != 2:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2"
+            )
 
         explorer_temperature_raw = data.pop(
             "explorer_temperature",
@@ -1018,15 +1031,15 @@ class Stage2ABChannelBV3K2Config:
             explorer_temperature = float(explorer_temperature_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2.explorer_temperature must be a float/int"
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be a float/int"
             ) from exc
         if not math.isfinite(explorer_temperature):
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.explorer_temperature must be finite"
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be finite"
             )
         if explorer_temperature < 0.0:
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.explorer_temperature must be >= 0"
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be >= 0"
             )
 
         explorer_top_p_raw = data.pop("explorer_top_p", cls.explorer_top_p)
@@ -1038,15 +1051,15 @@ class Stage2ABChannelBV3K2Config:
             )
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2.explorer_top_p must be a float/int"
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be a float/int"
             ) from exc
         if not math.isfinite(explorer_top_p):
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.explorer_top_p must be finite"
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be finite"
             )
         if not (0.0 < explorer_top_p <= 1.0):
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.explorer_top_p must be in (0, 1]"
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be in (0, 1]"
             )
 
         explorer_top_k_raw = data.pop("explorer_top_k", cls.explorer_top_k)
@@ -1054,64 +1067,65 @@ class Stage2ABChannelBV3K2Config:
             explorer_top_k = int(explorer_top_k_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2.explorer_top_k must be an int"
+                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be an int"
             ) from exc
         if explorer_top_k != -1 and explorer_top_k < 1:
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.explorer_top_k must be -1 (disabled) or >= 1"
+                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be -1 (disabled) or >= 1"
             )
 
-        consistent_iou_threshold_raw = data.pop(
-            "consistent_iou_threshold",
-            cls.consistent_iou_threshold,
+        unlabeled_consistent_iou_threshold_raw = data.pop(
+            "unlabeled_consistent_iou_threshold",
+            cls.unlabeled_consistent_iou_threshold,
         )
         try:
-            consistent_iou_threshold = float(consistent_iou_threshold_raw)
+            unlabeled_consistent_iou_threshold = float(unlabeled_consistent_iou_threshold_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be a float/int"
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be a float/int"
             ) from exc
-        if not math.isfinite(consistent_iou_threshold):
+        if not math.isfinite(unlabeled_consistent_iou_threshold):
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be finite"
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be finite"
             )
-        if consistent_iou_threshold < 0.0 or consistent_iou_threshold > 1.0:
+        if unlabeled_consistent_iou_threshold < 0.0 or unlabeled_consistent_iou_threshold > 1.0:
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be in [0, 1]"
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be in [0, 1]"
             )
 
-        recovered_fn_weight_raw = data.pop(
-            "recovered_fn_weight",
-            cls.recovered_fn_weight,
+        recovered_ground_truth_weight_multiplier_raw = data.pop(
+            "recovered_ground_truth_weight_multiplier",
+            cls.recovered_ground_truth_weight_multiplier,
         )
         try:
-            recovered_fn_weight = float(recovered_fn_weight_raw)
+            recovered_ground_truth_weight_multiplier = float(recovered_ground_truth_weight_multiplier_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be a float/int"
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be a float/int"
             ) from exc
-        if not math.isfinite(recovered_fn_weight):
+        if not math.isfinite(recovered_ground_truth_weight_multiplier):
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be finite"
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be finite"
             )
-        if recovered_fn_weight < 1.0:
+        if recovered_ground_truth_weight_multiplier < 1.0:
             raise ValueError(
-                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be >= 1.0"
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be >= 1.0"
             )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.v3_k2.{str(k)}"
+                f"stage2_ab.channel_b.triage_posterior.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
-            raise ValueError(f"Unknown stage2_ab.channel_b.v3_k2 keys: {unknown}")
+            raise ValueError(f"Unknown stage2_ab.channel_b.triage_posterior keys: {unknown}")
 
         return cls(
+            num_rollouts=num_rollouts,
             explorer_temperature=explorer_temperature,
             explorer_top_p=explorer_top_p,
             explorer_top_k=explorer_top_k,
-            consistent_iou_threshold=consistent_iou_threshold,
-            recovered_fn_weight=recovered_fn_weight,
+            unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
+            recovered_ground_truth_weight_multiplier=recovered_ground_truth_weight_multiplier,
         )
 
 
@@ -1120,8 +1134,8 @@ class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
-    v3_k2: Stage2ABChannelBV3K2Config = field(
-        default_factory=Stage2ABChannelBV3K2Config
+    triage_posterior: Stage2ABChannelBTriagePosteriorConfig = field(
+        default_factory=Stage2ABChannelBTriagePosteriorConfig
     )
 
     @classmethod
@@ -1234,7 +1248,7 @@ class Stage2ABChannelBConfig:
                     "(bounded DDP phase barriers are required)"
                 )
 
-        v3_k2 = Stage2ABChannelBV3K2Config.from_mapping(data.pop("v3_k2", None))
+        triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(data.pop("triage_posterior", None))
 
         if data:
             raise ValueError(
@@ -1245,7 +1259,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
-            v3_k2=v3_k2,
+            triage_posterior=triage_posterior,
         )
 
 
@@ -1386,7 +1400,7 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
-        canonical_objective_order = ["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"]
+        canonical_objective_order = ["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
         if authored_objective_order != canonical_objective_order:
             raise ValueError(
@@ -1432,16 +1446,16 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
-        duplicate_ul = specs_by_name.get("duplicate_ul")
-        if duplicate_ul is None:
+        loss_dead_anchor_suppression = specs_by_name.get("loss_dead_anchor_suppression")
+        if loss_dead_anchor_suppression is None:
             raise ValueError(
-                "stage2_ab.pipeline.objective requires duplicate_ul in the canonical "
+                "stage2_ab.pipeline.objective requires loss_dead_anchor_suppression in the canonical "
                 "clean-prefix Channel-B contract."
             )
-        if tuple(str(ch) for ch in duplicate_ul.channels) != ("B",):
+        if tuple(str(ch) for ch in loss_dead_anchor_suppression.channels) != ("B",):
             raise ValueError(
-                "stage2_ab.pipeline.objective duplicate_ul must declare channels ['B'] "
-                f"for the canonical clean-prefix Channel-B contract; got {list(duplicate_ul.channels)!r}"
+                "stage2_ab.pipeline.objective loss_dead_anchor_suppression must declare channels ['B'] "
+                f"for the canonical clean-prefix Channel-B contract; got {list(loss_dead_anchor_suppression.channels)!r}"
             )
 
         bbox_geo = specs_by_name.get("bbox_geo")

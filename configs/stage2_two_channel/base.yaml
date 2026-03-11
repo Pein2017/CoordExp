@@ -97,7 +97,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -141,12 +141,13 @@ stage2_ab:
         config: {}
   channel_b:
     duplicate_iou_threshold: 0.90
-    v3_k2:
+    triage_posterior:
+      num_rollouts: 2
       explorer_temperature: 0.7
       explorer_top_p: 0.95
       explorer_top_k: 64
-      consistent_iou_threshold: 0.9
-      recovered_fn_weight: 2.0
+      unlabeled_consistent_iou_threshold: 0.9
+      recovered_ground_truth_weight_multiplier: 2.0
 
 custom:
   json_format: standard

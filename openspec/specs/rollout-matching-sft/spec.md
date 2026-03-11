@@ -624,7 +624,7 @@ Normative behavior:
 #### Scenario: Per-sample decode errors are skipped but engine failures are fatal
 - **GIVEN** evaluation backend resolves to `vllm`
 - **WHEN** one sample decode fails but the vLLM engine remains healthy
-- **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
+- **THEN** evaluation skips that sample, increments `eval/runtime/vllm_decode_error_count`, and continues
 - **AND WHEN** a later engine-level vLLM failure occurs
 - **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
 
@@ -1073,15 +1073,10 @@ Normative default module configs (effective values):
   - `smoothl1_weight = 1.0`
   - `ciou_weight = 1.0`
   - decode mode is controlled by `rollout_matching.coord_decode_mode` (default `exp`)
-- `coord_reg` (enabled only when `custom.coord_soft_ce_w1.enabled: true`):
-  - `coord_ce_weight = custom.coord_soft_ce_w1.ce_weight` (default `0.0`)
-  - `soft_ce_weight = custom.coord_soft_ce_w1.soft_ce_weight` (default `1.0`)
-  - `w1_weight = custom.coord_soft_ce_w1.w1_weight` (default `1.0`)
-  - `coord_gate_weight = custom.coord_soft_ce_w1.gate_weight` (default `1.0`)
-  - `text_gate_weight = 0.0` (default `0.0`; pipeline-only knob)
-  - `temperature = custom.coord_soft_ce_w1.temperature` (default `1.0`)
-  - `target_sigma = custom.coord_soft_ce_w1.target_sigma` (default `2.0`)
-  - `target_truncate = custom.coord_soft_ce_w1.target_truncate` (default `null`)
+- `coord_reg`:
+  - is configured explicitly through `rollout_matching.pipeline`
+  - MUST NOT source values from removed legacy aux-loss keys
+  - uses only authored pipeline config values plus schema defaults for omitted module-local fields
 
 Informative YAML expression (conceptual; values shown are symbolic):
 ```yaml
@@ -1167,8 +1162,8 @@ Normative config schemas (minimum set; may be extended):
   - (no required keys; implementations MAY accept a strict subset of the above for convenience, but MUST document them)
 
 Note:
-- When `rollout_matching.pipeline` is omitted, the effective defaults for the rollout-aligned objective are defined by
-  the Default Pipeline Manifest above (which sources values from `custom.coord_soft_ce_w1` as applicable).
+- `rollout_matching.pipeline` is required.
+- No implicit rollout-aligned default manifest may be derived from removed legacy aux-loss keys.
 
 #### Scenario: Unknown module config keys fail fast
 - **WHEN** a rollout module config includes a key outside the module allowlist
@@ -1270,18 +1265,18 @@ Normative behavior:
   trainer code.
 - When `rollout_matching.eval_detection.enabled=true`, the trainer MUST attempt to compute COCO bbox AP/mAP for the
   eval-step rollouts and MUST emit, at minimum:
-  - `rollout/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
+  - `eval/detection/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
 - The trainer MUST NOT emit additional COCO summary metric keys during eval-step (e.g., `rollout/bbox_AP50`,
-  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `rollout/mAP`. Full metric reports remain available via the offline
+  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `eval/detection/mAP`. Full metric reports remain available via the offline
   evaluation pipeline.
 - If COCO eval fails unexpectedly (missing dependencies, invalid records, etc.), the trainer MUST:
-  - emit `rollout/mAP=0.0` (so the key is always present when enabled), and
+  - emit `eval/detection/mAP=0.0` (so the key is always present when enabled), and
   - surface the failure as a warning (not silent).
 
 #### Scenario: Rollout-aligned eval reports mAP
 - **GIVEN** `rollout_matching.eval_detection.enabled=true`
 - **WHEN** `eval_step` runs
-- **THEN** `rollout/mAP` is present in the eval metrics payload
+- **THEN** `eval/detection/mAP` is present in the eval metrics payload
 
 ### Requirement: Trainer-variant guardrails prevent ambiguous pipeline configuration
 To avoid “config declared but ignored” ambiguity, the system SHALL enforce strict guardrails:
@@ -1396,7 +1391,7 @@ Normative behavior:
   and MUST satisfy `len(token_ids) == len(token_logprobs) == len(generated_token_text)`.
 - If any sample violates these invariants during **evaluation**, the system MUST:
   - emit a warning (rate-limited) that confidence scoring fell back due to invalid token traces,
-  - increment an explicit metric/counter `eval/trace_fallback_count` by 1 for each affected sample, and
+  - increment an explicit metric/counter `eval/runtime/trace_fallback_count` by 1 for each affected sample, and
   - continue evaluation (do not abort training), falling back to a safe score policy equivalent to `score_mode: constant` using `constant_score` for the affected evaluation window.
 
 #### Scenario: Trace length mismatch falls back during evaluation
@@ -1412,7 +1407,7 @@ Normative behavior:
 - When the effective evaluation rollout backend resolves to `vllm`:
   - If an individual sample fails to decode/roll out due to a runtime error localized to that sample, the system MUST:
     - skip that sample (exclude it from downstream eval aggregation),
-    - increment `eval/vllm_decode_error_count` by 1,
+    - increment `eval/runtime/vllm_decode_error_count` by 1,
     - and continue evaluation.
   - If evaluation rollouts cannot proceed due to a vLLM engine-level failure (e.g., engine construction failure, missing/unsupported required lifecycle APIs for the configured mode (e.g., wake/sleep when sleep mode is enabled), OOM during eval, or a fatal runtime error), the system MUST:
     - fail fast with an actionable error message (do not hang),
@@ -1423,6 +1418,6 @@ Normative behavior:
 #### Scenario: Per-sample decode errors are skipped but engine failures are fatal
 - **GIVEN** evaluation backend resolves to `vllm`
 - **WHEN** one sample decode fails but the vLLM engine remains healthy
-- **THEN** evaluation skips that sample, increments `eval/vllm_decode_error_count`, and continues
+- **THEN** evaluation skips that sample, increments `eval/runtime/vllm_decode_error_count`, and continues
 - **AND WHEN** a later engine-level vLLM failure occurs
 - **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
