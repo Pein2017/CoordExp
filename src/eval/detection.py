@@ -1735,6 +1735,8 @@ def evaluate_f1ish(
 
     # Location matching per threshold.
     matches_by_thr: Dict[str, Dict[int, List[Tuple[int, int, float]]]] = {}
+    matches_records_by_thr: Dict[str, List[Dict[str, Any]]] = {}
+
     for thr in iou_thrs:
         thr_key = _fmt_iou_thr(thr)
         matches_by_thr[thr_key] = {}
@@ -1970,7 +1972,9 @@ def evaluate_f1ish(
             with matches_path.open("w", encoding="utf-8") as f:
                 for row in matches_records:
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        matches_records_by_thr[thr_key] = matches_records
 
     return {
         "metrics": metrics_out,
+        "matches_by_thr": matches_records_by_thr,
     }

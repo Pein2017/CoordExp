@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-03-09
+updated: 2026-03-10
 ---
 
 # Artifacts & Provenance
@@ -18,6 +18,53 @@ If you are looking for metric-key meaning, start here:
 
 If you are looking for the end-to-end system flow rather than artifact behavior, start with:
 - `docs/SYSTEM_OVERVIEW.md`
+
+---
+
+## Inference And Evaluation Artifacts
+
+During inference and offline evaluation, CoordExp writes reproducibility and analysis artifacts into the resolved run directory and its eval subdirectory.
+
+- `gt_vs_pred.jsonl`
+  - Base inference artifact with inline GT and parsed predictions per sample.
+- `pred_token_trace.jsonl`
+  - Optional per-sample generation trace artifact for later rollout inspection.
+- `summary.json`
+  - Inference-stage summary emitted by the YAML infer pipeline.
+- `resolved_config.json`
+  - Canonical snapshot of the resolved infer pipeline config.
+- `metrics.json`
+  - Offline evaluator metrics and diagnostic counters.
+- `per_image.json`
+  - Per-image evaluator diagnostics for the standard single-artifact evaluation flow.
+- `matches.jsonl`
+  - F1-ish primary-threshold match diagnostics.
+- `matches@<thr>.jsonl`
+  - Additional F1-ish match diagnostics when multiple IoU thresholds are requested.
+
+These standard artifacts remain unchanged when Oracle-K is enabled elsewhere; Oracle-K is an additive workflow rather than a replacement for the current evaluator.
+
+---
+
+## Oracle-K Analysis Artifacts
+
+Oracle-K writes a dedicated analysis directory under its configured `out_dir`. The v1 workflow focuses on object-level recoverability under repeated stochastic sampling.
+
+- `summary.json`
+  - Aggregate Oracle-K report with baseline vs Oracle-K recall-style counts at each configured IoU threshold.
+  - Includes `oracle_run_count` plus recoverable and systematic false-negative counts at the primary threshold.
+- `per_image.json`
+  - Per-image baseline false-negative totals with recoverable/systematic breakdowns for:
+    - location-only
+    - semantic+location
+- `fn_objects.jsonl`
+  - One row per baseline false-negative GT object, keyed by `record_idx` and `gt_idx`.
+  - Includes per-run object-level pairing, `ever recovered`, `recover_count`, and `recover_fraction`.
+- `materialized/<label>/` when Oracle-K is asked to generate runs
+  - Persisted labeled inference artifacts for the baseline or Oracle runs before aggregation begins.
+
+Oracle-K v1 may preserve run-level provenance such as `pred_token_trace_jsonl` and `resolved_config.json` paths when available.
+It does not require exact token-span-to-object alignment; object-level pairing is the v1 contract boundary.
 
 ---
 

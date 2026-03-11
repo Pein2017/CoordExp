@@ -6,12 +6,12 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-03-09
+updated: 2026-03-10
 ---
 
 # Evaluation Workflow
 
-This page describes the current production path from inference to scored evaluation artifacts.
+This page describes the current production path from inference to scored evaluation artifacts, plus the additive Oracle-K repeated-sampling analysis workflow.
 
 ## Default Flow
 
@@ -48,6 +48,13 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --config configs/eval/detection.yaml
 ```
 
+Run Oracle-K analysis:
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py \
+  --config configs/eval/oracle_k.yaml
+```
+
 ## Artifact Expectations
 
 After inference:
@@ -67,6 +74,48 @@ After evaluation:
 - `metrics.json`
 - `per_image.json`
 - optional `per_class.csv`, `matches.jsonl`, and overlays
+
+After Oracle-K analysis:
+
+- `summary.json`
+- `per_image.json`
+- `fn_objects.jsonl`
+- optional materialized inference run folders when Oracle-K is asked to generate repeated samples
+
+## Oracle-K Repeated-Sampling Workflow
+
+Use Oracle-K when you want to measure whether baseline false negatives are recoverable under repeated stochastic decoding, and how often they are recovered across `K` rollouts.
+
+```text
+baseline artifact or run spec
+  + one or more Oracle artifact or run specs
+  -> Oracle-K analysis
+  -> summary.json / per_image.json / fn_objects.jsonl
+```
+
+The Oracle-K workflow is additive:
+
+- standard `scripts/evaluate_detection.py` behavior does not change
+- Oracle-K reuses the same F1-ish matching semantics for IoU thresholds, semantic matching, and prediction scope
+- cross-run alignment is by record order only; `record_idx` + `gt_idx` is the normative object key for Oracle-K outputs
+
+The YAML config can work in two modes:
+
+- consume pre-generated `gt_vs_pred.jsonl` artifacts for one baseline run plus one or more Oracle runs
+- materialize repeated inference runs through the standard infer pipeline before aggregation
+
+Oracle-K v1 is intentionally object-level:
+
+- it records per-run pairing for each baseline-FN GT object
+- it preserves trace provenance when available through `pred_token_trace.jsonl`
+- it does not require exact token-span-to-object alignment for matched predictions
+
+Recommended validation checks for Oracle-K:
+
+- all runs use the same subset and agree on GT content in the same record order
+- the chosen IoU thresholds match the intended F1-ish study
+- the output includes both `ever recovered` and `recover_count` / `recover_fraction`
+- location-only and semantic+location recovery are inspected separately
 
 ## Official COCO Test-Dev Submission Flow
 
