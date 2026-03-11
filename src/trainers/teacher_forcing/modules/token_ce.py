@@ -118,6 +118,14 @@ def run_token_ce_module(
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
         tail_desc = {int(x) for x in tail_desc_pos if int(x) >= 0}
         tail_closure = {int(x) for x in tail_closure_pos if int(x) >= 0}
+        tail_desc_weights_raw = seg.get("tail_desc_weights")
+        tail_desc_weights: list[float] = []
+        if isinstance(tail_desc_weights_raw, (list, tuple)):
+            for value in tail_desc_weights_raw:
+                try:
+                    tail_desc_weights.append(max(0.0, float(value)))
+                except (TypeError, ValueError):
+                    tail_desc_weights.append(0.0)
 
         for p in range(int(tail_start), int(tail_end)):
             tok_id = int(input_ids[b, p].item())
@@ -131,6 +139,8 @@ def run_token_ce_module(
 
             if rel in tail_desc:
                 w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                if rel < len(tail_desc_weights):
+                    w_desc = float(w_desc) * float(tail_desc_weights[rel])
                 weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:

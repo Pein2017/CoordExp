@@ -73,6 +73,7 @@ def run_coord_reg_module(
     coord_logits = state.get("coord_logits")
     coord_logits_full = state.get("coord_logits_full")
     target_bins = state.get("coord_target_bins")
+    coord_slot_weights = state.get("coord_slot_weights")
 
     if not isinstance(coord_logits, torch.Tensor) or int(coord_logits.numel()) == 0:
         z = context.logits.new_tensor(0.0)
@@ -184,12 +185,28 @@ def run_coord_reg_module(
     coord_gate = context.logits.new_tensor(0.0)
     text_gate = context.logits.new_tensor(0.0)
 
+    slot_weights_t: torch.Tensor
+    if isinstance(coord_slot_weights, torch.Tensor) and coord_slot_weights.shape == target_bins.shape:
+        slot_weights_t = coord_slot_weights.to(device=coord_logits.device, dtype=torch.float32).clamp(min=0.0)
+    else:
+        slot_weights_t = torch.ones_like(target_bins, dtype=torch.float32, device=coord_logits.device)
+
+    def _weighted_mean(values: torch.Tensor) -> torch.Tensor:
+        if values.ndim == 0:
+            return values.to(dtype=context.logits.dtype)
+        w = slot_weights_t
+        den = w.sum()
+        if float(den.detach().cpu().item()) <= 0.0:
+            return values.new_tensor(0.0, dtype=context.logits.dtype)
+        return ((values.to(dtype=torch.float32) * w).sum() / den.clamp(min=1e-6)).to(dtype=context.logits.dtype)
+
     if weights["coord_ce_weight"] != 0.0:
-        coord_ce = F.cross_entropy(
+        coord_ce_per = F.cross_entropy(
             coord_logits.float(),
             target_bins.long(),
-            reduction="mean",
-        ).to(dtype=context.logits.dtype)
+            reduction="none",
+        )
+        coord_ce = _weighted_mean(coord_ce_per)
 
     if weights["coord_soft_ce_weight"] != 0.0 or weights["coord_w1_weight"] != 0.0:
         target_sigma = max(
@@ -217,8 +234,8 @@ def run_coord_reg_module(
             w1_weight=1.0,
             normalize_w1=True,
         )
-        coord_soft_ce = dist.soft_ce_per_token.mean().to(dtype=context.logits.dtype)
-        coord_w1 = dist.w1_per_token.mean().to(dtype=context.logits.dtype)
+        coord_soft_ce = _weighted_mean(dist.soft_ce_per_token)
+        coord_w1 = _weighted_mean(dist.w1_per_token)
 
     if weights["coord_gate_weight"] != 0.0:
         gate_per_token, _mass_mean = coord_vocab_gate_loss(
@@ -226,7 +243,7 @@ def run_coord_reg_module(
             logits_coord=coord_logits,
             temperature=float(temperature),
         )
-        coord_gate = gate_per_token.mean().to(dtype=context.logits.dtype)
+        coord_gate = _weighted_mean(gate_per_token)
 
     if weights["text_gate_weight"] != 0.0:
         masks = context.token_type_masks if isinstance(context.token_type_masks, Mapping) else {}
@@ -300,14 +317,14 @@ def run_coord_reg_module(
 
         if weights["coord_entropy_weight"] != 0.0:
             p = probs.clamp(min=1e-12)
-            coord_entropy = (-(p * p.log()).sum(dim=-1)).mean().to(dtype=context.logits.dtype)
+            coord_entropy = _weighted_mean((-(p * p.log()).sum(dim=-1)))
 
         bins_f = torch.arange(0, probs.shape[-1], device=probs.device, dtype=torch.float32) / 999.0
         gt = target_bins.float() / 999.0
         diff = bins_f.unsqueeze(0) - gt.unsqueeze(1)
 
         if weights["coord_el1_weight"] != 0.0:
-            coord_el1 = (probs * diff.abs()).sum(dim=-1).mean().to(dtype=context.logits.dtype)
+            coord_el1 = _weighted_mean((probs * diff.abs()).sum(dim=-1))
 
         if weights["coord_ehuber_weight"] != 0.0:
             absd = diff.abs()
@@ -316,7 +333,7 @@ def run_coord_reg_module(
                 0.5 * (absd**2) / float(huber_delta),
                 absd - 0.5 * float(huber_delta),
             )
-            coord_ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=context.logits.dtype)
+            coord_ehuber = _weighted_mean((probs * huber).sum(dim=-1))
 
     coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
     coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce
