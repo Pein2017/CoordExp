@@ -73,6 +73,7 @@ def run_coord_reg_module(
     coord_logits = state.get("coord_logits")
     coord_logits_full = state.get("coord_logits_full")
     target_bins = state.get("coord_target_bins")
+    coord_slot_weights = state.get("coord_slot_weights")
 
     if not isinstance(coord_logits, torch.Tensor) or int(coord_logits.numel()) == 0:
         z = context.logits.new_tensor(0.0)
@@ -91,6 +92,12 @@ def run_coord_reg_module(
 
     if not isinstance(coord_logits_full, torch.Tensor) or not isinstance(target_bins, torch.Tensor):
         raise ValueError("coord_reg module requires bbox_geo state: coord_logits_full + coord_target_bins")
+
+    slot_w: torch.Tensor | None = None
+    if isinstance(coord_slot_weights, torch.Tensor) and int(coord_slot_weights.numel()) > 0:
+        slot_w = coord_slot_weights.to(device=coord_logits.device, dtype=torch.float32)
+        if slot_w.ndim != 1 or int(slot_w.numel()) != int(target_bins.numel()):
+            raise ValueError("coord_slot_weights must be shape [N] matching coord_target_bins")
 
     registry_context = str(context.registry_context or "").strip().lower()
 
@@ -185,11 +192,21 @@ def run_coord_reg_module(
     text_gate = context.logits.new_tensor(0.0)
 
     if weights["coord_ce_weight"] != 0.0:
-        coord_ce = F.cross_entropy(
-            coord_logits.float(),
-            target_bins.long(),
-            reduction="mean",
-        ).to(dtype=context.logits.dtype)
+        if isinstance(slot_w, torch.Tensor):
+            per = F.cross_entropy(
+                coord_logits.float(),
+                target_bins.long(),
+                reduction="none",
+            )
+            coord_ce = ((per * slot_w).sum() / slot_w.sum().clamp(min=1e-6)).to(
+                dtype=context.logits.dtype
+            )
+        else:
+            coord_ce = F.cross_entropy(
+                coord_logits.float(),
+                target_bins.long(),
+                reduction="mean",
+            ).to(dtype=context.logits.dtype)
 
     if weights["coord_soft_ce_weight"] != 0.0 or weights["coord_w1_weight"] != 0.0:
         target_sigma = max(
@@ -217,8 +234,17 @@ def run_coord_reg_module(
             w1_weight=1.0,
             normalize_w1=True,
         )
-        coord_soft_ce = dist.soft_ce_per_token.mean().to(dtype=context.logits.dtype)
-        coord_w1 = dist.w1_per_token.mean().to(dtype=context.logits.dtype)
+        if isinstance(slot_w, torch.Tensor):
+            denom = slot_w.sum().clamp(min=1e-6)
+            coord_soft_ce = ((dist.soft_ce_per_token * slot_w).sum() / denom).to(
+                dtype=context.logits.dtype
+            )
+            coord_w1 = ((dist.w1_per_token * slot_w).sum() / denom).to(
+                dtype=context.logits.dtype
+            )
+        else:
+            coord_soft_ce = dist.soft_ce_per_token.mean().to(dtype=context.logits.dtype)
+            coord_w1 = dist.w1_per_token.mean().to(dtype=context.logits.dtype)
 
     if weights["coord_gate_weight"] != 0.0:
         gate_per_token, _mass_mean = coord_vocab_gate_loss(
@@ -226,7 +252,12 @@ def run_coord_reg_module(
             logits_coord=coord_logits,
             temperature=float(temperature),
         )
-        coord_gate = gate_per_token.mean().to(dtype=context.logits.dtype)
+        if isinstance(slot_w, torch.Tensor):
+            coord_gate = ((gate_per_token * slot_w).sum() / slot_w.sum().clamp(min=1e-6)).to(
+                dtype=context.logits.dtype
+            )
+        else:
+            coord_gate = gate_per_token.mean().to(dtype=context.logits.dtype)
 
     if weights["text_gate_weight"] != 0.0:
         masks = context.token_type_masks if isinstance(context.token_type_masks, Mapping) else {}
@@ -300,14 +331,26 @@ def run_coord_reg_module(
 
         if weights["coord_entropy_weight"] != 0.0:
             p = probs.clamp(min=1e-12)
-            coord_entropy = (-(p * p.log()).sum(dim=-1)).mean().to(dtype=context.logits.dtype)
+            ent = (-(p * p.log()).sum(dim=-1))
+            if isinstance(slot_w, torch.Tensor):
+                coord_entropy = ((ent * slot_w).sum() / slot_w.sum().clamp(min=1e-6)).to(
+                    dtype=context.logits.dtype
+                )
+            else:
+                coord_entropy = ent.mean().to(dtype=context.logits.dtype)
 
         bins_f = torch.arange(0, probs.shape[-1], device=probs.device, dtype=torch.float32) / 999.0
         gt = target_bins.float() / 999.0
         diff = bins_f.unsqueeze(0) - gt.unsqueeze(1)
 
         if weights["coord_el1_weight"] != 0.0:
-            coord_el1 = (probs * diff.abs()).sum(dim=-1).mean().to(dtype=context.logits.dtype)
+            el1 = (probs * diff.abs()).sum(dim=-1)
+            if isinstance(slot_w, torch.Tensor):
+                coord_el1 = ((el1 * slot_w).sum() / slot_w.sum().clamp(min=1e-6)).to(
+                    dtype=context.logits.dtype
+                )
+            else:
+                coord_el1 = el1.mean().to(dtype=context.logits.dtype)
 
         if weights["coord_ehuber_weight"] != 0.0:
             absd = diff.abs()
@@ -316,7 +359,13 @@ def run_coord_reg_module(
                 0.5 * (absd**2) / float(huber_delta),
                 absd - 0.5 * float(huber_delta),
             )
-            coord_ehuber = (probs * huber).sum(dim=-1).mean().to(dtype=context.logits.dtype)
+            eh = (probs * huber).sum(dim=-1)
+            if isinstance(slot_w, torch.Tensor):
+                coord_ehuber = ((eh * slot_w).sum() / slot_w.sum().clamp(min=1e-6)).to(
+                    dtype=context.logits.dtype
+                )
+            else:
+                coord_ehuber = eh.mean().to(dtype=context.logits.dtype)
 
     coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
     coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce

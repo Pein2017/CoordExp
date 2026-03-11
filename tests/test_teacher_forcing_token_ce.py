@@ -79,3 +79,46 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
 
     out.loss.backward()
     assert logits.grad is not None
+
+
+def test_token_ce_tail_desc_weights_scale_fn_desc_tokens() -> None:
+    # positions: 0 prompt, 1..4 tail
+    input_ids = torch.tensor([[3, 11, 12, 13, 14]], dtype=torch.long)
+    logits = torch.zeros((1, 5, 32), dtype=torch.float32, requires_grad=True)
+    meta = [
+        {
+            "prompt_len": 1,
+            "prefix_len": 0,
+            "train_len": 4,
+            "tail_ignore_pos": [],
+            "tail_desc_pos": [1, 3],
+            "tail_desc_weights": [2.0, 0.5],
+            "tail_closure_pos": [],
+            "prefix_struct_pos": [],
+            "drop_invalid_total": 0,
+        }
+    ]
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=meta,
+        coord_token_ids=[],
+        temperature=1.0,
+        decode_mode="greedy",
+    )
+    spec = PipelineModuleSpec(
+        name="token_ce",
+        enabled=True,
+        weight=1.0,
+        channels=("A", "B"),
+        config={"rollout_fn_desc_weight": 1.5},
+    )
+
+    out = run_token_ce_module(context=context, spec=spec)
+    weights = out.state["weights_masked"]
+    # tail starts at absolute pos 1. rel desc positions 1 and 3 -> abs 2 and 4
+    assert float(weights[0, 2].item()) == pytest.approx(3.0)
+    assert float(weights[0, 4].item()) == pytest.approx(0.75)

@@ -912,6 +912,112 @@ def _build_duplicate_ul_targets(
     return targets, int(ul_boundary_count), int(skipped_no_divergence)
 
 
+def _best_bipartite_iou_pairs(
+    *,
+    anchors: Sequence[GTObject],
+    explorers: Sequence[GTObject],
+    min_iou: float,
+) -> List[Tuple[int, int, float]]:
+    n_a = int(len(anchors))
+    n_e = int(len(explorers))
+    if n_a <= 0 or n_e <= 0:
+        return []
+
+    edges: List[List[Tuple[int, float]]] = []
+    for i, a in enumerate(anchors):
+        row: List[Tuple[int, float]] = []
+        for j, e in enumerate(explorers):
+            iou = float(_bbox_iou_norm1000_xyxy(a.points_norm1000, e.points_norm1000))
+            if iou >= float(min_iou):
+                row.append((int(j), float(iou)))
+        row.sort(key=lambda it: (-float(it[1]), int(i), int(it[0])))
+        edges.append(row)
+
+    if n_a <= 15 and n_e <= 15:
+        memo: Dict[Tuple[int, int], Tuple[float, Tuple[Tuple[int, int], ...]]] = {}
+
+        def solve(i: int, used_mask: int) -> Tuple[float, Tuple[Tuple[int, int], ...]]:
+            key = (int(i), int(used_mask))
+            if key in memo:
+                return memo[key]
+            if i >= n_a:
+                memo[key] = (0.0, ())
+                return memo[key]
+
+            best_score, best_pairs = solve(i + 1, used_mask)
+            for j, iou in edges[i]:
+                bit = 1 << int(j)
+                if used_mask & bit:
+                    continue
+                score_tail, pairs_tail = solve(i + 1, used_mask | bit)
+                cand_score = float(iou) + float(score_tail)
+                cand_pairs = ((int(i), int(j)),) + pairs_tail
+                if cand_score > best_score + 1e-12:
+                    best_score, best_pairs = cand_score, cand_pairs
+                elif abs(cand_score - best_score) <= 1e-12:
+                    if list(sorted(cand_pairs)) < list(sorted(best_pairs)):
+                        best_score, best_pairs = cand_score, cand_pairs
+
+            memo[key] = (best_score, best_pairs)
+            return memo[key]
+
+        _score, pairs = solve(0, 0)
+        return [
+            (
+                int(i),
+                int(j),
+                float(
+                    _bbox_iou_norm1000_xyxy(
+                        anchors[i].points_norm1000,
+                        explorers[j].points_norm1000,
+                    )
+                ),
+            )
+            for i, j in sorted(pairs)
+        ]
+
+    used_a: set[int] = set()
+    used_e: set[int] = set()
+    candidates: List[Tuple[float, int, int]] = []
+    for i, row in enumerate(edges):
+        for j, iou in row:
+            candidates.append((float(iou), int(i), int(j)))
+    candidates.sort(key=lambda it: (-it[0], it[1], it[2]))
+    out: List[Tuple[int, int, float]] = []
+    for iou, i, j in candidates:
+        if i in used_a or j in used_e:
+            continue
+        used_a.add(i)
+        used_e.add(j)
+        out.append((int(i), int(j), float(iou)))
+    return sorted(out, key=lambda it: (it[0], it[1]))
+
+
+def _desc_token_weights_for_append(
+    *,
+    tokenizer: Any,
+    token_ids: Sequence[int],
+    object_weights: Sequence[float],
+) -> Dict[int, float]:
+    ids = [int(t) for t in token_ids]
+    pieces = decode_pieces(tokenizer, ids)
+    token_spans = _token_piece_char_spans(tokenizer=tokenizer, token_ids=ids)
+    text = "".join(pieces)
+    desc_spans = find_desc_value_char_spans(text)
+    out: Dict[int, float] = {}
+    for obj_i, (start_c, end_c) in enumerate(desc_spans):
+        w = 1.0
+        if int(obj_i) < int(len(object_weights)):
+            try:
+                w = max(0.0, float(object_weights[int(obj_i)]))
+            except (TypeError, ValueError):
+                w = 1.0
+        for ti, (ts, te) in enumerate(token_spans):
+            if int(ts) < int(end_c) and int(te) > int(start_c):
+                out[int(ti)] = float(w)
+    return out
+
+
 class Stage2ABTrainingTrainer(
     Stage2ABSchedulerMixin,
     Stage2ABChannelExecutorsMixin,

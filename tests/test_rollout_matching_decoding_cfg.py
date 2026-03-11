@@ -95,6 +95,17 @@ def test_validate_rollout_matching_cfg_rejects_invalid_ranges():
         t2._validate_rollout_matching_cfg()
 
 
+def test_decoding_params_supports_per_call_override() -> None:
+    t = _mk_uninit_trainer({"decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1}})
+    t0, p0, k0 = t._decoding_params()
+    assert (t0, p0, k0) == pytest.approx((0.0, 1.0, -1))
+
+    t1, p1, k1 = t._decoding_params(
+        decoding_override={"temperature": 0.7, "top_p": 0.95, "top_k": 32}
+    )
+    assert (t1, p1, k1) == pytest.approx((0.7, 0.95, 32))
+
+
 def test_validate_rollout_matching_cfg_accepts_eval_detection_block():
     t = _mk_uninit_trainer(
         {

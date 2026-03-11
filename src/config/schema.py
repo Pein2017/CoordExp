@@ -974,8 +974,95 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBV3DecodeConfig:
+    temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = -1
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        path: str,
+        defaults: "Stage2ABChannelBV3DecodeConfig",
+    ) -> "Stage2ABChannelBV3DecodeConfig":
+        if payload is None:
+            return defaults
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        temperature = float(data.pop("temperature", defaults.temperature) or 0.0)
+        if temperature < 0.0:
+            raise ValueError(f"{path}.temperature must be >= 0")
+        top_p = float(data.pop("top_p", defaults.top_p) or 1.0)
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError(f"{path}.top_p must be in (0,1]")
+        top_k = int(data.pop("top_k", defaults.top_k))
+        if top_k != -1 and top_k < 1:
+            raise ValueError(f"{path}.top_k must be -1 or >= 1")
+        if data:
+            raise ValueError(f"Unknown {path} keys: {sorted(str(k) for k in data.keys())}")
+        return cls(temperature=temperature, top_p=top_p, top_k=top_k)
+
+
+@dataclass(frozen=True)
+class Stage2ABChannelBV3K2Config:
+    enabled: bool = False
+    association_iou_threshold: float = 0.90
+    recovered_fn_weight: float = 2.0
+    anchor: Stage2ABChannelBV3DecodeConfig = field(
+        default_factory=Stage2ABChannelBV3DecodeConfig
+    )
+    explorer: Stage2ABChannelBV3DecodeConfig = field(
+        default_factory=lambda: Stage2ABChannelBV3DecodeConfig(temperature=0.7)
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBV3K2Config":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.channel_b.v3_k2 must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        enabled = bool(data.pop("enabled", cls.enabled))
+        association_iou_threshold = float(
+            data.pop("association_iou_threshold", cls.association_iou_threshold)
+        )
+        if association_iou_threshold < 0.0 or association_iou_threshold > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.association_iou_threshold must be in [0,1]"
+            )
+        recovered_fn_weight = float(data.pop("recovered_fn_weight", cls.recovered_fn_weight))
+        if recovered_fn_weight < 0.0:
+            raise ValueError("stage2_ab.channel_b.v3_k2.recovered_fn_weight must be >= 0")
+        anchor = Stage2ABChannelBV3DecodeConfig.from_mapping(
+            data.pop("anchor", None),
+            path="stage2_ab.channel_b.v3_k2.anchor",
+            defaults=Stage2ABChannelBV3DecodeConfig(temperature=0.0, top_p=1.0, top_k=-1),
+        )
+        explorer = Stage2ABChannelBV3DecodeConfig.from_mapping(
+            data.pop("explorer", None),
+            path="stage2_ab.channel_b.v3_k2.explorer",
+            defaults=Stage2ABChannelBV3DecodeConfig(temperature=0.7, top_p=1.0, top_k=-1),
+        )
+        if data:
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.v3_k2 keys: {sorted(str(k) for k in data.keys())}"
+            )
+        return cls(
+            enabled=enabled,
+            association_iou_threshold=association_iou_threshold,
+            recovered_fn_weight=recovered_fn_weight,
+            anchor=anchor,
+            explorer=explorer,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
+    v3_k2: Stage2ABChannelBV3K2Config = field(default_factory=Stage2ABChannelBV3K2Config)
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
 
@@ -1095,6 +1182,7 @@ class Stage2ABChannelBConfig:
 
         return cls(
             duplicate_iou_threshold=duplicate_iou_threshold,
+            v3_k2=v3_k2,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
         )
@@ -1735,3 +1823,4 @@ class TrainingConfig:
             global_max_length=global_max_length,
             extra={},
         )
+        v3_k2 = Stage2ABChannelBV3K2Config.from_mapping(data.pop("v3_k2", None))

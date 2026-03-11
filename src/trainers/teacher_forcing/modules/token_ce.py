@@ -87,6 +87,14 @@ def run_token_ce_module(
         prefix_struct_pos = [int(p) for p in (seg.get("prefix_struct_pos") or [])]
         tail_ignore_pos = [int(p) for p in (seg.get("tail_ignore_pos") or [])]
         tail_desc_pos = [int(p) for p in (seg.get("tail_desc_pos") or [])]
+        tail_desc_weights_raw = seg.get("tail_desc_weights") or []
+        tail_desc_weights: dict[int, float] = {}
+        if isinstance(tail_desc_weights_raw, list):
+            for rel_i, w in zip(tail_desc_pos, tail_desc_weights_raw):
+                try:
+                    tail_desc_weights[int(rel_i)] = max(0.0, float(w))
+                except (TypeError, ValueError):
+                    continue
         tail_closure_pos = [int(p) for p in (seg.get("tail_closure_pos") or [])]
 
         seg_start_i = int(seg_start)
@@ -131,6 +139,8 @@ def run_token_ce_module(
 
             if rel in tail_desc:
                 w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                if channel == "B" and rel in tail_desc_weights:
+                    w_desc = float(w_desc) * float(tail_desc_weights[rel])
                 weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:
