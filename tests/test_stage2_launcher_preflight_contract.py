@@ -48,6 +48,7 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
                 "mode": "server",
                 "max_model_len": 14000,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "gpu_memory_utilization": 0.85,
                 "server": {
                     "servers": [
@@ -103,6 +104,7 @@ def test_stage2_launcher_preflight_accepts_vllm_train_backend() -> None:
                 "mode": "server",
                 "max_model_len": 2048,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {
@@ -138,6 +140,7 @@ def test_stage2_launcher_preflight_prefers_custom_offline_max_pixels() -> None:
                 "mode": "server",
                 "max_model_len": 2048,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {
@@ -168,6 +171,7 @@ def test_stage2_launcher_preflight_rejects_base_url_0_0_0_0() -> None:
                 "mode": "server",
                 "max_model_len": 2048,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {
@@ -197,6 +201,7 @@ def test_stage2_launcher_preflight_rejects_multi_server_configs() -> None:
                 "mode": "server",
                 "max_model_len": 128,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {"base_url": "http://127.0.0.1:8000", "group_port": 51216},
@@ -221,6 +226,7 @@ def test_stage2_launcher_preflight_requires_vllm_max_model_len() -> None:
             "eval_rollout_backend": "vllm",
             "vllm": {
                 "mode": "server",
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {"base_url": "http://127.0.0.1:8000", "group_port": 51216}
@@ -246,6 +252,7 @@ def test_stage2_launcher_preflight_requires_group_port() -> None:
                 "mode": "server",
                 "max_model_len": 128,
                 "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
                         {
@@ -258,4 +265,61 @@ def test_stage2_launcher_preflight_requires_group_port() -> None:
     )
 
     with pytest.raises(ValueError, match=r"group_port is required"):
+        _ = build_stage2_launcher_preflight(training_config, config_path=None)
+
+
+def test_stage2_launcher_preflight_requires_mm_processor_do_resize_false() -> None:
+    training_config = types.SimpleNamespace(
+        model={"model": "some_model", "dtype": "bfloat16"},
+        custom=types.SimpleNamespace(train_jsonl="public_data/lvis/train.jsonl"),
+        template={"max_pixels": 32 * 32 * 768},
+        rollout_matching={
+            "rollout_backend": "vllm",
+            "eval_rollout_backend": "vllm",
+            "vllm": {
+                "mode": "server",
+                "max_model_len": 2048,
+                "enable_lora": False,
+                "server": {
+                    "servers": [
+                        {
+                            "base_url": "http://127.0.0.1:8000",
+                            "group_port": 51216,
+                        }
+                    ]
+                },
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"do_resize=false is required"):
+        _ = build_stage2_launcher_preflight(training_config, config_path=None)
+
+
+def test_stage2_launcher_preflight_rejects_mm_processor_do_resize_true() -> None:
+    training_config = types.SimpleNamespace(
+        model={"model": "some_model", "dtype": "bfloat16"},
+        custom=types.SimpleNamespace(train_jsonl="public_data/lvis/train.jsonl"),
+        template={"max_pixels": 32 * 32 * 768},
+        rollout_matching={
+            "rollout_backend": "vllm",
+            "eval_rollout_backend": "vllm",
+            "vllm": {
+                "mode": "server",
+                "max_model_len": 2048,
+                "enable_lora": False,
+                "mm_processor_kwargs": {"do_resize": True},
+                "server": {
+                    "servers": [
+                        {
+                            "base_url": "http://127.0.0.1:8000",
+                            "group_port": 51216,
+                        }
+                    ]
+                },
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"must resolve to false"):
         _ = build_stage2_launcher_preflight(training_config, config_path=None)

@@ -334,43 +334,55 @@ def build_stage2_launcher_preflight(
     # change the number of `<|image_pad|>` tokens).
     vllm_engine_kwargs: dict[str, Any] = {}
     mm_processor_kwargs_raw = vllm_cfg.get("mm_processor_kwargs")
-    if mm_processor_kwargs_raw is not None:
-        if not isinstance(mm_processor_kwargs_raw, Mapping):
+    if mm_processor_kwargs_raw is None:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize=false is required for Stage-2 server preflight."
+        )
+    if not isinstance(mm_processor_kwargs_raw, Mapping):
+        raise TypeError(
+            "rollout_matching.vllm.mm_processor_kwargs must be a mapping when provided"
+        )
+    mm_processor_kwargs: dict[str, Any] = dict(mm_processor_kwargs_raw)
+    allowed_keys = {"do_resize"}
+    unknown_keys = set(mm_processor_kwargs.keys()) - set(allowed_keys)
+    if unknown_keys:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs contains unsupported keys: "
+            f"{sorted(unknown_keys)} (allowed: {sorted(allowed_keys)})"
+        )
+
+    if "do_resize" not in mm_processor_kwargs:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize=false is required for Stage-2 server preflight."
+        )
+
+    raw = mm_processor_kwargs.get("do_resize")
+    if isinstance(raw, bool):
+        do_resize = raw
+    elif isinstance(raw, int) and raw in {0, 1}:
+        do_resize = bool(raw)
+    elif isinstance(raw, str):
+        raw_s = raw.strip().lower()
+        if raw_s in {"true", "1", "yes"}:
+            do_resize = True
+        elif raw_s in {"false", "0", "no"}:
+            do_resize = False
+        else:
             raise TypeError(
-                "rollout_matching.vllm.mm_processor_kwargs must be a mapping when provided"
+                "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
             )
-        mm_processor_kwargs: dict[str, Any] = dict(mm_processor_kwargs_raw)
-        allowed_keys = {"do_resize"}
-        unknown_keys = set(mm_processor_kwargs.keys()) - set(allowed_keys)
-        if unknown_keys:
-            raise ValueError(
-                "rollout_matching.vllm.mm_processor_kwargs contains unsupported keys: "
-                f"{sorted(unknown_keys)} (allowed: {sorted(allowed_keys)})"
-            )
+    else:
+        raise TypeError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
+        )
 
-        if "do_resize" in mm_processor_kwargs:
-            raw = mm_processor_kwargs.get("do_resize")
-            if isinstance(raw, bool):
-                do_resize = raw
-            elif isinstance(raw, int) and raw in {0, 1}:
-                do_resize = bool(raw)
-            elif isinstance(raw, str):
-                raw_s = raw.strip().lower()
-                if raw_s in {"true", "1", "yes"}:
-                    do_resize = True
-                elif raw_s in {"false", "0", "no"}:
-                    do_resize = False
-                else:
-                    raise TypeError(
-                        "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
-                    )
-            else:
-                raise TypeError(
-                    "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
-                )
-            mm_processor_kwargs["do_resize"] = do_resize
+    if bool(do_resize):
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize must resolve to false for Stage-2 server preflight."
+        )
 
-        vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
+    mm_processor_kwargs["do_resize"] = False
+    vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
 
     return {
         "rollout_backend": rollout_contract["rollout_backend"],

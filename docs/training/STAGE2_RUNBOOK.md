@@ -271,6 +271,8 @@ Minimum required edits:
 - `template.max_pixels` and `custom.offline_max_pixels` now serve different purposes:
   - `template.max_pixels`: runtime processor/server setting (often kept large to disable HF auto-resize)
   - `custom.offline_max_pixels`: offline dataset contract enforced by launcher prechecks and dataset runtime
+- For Stage-2 server-mode rollout configs, `rollout_matching.vllm.mm_processor_kwargs.do_resize: false` is required.
+  - Treat this as a fail-fast invariant, not an optional tuning knob.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Objective pipeline declaration (required, ordered):
