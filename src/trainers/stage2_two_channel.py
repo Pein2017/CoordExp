@@ -587,6 +587,73 @@ class _CanonicalPrefixData:
     object_value_spans: List[Tuple[int, int]]
 
 
+def _associate_anchor_explorer_bipartite(
+    *,
+    anchors: Sequence[GTObject],
+    explorers: Sequence[GTObject],
+    iou_threshold: float,
+) -> List[Tuple[int, int]]:
+    n_a = int(len(anchors))
+    n_e = int(len(explorers))
+    if n_a <= 0 or n_e <= 0:
+        return []
+
+    edges: List[Tuple[int, int, float]] = []
+    for ai, a in enumerate(anchors):
+        for ei, e in enumerate(explorers):
+            iou = _bbox_iou_norm1000_xyxy(a.points_norm1000, e.points_norm1000)
+            if iou >= float(iou_threshold):
+                edges.append((int(ai), int(ei), float(iou)))
+    if not edges:
+        return []
+
+    # Enumerate maximum-cardinality assignments on thresholded edges and pick the
+    # one maximizing IoU sum; final tie-break is lexicographically smallest pair list.
+    adj: List[List[Tuple[int, float]]] = [[] for _ in range(n_a)]
+    for ai, ei, iou in edges:
+        adj[ai].append((ei, iou))
+    for ai in range(n_a):
+        adj[ai].sort(key=lambda t: (-float(t[1]), int(t[0])))
+
+    best_pairs: Optional[List[Tuple[int, int]]] = None
+    best_count = -1
+    best_iou = -1.0
+
+    def _dfs(ai: int, used_e: set[int], pairs: List[Tuple[int, int]], iou_sum: float) -> None:
+        nonlocal best_pairs, best_count, best_iou
+        if ai >= n_a:
+            pairs_sorted = sorted((int(a), int(e)) for a, e in pairs)
+            count = len(pairs_sorted)
+            if (
+                count > best_count
+                or (count == best_count and float(iou_sum) > float(best_iou) + 1e-12)
+                or (
+                    count == best_count
+                    and abs(float(iou_sum) - float(best_iou)) <= 1e-12
+                    and (best_pairs is None or pairs_sorted < best_pairs)
+                )
+            ):
+                best_pairs = pairs_sorted
+                best_count = int(count)
+                best_iou = float(iou_sum)
+            return
+
+        # Branch: skip anchor (singleton candidate)
+        _dfs(ai + 1, used_e, pairs, iou_sum)
+
+        for ei, iou in adj[ai]:
+            if int(ei) in used_e:
+                continue
+            used_e.add(int(ei))
+            pairs.append((int(ai), int(ei)))
+            _dfs(ai + 1, used_e, pairs, float(iou_sum) + float(iou))
+            pairs.pop()
+            used_e.remove(int(ei))
+
+    _dfs(0, set(), [], 0.0)
+    return [] if best_pairs is None else [(int(a), int(e)) for a, e in best_pairs]
+
+
 def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float:
     if len(box_a) != 4 or len(box_b) != 4:
         return 0.0
@@ -910,6 +977,58 @@ def _build_duplicate_ul_targets(
     )
     ul_boundary_count = len({int(item["boundary"]) for item in targets})
     return targets, int(ul_boundary_count), int(skipped_no_divergence)
+
+
+def _build_append_desc_weights(
+    *,
+    tokenizer: Any,
+    fn_objs: Sequence[GTObject],
+    fn_gt_indices: Sequence[int],
+    prefix_text: str,
+    object_field_order: str,
+    recovered_gt_indices: set[int],
+    recovered_fn_weight: float,
+) -> Dict[int, float]:
+    append_text = serialize_append_fragment(
+        fn_objects=fn_objs,
+        prefix_text=prefix_text,
+        object_field_order=object_field_order,
+    )
+    append_ids = [int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)]
+    token_spans = _token_piece_char_spans(tokenizer=tokenizer, token_ids=append_ids)
+
+    # Determine object-local text ranges inside append_text.
+    rel_cursor = 0
+    full_text = str(prefix_text)
+    rel_ranges: List[Tuple[int, int, int]] = []  # (gt_idx, rel_start, rel_end)
+    for gt_idx, obj in zip(fn_gt_indices, fn_objs):
+        if not str(full_text).rstrip().endswith("["):
+            full_text += ", "
+            rel_cursor += 2
+        obj_text = _serialize_gt_object_entry(obj=obj, object_field_order=object_field_order)
+        rel_start = int(rel_cursor)
+        rel_end = int(rel_cursor + len(obj_text))
+        rel_ranges.append((int(gt_idx), rel_start, rel_end))
+        full_text += str(obj_text)
+        rel_cursor = int(rel_end)
+    full_text += "]}"
+
+    out: Dict[int, float] = {}
+    for gt_idx, rel_start, rel_end in rel_ranges:
+        weight = (
+            float(recovered_fn_weight)
+            if int(gt_idx) in recovered_gt_indices
+            else 1.0
+        )
+        obj_text = append_text[rel_start:rel_end]
+        for s, e in find_desc_value_char_spans(obj_text):
+            abs_s = int(rel_start + s)
+            abs_e = int(rel_start + e)
+            for ti, (ts, te) in enumerate(token_spans):
+                if int(ts) < int(abs_e) and int(te) > int(abs_s):
+                    out[int(ti)] = float(max(float(out.get(int(ti), 0.0)), float(weight)))
+
+    return out
 
 
 class Stage2ABTrainingTrainer(
@@ -1979,6 +2098,22 @@ class Stage2ABTrainingTrainer(
         duplicate_iou_threshold = float(
             0.90 if duplicate_iou_threshold_raw is None else duplicate_iou_threshold_raw
         )
+        v3_k2_cfg = self._ab_channel_b_get("v3_k2", {})
+        if not isinstance(v3_k2_cfg, Mapping):
+            raise TypeError("stage2_ab.channel_b.v3_k2 must be a mapping when provided")
+        v3_k2_enabled = bool(v3_k2_cfg.get("enabled", False))
+        association_iou_threshold = float(
+            v3_k2_cfg.get("association_iou_threshold", 0.9)
+        )
+        recovered_fn_weight = float(v3_k2_cfg.get("recovered_fn_weight", 1.0))
+        anchor_decoding_cfg = v3_k2_cfg.get(
+            "anchor_decoding",
+            {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+        )
+        explorer_decoding_cfg = v3_k2_cfg.get(
+            "explorer_decoding",
+            {"temperature": 0.7, "top_p": 1.0, "top_k": -1},
+        )
 
 
         packing_enabled = self._packing_enabled()
@@ -2035,18 +2170,36 @@ class Stage2ABTrainingTrainer(
                     int(rollout_infer_bs), int(len(inputs_for_rollout))
                 )
 
-            rollout_results = []
+            rollout_results_anchor = []
+            rollout_results_explorer = []
             for off in range(0, int(len(inputs_for_rollout)), int(rollout_infer_bs)):
                 chunk = inputs_for_rollout[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
                     continue
 
-                chunk_results = self._rollout_many(chunk)
-                rollout_results.extend(chunk_results)
+                if v3_k2_enabled:
+                    anchor_chunk_results = self._rollout_many(
+                        chunk,
+                        decoding_override=anchor_decoding_cfg if isinstance(anchor_decoding_cfg, Mapping) else None,
+                    )
+                    explorer_chunk_results = self._rollout_many(
+                        chunk,
+                        decoding_override=explorer_decoding_cfg if isinstance(explorer_decoding_cfg, Mapping) else None,
+                    )
+                else:
+                    anchor_chunk_results = self._rollout_many(chunk)
+                    explorer_chunk_results = []
 
-            if len(rollout_results) != len(inputs_for_rollout):
+                rollout_results_anchor.extend(anchor_chunk_results)
+                rollout_results_explorer.extend(explorer_chunk_results)
+
+            if len(rollout_results_anchor) != len(inputs_for_rollout):
                 raise RuntimeError(
-                    "rollout backend returned unexpected number of results"
+                    "rollout backend returned unexpected number of anchor results"
+                )
+            if v3_k2_enabled and len(rollout_results_explorer) != len(inputs_for_rollout):
+                raise RuntimeError(
+                    "rollout backend returned unexpected number of explorer results"
                 )
             t_gen_s = time.perf_counter() - t_gen0
 
@@ -2079,10 +2232,17 @@ class Stage2ABTrainingTrainer(
         dup_ul_boundaries_total = 0
         dup_ul_skipped_no_divergence_total = 0
         dup_metric_samples = 0
+        triage_anchor_gt_backed_total = 0
+        triage_shielded_anchor_total = 0
+        triage_dead_anchor_total = 0
+        triage_recovered_gt_total = 0
+        triage_anchor_total = 0
+        triage_gt_total = 0
 
-        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids) in zip(
+        for sample, (resp_ids, _resp_text, decode_mode, prompt_ids), explorer_result in zip(
             inputs_for_rollout,
-            rollout_results,
+            rollout_results_anchor,
+            rollout_results_explorer if v3_k2_enabled else [None] * len(rollout_results_anchor),
         ):
             if "messages" not in sample:
                 raise ValueError("stage2-ab requires 'messages' in dataset samples")
@@ -2252,19 +2412,138 @@ class Stage2ABTrainingTrainer(
                 fn_cost=fn_cost,
             )
 
+            explorer_match = None
+            explorer_accepted_objects_clean: List[GTObject] = []
+            if v3_k2_enabled and explorer_result is not None:
+                exp_resp_ids, _exp_resp_text, _exp_decode_mode, _exp_prompt_ids = explorer_result
+                exp_resp_ids_local = [int(t) for t in exp_resp_ids]
+                if int(max_new_tokens) > 0 and int(len(exp_resp_ids_local)) >= int(max_new_tokens):
+                    try:
+                        eos = int(eos_id) if eos_id is not None else -1
+                    except (TypeError, ValueError):
+                        eos = -1
+                    if eos >= 0 and (not exp_resp_ids_local or int(exp_resp_ids_local[-1]) != eos):
+                        exp_resp_ids_local.append(int(eos))
+
+                exp_parse = parse_rollout_for_matching(
+                    tokenizer=tok,
+                    response_token_ids=exp_resp_ids_local,
+                    object_field_order=self._object_field_order(),
+                )
+                exp_parsed_bbox_objects_raw: List[GTObject] = []
+                for pobj in list(exp_parse.valid_objects):
+                    if pobj.geom_type != "bbox_2d":
+                        continue
+                    pts = points_from_coord_tokens(
+                        response_token_ids=exp_parse.response_token_ids,
+                        coord_token_indices=pobj.coord_token_indices,
+                        coord_id_to_bin=coord_id_to_bin,
+                    )
+                    if pts is None or len(pts) != 4:
+                        continue
+                    try:
+                        x1, y1, x2, y2 = [int(x) for x in pts]
+                    except (TypeError, ValueError):
+                        continue
+                    if x2 < x1 or y2 < y1:
+                        continue
+                    exp_parsed_bbox_objects_raw.append(
+                        GTObject(
+                            index=int(pobj.index),
+                            geom_type="bbox_2d",
+                            points_norm1000=[x1, y1, x2, y2],
+                            desc=str(pobj.desc),
+                        )
+                    )
+
+                explorer_accepted_objects_clean, _ = _sequential_dedup_bbox_objects(
+                    parsed_bbox_objects_raw=exp_parsed_bbox_objects_raw,
+                    duplicate_iou_threshold=duplicate_iou_threshold,
+                )
+                explorer_match = hungarian_match_maskiou(
+                    preds=explorer_accepted_objects_clean,
+                    gts=gts,
+                    top_k=match_top_k,
+                    gate_threshold=gate_thr,
+                    mask_resolution=mask_res,
+                    fp_cost=fp_cost,
+                    fn_cost=fn_cost,
+                )
+
             prefix_bbox_groups: List[Dict[str, Any]] = []
             fn_bbox_groups: List[Dict[str, Any]] = []
             prefix_pos: List[int] = []
             prefix_bins: List[int] = []
             matched_gt_for_supervision: set[int] = set()
+            recovered_gt_indices: set[int] = set()
 
             prefix_struct_pos: List[int] = []
 
             fn_count_for_meta = 0
 
+            action_by_anchor_index: Dict[int, str] = {}
+            if v3_k2_enabled and explorer_match is not None:
+                anchor_gt_map = {int(pi): int(gi) for pi, gi in match.matched_pairs}
+                explorer_gt_map = {int(pi): int(gi) for pi, gi in explorer_match.matched_pairs}
+                pairings = _associate_anchor_explorer_bipartite(
+                    anchors=accepted_objects_clean,
+                    explorers=explorer_accepted_objects_clean,
+                    iou_threshold=association_iou_threshold,
+                )
+                paired_anchor = {int(ai) for ai, _ in pairings}
+                paired_explorer = {int(ei) for _, ei in pairings}
+                for ai, ei in pairings:
+                    anchor_gt = anchor_gt_map.get(int(ai))
+                    explorer_gt = explorer_gt_map.get(int(ei))
+                    if anchor_gt is not None:
+                        action_by_anchor_index[int(ai)] = "anchor_gt_backed"
+                    elif explorer_gt is not None:
+                        action_by_anchor_index[int(ai)] = "dead_anchor"
+                        recovered_gt_indices.add(int(explorer_gt))
+                    else:
+                        action_by_anchor_index[int(ai)] = "shielded_anchor"
+                for ai in range(len(accepted_objects_clean)):
+                    if ai in action_by_anchor_index:
+                        continue
+                    if ai in anchor_gt_map:
+                        action_by_anchor_index[int(ai)] = "anchor_gt_backed"
+                    elif ai in paired_anchor:
+                        action_by_anchor_index[int(ai)] = "shielded_anchor"
+                    else:
+                        action_by_anchor_index[int(ai)] = "dead_anchor"
+
+                for ei, gt_i in explorer_gt_map.items():
+                    if int(ei) in paired_explorer:
+                        continue
+                    recovered_gt_indices.add(int(gt_i))
+            else:
+                for ai, _obj in enumerate(accepted_objects_clean):
+                    action_by_anchor_index[int(ai)] = (
+                        "anchor_gt_backed"
+                        if any(int(p) == int(ai) for p, _ in match.matched_pairs)
+                        else "dead_anchor"
+                    )
+
+            kept_anchor_indices = [
+                int(i)
+                for i in range(len(accepted_objects_clean))
+                if action_by_anchor_index.get(int(i)) != "dead_anchor"
+            ]
+            triage_anchor_total += int(len(accepted_objects_clean))
+            triage_gt_total += int(len(gts))
+            triage_recovered_gt_total += int(len(recovered_gt_indices))
+            for _ai, status in action_by_anchor_index.items():
+                if status == "anchor_gt_backed":
+                    triage_anchor_gt_backed_total += 1
+                elif status == "shielded_anchor":
+                    triage_shielded_anchor_total += 1
+                elif status == "dead_anchor":
+                    triage_dead_anchor_total += 1
+            accepted_objects_v3 = [accepted_objects_clean[int(i)] for i in kept_anchor_indices]
+
             clean_prefix = _build_canonical_prefix_data(
                 tokenizer=tok,
-                objects=accepted_objects_clean,
+                objects=accepted_objects_v3,
                 object_field_order=object_field_order,
             )
             prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
@@ -2274,7 +2553,7 @@ class Stage2ABTrainingTrainer(
                 for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
                 if int(tok_id) in coord_id_set
             ]
-            expected_prefix_coord_slots = int(len(accepted_objects_clean) * 4)
+            expected_prefix_coord_slots = int(len(accepted_objects_v3) * 4)
             if len(prefix_coord_positions_all) != expected_prefix_coord_slots:
                 raise ValueError(
                     "clean-prefix canonical serialization produced an unexpected number "
@@ -2283,17 +2562,22 @@ class Stage2ABTrainingTrainer(
                 )
 
             matched_clean_indices: List[int] = []
+            anchor_to_prefix_idx = {int(anchor_idx): int(pos) for pos, anchor_idx in enumerate(kept_anchor_indices)}
             for pred_i, gt_i in sorted(match.matched_pairs, key=lambda item: int(item[0])):
                 if pred_i < 0 or pred_i >= len(accepted_objects_clean):
                     continue
                 if gt_i < 0 or gt_i >= len(gts):
                     continue
+                if action_by_anchor_index.get(int(pred_i)) != "anchor_gt_backed":
+                    continue
+                if int(pred_i) not in anchor_to_prefix_idx:
+                    continue
 
                 matched_gt_for_supervision.add(int(gt_i))
-                matched_clean_indices.append(int(pred_i))
+                matched_clean_indices.append(int(anchor_to_prefix_idx[int(pred_i)]))
 
                 coord_group = prefix_coord_positions_all[
-                    int(pred_i) * 4 : int(pred_i + 1) * 4
+                    int(anchor_to_prefix_idx[int(pred_i)]) * 4 : int(anchor_to_prefix_idx[int(pred_i)] + 1) * 4
                 ]
                 if len(coord_group) != 4:
                     raise ValueError(
@@ -2328,6 +2612,9 @@ class Stage2ABTrainingTrainer(
             ]
             fn_objs = [gts[i] for i in fn_gt_indices_final]
             fn_count_for_meta = int(len(fn_objs))
+            recovered_gt_indices = {
+                int(i) for i in recovered_gt_indices if int(i) in fn_gt_indices_final
+            }
 
             append_text = serialize_append_fragment(
                 fn_objects=fn_objs,
@@ -2339,6 +2626,17 @@ class Stage2ABTrainingTrainer(
             tail_desc_pos = find_desc_value_token_positions(
                 tokenizer=tok, token_ids=append_ids
             )
+            tail_desc_weights_map: Dict[int, float] = {}
+            if v3_k2_enabled:
+                tail_desc_weights_map = _build_append_desc_weights(
+                    tokenizer=tok,
+                    fn_objs=fn_objs,
+                    fn_gt_indices=fn_gt_indices_final,
+                    prefix_text=clean_prefix.prefix_text,
+                    object_field_order=object_field_order,
+                    recovered_gt_indices=recovered_gt_indices,
+                    recovered_fn_weight=float(recovered_fn_weight),
+                )
 
             y_train_ids = list(clean_prefix.prefix_token_ids) + [
                 int(t) for t in append_ids
@@ -2499,6 +2797,12 @@ class Stage2ABTrainingTrainer(
                 token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
             )
             for obj, rel_pos in zip(fn_objs, rel_groups):
+                gt_idx = int(fn_gt_indices_final[len(fn_bbox_groups)]) if len(fn_bbox_groups) < len(fn_gt_indices_final) else -1
+                group_weight = (
+                    float(recovered_fn_weight)
+                    if v3_k2_enabled and int(gt_idx) in recovered_gt_indices
+                    else 1.0
+                )
                 fn_bbox_groups.append(
                     {
                         "pos": [
@@ -2510,6 +2814,7 @@ class Stage2ABTrainingTrainer(
                             for p in rel_pos
                         ],
                         "gt_bins": list(obj.points_norm1000),
+                        "weight": float(group_weight),
                     }
                 )
 
@@ -2680,6 +2985,7 @@ class Stage2ABTrainingTrainer(
 
             # Tail desc spans for CE weighting (relative to tail ids).
             tail_desc_pos_eff: List[int] = []
+            tail_desc_weight_overrides_eff: Dict[int, float] = {}
             tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
 
             # Stop/closure supervision is active (no stop-neutral masking). If
@@ -2706,6 +3012,10 @@ class Stage2ABTrainingTrainer(
                     continue
                 if 0 <= rel_i < tail_cap:
                     tail_desc_pos_eff.append(rel_i)
+                    if rel_i in tail_desc_weights_map:
+                        tail_desc_weight_overrides_eff[int(rel_i)] = float(
+                            tail_desc_weights_map[int(rel_i)]
+                        )
 
             invalid_rollout_total += int(invalid_rollout)
 
@@ -2738,8 +3048,19 @@ class Stage2ABTrainingTrainer(
                 "tail_closure_pos": [int(p) for p in tail_closure_pos_eff],
                 "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
+                "tail_desc_weight_overrides": {
+                    int(k): float(v)
+                    for k, v in sorted(tail_desc_weight_overrides_eff.items())
+                    if float(v) > 1.0
+                },
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
+                "coord_slot_weight_overrides": {
+                    int(pos): float(g.get("weight", 1.0))
+                    for g in bbox_groups_fn
+                    for pos in (g.get("pos") or [])
+                    if float(g.get("weight", 1.0)) > 1.0
+                },
                 "duplicate_ul_targets": [
                     {
                         "boundary": int(item["boundary"]),
@@ -2769,12 +3090,12 @@ class Stage2ABTrainingTrainer(
             ),
             "stage2_ab/channel_b/prompt_tok_mismatch": float(prompt_tok_mismatch_total),
             "stage2_ab/channel_b/prompt_tok_mismatch_rate": float(
-                (float(prompt_tok_mismatch_total) / float(len(rollout_results)))
-                if len(rollout_results) > 0
+                (float(prompt_tok_mismatch_total) / float(len(rollout_results_anchor)))
+                if len(rollout_results_anchor) > 0
                 else 0.0
             ),
             "stage2_ab/channel_b/_prompt_tok_mismatch_num": float(prompt_tok_mismatch_total),
-            "stage2_ab/channel_b/_prompt_tok_mismatch_den": float(len(rollout_results)),
+            "stage2_ab/channel_b/_prompt_tok_mismatch_den": float(len(rollout_results_anchor)),
             "stage2/drop_poly": float(drop_poly_total),
             "stage2/drop_unknown": float(drop_unknown_total),
             "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),
@@ -2795,12 +3116,12 @@ class Stage2ABTrainingTrainer(
             "rollout/repetition_penalty": float(repetition_penalty),
             "rollout/parse_truncated": float(parse_truncated_total),
             "rollout/parse_truncated_rate": float(
-                (float(parse_truncated_total) / float(len(rollout_results)))
-                if len(rollout_results) > 0
+                (float(parse_truncated_total) / float(len(rollout_results_anchor)))
+                if len(rollout_results_anchor) > 0
                 else 0.0
             ),
             "rollout/_parse_truncated_num": float(parse_truncated_total),
-            "rollout/_parse_truncated_den": float(len(rollout_results)),
+            "rollout/_parse_truncated_den": float(len(rollout_results_anchor)),
             "dup/max_desc_count": float(
                 dup_max_desc_count_sum / float(dup_metric_samples)
                 if dup_metric_samples > 0
@@ -2831,6 +3152,24 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/dup/N_ul_skipped_no_divergence": float(
                 dup_ul_skipped_no_divergence_total
             ),
+            "stage2_ab/channel_b/triage/N_anchor": float(triage_anchor_total),
+            "stage2_ab/channel_b/triage/N_anchor_gt_backed": float(
+                triage_anchor_gt_backed_total
+            ),
+            "stage2_ab/channel_b/triage/N_shielded_anchor": float(
+                triage_shielded_anchor_total
+            ),
+            "stage2_ab/channel_b/triage/N_dead_anchor": float(
+                triage_dead_anchor_total
+            ),
+            "stage2_ab/channel_b/triage/recovered_gt_num": float(
+                triage_recovered_gt_total
+            ),
+            "stage2_ab/channel_b/triage/recovered_gt_den": float(triage_gt_total),
+            "stage2_ab/channel_b/triage/dead_anchor_num": float(
+                triage_dead_anchor_total
+            ),
+            "stage2_ab/channel_b/triage/dead_anchor_den": float(triage_anchor_total),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),

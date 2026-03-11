@@ -118,6 +118,18 @@ def run_token_ce_module(
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
         tail_desc = {int(x) for x in tail_desc_pos if int(x) >= 0}
         tail_closure = {int(x) for x in tail_closure_pos if int(x) >= 0}
+        tail_desc_weight_overrides_raw = seg.get("tail_desc_weight_overrides") or {}
+        tail_desc_weight_overrides: dict[int, float] = {}
+        if isinstance(tail_desc_weight_overrides_raw, Mapping):
+            for k, v in tail_desc_weight_overrides_raw.items():
+                try:
+                    rel = int(k)
+                    w = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if rel < 0 or w <= 0.0:
+                    continue
+                tail_desc_weight_overrides[int(rel)] = float(w)
 
         for p in range(int(tail_start), int(tail_end)):
             tok_id = int(input_ids[b, p].item())
@@ -131,6 +143,9 @@ def run_token_ce_module(
 
             if rel in tail_desc:
                 w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                w_desc = float(
+                    tail_desc_weight_overrides.get(int(rel), float(w_desc))
+                )
                 weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:

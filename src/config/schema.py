@@ -974,10 +974,148 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABV3K2DecodingConfig:
+    temperature: float
+    top_p: float
+    top_k: int
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        path: str,
+        default_temperature: float,
+        default_top_p: float,
+        default_top_k: int,
+    ) -> "Stage2ABV3K2DecodingConfig":
+        if payload is None:
+            return cls(
+                temperature=float(default_temperature),
+                top_p=float(default_top_p),
+                top_k=int(default_top_k),
+            )
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping when provided")
+        data: MutableMapping[str, Any] = dict(payload)
+
+        try:
+            temperature = float(data.pop("temperature", default_temperature))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.temperature must be a float") from exc
+        if temperature < 0.0:
+            raise ValueError(f"{path}.temperature must be >= 0")
+
+        try:
+            top_p = float(data.pop("top_p", default_top_p))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.top_p must be a float") from exc
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError(f"{path}.top_p must be in (0, 1]")
+
+        try:
+            top_k = int(data.pop("top_k", default_top_k))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.top_k must be an int") from exc
+        if top_k != -1 and top_k < 1:
+            raise ValueError(
+                f"{path}.top_k must be -1 (disabled) or >= 1"
+            )
+
+        if data:
+            raise ValueError(
+                f"Unknown {path} keys: {sorted(str(k) for k in data.keys())}"
+            )
+
+        return cls(temperature=float(temperature), top_p=float(top_p), top_k=int(top_k))
+
+
+@dataclass(frozen=True)
+class Stage2ABChannelBV3K2Config:
+    enabled: bool = False
+    association_iou_threshold: float = 0.9
+    recovered_fn_weight: float = 2.0
+    anchor_decoding: Stage2ABV3K2DecodingConfig = field(
+        default_factory=lambda: Stage2ABV3K2DecodingConfig(
+            temperature=0.0, top_p=1.0, top_k=-1
+        )
+    )
+    explorer_decoding: Stage2ABV3K2DecodingConfig = field(
+        default_factory=lambda: Stage2ABV3K2DecodingConfig(
+            temperature=0.7, top_p=1.0, top_k=-1
+        )
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBV3K2Config":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.channel_b.v3_k2 must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        enabled = bool(data.pop("enabled", False))
+
+        try:
+            assoc = float(data.pop("association_iou_threshold", cls.association_iou_threshold))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.association_iou_threshold must be a float"
+            ) from exc
+        if assoc < 0.0 or assoc > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.association_iou_threshold must be in [0,1]"
+            )
+
+        try:
+            recovered_fn_weight = float(
+                data.pop("recovered_fn_weight", cls.recovered_fn_weight)
+            )
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be a float"
+            ) from exc
+        if recovered_fn_weight < 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be >= 1.0"
+            )
+
+        anchor_decoding = Stage2ABV3K2DecodingConfig.from_mapping(
+            data.pop("anchor_decoding", None),
+            path="stage2_ab.channel_b.v3_k2.anchor_decoding",
+            default_temperature=0.0,
+            default_top_p=1.0,
+            default_top_k=-1,
+        )
+        explorer_decoding = Stage2ABV3K2DecodingConfig.from_mapping(
+            data.pop("explorer_decoding", None),
+            path="stage2_ab.channel_b.v3_k2.explorer_decoding",
+            default_temperature=0.7,
+            default_top_p=1.0,
+            default_top_k=-1,
+        )
+
+        if data:
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.v3_k2 keys: {sorted(str(k) for k in data.keys())}"
+            )
+
+        return cls(
+            enabled=bool(enabled),
+            association_iou_threshold=float(assoc),
+            recovered_fn_weight=float(recovered_fn_weight),
+            anchor_decoding=anchor_decoding,
+            explorer_decoding=explorer_decoding,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    v3_k2: Stage2ABChannelBV3K2Config = field(default_factory=Stage2ABChannelBV3K2Config)
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
@@ -1088,6 +1226,8 @@ class Stage2ABChannelBConfig:
                     "(bounded DDP phase barriers are required)"
                 )
 
+        v3_k2 = Stage2ABChannelBV3K2Config.from_mapping(data.pop("v3_k2", None))
+
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
@@ -1097,6 +1237,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            v3_k2=v3_k2,
         )
 
 

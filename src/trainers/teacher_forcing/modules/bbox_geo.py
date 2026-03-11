@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import torch
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
-from ..geometry import bbox_smoothl1_ciou_loss, expectation_decode_coords
+from ..geometry import expectation_decode_coords
 from ..token_types import iter_segment_views
 
 
@@ -19,6 +20,7 @@ class _DecodedGroups:
     logits_full: torch.Tensor
     coord_logits: torch.Tensor
     target_bins: torch.Tensor
+    slot_weights: torch.Tensor
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -33,10 +35,11 @@ def _flatten_groups(
     key: str,
     input_ids: torch.Tensor,
     meta: Sequence[Mapping[str, Any]],
-) -> tuple[list[int], list[int], list[int]]:
+) -> tuple[list[int], list[int], list[int], list[float]]:
     b_list: List[int] = []
     pos_list: List[int] = []
     bins_list: List[int] = []
+    weights_list: List[float] = []
 
     for b, seg_start, _seg_end, seg in iter_segment_views(input_ids=input_ids, meta=meta):
         groups = seg.get(key) or []
@@ -53,8 +56,16 @@ def _flatten_groups(
                 b_list.append(int(b))
                 pos_list.append(int(seg_start + int(p)) if len(meta) != int(input_ids.shape[0]) else int(p))
                 bins_list.append(int(tbin))
+                w_raw = g.get("weight", 1.0) if isinstance(g, Mapping) else 1.0
+                try:
+                    w = float(w_raw)
+                except (TypeError, ValueError):
+                    w = 1.0
+                if w <= 0.0:
+                    w = 1.0
+                weights_list.append(float(w))
 
-    return b_list, pos_list, bins_list
+    return b_list, pos_list, bins_list, weights_list
 
 
 def _decode_groups(
@@ -67,12 +78,17 @@ def _decode_groups(
     logits = context.logits
     meta = context.meta
 
-    b_list, pos_list, bins_list = _flatten_groups(key=key, input_ids=input_ids, meta=meta)
+    b_list, pos_list, bins_list, weights_list = _flatten_groups(
+        key=key,
+        input_ids=input_ids,
+        meta=meta,
+    )
     if not pos_list:
         z = logits.new_tensor(0.0)
         empty = logits.new_zeros((0, logits.shape[-1]))
         empty_coord = logits.new_zeros((0, coord_ids_t.numel()))
         empty_bins = logits.new_zeros((0,), dtype=torch.long)
+        empty_w = logits.new_zeros((0,), dtype=torch.float32)
         return _DecodedGroups(
             smoothl1=z,
             ciou=z,
@@ -81,6 +97,7 @@ def _decode_groups(
             logits_full=empty,
             coord_logits=empty_coord,
             target_bins=empty_bins,
+            slot_weights=empty_w,
         )
 
     if len(pos_list) % 4 != 0:
@@ -89,10 +106,12 @@ def _decode_groups(
     b_t = torch.tensor(b_list, device=logits.device, dtype=torch.long)
     pos_t = torch.tensor(pos_list, device=logits.device, dtype=torch.long)
     bin_t = torch.tensor(bins_list, device=logits.device, dtype=torch.long).clamp(min=0, max=999)
+    weight_t = torch.tensor(weights_list, device=logits.device, dtype=torch.float32)
 
     b_g = b_t.reshape(-1, 4)
     pos_g = pos_t.reshape(-1, 4)
     bin_g = bin_t.reshape(-1, 4)
+    weight_g = weight_t.reshape(-1, 4)
 
     seq_len = int(logits.shape[1])
     valid = (pos_g > 0).all(dim=1)
@@ -110,6 +129,7 @@ def _decode_groups(
         empty = logits.new_zeros((0, logits.shape[-1]))
         empty_coord = logits.new_zeros((0, coord_ids_t.numel()))
         empty_bins = logits.new_zeros((0,), dtype=torch.long)
+        empty_w = logits.new_zeros((0,), dtype=torch.float32)
         return _DecodedGroups(
             smoothl1=z,
             ciou=z,
@@ -118,6 +138,7 @@ def _decode_groups(
             logits_full=empty,
             coord_logits=empty_coord,
             target_bins=empty_bins,
+            slot_weights=empty_w,
         )
 
     b_t = b_g.reshape(-1)
@@ -134,19 +155,57 @@ def _decode_groups(
     )
     gt = bin_t.float() / 999.0
 
-    bbox = bbox_smoothl1_ciou_loss(
-        pred_xyxy=pred.reshape(-1, 4),
-        gt_xyxy=gt.reshape(-1, 4),
-    )
+    pred_box = pred.reshape(-1, 4)
+    gt_box = gt.reshape(-1, 4)
+    smoothl1_per_box = torch.nn.functional.smooth_l1_loss(
+        pred_box,
+        gt_box,
+        reduction="none",
+    ).mean(dim=-1)
+
+    eps = 1e-7
+    px1, py1, px2, py2 = pred_box.unbind(dim=-1)
+    gx1, gy1, gx2, gy2 = gt_box.unbind(dim=-1)
+    ix1 = torch.maximum(px1, gx1)
+    iy1 = torch.maximum(py1, gy1)
+    ix2 = torch.minimum(px2, gx2)
+    iy2 = torch.minimum(py2, gy2)
+    inter = (ix2 - ix1).clamp(min=0.0) * (iy2 - iy1).clamp(min=0.0)
+    area_p = (px2 - px1).clamp(min=0.0) * (py2 - py1).clamp(min=0.0)
+    area_g = (gx2 - gx1).clamp(min=0.0) * (gy2 - gy1).clamp(min=0.0)
+    union = (area_p + area_g - inter).clamp(min=eps)
+    iou = inter / union
+    pcx = (px1 + px2) * 0.5
+    pcy = (py1 + py2) * 0.5
+    gcx = (gx1 + gx2) * 0.5
+    gcy = (gy1 + gy2) * 0.5
+    rho2 = (pcx - gcx) ** 2 + (pcy - gcy) ** 2
+    ex1 = torch.minimum(px1, gx1)
+    ey1 = torch.minimum(py1, gy1)
+    ex2 = torch.maximum(px2, gx2)
+    ey2 = torch.maximum(py2, gy2)
+    c2 = ((ex2 - ex1) ** 2 + (ey2 - ey1) ** 2).clamp(min=eps)
+    pw = (px2 - px1).clamp(min=eps)
+    ph = (py2 - py1).clamp(min=eps)
+    gw = (gx2 - gx1).clamp(min=eps)
+    gh = (gy2 - gy1).clamp(min=eps)
+    v = (4.0 / (math.pi**2)) * (torch.atan(gw / gh) - torch.atan(pw / ph)) ** 2
+    alpha = v / (1.0 - iou + v + eps)
+    ciou_per_box = 1.0 - (iou - (rho2 / c2 + alpha * v))
+    group_weights = weight_g.mean(dim=1)
+    denom = group_weights.sum().clamp(min=1e-6)
+    smoothl1 = (smoothl1_per_box * group_weights).sum() / denom
+    ciou = (ciou_per_box * group_weights).sum() / denom
 
     return _DecodedGroups(
-        smoothl1=bbox.smoothl1,
-        ciou=bbox.ciou,
+        smoothl1=smoothl1,
+        ciou=ciou,
         n_groups=int(n_groups),
         n_slots=int(pos_t.numel()),
         logits_full=logits_prev,
         coord_logits=coord_logits,
         target_bins=bin_t,
+        slot_weights=weight_t,
     )
 
 
@@ -221,6 +280,7 @@ def run_bbox_geo_module(
     logits_full = torch.cat([dec_prefix.logits_full, dec_fn.logits_full], dim=0)
     coord_logits = torch.cat([dec_prefix.coord_logits, dec_fn.coord_logits], dim=0)
     target_bins = torch.cat([dec_prefix.target_bins, dec_fn.target_bins], dim=0)
+    slot_weights = torch.cat([dec_prefix.slot_weights, dec_fn.slot_weights], dim=0)
 
     state = {
         "bbox_geo": loss,
@@ -231,6 +291,7 @@ def run_bbox_geo_module(
         "coord_logits": coord_logits,
         "coord_logits_full": logits_full,
         "coord_target_bins": target_bins,
+        "coord_slot_weights": slot_weights,
         "coord_slots_total": int(dec_prefix.n_slots + dec_fn.n_slots),
     }
 
