@@ -119,7 +119,7 @@
     for both Channel-A and Channel-B steps (coord-only atomic terms with provenance split: `A1_coord/*`, `A2_coord/*`, `B_coord/*`).
   - Verify packed-sequence execution does not require any second token-position gatherer.
 
-- [ ] 5.4 Add smoke YAML configs enabling the monitor with `interval_steps: 1`:
+- [x] 5.4 Add smoke YAML configs enabling the monitor with `interval_steps: 1`:
   - One Stage-1 smoke under `configs/stage1/smoke/`,
   - One Stage-2 two-channel smoke under `configs/stage2_two_channel/smoke/`,
   - One rollout-aligned verification run using either:
