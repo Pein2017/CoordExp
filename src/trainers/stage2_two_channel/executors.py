@@ -946,7 +946,10 @@ class Stage2ABChannelExecutorsMixin:
                     chunk = list(raw_samples[int(off) : int(off + rollout_decode_bs)])
                     if not chunk:
                         continue
-                    segs, m = self._prepare_batch_inputs_b(chunk, _segments_only=True)
+                    with self._stage2_stage_wallclock_ctx("rollout"):
+                        segs, m = self._prepare_batch_inputs_b(
+                            chunk, _segments_only=True
+                        )
                     # `raw_n` counts pre-drop rollouts; under strict format policy
                     # `len(segs)` may be < raw_n due to dropped malformed rollouts.
                     raw_n = int(len(chunk))
@@ -992,56 +995,55 @@ class Stage2ABChannelExecutorsMixin:
         while (not producer_done) or self._stage2_post_rollout_buffer(channel="B"):
             # Fill the buffer until we can build a near-capacity pack, or until producer finishes.
             while (not producer_done) and (buf_total_len < int(prefill_target_len)):
-                with self._stage2_stage_wallclock_ctx("rollout"):
-                    try:
-                        item = q.get(timeout=float(producer_wait_timeout_s))
-                    except queue.Empty as exc:
-                        producer_alive = bool(th.is_alive())
-                        pending_buf = int(
-                            len(self._stage2_post_rollout_buffer(channel="B"))
-                        )
-                        raise RuntimeError(
-                            "stage2-ab Channel-B pipeline stalled while waiting for producer output; "
-                            f"waited={float(producer_wait_timeout_s):.1f}s "
-                            f"seen_raw={int(seen_raw)}/{int(total_segments_target)} "
-                            f"seen_segments={int(seen_segments)} "
-                            f"buf_total_len={int(buf_total_len)} pending_buf={int(pending_buf)} "
-                            f"producer_done={bool(producer_done)} producer_alive={bool(producer_alive)} "
-                            f"rollout_decode_batch_size={int(rollout_decode_bs)} "
-                            f"packing_length={int(packing_length)} target_fill={float(target_fill):.3f} "
-                            f"prefill_target_len={int(prefill_target_len)}."
-                        ) from exc
-                    if item is None:
-                        producer_done = True
-                        break
+                try:
+                    item = q.get(timeout=float(producer_wait_timeout_s))
+                except queue.Empty as exc:
+                    producer_alive = bool(th.is_alive())
+                    pending_buf = int(
+                        len(self._stage2_post_rollout_buffer(channel="B"))
+                    )
+                    raise RuntimeError(
+                        "stage2-ab Channel-B pipeline stalled while waiting for producer output; "
+                        f"waited={float(producer_wait_timeout_s):.1f}s "
+                        f"seen_raw={int(seen_raw)}/{int(total_segments_target)} "
+                        f"seen_segments={int(seen_segments)} "
+                        f"buf_total_len={int(buf_total_len)} pending_buf={int(pending_buf)} "
+                        f"producer_done={bool(producer_done)} producer_alive={bool(producer_alive)} "
+                        f"rollout_decode_batch_size={int(rollout_decode_bs)} "
+                        f"packing_length={int(packing_length)} target_fill={float(target_fill):.3f} "
+                        f"prefill_target_len={int(prefill_target_len)}."
+                    ) from exc
+                if item is None:
+                    producer_done = True
+                    break
 
-                    segs, metrics, raw_n = item
-                    if not isinstance(segs, list):
-                        raise TypeError("producer returned non-list segments")
-                    if not isinstance(metrics, Mapping):
-                        metrics = {}
-                    raw_n = int(raw_n)
+                segs, metrics, raw_n = item
+                if not isinstance(segs, list):
+                    raise TypeError("producer returned non-list segments")
+                if not isinstance(metrics, Mapping):
+                    metrics = {}
+                raw_n = int(raw_n)
 
-                    # Track raw rollouts separately from valid segments; strict-drop affects only the latter.
-                    seen_segments += int(len(segs))
-                    seen_raw += int(raw_n)
-                    buf_total_len += int(sum(int(sl) for _, _, sl in segs))
+                # Track raw rollouts separately from valid segments; strict-drop affects only the latter.
+                seen_segments += int(len(segs))
+                seen_raw += int(raw_n)
+                buf_total_len += int(sum(int(sl) for _, _, sl in segs))
 
-                    self._stage2_append_post_rollout_segments(channel="B", segments=segs)
+                self._stage2_append_post_rollout_segments(channel="B", segments=segs)
 
-                    r_static, step_tot = _split_metrics(metrics)
-                    if not rollout_static:
-                        rollout_static.update(r_static)
-                    else:
-                        # Keep the first-seen rollout/* values (should be constant per step).
-                        for k, v in r_static.items():
-                            rollout_static.setdefault(k, float(v))
+                r_static, step_tot = _split_metrics(metrics)
+                if not rollout_static:
+                    rollout_static.update(r_static)
+                else:
+                    # Keep the first-seen rollout/* values (should be constant per step).
+                    for k, v in r_static.items():
+                        rollout_static.setdefault(k, float(v))
 
-                    # Accumulate step-level totals to be attached to the next trained pack.
-                    for k, v in step_tot.items():
-                        pending_totals[str(k)] = float(
-                            pending_totals.get(str(k), 0.0)
-                        ) + float(v)
+                # Accumulate step-level totals to be attached to the next trained pack.
+                for k, v in step_tot.items():
+                    pending_totals[str(k)] = float(
+                        pending_totals.get(str(k), 0.0)
+                    ) + float(v)
 
             # Train one pack if available.
             if not self._stage2_post_rollout_buffer(channel="B"):
