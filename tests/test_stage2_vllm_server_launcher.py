@@ -310,13 +310,6 @@ def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
     )
     monkeypatch.setattr(
         launcher,
-        "_wait_for_port_connectable",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("group_port must not be prechecked before learner startup")
-        ),
-    )
-    monkeypatch.setattr(
-        launcher,
         "launch_swift_rollout_server",
         lambda **kwargs: captured.update(
             {"expected_world_size": int(kwargs["expected_world_size"])}

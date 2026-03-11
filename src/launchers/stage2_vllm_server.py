@@ -176,43 +176,6 @@ def _assert_port_free(host: str, port: int) -> None:
         sock.close()
 
 
-def _wait_for_port_connectable(
-    host: str,
-    port: int,
-    *,
-    wait_timeout_s: float,
-    wait_interval_s: float,
-    proc: subprocess.Popen[str] | None = None,
-) -> None:
-    deadline = time.monotonic() + float(wait_timeout_s)
-    last_err: OSError | None = None
-    while True:
-        if proc is not None:
-            rc = proc.poll()
-            if rc is not None:
-                raise RuntimeError(
-                    f"rollout server exited before group_port became reachable (returncode={rc})"
-                )
-
-        remaining = float(deadline - time.monotonic())
-        if remaining <= 0.0:
-            break
-
-        try:
-            timeout_s = max(0.1, min(2.0, remaining))
-            with socket.create_connection((host, int(port)), timeout=timeout_s):
-                return
-        except OSError as exc:
-            last_err = exc
-
-        time.sleep(min(float(wait_interval_s), max(0.0, remaining)))
-
-    raise TimeoutError(
-        "rollout server group_port did not become reachable within "
-        f"{float(wait_timeout_s):.1f}s: {host}:{int(port)} last_err={last_err!r}"
-    )
-
-
 def _merge_no_proxy(existing_raw: str, *, hosts: list[str]) -> str:
     tokens = [tok.strip() for tok in existing_raw.split(",") if tok.strip()]
     for host in hosts:
