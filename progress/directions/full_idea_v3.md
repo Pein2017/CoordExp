@@ -268,48 +268,27 @@ Each cluster stores:
 
 ---
 
-<<<<<<< HEAD
 ## 6. The Triage Posterior
 
 This is the real center of v3.
 
-For each cluster `c`, estimate three responsibilities:
+For each cluster `c`, estimate three continuous responsibilities:
 
 - `r_gt(c)`   : GT-backed positive responsibility
 - `r_u(c)`    : unlabeled-consistent latent-positive responsibility
 - `r_dead(c)` : dead / redundant responsibility
-=======
-## 6. The Triage Heuristic
-
-This is the real center of v3.
-
-For each cluster `c`, define three heuristic scores:
-
-- `s_gt(c)`   : GT-backed positive score
-- `s_u(c)`    : unlabeled-consistent latent-positive score
-- `s_dead(c)` : dead / redundant score
->>>>>>> change/stage2-v3-k2-triage
 
 with:
 
 ```text
-<<<<<<< HEAD
 r_dead(c) = 1 - max(r_gt(c), r_u(c))
 ```
 
-The point is not to produce a calibrated Bayesian posterior on day 1.
-The point is to give the training system a **small, explicit triage**.
+The point is to produce a **posterior-style triage** over cluster states, even if the first learned version is only approximately calibrated.
+The goal is not formal Bayesian purity.
+The goal is to give the training system a **small, explicit, continuous triage** whose actions and weights can be derived from the current evidence.
 
 ### 6.1 GT-backed responsibility
-=======
-s_dead(c) = 1 - max(s_gt(c), s_u(c))
-```
-
-These are **not** intended to be calibrated posterior probabilities or a normalized partition.
-The point is to give the training system a **small, explicit triage**.
-
-### 6.1 GT-backed score
->>>>>>> change/stage2-v3-k2-triage
 
 A cluster is GT-backed if it is directly supported by GT.
 The strongest cases are:
@@ -328,11 +307,7 @@ The training action must stay side-specific:
 - if the anchor member misses but the **explorer** member matches, treat that GT as `RECOVERED_FN`,
 - do **not** keep a bad anchor object positive just because the explorer side matched.
 
-<<<<<<< HEAD
 ### 6.2 Unlabeled-consistent responsibility
-=======
-### 6.2 Unlabeled-consistent score
->>>>>>> change/stage2-v3-k2-triage
 
 A cluster should receive unlabeled-consistent credit if:
 
@@ -347,32 +322,35 @@ The minimal feature set is:
 - `like(c)`      : object continuation likelihood / normalized logprob under the local prefix
 - `dup_risk(c)`  : how much it looks like redundant re-explanation of an already-better cluster
 
-The broader posterior language above is useful for theory, but it is **not** the canonical v1 implementation contract.
-For v1:
-
-- geometry-first cross-rollout stability is the main acceptance rule,
-- semantic nearness is at most a weak veto / tie-breaker,
-- local likelihood terms are not required for the first implementation.
-
-<<<<<<< HEAD
 A simple soft form is:
 
 ```text
 r_u(c) = sigmoid(a * support(c)
-=======
-A simple soft scoring form is:
-
-```text
-s_u(c) = sigmoid(a * support(c)
->>>>>>> change/stage2-v3-k2-triage
                + b * stability(c)
                + d * like(c)
                - e * dup_risk(c))
 ```
 
-But the canonical starting implementation should be much simpler:
+This posterior-style formulation is the intended **next implementation target** after the locked v1 slice.
+However, it does not retroactively redefine the already-landed contract.
 
-### 6.3 Canonical first-pass rule-based triage
+### 6.3 Dead responsibility
+
+Deadness absorbs what is neither GT-backed nor sufficiently supported as unlabeled-consistent.
+
+In practice, `r_dead(c)` should rise when:
+
+- the cluster is not GT-backed,
+- it is unstable across rollouts,
+- it looks redundant relative to a better nearby explanation,
+- or it only survives as extra continuation mass.
+
+This is intentionally broader than “same-desc duplicate”.
+It is the unifying bucket for redundancy, over-fragmentation, alias-style re-description, and other zero-gain continuation behavior.
+
+### 6.4 Locked v1 approximation
+
+Locked v1 is the current operational approximation to the posterior above.
 
 Use high-precision hard rules first.
 
@@ -408,7 +386,12 @@ else:
     class(c) = DEAD
 ```
 
-This deliberately avoids premature probabilistic sophistication.
+This deliberately avoids premature probabilistic sophistication in the first landed slice.
+
+So the intended interpretation is:
+
+- **locked v1** = hard-rule approximation that is already implemented,
+- **future v3+** = posterior-style continuous triage whose actions are derived from `r_gt / r_u / r_dead`.
 
 ---
 
@@ -506,7 +489,8 @@ Assign each record enough evidence to drive one of the following **training acti
 - `UNLABELED_CONSISTENT`
 - `DEAD`
 
-using the rules in Section 6.
+In locked v1, these actions are produced by the hard-rule approximation in Section 6.4.
+In future v3+, these actions should be derived from the continuous triage posterior in Sections 6.1-6.3.
 
 ### B6 — Build the posterior-clean training view
 
@@ -647,7 +631,7 @@ For each recovered GT `g`:
 This is the natural v3 “recovered-prefix distillation” extension.
 
 It is stronger than simple FN reweighting, but it is also more implementation-heavy.
-So v3 should treat it as a **Phase-2** upgrade, not the first landed version.
+So v3 should treat it as a **Phase-3** upgrade, not the next landed version.
 
 ---
 
@@ -673,9 +657,9 @@ For clusters with high `r_u` / class `UNLABELED_CONSISTENT`:
 
 This is best thought of as **shielding**.
 
-### 11.3 Phase-2 optional upgrade
+### 11.3 Phase-3 optional upgrade
 
-Once the triage is stable, a small subset of very high-confidence unlabeled-consistent clusters may be used for:
+Once the posterior triage is stable, a small subset of very high-confidence unlabeled-consistent clusters may be used for:
 
 - soft-positive self-distillation,
 - or low-weight auxiliary CE / geo targets.
@@ -780,18 +764,23 @@ Land:
 
 This should be the **canonical first v3 implementation**.
 
-### Phase 2 — stronger positive use of exploration
+### Phase 2 — posterior-derived triage
 
 Add:
 
-- recovered-prefix distillation from explore prefixes
-- optional low-weight soft positive for very high-confidence unlabeled-consistent clusters
+- continuous posterior-style triage scores `r_gt / r_u / r_dead`
+- posterior-derived training actions instead of only hard classes
+- posterior-weighted recovered-GT emphasis on top of the locked v1 path
+- posterior-aware shielding for unlabeled-consistent anchor context
+
+This should be the **next implementation target** after locked v1.
 
 ### Phase 3 — optional refinements
 
 Only after Phase 1/2 prove useful should we explore:
 
-- soft posterior weighting instead of hard triage,
+- recovered-prefix distillation from explore prefixes,
+- optional low-weight soft positive for very high-confidence unlabeled-consistent clusters,
 - more semantic cluster features,
 - more advanced exploration schedules.
 
