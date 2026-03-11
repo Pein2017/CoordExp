@@ -21,7 +21,7 @@ import time
 from contextlib import contextmanager, nullcontext
 from copy import copy as shallow_copy
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import (
     Any,
@@ -104,6 +104,17 @@ from .teacher_forcing.rollout_meta import (
 from .teacher_forcing.token_types import build_token_type_masks
 
 logger = get_logger()
+
+
+@dataclass(frozen=True)
+class _RolloutDecodeRequest:
+    decode_mode: str
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    max_new_tokens: int
+    num_beams: int
 
 
 def _contiguous_chunk_slices(n: int, num_chunks: int) -> List[Tuple[int, int]]:
@@ -1824,6 +1835,104 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
 
         return float(temperature), float(top_p), int(top_k)
+
+    def _default_rollout_decode_request(self) -> _RolloutDecodeRequest:
+        decode_mode = str(self._cfg("decode_mode", "greedy") or "greedy").strip().lower()
+        if decode_mode not in {"greedy", "beam", "sampling"}:
+            raise ValueError(
+                "rollout_matching.decode_mode must be one of {'greedy', 'beam', 'sampling'}"
+            )
+
+        max_new_tokens = int(self._cfg("max_new_tokens", 512))
+        num_beams = int(self._cfg("num_beams", 1))
+        temperature, top_p, top_k = self._decoding_params()
+        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
+        if repetition_penalty <= 0:
+            raise ValueError("rollout_matching.repetition_penalty must be > 0")
+
+        return _RolloutDecodeRequest(
+            decode_mode=str(decode_mode),
+            temperature=float(temperature),
+            top_p=float(top_p),
+            top_k=int(top_k),
+            repetition_penalty=float(repetition_penalty),
+            max_new_tokens=int(max_new_tokens),
+            num_beams=max(1, int(num_beams)),
+        )
+
+    def _resolve_rollout_decode_request(
+        self,
+        *,
+        decode_override: Optional[Mapping[str, Any]] = None,
+    ) -> _RolloutDecodeRequest:
+        base = self._default_rollout_decode_request()
+        if decode_override is None:
+            return base
+        if not isinstance(decode_override, Mapping):
+            raise TypeError("rollout decode override must be a mapping when provided")
+
+        allowed = {"decode_mode", "temperature", "top_p", "top_k"}
+        unknown = [
+            str(k)
+            for k in sorted(decode_override.keys(), key=lambda item: str(item))
+            if str(k) not in allowed
+        ]
+        if unknown:
+            raise ValueError(
+                "Unknown rollout decode override keys: "
+                f"{[str(k) for k in unknown]}"
+            )
+
+        decode_mode_raw = decode_override.get("decode_mode", base.decode_mode)
+        decode_mode = str(
+            base.decode_mode if decode_mode_raw is None else decode_mode_raw
+        ).strip().lower()
+        if decode_mode not in {"greedy", "beam", "sampling"}:
+            raise ValueError(
+                "rollout decode override.decode_mode must be one of {'greedy', 'beam', 'sampling'}"
+            )
+
+        temperature_raw = decode_override.get("temperature", base.temperature)
+        try:
+            temperature = float(
+                base.temperature if temperature_raw is None else temperature_raw
+            )
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout decode override.temperature must be a float"
+            ) from exc
+        if temperature < 0.0:
+            raise ValueError(
+                "rollout decode override.temperature must be >= 0"
+            )
+
+        top_p_raw = decode_override.get("top_p", base.top_p)
+        try:
+            top_p = float(base.top_p if top_p_raw is None else top_p_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("rollout decode override.top_p must be a float") from exc
+        if not (0.0 < top_p <= 1.0):
+            raise ValueError("rollout decode override.top_p must be in (0, 1]")
+
+        top_k_raw = decode_override.get("top_k", base.top_k)
+        try:
+            top_k = int(base.top_k if top_k_raw is None else top_k_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("rollout decode override.top_k must be an int") from exc
+        if top_k != -1 and top_k < 1:
+            raise ValueError(
+                "rollout decode override.top_k must be -1 (disabled) or >= 1"
+            )
+
+        return _RolloutDecodeRequest(
+            decode_mode=str(decode_mode),
+            temperature=float(temperature),
+            top_p=float(top_p),
+            top_k=int(top_k),
+            repetition_penalty=float(base.repetition_penalty),
+            max_new_tokens=int(base.max_new_tokens),
+            num_beams=int(base.num_beams),
+        )
 
     @staticmethod
     def _apply_rollout_decoding_to_generation_config(
@@ -5183,20 +5292,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @torch.no_grad()
     def _rollout_many_hf(
-        self, samples: Sequence[Mapping[str, Any]]
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """HF (transformers) rollout backend with per-rank microbatching (padded batch)."""
         template = self.template
         tok = template.tokenizer
-        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        num_beams = int(self._cfg("num_beams", 1))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+        decode_request = self._resolve_rollout_decode_request(
+            decode_override=decode_override
+        )
+        decode_mode = str(decode_request.decode_mode)
+        max_new_tokens = int(decode_request.max_new_tokens)
+        num_beams = int(decode_request.num_beams)
+        temperature = float(decode_request.temperature)
+        top_p = float(decode_request.top_p)
+        top_k = int(decode_request.top_k)
+        repetition_penalty = float(decode_request.repetition_penalty)
 
         # Build GenerationConfig from model defaults.
         gen_cfg = getattr(self.model, "generation_config", None)
@@ -5354,7 +5467,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     @torch.no_grad()
     def _rollout_many_hf_traced(
-        self, samples: Sequence[Mapping[str, Any]]
+        self,
+        samples: Sequence[Mapping[str, Any]],
+        *,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
         """HF rollout backend that also captures per-token logprobs.
 
@@ -5371,18 +5487,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         template = self.template
         tok = template.tokenizer
-        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
+        decode_request = self._resolve_rollout_decode_request(
+            decode_override=decode_override
+        )
+        decode_mode = str(decode_request.decode_mode)
         if decode_mode == "beam":
             raise ValueError(
                 "eval-step confidence scoring does not support decode_mode=beam"
             )
 
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        num_beams = int(self._cfg("num_beams", 1))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError("rollout_matching.repetition_penalty must be > 0")
+        max_new_tokens = int(decode_request.max_new_tokens)
+        num_beams = int(decode_request.num_beams)
+        temperature = float(decode_request.temperature)
+        top_p = float(decode_request.top_p)
+        top_k = int(decode_request.top_k)
+        repetition_penalty = float(decode_request.repetition_penalty)
 
         if float(temperature) > 0.0:
             raise ValueError(
@@ -5607,16 +5726,33 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         *,
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
         request_index_offset: int = 0,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         """vLLM rollout backend (colocate default, server optional)."""
         mode = self._vllm_mode()
         if mode == "server":
+            if decode_override is None:
+                return self._rollout_many_vllm_server(
+                    samples,
+                    debug_samples=debug_samples,
+                    request_index_offset=int(request_index_offset),
+                )
             return self._rollout_many_vllm_server(
                 samples,
                 debug_samples=debug_samples,
                 request_index_offset=int(request_index_offset),
+                decode_override=decode_override,
             )
-        return self._rollout_many_vllm_colocate(samples)
+        if decode_override is None:
+            return self._rollout_many_vllm_colocate(
+                samples,
+                request_index_offset=int(request_index_offset),
+            )
+        return self._rollout_many_vllm_colocate(
+            samples,
+            request_index_offset=int(request_index_offset),
+            decode_override=decode_override,
+        )
 
 
     @torch.no_grad()
@@ -5626,6 +5762,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         *,
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
         request_index_offset: int = 0,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
         """vLLM rollout backend that also captures per-token logprobs.
 
@@ -5639,9 +5776,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 debug_samples=debug_samples,
                 request_index_offset=int(request_index_offset),
                 with_logprobs=True,
+                decode_override=decode_override,
             )
         else:
-            out = self._rollout_many_vllm_colocate(samples, with_logprobs=True)
+            if decode_override is None:
+                out = self._rollout_many_vllm_colocate(
+                    samples,
+                    with_logprobs=True,
+                    request_index_offset=int(request_index_offset),
+                )
+            else:
+                out = self._rollout_many_vllm_colocate(
+                    samples,
+                    with_logprobs=True,
+                    request_index_offset=int(request_index_offset),
+                    decode_override=decode_override,
+                )
         return [
             (
                 list(token_ids),
@@ -5667,21 +5817,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         samples: Sequence[Mapping[str, Any]],
         *,
         with_logprobs: bool = False,
+        request_index_offset: int = 0,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Any]:
         """vLLM colocate rollout backend (token ids, optional token logprobs)."""
-        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
-        if decode_mode != "greedy":
+        decode_request = self._resolve_rollout_decode_request(
+            decode_override=decode_override
+        )
+        decode_mode = str(decode_request.decode_mode)
+        if decode_mode == "beam":
             raise ValueError(
-                "vLLM rollout backend currently supports decode_mode=greedy only"
+                "vLLM rollout backend does not support decode_mode=beam; "
+                "use greedy or sampling overrides instead"
             )
 
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+        max_new_tokens = int(decode_request.max_new_tokens)
+        temperature = float(decode_request.temperature)
+        top_p = float(decode_request.top_p)
+        top_k = int(decode_request.top_k)
+        repetition_penalty = float(decode_request.repetition_penalty)
 
         if with_logprobs and float(temperature) > 0.0:
             raise ValueError(
@@ -5702,6 +5856,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             top_p=top_p,
             top_k=top_k,
             repetition_penalty=repetition_penalty,
+        )
+        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        seed_base = int(self._derive_rollout_seed_base(global_step=gs))
+        request_index_offset_i = max(0, int(request_index_offset))
+        request_kwargs["seed"] = int(
+            self._normalize_rollout_seed_int32(
+                int(seed_base + request_index_offset_i)
+            )
         )
         if with_logprobs:
             request_kwargs["logprobs"] = True
@@ -5843,6 +6005,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
         request_index_offset: int = 0,
         with_logprobs: bool = False,
+        decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Any]:
         """vLLM server rollout backend (token ids, optional token logprobs).
 
@@ -5850,10 +6013,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         (RequestConfig(logprobs=True)). This is used by eval-step confidence
         scoring.
         """
-        decode_mode = str(self._cfg("decode_mode", "greedy")).lower()
-        if decode_mode != "greedy":
+        decode_request = self._resolve_rollout_decode_request(
+            decode_override=decode_override
+        )
+        decode_mode = str(decode_request.decode_mode)
+        if decode_mode == "beam":
             raise ValueError(
-                "vLLM server rollout backend currently supports decode_mode=greedy only"
+                "vLLM server rollout backend does not support decode_mode=beam; "
+                "use greedy or sampling overrides instead"
             )
 
         n = int(len(samples))
@@ -5869,13 +6036,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not bool(getattr(self, "_stage2_skip_vllm_server_sync", False)):
             self._sync_vllm_server_rollout_model_if_needed()
 
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError(
-                "rollout_matching.repetition_penalty must be > 0"
-            )
+        max_new_tokens = int(decode_request.max_new_tokens)
+        temperature = float(decode_request.temperature)
+        top_p = float(decode_request.top_p)
+        top_k = int(decode_request.top_k)
+        repetition_penalty = float(decode_request.repetition_penalty)
 
         if with_logprobs and float(temperature) > 0.0:
             raise ValueError(
@@ -6332,6 +6497,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         *,
         prompt_variant_override: Optional[str] = None,
         rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+        decode_override: Optional[Mapping[str, Any]] = None,
+        request_index_offset: int = 0,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
         rollout_context = self._current_rollout_context()
         backend = (
@@ -6346,10 +6513,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         if backend == "hf":
-            return self._rollout_many_hf(samples_for_rollout)
+            if decode_override is None:
+                return self._rollout_many_hf(samples_for_rollout)
+            return self._rollout_many_hf(
+                samples_for_rollout,
+                decode_override=decode_override,
+            )
 
         if backend == "vllm":
             mode = self._vllm_mode()
+            request_index_offset_base = max(0, int(request_index_offset))
             if mode == "server":
                 # Enforce the per-rank rollout request cap centrally so all callers
                 # (Stage2-AB + evaluator) obey context-specific decode batch-size topology constraints.
@@ -6372,17 +6545,34 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         int(off) : int(off + chunk_size)
                     ]
                     chunk_debug_samples = samples[int(off) : int(off + chunk_size)]
-                    chunk_out = self._rollout_many_vllm(
-                        chunk_samples,
-                        debug_samples=chunk_debug_samples,
-                        request_index_offset=int(off),
-                    )
+                    if decode_override is None:
+                        chunk_out = self._rollout_many_vllm(
+                            chunk_samples,
+                            debug_samples=chunk_debug_samples,
+                            request_index_offset=int(request_index_offset_base + off),
+                        )
+                    else:
+                        chunk_out = self._rollout_many_vllm(
+                            chunk_samples,
+                            debug_samples=chunk_debug_samples,
+                            request_index_offset=int(request_index_offset_base + off),
+                            decode_override=decode_override,
+                        )
                     out.extend(chunk_out)
             else:
-                out = self._rollout_many_vllm(
-                    samples_for_rollout,
-                    debug_samples=samples,
-                )
+                if decode_override is None:
+                    out = self._rollout_many_vllm(
+                        samples_for_rollout,
+                        debug_samples=samples,
+                        request_index_offset=int(request_index_offset_base),
+                    )
+                else:
+                    out = self._rollout_many_vllm(
+                        samples_for_rollout,
+                        debug_samples=samples,
+                        request_index_offset=int(request_index_offset_base),
+                        decode_override=decode_override,
+                    )
             return out
 
         raise AssertionError("unreachable")

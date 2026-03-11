@@ -141,6 +141,12 @@ stage2_ab:
         config: {}
   channel_b:
     duplicate_iou_threshold: 0.90
+    v3_k2:
+      explorer_temperature: 0.7
+      explorer_top_p: 0.95
+      explorer_top_k: 64
+      consistent_iou_threshold: 0.9
+      recovered_fn_weight: 2.0
 
 custom:
   json_format: standard

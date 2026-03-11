@@ -72,14 +72,14 @@ rollout (no grad) -> bounded container salvage + strict record acceptance -> tea
 
 For `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B assistant target is:
 
-`Y_train = Y_clean_prefix + SerializeAppend(FN_gt_objects) + EOS`
+`Y_train = Y_anchor_edited_clean + SerializeAppend(FN_gt_objects) + EOS`
 
 Key policies:
 - Rollout parsing uses bounded container salvage plus strict record acceptance. Invalid predicted objects are dropped deterministically and never repaired into positives.
 - Missing GT objects (FN) are always appended in the tail (recall recovery stays mandatory).
 - Bbox geometry loss uses **SmoothL1 + CIoU** on expectation-decoded coords (no GIoU; boxes are canonicalized for CIoU stability).
-- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B now rebuilds its positive prefix from the deduplicated clean accepted sequence, not from raw rollout token ids.
-- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B uses clean-prefix CE plus duplicate UL on duplicate-certified continuations).
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B now rebuilds its positive prefix from an anchor-edited clean accepted sequence, not from raw rollout token ids.
+- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B uses clean-prefix CE plus dead-anchor duplicate UL).
 
 ---
 
@@ -127,38 +127,42 @@ Worked example (default launcher):
 - Default grad semantics: `stage2_ab.softctx_grad_mode: unroll` (no detach anywhere in the soft self-context loop). Use `em_detach` only for explicit ablations.
 - CE anchor split: Channel-A computes CE on the **A1** teacher-forced logits and computes geometry (bbox loss + coord regularizers) from the **final** softctx iteration logits.
 
-### Channel-B Contract (Clean-prefix + Duplicate UL)
+### Channel-B Contract (K=2 Triage + Dead-Anchor UL)
 
 - Clean-prefix Channel-B is the only supported `stage2_two_channel` contract.
-- This is the chosen v2 training contract for CoordExp Stage-2 Channel-B; it is not a claim that other mathematical formulations are invalid, only that this is the canonical repo contract.
+- This is the chosen v3 training contract for CoordExp Stage-2 Channel-B; it is not a claim that other mathematical formulations are invalid, only that this is the canonical repo contract.
 - Canonical Channel-B flow:
-  - raw rollout
-  - bounded container salvage + strict record acceptance
-  - bbox-valid filtering
-  - sequential dedup
-  - `accepted_objects_clean + duplicate_bursts_by_boundary`
-  - Hungarian on `accepted_objects_clean`
-  - clean-prefix teacher forcing + duplicate UL
-- Sequential dedup is bbox-only in v1:
+  - anchor rollout (greedy) + explorer rollout (stochastic)
+  - per-run bounded container salvage + strict record acceptance
+  - per-run bbox-valid filtering
+  - per-run sequential dedup
+  - per-run `accepted_objects_clean` + Hungarian matching
+  - deterministic one-to-one anchor/explorer association
+  - triage into `anchor_gt_backed`, `recovered_fn`, `shielded_anchor`, `dead_anchor`, `dead_explorer`
+  - anchor-edited clean-prefix teacher forcing + dead-anchor `duplicate_ul`
+- Per-run sequential dedup is bbox-only in v1:
   - compare each candidate against previously accepted clean bbox objects only,
   - duplicate iff `normalize_desc(desc)` matches exactly and `IoU >= stage2_ab.channel_b.duplicate_iou_threshold`,
   - default `duplicate_iou_threshold: 0.90`.
-- Matching / FN detection / matched geometry all run on `accepted_objects_clean`, not on the raw duplicate-heavy parsed list.
+- Matching / FN detection / matched geometry all run on per-run `accepted_objects_clean`, not on the raw duplicate-heavy parsed list.
 - Positive teacher-forced prefix:
-  - `Y_clean_prefix` is the canonical assistant serialization of `accepted_objects_clean`,
-  - later true positives are teacher-forced on that clean prefix, not on a duplicate-contaminated raw rollout prefix,
+  - `Y_anchor_edited_clean` is the canonical assistant serialization of the kept anchor objects,
+  - anchor order is preserved for retained objects,
+  - `anchor_gt_backed` objects stay positive,
+  - `shielded_anchor` objects stay in-prefix but neutral,
+  - `dead_anchor` objects are removed from the positive prefix,
   - raw rollout token spans are diagnostic-only; they are not the positive-prefix source of truth.
 - CE masking policy (clean-prefix Channel-B):
   - matched clean prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
-  - generic unmatched clean prefix extras: structure/desc/coord CE all OFF (neutral context only);
-  - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF.
-- FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; generic unmatched clean extras contribute no geometry loss.
+  - shielded anchor objects: structure/desc/coord CE all OFF (neutral context only);
+  - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF, with recovered GTs receiving higher per-object desc+geo+coord weight.
+- FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; shielded anchor objects contribute no geometry loss.
 - Duplicate UL:
   - `duplicate_ul` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
   - `duplicate_ul.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
-  - duplicates are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
-  - the bad token is the first true LCP-divergence token of the duplicate continuation relative to the canonical clean continuation,
-  - same-boundary duplicates sharing the same divergence token collapse to one UL term.
+  - dead anchor continuations are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
+  - the bad token is the first true LCP-divergence token of the dead-anchor continuation relative to the canonical clean continuation,
+  - same-boundary dead-anchor continuations sharing the same divergence token collapse to one UL term.
 - Deterministic FN injection:
   - retain an append-ready canonical clean prefix inside `{"objects": [ ...`,
   - append unmatched GT records as extra `objects[]` elements,
@@ -175,6 +179,15 @@ Worked example (default launcher):
   - `dup/near_iou90_pairs_same_desc_count`
   - `dup/near_iou90_pairs_any_desc_count`
   - `stage2_ab/channel_b/dup/N_{raw_bbox_valid,clean_accepted,duplicates,duplicate_bursts,ul_boundaries,ul_skipped_no_divergence}`
+- Triage diagnostics are also emitted:
+  - `stage2_ab/channel_b/triage/N_{anchor_gt_backed,shielded_anchor,dead_anchor,dead_explorer,recovered_gt}`
+  - `stage2_ab/channel_b/triage/{recovered_gt_num,recovered_gt_den,dead_anchor_num,dead_anchor_den}`
+- v3 Channel-B config block:
+  - `stage2_ab.channel_b.v3_k2.explorer_temperature`
+  - `stage2_ab.channel_b.v3_k2.explorer_top_p`
+  - `stage2_ab.channel_b.v3_k2.explorer_top_k`
+  - `stage2_ab.channel_b.v3_k2.consistent_iou_threshold`
+  - `stage2_ab.channel_b.v3_k2.recovered_fn_weight`
 - Optional Channel-B runtime timeouts:
   - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). Must be `> 0` under DDP; `120` is the default/recommended fail-fast setting for faster error exposure.
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
@@ -604,11 +617,12 @@ Combined server-mode launcher contract (`scripts/train_stage2.sh`):
 
 ## Decoding Tips
 
-- Start with deterministic non-beam decoding for stability: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
+- Start with deterministic non-beam decoding for the anchor policy: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
+- For v3 Channel-B, keep the explorer policy under `stage2_ab.channel_b.v3_k2` and start with `explorer_temperature: 0.7`.
 - `rollout_matching.decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `rollout_matching.decoding.temperature/top_p/top_k`.
   - `rollout_matching.decode_mode: greedy` can still produce **sampling** rollouts when `rollout_matching.decoding.temperature > 0.0`.
-  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_non_beam_count`.
-- vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_matching.rollout_backend: hf` if you need beam search.
+  - Metrics tip: use `rollout/do_sample` plus the anchor/explorer rollout tags (`rollout/anchor_*`, `rollout/explorer_*`) to disambiguate policies, not `rollout/decode_non_beam_count`.
+- vLLM rollout backends support non-beam dual-policy Channel-B requests (greedy anchor + stochastic explorer), but still reject `decode_mode=beam`; use `rollout_matching.rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
 

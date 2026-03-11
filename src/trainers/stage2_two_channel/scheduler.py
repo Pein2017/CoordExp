@@ -68,7 +68,14 @@ class Stage2ABSchedulerMixin:
         cfg = self._ab_channel_b_cfg()
         if key in cfg:
             return cfg[key]
-        return default
+        if not isinstance(key, str) or "." not in key:
+            return default
+        cur: Any = cfg
+        for part in key.split("."):
+            if not part or not isinstance(cur, Mapping) or part not in cur:
+                return default
+            cur = cur[part]
+        return cur
 
     def _stage2_b_rollouts_per_step(self) -> int:
         # Single source of truth for raw-rollout budgeting: training.effective_batch_size.
@@ -167,4 +174,3 @@ class Stage2ABSchedulerMixin:
         a = math.floor(float(s + 1) * float(b_ratio))
         b = math.floor(float(s) * float(b_ratio))
         return "B" if a > b else "A"
-

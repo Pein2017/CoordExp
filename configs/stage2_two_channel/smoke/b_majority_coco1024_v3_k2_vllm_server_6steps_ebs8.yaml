@@ -1,0 +1,36 @@
+extends: ./common_b_majority_coco1024_prodlike.yaml
+
+model:
+  model: /data/CoordExp/output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged
+
+training:
+  run_name: smoke_b_majority_coco1024_v3_k2_vllm_server_6steps_ebs8
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6steps_ebs8
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6steps_ebs8
+  effective_batch_size: 8
+  max_steps: 6
+  do_eval: false
+  eval_strategy: "no"
+  save_strategy: "no"
+
+custom:
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  train_sample_limit: 128
+  val_sample_limit: 8
+
+rollout_matching:
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  train_monitor_dump:
+    enabled: true
+    every_steps: 1
+    max_events: 12
+    max_samples: 2
+    max_text_chars: 4000
+    write_markdown: false
+  vllm:
+    server:
+      servers:
+        - base_url: http://127.0.0.1:8024
+          group_port: 51324

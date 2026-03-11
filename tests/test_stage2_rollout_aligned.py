@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from src.config.prompts import build_dense_user_prompt
+from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
     RolloutMatchingSFTTrainer,
@@ -633,6 +634,47 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
         assert all(sample["messages"][-1]["role"] == "assistant" for sample in chunk)
 
 
+def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    call_offsets: list[int] = []
+
+    def _capture_rollout_many_vllm(
+        samples,
+        *,
+        debug_samples=None,
+        request_index_offset=0,
+    ):
+        call_offsets.append(int(request_index_offset))
+        return [([1], "{}", "greedy", [2]) for _ in samples]
+
+    trainer._vllm_mode = lambda: "server"
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+    trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
+    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+
+    original_samples = [
+        {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": f"prompt-{i}"},
+                {
+                    "role": "assistant",
+                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
+                },
+            ]
+        }
+        for i in range(5)
+    ]
+
+    out = trainer._rollout_many(original_samples, request_index_offset=5)
+
+    assert len(out) == 5
+    assert call_offsets == [5, 7, 9]
+
+
 def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
     monkeypatch,
 ):
@@ -1197,6 +1239,65 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
     assert user_content[-1]["text"] == expected_prompt
 
 
+def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 12,
+        "num_beams": 1,
+        "repetition_penalty": 1.1,
+    }
+    trainer._decoding_params = lambda: (0.0, 1.0, -1)
+
+    request = trainer._resolve_rollout_decode_request(
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.92,
+            "top_k": 24,
+        }
+    )
+
+    assert request.decode_mode == "greedy"
+    assert request.temperature == pytest.approx(0.7)
+    assert request.top_p == pytest.approx(0.92)
+    assert request.top_k == 24
+    assert request.repetition_penalty == pytest.approx(1.1)
+    assert request.max_new_tokens == 12
+
+
+def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    captured: dict[str, object] = {}
+
+    def _fake_rollout_many_hf(samples, *, decode_override=None):
+        captured["samples"] = samples
+        captured["decode_override"] = decode_override
+        return [([], "{}", "greedy", []) for _ in samples]
+
+    trainer._rollout_many_hf = _fake_rollout_many_hf
+    trainer._effective_rollout_backend = lambda context="train": "hf"
+
+    sample = {
+        "messages": [
+            {"role": "user", "content": "prompt"},
+            {"role": "assistant", "content": '{"objects": []}'},
+        ]
+    }
+    decode_override = {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 16,
+    }
+
+    out = trainer._rollout_many([sample], decode_override=decode_override)
+
+    assert out == [([], "{}", "greedy", [])]
+    assert captured["decode_override"] == decode_override
+
+
 def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     monkeypatch,
 ) -> None:
@@ -1310,6 +1411,123 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     assert kwargs["rollout_backend"] == "hf"
     assert "force_enable" not in kwargs
     assert "force_offload_optimizer" not in kwargs
+
+
+def test_vllm_server_rollout_uses_decode_override_request_config(monkeypatch):
+    trainer = _make_rollout_server_trainer()
+
+    captured_payloads: list[dict] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [1, 2],
+                "choices": [
+                    {
+                        "message": {"content": "{}"},
+                        "token_ids": [3, 4],
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        }
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    trainer._rollout_many_vllm_server(
+        [sample],
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.93,
+            "top_k": 32,
+        },
+    )
+
+    assert captured_payloads
+    request_cfg = captured_payloads[0]["json"]["request_config"]
+    assert request_cfg["temperature"] == pytest.approx(0.7)
+    assert request_cfg["top_p"] == pytest.approx(0.93)
+    assert request_cfg["top_k"] == 32
+
+
+def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 8,
+        "repetition_penalty": 1.0,
+    }
+    trainer.state = types.SimpleNamespace(global_step=4)
+    trainer.processing_class = _DummyTokenizerRM()
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._derive_rollout_seed_base = lambda global_step: 100 + int(global_step)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: nullcontext()
+    trainer._sync_vllm_rollout_model_if_needed = lambda: None
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(_infer_requests, request_config):
+        captured["request_config"] = request_config
+        return [
+            types.SimpleNamespace(
+                prompt_token_ids=[1, 2],
+                choices=[
+                    types.SimpleNamespace(
+                        message=types.SimpleNamespace(content="{}"),
+                        token_ids=[3, 4],
+                        logprobs=None,
+                    )
+                ],
+            )
+        ]
+
+    trainer._vllm_infer_tp_group = _fake_infer
+
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(
+            RequestConfig=_FakeRequestConfig,
+            InferRequest=lambda **kwargs: types.SimpleNamespace(**kwargs),
+        ),
+    )
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    outs = trainer._rollout_many_vllm_colocate(
+        [sample],
+        request_index_offset=7,
+        decode_override={"temperature": 0.7, "top_p": 0.9, "top_k": 11},
+    )
+
+    assert len(outs) == 1
+    request_cfg = captured["request_config"]
+    assert request_cfg.seed == 111
+    assert request_cfg.temperature == pytest.approx(0.7)
+    assert request_cfg.top_p == pytest.approx(0.9)
+    assert request_cfg.top_k == 11
+
+
+def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
+    trainer = _make_rollout_server_trainer()
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+
+    with pytest.raises(
+        ValueError,
+        match=r"vLLM server rollout backend does not support decode_mode=beam",
+    ):
+        trainer._rollout_many_vllm_server(
+            [sample],
+            decode_override={"decode_mode": "beam"},
+        )
 
 
 def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
@@ -2494,7 +2712,7 @@ def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
     assert kwargs["require_cuda_drain"] is True
 
 
-def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
+def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     class _DummyEvalModel:
@@ -2613,13 +2831,13 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    metrics = trainer.evaluate()
+    with pytest.raises(
+        RuntimeError,
+        match=r"Eval-step COCO/mAP failed; aborting \(fail-fast\)",
+    ):
+        trainer.evaluate()
 
-    assert logged_metrics == metrics
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(0.0)
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    assert logged_metrics == {}
 
 
 def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) -> None:
@@ -3122,6 +3340,45 @@ def test_hungarian_matching_with_gating_and_dummy_augmentation():
     assert match2.matched_pairs == []
     assert match2.fn_gt_indices == [0, 1]
     assert match2.fp_pred_indices == [0, 1]
+
+
+def test_associate_one_to_one_max_iou_uses_lexicographic_tiebreak() -> None:
+    anchors = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="anchor-0",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="anchor-1",
+        ),
+    ]
+    explorers = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="explorer-0",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="explorer-1",
+        ),
+    ]
+
+    pairs = associate_one_to_one_max_iou(
+        anchors=anchors,
+        explorers=explorers,
+        min_iou=0.5,
+    )
+
+    assert pairs == [(0, 0), (1, 1)]
 
 
 def test_sinkhorn_barycentric_targets_sanity_poly_involved():

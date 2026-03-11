@@ -100,7 +100,7 @@ rollout_matching:
   eval_rollout_backend: vllm
   offload:
     enabled: false
-  max_new_tokens: 2560
+  max_new_tokens: 3084
   channel_b_decode_batch_size: 16
   eval_decode_batch_size: 16
   train_monitor_dump:

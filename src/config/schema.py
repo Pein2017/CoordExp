@@ -974,10 +974,137 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBV3K2Config:
+    explorer_temperature: float = 0.7
+    explorer_top_p: float = 1.0
+    explorer_top_k: int = -1
+    consistent_iou_threshold: float = 0.85
+    recovered_fn_weight: float = 2.0
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBV3K2Config":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2 must be a mapping when provided"
+            )
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        explorer_temperature_raw = data.pop(
+            "explorer_temperature",
+            cls.explorer_temperature,
+        )
+        try:
+            explorer_temperature = float(explorer_temperature_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.explorer_temperature must be a float/int"
+            ) from exc
+        if not math.isfinite(explorer_temperature):
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.explorer_temperature must be finite"
+            )
+        if explorer_temperature < 0.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.explorer_temperature must be >= 0"
+            )
+
+        explorer_top_p_raw = data.pop("explorer_top_p", cls.explorer_top_p)
+        try:
+            explorer_top_p = float(
+                cls.explorer_top_p
+                if explorer_top_p_raw is None
+                else explorer_top_p_raw
+            )
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.explorer_top_p must be a float/int"
+            ) from exc
+        if not math.isfinite(explorer_top_p):
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.explorer_top_p must be finite"
+            )
+        if not (0.0 < explorer_top_p <= 1.0):
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.explorer_top_p must be in (0, 1]"
+            )
+
+        explorer_top_k_raw = data.pop("explorer_top_k", cls.explorer_top_k)
+        try:
+            explorer_top_k = int(explorer_top_k_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.explorer_top_k must be an int"
+            ) from exc
+        if explorer_top_k != -1 and explorer_top_k < 1:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.explorer_top_k must be -1 (disabled) or >= 1"
+            )
+
+        consistent_iou_threshold_raw = data.pop(
+            "consistent_iou_threshold",
+            cls.consistent_iou_threshold,
+        )
+        try:
+            consistent_iou_threshold = float(consistent_iou_threshold_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be a float/int"
+            ) from exc
+        if not math.isfinite(consistent_iou_threshold):
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be finite"
+            )
+        if consistent_iou_threshold < 0.0 or consistent_iou_threshold > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.consistent_iou_threshold must be in [0, 1]"
+            )
+
+        recovered_fn_weight_raw = data.pop(
+            "recovered_fn_weight",
+            cls.recovered_fn_weight,
+        )
+        try:
+            recovered_fn_weight = float(recovered_fn_weight_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be a float/int"
+            ) from exc
+        if not math.isfinite(recovered_fn_weight):
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be finite"
+            )
+        if recovered_fn_weight < 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.v3_k2.recovered_fn_weight must be >= 1.0"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.v3_k2.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown stage2_ab.channel_b.v3_k2 keys: {unknown}")
+
+        return cls(
+            explorer_temperature=explorer_temperature,
+            explorer_top_p=explorer_top_p,
+            explorer_top_k=explorer_top_k,
+            consistent_iou_threshold=consistent_iou_threshold,
+            recovered_fn_weight=recovered_fn_weight,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    v3_k2: Stage2ABChannelBV3K2Config = field(
+        default_factory=Stage2ABChannelBV3K2Config
+    )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
@@ -1089,6 +1216,8 @@ class Stage2ABChannelBConfig:
                     "(bounded DDP phase barriers are required)"
                 )
 
+        v3_k2 = Stage2ABChannelBV3K2Config.from_mapping(data.pop("v3_k2", None))
+
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
@@ -1098,6 +1227,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            v3_k2=v3_k2,
         )
 
 

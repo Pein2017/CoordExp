@@ -165,6 +165,24 @@ Current evidence suggests that a model in the `ul_res_1024-v2` family remains a 
 This does **not** mean the hot rollout should be imitated wholesale.
 It is a mining path, not a behavior teacher.
 
+### 3.4 Locked v1 implementation contract
+
+The first landed v3 slice is intentionally narrower than the broader research note.
+
+The locked v1 contract is:
+
+- build Channel-B from **two rollout views**:
+  - anchor = greedy / deterministic
+  - explorer = stochastic under a typed `stage2_ab.channel_b.v3_k2` block
+- realize the target as an **anchor-edited clean sequence**:
+  - keep anchor GT-backed objects
+  - keep shielded anchor objects as neutral context
+  - remove dead anchor objects
+  - append GT FN objects in the usual tail
+- run **one merged teacher-forced forward** on that edited target
+- treat explorer-only non-GT-backed objects as **dead by default**
+- keep recovered GTs on the **FN-injection path** with higher per-object desc+geo+coord weight
+- do **not** add recovered-prefix distillation or a second explorer teacher trajectory in v1
 ---
 
 ## 4. Core Objects And Notation
@@ -250,6 +268,7 @@ Each cluster stores:
 
 ---
 
+<<<<<<< HEAD
 ## 6. The Triage Posterior
 
 This is the real center of v3.
@@ -259,10 +278,22 @@ For each cluster `c`, estimate three responsibilities:
 - `r_gt(c)`   : GT-backed positive responsibility
 - `r_u(c)`    : unlabeled-consistent latent-positive responsibility
 - `r_dead(c)` : dead / redundant responsibility
+=======
+## 6. The Triage Heuristic
+
+This is the real center of v3.
+
+For each cluster `c`, define three heuristic scores:
+
+- `s_gt(c)`   : GT-backed positive score
+- `s_u(c)`    : unlabeled-consistent latent-positive score
+- `s_dead(c)` : dead / redundant score
+>>>>>>> change/stage2-v3-k2-triage
 
 with:
 
 ```text
+<<<<<<< HEAD
 r_dead(c) = 1 - max(r_gt(c), r_u(c))
 ```
 
@@ -270,6 +301,15 @@ The point is not to produce a calibrated Bayesian posterior on day 1.
 The point is to give the training system a **small, explicit triage**.
 
 ### 6.1 GT-backed responsibility
+=======
+s_dead(c) = 1 - max(s_gt(c), s_u(c))
+```
+
+These are **not** intended to be calibrated posterior probabilities or a normalized partition.
+The point is to give the training system a **small, explicit triage**.
+
+### 6.1 GT-backed score
+>>>>>>> change/stage2-v3-k2-triage
 
 A cluster is GT-backed if it is directly supported by GT.
 The strongest cases are:
@@ -288,7 +328,11 @@ The training action must stay side-specific:
 - if the anchor member misses but the **explorer** member matches, treat that GT as `RECOVERED_FN`,
 - do **not** keep a bad anchor object positive just because the explorer side matched.
 
+<<<<<<< HEAD
 ### 6.2 Unlabeled-consistent responsibility
+=======
+### 6.2 Unlabeled-consistent score
+>>>>>>> change/stage2-v3-k2-triage
 
 A cluster should receive unlabeled-consistent credit if:
 
@@ -310,10 +354,17 @@ For v1:
 - semantic nearness is at most a weak veto / tie-breaker,
 - local likelihood terms are not required for the first implementation.
 
+<<<<<<< HEAD
 A simple soft form is:
 
 ```text
 r_u(c) = sigmoid(a * support(c)
+=======
+A simple soft scoring form is:
+
+```text
+s_u(c) = sigmoid(a * support(c)
+>>>>>>> change/stage2-v3-k2-triage
                + b * stability(c)
                + d * like(c)
                - e * dup_risk(c))

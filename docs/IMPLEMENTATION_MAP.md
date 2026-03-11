@@ -67,7 +67,7 @@ Run these tests first:
 - `tests/test_stage1_registry_masks.py`
 - `tests/test_stage1_static_packing_runtime_config.py`
 
-## 3. Stage-2 Two-Channel Training, Matching, Or Duplicate UL
+## 3. Stage-2 Two-Channel Training, Matching, Triage, Or Duplicate UL
 
 Open these docs first:
 - [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
@@ -79,6 +79,10 @@ Open these configs first:
 - `configs/stage2_two_channel/base.yaml`
 - `configs/stage2_two_channel/prod/`
 - `configs/stage2_two_channel/smoke/`
+
+Key v3 config handles:
+- `stage2_ab.channel_b.v3_k2.*`
+- `rollout_matching.decoding.*`
 
 Open these code files first:
 - `src/sft.py`
