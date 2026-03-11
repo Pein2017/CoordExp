@@ -1559,14 +1559,20 @@ class Stage2ABTrainingTrainer(
                 }
             if latest_snapshots:
                 logs.update(latest_snapshots)
+            logs.update(
+                self._reduce_stage_wallclock_metrics_global(
+                    self._stage_wallclock_metrics_local()
+                )
+            )
         return super().log(logs)
 
     def training_step(self, model, inputs, *args, **kwargs):
         # When using identity collator, `inputs` is a list of raw samples.
         if not isinstance(inputs, list):
-            return super(RolloutMatchingSFTTrainer, self).training_step(
-                model, inputs, *args, **kwargs
-            )
+            with self._track_stage_wallclock("sft"):
+                return super(RolloutMatchingSFTTrainer, self).training_step(
+                    model, inputs, *args, **kwargs
+                )
 
         if not inputs:
             rank, world_size, _dist = self._dist_info()
@@ -1602,13 +1608,13 @@ class Stage2ABTrainingTrainer(
                 return self._stage2_training_step_a_step_mode(
                     model, inputs, global_step=gs
                 )
-            prepared = self._prepare_batch_inputs(inputs)
+            with self._track_stage_wallclock("sft"):
+                prepared = self._prepare_batch_inputs(inputs)
+                return super(RolloutMatchingSFTTrainer, self).training_step(
+                    model, prepared, *args, **kwargs
+                )
         finally:
             self._stage2_channel_override = prev
-
-        return super(RolloutMatchingSFTTrainer, self).training_step(
-            model, prepared, *args, **kwargs
-        )
 
 
 

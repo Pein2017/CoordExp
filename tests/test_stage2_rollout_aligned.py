@@ -1081,6 +1081,52 @@ def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
     assert "loss/B_rollout_text/struct_ce_total" not in out
 
 
+def test_reduce_stage_wallclock_metrics_global_uses_ddp_max(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 0, raising=False)
+
+    class _FakeReduceOp:
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+
+    metric_keys = sorted(("time/sft_total_time", "time/rollout_total_time"))
+    peer_values = {
+        "time/sft_total_time": 12.0,
+        "time/rollout_total_time": 9.5,
+    }
+
+    def _fake_all_reduce(tensor: torch.Tensor, op: str) -> None:
+        assert op == _FakeReduceOp.MAX
+        for idx, key in enumerate(metric_keys):
+            tensor[idx] = torch.maximum(
+                tensor[idx],
+                torch.tensor(
+                    peer_values[key],
+                    dtype=tensor.dtype,
+                    device=tensor.device,
+                ),
+            )
+
+    monkeypatch.setattr(dist, "all_reduce", _fake_all_reduce)
+
+    out = trainer._reduce_stage_wallclock_metrics_global(
+        {
+            "time/sft_total_time": 10.0,
+            "time/rollout_total_time": 8.0,
+        }
+    )
+
+    assert out["time/sft_total_time"] == pytest.approx(12.0)
+    assert out["time/rollout_total_time"] == pytest.approx(9.5)
+
+
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 

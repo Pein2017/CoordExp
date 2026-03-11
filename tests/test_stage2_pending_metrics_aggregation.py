@@ -229,6 +229,13 @@ def test_stage2_log_emits_latest_snapshots_alongside_current_reduced_metrics(
     trainer._reduce_stage2_pending_metrics_global = (
         lambda metrics: dict(metrics)
     )  # type: ignore[method-assign]
+    trainer._stage_wallclock_metrics_local = lambda: {
+        "time/sft_total_time": 12.0,
+        "time/rollout_total_time": 5.0,
+    }
+    trainer._reduce_stage_wallclock_metrics_global = (
+        lambda metrics: dict(metrics)
+    )  # type: ignore[method-assign]
 
     captured: dict[str, float] = {}
 
@@ -250,6 +257,8 @@ def test_stage2_log_emits_latest_snapshots_alongside_current_reduced_metrics(
     assert captured["latest/coord_diag/A1/acc_top5"] == pytest.approx(0.4)
     assert captured["latest/loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["latest/rollout/f1"] == pytest.approx(0.3)
+    assert captured["time/sft_total_time"] == pytest.approx(12.0)
+    assert captured["time/rollout_total_time"] == pytest.approx(5.0)
 
 
 def test_stage2_pending_log_preserves_sparse_gradmon_weighting() -> None:

@@ -1340,6 +1340,133 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Mutable config injected by src/sft.py after construction.
         self.rollout_matching_cfg: Mapping[str, Any] = {}
+        self._stage_wallclock_totals_s: Dict[str, float] = {
+            "sft": 0.0,
+            "rollout": 0.0,
+        }
+        self._stage_wallclock_lock = threading.Lock()
+
+    def _ensure_stage_wallclock_state(self) -> None:
+        totals = getattr(self, "_stage_wallclock_totals_s", None)
+        if not isinstance(totals, dict):
+            totals = {"sft": 0.0, "rollout": 0.0}
+            setattr(self, "_stage_wallclock_totals_s", totals)
+        for key in ("sft", "rollout"):
+            try:
+                totals[key] = float(totals.get(key, 0.0) or 0.0)
+            except (AttributeError, TypeError, ValueError):
+                totals[key] = 0.0
+
+        lock = getattr(self, "_stage_wallclock_lock", None)
+        if lock is None or not hasattr(lock, "acquire") or not hasattr(lock, "release"):
+            setattr(self, "_stage_wallclock_lock", threading.Lock())
+
+    def _record_stage_wallclock_span(
+        self,
+        *,
+        stage: Literal["sft", "rollout"],
+        start_ts: float,
+        end_ts: Optional[float] = None,
+    ) -> float:
+        if stage not in {"sft", "rollout"}:
+            raise ValueError(f"unknown stage wallclock timer: {stage!r}")
+
+        self._ensure_stage_wallclock_state()
+
+        stop_ts = float(time.perf_counter() if end_ts is None else end_ts)
+        delta = float(stop_ts - float(start_ts))
+        if (not math.isfinite(delta)) or delta <= 0.0:
+            return 0.0
+
+        totals = getattr(self, "_stage_wallclock_totals_s")
+        lock = getattr(self, "_stage_wallclock_lock")
+        with lock:
+            totals[str(stage)] = float(totals.get(str(stage), 0.0) or 0.0) + float(delta)
+        return float(delta)
+
+    @contextmanager
+    def _track_stage_wallclock(self, stage: Literal["sft", "rollout"]):
+        start_ts = time.perf_counter()
+        try:
+            yield
+        finally:
+            self._record_stage_wallclock_span(stage=stage, start_ts=float(start_ts))
+
+    def _stage_wallclock_metrics_local(self) -> Dict[str, float]:
+        self._ensure_stage_wallclock_state()
+        totals = getattr(self, "_stage_wallclock_totals_s")
+        return {
+            "time/sft_total_time": float(totals.get("sft", 0.0) or 0.0),
+            "time/rollout_total_time": float(totals.get("rollout", 0.0) or 0.0),
+        }
+
+    def _reduce_stage_wallclock_metrics_global(
+        self, metrics: Mapping[str, Any]
+    ) -> Dict[str, float]:
+        reduced: Dict[str, float] = {}
+        for k, v in metrics.items():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(fv):
+                continue
+            reduced[str(k)] = float(fv)
+
+        if not reduced:
+            return {}
+
+        try:
+            import torch.distributed as dist
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            dist = None  # type: ignore[assignment]
+
+        rank = 0
+        world_size = 1
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            try:
+                world_size = int(dist.get_world_size())
+            except (TypeError, ValueError, RuntimeError):
+                world_size = 1
+            try:
+                rank = int(dist.get_rank())
+            except (TypeError, ValueError, RuntimeError):
+                rank = 0
+
+        metric_keys = sorted(reduced.keys())
+        if (
+            dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+            and int(world_size) > 1
+            and metric_keys
+        ):
+            try:
+                device = torch.device("cpu")
+                try:
+                    model = getattr(self, "model", None)
+                    if model is not None and hasattr(model, "device"):
+                        device = model.device
+                    elif model is not None:
+                        device = next(model.parameters()).device
+                except (AttributeError, RuntimeError, StopIteration, TypeError):
+                    device = torch.device("cpu")
+
+                values = torch.tensor(
+                    [float(reduced[k]) for k in metric_keys],
+                    dtype=torch.float64,
+                    device=device,
+                )
+                dist.all_reduce(values, op=dist.ReduceOp.MAX)
+                for idx, key in enumerate(metric_keys):
+                    reduced[key] = float(values[idx].item())
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "stage wallclock metric all-reduce failed (DDP is initialized); "
+                    f"rank={int(rank)}/{int(world_size)}"
+                ) from exc
+
+        return reduced
 
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
@@ -8164,6 +8291,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     logs["train/samples_seen"] = float(
                         getattr(self, "_rm_train_samples_seen", 0) or 0
                     )
+                logs.update(
+                    self._reduce_stage_wallclock_metrics_global(
+                        self._stage_wallclock_metrics_local()
+                    )
+                )
         except (TypeError, ValueError):
             raise
 
@@ -9939,7 +10071,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def training_step(self, model, inputs, *args, **kwargs):
         # When using identity collator, `inputs` is a list of raw samples.
         if not isinstance(inputs, list):
-            return super().training_step(model, inputs, *args, **kwargs)
+            with self._track_stage_wallclock("sft"):
+                return super().training_step(model, inputs, *args, **kwargs)
 
         if not inputs:
             rank = 0
@@ -9969,9 +10102,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         self._validate_rollout_matching_cfg()
 
-        prepared = self._prepare_batch_inputs(inputs)
+        with self._track_stage_wallclock("rollout"):
+            prepared = self._prepare_batch_inputs(inputs)
 
-        return super().training_step(model, prepared, *args, **kwargs)
+        with self._track_stage_wallclock("sft"):
+            return super().training_step(model, prepared, *args, **kwargs)
 
     # ------------------------ target construction ------------------------ #
     @staticmethod
