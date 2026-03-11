@@ -3,7 +3,9 @@
 # The workflow stays additive to `scripts/evaluate_detection.py`:
 # - baseline_run supplies the conservative single-decode artifact
 # - oracle_runs supply repeated stochastic decodes for the same subset
-# - alignment is validated by record order only (`record_idx` + `gt_idx`)
+# - alignment is validated in record order and requires consistent `file_name`
+#   provenance; `record_idx` + `gt_idx` remains the object join key while
+#   `image_id` / `file_name` stay available for downstream visualization analysis
 
 out_dir: output/eval/oracle_k_example
 

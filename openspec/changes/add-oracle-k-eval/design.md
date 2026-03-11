@@ -18,6 +18,7 @@ Required invariants:
 - all artifacts correspond to the same input subset,
 - record order is the only normative join key across artifacts,
 - width, height, and GT object content agree across artifacts,
+- `file_name` stays consistent across aligned artifacts for downstream visualization analysis,
 - each run entry has an explicit label,
 - the workflow may either:
   - consume pre-generated `gt_vs_pred.jsonl` artifacts,
@@ -111,6 +112,7 @@ Expected `fn_objects.jsonl` surfaces:
   - `record_idx`
   - `gt_idx`
 - diagnostic identity:
+  - `image_id`
   - `file_name`
   - GT desc / geometry
 - recovery aggregates:

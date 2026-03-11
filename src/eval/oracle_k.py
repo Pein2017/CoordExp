@@ -51,10 +51,11 @@ class OracleKConfig:
 class OracleKPreparedRun:
     resolved: OracleKResolvedRun
     gt_samples: List[Sample]
-    metrics: Dict[str, float]
+    pred_samples: List[Tuple[int, List[Dict[str, Any]]]]
     counters: Dict[str, int]
     per_image: List[Dict[str, Any]]
-    matches_by_thr: Dict[str, List[Dict[str, Any]]]
+    metrics: Dict[str, float] = field(default_factory=dict)
+    matches_by_thr: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -323,7 +324,7 @@ def _validate_alignment(
         if str(base_sample.file_name) != str(run_sample.file_name):
             raise ValueError(
                 f"Alignment failure for run '{run_label}' at record_idx={base_record_idx}: "
-                "file_name mismatch suggests record-order mismatch "
+                "required file_name mismatch for visualization provenance "
                 f"baseline={base_sample.file_name!r} run={run_sample.file_name!r}"
             )
         base_objects = [_canonical_gt_object(obj) for obj in base_sample.objects]
@@ -346,7 +347,6 @@ def _prepare_run(
     resolved: OracleKResolvedRun,
     *,
     base_options: EvalOptions,
-    eval_dir: Path,
 ) -> OracleKPreparedRun:
     counters = EvalCounters()
     pred_records = load_jsonl(
@@ -360,37 +360,46 @@ def _prepare_run(
         counters,
         prepare_coco=False,
     )
+    return OracleKPreparedRun(
+        resolved=resolved,
+        gt_samples=gt_samples,
+        pred_samples=pred_samples,
+        counters=counters.to_dict(),
+        per_image=per_image,
+    )
+
+
+def _evaluate_prepared_run(
+    prepared: OracleKPreparedRun,
+    *,
+    base_options: EvalOptions,
+    eval_dir: Path,
+) -> None:
     options = replace(base_options, output_dir=eval_dir)
     f1ish_summary = evaluate_f1ish(
-        gt_samples,
-        pred_samples,
-        per_image,
+        prepared.gt_samples,
+        prepared.pred_samples,
+        prepared.per_image,
         options=options,
     )
     eval_dir.mkdir(parents=True, exist_ok=True)
     metrics_payload = {
         "metrics": f1ish_summary.get("metrics", {}),
-        "counters": counters.to_dict(),
+        "counters": prepared.counters,
     }
     (eval_dir / "metrics.json").write_text(
         json.dumps(metrics_payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     (eval_dir / "per_image.json").write_text(
-        json.dumps(per_image, ensure_ascii=False, indent=2),
+        json.dumps(prepared.per_image, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    return OracleKPreparedRun(
-        resolved=resolved,
-        gt_samples=gt_samples,
-        metrics=dict(f1ish_summary.get("metrics", {})),
-        counters=counters.to_dict(),
-        per_image=per_image,
-        matches_by_thr={
-            str(thr_key): list(rows)
-            for thr_key, rows in (f1ish_summary.get("matches_by_thr", {}) or {}).items()
-        },
-    )
+    prepared.metrics = dict(f1ish_summary.get("metrics", {}))
+    prepared.matches_by_thr = {
+        str(thr_key): list(rows)
+        for thr_key, rows in (f1ish_summary.get("matches_by_thr", {}) or {}).items()
+    }
 
 
 def _build_match_index(
@@ -466,7 +475,6 @@ def evaluate_oracle_k(config: OracleKConfig) -> Dict[str, Any]:
     baseline_prepared = _prepare_run(
         baseline_resolved,
         base_options=config.eval_options,
-        eval_dir=baseline_eval_dir,
     )
 
     oracle_prepared: List[OracleKPreparedRun] = []
@@ -474,12 +482,6 @@ def evaluate_oracle_k(config: OracleKConfig) -> Dict[str, Any]:
         prepared = _prepare_run(
             resolved,
             base_options=config.eval_options,
-            eval_dir=_run_eval_dir(
-                out_dir,
-                role="oracle",
-                ordinal=idx,
-                label=resolved.label,
-            ),
         )
         _validate_alignment(
             baseline_prepared.gt_samples,
@@ -487,6 +489,23 @@ def evaluate_oracle_k(config: OracleKConfig) -> Dict[str, Any]:
             run_label=resolved.label,
         )
         oracle_prepared.append(prepared)
+
+    _evaluate_prepared_run(
+        baseline_prepared,
+        base_options=config.eval_options,
+        eval_dir=baseline_eval_dir,
+    )
+    for idx, prepared in enumerate(oracle_prepared, start=1):
+        _evaluate_prepared_run(
+            prepared,
+            base_options=config.eval_options,
+            eval_dir=_run_eval_dir(
+                out_dir,
+                role="oracle",
+                ordinal=idx,
+                label=prepared.resolved.label,
+            ),
+        )
 
     iou_thrs = sorted({float(x) for x in (config.eval_options.f1ish_iou_thrs or [0.3, 0.5])})
     primary_thr = _select_primary_f1ish_iou_thr(iou_thrs)

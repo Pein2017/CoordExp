@@ -98,6 +98,13 @@ def _base_options(
     )
 
 
+def _assert_no_oracle_k_outputs(out_dir: Path) -> None:
+    assert not (out_dir / "summary.json").exists()
+    assert not (out_dir / "per_image.json").exists()
+    assert not (out_dir / "fn_objects.jsonl").exists()
+    assert not (out_dir / "runs").exists()
+
+
 def test_oracle_k_tracks_recovery_views_and_frequencies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -244,8 +251,31 @@ def test_oracle_k_rejects_record_order_mismatch(
         oracle_runs=(OracleKRunSpec(label="oracle", pred_jsonl=oracle_path),),
     )
 
-    with pytest.raises(ValueError, match="record-order mismatch"):
+    with pytest.raises(ValueError, match="file_name mismatch"):
         evaluate_oracle_k(config)
+    _assert_no_oracle_k_outputs(tmp_path / "oracle_k")
+
+
+def test_oracle_k_rejects_required_file_name_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_semantic_encoder(monkeypatch)
+
+    baseline_path = tmp_path / "baseline.jsonl"
+    oracle_path = tmp_path / "oracle.jsonl"
+    _write_jsonl(baseline_path, [_record(image="img_a.png", gt_desc="cat")])
+    _write_jsonl(oracle_path, [_record(image="img_b.png", gt_desc="cat")])
+
+    config = OracleKConfig(
+        out_dir=tmp_path / "oracle_k",
+        eval_options=_base_options(tmp_path / "oracle_k"),
+        baseline_run=OracleKRunSpec(label="baseline", pred_jsonl=baseline_path),
+        oracle_runs=(OracleKRunSpec(label="oracle", pred_jsonl=oracle_path),),
+    )
+
+    with pytest.raises(ValueError, match="file_name mismatch"):
+        evaluate_oracle_k(config)
+    _assert_no_oracle_k_outputs(tmp_path / "oracle_k")
 
 
 @pytest.mark.parametrize(

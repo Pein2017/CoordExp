@@ -19,7 +19,8 @@ Normative behavior:
 - All artifacts MUST correspond to the same evaluation subset and MUST agree on:
   - record order,
   - width and height,
-  - GT object content.
+  - GT object content,
+  - required `file_name` provenance for downstream visualization analysis.
 - Oracle-K MUST reuse the current F1-ish matching semantics for:
   - IoU threshold handling,
   - semantic matching,
@@ -37,7 +38,8 @@ Normative behavior:
 - The normative join key for a baseline GT object is:
   - `record_idx`,
   - `gt_idx`.
-- `image_id` and `file_name` are diagnostic-only fields and MUST NOT be treated as the normative cross-run join key.
+- `image_id` and `file_name` MUST be preserved in Oracle-K outputs for downstream visualization analysis.
+- `file_name` MUST agree across aligned artifacts; `image_id` is derived from record order and preserved alongside `record_idx`.
 - Oracle-K SHALL remain additive:
   - existing single-artifact evaluation behavior and artifacts MUST remain unchanged.
 
@@ -63,7 +65,7 @@ Normative behavior:
 - **AND** the summary counts it toward systematic false negatives for the full-match view.
 
 #### Scenario: Oracle-K rejects misaligned artifacts
-- **GIVEN** baseline and Oracle artifacts generated from different subsets or record orders
+- **GIVEN** baseline and Oracle artifacts generated from different subsets, record orders, or required `file_name` provenance
 - **WHEN** Oracle-K analysis validates the artifacts
 - **THEN** it fails fast with actionable diagnostics
 - **AND** it does not emit partial Oracle-K metrics.
@@ -87,7 +89,7 @@ Normative behavior:
 - `per_image.json` MUST provide per-image baseline FN totals and recoverable/systematic breakdowns for both views.
 - `fn_objects.jsonl` MUST contain one row per baseline FN object with:
   - normative join keys (`record_idx`, `gt_idx`),
-  - diagnostic identity (`file_name` when available),
+  - diagnostic identity (`image_id`, `file_name`),
   - GT description and geometry,
   - location-only and semantic+location recovery aggregates,
   - the Oracle run labels that recovered the object, when any,

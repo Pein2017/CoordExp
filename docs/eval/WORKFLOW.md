@@ -97,7 +97,7 @@ The Oracle-K workflow is additive:
 
 - standard `scripts/evaluate_detection.py` behavior does not change
 - Oracle-K reuses the same F1-ish matching semantics for IoU thresholds, semantic matching, and prediction scope
-- cross-run alignment is by record order only; `record_idx` + `gt_idx` is the normative object key for Oracle-K outputs
+- cross-run alignment is validated in record order and requires consistent `file_name` provenance; `record_idx` + `gt_idx` remains the normative object key and `image_id` / `file_name` are preserved for downstream visualization analysis
 
 The YAML config can work in two modes:
 
