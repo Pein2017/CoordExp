@@ -243,17 +243,17 @@ custom:
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) now uses canonical clean-prefix Channel-B:
-  raw rollout -> strict accepted bbox objects -> sequential dedup -> clean teacher-forced prefix + FN injection + duplicate UL.
+  anchor rollout + explorer rollout -> per-run strict accepted bbox objects -> per-run sequential dedup -> anchor/explorer triage -> anchor-edited clean prefix + weighted FN injection + dead-anchor duplicate UL.
 - Channel-B CE/geometry semantics:
   - matched clean prefix: structure CE ON, desc/coord CE OFF,
-  - generic unmatched clean prefix extras: structure/desc/coord CE OFF,
-  - FN-injected: structure+desc CE ON, coord CE OFF,
-  - geometry loss on matched clean prefix objects + FN, generic unmatched clean extras OFF.
+  - shielded anchor objects: structure/desc/coord CE OFF,
+  - FN-injected: structure+desc CE ON, coord CE OFF, with recovered GTs receiving higher per-object desc+geo+coord weight,
+  - geometry loss on matched clean prefix objects + FN, shielded anchor objects OFF.
 - Duplicate handling:
-  - `loss/B_rollout_text/duplicate_ul` is the explicit Channel-B duplicate-unlikelihood atom,
+  - `loss/B_rollout_text/duplicate_ul` is the explicit Channel-B dead-anchor suppression atom,
   - `duplicate_ul.config` is `{}` in v1 and the module `weight` is the only scaling surface,
-  - duplicates are removed from the positive clean prefix and folded into boundary-local UL targets,
-  - same-boundary duplicates that share the same divergence token collapse to one UL term.
+  - dead anchor continuations are removed from the positive clean prefix and folded into boundary-local UL targets,
+  - same-boundary dead continuations that share the same divergence token collapse to one UL term.
 - Legacy `reordered_gt_sft` and `rollout_drop_invalid_struct_ce_multiplier` have been removed.
 
 ## Stage-2 Rollout-Matching Metrics (Training Logs)
@@ -299,10 +299,12 @@ Stage_2 uses `decode_mode` primarily to choose **beam** vs **non-beam** decoding
 Sampling is controlled separately via `decoding.temperature/top_p/top_k`.
 
 - `rollout/do_sample`, `rollout/temperature`, `rollout/top_p`, `rollout/top_k`
-  - **What:** effective sampling knobs used for rollout generation.
-  - **Note:** vLLM backends currently enforce `decode_mode=greedy` as a **non-beam sentinel** (no beam support in this path),
-    so `rollout/decode_non_beam_count == N` does **not** imply deterministic rollouts. Use `rollout/do_sample` and `rollout/temperature`
-    to disambiguate deterministic vs sampling.
+  - **What:** backward-compatible anchor-side rollout tags for the active Channel-B step.
+- `rollout/anchor_temperature`, `rollout/anchor_top_p`, `rollout/anchor_top_k`
+- `rollout/explorer_temperature`, `rollout/explorer_top_p`, `rollout/explorer_top_k`
+  - **What:** explicit dual-policy K=2 rollout tags for the anchor and explorer requests.
+  - **Note:** vLLM backends support non-beam dual-policy rollouts in this path, but still reject `decode_mode=beam`.
+    Use the anchor/explorer tags, not `rollout/decode_non_beam_count`, to disambiguate deterministic vs stochastic Channel-B behavior.
 
 - `rollout/decode_non_beam_count`, `rollout/decode_beam_count`
   - **What:** counts of samples rolled out with `decode_mode != "beam"` (non-beam) vs `decode_mode == "beam"` (beam).
@@ -458,6 +460,31 @@ These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Ch
 - `stage2_ab/channel_b/dup/N_ul_skipped_no_divergence`
   - **What:** total number of duplicate continuations skipped because no safe divergence token could be used.
   - **Why:** tokenizer/serialization safety check; should stay low.
+
+### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B triage diagnostics
+
+- `stage2_ab/channel_b/triage/N_anchor_gt_backed`
+  - **What:** total number of anchor clean objects kept as GT-backed positives.
+
+- `stage2_ab/channel_b/triage/N_shielded_anchor`
+  - **What:** total number of anchor clean objects retained as neutral shielded context.
+
+- `stage2_ab/channel_b/triage/N_dead_anchor`
+  - **What:** total number of anchor clean objects removed from the positive prefix and sourced into dead-anchor suppression.
+
+- `stage2_ab/channel_b/triage/N_dead_explorer`
+  - **What:** total number of explorer-side non-GT-backed objects that remained unretained after triage.
+
+- `stage2_ab/channel_b/triage/N_recovered_gt`
+  - **What:** total number of GT objects missed by anchor but recovered by the explorer rollout.
+
+- `stage2_ab/channel_b/triage/recovered_gt_num`
+- `stage2_ab/channel_b/triage/recovered_gt_den`
+  - **What:** additive numerator/denominator pair for recovered-GT rate calculations.
+
+- `stage2_ab/channel_b/triage/dead_anchor_num`
+- `stage2_ab/channel_b/triage/dead_anchor_den`
+  - **What:** additive numerator/denominator pair for dead-anchor rate calculations.
 
 ### Stage-2 Two-Channel Rollout Tags (Channel-B Steps Only)
 

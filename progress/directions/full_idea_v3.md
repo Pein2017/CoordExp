@@ -165,6 +165,25 @@ Current evidence suggests that a model in the `ul_res_1024-v2` family remains a 
 This does **not** mean the hot rollout should be imitated wholesale.
 It is a mining path, not a behavior teacher.
 
+### 3.4 Locked v1 implementation contract
+
+The first landed v3 slice is intentionally narrower than the broader research note.
+
+The locked v1 contract is:
+
+- build Channel-B from **two rollout views**:
+  - anchor = greedy / deterministic
+  - explorer = stochastic under a typed `stage2_ab.channel_b.v3_k2` block
+- realize the target as an **anchor-edited clean sequence**:
+  - keep anchor GT-backed objects
+  - keep shielded anchor objects as neutral context
+  - remove dead anchor objects
+  - append GT FN objects in the usual tail
+- run **one merged teacher-forced forward** on that edited target
+- treat explorer-only non-GT-backed objects as **dead by default**
+- keep recovered GTs on the **FN-injection path** with higher per-object desc+geo+coord weight
+- do **not** add recovered-prefix distillation or a second explorer teacher trajectory in v1
+
 ---
 
 ## 4. Core Objects And Notation

@@ -87,6 +87,7 @@ def run_token_ce_module(
         prefix_struct_pos = [int(p) for p in (seg.get("prefix_struct_pos") or [])]
         tail_ignore_pos = [int(p) for p in (seg.get("tail_ignore_pos") or [])]
         tail_desc_pos = [int(p) for p in (seg.get("tail_desc_pos") or [])]
+        tail_desc_weights = list(seg.get("tail_desc_weights") or [])
         tail_closure_pos = [int(p) for p in (seg.get("tail_closure_pos") or [])]
 
         seg_start_i = int(seg_start)
@@ -117,6 +118,23 @@ def run_token_ce_module(
 
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
         tail_desc = {int(x) for x in tail_desc_pos if int(x) >= 0}
+        tail_desc_weight_by_pos: dict[int, float] = {}
+        if tail_desc_weights:
+            if len(tail_desc_weights) != len(tail_desc_pos):
+                raise ValueError(
+                    "tail_desc_weights must align 1:1 with tail_desc_pos entries"
+                )
+            for rel_raw, weight_raw in zip(tail_desc_pos, tail_desc_weights):
+                try:
+                    rel_i = int(rel_raw)
+                    weight_i = float(weight_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "tail_desc_weights entries must be float-compatible"
+                    ) from exc
+                if rel_i < 0:
+                    continue
+                tail_desc_weight_by_pos[int(rel_i)] = float(weight_i)
         tail_closure = {int(x) for x in tail_closure_pos if int(x) >= 0}
 
         for p in range(int(tail_start), int(tail_end)):
@@ -130,7 +148,9 @@ def run_token_ce_module(
             labels_masked[b, p] = input_ids[b, p]
 
             if rel in tail_desc:
+                desc_multiplier = float(tail_desc_weight_by_pos.get(rel, 1.0))
                 w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                w_desc *= float(desc_multiplier)
                 weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:

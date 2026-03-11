@@ -5,7 +5,11 @@ import types
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import Stage2ABChannelBConfig, TrainingConfig
+from src.config.schema import (
+    Stage2ABChannelBConfig,
+    Stage2ABChannelBV3K2Config,
+    TrainingConfig,
+)
 
 
 class _FakeTrainArguments:
@@ -158,6 +162,62 @@ def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     assert cfg.duplicate_iou_threshold == pytest.approx(0.9)
     assert cfg.producer_wait_timeout_s == pytest.approx(0.0)
     assert cfg.ddp_phase_timeout_s == pytest.approx(600.0)
+    assert cfg.v3_k2 == Stage2ABChannelBV3K2Config()
+
+
+def test_stage2_ab_channel_b_v3_k2_keys_are_supported() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping(
+        {
+            "v3_k2": {
+                "explorer_temperature": 0.6,
+                "explorer_top_p": 0.95,
+                "explorer_top_k": 32,
+                "consistent_iou_threshold": 0.8,
+                "recovered_fn_weight": 1.5,
+            }
+        }
+    )
+    assert cfg.v3_k2.explorer_temperature == pytest.approx(0.6)
+    assert cfg.v3_k2.explorer_top_p == pytest.approx(0.95)
+    assert cfg.v3_k2.explorer_top_k == 32
+    assert cfg.v3_k2.consistent_iou_threshold == pytest.approx(0.8)
+    assert cfg.v3_k2.recovered_fn_weight == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize(
+    "payload, expected_msg",
+    [
+        (
+            {"explorer_temperature": "oops"},
+            r"stage2_ab\.channel_b\.v3_k2\.explorer_temperature must be a float/int",
+        ),
+        (
+            {"explorer_top_p": 0.0},
+            r"stage2_ab\.channel_b\.v3_k2\.explorer_top_p must be in \(0, 1\]",
+        ),
+        (
+            {"explorer_top_k": 0},
+            r"stage2_ab\.channel_b\.v3_k2\.explorer_top_k must be -1 \(disabled\) or >= 1",
+        ),
+        (
+            {"consistent_iou_threshold": 1.1},
+            r"stage2_ab\.channel_b\.v3_k2\.consistent_iou_threshold must be in \[0, 1\]",
+        ),
+        (
+            {"recovered_fn_weight": 0.9},
+            r"stage2_ab\.channel_b\.v3_k2\.recovered_fn_weight must be >= 1.0",
+        ),
+        (
+            {"unknown_key": 1.0},
+            r"Unknown stage2_ab\.channel_b\.v3_k2 keys",
+        ),
+    ],
+)
+def test_stage2_ab_channel_b_v3_k2_invalid_values_fail_fast(
+    payload: dict, expected_msg: str
+) -> None:
+    with pytest.raises((ValueError, TypeError), match=expected_msg):
+        Stage2ABChannelBV3K2Config.from_mapping(payload)
 
 
 def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
@@ -217,6 +277,7 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert cfg.stage2_ab is not None
     assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s is None
     assert cfg.stage2_ab.channel_b.producer_wait_timeout_s is None
+    assert cfg.stage2_ab.channel_b.v3_k2 == Stage2ABChannelBV3K2Config()
 
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -241,6 +302,13 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
                 "duplicate_iou_threshold": 0.85,
                 "producer_wait_timeout_s": 120.0,
                 "ddp_phase_timeout_s": 900.0,
+                "v3_k2": {
+                    "explorer_temperature": 0.5,
+                    "explorer_top_p": 0.92,
+                    "explorer_top_k": 16,
+                    "consistent_iou_threshold": 0.82,
+                    "recovered_fn_weight": 1.75,
+                },
             },
         },
     }
@@ -250,6 +318,15 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert parsed.stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.85)
     assert parsed.stage2_ab.channel_b.producer_wait_timeout_s == pytest.approx(120.0)
     assert parsed.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(900.0)
+    assert parsed.stage2_ab.channel_b.v3_k2.explorer_temperature == pytest.approx(0.5)
+    assert parsed.stage2_ab.channel_b.v3_k2.explorer_top_p == pytest.approx(0.92)
+    assert parsed.stage2_ab.channel_b.v3_k2.explorer_top_k == 16
+    assert parsed.stage2_ab.channel_b.v3_k2.consistent_iou_threshold == pytest.approx(
+        0.82
+    )
+    assert parsed.stage2_ab.channel_b.v3_k2.recovered_fn_weight == pytest.approx(
+        1.75
+    )
 
 
 def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> None:
