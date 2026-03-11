@@ -623,6 +623,7 @@ class CustomConfig:
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
+    offline_max_pixels: Optional[int] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
@@ -657,6 +658,8 @@ class CustomConfig:
             raise TypeError("custom.val_sample_with_replacement must be a boolean value")
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
+            raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         # NOTE: Coord tokens can be supervised either via distribution losses
         # (custom.coord_soft_ce_w1) or via the base CE objective (ablations).
         # NOTE: We intentionally do not validate val_sample_with_replacement sizing here
@@ -743,6 +746,20 @@ class CustomConfig:
         if object_field_order_raw is None:
             raise ValueError("custom.object_field_order must be provided")
         val_jsonl = data.pop("val_jsonl", None)
+        offline_max_pixels_raw = data.pop("offline_max_pixels", None)
+        if offline_max_pixels_raw in (None, "", False):
+            offline_max_pixels = None
+        else:
+            if isinstance(offline_max_pixels_raw, bool):
+                raise TypeError("custom.offline_max_pixels must be an int when provided")
+            try:
+                offline_max_pixels = int(offline_max_pixels_raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "custom.offline_max_pixels must be an int when provided"
+                ) from exc
+            if offline_max_pixels <= 0:
+                raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         fusion_config_raw = data.pop("fusion_config", None)
         fusion_config: Optional[str]
         if fusion_config_raw in (None, "", False):
@@ -849,6 +866,7 @@ class CustomConfig:
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
+            offline_max_pixels=offline_max_pixels,
             fusion_config=fusion_config,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,

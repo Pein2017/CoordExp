@@ -31,10 +31,10 @@ Recommended wrapper (config-driven; handles `PYTHONPATH`, `torchrun`, proxy hygi
 
 ```bash
 # Single GPU
-bash scripts/train.sh config=<yaml> gpus=0
+config=<yaml> gpus=0 bash scripts/train.sh
 
 # Multi-GPU
-bash scripts/train.sh config=<yaml> gpus=0,1,2,3
+config=<yaml> gpus=0,1,2,3 bash scripts/train.sh
 ```
 
 Multi-GPU:
@@ -259,12 +259,18 @@ Start from a template config and fill in dataset + rollout knobs:
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
+- Set `custom.offline_max_pixels` to the offline resize budget enforced by your prepared JSONLs.
+  - Example: `786432` for the standard `32*32*768` pipeline.
+  - Example: `1048576` for the `32*32*1024` pipeline.
 - Set top-level `rollout_matching.*` (including `rollout_matching.decoding.*` + matching knobs).
 - If using Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
 - Stage-2 pipelines are **required** (no implicit defaults):
   - For `custom.trainer_variant: stage2_two_channel`, `stage2_ab.pipeline` MUST be present.
   - For `custom.trainer_variant: stage2_rollout_aligned`, `rollout_matching.pipeline` MUST be present.
+- `template.max_pixels` and `custom.offline_max_pixels` now serve different purposes:
+  - `template.max_pixels`: runtime processor/server setting (often kept large to disable HF auto-resize)
+  - `custom.offline_max_pixels`: offline dataset contract enforced by launcher prechecks and dataset runtime
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Objective pipeline declaration (required, ordered):

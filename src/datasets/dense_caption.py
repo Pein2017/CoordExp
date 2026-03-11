@@ -52,6 +52,7 @@ class BaseCaptionDataset(Dataset):
         dataset_name: Optional[str] = None,
         allow_empty: bool = False,
         coord_tokens: Optional[CoordTokensConfig] = None,
+        offline_max_pixels: Optional[int] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
     ):
@@ -64,6 +65,9 @@ class BaseCaptionDataset(Dataset):
         self.bypass_prob = float(bypass_prob)
         self.seed = int(seed)
         self.template = template
+        self.offline_max_pixels = (
+            None if offline_max_pixels is None else int(offline_max_pixels)
+        )
         self.mode: Literal["dense", "summary"] = (
             "summary" if self.use_summary else "dense"
         )
@@ -262,7 +266,7 @@ class BaseCaptionDataset(Dataset):
             annotate_coord_tokens(record)
 
     def _enforce_max_pixels(self, record: Mapping[str, Any], *, base_idx: int) -> None:
-        """Fail fast if a record would exceed template.max_pixels.
+        """Fail fast if a record would exceed the configured offline image budget.
 
         CoordExp forbids any runtime image resizing because it breaks grounding
         coordinates. Images must be pre-rescaled offline and JSONL width/height
@@ -311,12 +315,17 @@ class BaseCaptionDataset(Dataset):
             or record.get("path")
         )
 
-        max_pixels_raw = getattr(self.template, "max_pixels", None)
+        if self.offline_max_pixels is not None:
+            max_pixels_raw = self.offline_max_pixels
+            max_pixels_name = "custom.offline_max_pixels"
+        else:
+            max_pixels_raw = getattr(self.template, "max_pixels", None)
+            max_pixels_name = "template.max_pixels"
         try:
-            max_pixels = _coerce_positive_int(max_pixels_raw, name="template.max_pixels")
+            max_pixels = _coerce_positive_int(max_pixels_raw, name=max_pixels_name)
         except ValueError as exc:
             raise ValueError(
-                "Invalid template.max_pixels for max_pixels enforcement; "
+                f"Invalid {max_pixels_name} for max_pixels enforcement; "
                 f"dataset={self.dataset_name!r}, base_idx={base_idx}, image={image_hint!r}: {exc}"
             ) from exc
 
@@ -332,11 +341,11 @@ class BaseCaptionDataset(Dataset):
         pixels = width * height
         if pixels > max_pixels:
             raise ValueError(
-                f"Image resolution {width}x{height}={pixels} exceeds template.max_pixels={max_pixels} "
+                f"Image resolution {width}x{height}={pixels} exceeds {max_pixels_name}={max_pixels} "
                 f"for dataset={self.dataset_name!r}, base_idx={base_idx}, image={image_hint!r}. "
                 "Runtime image resizing is forbidden because it breaks grounding coordinates. "
                 "Pre-rescale images offline (and update JSONL width/height + geometry) so that "
-                "width*height <= template.max_pixels."
+                f"width*height <= {max_pixels_name}."
             )
 
     def _encode_record(

@@ -24,7 +24,12 @@ class _NoEncodeDataset(BaseCaptionDataset):
         return {"input_ids": [0, 1, 2]}
 
 
-def _make_dataset(*, record: dict, max_pixels: int = 786432) -> _NoEncodeDataset:
+def _make_dataset(
+    *,
+    record: dict,
+    max_pixels: int = 786432,
+    offline_max_pixels: int | None = None,
+) -> _NoEncodeDataset:
     template = DummyTemplate(max_pixels=max_pixels)
     return _NoEncodeDataset(
         base_records=[record],
@@ -33,6 +38,7 @@ def _make_dataset(*, record: dict, max_pixels: int = 786432) -> _NoEncodeDataset
         emit_norm="none",
         json_format="standard",
         dataset_name="unit",
+        offline_max_pixels=offline_max_pixels,
     )
 
 
@@ -57,6 +63,16 @@ def test_max_pixels_guard_allows_record_at_cap() -> None:
     assert out["dataset"] == "unit"
     assert out["base_idx"] == 0
     assert "sample_id" in out
+
+
+def test_max_pixels_guard_prefers_offline_contract_when_set() -> None:
+    ds = _make_dataset(
+        record=_record(width=1200, height=900),
+        max_pixels=7864320000,
+        offline_max_pixels=786432,
+    )
+    with pytest.raises(ValueError, match=r"custom\.offline_max_pixels"):
+        _ = ds[0]
 
 
 def test_smart_resize_upscales_low_resolution_images_toward_cap() -> None:

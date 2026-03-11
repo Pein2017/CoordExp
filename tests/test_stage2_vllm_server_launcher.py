@@ -26,6 +26,17 @@ def test_resolve_config_path_appends_yaml(tmp_path: Path) -> None:
     assert got == cfg.resolve()
 
 
+def test_resolve_config_path_supports_repo_relative_yaml_outside_configs(
+    tmp_path: Path,
+) -> None:
+    cfg = tmp_path / "temp" / "a.yaml"
+    cfg.parent.mkdir()
+    cfg.write_text("x: 1\n", encoding="utf-8")
+
+    got = launcher.resolve_config_path("temp/a.yaml", repo_root=tmp_path)
+    assert got == cfg.resolve()
+
+
 def test_parse_base_url_accepts_http_host_port() -> None:
     parsed = launcher.parse_base_url("http://127.0.0.1:8000")
     assert parsed.scheme == "http"
@@ -218,3 +229,110 @@ def test_wait_for_server_health_bounds_probe_timeout_by_remaining_budget(
     assert probe_timeouts
     assert max(probe_timeouts) <= 0.200001
     assert max(probe_timeouts) < 5.0
+
+
+def test_main_uses_server_dp_for_readiness_and_checks_group_port(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = tmp_path / "configs" / "stage2.yaml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("x: 1\n", encoding="utf-8")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    captured: dict[str, object] = {}
+
+    class FakeProc:
+        def __init__(self, *, rc: int = 0):
+            self.returncode = None
+            self._rc = rc
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self):
+            self.returncode = self._rc
+            return self._rc
+
+    monkeypatch.setenv("CONFIG", str(cfg))
+    monkeypatch.setenv("SERVER_GPUS", "0,1,2,3")
+    monkeypatch.setenv("TRAIN_GPUS", "4")
+    monkeypatch.setattr(launcher.sys, "argv", ["stage2_vllm_server"])
+    monkeypatch.setattr(launcher.signal, "signal", lambda *_args, **_kwargs: None)
+
+    monkeypatch.setattr(launcher, "resolve_config_path", lambda *_args, **_kwargs: cfg)
+    monkeypatch.setattr(
+        launcher,
+        "resolve_stage2_launcher_preflight",
+        lambda _path: {
+            "rollout_backend": "vllm",
+            "vllm_mode": "server",
+            "server_base_urls": ["http://127.0.0.1:8000"],
+            "server_group_ports": [51216],
+            "server_model": str(model_dir),
+            "root_image_dir_resolved": str(tmp_path),
+            "train_jsonl_resolved": str(tmp_path / "train.jsonl"),
+            "val_jsonl_resolved": str(tmp_path / "val.jsonl"),
+            "offline_max_pixels": 786432,
+            "template_max_pixels": 786432,
+            "vllm_tensor_parallel_size": 2,
+            "server_torch_dtype": "bfloat16",
+            "vllm_enforce_eager": True,
+            "vllm_max_model_len": 4096,
+            "vllm_enable_lora": False,
+            "vllm_gpu_memory_utilization": 0.8,
+            "server_template": "qwen3_vl",
+            "server_max_length": 2048,
+            "server_truncation_strategy": "delete",
+            "vllm_engine_kwargs": {},
+        },
+    )
+    monkeypatch.setattr(
+        launcher,
+        "validate_gpu_split",
+        lambda **_kwargs: (["0", "1", "2", "3"], ["4"], 2),
+    )
+    monkeypatch.setattr(launcher, "_assert_port_free", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(launcher, "_run_validate_jsonl", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        launcher, "build_swift_rollout_cmd", lambda **_kwargs: ["swift", "rollout"]
+    )
+    monkeypatch.setattr(
+        launcher, "build_torchrun_cmd", lambda **_kwargs: ["torchrun", "-m", "src.sft"]
+    )
+    monkeypatch.setattr(launcher, "_ensure_pythonpath", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(launcher, "_apply_no_proxy", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        launcher,
+        "_set_default_env",
+        lambda env, key, value: env.setdefault(key, value),
+    )
+    monkeypatch.setattr(
+        launcher,
+        "_wait_for_port_connectable",
+        lambda host, port, **_kwargs: captured.update(
+            {"group_port_host": host, "group_port": int(port)}
+        ),
+    )
+    monkeypatch.setattr(
+        launcher,
+        "launch_swift_rollout_server",
+        lambda **kwargs: captured.update(
+            {"expected_world_size": int(kwargs["expected_world_size"])}
+        )
+        or FakeProc(),
+    )
+    monkeypatch.setattr(
+        launcher.subprocess, "Popen", lambda *_args, **_kwargs: FakeProc()
+    )
+    monkeypatch.setattr(
+        launcher, "_terminate_process_group", lambda *_args, **_kwargs: None
+    )
+
+    rc = launcher.main()
+
+    assert rc == 0
+    assert captured["expected_world_size"] == 2
+    assert captured["group_port_host"] == "127.0.0.1"
+    assert captured["group_port"] == 51216

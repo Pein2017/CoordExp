@@ -116,7 +116,7 @@ def resolve_config_path(config_raw: str, *, repo_root: Path) -> Path:
     elif raw.startswith("configs/"):
         path = repo_root / raw
     elif raw.endswith(".yaml"):
-        path = repo_root / "configs" / raw
+        path = repo_root / raw
     else:
         path = repo_root / "configs" / f"{raw}.yaml"
 
@@ -174,6 +174,43 @@ def _assert_port_free(host: str, port: int) -> None:
         ) from exc
     finally:
         sock.close()
+
+
+def _wait_for_port_connectable(
+    host: str,
+    port: int,
+    *,
+    wait_timeout_s: float,
+    wait_interval_s: float,
+    proc: subprocess.Popen[str] | None = None,
+) -> None:
+    deadline = time.monotonic() + float(wait_timeout_s)
+    last_err: OSError | None = None
+    while True:
+        if proc is not None:
+            rc = proc.poll()
+            if rc is not None:
+                raise RuntimeError(
+                    f"rollout server exited before group_port became reachable (returncode={rc})"
+                )
+
+        remaining = float(deadline - time.monotonic())
+        if remaining <= 0.0:
+            break
+
+        try:
+            timeout_s = max(0.1, min(2.0, remaining))
+            with socket.create_connection((host, int(port)), timeout=timeout_s):
+                return
+        except OSError as exc:
+            last_err = exc
+
+        time.sleep(min(float(wait_interval_s), max(0.0, remaining)))
+
+    raise TimeoutError(
+        "rollout server group_port did not become reachable within "
+        f"{float(wait_timeout_s):.1f}s: {host}:{int(port)} last_err={last_err!r}"
+    )
 
 
 def _merge_no_proxy(existing_raw: str, *, hosts: list[str]) -> str:
@@ -519,6 +556,7 @@ def main() -> int:
         rollout_backend = preflight.get("rollout_backend")
         vllm_mode = preflight.get("vllm_mode")
         server_base_urls = preflight.get("server_base_urls")
+        server_group_ports = preflight.get("server_group_ports")
 
         if rollout_backend != "vllm" or vllm_mode != "server":
             raise ValueError(
@@ -532,8 +570,23 @@ def main() -> int:
                 "Single-server only: rollout_matching.vllm.server.servers must have exactly 1 entry. "
                 f"Got server_base_urls={server_base_urls!r}."
             )
+        if not isinstance(server_group_ports, list) or len(server_group_ports) != 1:
+            raise ValueError(
+                "Single-server only: rollout_matching.vllm.server.servers must include exactly 1 group_port entry. "
+                f"Got server_group_ports={server_group_ports!r}."
+            )
 
         base_url = parse_base_url(server_base_urls[0])
+        try:
+            group_port = int(server_group_ports[0])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid rollout server group_port in preflight: {server_group_ports!r}"
+            ) from exc
+        if int(group_port) <= 0:
+            raise ValueError(
+                f"Invalid rollout server group_port in preflight: {server_group_ports!r}"
+            )
         if base_url.scheme != "http":
             raise ValueError(
                 "Combined launcher only supports http base_url (swift rollout serves http). "
@@ -561,6 +614,7 @@ def main() -> int:
         train_jsonl = str(preflight.get("train_jsonl_resolved") or "").strip()
         val_jsonl = str(preflight.get("val_jsonl_resolved") or "").strip()
         template_max_pixels = int(preflight["template_max_pixels"])
+        offline_max_pixels = int(preflight["offline_max_pixels"])
 
         if not train_jsonl:
             raise ValueError("custom.train_jsonl is required (resolved empty)")
@@ -609,14 +663,15 @@ def main() -> int:
             "========================================================================"
         )
         _info(
-            "[PRECHECK] Validating JSONL contracts + max_pixels before launching GPUs"
+            "[PRECHECK] Validating JSONL contracts + offline_max_pixels before launching GPUs"
         )
         _info(
             "========================================================================"
         )
         _info(f"[PRECHECK] train_jsonl: {train_jsonl}")
         _info(f"[PRECHECK] val_jsonl: {val_jsonl}")
-        _info(f"[PRECHECK] max_pixels: {template_max_pixels} (expect 768*32*32=786432)")
+        _info(f"[PRECHECK] offline_max_pixels: {offline_max_pixels}")
+        _info(f"[PRECHECK] template.max_pixels(runtime): {template_max_pixels}")
         _info("[PRECHECK] multiple_of: 32")
         _info(
             "========================================================================"
@@ -625,21 +680,21 @@ def main() -> int:
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=train_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="exists",
             n=0,
         )
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=train_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="open",
             n=256,
         )
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=val_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="open",
             n=0,
         )
@@ -795,10 +850,24 @@ def main() -> int:
                 world_url=world_url,
                 wait_timeout_s=wait_timeout_s,
                 wait_interval_s=wait_interval_s,
-                expected_world_size=len(server_gpus),
+                expected_world_size=server_dp,
             )
 
-            _info(f"vLLM server is ready. world_size: {len(server_gpus)}")
+            _wait_for_port_connectable(
+                base_url.host,
+                int(group_port),
+                wait_timeout_s=min(float(wait_timeout_s), 30.0),
+                wait_interval_s=float(wait_interval_s),
+                proc=server_proc,
+            )
+
+            _info(
+                "vLLM server is ready. "
+                f"data_parallel_world_size={int(server_dp)} "
+                f"tensor_parallel_size={int(server_tp)} "
+                f"total_server_gpus={int(len(server_gpus))} "
+                f"group_port={int(group_port)}"
+            )
 
             _info(
                 f"[RUN] (cwd={_REPO_ROOT}) CUDA_VISIBLE_DEVICES={train_gpus_raw} {_format_cmd(learner_cmd)}"

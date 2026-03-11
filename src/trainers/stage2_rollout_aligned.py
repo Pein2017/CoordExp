@@ -4381,7 +4381,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             try:
                 from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
-            except (TypeError, ValueError) as exc:
+            except (ImportError, TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
                     "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
@@ -5845,7 +5845,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.llm import RequestConfig
-        except (TypeError, ValueError) as exc:
+        except (ImportError, TypeError, ValueError) as exc:
             raise RuntimeError(
                 "swift.llm.RequestConfig is required for vLLM rollouts"
             ) from exc
@@ -6050,7 +6050,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         try:
             from swift.llm import RequestConfig
-        except (TypeError, ValueError) as exc:
+        except (ImportError, TypeError, ValueError) as exc:
             raise RuntimeError(
                 "swift.llm.RequestConfig is required for vLLM server rollouts"
             ) from exc

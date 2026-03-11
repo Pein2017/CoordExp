@@ -133,19 +133,25 @@ if not isinstance(val_jsonl_raw, str) or not val_jsonl_raw.strip():
 train_jsonl = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
 val_jsonl = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
 
-max_pixels_raw = cfg.template.get("max_pixels")
+offline_max_pixels_raw = getattr(cfg.custom, "offline_max_pixels", None)
+max_pixels_source = "custom.offline_max_pixels"
+if offline_max_pixels_raw is None:
+    max_pixels_raw = cfg.template.get("max_pixels")
+    max_pixels_source = "template.max_pixels"
+else:
+    max_pixels_raw = offline_max_pixels_raw
 if max_pixels_raw is None:
-    die("template.max_pixels must be set (we treat it as a hard input constraint)")
+    die("custom.offline_max_pixels or template.max_pixels must be set for CPU JSONL validation")
 try:
     max_pixels = int(max_pixels_raw)
 except Exception as exc:
-    die(f"template.max_pixels must be an int, got: {max_pixels_raw!r} ({exc})")
+    die(f"{max_pixels_source} must be an int, got: {max_pixels_raw!r} ({exc})")
 if max_pixels <= 0:
-    die(f"template.max_pixels must be > 0, got: {max_pixels}")
+    die(f"{max_pixels_source} must be > 0, got: {max_pixels}")
 
 emit("TRAIN_JSONL_RESOLVED", train_jsonl)
 emit("VAL_JSONL_RESOLVED", val_jsonl)
-emit("TEMPLATE_MAX_PIXELS", max_pixels)
+emit("OFFLINE_MAX_PIXELS", max_pixels)
 PY
 )
 
@@ -159,17 +165,17 @@ PRECHECK_VARS="$(
 eval "${PRECHECK_VARS}"
 
 echo "========================================================================"
-echo "[PRECHECK] Validating JSONL contracts + max_pixels before launching GPUs"
+echo "[PRECHECK] Validating JSONL contracts + offline_max_pixels before launching GPUs"
 echo "========================================================================"
 echo "[PRECHECK] train_jsonl: ${TRAIN_JSONL_RESOLVED}"
 echo "[PRECHECK] val_jsonl: ${VAL_JSONL_RESOLVED}"
-echo "[PRECHECK] max_pixels: ${TEMPLATE_MAX_PIXELS} (expect 768*32*32=786432)"
+echo "[PRECHECK] offline_max_pixels: ${OFFLINE_MAX_PIXELS}"
 echo "[PRECHECK] multiple_of: 32"
 echo "========================================================================"
 
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${TRAIN_JSONL_RESOLVED}" \
-  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode exists \
   --enforce-rescale-images-real-dir \
@@ -178,7 +184,7 @@ echo "========================================================================"
 # Spot-check open+size alignment on train to catch any meta/image mismatch.
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${TRAIN_JSONL_RESOLVED}" \
-  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \
   --enforce-rescale-images-real-dir \
@@ -187,7 +193,7 @@ echo "========================================================================"
 # Validate val with full open+size checks (usually small enough).
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${VAL_JSONL_RESOLVED}" \
-  --max-pixels "${TEMPLATE_MAX_PIXELS}" \
+  --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \
   --enforce-rescale-images-real-dir \

@@ -77,6 +77,9 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
 - This intentionally upsamples low-resolution sources (including some native COCO-2017
   images) so evaluation/training can use the available visual budget instead of only
   treating `max_pixels` as a hard cap.
+- For stage-2 training configs, mirror this offline resize budget into
+  `custom.offline_max_pixels` so launcher prechecks and dataset runtime enforce the
+  same prepared-data contract without reusing the runtime `template.max_pixels` knob.
 
 ### 2. Tiny Subset (Smoke Tests)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import re
 import sys
 import threading
@@ -204,6 +205,22 @@ def test_shutdown_vllm_server_client_closes_resources():
     assert all(s.closed for s in client.sessions)
     assert trainer._vllm_server_client is None
     assert trainer._vllm_server_comm_inited is False
+
+
+def test_ensure_vllm_server_client_wraps_import_error(monkeypatch) -> None:
+    trainer = _make_rollout_server_trainer()
+    trainer._vllm_server_client = None
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "swift.trainers.rlhf_trainer.vllm_client":
+            raise ImportError("missing vllm client")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    with pytest.raises(RuntimeError, match=r"VLLMClient"):
+        trainer._ensure_vllm_server_client()
 
 
 def test_shutdown_vllm_colocate_engine_cleans_runtime(monkeypatch) -> None:
@@ -712,6 +729,23 @@ def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
 
     assert captured_payloads
     assert captured_payloads[0]["timeout"] is None
+
+
+def test_vllm_server_rollout_wraps_request_config_import_error(monkeypatch) -> None:
+    trainer = _make_rollout_server_trainer()
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "swift.llm" and "RequestConfig" in tuple(fromlist or ()):
+            raise ImportError("missing request config")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    with pytest.raises(RuntimeError, match=r"RequestConfig"):
+        trainer._rollout_many_vllm_server(
+            [{"messages": [{"role": "user", "content": "ping"}]}]
+        )
 
 
 def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
