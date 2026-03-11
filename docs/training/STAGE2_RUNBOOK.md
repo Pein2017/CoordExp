@@ -273,6 +273,10 @@ Minimum required edits:
   - `custom.offline_max_pixels`: offline dataset contract enforced by launcher prechecks and dataset runtime
 - For Stage-2 server-mode rollout configs, `rollout_matching.vllm.mm_processor_kwargs.do_resize: false` is required.
   - Treat this as a fail-fast invariant, not an optional tuning knob.
+- Golden rule:
+  - preprocessed images are the source of truth for both training and evaluation,
+  - do not let the runtime vision processor resize them,
+  - if a path cannot honor `do_resize=false`, that path is misconfigured.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Objective pipeline declaration (required, ordered):

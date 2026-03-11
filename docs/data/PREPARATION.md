@@ -80,6 +80,10 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
 - For stage-2 training configs, mirror this offline resize budget into
   `custom.offline_max_pixels` so launcher prechecks and dataset runtime enforce the
   same prepared-data contract without reusing the runtime `template.max_pixels` knob.
+- Golden rule:
+  - all training and evaluation must use these offline-prepared images,
+  - the model's vision processor must not resize them at runtime,
+  - if a runtime path would require resize to proceed, treat that as a contract failure rather than letting the processor silently change the image geometry.
 
 ### 2. Tiny Subset (Smoke Tests)
 

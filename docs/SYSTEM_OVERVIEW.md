@@ -51,6 +51,8 @@ CoordExp expects offline-prepared JSONL rather than ad-hoc runtime transforms.
 Important invariant:
 - images are resized offline,
 - geometry stays aligned with images,
+- all training and evaluation consume those offline-prepared images as-is,
+- runtime vision processors must not resize them,
 - training uses `do_resize=false`.
 
 ## 2. Dataset Build And Template Encoding
