@@ -124,8 +124,12 @@ Record these metrics in your benchmark note after the server returns them:
 
 Recommended note location:
 
-- `progress/benchmarks/`
-- or `progress/diagnostics/` if you are still iterating
+- measured official result:
+  - `progress/benchmarks/README.md`
+- iteration / failure analysis:
+  - `progress/diagnostics/README.md`
+
+Do not create a second workflow note in `progress/`; this runbook is the canonical supported path.
 
 ## 7. Local Val Anchor
 

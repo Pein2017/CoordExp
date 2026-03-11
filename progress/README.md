@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Human router for historical directions, diagnostics, audits, benchmarks, and exploratory notes.
 tags: [progress, history, research]
-updated: 2026-03-09
+updated: 2026-03-11
 ---
 
 # Progress Index
@@ -21,15 +21,20 @@ Historical motivation and empirical evidence belong here.
 - `progress/directions/`
   - long-form design history and superseded research directions
 - `progress/diagnostics/`
-  - failure analyses and behavior investigations
+  - failure analyses, threshold studies, and operator notes used to explain behavior
 - `progress/audits/`
   - structured review notes and decision audits
 - `progress/benchmarks/`
-  - measured results and comparison reports
+  - measured results, checkpoint comparisons, and evaluation sweeps
 - `progress/explorations/`
   - exploratory requests and infrastructure probes
 - `progress/pretrain/`
   - Stage-1 background and pretraining history
+
+Use the folder routers when the split is unclear:
+
+- [progress/diagnostics/README.md](diagnostics/README.md)
+- [progress/benchmarks/README.md](benchmarks/README.md)
 
 ## Human Read Order
 
