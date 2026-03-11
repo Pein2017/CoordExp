@@ -369,18 +369,53 @@ def test_best_effort_cleanup_vllm_sleep_mode_pools_clears_globals(monkeypatch) -
     assert gc_calls == [1]
 
 
-def test_vllm_server_timeouts_allow_null_or_non_positive_infer_timeout() -> None:
+def test_vllm_server_timeouts_default_to_finite_infer_timeout() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": None}
     timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
     assert timeout_s == pytest.approx(60.0)
-    assert infer_timeout_s is None
+    assert infer_timeout_s == pytest.approx(60.0)
 
-    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
+
+def test_vllm_server_timeouts_allow_infinite_only_with_explicit_opt_in() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    trainer._vllm_server_cfg = lambda: {
+        "timeout_s": 60.0,
+        "infer_timeout_s": None,
+        "allow_infinite_infer_timeout": True,
+    }
     timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
     assert timeout_s == pytest.approx(60.0)
     assert infer_timeout_s is None
+
+    trainer._vllm_server_cfg = lambda: {
+        "timeout_s": 60.0,
+        "infer_timeout_s": 0,
+        "allow_infinite_infer_timeout": True,
+    }
+    timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
+    assert timeout_s == pytest.approx(60.0)
+    assert infer_timeout_s is None
+
+
+def test_vllm_server_timeouts_reject_non_positive_without_explicit_opt_in() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
+    with pytest.raises(
+        ValueError,
+        match=r"infer_timeout_s must be > 0 unless .*allow_infinite_infer_timeout=true",
+    ):
+        trainer._vllm_server_timeouts()
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": -1}
+    with pytest.raises(
+        ValueError,
+        match=r"infer_timeout_s must be > 0 unless .*allow_infinite_infer_timeout=true",
+    ):
+        trainer._vllm_server_timeouts()
 
 
 def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(

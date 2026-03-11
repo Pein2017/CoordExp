@@ -3257,13 +3257,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.vllm.server.timeout_s must be > 0"
             )
 
+        allow_infinite_infer_timeout = bool(
+            scfg.get("allow_infinite_infer_timeout", False)
+        )
+
         # Infer (read) timeout for /infer/ requests:
-        # - null/unset: no timeout (allows long rollouts without client-side aborts)
-        # - <= 0: also treated as disabled
+        # - null/unset: defaults to the finite connection timeout
+        # - <= 0: rejected unless explicit infinite timeout opt-in is enabled
         # - > 0: enforced as (connect, read) timeout tuple downstream
         infer_timeout_raw = scfg.get("infer_timeout_s", None)
         if infer_timeout_raw is None:
-            infer_timeout_s: Optional[float] = None
+            infer_timeout_s: Optional[float]
+            if allow_infinite_infer_timeout:
+                infer_timeout_s = None
+            else:
+                infer_timeout_s = float(timeout_s)
         else:
             try:
                 infer_timeout_s = float(infer_timeout_raw)
@@ -3272,7 +3280,24 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     "rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
                 ) from exc
             if infer_timeout_s <= 0:
-                infer_timeout_s = None
+                if allow_infinite_infer_timeout:
+                    infer_timeout_s = None
+                else:
+                    raise ValueError(
+                        "rollout_matching.vllm.server.infer_timeout_s must be > 0 unless "
+                        "rollout_matching.vllm.server.allow_infinite_infer_timeout=true"
+                    )
+
+        if infer_timeout_s is None and allow_infinite_infer_timeout:
+            warned = bool(
+                getattr(self, "_vllm_server_infinite_timeout_warned", False)
+            )
+            if not warned:
+                logger.warning(
+                    "vLLM server infer timeout is unbounded because "
+                    "rollout_matching.vllm.server.allow_infinite_infer_timeout=true"
+                )
+                setattr(self, "_vllm_server_infinite_timeout_warned", True)
 
         return float(timeout_s), (
             float(infer_timeout_s) if infer_timeout_s is not None else None

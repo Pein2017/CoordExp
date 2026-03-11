@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+from pathlib import Path
 
 import pytest
 
@@ -135,7 +136,10 @@ def _patch_loader_runtime(monkeypatch: pytest.MonkeyPatch, *, world_size: int) -
         ({"mode": "step"}, r"stage2_ab\.channel_b\.mode has been removed"),
         ({"async": {"enabled": True}}, r"stage2_ab\.channel_b\.async has been removed"),
         ({"rollouts_per_step": 16}, r"rollouts_per_step has been removed"),
-        ({"enable_pipeline": True}, r"enable_pipeline has been removed"),
+        (
+            {"enable_pipeline": True},
+            r"enable_pipeline has been removed.*runtime-managed.*under DDP it may be disabled",
+        ),
         ({"rollout_decode_batch_size": 4}, r"rollout_decode_batch_size has been removed"),
         ({"reordered_gt_sft": False}, r"reordered_gt_sft has been removed"),
         ({"desc_ce_weight_matched": 0.0}, r"desc_ce_weight_matched has been removed"),
@@ -847,3 +851,44 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
 
     assert [m["name"] for m in manifest["objective"]] == ["token_ce", "duplicate_ul"]
     assert manifest["diagnostics"] == []
+
+
+def test_stage2_profile_kind_detects_live_two_channel_tree() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    assert (
+        ConfigLoader._canonical_stage2_profile_kind(
+            str(repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml")
+        )
+        == "prod"
+    )
+    assert (
+        ConfigLoader._canonical_stage2_profile_kind(
+            str(repo_root / "configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml")
+        )
+        == "smoke"
+    )
+
+
+def test_stage2_leaf_contract_accepts_live_prod_profile() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    ConfigLoader._validate_stage2_leaf_contract(
+        str(repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml")
+    )
+
+
+def test_stage2_leaf_contract_rejects_live_tree_profile_without_extends() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    bad_path = (
+        repo_root
+        / "configs"
+        / "stage2_two_channel"
+        / "smoke"
+        / "temp_invalid_stage2_profile_for_test.yaml"
+    )
+    bad_path.write_text("training:\n  run_name: temp_invalid\n", encoding="utf-8")
+    try:
+        with pytest.raises(ValueError, match=r"must declare extends/inherit"):
+            ConfigLoader._validate_stage2_leaf_contract(str(bad_path))
+    finally:
+        bad_path.unlink(missing_ok=True)

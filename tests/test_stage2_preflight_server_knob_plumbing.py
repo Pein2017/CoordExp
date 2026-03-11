@@ -12,5 +12,7 @@ def test_stage2_preflight_extracts_server_runtime_knobs_from_yaml() -> None:
     preflight = resolve_stage2_launcher_preflight(str(config_path))
 
     assert preflight.get("server_torch_dtype") == "bfloat16"
-    assert preflight.get("vllm_gpu_memory_utilization") == 0.85
-
+    assert preflight.get("vllm_gpu_memory_utilization") == 0.8
+    assert preflight.get("vllm_engine_kwargs") == {
+        "mm_processor_kwargs": {"do_resize": False}
+    }

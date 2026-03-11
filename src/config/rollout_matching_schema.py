@@ -197,6 +197,7 @@ class VllmServerEntryConfig:
 class VllmServerConfig:
     timeout_s: float = 240.0
     infer_timeout_s: Optional[float] = None
+    allow_infinite_infer_timeout: bool = False
     servers: list[VllmServerEntryConfig] = field(default_factory=list)
     debug_dump: VllmServerDebugDumpConfig = field(default_factory=VllmServerDebugDumpConfig)
 

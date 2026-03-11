@@ -1007,7 +1007,8 @@ class Stage2ABChannelBConfig:
         if "enable_pipeline" in data:
             raise ValueError(
                 "stage2_ab.channel_b.enable_pipeline has been removed. "
-                "Pipeline overlap is automatic under vLLM server mode."
+                "Pipeline overlap is runtime-managed under vLLM server mode; "
+                "under DDP it may be disabled for safety."
             )
         if "rollout_decode_batch_size" in data:
             raise ValueError(

@@ -107,17 +107,18 @@ Key semantics:
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
 Rollout decode batching:
-- Canonical knob:
-  - `rollout_matching.decode_batch_size`: per-rollout-GPU cap for one `generation()` / `/infer/` call.
+- Canonical knobs:
+  - `rollout_matching.channel_b_decode_batch_size`: per-rollout-GPU cap for Channel-B train-time generation.
+  - `rollout_matching.eval_decode_batch_size`: per-rollout-GPU cap for eval-step generation.
 - HF + vLLM colocate:
-  - Each learner rank chunks its local requests to `decode_batch_size`.
+  - Each learner rank chunks its local requests to the active context knob (`channel_b_decode_batch_size` for train, `eval_decode_batch_size` for eval).
 - vLLM server mode:
   - The learner queries each rollout server DP `world_size` via `/get_world_size/` and derives a per-rank request chunk size so the
     per-GPU cap holds when all learner ranks generate concurrently.
-  - Pipeline overlap (produce segments while consuming packs) is enabled automatically in server mode.
+  - Pipeline overlap (produce segments while consuming packs) is enabled in server mode only for single-process learners; under DDP it is disabled intentionally to prevent cross-rank sync deadlocks.
 
 Worked example (default launcher):
-- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `decode_batch_size=4`:
+- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `channel_b_decode_batch_size=4`:
   - per-rank chunk size = `floor(4 * 6 / 2) = 12` requests per call.
   - Across 2 ranks: 24 requests per synchronized round; average 4 per rollout GPU.
 
@@ -177,6 +178,10 @@ Worked example (default launcher):
 - Optional Channel-B runtime timeouts:
   - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). Must be `> 0` under DDP; `120` is the default/recommended fail-fast setting for faster error exposure.
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
+- vLLM server request timeouts:
+  - `rollout_matching.vllm.server.timeout_s` stays the finite connection/control-plane timeout.
+  - `rollout_matching.vllm.server.infer_timeout_s` now defaults to that same finite timeout when unset.
+  - Infinite `/infer/` waits require explicit opt-in via `rollout_matching.vllm.server.allow_infinite_infer_timeout: true`.
 
 ---
 
@@ -463,7 +468,8 @@ custom:
 
 rollout_matching:
   rollout_backend: vllm
-  decode_batch_size: 4
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   pipeline:
     objective:
       - name: token_ce
@@ -849,7 +855,7 @@ Checks:
 
 Mitigations (smoke runs):
 - Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
-- Reduce rollout decode batching by setting `rollout_matching.decode_batch_size: 1`.
+- Reduce rollout decode batching by setting `rollout_matching.channel_b_decode_batch_size: 1` and, if eval is involved, `rollout_matching.eval_decode_batch_size: 1`.
 - Lower `rollout_matching.vllm.gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)

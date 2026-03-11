@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,31 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
     assert "8000" in cmd
     assert "--max_pixels" in cmd
     assert "786432" in cmd
+
+
+def test_build_swift_rollout_cmd_serializes_vllm_engine_kwargs(tmp_path: Path) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    cmd = launcher.build_swift_rollout_cmd(
+        server_model=model_dir,
+        base_url=launcher.parse_base_url("http://127.0.0.1:8000"),
+        server_torch_dtype="bfloat16",
+        vllm_dp=1,
+        vllm_tp=1,
+        vllm_enforce_eager=True,
+        vllm_gpu_memory_utilization=0.8,
+        vllm_max_model_len=4096,
+        vllm_enable_lora=False,
+        template="qwen3_vl",
+        template_max_pixels=786432,
+        template_max_length=2048,
+        truncation_strategy="delete",
+        vllm_engine_kwargs={"mm_processor_kwargs": {"do_resize": False}},
+    )
+
+    idx = cmd.index("--vllm_engine_kwargs")
+    assert json.loads(cmd[idx + 1]) == {"mm_processor_kwargs": {"do_resize": False}}
 
 
 def test_build_torchrun_cmd_uses_src_sft(tmp_path: Path) -> None:

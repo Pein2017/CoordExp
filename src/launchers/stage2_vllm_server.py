@@ -224,6 +224,7 @@ def build_swift_rollout_cmd(
     template_max_pixels: int,
     template_max_length: int | None,
     truncation_strategy: str | None,
+    vllm_engine_kwargs: Mapping[str, Any] | None = None,
 ) -> list[str]:
     cmd = [
         "swift",
@@ -260,6 +261,13 @@ def build_swift_rollout_cmd(
         cmd.extend(["--truncation_strategy", truncation_strategy])
 
     cmd.extend(["--max_pixels", str(int(template_max_pixels))])
+    if vllm_engine_kwargs:
+        cmd.extend(
+            [
+                "--vllm_engine_kwargs",
+                json.dumps(dict(vllm_engine_kwargs), sort_keys=True, separators=(",", ":")),
+            ]
+        )
     return cmd
 
 
@@ -573,6 +581,10 @@ def main() -> int:
 
         vllm_max_model_len = int(preflight.get("vllm_max_model_len"))
         vllm_enable_lora = bool(preflight.get("vllm_enable_lora"))
+        vllm_engine_kwargs_raw = preflight.get("vllm_engine_kwargs") or {}
+        if not isinstance(vllm_engine_kwargs_raw, Mapping):
+            raise TypeError("Preflight returned non-mapping vllm_engine_kwargs")
+        vllm_engine_kwargs = dict(vllm_engine_kwargs_raw)
 
         gpu_mem_raw = preflight.get("vllm_gpu_memory_utilization")
         vllm_gpu_memory_utilization = 0.75
@@ -646,6 +658,7 @@ def main() -> int:
             template_max_pixels=template_max_pixels,
             template_max_length=template_max_length,
             truncation_strategy=truncation_strategy,
+            vllm_engine_kwargs=vllm_engine_kwargs,
         )
 
         train_world_size = len(train_gpus)
@@ -731,6 +744,11 @@ def main() -> int:
         _info(
             f"[INFO] enable_lora: {vllm_enable_lora} (full-sync-only; adapter sync unsupported)"
         )
+        if vllm_engine_kwargs:
+            _info(
+                "[INFO] vllm_engine_kwargs: %s"
+                % json.dumps(vllm_engine_kwargs, sort_keys=True)
+            )
         _info(
             "[INFO] nccl_monitor:%s heartbeat_s:%s dump_on_timeout:%s"
             % (
