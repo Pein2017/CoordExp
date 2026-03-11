@@ -231,7 +231,7 @@ def test_wait_for_server_health_bounds_probe_timeout_by_remaining_budget(
     assert max(probe_timeouts) < 5.0
 
 
-def test_main_uses_server_dp_for_readiness_and_checks_group_port(
+def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -311,8 +311,8 @@ def test_main_uses_server_dp_for_readiness_and_checks_group_port(
     monkeypatch.setattr(
         launcher,
         "_wait_for_port_connectable",
-        lambda host, port, **_kwargs: captured.update(
-            {"group_port_host": host, "group_port": int(port)}
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("group_port must not be prechecked before learner startup")
         ),
     )
     monkeypatch.setattr(
@@ -334,5 +334,3 @@ def test_main_uses_server_dp_for_readiness_and_checks_group_port(
 
     assert rc == 0
     assert captured["expected_world_size"] == 2
-    assert captured["group_port_host"] == "127.0.0.1"
-    assert captured["group_port"] == 51216

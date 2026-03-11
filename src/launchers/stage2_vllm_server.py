@@ -853,20 +853,13 @@ def main() -> int:
                 expected_world_size=server_dp,
             )
 
-            _wait_for_port_connectable(
-                base_url.host,
-                int(group_port),
-                wait_timeout_s=min(float(wait_timeout_s), 30.0),
-                wait_interval_s=float(wait_interval_s),
-                proc=server_proc,
-            )
-
             _info(
                 "vLLM server is ready. "
                 f"data_parallel_world_size={int(server_dp)} "
                 f"tensor_parallel_size={int(server_tp)} "
                 f"total_server_gpus={int(len(server_gpus))} "
-                f"group_port={int(group_port)}"
+                f"group_port={int(group_port)} "
+                "(communicator initializes after learner startup)"
             )
 
             _info(

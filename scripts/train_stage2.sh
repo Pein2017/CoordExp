@@ -23,7 +23,7 @@ fi
 # Defaults (override via env vars)
 export SERVER_GPUS="${server_gpus:-${SERVER_GPUS:-0,1,2,3,4,5}}"
 export TRAIN_GPUS="${train_gpus:-${TRAIN_GPUS:-6,7}}"
-export WAIT_TIMEOUT="${wait_timeout:-${:-900}}"
+export WAIT_TIMEOUT="${wait_timeout:-${WAIT_TIMEOUT:-900}}"
 export WAIT_INTERVAL="${wait_interval:-${WAIT_INTERVAL:-2}}"
 export CONFIG="${config:-${CONFIG:-configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml}}"
 
