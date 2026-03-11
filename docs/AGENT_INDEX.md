@@ -74,7 +74,7 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2|rollout|duplicate_ul|clean-prefix" docs progress openspec configs
+rg -n "stage2|rollout|loss_dead_anchor_suppression|clean-prefix" docs progress openspec configs
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets
 rg -n "eval|infer|confidence|metrics" docs/eval docs/training scripts src
 ```

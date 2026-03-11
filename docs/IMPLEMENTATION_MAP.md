@@ -81,7 +81,7 @@ Open these configs first:
 - `configs/stage2_two_channel/smoke/`
 
 Key v3 config handles:
-- `stage2_ab.channel_b.v3_k2.*`
+- `stage2_ab.channel_b.triage_posterior.*`
 - `rollout_matching.decoding.*`
 
 Open these code files first:
@@ -92,7 +92,7 @@ Open these code files first:
 - `src/trainers/teacher_forcing/module_registry.py`
 - `src/trainers/teacher_forcing/objective_atoms.py`
 - `src/trainers/teacher_forcing/modules/token_ce.py`
-- `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+- `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 - `src/trainers/teacher_forcing/modules/bbox_geo.py`
 - `src/trainers/teacher_forcing/modules/coord_reg.py`
 

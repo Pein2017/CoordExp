@@ -66,7 +66,7 @@ Normative behavior:
 - `coord_diag/<metric>` is reserved for Stage-1-style bare coord diagnostics.
 - `coord_diag/<provenance>/<metric>` is reserved for provenance-split Stage-2 coord diagnostics.
 - `gradmon/<metric>` and `gradmon/<group>/<term>` are reserved for optional loss-gradient diagnostics.
-- `rollout/*` and `eval_rollout/*` remain distinct training-vs-eval families.
+- `rollout/*` and `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*` remain distinct training-vs-eval families.
 - Internal reducer-helper keys MUST remain underscore-prefixed and MUST NOT appear in the final logged payload.
 
 #### Scenario: Key shape disambiguates objective atoms vs diagnostics
@@ -127,7 +127,7 @@ Normative behavior:
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
   - Channel-B (rollout context):
-    - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}` (rollout-context forward; token/UL objective atoms)
+    - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (rollout-context forward; geometry objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - Raw/duplicate loss keys MUST NOT be emitted by default (non-exhaustive):
@@ -140,9 +140,9 @@ Normative behavior:
 - **THEN** emitted keys include only canonical `loss/<provenance>/<atom>` keys for registry-defined objective modules
 - **AND** raw component loss keys and legacy aliases are absent.
 
-#### Scenario: Channel-B emits duplicate_ul as a canonical objective atom
+#### Scenario: Channel-B emits loss_dead_anchor_suppression as a canonical objective atom
 - **WHEN** a Channel-B training step applies duplicate unlikelihood
-- **THEN** the emitted objective key is `loss/B_rollout_text/duplicate_ul`
+- **THEN** the emitted objective key is `train/optimization/loss_dead_anchor_suppression`
 - **AND** no raw alias key for duplicate-unlikelihood is emitted.
 
 ### Requirement: Channel-B duplicate-collapse metrics are explicit and aggregation-safe

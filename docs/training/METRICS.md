@@ -48,9 +48,9 @@ Read metric keys left-to-right:
   - Aggregate keys such as `gradmon/neg_cosine_pair_frac` and
     `gradmon/grad_norm_ratio_max_over_median` summarize gradient domination/conflict.
 
-- `rollout/<metric>` and `eval_rollout/<metric>`
+- Training-time `rollout/<metric>` and eval families `eval/detection/*`, `eval/parsing/*`, `eval/description/*`, `eval/config/*`, `eval/runtime/*`
   - Training-time rollout telemetry uses `rollout/*`.
-  - Eval-step rollout telemetry uses `eval_rollout/*`.
+  - Eval-step rollout telemetry uses `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*`.
 
 - `packing/<metric>`, `time/<metric>`, `train/<metric>`, `accum/<metric>`
   - Operational telemetry families for packing, timing, sample accounting, and grad-accum/runtime state.
@@ -92,7 +92,7 @@ Key replacements (non-exhaustive):
       - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
       - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
     - Channel-B:
-      - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}`
+      - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
       - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
       - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 - Old provenance prefix: `obj/<provenance>/<atom>` (removed) -> `loss/<provenance>/<atom>`
@@ -129,7 +129,7 @@ ST bridge diagnostics surface:
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
   - Channel-B:
-    - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}`
+    - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 
@@ -250,8 +250,8 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-B path):
   - FN-injected: structure+desc CE ON, coord CE OFF, with recovered GTs receiving higher per-object desc+geo+coord weight,
   - geometry loss on matched clean prefix objects + FN, shielded anchor objects OFF.
 - Duplicate handling:
-  - `loss/B_rollout_text/duplicate_ul` is the explicit Channel-B dead-anchor suppression atom,
-  - `duplicate_ul.config` is `{}` in v1 and the module `weight` is the only scaling surface,
+  - `train/optimization/loss_dead_anchor_suppression` is the explicit Channel-B dead-anchor suppression atom,
+  - `loss_dead_anchor_suppression.config` is `{}` in v1 and the module `weight` is the only scaling surface,
   - dead anchor continuations are removed from the positive clean prefix and folded into boundary-local UL targets,
   - same-boundary dead continuations that share the same divergence token collapse to one UL term.
 - Legacy `reordered_gt_sft` and `rollout_drop_invalid_struct_ce_multiplier` have been removed.
@@ -263,7 +263,7 @@ under `rollout/*`, `packing/*`, and `time/*` to help diagnose failures and
 performance during training.
 
 For evaluation, Stage_2 uses a production-style evaluator (rollout -> parse ->
-Hungarian match) and reports metrics under `eval_rollout/*` keys. This evaluator
+Hungarian match) and reports metrics under `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*` keys. This evaluator
 intentionally skips teacher-forced encoding/loss computation, so `eval_loss` is
 not reported for this trainer variant.
 
@@ -274,7 +274,7 @@ Important semantics:
   - Counter-like keys reduce by global sum.
   - Mean-like `loss/*` / rollout gauges use the trainer's existing weighted-mean policy.
   - `time/*` tags follow the reducer family used by the active trainer (for example max-style reduction where the reducer already does that).
-- **All-reduced (eval):** `eval_rollout/*` keys are aggregated over the full
+- **All-reduced (eval):** `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*` keys are aggregated over the full
   evaluation dataset and summed across ranks.
 
 ### Rollout timing / throughput
@@ -463,27 +463,27 @@ These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Ch
 
 ### Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B triage diagnostics
 
-- `stage2_ab/channel_b/triage/N_anchor_gt_backed`
+- `train/triage/gt_backed_count`
   - **What:** total number of anchor clean objects kept as GT-backed positives.
 
-- `stage2_ab/channel_b/triage/N_shielded_anchor`
+- `train/triage/unlabeled_consistent_count`
   - **What:** total number of anchor clean objects retained as neutral shielded context.
 
-- `stage2_ab/channel_b/triage/N_dead_anchor`
+- `train/triage/dead_anchor_count`
   - **What:** total number of anchor clean objects removed from the positive prefix and sourced into dead-anchor suppression.
 
-- `stage2_ab/channel_b/triage/N_dead_explorer`
+- `train/triage/explorer_only_dead_count`
   - **What:** total number of explorer-side non-GT-backed objects that remained unretained after triage.
 
-- `stage2_ab/channel_b/triage/N_recovered_gt`
+- `train/triage/recovered_ground_truth_count`
   - **What:** total number of GT objects missed by anchor but recovered by the explorer rollout.
 
-- `stage2_ab/channel_b/triage/recovered_gt_num`
-- `stage2_ab/channel_b/triage/recovered_gt_den`
+- `train/triage/recovered_ground_truth_rate_num`
+- `train/triage/recovered_ground_truth_rate_den`
   - **What:** additive numerator/denominator pair for recovered-GT rate calculations.
 
-- `stage2_ab/channel_b/triage/dead_anchor_num`
-- `stage2_ab/channel_b/triage/dead_anchor_den`
+- `train/triage/dead_anchor_rate_num`
+- `train/triage/dead_anchor_rate_den`
   - **What:** additive numerator/denominator pair for dead-anchor rate calculations.
 
 ### Stage-2 Two-Channel Rollout Tags (Channel-B Steps Only)
@@ -535,28 +535,28 @@ When `custom.trainer_variant: stage2_rollout_aligned` runs evaluation (`training
 it reports production-style metrics derived from rollout -> parse -> Hungarian matching.
 
 Returned keys (prefixed with `eval_`):
-- `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
-- `eval_rollout/pred_objects`, `eval_rollout/gt_objects_total`, `eval_rollout/matched`
-- `eval_rollout/fp_total`, `eval_rollout/fn_total` (aliases: `eval_rollout/fp`, `eval_rollout/fn`)
-- `eval_rollout/parse_truncated_rate`
-- `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
-- `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
-- `eval_rollout/matched_maskiou_mean`
-- `eval_rollout/mAP` (when `rollout_matching.eval_detection.enabled: true`)
-- `eval_rollout/coco_eval_ok` (1.0 on success, 0.0 on best-effort failure fallback)
-- `eval_rollout/coco_counter_*` (compact COCO failure counters, when detection eval runs)
-- `eval_rollout/prompt_variant_is_coco_80` (1.0 iff `rollout_matching.eval_prompt_variant: coco_80`)
+- `eval/detection/precision`, `eval/detection/recall`, `eval/detection/f1`
+- `eval/detection/pred_objects`, `eval/detection/gt_objects_total`, `eval/detection/matched`
+- `eval/detection/fp_total`, `eval/detection/fn_total` (aliases: `eval/detection/fp`, `eval/detection/fn`)
+- `eval/parsing/parse_truncated_rate`
+- `eval/parsing/parse_dropped_invalid`, `eval/parsing/parse_dropped_ambiguous`
+- `eval/parsing/sample_valid_pred_rate`, `eval/detection/sample_any_match_rate`
+- `eval/detection/matched_maskiou_mean`
+- `eval/detection/mAP` (when `rollout_matching.eval_detection.enabled: true`)
+- `eval/runtime/coco_eval_ok` (1.0 on success, 0.0 on best-effort failure fallback)
+- `eval/runtime/coco_counter_*` (compact COCO failure counters, when detection eval runs)
+- `eval/config/prompt_variant_is_coco_80` (1.0 iff `rollout_matching.eval_prompt_variant: coco_80`)
 
 COCO summary policy (eval-step):
-- COCO eval logs `eval_rollout/mAP` plus a small set of `eval_rollout/coco_counter_*` counters.
-- Per-class summaries and `eval_rollout/bbox_*` / `eval_rollout/segm_*` aggregates are intentionally suppressed during eval-step.
+- COCO eval logs `eval/detection/mAP` plus a small set of `eval/runtime/coco_counter_*` counters.
+- Per-class summaries and `eval/detection/bbox_*` / `eval/detection/segm_*` aggregates are intentionally suppressed during eval-step.
 
 Optional desc monitor keys (when enabled):
-- `eval_rollout/desc_pairs_total`
-- `eval_rollout/desc_exact_acc_on_matched`
-- `eval_rollout/desc_sem_enabled`
-- `eval_rollout/desc_sem_acc_on_matched`
-- `eval_rollout/desc_sem_sim_mean`, `eval_rollout/desc_sem_sim_count`
+- `eval/description/desc_pairs_total`
+- `eval/description/desc_exact_acc_on_matched`
+- `eval/description/desc_sem_enabled`
+- `eval/description/desc_sem_acc_on_matched`
+- `eval/description/desc_sem_sim_mean`, `eval/description/desc_sem_sim_count`
 
 Config tip:
 - For Stage_2 runs, prefer `training.metric_for_best_model: rollout/f1` (and
@@ -572,53 +572,10 @@ Coord-offset adapter note (tie-head):
 - Set `custom.coord_offset.tie_head: false` only for ablations that intentionally train embedding vs head
   offsets separately (export/merge then may need to materialize `lm_head.weight` and disable tying).
 
-When `custom.coord_soft_ce_w1.enabled: true`:
-
-1) Base LM loss (full vocab CE)
-- **What:** model-native cross-entropy over the full vocabulary.
-- **Where applied:** only on **non-coord** targets (coord targets are masked to `-100`).
-- **Normalization:** mean over the number of supervised non-coord tokens (packing-safe).
-- **In loss:** YES (train and eval_loss).
-
-Diagnostics (logged as metrics, prefixed with `eval_` during evaluation):
-- `base_ce/loss`
-  - **What:** the base CE term after masking coord targets (i.e. non-coord CE only).
-  - **In loss:** YES (this is the base term of the objective).
-- `base_ce/noncoord_tokens`
-  - **What:** supervised non-coord token count used by the base CE term (sanity-check denominator).
-  - **In loss:** NO (diagnostic only).
-- `base_ce/noncoord_tokens_per_sample`
-  - **What:** `base_ce/noncoord_tokens / pack/num_samples` (packed runs only; batch-wide aggregate).
-  - **In loss:** NO (diagnostic only; helps interpret scale per original sample).
-- `base_ce/loss_per_sample`
-  - **What:** approximate base-CE contribution per original sample:
-    `base_ce/loss * base_ce/noncoord_tokens / pack/num_samples`.
-  - **In loss:** NO (diagnostic only).
-
-2) Coord-token loss (coord-gated distribution losses)
-- **What:** extra supervision computed from the same forward logits at GT coord positions.
-- **Where applied:** only at positions whose GT label is a coord token (1000-bin ordered vocab).
-- **Normalization:** mean over the number of GT coord-token positions (packing-safe).
-- **In loss:** YES (added to the base loss).
-
-### Coord-token loss breakdown (`coord_diag/*`)
-
-The coord loss is:
-
-`coord_diag/loss = soft_ce_weight * softCE + w1_weight * W1 + ce_weight * CE + gate_weight * gate`
-
-Compatibility note:
-- The same breakdown is also logged under `coord_softce_w1/*` keys (legacy alias):
-  - `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/ce`, `coord_softce_w1/gate`
-
-- `coord_diag/enabled`
-  - **What:** whether coord-gated softCE+W1(+gate) is active (`1.0`) or this is a pure-CE ablation (`0.0`).
-  - **In loss:** NO (this is a tag for grouping/comparability across ablations).
-
-- `coord_diag/loss`
-  - **What:** coord loss term (already includes weights). When `coord_diag/enabled=1`, this is the
-    coord term *added* to the training loss. When `coord_diag/enabled=0`, this is diagnostic-only.
-  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` (otherwise diagnostic-only).
+Legacy coord-loss note:
+- `custom.coord_soft_ce_w1.*` is not part of the live public contract.
+- Canonical coord supervision now flows through the pipeline modules, primarily `coord_reg`, with diagnostics such as `coord_diag`.
+- Do not expect legacy `coord_softce_w1/*` aliases or implicit aux-loss defaults on the latest Stage-2 and rollout-aligned surfaces.
 
 - `coord_diag/soft_ce`
   - **What:** soft cross-entropy between the predicted coord distribution and a Gaussian

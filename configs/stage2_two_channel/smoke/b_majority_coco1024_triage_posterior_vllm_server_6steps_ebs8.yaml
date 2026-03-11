@@ -4,9 +4,9 @@ model:
   model: /data/CoordExp/output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged
 
 training:
-  run_name: smoke_b_majority_coco1024_v3_k2_vllm_server_6steps_ebs8
-  output_dir: output/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6steps_ebs8
-  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6steps_ebs8
+  run_name: smoke_b_majority_coco1024_triage_posterior_vllm_server_6steps_ebs8
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/triage_posterior_vllm_server_6steps_ebs8
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/triage_posterior_vllm_server_6steps_ebs8
   effective_batch_size: 8
   max_steps: 6
   do_eval: false

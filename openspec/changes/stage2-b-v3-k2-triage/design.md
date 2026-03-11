@@ -82,7 +82,7 @@ So the first implementation may represent “clusters” as pair-or-singleton tr
 The association itself must still be normative:
 
 - compute candidate anchor/explorer pairs by IoU,
-- keep only pairs with `IoU >= consistent_iou_threshold`,
+- keep only pairs with `IoU >= unlabeled_consistent_iou_threshold`,
 - choose a **one-to-one bipartite max-IoU matching**,
 - if multiple assignments achieve the same maximum total IoU, choose the one whose sorted pair list `[(anchor_index, explorer_index), ...]` is lexicographically smallest.
 
@@ -202,12 +202,12 @@ Reason for rejection:
 - harder to audit,
 - and not necessary to test the main scientific question first.
 
-### 8) `duplicate_ul` stays the module slot, but its semantic source broadens
+### 8) `loss_dead_anchor_suppression` stays the module slot, but its semantic source broadens
 
 To minimize churn in the objective pipeline:
 
-- keep `duplicate_ul` as the canonical B-only module name,
-- keep `loss/B_rollout_text/duplicate_ul` as the logging key,
+- keep `loss_dead_anchor_suppression` as the canonical B-only module name,
+- keep `train/optimization/loss_dead_anchor_suppression` as the logging key,
 - keep first-divergence suppression as the token-level mechanism.
 
 What changes is the **source of the targets**:
@@ -221,11 +221,11 @@ This lets the trainer reuse existing objective-pipeline plumbing while still cha
 
 To keep the change explicit and auditable, add a grouped typed config block under `stage2_ab.channel_b`:
 
-- `stage2_ab.channel_b.v3_k2.explorer_temperature`
-- `stage2_ab.channel_b.v3_k2.explorer_top_p`
-- `stage2_ab.channel_b.v3_k2.explorer_top_k`
-- `stage2_ab.channel_b.v3_k2.consistent_iou_threshold`
-- `stage2_ab.channel_b.v3_k2.recovered_fn_weight`
+- `stage2_ab.channel_b.triage_posterior.explorer_temperature`
+- `stage2_ab.channel_b.triage_posterior.explorer_top_p`
+- `stage2_ab.channel_b.triage_posterior.explorer_top_k`
+- `stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold`
+- `stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier`
 
 Existing Channel-B knobs stay where they already live:
 
@@ -255,15 +255,15 @@ Legacy duplicate metrics remain valuable, but v3 needs explicit triage accountin
 
 Add count-like metrics:
 
-- `stage2_ab/channel_b/triage/N_anchor_gt_backed`
-- `stage2_ab/channel_b/triage/N_shielded_anchor`
-- `stage2_ab/channel_b/triage/N_dead_anchor`
-- `stage2_ab/channel_b/triage/N_dead_explorer`
-- `stage2_ab/channel_b/triage/N_recovered_gt`
-- `stage2_ab/channel_b/triage/recovered_gt_num`
-- `stage2_ab/channel_b/triage/recovered_gt_den`
-- `stage2_ab/channel_b/triage/dead_anchor_num`
-- `stage2_ab/channel_b/triage/dead_anchor_den`
+- `train/triage/gt_backed_count`
+- `train/triage/unlabeled_consistent_count`
+- `train/triage/dead_anchor_count`
+- `train/triage/explorer_only_dead_count`
+- `train/triage/recovered_ground_truth_count`
+- `train/triage/recovered_ground_truth_rate_num`
+- `train/triage/recovered_ground_truth_rate_den`
+- `train/triage/dead_anchor_rate_num`
+- `train/triage/dead_anchor_rate_den`
 
 Keep existing duplicate counters/gauges as supporting diagnostics rather than removing them.
 
@@ -297,7 +297,7 @@ For each raw training sample on a Channel-B step:
 12. `fn_objects`
 13. `fn_objects_recovered`
 14. `y_v3_target`
-15. `duplicate_ul_targets` (now semantically dead-anchor continuation targets)
+15. `dead_anchor_suppression_targets` (now semantically dead-anchor continuation targets)
 
 ### Triage outcome rules
 
@@ -307,7 +307,7 @@ For each pair-or-singleton triage record:
   - `anchor_gt_backed`
 - else if the anchor side misses and the **explorer** side matches:
   - `recovered_fn`
-- else if both sides exist, neither is GT-backed, geometry agreement exceeds `consistent_iou_threshold`, and the pair does not conflict with an already-kept anchor GT-backed object:
+- else if both sides exist, neither is GT-backed, geometry agreement exceeds `unlabeled_consistent_iou_threshold`, and the pair does not conflict with an already-kept anchor GT-backed object:
   - `shielded_anchor`
 - else if the anchor side exists:
   - `dead_anchor`
@@ -330,9 +330,9 @@ Then convert triage into the final target:
   - Mitigation: keep the shield rule high precision and apply suppression only anchor-side.
 - **Weighted-loss plumbing risk:** recovered-FN desc+geo+coord weighting now requires new per-object metadata to flow through `token_ce`, `bbox_geo`, and `coord_reg`.
   - Mitigation: make the metadata contract explicit and add unit tests at each module seam.
-- **Semantic drift risk:** broadening `duplicate_ul` semantics without renaming could confuse operators.
+- **Semantic drift risk:** broadening `loss_dead_anchor_suppression` semantics without renaming could confuse operators.
   - Mitigation: update docs/specs/metrics wording explicitly and keep the behavior change visible in monitor dumps.
 - **Config drift risk:** v3-specific knobs could sprawl across `rollout_matching` and `stage2_ab`.
-  - Mitigation: keep v3-specific knobs grouped under `stage2_ab.channel_b.v3_k2`.
+  - Mitigation: keep v3-specific knobs grouped under `stage2_ab.channel_b.triage_posterior`.
 - **Implementation-surface risk:** target construction, masks, metrics, and monitor dumps all change together.
   - Mitigation: land the work in small slices with explicit tests around target editing, weighting, and UL target provenance.

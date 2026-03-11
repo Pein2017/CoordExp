@@ -16,11 +16,11 @@
 ## 2. Typed Config and Rollout Contract
 
 - [x] 2.1 Extend `src/config/schema.py` so `stage2_ab.channel_b` accepts the grouped v3 block:
-  - `v3_k2.explorer_temperature`
-  - `v3_k2.explorer_top_p`
-  - `v3_k2.explorer_top_k`
-  - `v3_k2.consistent_iou_threshold`
-  - `v3_k2.recovered_fn_weight`
+  - `triage_posterior.explorer_temperature`
+  - `triage_posterior.explorer_top_p`
+  - `triage_posterior.explorer_top_k`
+  - `triage_posterior.unlabeled_consistent_iou_threshold`
+  - `triage_posterior.recovered_ground_truth_weight_multiplier`
 - [x] 2.2 Keep existing `stage2_ab.channel_b` knobs intact:
   - `duplicate_iou_threshold`
   - `producer_wait_timeout_s`
@@ -66,8 +66,8 @@
 
 ## 5. Local Negative Supervision
 
-- [x] 5.1 Broaden the upstream source of `duplicate_ul_targets` so it can represent any dead anchor-side continuation, not only same-desc duplicate bursts.
-- [x] 5.2 Keep the first-divergence / LCP suppression mechanism and the `duplicate_ul` module name.
+- [x] 5.1 Broaden the upstream source of `dead_anchor_suppression_targets` so it can represent any dead anchor-side continuation, not only same-desc duplicate bursts.
+- [x] 5.2 Keep the first-divergence / LCP suppression mechanism and the `loss_dead_anchor_suppression` module name.
 - [x] 5.3 Restrict dead-continuation UL to anchor-side continuations only.
 - [x] 5.4 Add unit coverage for:
   - anchor-only vs explorer-only GT hits projecting to the correct side-specific action state
@@ -79,16 +79,16 @@
 ## 6. Metrics, Dumps, and Docs
 
 - [x] 6.1 Add triage count metrics:
-  - `stage2_ab/channel_b/triage/N_anchor_gt_backed`
-  - `stage2_ab/channel_b/triage/N_shielded_anchor`
-  - `stage2_ab/channel_b/triage/N_dead_anchor`
-  - `stage2_ab/channel_b/triage/N_dead_explorer`
-  - `stage2_ab/channel_b/triage/N_recovered_gt`
+  - `train/triage/gt_backed_anchor_count`
+  - `train/triage/unlabeled_consistent_anchor_count`
+  - `train/triage/dead_anchor_count`
+  - `train/triage/dead_explorer_count`
+  - `train/triage/recovered_ground_truth_count`
 - [x] 6.2 Add aggregation-safe triage numerators / denominators:
-  - `stage2_ab/channel_b/triage/recovered_gt_num`
-  - `stage2_ab/channel_b/triage/recovered_gt_den`
-  - `stage2_ab/channel_b/triage/dead_anchor_num`
-  - `stage2_ab/channel_b/triage/dead_anchor_den`
+  - `train/triage/recovered_gt_rate_num`
+  - `train/triage/recovered_gt_rate_den`
+  - `train/triage/dead_anchor_rate_num`
+  - `train/triage/dead_anchor_rate_den`
 - [x] 6.3 Preserve legacy duplicate metrics as supporting diagnostics and update monitor dumps to surface both rollout views plus final triage decisions.
 - [x] 6.4 Update docs after implementation:
   - `docs/training/STAGE2_DESIGN.md`

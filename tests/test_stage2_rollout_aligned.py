@@ -1173,18 +1173,18 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     assert callback_metrics and callback_metrics[0] == metrics
     assert logged_metrics == metrics
 
-    assert metrics["eval_rollout/precision"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/recall"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/f1"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/fp"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/fn"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/gating_rejections"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/parse_truncated_rate"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/sample_valid_pred_rate"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/sample_any_match_rate"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/matched_maskiou_mean"] == pytest.approx(0.8)
+    assert metrics["eval/detection/precision"] == pytest.approx(0.5)
+    assert metrics["eval/detection/recall"] == pytest.approx(0.5)
+    assert metrics["eval/detection/f1"] == pytest.approx(0.5)
+    assert metrics["eval/detection/fp_total"] == pytest.approx(1.0)
+    assert metrics["eval/detection/fn_total"] == pytest.approx(1.0)
+    assert metrics["eval/parsing/gating_rejections"] == pytest.approx(1.0)
+    assert metrics["eval/parsing/parse_truncated_rate"] == pytest.approx(0.5)
+    assert metrics["eval/parsing/sample_valid_pred_rate"] == pytest.approx(1.0)
+    assert metrics["eval/detection/sample_any_match_rate"] == pytest.approx(0.5)
+    assert metrics["eval/detection/matched_maskiou_mean"] == pytest.approx(0.8)
     assert "eval_loss" not in metrics
-    assert "eval_time/runtime_s" in metrics
+    assert "eval/runtime/runtime_s" in metrics
 
 
 def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
@@ -1653,11 +1653,11 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     metrics = trainer.evaluate()
 
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert all(not k.startswith("eval/detection/bbox_") for k in metrics)
+    assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> None:
@@ -1806,9 +1806,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
     metrics = trainer.evaluate()
 
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
@@ -1965,9 +1965,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
 
     assert called["vllm"] == 1
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
 def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> None:
@@ -2270,10 +2270,10 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
     )
 
     metrics = trainer.evaluate()
-    assert metrics["eval/trace_fallback_count"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/effective_score_mode_is_constant"] == pytest.approx(1.0)
+    assert metrics["eval/runtime/trace_fallback_count"] == pytest.approx(1.0)
+    assert metrics["eval/config/effective_score_mode_is_constant"] == pytest.approx(1.0)
     assert (
-        metrics["eval_rollout/effective_score_mode_is_confidence_postop"]
+        metrics["eval/config/effective_score_mode_is_confidence_postop"]
         == pytest.approx(0.0)
     )
 
@@ -2378,7 +2378,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
     )
 
     metrics = trainer.evaluate()
-    assert metrics["eval/vllm_decode_error_count"] == pytest.approx(1.0)
+    assert metrics["eval/runtime/vllm_decode_error_count"] == pytest.approx(1.0)
 
 
 def test_evaluate_vllm_engine_level_failure_is_fatal() -> None:
@@ -2857,7 +2857,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace(metric_for_best_model="rollout/mAP")
+    trainer.args = types.SimpleNamespace(metric_for_best_model="eval/detection/mAP")
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -2956,7 +2956,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    with pytest.raises(RuntimeError, match=r"metric_for_best_model targets rollout/mAP"):
+    with pytest.raises(RuntimeError, match=r"metric_for_best_model targets eval/detection/mAP"):
         trainer.evaluate()
 
 

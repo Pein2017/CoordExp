@@ -9532,6 +9532,61 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         def _k(suffix: str) -> str:
+            if str(metric_key_prefix) == "eval":
+                if str(suffix).startswith("time/"):
+                    leaf = str(suffix)[len("time/") :]
+                    return f"eval/runtime/{leaf}"
+                if str(suffix).startswith("rollout/"):
+                    leaf = str(suffix)[len("rollout/") :]
+                    detection_keys = {
+                        "precision",
+                        "recall",
+                        "f1",
+                        "pred_objects",
+                        "gt_objects_total",
+                        "matched",
+                        "fp_total",
+                        "fn_total",
+                        "matched_maskiou_mean",
+                        "sample_any_match_rate",
+                        "mAP",
+                    }
+                    parsing_keys = {
+                        "gating_rejections",
+                        "parse_dropped_invalid",
+                        "parse_dropped_ambiguous",
+                        "parse_truncated_rate",
+                        "sample_valid_pred_rate",
+                    }
+                    description_keys = {
+                        "desc_pairs_total",
+                        "desc_exact_acc_on_matched",
+                        "desc_sem_enabled",
+                        "desc_sem_acc_on_matched",
+                        "desc_sem_sim_mean",
+                        "desc_sem_sim_count",
+                    }
+                    config_keys = {
+                        "prompt_variant_is_coco_80",
+                        "effective_score_mode_is_constant",
+                        "effective_score_mode_is_confidence_postop",
+                    }
+                    runtime_keys = {
+                        "trace_fallback_count",
+                        "vllm_decode_error_count",
+                        "coco_eval_ok",
+                    }
+                    if leaf in detection_keys:
+                        return f"eval/detection/{leaf}"
+                    if leaf in parsing_keys:
+                        return f"eval/parsing/{leaf}"
+                    if leaf in description_keys:
+                        return f"eval/description/{leaf}"
+                    if leaf in config_keys:
+                        return f"eval/config/{leaf}"
+                    if leaf in runtime_keys or leaf.startswith("coco_counter_"):
+                        return f"eval/runtime/{leaf}"
+                    return f"eval/runtime/{leaf}"
             return f"{metric_key_prefix}_{suffix}"
 
         metrics: Dict[str, float] = {}
@@ -9549,9 +9604,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         metrics[_k("rollout/matched")] = float(matched_total)
         metrics[_k("rollout/fp_total")] = float(fp_total)
         metrics[_k("rollout/fn_total")] = float(fn_total)
-        # Backward-compatible aliases kept for existing eval dashboards/tests.
-        metrics[_k("rollout/fp")] = float(fp_total)
-        metrics[_k("rollout/fn")] = float(fn_total)
         metrics[_k("rollout/gating_rejections")] = float(gating_rejections_total)
 
         metrics[_k("rollout/parse_dropped_invalid")] = float(dropped_invalid_total)
@@ -9572,12 +9624,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
         metrics[_k("rollout/trace_fallback_count")] = float(trace_fallback_count_local)
         metrics[_k("rollout/vllm_decode_error_count")] = float(
-            vllm_decode_error_count_local
-        )
-        metrics[f"{metric_key_prefix}/trace_fallback_count"] = float(
-            trace_fallback_count_local
-        )
-        metrics[f"{metric_key_prefix}/vllm_decode_error_count"] = float(
             vllm_decode_error_count_local
         )
 
@@ -9782,9 +9828,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
             if coco_ok <= 0.0:
                 coco_err = str(recv_payload.get("error", "") or "").strip()
-                if metric_for_best_model_norm == "rollout/mAP":
+                if metric_for_best_model_norm == "eval/detection/mAP":
                     msg = (
-                        "Eval-step COCO/mAP failed while metric_for_best_model targets rollout/mAP; "
+                        "Eval-step COCO/mAP failed while metric_for_best_model targets eval/detection/mAP; "
                         "aborting to avoid invalid best-checkpoint selection. "
                         f"error={coco_err or 'unknown'}"
                     )

@@ -173,7 +173,7 @@ The locked v1 contract is:
 
 - build Channel-B from **two rollout views**:
   - anchor = greedy / deterministic
-  - explorer = stochastic under a typed `stage2_ab.channel_b.v3_k2` block
+  - explorer = stochastic under a typed `stage2_ab.channel_b.triage_posterior` block
 - realize the target as an **anchor-edited clean sequence**:
   - keep anchor GT-backed objects
   - keep shielded anchor objects as neutral context
@@ -831,19 +831,19 @@ v3 should be judged by a sharper scorecard than v2.
 
 ### 16.1 Core metrics
 
-- `eval_rollout/mAP`
-- `eval_rollout/precision`
-- `eval_rollout/recall`
-- `eval_rollout/matched_maskiou_mean`
+- `eval/detection/mAP`
+- `eval/detection/precision`
+- `eval/detection/recall`
+- `eval/detection/matched_maskiou_mean`
 - `rollout/pred_per_sample`
 - `rollout/rollout_len_mean`
 - `rollout/parse_truncated_rate`
 
 ### 16.2 New triage metrics
 
-- `triage/recovered_gt_count`
-- `triage/unlabeled_consistent_count`
-- `triage/dead_count`
+- `train/triage/recovered_ground_truth_count`
+- `train/triage/unlabeled_consistent_count`
+- `train/triage/dead_anchor_count`
 - `triage/dead_late_tail_rate`
 - `triage/recovered_gt_num`
 - `triage/recovered_gt_den`

@@ -56,7 +56,7 @@ Where this lives in code:
 - Stage-2 Rollout-Aligned Teacher Forcing trainer: `src/trainers/stage2_rollout_aligned.py`
 - Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) trainer: `src/trainers/stage2_two_channel.py`
 - Channel-B rollout parsing + matching helpers: `src/trainers/rollout_matching/parsing.py`, `src/trainers/rollout_matching/matching.py`
-- Explicit duplicate UL module: `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+- Explicit dead-anchor suppression module: `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 - Training entrypoint (YAML loader + wiring): `src/sft.py`
 - Import note: `src/trainers/stage2_two_channel/__init__.py` intentionally uses a proxy-style dynamic loader
   to preserve monkeypatch/import compatibility with the historical single-file module; avoid "simplifying"
@@ -139,7 +139,7 @@ Worked example (default launcher):
   - per-run `accepted_objects_clean` + Hungarian matching
   - deterministic one-to-one anchor/explorer association
   - triage into `anchor_gt_backed`, `recovered_fn`, `shielded_anchor`, `dead_anchor`, `dead_explorer`
-  - anchor-edited clean-prefix teacher forcing + dead-anchor `duplicate_ul`
+  - anchor-edited clean-prefix teacher forcing + dead-anchor `loss_dead_anchor_suppression`
 - Per-run sequential dedup is bbox-only in v1:
   - compare each candidate against previously accepted clean bbox objects only,
   - duplicate iff `normalize_desc(desc)` matches exactly and `IoU >= stage2_ab.channel_b.duplicate_iou_threshold`,
@@ -158,8 +158,8 @@ Worked example (default launcher):
   - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF, with recovered GTs receiving higher per-object desc+geo+coord weight.
 - FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; shielded anchor objects contribute no geometry loss.
 - Duplicate UL:
-  - `duplicate_ul` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
-  - `duplicate_ul.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
+  - `loss_dead_anchor_suppression` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
+  - `loss_dead_anchor_suppression.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
   - dead anchor continuations are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
   - the bad token is the first true LCP-divergence token of the dead-anchor continuation relative to the canonical clean continuation,
   - same-boundary dead-anchor continuations sharing the same divergence token collapse to one UL term.
@@ -180,14 +180,14 @@ Worked example (default launcher):
   - `dup/near_iou90_pairs_any_desc_count`
   - `stage2_ab/channel_b/dup/N_{raw_bbox_valid,clean_accepted,duplicates,duplicate_bursts,ul_boundaries,ul_skipped_no_divergence}`
 - Triage diagnostics are also emitted:
-  - `stage2_ab/channel_b/triage/N_{anchor_gt_backed,shielded_anchor,dead_anchor,dead_explorer,recovered_gt}`
-  - `stage2_ab/channel_b/triage/{recovered_gt_num,recovered_gt_den,dead_anchor_num,dead_anchor_den}`
-- v3 Channel-B config block:
-  - `stage2_ab.channel_b.v3_k2.explorer_temperature`
-  - `stage2_ab.channel_b.v3_k2.explorer_top_p`
-  - `stage2_ab.channel_b.v3_k2.explorer_top_k`
-  - `stage2_ab.channel_b.v3_k2.consistent_iou_threshold`
-  - `stage2_ab.channel_b.v3_k2.recovered_fn_weight`
+  - `train/triage/{gt_backed_count,unlabeled_consistent_count,dead_anchor_count,explorer_only_dead_count,recovered_ground_truth_count}`
+  - `train/triage/{recovered_ground_truth_rate_num,recovered_ground_truth_rate_den,dead_anchor_rate_num,dead_anchor_rate_den}`
+- Stage-2 Channel-B config block:
+  - `stage2_ab.channel_b.triage_posterior.explorer_temperature`
+  - `stage2_ab.channel_b.triage_posterior.explorer_top_p`
+  - `stage2_ab.channel_b.triage_posterior.explorer_top_k`
+  - `stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold`
+  - `stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier`
 - Optional Channel-B runtime timeouts:
   - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). Must be `> 0` under DDP; `120` is the default/recommended fail-fast setting for faster error exposure.
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
@@ -271,10 +271,10 @@ Objective pipeline declaration (required, ordered):
 - `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
 - `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
 - Canonical module names:
-  - objective: `token_ce`, `duplicate_ul`, `bbox_geo`, `coord_reg`
+  - objective: `token_ce`, `loss_dead_anchor_suppression`, `bbox_geo`, `coord_reg`
   - diagnostics: `coord_diag`
 - **Order matters**:
-  - `stage2_two_channel`: `token_ce -> duplicate_ul -> bbox_geo -> coord_reg`
+  - `stage2_two_channel`: `token_ce -> loss_dead_anchor_suppression -> bbox_geo -> coord_reg`
   - `stage2_rollout_aligned`: `bbox_geo` MUST run before `coord_reg` when both are enabled (coord_reg consumes bbox_geo state).
 - Pipeline module specs are strict and explicit (no silent defaults):
   - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
@@ -307,7 +307,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -368,7 +368,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -429,7 +429,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -618,7 +618,7 @@ Combined server-mode launcher contract (`scripts/train_stage2.sh`):
 ## Decoding Tips
 
 - Start with deterministic non-beam decoding for the anchor policy: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
-- For v3 Channel-B, keep the explorer policy under `stage2_ab.channel_b.v3_k2` and start with `explorer_temperature: 0.7`.
+- For v3 Channel-B, keep the explorer policy under `stage2_ab.channel_b.triage_posterior` and start with `explorer_temperature: 0.7`.
 - `rollout_matching.decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `rollout_matching.decoding.temperature/top_p/top_k`.
   - `rollout_matching.decode_mode: greedy` can still produce **sampling** rollouts when `rollout_matching.decoding.temperature > 0.0`.
   - Metrics tip: use `rollout/do_sample` plus the anchor/explorer rollout tags (`rollout/anchor_*`, `rollout/explorer_*`) to disambiguate policies, not `rollout/decode_non_beam_count`.
@@ -721,14 +721,14 @@ Important:
 - As a result, Stage-2 eval does not report `eval_loss`.
 
 Eval metrics include:
-- `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
-- Counters: `eval_rollout/pred_objects`, `eval_rollout/gt_objects_total`, `eval_rollout/matched`, `eval_rollout/fp_total`, `eval_rollout/fn_total` (aliases: `eval_rollout/fp`, `eval_rollout/fn`)
-- Parse health: `eval_rollout/parse_truncated_rate`, `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
-- Sample health: `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
-- Geometry quality: `eval_rollout/matched_maskiou_mean`
-- COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval_rollout/mAP`
-  - Eval-step COCO summary keys are intentionally compact: `eval_rollout/mAP` plus a small set of `eval_rollout/coco_counter_*` counters (no `eval_rollout/bbox_*` or `eval_rollout/segm_*` keys).
-  - On COCO-eval failure, training/evaluation continues and `eval_rollout/mAP` is set to `0.0`; status is surfaced via `eval_rollout/coco_eval_ok`.
+- `eval/detection/precision`, `eval/detection/recall`, `eval/detection/f1`
+- Counters: `eval/detection/pred_objects`, `eval/detection/gt_objects_total`, `eval/detection/matched`, `eval/detection/fp_total`, `eval/detection/fn_total` (aliases: `eval/detection/fp`, `eval/detection/fn`)
+- Parse health: `eval/parsing/parse_truncated_rate`, `eval/parsing/parse_dropped_invalid`, `eval/parsing/parse_dropped_ambiguous`
+- Sample health: `eval/parsing/sample_valid_pred_rate`, `eval/detection/sample_any_match_rate`
+- Geometry quality: `eval/detection/matched_maskiou_mean`
+- COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval/detection/mAP`
+  - Eval-step COCO summary keys are intentionally compact: `eval/detection/mAP` plus a small set of `eval/runtime/coco_counter_*` counters (no `eval/detection/bbox_*` or `eval/detection/segm_*` keys).
+  - On COCO-eval failure, training/evaluation continues and `eval/detection/mAP` is set to `0.0`; status is surfaced via `eval/runtime/coco_eval_ok`.
 
 Best-checkpoint selection:
 - Prefer `training.metric_for_best_model: rollout/f1` and `training.greater_is_better: true`.

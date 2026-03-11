@@ -46,7 +46,7 @@ anchor rollout + explorer rollout
   -> per-run accepted_objects_clean + Hungarian matching
   -> deterministic anchor/explorer association
   -> triage: anchor_gt_backed | recovered_fn | shielded_anchor | dead_anchor | dead_explorer
-  -> anchor-edited clean target + weighted FN injection + dead-anchor duplicate_ul
+  -> anchor-edited clean target + weighted FN injection + dead-anchor loss_dead_anchor_suppression
 ```
 
 ## Why v3 Exists
@@ -68,10 +68,10 @@ The resulting v1 implementation is intentionally conservative:
 ## Stable v1 Contract
 
 - Anchor rollout is greedy / deterministic.
-- Explorer rollout is stochastic under `stage2_ab.channel_b.v3_k2`.
+- Explorer rollout is stochastic under `stage2_ab.channel_b.triage_posterior`.
 - The final target is built by editing the anchor clean sequence, preserving anchor order.
 - Shielded anchor objects remain neutral context only.
-- Dead anchor objects are removed from the positive prefix and sourced into `duplicate_ul`.
+- Dead anchor objects are removed from the positive prefix and sourced into `loss_dead_anchor_suppression`.
 - Recovered GTs stay on the FN tail and receive higher per-object desc+geo+coord weight.
 - Training remains one merged teacher-forced forward on the edited target.
 
@@ -106,13 +106,13 @@ If you are moving from design to implementation, these are the main code handles
   - `src/trainers/teacher_forcing/module_registry.py`
   - `src/trainers/teacher_forcing/objective_atoms.py`
 - explicit duplicate UL module:
-  - `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+  - `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 
 ## Key Config Surfaces
 
 - `stage2_ab.pipeline`
 - `stage2_ab.channel_b`
-- `stage2_ab.channel_b.v3_k2.*`
+- `stage2_ab.channel_b.triage_posterior.*`
 - `rollout_matching.*`
 - `configs/stage2_two_channel/`
 

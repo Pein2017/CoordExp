@@ -1,9 +1,9 @@
 extends: ./common_b_majority_coco1024_prodlike_6srv2lr.yaml
 
 training:
-  run_name: smoke_b_majority_coco1024_v3_k2_vllm_server_6srv2lr_eval_6steps
-  output_dir: output/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6srv2lr_eval_6steps
-  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/v3_k2_vllm_server_6srv2lr_eval_6steps
+  run_name: smoke_b_majority_coco1024_triage_posterior_vllm_server_6srv2lr_eval_6steps
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/triage_posterior_vllm_server_6srv2lr_eval_6steps
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/triage_posterior_vllm_server_6srv2lr_eval_6steps
   max_steps: 6
   do_eval: true
   eval_strategy: steps
