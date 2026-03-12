@@ -45,6 +45,7 @@ class RolloutOffloadConfig:
 class RolloutMonitorDumpConfig:
     enabled: bool = False
     every_steps: Optional[int] = None
+    every_channel_b_steps: Optional[int] = None
     dump_first_step: Optional[bool] = None
     only_world_process_zero: bool = True
     max_events: int = 20
@@ -59,6 +60,26 @@ class RolloutMonitorDumpConfig:
     min_free_gb: float = 2.0
     out_dir: Optional[str] = None
     write_markdown: bool = True
+
+    def __post_init__(self) -> None:
+        def _validate_positive_optional_int(raw: Any, *, field_name: str) -> None:
+            if raw is None:
+                return
+            try:
+                value = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"rollout_matching.train_monitor_dump.{field_name} must be an int"
+                ) from exc
+            if value <= 0:
+                raise ValueError(
+                    f"rollout_matching.train_monitor_dump.{field_name} must be > 0"
+                )
+
+        _validate_positive_optional_int(self.every_steps, field_name="every_steps")
+        _validate_positive_optional_int(
+            self.every_channel_b_steps, field_name="every_channel_b_steps"
+        )
 
 
 @dataclass(frozen=True)

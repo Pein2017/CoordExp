@@ -91,6 +91,7 @@ During training (`python -m src.sft ...`), rank 0 writes reproducibility artifac
   - Qualitative rollout diagnostics written as `.json` and optional `.md`.
   - `eval_step` uses the configured eval-window cadence (`every_evals`).
   - `stage2_two_channel` Channel-B `train_step` writes only suspicious duplicate-heavy rollouts for the current optimizer step.
+    `train_monitor_dump.every_channel_b_steps` counts realized Channel-B rollout steps when set; otherwise the trainer falls back to `every_steps`.
 
 Notes:
 - If `training.add_version: true` (default in `configs/base.yaml`), ms-swift scopes outputs under a versioned run directory.

@@ -1420,6 +1420,62 @@ def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> N
     assert captured["payload"]["samples"][0]["sample_id"] == "dup-heavy"
 
 
+def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_aliasing() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "decode_mode": "greedy",
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_steps": 40,
+            "every_channel_b_steps": 3,
+            "max_samples": 1,
+            "write_markdown": False,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._rollout_backend = lambda: "hf"
+    t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
+    t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
+    t.is_world_process_zero = True
+    t._monitor_dump_count = 0
+    t._monitor_dump_last_step = None
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+    t._stage2_train_monitor_b_step_count = 0
+    t._stage2_train_monitor_dump_count = 0
+    t._stage2_train_monitor_dump_last_step = None
+
+    t._stage2_reset_train_monitor_dump(global_step=4)
+    assert t._stage2_train_monitor_b_step_count == 1
+    assert t._stage2_train_monitor_step_allowed(global_step=4) is False
+
+    t._stage2_reset_train_monitor_dump(global_step=8)
+    assert t._stage2_train_monitor_b_step_count == 2
+    assert t._stage2_train_monitor_step_allowed(global_step=8) is False
+
+    t._stage2_reset_train_monitor_dump(global_step=12)
+    assert t._stage2_train_monitor_b_step_count == 3
+    assert t._stage2_train_monitor_step_allowed(global_step=12) is True
+
+    t._stage2_note_train_monitor_candidate(
+        global_step=12,
+        sample={
+            "sample_id": "third-b-step",
+            "duplication": {"duplicates": 2, "duplicate_bursts": 1},
+            "stats": {"fp_count": 1, "raw_valid_pred_objects": 3},
+        },
+    )
+
+    captured = {}
+    t._write_monitor_dump = lambda *, global_step, payload: captured.update(
+        {"global_step": int(global_step), "payload": payload}
+    )
+    t._stage2_flush_train_monitor_dump(global_step=12)
+
+    assert captured["global_step"] == 12
+    assert captured["payload"]["samples"][0]["sample_id"] == "third-b-step"
+
+
 def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {

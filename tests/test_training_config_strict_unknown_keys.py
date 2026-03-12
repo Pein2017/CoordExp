@@ -273,6 +273,66 @@ def test_unknown_rollout_train_monitor_dump_key_fails_fast():
     assert "rollout_matching.train_monitor_dump.unknown" in str(exc.value)
 
 
+def test_rollout_train_monitor_every_channel_b_steps_is_accepted():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_channel_b_steps": 3,
+        },
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.train_monitor_dump is not None
+    assert cfg.rollout_matching.train_monitor_dump.every_channel_b_steps == 3
+
+
+@pytest.mark.parametrize("value", [0, -3, "x"])
+def test_rollout_train_monitor_every_channel_b_steps_invalid_values_fail_fast(value):
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_channel_b_steps": value,
+        },
+    }
+
+    with pytest.raises((TypeError, ValueError)) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.train_monitor_dump.every_channel_b_steps" in str(exc.value)
+
+
+@pytest.mark.parametrize("value", [0, -3, "x"])
+def test_rollout_train_monitor_every_steps_invalid_values_fail_fast(value):
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_steps": value,
+        },
+    }
+
+    with pytest.raises((TypeError, ValueError)) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.train_monitor_dump.every_steps" in str(exc.value)
+
+
 def test_unknown_rollout_eval_monitor_dump_key_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {

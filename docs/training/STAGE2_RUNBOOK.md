@@ -784,10 +784,15 @@ Behavior depends on the execution path:
   `every_evals: N` means “dump every Nth evaluation window”, so dumps align to
   `N * training.eval_steps` in step-space.
 - `stage2_two_channel` Channel-B `train_step` uses
-  `rollout_matching.train_monitor_dump.every_steps` and does **not** dump every
-  suspicious step by default. It first applies the train cadence, then buffers the
-  current optimizer step, selects suspicious duplicate-heavy rollouts only, and
-  writes the top `max_samples` candidates for that dumped step.
+  `rollout_matching.train_monitor_dump.every_channel_b_steps` when set, otherwise
+  it falls back to `rollout_matching.train_monitor_dump.every_steps`. It does
+  **not** dump every suspicious step by default. It first applies the train
+  cadence, then buffers the current optimizer step, selects suspicious
+  duplicate-heavy rollouts only, and writes the top `max_samples` candidates for
+  that dumped step.
+- `every_channel_b_steps: N` counts realized Channel-B rollout steps rather than
+  raw `global_step`, so the dump cadence does not alias against the AB schedule
+  or `stage2_ab.schedule.b_ratio`.
 - Suspicious Channel-B train dumps keep the same top-level dump hierarchy as eval
   (`kind`, `global_step`, `epoch`, `time`, `meta`, `metrics`, `samples`) and each
   sample includes:
@@ -806,7 +811,7 @@ Example config:
 rollout_matching:
   train_monitor_dump:
     enabled: true
-    every_steps: 4
+    every_channel_b_steps: 4
     max_events: 50
     max_samples: 1
     max_text_chars: 4000

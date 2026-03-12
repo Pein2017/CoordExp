@@ -1037,6 +1037,7 @@ class Stage2ABTrainingTrainer(
         self._stage2_ab_realized_recent: Deque[int] = deque(maxlen=200)
         self._stage2_train_monitor_pending_gs: Optional[int] = None
         self._stage2_train_monitor_candidates: List[Dict[str, Any]] = []
+        self._stage2_train_monitor_b_step_count: int = 0
         self._stage2_train_monitor_dump_last_step: Optional[int] = None
         self._stage2_train_monitor_dump_count: int = 0
         self._stage2_train_monitor_dump_written_step: Optional[int] = None
@@ -1063,7 +1064,14 @@ class Stage2ABTrainingTrainer(
         batch["_rollout_matching_batch_metrics"] = out
 
     def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
-        self._stage2_train_monitor_pending_gs = int(global_step)
+        gs = int(global_step)
+        pending_gs = getattr(self, "_stage2_train_monitor_pending_gs", None)
+        if pending_gs is None or int(pending_gs) != gs:
+            b_step_count = int(
+                getattr(self, "_stage2_train_monitor_b_step_count", 0) or 0
+            )
+            self._stage2_train_monitor_b_step_count = b_step_count + 1
+        self._stage2_train_monitor_pending_gs = gs
         self._stage2_train_monitor_candidates = []
 
     def _stage2_train_monitor_step_allowed(self, *, global_step: int) -> bool:
@@ -1088,12 +1096,6 @@ class Stage2ABTrainingTrainer(
         if last_step is not None and int(last_step) == gs:
             return False
 
-        every = cfg.get("every_steps", None)
-        if every is None:
-            args_obj = getattr(self, "args", None)
-            every = int(getattr(args_obj, "logging_steps", 1) or 1)
-        every = max(1, int(every))
-
         args_obj = getattr(self, "args", None)
         dump_first = bool(
             cfg.get(
@@ -1101,6 +1103,24 @@ class Stage2ABTrainingTrainer(
                 bool(getattr(args_obj, "logging_first_step", False)),
             )
         )
+
+        every_channel_b = cfg.get("every_channel_b_steps", None)
+        if every_channel_b is not None:
+            every_channel_b = max(1, int(every_channel_b))
+            b_step_count = int(
+                getattr(self, "_stage2_train_monitor_b_step_count", 0) or 0
+            )
+            if b_step_count <= 0:
+                return False
+            if dump_first and b_step_count == 1:
+                return True
+            return (b_step_count % every_channel_b) == 0
+
+        every = cfg.get("every_steps", None)
+        if every is None:
+            every = int(getattr(args_obj, "logging_steps", 1) or 1)
+        every = max(1, int(every))
+
         if gs == 0 and not dump_first:
             return False
         if gs % every != 0:
