@@ -7,7 +7,7 @@ import pytest
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
-    _merge_latest_stage2_metric_snapshots,
+    _merge_stage2_metric_snapshots,
 )
 
 
@@ -169,11 +169,11 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
     assert out["stage2_ab/channel_b/dup/N_duplicates"] == pytest.approx(11.0)
     assert out["stage2_ab/channel_b/dup/N_ul_boundaries"] == pytest.approx(3.0)
 
-def test_latest_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
-    latest: dict[str, float] = {}
+def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
+    snapshots: dict[str, float] = {}
 
-    first = _merge_latest_stage2_metric_snapshots(
-        latest,
+    first = _merge_stage2_metric_snapshots(
+        snapshots,
         {
             "loss/A1_text/struct_ce": 0.5,
             "coord_diag/A1/acc_top5": 0.4,
@@ -183,14 +183,14 @@ def test_latest_stage2_metric_snapshots_carry_forward_channel_specific_keys() ->
         },
     )
 
-    assert first["latest/loss/A1_text/struct_ce"] == pytest.approx(0.5)
-    assert first["latest/coord_diag/A1/acc_top5"] == pytest.approx(0.4)
-    assert first["latest/stage2/channel_a"] == pytest.approx(1.0)
-    assert first["latest/time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
-    assert "latest/time/forward_s" not in first
+    assert first["loss/A1_text/struct_ce"] == pytest.approx(0.5)
+    assert first["coord_diag/A1/acc_top5"] == pytest.approx(0.4)
+    assert first["stage2/channel_a"] == pytest.approx(1.0)
+    assert first["time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
+    assert "time/forward_s" not in first
 
-    second = _merge_latest_stage2_metric_snapshots(
-        latest,
+    second = _merge_stage2_metric_snapshots(
+        snapshots,
         {
             "loss/B_rollout_text/struct_ce": 0.8,
             "rollout/f1": 0.3,
@@ -199,14 +199,14 @@ def test_latest_stage2_metric_snapshots_carry_forward_channel_specific_keys() ->
         },
     )
 
-    assert second["latest/loss/A1_text/struct_ce"] == pytest.approx(0.5)
-    assert second["latest/loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
-    assert second["latest/rollout/f1"] == pytest.approx(0.3)
-    assert second["latest/stage2/channel_b"] == pytest.approx(1.0)
-    assert second["latest/time/rollout_generate_s"] == pytest.approx(9.0)
+    assert second["loss/A1_text/struct_ce"] == pytest.approx(0.5)
+    assert second["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert second["rollout/f1"] == pytest.approx(0.3)
+    assert second["stage2/channel_b"] == pytest.approx(1.0)
+    assert second["time/rollout_generate_s"] == pytest.approx(9.0)
 
 
-def test_stage2_log_emits_latest_snapshots_alongside_current_reduced_metrics(
+def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -219,9 +219,9 @@ def test_stage2_log_emits_latest_snapshots_alongside_current_reduced_metrics(
             "rollout/f1": 0.3,
         }
     )
-    trainer._stage2_latest_metric_snapshots = {
-        "latest/loss/A1_text/struct_ce": 0.5,
-        "latest/coord_diag/A1/acc_top5": 0.4,
+    trainer._stage2_metric_snapshots = {
+        "loss/A1_text/struct_ce": 0.5,
+        "coord_diag/A1/acc_top5": 0.4,
     }
     trainer._ddp_assert_all_ranks_true_or_raise = (
         lambda **_kwargs: None
@@ -253,10 +253,10 @@ def test_stage2_log_emits_latest_snapshots_alongside_current_reduced_metrics(
     assert captured["loss"] == pytest.approx(1.0)
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
-    assert captured["latest/loss/A1_text/struct_ce"] == pytest.approx(0.5)
-    assert captured["latest/coord_diag/A1/acc_top5"] == pytest.approx(0.4)
-    assert captured["latest/loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
-    assert captured["latest/rollout/f1"] == pytest.approx(0.3)
+    assert captured["loss/A1_text/struct_ce"] == pytest.approx(0.5)
+    assert captured["coord_diag/A1/acc_top5"] == pytest.approx(0.4)
+    assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert captured["rollout/f1"] == pytest.approx(0.3)
     assert captured["time/sft_total_time"] == pytest.approx(12.0)
     assert captured["time/rollout_total_time"] == pytest.approx(5.0)
 

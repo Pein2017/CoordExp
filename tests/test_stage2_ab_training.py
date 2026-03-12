@@ -1307,10 +1307,10 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
     t._write_monitor_dump = lambda *, global_step, payload: captured.update(
         {"global_step": int(global_step), "payload": payload}
     )
-    t._stage2_flush_train_monitor_dump(global_step=7)
+    t._stage2_flush_train_monitor_dump(global_step=8)
 
     dumped = captured["payload"]["samples"][0]
-    assert captured["global_step"] == 7
+    assert captured["global_step"] == 8
     assert captured["payload"]["kind"] == "train_monitor_dump"
     assert dumped["image_id"] == 314
     assert dumped["gt"] == [{"desc": "person", "bbox_2d": [10, 10, 20, 20]}]
@@ -1372,6 +1372,52 @@ def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
 
     assert captured["global_step"] == 11
     assert captured["payload"]["samples"][0]["sample_id"] == "high"
+
+
+def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    cfg = {
+        "decode_mode": "greedy",
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_steps": 40,
+            "max_samples": 1,
+            "write_markdown": False,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t._rollout_backend = lambda: "hf"
+    t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=True)
+    t.state = types.SimpleNamespace(global_step=39, epoch=0.0)
+    t.is_world_process_zero = True
+    t._monitor_dump_count = 0
+    t._monitor_dump_last_step = None
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+    t._stage2_train_monitor_dump_count = 0
+    t._stage2_train_monitor_dump_last_step = None
+
+    assert t._stage2_train_monitor_step_allowed(global_step=40) is True
+    assert t._stage2_train_monitor_step_allowed(global_step=39) is False
+
+    t._stage2_reset_train_monitor_dump(global_step=40)
+    t._stage2_note_train_monitor_candidate(
+        global_step=40,
+        sample={
+            "sample_id": "dup-heavy",
+            "duplication": {"duplicates": 2, "duplicate_bursts": 1},
+            "stats": {"fp_count": 1, "raw_valid_pred_objects": 3},
+        },
+    )
+
+    captured = {}
+    t._write_monitor_dump = lambda *, global_step, payload: captured.update(
+        {"global_step": int(global_step), "payload": payload}
+    )
+    t._stage2_flush_train_monitor_dump(global_step=40)
+
+    assert captured["global_step"] == 40
+    assert captured["payload"]["samples"][0]["sample_id"] == "dup-heavy"
 
 
 def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
@@ -1779,6 +1825,28 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     assert batch_metrics["train/triage/recovered_ground_truth_rate_den"] == pytest.approx(
         1.0
     )
+    assert batch_metrics["train/triage/recovered_ground_truth_rate"] == pytest.approx(
+        1.0
+    )
+    assert batch_metrics["train/triage/dead_anchor_rate"] == pytest.approx(1.0)
+    assert batch_metrics["train/triage/explorer_only_dead_rate"] == pytest.approx(
+        0.0
+    )
+    assert batch_metrics["rollout/anchor/pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/anchor/valid_pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/anchor/gen_new_tokens_mean"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/anchor/gen_new_tokens_p90"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/gen_new_tokens_mean"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/gen_new_tokens_p90"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/temperature"] == pytest.approx(0.7)
+    assert batch_metrics["rollout/explorer/do_sample"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/explorer/top_p"] == pytest.approx(0.9)
+    assert batch_metrics["rollout/explorer/top_k"] == pytest.approx(12.0)
+    assert batch_metrics[
+        "rollout/matched_for_supervision_over_valid_pred"
+    ] == pytest.approx(0.0)
 
 
 def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> None:
@@ -4261,6 +4329,79 @@ def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom()
     pending = t._stage2_pending_train_logs[1].finalize()
     assert "train/optimization/loss_dead_anchor_suppression" in pending
     assert pending["train/optimization/loss_dead_anchor_suppression"] > 0.0
+
+
+def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> None:
+    t = _make_min_trainer(n_softctx_iter=1)
+    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+        token_ce_enabled=False,
+        token_ce_weight=0.0,
+        dead_anchor_suppression_enabled=True,
+        dead_anchor_suppression_weight=1.0,
+        bbox_geo_enabled=False,
+        bbox_geo_weight=0.0,
+        coord_reg_enabled=False,
+        coord_reg_weight=0.0,
+    )
+    model = _DummyAlwaysTokenModel(pred_id=7)
+    input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
+    meta = [
+        {
+            "stage2_channel": "B",
+            "prompt_len": 2,
+            "prefix_len": 0,
+            "train_len": 2,
+            "encoded_len": 4,
+            "prefix_struct_pos": [],
+            "prefix_coord_pos": [],
+            "tail_desc_pos": [],
+            "tail_ignore_pos": [],
+            "tail_closure_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [],
+            "dead_anchor_suppression_targets": [
+                {"boundary": 0, "rel_pos": 0, "token_id": 7},
+            ],
+        }
+    ]
+
+    t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": meta,
+            "_rollout_matching_batch_metrics": {
+                "train/triage/gt_backed_count": 2.0,
+                "train/triage/recovered_ground_truth_count": 1.0,
+                "train/triage/recovered_ground_truth_rate_num": 1.0,
+                "train/triage/recovered_ground_truth_rate_den": 4.0,
+                "train/triage/recovered_ground_truth_rate": 0.25,
+                "rollout/anchor/pred_objects": 5.0,
+                "rollout/explorer/pred_objects": 7.0,
+                "rollout/explorer/temperature": 0.7,
+                "rollout/explorer/do_sample": 1.0,
+                "rollout/matched_for_supervision_over_valid_pred": 0.5,
+                "rollout/matched_for_supervision_count": 3.0,
+                "rollout/valid_pred_objects_total": 6.0,
+            },
+            "input_ids": input_ids,
+        },
+    )
+
+    pending = t._stage2_pending_train_logs[1].finalize()
+    assert pending["train/triage/gt_backed_count"] == pytest.approx(2.0)
+    assert pending["train/triage/recovered_ground_truth_rate"] == pytest.approx(0.25)
+    assert pending["rollout/anchor/pred_objects"] == pytest.approx(5.0)
+    assert pending["rollout/explorer/pred_objects"] == pytest.approx(7.0)
+    assert pending["rollout/explorer/temperature"] == pytest.approx(0.7)
+    assert pending["rollout/explorer/do_sample"] == pytest.approx(1.0)
+    assert pending["rollout/matched_for_supervision_over_valid_pred"] == pytest.approx(
+        0.5
+    )
+    assert pending["loss/B_rollout_text/dead_anchor_suppression"] > 0.0
+    assert pending["diag/dead_anchor/num_terms"] == pytest.approx(1.0)
+    assert pending["diag/dead_anchor/num_ul_boundaries"] == pytest.approx(1.0)
+    assert pending["diag/dead_anchor/loss_per_term"] > 0.0
 
 
 def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> None:

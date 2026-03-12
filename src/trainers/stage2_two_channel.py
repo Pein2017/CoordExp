@@ -246,7 +246,7 @@ class _PendingStage2Log:
         return out
 
 
-def _stage2_latest_snapshot_key(metric_key: str) -> str | None:
+def _stage2_snapshot_key(metric_key: str) -> str | None:
     key = str(metric_key)
 
     if (
@@ -255,13 +255,15 @@ def _stage2_latest_snapshot_key(metric_key: str) -> str | None:
         or key.startswith("time/channel_a_")
         or key == "stage2/channel_a"
     ):
-        return f"latest/{key}"
+        return key
 
     if (
         key.startswith("loss/B_")
         or key.startswith("coord_diag/B/")
         or key.startswith("stage2_ab/channel_b/")
         or key.startswith("dup/")
+        or key.startswith("train/triage/")
+        or key.startswith("diag/dead_anchor/")
         or key.startswith("rollout/")
         or key.startswith("time/rollout_")
         or key
@@ -274,26 +276,26 @@ def _stage2_latest_snapshot_key(metric_key: str) -> str | None:
             "stage2/drop_bbox_invalid",
         }
     ):
-        return f"latest/{key}"
+        return key
 
     return None
 
 
-def _merge_latest_stage2_metric_snapshots(
-    latest_snapshots: MutableMapping[str, float],
+def _merge_stage2_metric_snapshots(
+    snapshots: MutableMapping[str, float],
     metrics: Mapping[str, Any],
 ) -> Dict[str, float]:
     for key_raw, value in metrics.items():
-        snapshot_key = _stage2_latest_snapshot_key(str(key_raw))
+        snapshot_key = _stage2_snapshot_key(str(key_raw))
         if snapshot_key is None:
             continue
         try:
-            latest_snapshots[snapshot_key] = float(value)
+            snapshots[snapshot_key] = float(value)
         except (TypeError, ValueError):
             continue
     return {
         str(key): float(value)
-        for key, value in sorted(latest_snapshots.items(), key=lambda item: item[0])
+        for key, value in sorted(snapshots.items(), key=lambda item: item[0])
     }
 
 
@@ -342,6 +344,24 @@ def _find_subsequence(haystack: Sequence[int], needle: Sequence[int]) -> int:
             "unable to locate assistant token ids inside encoded input_ids"
         )
     return int(last)
+
+
+def _percentile(xs: Sequence[float], q: float) -> float:
+    """Small percentile helper for rollout telemetry without adding numpy here."""
+
+    vals = sorted(float(x) for x in xs)
+    if not vals:
+        return 0.0
+    if len(vals) == 1:
+        return float(vals[0])
+
+    rank = (float(len(vals)) - 1.0) * (float(q) / 100.0)
+    lo = int(math.floor(rank))
+    hi = int(math.ceil(rank))
+    if lo == hi:
+        return float(vals[lo])
+    frac = float(rank - float(lo))
+    return float((1.0 - frac) * float(vals[lo]) + frac * float(vals[hi]))
 
 
 def _coerce_bbox_bins(values: Any) -> Optional[List[int]]:
@@ -991,7 +1011,7 @@ class Stage2ABTrainingTrainer(
         setattr(self, "_coordexp_disable_dataset_metric_key_sync", True)
 
         self._stage2_pending_train_logs: Dict[int, _PendingStage2Log] = {}
-        self._stage2_latest_metric_snapshots: Dict[str, float] = {}
+        self._stage2_metric_snapshots: Dict[str, float] = {}
         self._stage2_channel_override: Optional[str] = None
 
         # Keep per-channel packing buffers so mixed schedules never pack A/B segments together.
@@ -1019,6 +1039,7 @@ class Stage2ABTrainingTrainer(
         self._stage2_train_monitor_candidates: List[Dict[str, Any]] = []
         self._stage2_train_monitor_dump_last_step: Optional[int] = None
         self._stage2_train_monitor_dump_count: int = 0
+        self._stage2_train_monitor_dump_written_step: Optional[int] = None
 
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
@@ -1169,6 +1190,12 @@ class Stage2ABTrainingTrainer(
             self._stage2_train_monitor_dump_count = int(
                 getattr(self, "_stage2_train_monitor_dump_count", 0) or 0
             ) + 1
+            self._stage2_train_monitor_dump_written_step = int(global_step)
+            logger.info(
+                "stage2-ab wrote train monitor dump for global_step=%s with %s candidate samples",
+                int(global_step),
+                int(len(selected)),
+            )
         finally:
             self._stage2_reset_train_monitor_dump(global_step=global_step)
 
@@ -1518,12 +1545,10 @@ class Stage2ABTrainingTrainer(
         ):
             step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
             pending = self._stage2_pending_train_logs.get(step)
-            latest_snapshot_state = getattr(
-                self, "_stage2_latest_metric_snapshots", None
-            )
-            if not isinstance(latest_snapshot_state, dict):
-                latest_snapshot_state = {}
-                setattr(self, "_stage2_latest_metric_snapshots", latest_snapshot_state)
+            snapshot_state = getattr(self, "_stage2_metric_snapshots", None)
+            if not isinstance(snapshot_state, dict):
+                snapshot_state = {}
+                setattr(self, "_stage2_metric_snapshots", snapshot_state)
 
             # IMPORTANT (DDP contract): stage2-ab log() merges buffered per-step
             # debug metrics via distributed collectives.
@@ -1538,7 +1563,7 @@ class Stage2ABTrainingTrainer(
                 global_step=step,
             )
             pending = self._stage2_pending_train_logs.pop(step, None)
-            latest_snapshots: Dict[str, float] = {}
+            snapshot_logs: Dict[str, float] = {}
             if pending is not None:
                 reduced = self._reduce_stage2_pending_metrics_global(
                     pending.finalize(drop_internal=False)
@@ -1546,19 +1571,19 @@ class Stage2ABTrainingTrainer(
                 reduced.pop("rollout/_parse_truncated_num", None)
                 reduced.pop("rollout/_parse_truncated_den", None)
                 logs.update(reduced)
-                latest_snapshots = _merge_latest_stage2_metric_snapshots(
-                    latest_snapshot_state,
+                snapshot_logs = _merge_stage2_metric_snapshots(
+                    snapshot_state,
                     reduced,
                 )
-            elif latest_snapshot_state:
-                latest_snapshots = {
+            elif snapshot_state:
+                snapshot_logs = {
                     str(key): float(value)
                     for key, value in sorted(
-                        latest_snapshot_state.items(), key=lambda item: item[0]
+                        snapshot_state.items(), key=lambda item: item[0]
                     )
                 }
-            if latest_snapshots:
-                logs.update(latest_snapshots)
+            if snapshot_logs:
+                logs.update(snapshot_logs)
             logs.update(
                 self._reduce_stage_wallclock_metrics_global(
                     self._stage_wallclock_metrics_local()
@@ -2049,9 +2074,10 @@ class Stage2ABTrainingTrainer(
             )
 
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
+        monitor_step = int(gs + 1)
         object_field_order = self._object_field_order()
         track_monitor_candidates = bool(
-            self._stage2_train_monitor_step_allowed(global_step=gs)
+            self._stage2_train_monitor_step_allowed(global_step=monitor_step)
         )
         seed_base = int(self._derive_rollout_seed_base(global_step=gs))
 
@@ -2206,6 +2232,22 @@ class Stage2ABTrainingTrainer(
         triage_recovered_gt_total = 0
         triage_recovered_gt_den_total = 0
         triage_dead_anchor_den_total = 0
+        triage_dead_explorer_den_total = 0
+        matched_for_supervision_total = 0
+
+        anchor_pred_objects_total = 0
+        anchor_valid_pred_objects_total = 0
+        anchor_parse_truncated_total = 0
+        anchor_gen_new_token_lens: List[int] = []
+        anchor_near_same_desc_pairs_total = 0
+        anchor_near_any_desc_pairs_total = 0
+
+        explorer_pred_objects_total = 0
+        explorer_valid_pred_objects_total = 0
+        explorer_parse_truncated_total = 0
+        explorer_gen_new_token_lens: List[int] = []
+        explorer_near_same_desc_pairs_total = 0
+        explorer_near_any_desc_pairs_total = 0
 
         def _build_rollout_view(
             *,
@@ -2321,6 +2363,11 @@ class Stage2ABTrainingTrainer(
             return {
                 "prompt_ids": [int(t) for t in prompt_ids],
                 "decode_mode": str(rollout_decode_mode),
+                "pred_objects": int(len(parse.valid_objects)),
+                "parse_truncated": int(
+                    1 if bool(getattr(parse, "truncated", False)) else 0
+                ),
+                "gen_new_tokens": int(len(parse.response_token_ids)),
                 "parse": parse,
                 "invalid_rollout": int(invalid_rollout),
                 "drop_reasons": drop_reasons,
@@ -2449,6 +2496,39 @@ class Stage2ABTrainingTrainer(
             explorer_gt_indices = set(
                 int(gt_i) for gt_i in explorer_match_by_pred.values()
             )
+            anchor_pred_objects_total += int(anchor_view["pred_objects"])
+            anchor_valid_pred_objects_total += int(anchor_view["n_valid_pred"])
+            anchor_parse_truncated_total += int(anchor_view["parse_truncated"])
+            anchor_gen_new_token_lens.append(int(anchor_view["gen_new_tokens"]))
+            anchor_near_same_desc_pairs_total += int(
+                anchor_view["duplicate_metrics"].get(
+                    "dup/near_iou90_pairs_same_desc_count", 0.0
+                )
+                or 0.0
+            )
+            anchor_near_any_desc_pairs_total += int(
+                anchor_view["duplicate_metrics"].get(
+                    "dup/near_iou90_pairs_any_desc_count", 0.0
+                )
+                or 0.0
+            )
+
+            explorer_pred_objects_total += int(explorer_view["pred_objects"])
+            explorer_valid_pred_objects_total += int(explorer_view["n_valid_pred"])
+            explorer_parse_truncated_total += int(explorer_view["parse_truncated"])
+            explorer_gen_new_token_lens.append(int(explorer_view["gen_new_tokens"]))
+            explorer_near_same_desc_pairs_total += int(
+                explorer_view["duplicate_metrics"].get(
+                    "dup/near_iou90_pairs_same_desc_count", 0.0
+                )
+                or 0.0
+            )
+            explorer_near_any_desc_pairs_total += int(
+                explorer_view["duplicate_metrics"].get(
+                    "dup/near_iou90_pairs_any_desc_count", 0.0
+                )
+                or 0.0
+            )
 
             association_pairs = associate_one_to_one_max_iou(
                 anchors=accepted_objects_clean,
@@ -2499,6 +2579,9 @@ class Stage2ABTrainingTrainer(
             triage_dead_explorer_total += int(len(dead_explorer_indices))
             triage_recovered_gt_total += int(len(recovered_gt_indices))
             triage_dead_anchor_den_total += int(len(accepted_objects_clean))
+            triage_dead_explorer_den_total += int(
+                len(explorer_accepted_objects_clean)
+            )
 
             prefix_bbox_groups: List[Dict[str, Any]] = []
             fn_bbox_groups: List[Dict[str, Any]] = []
@@ -2591,6 +2674,7 @@ class Stage2ABTrainingTrainer(
             fn_gt_indices_final = [
                 i for i in range(len(gts)) if i not in matched_gt_for_supervision
             ]
+            matched_for_supervision_total += int(len(matched_gt_for_supervision))
             fn_objs = [gts[i] for i in fn_gt_indices_final]
             fn_object_weights = [
                 float(recovered_ground_truth_weight_multiplier)
@@ -2689,7 +2773,7 @@ class Stage2ABTrainingTrainer(
                     object_field_order=object_field_order,
                 )
                 self._stage2_note_train_monitor_candidate(
-                    global_step=gs,
+                    global_step=monitor_step,
                     sample={
                         "sample_id": sample.get("sample_id"),
                         "base_idx": sample.get("base_idx"),
@@ -3163,6 +3247,52 @@ class Stage2ABTrainingTrainer(
             "rollout/explorer_temperature": float(explorer_decode_request.temperature),
             "rollout/explorer_top_p": float(explorer_decode_request.top_p),
             "rollout/explorer_top_k": float(explorer_decode_request.top_k),
+            # Per-policy rollout split over the current Channel-B raw rollout window.
+            "rollout/anchor/pred_objects": float(anchor_pred_objects_total),
+            "rollout/anchor/valid_pred_objects": float(anchor_valid_pred_objects_total),
+            "rollout/anchor/parse_truncated_rate": float(
+                float(anchor_parse_truncated_total) / float(len(anchor_rollout_results))
+                if len(anchor_rollout_results) > 0
+                else 0.0
+            ),
+            "rollout/anchor/gen_new_tokens_mean": float(
+                sum(anchor_gen_new_token_lens) / len(anchor_gen_new_token_lens)
+                if anchor_gen_new_token_lens
+                else 0.0
+            ),
+            "rollout/anchor/gen_new_tokens_p90": float(
+                _percentile(anchor_gen_new_token_lens, 90.0)
+            ),
+            "rollout/anchor/near_iou90_any": float(anchor_near_any_desc_pairs_total),
+            "rollout/anchor/near_iou90_same": float(anchor_near_same_desc_pairs_total),
+            "rollout/explorer/pred_objects": float(explorer_pred_objects_total),
+            "rollout/explorer/valid_pred_objects": float(
+                explorer_valid_pred_objects_total
+            ),
+            "rollout/explorer/parse_truncated_rate": float(
+                float(explorer_parse_truncated_total)
+                / float(len(explorer_rollout_results))
+                if len(explorer_rollout_results) > 0
+                else 0.0
+            ),
+            "rollout/explorer/gen_new_tokens_mean": float(
+                sum(explorer_gen_new_token_lens) / len(explorer_gen_new_token_lens)
+                if explorer_gen_new_token_lens
+                else 0.0
+            ),
+            "rollout/explorer/gen_new_tokens_p90": float(
+                _percentile(explorer_gen_new_token_lens, 90.0)
+            ),
+            "rollout/explorer/near_iou90_any": float(
+                explorer_near_any_desc_pairs_total
+            ),
+            "rollout/explorer/near_iou90_same": float(
+                explorer_near_same_desc_pairs_total
+            ),
+            "rollout/explorer/temperature": float(explorer_decode_request.temperature),
+            "rollout/explorer/do_sample": float(1.0 if do_sample else 0.0),
+            "rollout/explorer/top_p": float(explorer_decode_request.top_p),
+            "rollout/explorer/top_k": float(explorer_decode_request.top_k),
             "rollout/parse_truncated": float(parse_truncated_total),
             "rollout/parse_truncated_rate": float(
                 (float(parse_truncated_total) / float(len(anchor_rollout_results)))
@@ -3222,11 +3352,43 @@ class Stage2ABTrainingTrainer(
             "train/triage/recovered_ground_truth_rate_den": float(
                 triage_recovered_gt_den_total
             ),
+            "train/triage/recovered_ground_truth_rate": float(
+                float(triage_recovered_gt_total)
+                / float(triage_recovered_gt_den_total)
+                if triage_recovered_gt_den_total > 0
+                else 0.0
+            ),
             "train/triage/dead_anchor_rate_num": float(
                 triage_dead_anchor_total
             ),
             "train/triage/dead_anchor_rate_den": float(
                 triage_dead_anchor_den_total
+            ),
+            "train/triage/dead_anchor_rate": float(
+                float(triage_dead_anchor_total) / float(triage_dead_anchor_den_total)
+                if triage_dead_anchor_den_total > 0
+                else 0.0
+            ),
+            "train/triage/explorer_only_dead_rate_num": float(
+                triage_dead_explorer_total
+            ),
+            "train/triage/explorer_only_dead_rate_den": float(
+                triage_dead_explorer_den_total
+            ),
+            "train/triage/explorer_only_dead_rate": float(
+                float(triage_dead_explorer_total)
+                / float(triage_dead_explorer_den_total)
+                if triage_dead_explorer_den_total > 0
+                else 0.0
+            ),
+            # Direct supervision-efficiency gauge for strict-valid predictions.
+            "rollout/matched_for_supervision_count": float(
+                matched_for_supervision_total
+            ),
+            "rollout/matched_for_supervision_over_valid_pred": float(
+                float(matched_for_supervision_total) / float(strict_valid_pred_total)
+                if strict_valid_pred_total > 0
+                else 0.0
             ),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),
@@ -4140,11 +4302,41 @@ class Stage2ABTrainingTrainer(
                         )
 
                 if float(dead_anchor_suppression_module_w) != 0.0:
-                    stage2_logs["train/optimization/loss_dead_anchor_suppression"] = float(
+                    dead_anchor_loss = float(
                         pipeline_metrics_ctx.get(
                             "train/optimization/loss_dead_anchor_suppression", 0.0
                         )
                         or 0.0
+                    )
+                    dead_anchor_num_terms = float(
+                        pipeline_metrics_ctx.get(
+                            "train/triage/dead_anchor_suppression_target_count", 0.0
+                        )
+                        or 0.0
+                    )
+                    dead_anchor_num_boundaries = float(
+                        pipeline_metrics_ctx.get(
+                            "train/triage/dead_anchor_suppression_boundary_count", 0.0
+                        )
+                        or 0.0
+                    )
+                    stage2_logs["train/optimization/loss_dead_anchor_suppression"] = float(
+                        dead_anchor_loss
+                    )
+                    # Compatibility alias so dead-anchor UL is visible beside the
+                    # other Channel-B text losses under loss/B_rollout_text/*.
+                    stage2_logs["loss/B_rollout_text/dead_anchor_suppression"] = float(
+                        dead_anchor_loss
+                    )
+                    # Counts explain whether low UL is "healthy" or simply "few terms."
+                    stage2_logs["diag/dead_anchor/num_terms"] = float(
+                        dead_anchor_num_terms
+                    )
+                    stage2_logs["diag/dead_anchor/num_ul_boundaries"] = float(
+                        dead_anchor_num_boundaries
+                    )
+                    stage2_logs["diag/dead_anchor/loss_per_term"] = float(
+                        dead_anchor_loss if dead_anchor_num_terms > 0.0 else 0.0
                     )
 
                 if float(bbox_geo_module_w) != 0.0:
@@ -4307,8 +4499,22 @@ class Stage2ABTrainingTrainer(
                             stage2_logs[k] = float(batch_metrics.get(k) or 0.0)
 
                 for k, v in batch_metrics.items():
-                    if str(k).startswith("stage2_ab/") or str(k).startswith("dup/"):
-                        stage2_logs[str(k)] = float(v or 0.0)
+                    key = str(k)
+                    if (
+                        key.startswith("stage2_ab/")
+                        or key.startswith("dup/")
+                        or key.startswith("train/triage/")
+                        or key.startswith("diag/dead_anchor/")
+                        or key.startswith("rollout/anchor/")
+                        or key.startswith("rollout/explorer/")
+                        or key
+                        in {
+                            "rollout/matched_for_supervision_count",
+                            "rollout/matched_for_supervision_over_valid_pred",
+                            "rollout/valid_pred_objects_total",
+                        }
+                    ):
+                        stage2_logs[key] = float(v or 0.0)
 
             if isinstance(batch_metrics, Mapping):
                 for k, v in batch_metrics.items():

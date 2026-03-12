@@ -58,12 +58,13 @@ Read metric keys left-to-right:
 - `stage2/<metric>`, `stage2_ab/<...>`, `dup/<metric>`
   - Stage-2 scheduler / rollout-health tags, Channel-B-specific counters, and duplicate-collapse diagnostics.
 
-- `latest/<train-key>`
-  - Train-only dense snapshots for channel-specific Stage-2 metrics.
-  - These mirror the most recently observed Channel-A / Channel-B values into every `logging_step`,
-    even when the current interval only contained the other channel.
-  - Use `latest/*` for continuous TensorBoard monitoring; keep the original non-prefixed keys for
-    interval-local semantics.
+- Channel-specific snapshots reuse the normal train-key hierarchy.
+  - Stage-2 keeps the most recently observed Channel-A / Channel-B values and mirrors them into later
+    `logging_step` rows, even when the current interval only contained the other channel.
+  - There is no separate `latest/` namespace anymore; the stale-channel snapshot is written back under
+    the same grouped key, for example `loss/A1_text/struct_ce` or `rollout/f1`.
+  - Interpret a logged key as “most recent observed value for that metric at this logging step,” not
+    strictly “computed in the immediately preceding interval.”
 
 Naming rules:
 - `/` separates namespace levels.
@@ -482,9 +483,48 @@ These keys are emitted by `custom.trainer_variant: stage2_two_channel` during Ch
 - `train/triage/recovered_ground_truth_rate_den`
   - **What:** additive numerator/denominator pair for recovered-GT rate calculations.
 
+- `train/triage/recovered_ground_truth_rate`
+  - **What:** `recovered_ground_truth_count / recovered_ground_truth_rate_den`.
+  - **Interpretation:** share of FN-tail GT objects that were recovered by the explorer rollout.
+
 - `train/triage/dead_anchor_rate_num`
 - `train/triage/dead_anchor_rate_den`
   - **What:** additive numerator/denominator pair for dead-anchor rate calculations.
+
+- `train/triage/dead_anchor_rate`
+  - **What:** `dead_anchor_count / dead_anchor_rate_den`.
+  - **Interpretation:** share of anchor clean objects removed from the positive prefix.
+
+- `train/triage/explorer_only_dead_rate_num`
+- `train/triage/explorer_only_dead_rate_den`
+- `train/triage/explorer_only_dead_rate`
+  - **What:** explorer-only dead-object numerator/denominator pair plus the derived rate.
+  - **Interpretation:** how much of the explorer clean set was mined but not kept as GT-backed or shielded context.
+
+- `rollout/anchor/*` and `rollout/explorer/*`
+  - **What:** policy-split rollout telemetry for the same Channel-B window.
+  - **Includes:** `pred_objects`, `valid_pred_objects`, `parse_truncated_rate`, `gen_new_tokens_mean`, `gen_new_tokens_p90`, `near_iou90_any`, `near_iou90_same`.
+  - **Explorer-only includes:** `temperature`, `do_sample`, `top_p`, `top_k`.
+  - **Interpretation:** these are the diagnostics to compare conservative anchor behavior against stochastic explorer behavior without overloading the legacy flat `rollout/*` keys.
+
+- `loss/B_rollout_text/dead_anchor_suppression`
+  - **What:** compatibility alias for the Channel-B dead-anchor UL atom under the `loss/*` namespace.
+  - **Why:** keeps dead-anchor suppression inspectable beside `struct_ce` / `desc_ce`.
+
+- `diag/dead_anchor/num_terms`
+- `diag/dead_anchor/num_ul_boundaries`
+- `diag/dead_anchor/loss_per_term`
+  - **What:** per-step dead-anchor UL diagnostics.
+  - **Interpretation:** `num_terms` counts retained UL targets, `num_ul_boundaries` counts the contributing clean boundaries, and `loss_per_term` is the mean UL term value for the current step.
+
+- `rollout/matched_for_supervision_count`
+- `rollout/matched_for_supervision_over_valid_pred`
+  - **What:** direct productive-supervision aliases for matched clean predictions.
+  - **Interpretation:** use `matched_for_supervision_over_valid_pred` as a quick efficiency gauge for how much of the strict-valid predicted set contributes positive supervision.
+
+- `stage2_ab/channel_b/train_monitor_dump_written`
+  - **What:** `1` when the current logged Channel-B step successfully wrote a train monitor dump, else `0`.
+  - **Why:** confirms that `monitor_dumps/` emission is actually happening at the configured cadence.
 
 ### Stage-2 Two-Channel Rollout Tags (Channel-B Steps Only)
 

@@ -566,7 +566,8 @@ class Stage2ABChannelExecutorsMixin:
                 "stage2-ab Channel-B step mode requires non-empty raw_samples"
             )
 
-        self._stage2_reset_train_monitor_dump(global_step=global_step)
+        target_log_step = int(global_step + 1)
+        self._stage2_reset_train_monitor_dump(global_step=target_log_step)
 
         # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
         model.train()
@@ -875,7 +876,7 @@ class Stage2ABChannelExecutorsMixin:
                 segments, batch_metrics = self._prepare_batch_inputs_b(
                     list(raw_samples), _segments_only=True
                 )
-            self._stage2_flush_train_monitor_dump(global_step=global_step)
+            self._stage2_flush_train_monitor_dump(global_step=target_log_step)
             if not isinstance(segments, list) or not segments:
                 raise ValueError(
                     "stage2-ab Channel-B step mode produced no post-rollout segments; "
@@ -884,6 +885,14 @@ class Stage2ABChannelExecutorsMixin:
 
             batch_metrics = (
                 dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
+            )
+            batch_metrics["stage2_ab/channel_b/train_monitor_dump_written"] = float(
+                1.0
+                if int(
+                    getattr(self, "_stage2_train_monitor_dump_written_step", -1) or -1
+                )
+                == int(target_log_step)
+                else 0.0
             )
             rollout_static, step_totals = _split_metrics(batch_metrics)
             step_totals["stage2/raw_rollouts"] = float(total_segments_target)
@@ -1089,7 +1098,7 @@ class Stage2ABChannelExecutorsMixin:
                 "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
             )
 
-        self._stage2_flush_train_monitor_dump(global_step=global_step)
+        self._stage2_flush_train_monitor_dump(global_step=target_log_step)
 
         if producer_exc:
             # Re-raise the first producer exception.
