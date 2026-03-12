@@ -1,0 +1,22 @@
+extends: ./ab_mixed_coco1024_bmajority.yaml
+
+model:
+  model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+
+training:
+  run_name: eff_size_96-b_ratio_0.75-triage_posterior-epoch_1
+  output_dir: output/stage2_ab/prod/2b-ab_mixed_coco1024_bmajority_channel_b_triage_posterior
+  logging_dir: tb/stage2_ab/prod/2b-ab_mixed_coco1024_bmajority_channel_b_triage_posterior
+
+stage2_ab:
+  channel_b:
+    triage_posterior:
+      num_rollouts: 2
+      explorer_temperature: 0.7
+      explorer_top_p: 0.95
+      explorer_top_k: 64
+      unlabeled_consistent_iou_threshold: 0.9
+      recovered_ground_truth_weight_multiplier: 2.0
+
+rollout_matching:
+  max_new_tokens: 3084
