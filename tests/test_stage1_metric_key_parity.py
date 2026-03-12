@@ -28,8 +28,11 @@ class _DummyMetric:
 
 def _load_doc_keys() -> set[str]:
     # tests/ -> repo root
-    doc_path = Path(__file__).resolve().parents[1] / "docs/training/METRICS_LOSSES.md"
+    doc_path = Path(__file__).resolve().parents[1] / "docs/training/METRICS.md"
     text = doc_path.read_text(encoding="utf-8")
+    # Ignore fenced code blocks so inline-code extraction is stable even when the doc
+    # contains YAML/CLI examples that also use backticks.
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     keys: set[str] = set()
 
     # Extract inline-code spans, then keep only strings that *look like* metric keys.

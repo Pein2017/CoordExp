@@ -1,5 +1,5 @@
 extends: ../base.yaml
-global_max_length: 14000
+global_max_length: 12000
 
 
 model:
@@ -19,7 +19,7 @@ training:
   save_steps: 300
   do_eval: true
   eval_steps: 300
-  metric_for_best_model: rollout/mAP
+  metric_for_best_model: detection/mAP
 
 stage2_ab:
   schedule: {b_ratio: 0.05}
@@ -38,7 +38,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -83,18 +83,36 @@ custom:
   val_sample_limit: 504
   extra:
     prompt_variant: coco_80
+    loss_gradient_monitor:
+      enabled: true
+      interval_steps: 50
+      ema_beta: 0.98
+      require_sync_gradients: true
+      coord_only: true
+      granularity: atomic
+      param_block:
+        strategy: auto_last_lm_layernorm
+        max_params: 64
+        max_numel: 200000
 
 rollout_matching:
   rollout_backend: vllm
   eval_rollout_backend: vllm
   offload:
     enabled: false
-  max_new_tokens: 2560
+  max_new_tokens: 3084
   channel_b_decode_batch_size: 16
   eval_decode_batch_size: 16
-  monitor_dump:
+  train_monitor_dump:
     enabled: true
-    every_steps: 100
+    every_steps: 40
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
+  eval_monitor_dump:
+    enabled: true
+    every_evals: 1
     max_events: 0
     max_samples: 10
     max_text_chars: 0

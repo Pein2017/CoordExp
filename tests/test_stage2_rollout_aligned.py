@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import re
 import sys
 import threading
@@ -11,6 +12,7 @@ import pytest
 import torch
 
 from src.config.prompts import build_dense_user_prompt
+from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
     RolloutMatchingSFTTrainer,
@@ -28,10 +30,7 @@ from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
     assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
-    assert (
-        Stage2ABTrainingTrainer.prediction_step
-        is RolloutMatchingSFTTrainer.prediction_step
-    )
+    assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
 
 
 class _DummyTokenizerRM:
@@ -208,6 +207,22 @@ def test_shutdown_vllm_server_client_closes_resources():
     assert trainer._vllm_server_comm_inited is False
 
 
+def test_ensure_vllm_server_client_wraps_import_error(monkeypatch) -> None:
+    trainer = _make_rollout_server_trainer()
+    trainer._vllm_server_client = None
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "swift.trainers.rlhf_trainer.vllm_client":
+            raise ImportError("missing vllm client")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    with pytest.raises(RuntimeError, match=r"VLLMClient"):
+        trainer._ensure_vllm_server_client()
+
+
 def test_shutdown_vllm_colocate_engine_cleans_runtime(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer._vllm_last_loaded_step = 9
@@ -372,18 +387,53 @@ def test_best_effort_cleanup_vllm_sleep_mode_pools_clears_globals(monkeypatch) -
     assert gc_calls == [1]
 
 
-def test_vllm_server_timeouts_allow_null_or_non_positive_infer_timeout() -> None:
+def test_vllm_server_timeouts_default_to_finite_infer_timeout() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": None}
     timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
     assert timeout_s == pytest.approx(60.0)
-    assert infer_timeout_s is None
+    assert infer_timeout_s == pytest.approx(60.0)
 
-    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
+
+def test_vllm_server_timeouts_allow_infinite_only_with_explicit_opt_in() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    trainer._vllm_server_cfg = lambda: {
+        "timeout_s": 60.0,
+        "infer_timeout_s": None,
+        "allow_infinite_infer_timeout": True,
+    }
     timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
     assert timeout_s == pytest.approx(60.0)
     assert infer_timeout_s is None
+
+    trainer._vllm_server_cfg = lambda: {
+        "timeout_s": 60.0,
+        "infer_timeout_s": 0,
+        "allow_infinite_infer_timeout": True,
+    }
+    timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
+    assert timeout_s == pytest.approx(60.0)
+    assert infer_timeout_s is None
+
+
+def test_vllm_server_timeouts_reject_non_positive_without_explicit_opt_in() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
+    with pytest.raises(
+        ValueError,
+        match=r"infer_timeout_s must be > 0 unless .*allow_infinite_infer_timeout=true",
+    ):
+        trainer._vllm_server_timeouts()
+
+    trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": -1}
+    with pytest.raises(
+        ValueError,
+        match=r"infer_timeout_s must be > 0 unless .*allow_infinite_infer_timeout=true",
+    ):
+        trainer._vllm_server_timeouts()
 
 
 def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(
@@ -502,9 +552,7 @@ def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
     }
 
     token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(
-            raw, tokenizer=_Tok()
-        )
+        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw, tokenizer=_Tok())
     )
 
     assert prompt_ids == [1, 2]
@@ -531,9 +579,7 @@ def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
         trainer._rollout_decode_batch_size_per_rank(rollout_backend="vllm")
 
 
-def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> (
-    None
-):
+def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology() -> None:
     # Regression for the [1, 1] two-server topology where each rank must still
     # receive one request when per-rank chunk is 1.
     caps_rank0 = _per_server_rank_request_caps(
@@ -586,10 +632,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": f"prompt-{i}"},
-                {
-                    "role": "assistant",
-                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
-                },
+                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
             ]
         }
         for i in range(5)
@@ -606,6 +649,47 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
 
     for chunk in call_debug_samples:
         assert all(sample["messages"][-1]["role"] == "assistant" for sample in chunk)
+
+
+def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    call_offsets: list[int] = []
+
+    def _capture_rollout_many_vllm(
+        samples,
+        *,
+        debug_samples=None,
+        request_index_offset=0,
+    ):
+        call_offsets.append(int(request_index_offset))
+        return [([1], "{}", "greedy", [2]) for _ in samples]
+
+    trainer._vllm_mode = lambda: "server"
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+    trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
+    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+
+    original_samples = [
+        {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": f"prompt-{i}"},
+                {
+                    "role": "assistant",
+                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
+                },
+            ]
+        }
+        for i in range(5)
+    ]
+
+    out = trainer._rollout_many(original_samples, request_index_offset=5)
+
+    assert len(out) == 5
+    assert call_offsets == [5, 7, 9]
 
 
 def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
@@ -647,6 +731,23 @@ def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
     assert captured_payloads[0]["timeout"] is None
 
 
+def test_vllm_server_rollout_wraps_request_config_import_error(monkeypatch) -> None:
+    trainer = _make_rollout_server_trainer()
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "swift.llm" and "RequestConfig" in tuple(fromlist or ()):
+            raise ImportError("missing request config")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    with pytest.raises(RuntimeError, match=r"RequestConfig"):
+        trainer._rollout_many_vllm_server(
+            [{"messages": [{"role": "user", "content": "ping"}]}]
+        )
+
+
 def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {}
@@ -675,10 +776,7 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": "prompt"},
-                {
-                    "role": "assistant",
-                    "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}',
-                },
+                {"role": "assistant", "content": '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}]}'},
             ]
         }
     ]
@@ -819,9 +917,7 @@ def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
     assert "rollout/fn_appended" not in metrics
 
 
-def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> (
-    None
-):
+def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     out = trainer._reduce_train_rollout_log_payload_global(
@@ -836,9 +932,7 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
     assert "rollout/parse_truncated_rate" not in out
 
 
-def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> (
-    None
-):
+def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer._cfg = lambda _k, default=None: default
 
@@ -872,6 +966,7 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0}],
         objective_atoms={"loss/B_rollout_text/struct_ce": 10.0},
+        gradmon_metrics=None,
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
@@ -879,6 +974,7 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     pending.add_micro(
         meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
         objective_atoms={"loss/B_rollout_text/struct_ce": 20.0},
+        gradmon_metrics=None,
         time_forward_s=0.0,
         time_mask_build_s=0.0,
         batch_metrics=None,
@@ -891,6 +987,40 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
     assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
+
+
+def test_build_train_rollout_log_payload_preserves_sparse_gradmon_weight() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    pending = _PendingTrainRolloutLog()
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0}],
+        objective_atoms=None,
+        gradmon_metrics=None,
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+    pending.add_micro(
+        meta=[{"decode_mode": "none", "rollout_len": 0} for _ in range(3)],
+        objective_atoms=None,
+        gradmon_metrics={
+            "gradmon/neg_cosine_pair_frac": 0.5,
+            "gradmon/num_terms": 4.0,
+            "time/gradmon_s": 0.125,
+        },
+        time_forward_s=0.0,
+        time_mask_build_s=0.0,
+        batch_metrics=None,
+    )
+
+    out = trainer._build_train_rollout_log_payload(pending)
+
+    assert out["train/samples_total"] == pytest.approx(4.0)
+    assert out["gradmon/neg_cosine_pair_frac"] == pytest.approx(0.5)
+    assert out["gradmon/num_terms"] == pytest.approx(4.0)
+    assert out["gradmon/_log_weight_total"] == pytest.approx(3.0)
+    assert out["time/gradmon_s"] == pytest.approx(0.125)
 
 
 def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
@@ -951,6 +1081,52 @@ def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
     assert "loss/B_rollout_text/struct_ce_total" not in out
 
 
+def test_reduce_stage_wallclock_metrics_global_uses_ddp_max(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 0, raising=False)
+
+    class _FakeReduceOp:
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+
+    metric_keys = sorted(("time/sft_total_time", "time/rollout_total_time"))
+    peer_values = {
+        "time/sft_total_time": 12.0,
+        "time/rollout_total_time": 9.5,
+    }
+
+    def _fake_all_reduce(tensor: torch.Tensor, op: str) -> None:
+        assert op == _FakeReduceOp.MAX
+        for idx, key in enumerate(metric_keys):
+            tensor[idx] = torch.maximum(
+                tensor[idx],
+                torch.tensor(
+                    peer_values[key],
+                    dtype=tensor.dtype,
+                    device=tensor.device,
+                ),
+            )
+
+    monkeypatch.setattr(dist, "all_reduce", _fake_all_reduce)
+
+    out = trainer._reduce_stage_wallclock_metrics_global(
+        {
+            "time/sft_total_time": 10.0,
+            "time/rollout_total_time": 8.0,
+        }
+    )
+
+    assert out["time/sft_total_time"] == pytest.approx(12.0)
+    assert out["time/rollout_total_time"] == pytest.approx(9.5)
+
+
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
@@ -990,12 +1166,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         100: types.SimpleNamespace(
             response_token_ids=[100],
             valid_objects=[
-                types.SimpleNamespace(
-                    index=0,
-                    geom_type="bbox_2d",
-                    coord_token_indices=[0, 1, 2, 3],
-                    desc="",
-                )
+                    types.SimpleNamespace(
+                        index=0,
+                        geom_type="bbox_2d",
+                        coord_token_indices=[0, 1, 2, 3],
+                        desc="",
+                    )
             ],
             dropped_invalid=0,
             dropped_ambiguous=0,
@@ -1004,12 +1180,12 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         101: types.SimpleNamespace(
             response_token_ids=[101],
             valid_objects=[
-                types.SimpleNamespace(
-                    index=0,
-                    geom_type="bbox_2d",
-                    coord_token_indices=[0, 1, 2, 3],
-                    desc="",
-                )
+                    types.SimpleNamespace(
+                        index=0,
+                        geom_type="bbox_2d",
+                        coord_token_indices=[0, 1, 2, 3],
+                        desc="",
+                    )
             ],
             dropped_invalid=1,
             dropped_ambiguous=1,
@@ -1077,18 +1253,18 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     assert callback_metrics and callback_metrics[0] == metrics
     assert logged_metrics == metrics
 
-    assert metrics["eval_rollout/precision"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/recall"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/f1"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/fp"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/fn"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/gating_rejections"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/parse_truncated_rate"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/sample_valid_pred_rate"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/sample_any_match_rate"] == pytest.approx(0.5)
-    assert metrics["eval_rollout/matched_maskiou_mean"] == pytest.approx(0.8)
+    assert metrics["eval/detection/precision"] == pytest.approx(0.5)
+    assert metrics["eval/detection/recall"] == pytest.approx(0.5)
+    assert metrics["eval/detection/f1"] == pytest.approx(0.5)
+    assert metrics["eval/detection/fp_total"] == pytest.approx(1.0)
+    assert metrics["eval/detection/fn_total"] == pytest.approx(1.0)
+    assert metrics["eval/parsing/gating_rejections"] == pytest.approx(1.0)
+    assert metrics["eval/parsing/parse_truncated_rate"] == pytest.approx(0.5)
+    assert metrics["eval/parsing/sample_valid_pred_rate"] == pytest.approx(1.0)
+    assert metrics["eval/detection/sample_any_match_rate"] == pytest.approx(0.5)
+    assert metrics["eval/detection/matched_maskiou_mean"] == pytest.approx(0.8)
     assert "eval_loss" not in metrics
-    assert "eval_time/runtime_s" in metrics
+    assert "eval/runtime/runtime_s" in metrics
 
 
 def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
@@ -1141,6 +1317,65 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
         object_field_order="geometry_first",
     )
     assert user_content[-1]["text"] == expected_prompt
+
+
+def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 12,
+        "num_beams": 1,
+        "repetition_penalty": 1.1,
+    }
+    trainer._decoding_params = lambda: (0.0, 1.0, -1)
+
+    request = trainer._resolve_rollout_decode_request(
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.92,
+            "top_k": 24,
+        }
+    )
+
+    assert request.decode_mode == "greedy"
+    assert request.temperature == pytest.approx(0.7)
+    assert request.top_p == pytest.approx(0.92)
+    assert request.top_k == 24
+    assert request.repetition_penalty == pytest.approx(1.1)
+    assert request.max_new_tokens == 12
+
+
+def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    captured: dict[str, object] = {}
+
+    def _fake_rollout_many_hf(samples, *, decode_override=None):
+        captured["samples"] = samples
+        captured["decode_override"] = decode_override
+        return [([], "{}", "greedy", []) for _ in samples]
+
+    trainer._rollout_many_hf = _fake_rollout_many_hf
+    trainer._effective_rollout_backend = lambda context="train": "hf"
+
+    sample = {
+        "messages": [
+            {"role": "user", "content": "prompt"},
+            {"role": "assistant", "content": '{"objects": []}'},
+        ]
+    }
+    decode_override = {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 16,
+    }
+
+    out = trainer._rollout_many([sample], decode_override=decode_override)
+
+    assert out == [([], "{}", "greedy", [])]
+    assert captured["decode_override"] == decode_override
 
 
 def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
@@ -1246,7 +1481,9 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
         lambda *_args, **_kwargs: nullcontext(_DummyUnwrapped()),
     )
 
-    outs = trainer._rollout_many_hf([{"messages": [{"role": "user", "content": "q"}]}])
+    outs = trainer._rollout_many_hf(
+        [{"messages": [{"role": "user", "content": "q"}]}]
+    )
 
     assert len(outs) == 1
     assert len(offload_calls) == 1
@@ -1254,6 +1491,123 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     assert kwargs["rollout_backend"] == "hf"
     assert "force_enable" not in kwargs
     assert "force_offload_optimizer" not in kwargs
+
+
+def test_vllm_server_rollout_uses_decode_override_request_config(monkeypatch):
+    trainer = _make_rollout_server_trainer()
+
+    captured_payloads: list[dict] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(RequestConfig=_FakeRequestConfig),
+    )
+
+    response_payload = [
+        {
+            "response": {
+                "prompt_token_ids": [1, 2],
+                "choices": [
+                    {
+                        "message": {"content": "{}"},
+                        "token_ids": [3, 4],
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        }
+    ]
+    fake_client = types.SimpleNamespace(
+        sessions=[_FakeHTTPSession(response_payload, captured_payloads)]
+    )
+    trainer._ensure_vllm_server_client = lambda: fake_client
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    trainer._rollout_many_vllm_server(
+        [sample],
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.93,
+            "top_k": 32,
+        },
+    )
+
+    assert captured_payloads
+    request_cfg = captured_payloads[0]["json"]["request_config"]
+    assert request_cfg["temperature"] == pytest.approx(0.7)
+    assert request_cfg["top_p"] == pytest.approx(0.93)
+    assert request_cfg["top_k"] == 32
+
+
+def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 8,
+        "repetition_penalty": 1.0,
+    }
+    trainer.state = types.SimpleNamespace(global_step=4)
+    trainer.processing_class = _DummyTokenizerRM()
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._derive_rollout_seed_base = lambda global_step: 100 + int(global_step)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: nullcontext()
+    trainer._sync_vllm_rollout_model_if_needed = lambda: None
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(_infer_requests, request_config):
+        captured["request_config"] = request_config
+        return [
+            types.SimpleNamespace(
+                prompt_token_ids=[1, 2],
+                choices=[
+                    types.SimpleNamespace(
+                        message=types.SimpleNamespace(content="{}"),
+                        token_ids=[3, 4],
+                        logprobs=None,
+                    )
+                ],
+            )
+        ]
+
+    trainer._vllm_infer_tp_group = _fake_infer
+
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(
+            RequestConfig=_FakeRequestConfig,
+            InferRequest=lambda **kwargs: types.SimpleNamespace(**kwargs),
+        ),
+    )
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    outs = trainer._rollout_many_vllm_colocate(
+        [sample],
+        request_index_offset=7,
+        decode_override={"temperature": 0.7, "top_p": 0.9, "top_k": 11},
+    )
+
+    assert len(outs) == 1
+    request_cfg = captured["request_config"]
+    assert request_cfg.seed == 111
+    assert request_cfg.temperature == pytest.approx(0.7)
+    assert request_cfg.top_p == pytest.approx(0.9)
+    assert request_cfg.top_k == 11
+
+
+def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
+    trainer = _make_rollout_server_trainer()
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+
+    with pytest.raises(
+        ValueError,
+        match=r"vLLM server rollout backend does not support decode_mode=beam",
+    ):
+        trainer._rollout_many_vllm_server(
+            [sample],
+            decode_override={"decode_mode": "beam"},
+        )
 
 
 def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
@@ -1316,9 +1670,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [
-        ([100], "{}", "greedy", []) for _ in batch
-    ]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -1381,11 +1733,11 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     metrics = trainer.evaluate()
 
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert all(not k.startswith("eval/detection/bbox_") for k in metrics)
+    assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> None:
@@ -1534,9 +1886,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
     metrics = trainer.evaluate()
 
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
@@ -1693,20 +2045,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
 
     assert called["vllm"] == 1
     assert logged_metrics == metrics
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.123)
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/prompt_variant_is_coco_80"] == pytest.approx(1.0)
-
-
-def test_effective_rollout_backend_allows_hf_eval_override() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
-    trainer.rollout_matching_cfg = {
-        "rollout_backend": "hf",
-        "eval_rollout_backend": "hf",
-    }
-
-    assert trainer._effective_rollout_backend(context="train") == "hf"
-    assert trainer._effective_rollout_backend(context="eval") == "hf"
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
 
 
 def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> None:
@@ -1730,9 +2071,7 @@ def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> 
         trainer._validate_rollout_matching_cfg()
 
 
-def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> (
-    None
-):
+def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -1772,9 +2111,7 @@ def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> Non
     trainer._validate_rollout_matching_cfg()
 
 
-def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> (
-    None
-):
+def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -2013,13 +2350,12 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
     )
 
     metrics = trainer.evaluate()
-    assert metrics["eval/trace_fallback_count"] == pytest.approx(1.0)
-    assert metrics["eval_rollout/effective_score_mode_is_constant"] == pytest.approx(
-        1.0
+    assert metrics["eval/runtime/trace_fallback_count"] == pytest.approx(1.0)
+    assert metrics["eval/config/effective_score_mode_is_constant"] == pytest.approx(1.0)
+    assert (
+        metrics["eval/config/effective_score_mode_is_confidence_postop"]
+        == pytest.approx(0.0)
     )
-    assert metrics[
-        "eval_rollout/effective_score_mode_is_confidence_postop"
-    ] == pytest.approx(0.0)
 
 
 def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
@@ -2122,7 +2458,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
     )
 
     metrics = trainer.evaluate()
-    assert metrics["eval/vllm_decode_error_count"] == pytest.approx(1.0)
+    assert metrics["eval/runtime/vllm_decode_error_count"] == pytest.approx(1.0)
 
 
 def test_evaluate_vllm_engine_level_failure_is_fatal() -> None:
@@ -2208,9 +2544,7 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
 
     sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [
-        ([100], "{}", "greedy", []) for _ in batch
-    ]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2326,9 +2660,7 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
 
     sample = {"sample_id": 0, "messages": [{"role": "user", "content": "q0"}]}
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [
-        ([100], "{}", "greedy", []) for _ in batch
-    ]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2432,12 +2764,14 @@ def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
         return nullcontext()
 
     trainer._maybe_rollout_offload_context = _offload_ctx
-    trainer._ensure_vllm_engine = (
-        lambda: events.__setitem__("ensure", int(events["ensure"]) + 1) or object()
+    trainer._ensure_vllm_engine = lambda: events.__setitem__(
+        "ensure", int(events["ensure"]) + 1
+    ) or object()
+    trainer._shutdown_vllm_colocate_engine = (
+        lambda *, wake_before_release: events["shutdown"].append(
+            bool(wake_before_release)
+        )
     )
-    trainer._shutdown_vllm_colocate_engine = lambda *, wake_before_release: events[
-        "shutdown"
-    ].append(bool(wake_before_release))
     trainer._cuda_memory_drain = lambda *, synchronize=False: events["drain"].append(
         bool(synchronize)
     )
@@ -2458,7 +2792,7 @@ def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
     assert kwargs["require_cuda_drain"] is True
 
 
-def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
+def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     class _DummyEvalModel:
@@ -2516,9 +2850,7 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [
-        ([100], "{}", "greedy", []) for _ in batch
-    ]
+    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2579,13 +2911,13 @@ def test_evaluate_emits_zero_map_when_coco_eval_fails(monkeypatch) -> None:
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    metrics = trainer.evaluate()
+    with pytest.raises(
+        RuntimeError,
+        match=r"Eval-step COCO/mAP failed; aborting \(fail-fast\)",
+    ):
+        trainer.evaluate()
 
-    assert logged_metrics == metrics
-    assert metrics["eval_rollout/coco_eval_ok"] == pytest.approx(0.0)
-    assert metrics["eval_rollout/mAP"] == pytest.approx(0.0)
-    assert all(not k.startswith("eval_rollout/bbox_") for k in metrics)
-    assert all(not k.startswith("eval_rollout/segm_") for k in metrics)
+    assert logged_metrics == {}
 
 
 def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) -> None:
@@ -2605,7 +2937,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace(metric_for_best_model="rollout/mAP")
+    trainer.args = types.SimpleNamespace(metric_for_best_model="eval/detection/mAP")
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -2646,9 +2978,9 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [
-        ([100], "{}", "greedy", []) for _ in batch
-    ]
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    )
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2704,9 +3036,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    with pytest.raises(
-        RuntimeError, match=r"metric_for_best_model targets rollout/mAP"
-    ):
+    with pytest.raises(RuntimeError, match=r"metric_for_best_model targets eval/detection/mAP"):
         trainer.evaluate()
 
 
@@ -2848,7 +3178,7 @@ def test_rollout_parse_drops_invalid_objects_without_repair():
         '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
         '{"desc": "b", "bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>]}, '
         '{"desc": "c", "bbox_2d": [<|coord_8|>, <|coord_9|>, <|coord_10|>, <|coord_11|>]}'
-        "]}"
+        ']}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
@@ -2862,7 +3192,7 @@ def test_rollout_parse_drops_order_violation_for_geometry_first():
         '{"objects": ['
         '{"desc": "a", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}, '
         '{"bbox_2d": [<|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>], "desc": "b"}'
-        "]}"
+        ']}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(
@@ -2906,7 +3236,9 @@ def test_serialize_append_fragment_comma_policy_is_prefix_entry_aware():
     assert frag_empty.startswith('{"')
     assert frag_empty.endswith("]}")
 
-    prefix_with_entry = '{"objects": [{"desc": "p", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}'
+    prefix_with_entry = (
+        '{"objects": [{"desc": "p", "bbox_2d": [<|coord_1|>, <|coord_2|>, <|coord_3|>, <|coord_4|>]}'
+    )
     frag_non_empty = _serialize_append_fragment(
         fn_objects=fn_objs,
         prefix_text=prefix_with_entry,
@@ -2949,7 +3281,7 @@ def test_rollout_parse_poly_captures_coord_indices_for_flat_arrays():
     tok = _DummyTokenizerRM()
     text = (
         '{"objects": [{"desc": "p", "poly": [<|coord_1|>, <|coord_2|>, <|coord_3|>, '
-        "<|coord_4|>, <|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}"
+        '<|coord_4|>, <|coord_5|>, <|coord_6|>, <|coord_7|>, <|coord_8|>]}]}'
     )
     ids = tok.encode(text, add_special_tokens=False)
     parsed = parse_rollout_for_matching(tokenizer=tok, response_token_ids=ids)
@@ -3090,6 +3422,45 @@ def test_hungarian_matching_with_gating_and_dummy_augmentation():
     assert match2.fp_pred_indices == [0, 1]
 
 
+def test_associate_one_to_one_max_iou_uses_lexicographic_tiebreak() -> None:
+    anchors = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="anchor-0",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="anchor-1",
+        ),
+    ]
+    explorers = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="explorer-0",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="explorer-1",
+        ),
+    ]
+
+    pairs = associate_one_to_one_max_iou(
+        anchors=anchors,
+        explorers=explorers,
+        min_iou=0.5,
+    )
+
+    assert pairs == [(0, 0), (1, 1)]
+
+
 def test_sinkhorn_barycentric_targets_sanity_poly_involved():
     # Pred and GT are the same square -> barycentric targets should be close.
     pred = torch.tensor(
@@ -3199,29 +3570,25 @@ def test_rollout_context_masking_full_idea_semantics_prefix_fn_fp_and_closure():
 
     # assistant span: [2, 10)
     # prefix: [2, 6), tail: [6, 10)
-    input_ids = torch.tensor(
-        [1, 2, 30, 31, 32, 33, 40, 41, 10, 42, 0, 0], dtype=torch.long
-    )
+    input_ids = torch.tensor([1, 2, 30, 31, 32, 33, 40, 41, 10, 42, 0, 0], dtype=torch.long)
 
-    labels, coord_pos, coord_bins, coord_is_prefix = (
-        _build_labels_and_coord_targets_for_sample(
-            input_ids_1d=input_ids,
-            prompt_len=prompt_len,
-            prefix_len=prefix_len,
-            train_len=train_len,
-            coord_id_set=coord_id_set,
-            coord_id_to_bin=coord_id_to_bin,
-            prefix_coord_pos=[],
-            prefix_coord_target_bins=[],
-            # ignore tail rel=0 and rel=3, but rel=3 is closure and must stay supervised
-            tail_ignore_pos=[0, 3],
-            # matched-prefix struct-only CE
-            prefix_struct_pos=[0, 2],
-            # FN desc token rel=1 is supervised by default
-            tail_desc_pos=[1],
-            # closure/EOS supervision (tail rel=3)
-            tail_closure_pos=[3],
-        )
+    labels, coord_pos, coord_bins, coord_is_prefix = _build_labels_and_coord_targets_for_sample(
+        input_ids_1d=input_ids,
+        prompt_len=prompt_len,
+        prefix_len=prefix_len,
+        train_len=train_len,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+        prefix_coord_pos=[],
+        prefix_coord_target_bins=[],
+        # ignore tail rel=0 and rel=3, but rel=3 is closure and must stay supervised
+        tail_ignore_pos=[0, 3],
+        # matched-prefix struct-only CE
+        prefix_struct_pos=[0, 2],
+        # FN desc token rel=1 is supervised by default
+        tail_desc_pos=[1],
+        # closure/EOS supervision (tail rel=3)
+        tail_closure_pos=[3],
     )
 
     # Prefix matched-struct CE on rel=0,2 only (FP prefix spans masked).
@@ -3232,11 +3599,9 @@ def test_rollout_context_masking_full_idea_semantics_prefix_fn_fp_and_closure():
 
     # Tail FN semantics: desc token is supervised, coord token masked, closure supervised.
     assert labels[6].item() == -100  # ignored non-closure
-    assert labels[7].item() == 41  # desc supervised by default
+    assert labels[7].item() == 41    # desc supervised by default
     assert labels[8].item() == -100  # coord
-    assert (
-        labels[9].item() == 42
-    )  # closure supervised even if listed in tail_ignore_pos
+    assert labels[9].item() == 42    # closure supervised even if listed in tail_ignore_pos
 
     # Tail coord token still contributes to coord supervision targets.
     assert coord_pos == [8]

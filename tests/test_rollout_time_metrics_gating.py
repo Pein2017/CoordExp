@@ -35,3 +35,28 @@ def test_rollout_time_metrics_only_present_when_rollout_ran() -> None:
     assert out2["time/rollout_generate_s"] == 3.0
     assert out2["time/rollout_parse_match_s"] == 0.0
     assert out2["time/rollout_teacher_encode_s"] == 0.0
+
+
+def test_rollout_log_emits_stage_total_time_metrics(monkeypatch) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.state = type("State", (), {"global_step": 0})()
+    trainer._rm_pending_train_logs = {}
+    trainer._stage_wallclock_metrics_local = lambda: {
+        "time/sft_total_time": 11.5,
+        "time/rollout_total_time": 7.25,
+    }
+    trainer._reduce_stage_wallclock_metrics_global = lambda metrics: dict(metrics)
+
+    captured: dict[str, float] = {}
+
+    def _capture_super_log(self, logs):
+        captured.update(dict(logs))
+        return None
+
+    monkeypatch.setattr("swift.trainers.Seq2SeqTrainer.log", _capture_super_log)
+
+    RolloutMatchingSFTTrainer.log(trainer, {"loss": 1.0})
+
+    assert captured["loss"] == 1.0
+    assert captured["time/sft_total_time"] == 11.5
+    assert captured["time/rollout_total_time"] == 7.25

@@ -16,7 +16,6 @@ references:
 > - `docs/PROJECT_CONTEXT.md`
 > - `docs/training/STAGE2_DESIGN.md`
 > - `progress/directions/stage2_clean_prefix_v2.md`
-> - `progress/directions/stage2_clean_prefix_v2_longform.md`
 
 > Goal: Train a pretrained V-LLM (e.g., Qwen3-VL) to output **open-vocabulary object descriptions + norm1000 boxes** in a structured text format, while enabling **continuous geometric gradients** (SmoothL1 + CIoU) to flow back into the LM head via **CoordExp** and reducing order sensitivity via **Hungarian matching** in an **EM-ish** training loop—**without adding a DETR-style detection head**.
 

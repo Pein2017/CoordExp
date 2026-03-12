@@ -67,7 +67,7 @@ Run these tests first:
 - `tests/test_stage1_registry_masks.py`
 - `tests/test_stage1_static_packing_runtime_config.py`
 
-## 3. Stage-2 Two-Channel Training, Matching, Or Duplicate UL
+## 3. Stage-2 Two-Channel Training, Matching, Triage, Or Duplicate UL
 
 Open these docs first:
 - [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
@@ -80,6 +80,10 @@ Open these configs first:
 - `configs/stage2_two_channel/prod/`
 - `configs/stage2_two_channel/smoke/`
 
+Key v3 config handles:
+- `stage2_ab.channel_b.triage_posterior.*`
+- `rollout_matching.decoding.*`
+
 Open these code files first:
 - `src/sft.py`
 - `src/trainers/stage2_two_channel.py`
@@ -88,7 +92,7 @@ Open these code files first:
 - `src/trainers/teacher_forcing/module_registry.py`
 - `src/trainers/teacher_forcing/objective_atoms.py`
 - `src/trainers/teacher_forcing/modules/token_ce.py`
-- `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+- `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 - `src/trainers/teacher_forcing/modules/bbox_geo.py`
 - `src/trainers/teacher_forcing/modules/coord_reg.py`
 

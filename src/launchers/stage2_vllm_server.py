@@ -116,7 +116,7 @@ def resolve_config_path(config_raw: str, *, repo_root: Path) -> Path:
     elif raw.startswith("configs/"):
         path = repo_root / raw
     elif raw.endswith(".yaml"):
-        path = repo_root / "configs" / raw
+        path = repo_root / raw
     else:
         path = repo_root / "configs" / f"{raw}.yaml"
 
@@ -224,6 +224,7 @@ def build_swift_rollout_cmd(
     template_max_pixels: int,
     template_max_length: int | None,
     truncation_strategy: str | None,
+    vllm_engine_kwargs: Mapping[str, Any] | None = None,
 ) -> list[str]:
     cmd = [
         "swift",
@@ -260,6 +261,13 @@ def build_swift_rollout_cmd(
         cmd.extend(["--truncation_strategy", truncation_strategy])
 
     cmd.extend(["--max_pixels", str(int(template_max_pixels))])
+    if vllm_engine_kwargs:
+        cmd.extend(
+            [
+                "--vllm_engine_kwargs",
+                json.dumps(dict(vllm_engine_kwargs), sort_keys=True, separators=(",", ":")),
+            ]
+        )
     return cmd
 
 
@@ -511,6 +519,7 @@ def main() -> int:
         rollout_backend = preflight.get("rollout_backend")
         vllm_mode = preflight.get("vllm_mode")
         server_base_urls = preflight.get("server_base_urls")
+        server_group_ports = preflight.get("server_group_ports")
 
         if rollout_backend != "vllm" or vllm_mode != "server":
             raise ValueError(
@@ -524,8 +533,23 @@ def main() -> int:
                 "Single-server only: rollout_matching.vllm.server.servers must have exactly 1 entry. "
                 f"Got server_base_urls={server_base_urls!r}."
             )
+        if not isinstance(server_group_ports, list) or len(server_group_ports) != 1:
+            raise ValueError(
+                "Single-server only: rollout_matching.vllm.server.servers must include exactly 1 group_port entry. "
+                f"Got server_group_ports={server_group_ports!r}."
+            )
 
         base_url = parse_base_url(server_base_urls[0])
+        try:
+            group_port = int(server_group_ports[0])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid rollout server group_port in preflight: {server_group_ports!r}"
+            ) from exc
+        if int(group_port) <= 0:
+            raise ValueError(
+                f"Invalid rollout server group_port in preflight: {server_group_ports!r}"
+            )
         if base_url.scheme != "http":
             raise ValueError(
                 "Combined launcher only supports http base_url (swift rollout serves http). "
@@ -553,6 +577,7 @@ def main() -> int:
         train_jsonl = str(preflight.get("train_jsonl_resolved") or "").strip()
         val_jsonl = str(preflight.get("val_jsonl_resolved") or "").strip()
         template_max_pixels = int(preflight["template_max_pixels"])
+        offline_max_pixels = int(preflight["offline_max_pixels"])
 
         if not train_jsonl:
             raise ValueError("custom.train_jsonl is required (resolved empty)")
@@ -573,6 +598,10 @@ def main() -> int:
 
         vllm_max_model_len = int(preflight.get("vllm_max_model_len"))
         vllm_enable_lora = bool(preflight.get("vllm_enable_lora"))
+        vllm_engine_kwargs_raw = preflight.get("vllm_engine_kwargs") or {}
+        if not isinstance(vllm_engine_kwargs_raw, Mapping):
+            raise TypeError("Preflight returned non-mapping vllm_engine_kwargs")
+        vllm_engine_kwargs = dict(vllm_engine_kwargs_raw)
 
         gpu_mem_raw = preflight.get("vllm_gpu_memory_utilization")
         vllm_gpu_memory_utilization = 0.75
@@ -597,14 +626,15 @@ def main() -> int:
             "========================================================================"
         )
         _info(
-            "[PRECHECK] Validating JSONL contracts + max_pixels before launching GPUs"
+            "[PRECHECK] Validating JSONL contracts + offline_max_pixels before launching GPUs"
         )
         _info(
             "========================================================================"
         )
         _info(f"[PRECHECK] train_jsonl: {train_jsonl}")
         _info(f"[PRECHECK] val_jsonl: {val_jsonl}")
-        _info(f"[PRECHECK] max_pixels: {template_max_pixels} (expect 768*32*32=786432)")
+        _info(f"[PRECHECK] offline_max_pixels: {offline_max_pixels}")
+        _info(f"[PRECHECK] template.max_pixels(runtime): {template_max_pixels}")
         _info("[PRECHECK] multiple_of: 32")
         _info(
             "========================================================================"
@@ -613,21 +643,21 @@ def main() -> int:
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=train_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="exists",
             n=0,
         )
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=train_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="open",
             n=256,
         )
         _run_validate_jsonl(
             repo_root=_REPO_ROOT,
             jsonl_path=val_jsonl,
-            max_pixels=template_max_pixels,
+            max_pixels=offline_max_pixels,
             mode="open",
             n=0,
         )
@@ -646,6 +676,7 @@ def main() -> int:
             template_max_pixels=template_max_pixels,
             template_max_length=template_max_length,
             truncation_strategy=truncation_strategy,
+            vllm_engine_kwargs=vllm_engine_kwargs,
         )
 
         train_world_size = len(train_gpus)
@@ -731,6 +762,11 @@ def main() -> int:
         _info(
             f"[INFO] enable_lora: {vllm_enable_lora} (full-sync-only; adapter sync unsupported)"
         )
+        if vllm_engine_kwargs:
+            _info(
+                "[INFO] vllm_engine_kwargs: %s"
+                % json.dumps(vllm_engine_kwargs, sort_keys=True)
+            )
         _info(
             "[INFO] nccl_monitor:%s heartbeat_s:%s dump_on_timeout:%s"
             % (
@@ -777,10 +813,17 @@ def main() -> int:
                 world_url=world_url,
                 wait_timeout_s=wait_timeout_s,
                 wait_interval_s=wait_interval_s,
-                expected_world_size=len(server_gpus),
+                expected_world_size=server_dp,
             )
 
-            _info(f"vLLM server is ready. world_size: {len(server_gpus)}")
+            _info(
+                "vLLM server is ready. "
+                f"data_parallel_world_size={int(server_dp)} "
+                f"tensor_parallel_size={int(server_tp)} "
+                f"total_server_gpus={int(len(server_gpus))} "
+                f"group_port={int(group_port)} "
+                "(communicator initializes after learner startup)"
+            )
 
             _info(
                 f"[RUN] (cwd={_REPO_ROOT}) CUDA_VISIBLE_DEVICES={train_gpus_raw} {_format_cmd(learner_cmd)}"

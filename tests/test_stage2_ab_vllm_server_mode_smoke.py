@@ -85,6 +85,21 @@ def _http_get(url: str, *, timeout_s: float) -> tuple[int, bytes]:
         return int(resp.getcode()), resp.read()
 
 
+def _http_post_json(url: str, payload: dict[str, Any], *, timeout_s: float) -> tuple[int, bytes]:
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with opener.open(req, timeout=timeout_s) as resp:
+        return int(resp.getcode()), resp.read()
+
+
 def _wait_for_rollout_server(
     base_url: str, *, timeout_s: float, proc: Optional[subprocess.Popen[str]] = None
 ) -> dict[str, Any]:
@@ -151,6 +166,246 @@ def _select_model_dir() -> Path:
     raise FileNotFoundError(
         "No Stage-1 checkpoint directory found. Set COORDEXP_STAGE2_AB_MODEL to a local merged checkpoint folder."
     )
+
+
+def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
+    """Opt-in smoke: real server prompt_token_ids must match the teacher-forced prompt prefix."""
+
+    if not _env_flag("COORDEXP_RUN_VLLM_PROMPT_PARITY_SMOKE"):
+        pytest.skip(
+            "Set COORDEXP_RUN_VLLM_PROMPT_PARITY_SMOKE=1 to run the vLLM prompt parity smoke."
+        )
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is not available in this environment.")
+    if _nvidia_gpu_count() < 1:
+        pytest.skip("Need >=1 GPU for the rollout server parity smoke.")
+
+    pytest.importorskip("vllm")
+
+    swift_bin = shutil.which("swift")
+    if not swift_bin:
+        pytest.skip("`swift` CLI not found on PATH; required to launch the rollout server.")
+
+    from PIL import Image
+    from swift.llm import get_model_tokenizer, get_template
+
+    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+    from src.utils.assistant_json import dumps_coordjson
+
+    def _find_subsequence(haystack: list[int], needle: list[int]) -> int:
+        limit = len(haystack) - len(needle) + 1
+        for idx in range(max(0, limit)):
+            if haystack[idx : idx + len(needle)] == needle:
+                return idx
+        raise AssertionError(
+            "assistant token ids not found inside teacher-forced input_ids"
+        )
+
+    repo_root = Path(__file__).resolve().parent.parent
+    model_dir = _select_model_dir().resolve()
+
+    image_path = tmp_path / "parity.png"
+    Image.new("RGB", (96, 64), color=(0, 0, 0)).save(image_path)
+
+    _, processor = get_model_tokenizer(str(model_dir), load_model=False)
+
+    teacher_template = get_template(
+        "qwen3_vl",
+        processor,
+        max_length=512,
+        truncation_strategy="right",
+        max_pixels=7864320000,
+        padding_free=False,
+    )
+    teacher_template.system = "You are a precise detection assistant."
+    teacher_template.set_mode("train")
+
+    assistant_text = dumps_coordjson({"objects": []})
+    assistant_ids = teacher_template.tokenizer.encode(
+        assistant_text, add_special_tokens=False
+    )
+    teacher_encoded = teacher_template.encode(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": str(image_path)},
+                        {"type": "text", "text": "Describe the objects."},
+                    ],
+                },
+                {"role": "assistant", "content": assistant_ids},
+            ]
+        },
+        return_length=True,
+    )
+    teacher_input_ids = [int(t) for t in teacher_encoded["input_ids"]]
+    prompt_len = _find_subsequence(teacher_input_ids, assistant_ids)
+    teacher_prompt_ids = teacher_input_ids[:prompt_len]
+    teacher_image_token_count = sum(
+        1 for t in teacher_prompt_ids if int(t) == int(teacher_template.image_token_id)
+    )
+
+    rollout_template = get_template(
+        "qwen3_vl",
+        processor,
+        max_length=512,
+        truncation_strategy="right",
+        max_pixels=7864320000,
+        padding_free=False,
+    )
+    rollout_template.system = str(teacher_template.system)
+    rollout_template.set_mode("vllm")
+
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.template = rollout_template
+
+    rollout_sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": str(image_path)},
+                    {"type": "text", "text": "Describe the objects."},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": assistant_text}],
+            },
+        ],
+        "images": [str(image_path)],
+    }
+
+    prepared = trainer._prepare_samples_for_rollout(
+        [rollout_sample], rollout_backend="vllm"
+    )
+    infer_requests = trainer._build_vllm_server_infer_requests(prepared)
+
+    port = _pick_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    server_log = tmp_path / "vllm_prompt_parity_server.log"
+
+    server_env = os.environ.copy()
+    _unset_proxies(server_env)
+    _set_no_proxy(server_env)
+    server_env["CUDA_VISIBLE_DEVICES"] = os.environ.get(
+        "COORDEXP_STAGE2_AB_SERVER_CUDA_VISIBLE_DEVICES", "0"
+    )
+    server_env["PYTHONPATH"] = str(repo_root) + (
+        f"{os.pathsep}{server_env['PYTHONPATH']}"
+        if server_env.get("PYTHONPATH")
+        else ""
+    )
+    server_env["ROOT_IMAGE_DIR"] = str(tmp_path)
+
+    server_cmd = [
+        swift_bin,
+        "rollout",
+        "--model",
+        str(model_dir),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--infer_backend",
+        "vllm",
+        "--template",
+        "qwen3_vl",
+        "--max_length",
+        "512",
+        "--truncation_strategy",
+        "delete",
+        "--max_pixels",
+        "7864320000",
+        "--vllm_data_parallel_size",
+        "1",
+        "--vllm_tensor_parallel_size",
+        "1",
+        "--vllm_gpu_memory_utilization",
+        "0.8",
+        "--vllm_max_model_len",
+        "1024",
+        "--vllm_enable_lora",
+        "false",
+        "--vllm_enforce_eager",
+        "true",
+        "--vllm_engine_kwargs",
+        json.dumps(
+            {"mm_processor_kwargs": {"do_resize": False}},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    ]
+
+    proc: Optional[subprocess.Popen[str]] = None
+    try:
+        with server_log.open("w", encoding="utf-8") as fp:
+            proc = subprocess.Popen(
+                server_cmd,
+                cwd=str(repo_root),
+                env=server_env,
+                stdout=fp,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+        try:
+            _wait_for_rollout_server(base_url, timeout_s=15 * 60, proc=proc)
+        except BaseException as exc:
+            rc = None if proc is None else proc.poll()
+            raise AssertionError(
+                f"rollout server failed to become healthy (returncode={rc}); last server logs:\n"
+                + _tail(server_log)
+            ) from exc
+
+        request_cfg = RolloutMatchingSFTTrainer._rollout_vllm_request_config_kwargs(
+            max_tokens=1,
+            temperature=0.0,
+            top_p=1.0,
+            top_k=-1,
+            repetition_penalty=1.0,
+        )
+        code, body = _http_post_json(
+            f"{base_url}/infer/",
+            {
+                "infer_requests": infer_requests,
+                "request_config": request_cfg,
+                "metrics": None,
+                "template": None,
+                "use_tqdm": None,
+                "adapter_request": None,
+            },
+            timeout_s=120.0,
+        )
+        assert code == 200, body.decode("utf-8", errors="replace")
+
+        payload = json.loads(body.decode("utf-8"))
+        assert isinstance(payload, list) and payload
+        _token_ids, _text, server_prompt_ids = (
+            RolloutMatchingSFTTrainer._parse_vllm_server_output(payload[0])
+        )
+        server_image_token_count = sum(
+            1
+            for t in server_prompt_ids
+            if int(t) == int(teacher_template.image_token_id)
+        )
+
+        assert len(server_prompt_ids) == len(teacher_prompt_ids)
+        assert server_image_token_count == teacher_image_token_count
+        assert server_prompt_ids == teacher_prompt_ids
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:  # pragma: no cover
+                proc.kill()
+                proc.wait(timeout=30)
 
 
 def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
@@ -235,7 +490,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",

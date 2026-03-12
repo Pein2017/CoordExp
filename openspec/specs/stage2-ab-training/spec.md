@@ -126,42 +126,56 @@ Normative behavior:
 - **THEN** emitted coord diagnostics include `coord_diag/A1/*` and `coord_diag/A2/*`
 - **AND** no ambiguous bare `coord_diag/*` provenance-free keys are emitted.
 
-### Requirement: Stage-2 AB profile hierarchy is canonical and one-hop
-Stage-2 AB experiment profiles under `configs/stage2_two_channel/` MUST follow a canonical one-hop hierarchy so ablation intent remains auditable from each downstream file.
+### Requirement: Stage-2 AB profile hierarchy supports the current shared-base layout
+Stage-2 AB experiment profiles under `configs/stage2_two_channel/` SHALL use the current repo-owned inheritance layout so shared prod/smoke behaviors remain reusable without flattening every downstream profile into a one-hop leaf.
 
 Normative structure:
-- `configs/stage2_two_channel/base.yaml` MUST be the canonical shared base for Stage-2 AB profile runs.
-- Canonical profile leaves under `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml` MUST extend exactly one file, and that file MUST be `../base.yaml`.
-- Canonical smoke leaves MUST inline smoke runtime overrides and MUST NOT use dual-parent `extends` lists.
-- Canonical profile leaves MUST NOT use multi-hop inheritance chains (e.g., leaf -> intermediate -> base).
-- Additional optional Stage-2 profile leaves (outside the canonical trio) are allowed only if they satisfy the same one-hop + explicit-leaf contract.
+- `configs/stage2_two_channel/base.yaml` MUST remain the canonical shared base for Stage-2 AB profile runs.
+- Canonical profile discovery continues to target `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`.
+- Canonical prod and smoke profiles MAY extend other Stage-2 profiles inside `configs/stage2_two_channel/` when those parents capture a supported reusable sub-profile.
+- Multi-hop inheritance within the Stage-2 profile tree is allowed.
+- Config inheritance cycles MUST still fail fast.
 
 Validation behavior:
-- Config loading for Stage-2 AB profile leaves MUST fail fast when one-hop structure is violated.
-- Error messages MUST include actionable migration guidance (expected parent path and offending `extends` chain).
-- Strict hierarchy/explicitness validation targets the canonical profile directories (`configs/stage2_two_channel/prod/*.yaml`, `configs/stage2_two_channel/smoke/*.yaml`) and is expected to pass for all files in those paths.
-- Any automation that enumerates canonical Stage-2 profiles MUST target only `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`.
+- Config loading for canonical Stage-2 profiles MUST validate the **resolved** profile rather than requiring one-hop inheritance.
+- Error messages for invalid canonical profiles MUST identify the missing resolved dotted-path fields.
+- Strict profile validation continues to target `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`.
 
-#### Scenario: One-hop profile inheritance passes validation
-- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_two_channel/prod/` extends only `../base.yaml`
+#### Scenario: Canonical prod profile may extend base directly
+- **WHEN** a canonical Stage-2 prod profile under `configs/stage2_two_channel/prod/` extends `../base.yaml`
 - **THEN** config loading succeeds for hierarchy validation.
 
-#### Scenario: Multi-hop profile inheritance fails fast
-- **WHEN** a Stage-2 AB profile leaf in `configs/stage2_two_channel/smoke/` extends an intermediate profile file
-- **THEN** config loading fails fast with guidance to extend `../base.yaml` directly.
-
-#### Scenario: Dual-parent smoke inheritance fails fast
-- **WHEN** a Stage-2 AB smoke profile leaf uses `extends` with two parents (e.g., prod leaf + smoke base)
-- **THEN** config loading fails fast with guidance to inline smoke runtime overrides in a one-hop leaf.
+#### Scenario: Canonical smoke profile may extend a prod profile
+- **WHEN** a canonical Stage-2 smoke profile under `configs/stage2_two_channel/smoke/` extends an intermediate Stage-2 prod profile
+- **THEN** config loading succeeds so long as the fully resolved profile satisfies the required Stage-2 contract.
 
 #### Scenario: Canonical profile discovery is scoped to prod/smoke
 - **WHEN** a config discovery utility scans canonical Stage-2 profiles
 - **THEN** it includes only `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml`
 
-### Requirement: Stage-2 AB downstream profiles explicitly pin high-signal knobs
-Each canonical Stage-2 AB profile leaf MUST explicitly declare high-signal run and ablation knobs so the file is self-consistent without traversing parent configs.
+### Requirement: Offline image-budget validation is distinct from runtime template max_pixels
+Stage-2 training SHALL distinguish the offline prepared-data image budget from the runtime processor/server `template.max_pixels` setting.
 
-Required explicit leaf fields:
+Normative behavior:
+- `custom.offline_max_pixels` MAY be provided as the canonical offline image-budget contract for launch prechecks and dataset runtime validation.
+- When `custom.offline_max_pixels` is provided:
+  - launcher JSONL prechecks MUST use `custom.offline_max_pixels`,
+  - dataset runtime max-pixel enforcement MUST use `custom.offline_max_pixels`,
+  - `template.max_pixels` remains available for runtime processor/server behavior and MUST NOT replace the offline validation contract.
+- When `custom.offline_max_pixels` is absent:
+  - launch prechecks and dataset runtime MAY fall back to `template.max_pixels` for backward compatibility.
+
+#### Scenario: Stage-2 config disables runtime resize but keeps offline validation strict
+- **GIVEN** a Stage-2 config sets a large `template.max_pixels` to disable HF auto-resize
+- **AND** `custom.offline_max_pixels` is set to the offline prepared-data budget
+- **WHEN** launcher prechecks and dataset runtime validate image sizes
+- **THEN** they use `custom.offline_max_pixels`
+- **AND** the large runtime `template.max_pixels` does not weaken offline data validation.
+
+### Requirement: Stage-2 AB canonical profiles resolve high-signal knobs after inheritance
+Each canonical Stage-2 AB profile under `configs/stage2_two_channel/prod/*.yaml` and `configs/stage2_two_channel/smoke/*.yaml` MUST resolve the following high-signal run and ablation knobs after inheritance.
+
+Required resolved fields:
 - `model.model`
 - `training.run_name`
 - `training.output_dir`
@@ -177,23 +191,23 @@ Required explicit leaf fields:
 - `stage2_ab.schedule.b_ratio`
 - `stage2_ab.n_softctx_iter`
 
-Rationale for strict explicitness:
-- The LR trio (`training.learning_rate`, `training.vit_lr`, `training.aligner_lr`) is treated as MUST for canonical leaves to avoid hidden optimizer-group drift across ablations.
+Rationale for resolved-profile explicitness:
+- The LR trio (`training.learning_rate`, `training.vit_lr`, `training.aligner_lr`) is treated as MUST for canonical profiles to avoid hidden optimizer-group drift across ablations, even when these values are supplied by an intermediate parent.
 
 Validation behavior:
-- Canonical Stage-2 AB profile loading MUST fail fast if any required explicit field is missing from the leaf profile.
+- Canonical Stage-2 AB profile loading MUST fail fast if any required field is missing from the fully resolved profile.
 - Error text MUST identify missing fields by full key path.
 
-#### Scenario: Downstream profile with explicit high-signal fields is accepted
-- **WHEN** a Stage-2 AB profile leaf includes all required explicit high-signal keys
+#### Scenario: Canonical profile with resolved high-signal fields is accepted
+- **WHEN** a Stage-2 AB canonical profile resolves all required high-signal keys after inheritance
 - **THEN** config loading succeeds and the profile is considered self-consistent.
 
-#### Scenario: Missing explicit run identity fails fast
-- **WHEN** a Stage-2 AB profile leaf omits `training.run_name`
+#### Scenario: Missing resolved run identity fails fast
+- **WHEN** a Stage-2 AB canonical profile does not resolve `training.run_name`
 - **THEN** config loading fails fast and reports `training.run_name` as missing.
 
-#### Scenario: Missing explicit model path fails fast
-- **WHEN** a Stage-2 AB profile leaf omits `model.model`
+#### Scenario: Missing resolved model path fails fast
+- **WHEN** a Stage-2 AB canonical profile does not resolve `model.model`
 - **THEN** config loading fails fast and reports `model.model` as missing.
 
 ### Requirement: Stage-2 AB canonical rollout namespace is normalized before trainer injection
@@ -1076,12 +1090,12 @@ Canonical prod overrides (pipeline-only):
 
 #### Scenario: Canonical prod leaves pin explicit CIoU/soft-CE/W1 overrides
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/prod/*.yaml`
-- **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
+- **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
 - **THEN** the leaf explicitly overrides effective Stage-2 loss weights with the canonical prod values above.
 
 #### Scenario: Canonical smoke leaves inherit base CIoU/soft-CE/W1 defaults
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/smoke/*.yaml`
-- **WHEN** config is materialized through one-hop inheritance from `../base.yaml`
+- **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
 - **THEN** effective Stage-2 loss defaults include canonical base CIoU downweight and non-zero soft-CE/W1 terms.
 
 ### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
@@ -1091,12 +1105,12 @@ Normative behavior:
 - `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
 - Canonical Stage-2 AB objective ordering for this contract is:
   1. `token_ce`
-  2. `duplicate_ul`
+  2. `loss_dead_anchor_suppression`
   3. `bbox_geo`
   4. `coord_reg`
 - Canonical Stage-2 AB diagnostics MAY include `coord_diag`.
-- `duplicate_ul` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
-- `duplicate_ul` module `weight` is the only v1 scaling surface for duplicate UL.
+- `loss_dead_anchor_suppression` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
+- `loss_dead_anchor_suppression` module `weight` is the only v1 scaling surface for duplicate UL.
 - The old raw-prefix Channel-B contract is removed; there is no contract toggle or compatibility mode.
 
 #### Scenario: Missing stage2_ab.pipeline fails fast
@@ -1105,11 +1119,11 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `stage2_ab.pipeline` is required.
 
-#### Scenario: Missing duplicate_ul in the canonical Channel-B pipeline fails fast
+#### Scenario: Missing loss_dead_anchor_suppression in the canonical Channel-B pipeline fails fast
 - **WHEN** a Stage-2 AB config declares `stage2_ab.pipeline.objective`
-- **AND** the objective list omits `duplicate_ul`
+- **AND** the objective list omits `loss_dead_anchor_suppression`
 - **THEN** config validation fails fast
-- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `duplicate_ul`.
+- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `loss_dead_anchor_suppression`.
 
 #### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
 - **WHEN** `custom.trainer_variant=stage2_two_channel`
@@ -1140,7 +1154,7 @@ YAML-declared experiments remain auditable.
 
 Normative minimum objective module names for this contract:
 - `token_ce`
-- `duplicate_ul`
+- `loss_dead_anchor_suppression`
 - `bbox_geo`
 - `coord_reg`
 
@@ -1160,19 +1174,27 @@ Normative behavior:
 Stage-2 Two-Channel SHALL validate module `config` payloads and `stage2_ab.channel_b` payloads strictly so experiments are reproducible and fail fast on schema drift.
 
 Normative behavior:
-- `duplicate_ul.config` MUST be an empty mapping in v1.
+- `loss_dead_anchor_suppression.config` MUST be an empty mapping in v1.
 - `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
 - `stage2_ab.channel_b` MUST accept only:
   - `duplicate_iou_threshold`
+  - `triage_posterior`
   - `producer_wait_timeout_s`
   - `ddp_phase_timeout_s`
+- `stage2_ab.channel_b.triage_posterior` MUST accept only:
+  - `num_rollouts`
+  - `explorer_temperature`
+  - `explorer_top_p`
+  - `explorer_top_k`
+  - `unlabeled_consistent_iou_threshold`
+  - `recovered_ground_truth_weight_multiplier`
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
-#### Scenario: Non-empty duplicate_ul.config fails fast
-- **WHEN** `stage2_ab.pipeline.objective[*].name=duplicate_ul`
+#### Scenario: Non-empty loss_dead_anchor_suppression.config fails fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name=loss_dead_anchor_suppression`
 - **AND** its `config` mapping contains any key
 - **THEN** configuration parsing fails fast
-- **AND** the error indicates `duplicate_ul.config` must be empty for v1.
+- **AND** the error indicates `loss_dead_anchor_suppression.config` must be empty for v1.
 
 #### Scenario: Legacy invalid-structure multiplier placement fails fast
 - **WHEN** a Stage-2 AB config sets `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
@@ -1234,15 +1256,15 @@ Normative behavior:
   trainer code.
 - When `rollout_matching.eval_detection.enabled=true`, the trainer MUST attempt to compute COCO bbox AP/mAP for the
   eval-step rollouts and MUST emit, at minimum:
-  - `rollout/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
+  - `eval/detection/mAP` (float; COCO `bbox_AP` = AP@[.50:.95])
 - The trainer MUST NOT emit additional COCO summary metric keys during eval-step (e.g., `rollout/bbox_AP50`,
-  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `rollout/mAP`. Full metric reports remain available via the offline
+  `rollout/bbox_AR100`, `rollout/segm_*`) beyond `eval/detection/mAP`. Full metric reports remain available via the offline
   evaluation pipeline.
 - If COCO eval fails unexpectedly (missing dependencies, invalid records, etc.), the trainer MUST:
-  - emit `rollout/mAP=0.0` (so the key is always present when enabled), and
+  - emit `eval/detection/mAP=0.0` (so the key is always present when enabled), and
   - surface the failure as a warning (not silent).
 
 #### Scenario: Stage-2 two-channel eval reports mAP
 - **GIVEN** `rollout_matching.eval_detection.enabled=true`
 - **WHEN** `eval_step` runs
-- **THEN** `rollout/mAP` is present in the eval metrics payload
+- **THEN** `eval/detection/mAP` is present in the eval metrics payload

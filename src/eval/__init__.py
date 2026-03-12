@@ -11,6 +11,14 @@ from .confidence_postop import (
     run_confidence_postop,
     run_confidence_postop_from_config,
 )
+from .oracle_k import (
+    OracleKConfig,
+    OracleKResolvedRun,
+    OracleKRunSpec,
+    evaluate_oracle_k,
+    load_oracle_k_config,
+    run_oracle_k_from_config,
+)
 from src.common.geometry.coord_utils import COORD_TOKEN_RE
 from .parsing import (
     GEOM_KEYS,
@@ -31,6 +39,12 @@ __all__ = [
     "ConfidencePostOpPaths",
     "run_confidence_postop",
     "run_confidence_postop_from_config",
+    "OracleKConfig",
+    "OracleKResolvedRun",
+    "OracleKRunSpec",
+    "evaluate_oracle_k",
+    "load_oracle_k_config",
+    "run_oracle_k_from_config",
     "COORD_TOKEN_RE",
     "GEOM_KEYS",
     "MAX_BIN",

@@ -42,7 +42,7 @@ Canonical intermediate records at the adapter->pipeline boundary MUST follow a d
 - coordinate space at this boundary is pixel-space,
 - optional metadata is allowed.
 
-Canonical intermediate records MUST be structurally compatible with `docs/data/JSONL_CONTRACT.md`, except that in-memory `images` paths may be absolute before writer relativization.
+Canonical intermediate records MUST be structurally compatible with `docs/data/CONTRACT.md`, except that in-memory `images` paths may be absolute before writer relativization.
 
 #### Scenario: Intermediate record violates geometry invariant
 - **WHEN** an adapter emits an object containing both `bbox_2d` and `poly`
@@ -113,7 +113,7 @@ The unified pipeline MUST preserve deterministic geometry behavior currently use
 - **THEN** ordering follows shared `sort_objects_tlbr` semantics deterministically.
 
 ### Requirement: Unified Writer Preserves Contract and Relative Paths
-The output formatter/writer used by the unified pipeline MUST preserve `docs/data/JSONL_CONTRACT.md` invariants and MUST produce image paths relative to the output JSONL directory.
+The output formatter/writer used by the unified pipeline MUST preserve `docs/data/CONTRACT.md` invariants and MUST produce image paths relative to the output JSONL directory.
 
 It MUST support generation of:
 - pixel-space train/val outputs,

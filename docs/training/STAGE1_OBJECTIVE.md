@@ -17,7 +17,7 @@ Scope note:
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
   - `stage2_ab.pipeline` for `custom.trainer_variant: stage2_two_channel`
   - `rollout_matching.pipeline` for `custom.trainer_variant: stage2_rollout_aligned`
-- In those Stage-2 paths, `coord_reg`, `bbox_geo`, and `duplicate_ul` are declared through the pipeline surface described in:
+- In those Stage-2 paths, `coord_reg`, `bbox_geo`, and `loss_dead_anchor_suppression` are declared through the pipeline surface described in:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
 - Legacy `custom.coord_soft_ce_w1.*` authoring should not be used for pipeline-declared Stage-2 configs.

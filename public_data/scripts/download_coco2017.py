@@ -13,10 +13,10 @@ from typing import Dict, Iterable, List, Tuple
 COCO2017_URLS: Dict[str, str] = {
     "train2017.zip": "http://images.cocodataset.org/zips/train2017.zip",
     "val2017.zip": "http://images.cocodataset.org/zips/val2017.zip",
+    "test2017.zip": "http://images.cocodataset.org/zips/test2017.zip",
     "annotations_trainval2017.zip": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+    "image_info_test2017.zip": "http://images.cocodataset.org/annotations/image_info_test2017.zip",
 }
-
-
 
 
 def _format_bytes(n: float) -> str:
@@ -52,6 +52,7 @@ def _render_progress(
         f"({_format_bytes(downloaded)}/{_format_bytes(total_bytes)}) "
         f"{_format_bytes(speed)}/s"
     )
+
 
 @dataclass(frozen=True)
 class DownloadResult:
@@ -100,7 +101,10 @@ def _download(
     last_print_t = 0.0
     print_interval_s = 0.25
 
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp, tmp_path.open("wb") as f:
+    with (
+        urllib.request.urlopen(req, timeout=timeout_s) as resp,
+        tmp_path.open("wb") as f,
+    ):
         content_len_hdr = resp.headers.get("Content-Length")
         total_bytes: int | None = None
         if content_len_hdr is not None:
@@ -174,7 +178,9 @@ def _write_manifest(results: Iterable[DownloadResult], out_path: Path) -> None:
         }
         for r in sorted(results, key=lambda x: x.filename)
     ]
-    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def main() -> None:
@@ -185,14 +191,19 @@ def main() -> None:
 Canonical COCO 2017 artifacts (hosted on images.cocodataset.org):
   - train2017.zip
   - val2017.zip
+  - test2017.zip
   - annotations_trainval2017.zip
+  - image_info_test2017.zip
 
 Expected output structure (after extraction):
   public_data/coco/raw/
     images/train2017/*.jpg
     images/val2017/*.jpg
+    images/test2017/*.jpg
     annotations/instances_train2017.json
     annotations/instances_val2017.json
+    annotations/image_info_test2017.json
+    annotations/image_info_test-dev2017.json
 
 This script writes checksums for downloaded zips to:
   public_data/coco/raw/downloads/SHA256SUMS.txt
@@ -210,6 +221,12 @@ This script writes checksums for downloaded zips to:
         "--annotations-only",
         action="store_true",
         help="Download/extract only annotations (no image zips)",
+    )
+
+    parser.add_argument(
+        "--include-test",
+        action="store_true",
+        help="Also download/extract test2017 images plus image_info_test2017.zip",
     )
 
     parser.add_argument(
@@ -240,6 +257,12 @@ This script writes checksums for downloaded zips to:
     if not args.annotations_only:
         to_download.append(("train2017.zip", COCO2017_URLS["train2017.zip"]))
         to_download.append(("val2017.zip", COCO2017_URLS["val2017.zip"]))
+        if args.include_test:
+            to_download.append(("test2017.zip", COCO2017_URLS["test2017.zip"]))
+    if args.include_test:
+        to_download.append(
+            ("image_info_test2017.zip", COCO2017_URLS["image_info_test2017.zip"])
+        )
 
     print("=" * 70)
     print("COCO 2017 downloader")
@@ -247,6 +270,7 @@ This script writes checksums for downloaded zips to:
     print(f"  raw_dir: {raw_dir}")
     print(f"  downloads_dir: {downloads_dir}")
     print(f"  annotations_only: {args.annotations_only}")
+    print(f"  include_test: {args.include_test}")
     print(f"  skip_extract: {args.skip_extract}")
     print(f"  force: {args.force}")
     print("  progress: enabled")
@@ -265,7 +289,7 @@ This script writes checksums for downloaded zips to:
         if args.skip_extract:
             continue
 
-        if filename == "annotations_trainval2017.zip":
+        if filename in {"annotations_trainval2017.zip", "image_info_test2017.zip"}:
             print(f"[extract] {filename} -> {raw_dir}")
             _extract_zip(dst_path, raw_dir)
         else:

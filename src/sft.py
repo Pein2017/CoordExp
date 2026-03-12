@@ -906,7 +906,7 @@ def _build_pipeline_manifest(
                     "rollout_matched_prefix_struct_weight": 1.0,
                 }
 
-            if name == "duplicate_ul":
+            if name == "loss_dead_anchor_suppression":
                 return {}
 
             if name == "bbox_geo":
@@ -1117,6 +1117,81 @@ def _build_pipeline_manifest(
     }
 
 
+def _scope_logging_dir_under_run_name(train_args: Any) -> str | None:
+    """Nest explicit TensorBoard roots under `run_name`.
+
+    ms-swift versions `output_dir` when `add_version` is enabled, but it leaves an
+    authored `logging_dir` untouched. Without this alignment, `tensorboard --logdir`
+    sees event files directly under the root and labels the run as `.` instead of
+    the authored `training.run_name`.
+    """
+    training_args = getattr(train_args, "training_args", None)
+    run_name = getattr(train_args, "run_name", None)
+    if not run_name and training_args is not None:
+        run_name = getattr(training_args, "run_name", None)
+
+    base_logging_dir = getattr(train_args, "logging_dir", None)
+    if base_logging_dir is None and training_args is not None:
+        base_logging_dir = getattr(training_args, "logging_dir", None)
+
+    if not run_name or not base_logging_dir:
+        return None
+
+    run_name_str = str(run_name)
+    base_logging_dir_str = str(base_logging_dir)
+    base_logging_dir_norm = os.path.normpath(base_logging_dir_str)
+    if os.path.basename(base_logging_dir_norm) == run_name_str:
+        final_logging_dir = base_logging_dir_str
+    else:
+        final_logging_dir = os.path.join(base_logging_dir_str, run_name_str)
+        setattr(train_args, "logging_dir", final_logging_dir)
+        if training_args is not None:
+            setattr(training_args, "logging_dir", final_logging_dir)
+    return final_logging_dir
+
+
+def _strip_trailing_trainer_state_logging_row(logging_path: str | Path) -> bool:
+    """Remove the final ms-swift trainer-state append from a flat metrics JSONL.
+
+    Upstream ms-swift appends a final status payload with `log_history`, checkpoint
+    pointers, and memory to the same `logging.jsonl` stream used for flat metric rows.
+    That payload is valid JSON but not a metric event, so downstream JSONL viewers
+    and editors render it poorly. Keep the metrics stream flat by dropping only that
+    trailing trainer-state object after training finishes.
+    """
+
+    path = Path(logging_path)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return False
+
+    if not lines:
+        return False
+
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return False
+
+    if not isinstance(payload, Mapping):
+        return False
+    if not isinstance(payload.get("log_history"), list):
+        return False
+    if "global_step" not in payload:
+        return False
+    if any("/" in str(key) for key in payload):
+        return False
+    if any(key in payload for key in ("loss", "step", "global_step/max_steps")):
+        return False
+
+    sanitized = "\n".join(lines[:-1])
+    if sanitized:
+        sanitized += "\n"
+    path.write_text(sanitized, encoding="utf-8")
+    return True
+
+
 def main():
     """Main training entry point - pure config-driven."""
     args = parse_args()
@@ -1149,6 +1224,7 @@ def main():
     # Keep directory targets aligned across ms-swift wrappers.
     run_name = getattr(train_args, "run_name", None)
     training_args = getattr(train_args, "training_args", None)
+    debug_output_override_applied = False
 
     def _set_train_dir_attr(attr_name: str, value: str) -> None:
         setattr(train_args, attr_name, value)
@@ -1166,22 +1242,10 @@ def main():
             )
             _set_train_dir_attr("output_dir", debug_output_dir_s)
             _set_train_dir_attr("logging_dir", debug_output_dir_s)
+            debug_output_override_applied = True
 
-    add_version = getattr(train_args, "add_version", None)
-    if add_version is None and training_args is not None:
-        add_version = getattr(training_args, "add_version", None)
-    add_version_enabled = bool(add_version) if add_version is not None else False
-
-    # add_version already scopes output/logging under a versioned run dir in ms-swift.
-    if run_name and not add_version_enabled:
-        base_logging_dir = getattr(train_args, "logging_dir", None)
-        if base_logging_dir is None and training_args is not None:
-            base_logging_dir = getattr(training_args, "logging_dir", None)
-        if base_logging_dir:
-            base_logging_dir_norm = os.path.normpath(base_logging_dir)
-            if os.path.basename(base_logging_dir_norm) != str(run_name):
-                final_logging_dir = os.path.join(base_logging_dir, str(run_name))
-                _set_train_dir_attr("logging_dir", final_logging_dir)
+    if run_name and not debug_output_override_applied:
+        _scope_logging_dir_under_run_name(train_args)
 
     # Optional: mirror logs into output_dir for quick review (rank 0 only).
     try:
@@ -1465,6 +1529,7 @@ def main():
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
             coord_tokens=custom_config.coord_tokens,
+            offline_max_pixels=custom_config.offline_max_pixels,
             seed=dataset_seed,
             shuffle=True,
             sample_limit=fusion_train_limit,
@@ -1488,6 +1553,7 @@ def main():
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
             coord_tokens=custom_config.coord_tokens,
+            offline_max_pixels=custom_config.offline_max_pixels,
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
@@ -2033,6 +2099,7 @@ def main():
                 system_prompt_dense=system_prompt_dense,
                 system_prompt_summary=system_prompt_summary,
                 coord_tokens=custom_config.coord_tokens,
+                offline_max_pixels=custom_config.offline_max_pixels,
                 seed=dataset_seed,
                 shuffle=False,  # eval ordering doesn't matter; keep stable by default
                 sample_limit=fusion_eval_limit,
@@ -2073,6 +2140,7 @@ def main():
             system_prompt_dense=system_prompt_dense,
             system_prompt_summary=system_prompt_summary,
             coord_tokens=custom_config.coord_tokens,
+            offline_max_pixels=custom_config.offline_max_pixels,
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
@@ -2224,11 +2292,15 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     instability_monitor_cfg = None
+    loss_gradient_monitor_cfg = None
     extra_cfg = getattr(custom_config, "extra", None)
     if isinstance(extra_cfg, Mapping):
         raw_instab = extra_cfg.get("instability_monitor")
         if isinstance(raw_instab, dict):
             instability_monitor_cfg = raw_instab
+        raw_gradmon = extra_cfg.get("loss_gradient_monitor")
+        if isinstance(raw_gradmon, Mapping):
+            loss_gradient_monitor_cfg = dict(raw_gradmon)
     if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
@@ -2536,7 +2608,7 @@ def main():
 
         stage2_manifest = _resolve_pipeline_manifest(
             stage2_ab_cfg,
-            default_objective=["token_ce", "duplicate_ul", "bbox_geo", "coord_reg"],
+            default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
             default_diagnostics=["coord_diag"],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )
@@ -2564,6 +2636,23 @@ def main():
         setattr(trainer, "instability_train_jsonl", str(train_jsonl))
         if val_jsonl:
             setattr(trainer, "instability_val_jsonl", str(val_jsonl))
+    if loss_gradient_monitor_cfg is not None:
+        setattr(trainer, "loss_gradient_monitor_cfg", dict(loss_gradient_monitor_cfg))
+        if bool(loss_gradient_monitor_cfg.get("enabled", False)) and int(
+            os.environ.get("RANK", "0") or "0"
+        ) == 0:
+            param_block = loss_gradient_monitor_cfg.get("param_block", {})
+            param_strategy = (
+                str(param_block.get("strategy", "auto_last_lm_layernorm"))
+                if isinstance(param_block, Mapping)
+                else "auto_last_lm_layernorm"
+            )
+            logger.info(
+                "LossGradientMonitor enabled: interval_steps=%s require_sync_gradients=%s param_strategy=%s",
+                loss_gradient_monitor_cfg.get("interval_steps", 50),
+                loss_gradient_monitor_cfg.get("require_sync_gradients", True),
+                param_strategy,
+            )
 
 
     # Start training
@@ -2734,6 +2823,21 @@ def main():
         except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as e:
             # Non-fatal: training already completed successfully
             logger.debug(f"Cleanup warning (non-fatal): {e}")
+
+        try:
+            rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+            is_rank0 = True if rank_raw is None else (int(rank_raw) == 0)
+        except (TypeError, ValueError):
+            is_rank0 = True
+
+        if is_rank0:
+            output_dir = getattr(train_args, "output_dir", None)
+            if output_dir:
+                logging_path = Path(str(output_dir)) / "logging.jsonl"
+                if _strip_trailing_trainer_state_logging_row(logging_path):
+                    logger.info(
+                        "Sanitized logging.jsonl: removed trailing trainer-state payload appended by upstream ms-swift."
+                    )
 
 
 if __name__ == "__main__":

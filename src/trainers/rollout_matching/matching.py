@@ -225,4 +225,112 @@ def hungarian_match_maskiou(
     )
 
 
-__all__ = ["hungarian_match_maskiou"]
+def _max_weight_pair_sum(
+    *,
+    candidates: Sequence[Tuple[int, int, float]],
+) -> float:
+    if not candidates:
+        return 0.0
+
+    anchor_ids = sorted({int(anchor_i) for anchor_i, _, _ in candidates})
+    explorer_ids = sorted({int(explorer_i) for _, explorer_i, _ in candidates})
+    if not anchor_ids or not explorer_ids:
+        return 0.0
+
+    anchor_to_row = {int(anchor_i): idx for idx, anchor_i in enumerate(anchor_ids)}
+    explorer_to_col = {
+        int(explorer_i): idx for idx, explorer_i in enumerate(explorer_ids)
+    }
+
+    n_anchor = int(len(anchor_ids))
+    n_explorer = int(len(explorer_ids))
+    n = int(n_anchor + n_explorer)
+    weights = np.zeros((n, n), dtype=np.float64)
+    for anchor_i, explorer_i, score in candidates:
+        weights[
+            int(anchor_to_row[int(anchor_i)]),
+            int(explorer_to_col[int(explorer_i)]),
+        ] = float(score)
+
+    row_ind, col_ind = linear_sum_assignment(-weights)
+    total = 0.0
+    for row_i, col_i in zip(row_ind, col_ind):
+        if row_i >= n_anchor or col_i >= n_explorer:
+            continue
+        total += float(weights[int(row_i), int(col_i)])
+    return float(total)
+
+
+def _lexicographic_max_weight_pairs(
+    *,
+    candidates: Sequence[Tuple[int, int, float]],
+    tol: float = 1e-9,
+) -> List[Tuple[int, int]]:
+    best_total = _max_weight_pair_sum(candidates=candidates)
+    if best_total <= float(tol):
+        return []
+
+    ordered = sorted(
+        candidates,
+        key=lambda item: (int(item[0]), int(item[1])),
+    )
+    for anchor_i, explorer_i, score in ordered:
+        residual = [
+            (int(next_anchor_i), int(next_explorer_i), float(next_score))
+            for next_anchor_i, next_explorer_i, next_score in ordered
+            if int(next_anchor_i) != int(anchor_i)
+            and int(next_explorer_i) != int(explorer_i)
+            and (int(next_anchor_i), int(next_explorer_i))
+            > (int(anchor_i), int(explorer_i))
+        ]
+        with_pair_total = float(score) + _max_weight_pair_sum(candidates=residual)
+        if abs(float(with_pair_total) - float(best_total)) <= float(tol):
+            return [(int(anchor_i), int(explorer_i))] + _lexicographic_max_weight_pairs(
+                candidates=residual,
+                tol=float(tol),
+            )
+    return []
+
+
+def associate_one_to_one_max_iou(
+    *,
+    anchors: Sequence[GTObject],
+    explorers: Sequence[GTObject],
+    min_iou: float,
+) -> List[Tuple[int, int]]:
+    """Associate anchor/explorer objects by max total IoU with stable tie-breaks.
+
+    Among all one-to-one assignments whose pairs satisfy `IoU >= min_iou`, choose
+    the assignment with the maximum total IoU. If multiple assignments achieve the
+    same maximum total IoU, choose the one whose sorted pair list is
+    lexicographically smallest.
+    """
+
+    threshold = float(min_iou)
+    if not np.isfinite(threshold):
+        raise ValueError("min_iou must be finite")
+    if threshold < 0.0 or threshold > 1.0:
+        raise ValueError("min_iou must be in [0, 1]")
+
+    if not anchors or not explorers:
+        return []
+
+    anchor_boxes = [
+        _bbox_xyxy_from_norm(obj.points_norm1000, obj.geom_type) for obj in anchors
+    ]
+    explorer_boxes = [
+        _bbox_xyxy_from_norm(obj.points_norm1000, obj.geom_type) for obj in explorers
+    ]
+
+    candidates: List[Tuple[int, int, float]] = []
+    for anchor_i, anchor_box in enumerate(anchor_boxes):
+        for explorer_i, explorer_box in enumerate(explorer_boxes):
+            iou = _bbox_iou_xyxy(anchor_box, explorer_box)
+            if float(iou) < float(threshold):
+                continue
+            candidates.append((int(anchor_i), int(explorer_i), float(iou)))
+
+    return _lexicographic_max_weight_pairs(candidates=candidates)
+
+
+__all__ = ["associate_one_to_one_max_iou", "hungarian_match_maskiou"]

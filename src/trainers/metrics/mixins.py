@@ -67,7 +67,7 @@ class AggregateTokenTypeMetricsMixin:
     - Skips metrics when no supervised tokens to avoid NaNs
 
     Metric key reference:
-      - docs/training/METRICS_LOSSES.md
+      - docs/training/METRICS.md
     """
 
     label_field = "dataset_labels"
@@ -441,6 +441,7 @@ class CoordSoftCEW1LossMixin:
             )
 
             loss = self._maybe_add_coord_softce_w1_loss(
+                model=model,
                 reporter=reporter,
                 loss=loss,
                 outputs=outputs,
@@ -547,6 +548,7 @@ class CoordSoftCEW1LossMixin:
     def _maybe_add_coord_softce_w1_loss(
         self,
         *,
+        model: Any,
         reporter: Any,
         loss: torch.Tensor,
         outputs: Any,
@@ -605,6 +607,26 @@ class CoordSoftCEW1LossMixin:
             result=result,
             batch_size=int(labels.shape[0]),
         )
+
+        from src.metrics.reporter import best_effort_value
+        from src.trainers.monitoring.loss_gradient_monitor import (
+            build_stage1_coord_monitor_terms,
+            get_loss_gradient_monitor,
+        )
+
+        monitor = get_loss_gradient_monitor(self)
+        if monitor is not None:
+            gradmon_metrics = best_effort_value(
+                self,
+                name="loss_gradient_monitor",
+                fn=lambda: monitor.measure(
+                    model=model,
+                    loss_terms=build_stage1_coord_monitor_terms(result=result, cfg=cfg),
+                ),
+                default={},
+            )
+            if isinstance(gradmon_metrics, Mapping) and gradmon_metrics:
+                reporter.update_many(gradmon_metrics)
 
         return loss + result.coord_loss.to(dtype=loss.dtype)
 

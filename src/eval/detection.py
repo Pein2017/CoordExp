@@ -51,7 +51,9 @@ def _fmt_iou_thr(iou_thr: float) -> str:
     return f"{float(iou_thr):.2f}"
 
 
-def _validate_score_provenance_for_coco(record: Dict[str, Any], record_idx: int) -> None:
+def _validate_score_provenance_for_coco(
+    record: Dict[str, Any], record_idx: int
+) -> None:
     source = record.get("pred_score_source")
     if not isinstance(source, str) or not source.strip():
         raise ValueError(
@@ -171,7 +173,9 @@ def _object_iou_auto(
     """Auto-select IoU type: segm when either side has poly, else bbox."""
     if _object_has_poly(pred_obj) or _object_has_poly(gt_obj):
         return _segm_iou(pred_obj, gt_obj, width=width, height=height)
-    return _bbox_iou(cast(List[float], pred_obj["bbox"]), cast(List[float], gt_obj["bbox"]))
+    return _bbox_iou(
+        cast(List[float], pred_obj["bbox"]), cast(List[float], gt_obj["bbox"])
+    )
 
 
 def _greedy_match_by_iou(
@@ -239,7 +243,9 @@ def _build_semantic_desc_mapping(
     device = options.semantic_device or "auto"
     bs = max(1, int(options.semantic_batch_size))
 
-    encoder = SemanticDescEncoder(model_name=str(model_name), device=str(device), batch_size=int(bs))
+    encoder = SemanticDescEncoder(
+        model_name=str(model_name), device=str(device), batch_size=int(bs)
+    )
 
     try:
         pred_map = encoder.encode_norm_texts(pred_norm)
@@ -299,7 +305,9 @@ def _build_semantic_desc_mapping(
                     "count": c,
                     "best_gt_desc": best,
                     "score": s,
-                    "mapped": bool(best is not None and s >= float(options.semantic_threshold)),
+                    "mapped": bool(
+                        best is not None and s >= float(options.semantic_threshold)
+                    ),
                 }
                 for d, (best, s, c) in sorted(
                     mapping.items(),
@@ -315,7 +323,6 @@ def _build_semantic_desc_mapping(
         logger.warning("Failed to write semantic report: %s", exc)
 
     return mapping
-
 
 
 def load_jsonl(
@@ -343,6 +350,243 @@ def load_jsonl(
         counters.invalid_json += int(invalid_seen)
 
     return records
+
+
+def _load_coco_categories_json(path: Path) -> Dict[str, int]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("categories_json must be a list of {id, name} objects")
+
+    categories: Dict[str, int] = {}
+    ids_to_names: Dict[int, str] = {}
+    for idx, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"categories_json entry {idx} must be an object, got {type(item).__name__}"
+            )
+
+        raw_id = item.get("id")
+        raw_name = item.get("name")
+        try:
+            category_id = int(raw_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"categories_json entry {idx} has invalid `id`: {raw_id!r}"
+            ) from exc
+
+        category_name = str(raw_name or "").strip()
+        if not category_name:
+            raise ValueError(
+                f"categories_json entry {idx} has empty `name`: {raw_name!r}"
+            )
+
+        prev_name = ids_to_names.get(category_id)
+        if prev_name is not None and prev_name != category_name:
+            raise ValueError(
+                "categories_json contains conflicting entries for "
+                f"category id {category_id}: {prev_name!r} vs {category_name!r}"
+            )
+
+        prev_id = categories.get(category_name)
+        if prev_id is not None and prev_id != category_id:
+            raise ValueError(
+                "categories_json contains conflicting entries for "
+                f"category name {category_name!r}: {prev_id} vs {category_id}"
+            )
+
+        categories[category_name] = category_id
+        ids_to_names[category_id] = category_name
+
+    if not categories:
+        raise ValueError("categories_json must contain at least one category")
+    return categories
+
+
+def _project_bbox_to_source_resolution(
+    bbox_xyxy: Sequence[float],
+    *,
+    pred_width: int,
+    pred_height: int,
+    source_width: int,
+    source_height: int,
+) -> List[float]:
+    if pred_width <= 0 or pred_height <= 0:
+        raise ValueError(
+            "Official COCO submission export requires positive prediction width/height "
+            f"for resolution rollback, got {(pred_width, pred_height)}."
+        )
+    if source_width <= 0 or source_height <= 0:
+        raise ValueError(
+            "Official COCO submission export requires positive source width/height "
+            f"for resolution rollback, got {(source_width, source_height)}."
+        )
+    if len(bbox_xyxy) != 4:
+        raise ValueError(
+            f"Expected bbox_xyxy with 4 values, got {len(bbox_xyxy)}: {bbox_xyxy!r}"
+        )
+
+    sx = float(source_width) / float(pred_width)
+    sy = float(source_height) / float(pred_height)
+    x1, y1, x2, y2 = bbox_xyxy
+    scaled = [
+        max(0.0, min(float(source_width), float(x1) * sx)),
+        max(0.0, min(float(source_height), float(y1) * sy)),
+        max(0.0, min(float(source_width), float(x2) * sx)),
+        max(0.0, min(float(source_height), float(y2) * sy)),
+    ]
+    return scaled
+
+
+def export_coco_submission(
+    pred_path: Path,
+    *,
+    source_jsonl: Path,
+    categories_json: Path,
+    out_json: Path,
+    options: EvalOptions,
+) -> Dict[str, Any]:
+    counters = EvalCounters()
+    pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
+    source_records = load_jsonl(source_jsonl, strict=True)
+
+    if len(source_records) != len(pred_records):
+        raise ValueError(
+            "Official COCO submission export requires source and prediction artifacts "
+            "to have the same number of records. "
+            f"source={len(source_records)} pred={len(pred_records)} "
+            f"(source_jsonl={source_jsonl}, pred_jsonl={pred_path})"
+        )
+
+    categories = _load_coco_categories_json(categories_json)
+    pred_samples: List[Tuple[int, List[Dict[str, Any]]]] = []
+
+    for record_idx, (source_record, pred_record) in enumerate(
+        zip(source_records, pred_records)
+    ):
+        if not isinstance(source_record, dict):
+            raise ValueError(
+                f"Source JSONL record {record_idx} must be a JSON object, got "
+                f"{type(source_record).__name__}"
+            )
+        if not isinstance(pred_record, dict):
+            raise ValueError(
+                f"Prediction JSONL record {record_idx} must be a JSON object, got "
+                f"{type(pred_record).__name__}"
+            )
+
+        _validate_score_provenance_for_coco(pred_record, record_idx)
+
+        raw_image_id = source_record.get("image_id")
+        try:
+            image_id = int(raw_image_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Official COCO submission export requires `image_id` in the source JSONL. "
+                f"Source record index {record_idx} has invalid image_id={raw_image_id!r}."
+            ) from exc
+
+        source_images = source_record.get("images")
+        if (
+            not isinstance(source_images, list)
+            or len(source_images) != 1
+            or not isinstance(source_images[0], str)
+            or not source_images[0].strip()
+        ):
+            raise ValueError(
+                "Official COCO submission export requires source JSONL records to contain "
+                f"exactly one image path. Source record index {record_idx} has "
+                f"images={source_images!r}."
+            )
+        source_image = source_images[0]
+
+        width_raw = source_record.get("width")
+        height_raw = source_record.get("height")
+        try:
+            source_width = int(width_raw)
+            source_height = int(height_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Official COCO submission export requires source JSONL width/height. "
+                f"Source record index {record_idx} has width={width_raw!r} "
+                f"height={height_raw!r}."
+            ) from exc
+        if source_width <= 0 or source_height <= 0:
+            raise ValueError(
+                "Official COCO submission export requires positive source JSONL width/height. "
+                f"Source record index {record_idx} has width={source_width} height={source_height}."
+            )
+
+        pred_image = pred_record.get("image")
+        if pred_image is None and isinstance(pred_record.get("images"), list):
+            pred_images = pred_record["images"]
+            if pred_images:
+                pred_image = pred_images[0]
+        if pred_image is not None and pred_image != source_image:
+            raise ValueError(
+                "Source/prediction record alignment mismatch while exporting COCO submission. "
+                f"Record index {record_idx} has source image {source_image!r} but "
+                f"prediction image {pred_image!r}."
+            )
+
+        pred_width_raw = pred_record.get("width")
+        pred_height_raw = pred_record.get("height")
+        try:
+            pred_width = int(pred_width_raw)
+            pred_height = int(pred_height_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Official COCO submission export requires prediction width/height. "
+                f"Prediction record index {record_idx} has width={pred_width_raw!r} "
+                f"height={pred_height_raw!r}."
+            ) from exc
+        if pred_width <= 0 or pred_height <= 0:
+            raise ValueError(
+                "Official COCO submission export requires positive prediction width/height. "
+                f"Prediction record index {record_idx} has width={pred_width} height={pred_height}."
+            )
+
+        preds, _invalid = _prepare_pred_objects(
+            pred_record,
+            width=pred_width,
+            height=pred_height,
+            options=options,
+            counters=counters,
+        )
+        if pred_width != source_width or pred_height != source_height:
+            for pred in preds:
+                pred["bbox"] = _project_bbox_to_source_resolution(
+                    pred["bbox"],
+                    pred_width=pred_width,
+                    pred_height=pred_height,
+                    source_width=source_width,
+                    source_height=source_height,
+                )
+        pred_samples.append((image_id, preds))
+
+    results = _to_coco_preds(
+        pred_samples, categories, options=options, counters=counters
+    )
+
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
+
+    summary = {
+        "pred_jsonl": str(pred_path),
+        "source_jsonl": str(source_jsonl),
+        "categories_json": str(categories_json),
+        "submission_json": str(out_json),
+        "images_total": len(source_records),
+        "predictions_total": len(results),
+        "categories_total": len(categories),
+        "semantic_model": options.semantic_model,
+        "semantic_threshold": float(options.semantic_threshold),
+        "counters": counters.to_dict(),
+    }
+    (out_json.parent / "submission_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return summary
 
 
 def preds_to_gt_records(pred_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -423,7 +667,9 @@ class EvalOptions:
     overlay_k: int = 12
     open_vocab_recall: bool = False  # class-agnostic recall
     num_workers: int = 0  # parallelize pred parsing/denorm on CPU
-    semantic_model: str = _DEFAULT_SEMANTIC_MODEL  # forced semantic matcher (unmatched descs are dropped)
+    semantic_model: str = (
+        _DEFAULT_SEMANTIC_MODEL  # forced semantic matcher (unmatched descs are dropped)
+    )
     semantic_threshold: float = 0.6
     semantic_device: str = "auto"
     semantic_batch_size: int = 64
@@ -497,7 +743,9 @@ def _prepare_gt_record(
             counters.invalid_coord += 1
             invalid.append({"reason": "coord_parse", "raw": obj})
             continue
-        coord_mode = "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
+        coord_mode = (
+            "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
+        )
         pts_px = denorm_and_clamp(points, width, height, coord_mode=coord_mode)
         x1, y1, x2, y2 = bbox_from_points(pts_px)
         if is_degenerate_bbox(x1, y1, x2, y2):
@@ -1027,7 +1275,9 @@ def _prepare_all_from_records(
     coco_gt_dict = _to_coco_gt(
         gt_samples, categories, add_box_segmentation=options.use_segm
     )
-    results = _to_coco_preds(pred_samples, categories, options=options, counters=counters)
+    results = _to_coco_preds(
+        pred_samples, categories, options=options, counters=counters
+    )
     run_segm = options.use_segm and any("segmentation" in r for r in results)
     return (
         gt_samples,
@@ -1038,6 +1288,7 @@ def _prepare_all_from_records(
         run_segm,
         per_image,
     )
+
 
 def _prepare_all(
     pred_records: List[Dict[str, Any]],
@@ -1160,7 +1411,9 @@ def evaluate_detection(
             results,
             run_segm,
             _,
-        ) = _prepare_all_separate(gt_records, pred_records, options, counters, prepare_coco=want_coco)
+        ) = _prepare_all_separate(
+            gt_records, pred_records, options, counters, prepare_coco=want_coco
+        )
 
     metrics: Dict[str, float] = {}
     per_class: Dict[str, float] = {}
@@ -1355,7 +1608,9 @@ def _try_build_semantic_embeddings(
     device = options.semantic_device or "auto"
     bs = max(1, int(options.semantic_batch_size))
 
-    encoder = SemanticDescEncoder(model_name=model_name, device=str(device), batch_size=int(bs))
+    encoder = SemanticDescEncoder(
+        model_name=model_name, device=str(device), batch_size=int(bs)
+    )
 
     try:
         embs = encoder.encode_norm_texts(unique_norm_texts)
@@ -1396,7 +1651,9 @@ def evaluate_f1ish(
 
     pred_scope = str(options.f1ish_pred_scope or "annotated").strip().lower()
     if pred_scope not in {"annotated", "all"}:
-        logger.warning("Unknown f1ish_pred_scope='%s'; defaulting to 'annotated'", pred_scope)
+        logger.warning(
+            "Unknown f1ish_pred_scope='%s'; defaulting to 'annotated'", pred_scope
+        )
         pred_scope = "annotated"
 
     pred_lookup = {img_id: preds for img_id, preds in pred_samples}
@@ -1478,6 +1735,8 @@ def evaluate_f1ish(
 
     # Location matching per threshold.
     matches_by_thr: Dict[str, Dict[int, List[Tuple[int, int, float]]]] = {}
+    matches_records_by_thr: Dict[str, List[Dict[str, Any]]] = {}
+
     for thr in iou_thrs:
         thr_key = _fmt_iou_thr(thr)
         matches_by_thr[thr_key] = {}
@@ -1526,11 +1785,15 @@ def evaluate_f1ish(
             preds_total = pred_lookup.get(sample.image_id, [])
             preds = preds_eval_by_image.get(sample.image_id, [])
             preds_eval_orig = preds_eval_orig_idx_by_image.get(sample.image_id, [])
-            preds_ignored_orig = preds_ignored_orig_idx_by_image.get(sample.image_id, [])
+            preds_ignored_orig = preds_ignored_orig_idx_by_image.get(
+                sample.image_id, []
+            )
             gts = gts_by_image.get(sample.image_id, [])
             matches = matches_by_thr[thr_key].get(sample.image_id, [])
 
-            matched_pred = {pred_idx for pred_idx, _, _ in matches}  # pred_idx is in *eval* space
+            matched_pred = {
+                pred_idx for pred_idx, _, _ in matches
+            }  # pred_idx is in *eval* space
             matched_gt = {gt_idx for _, gt_idx, _ in matches}
 
             tp_loc = len(matches)
@@ -1682,7 +1945,9 @@ def evaluate_f1ish(
                 f"{prefix}f1_loc_macro": float(f1_macro),
                 f"{prefix}matched_sem_ok": float(sum_sem_ok),
                 f"{prefix}matched_sem_bad": float(sum_sem_bad),
-                f"{prefix}sem_acc_on_matched": float(sum_sem_ok / sum_tp) if sum_tp > 0 else 1.0,
+                f"{prefix}sem_acc_on_matched": float(sum_sem_ok / sum_tp)
+                if sum_tp > 0
+                else 1.0,
                 f"{prefix}tp_full": float(sum_tp_full),
                 f"{prefix}fp_full": float(sum_fp_full),
                 f"{prefix}fn_full": float(sum_fn_full),
@@ -1707,7 +1972,9 @@ def evaluate_f1ish(
             with matches_path.open("w", encoding="utf-8") as f:
                 for row in matches_records:
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        matches_records_by_thr[thr_key] = matches_records
 
     return {
         "metrics": metrics_out,
+        "matches_by_thr": matches_records_by_thr,
     }

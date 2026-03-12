@@ -1,21 +1,16 @@
 # Task Completion Checklist (Memory)
 
 Role separation:
-- Memory role: minimal done-definition before wrapping a coding task.
-- Canonical docs: domain docs in `docs/` and runbooks for full procedures.
-- Owner memories for contract details: `.serena/memories/config_yaml_guide.md`, `.serena/memories/packing_and_stage2_rollout_matching.md`.
-- Update trigger: when acceptance criteria, trainer contracts, or validation flow changes.
+- Memory role: minimal done-definition before closing an implementation turn.
+- Canonical docs: `docs/IMPLEMENTATION_MAP.md`, the relevant domain runbook under `docs/`, and `openspec/specs/` when semantics change.
+- Update trigger: when validation expectations or workflow contracts change.
 
 Pre-close sanity:
-- Confirm configuration passes owner-memory contract checks (config + packing/stage2 semantics).
-- Ensure selected variant-specific knobs are coherent for the active run (for example stage2 rollout namespace and effective batch semantics).
-- For coord-token experiments, explicitly choose whether coord distributional loss is enabled.
-
-Quick verification loop:
-- Validate JSONL: `public_data/scripts/validate_jsonl.py`
-- Render one sample: `scripts/tools/inspect_chat_template.py`
-- Smoke run config: `python -m src.sft --config <yaml> --debug`
+- Re-check the change against `.serena/memories/runtime_footguns.md`.
+- For data, prompt, or template changes, validate one JSONL sample and inspect one rendered example.
+- For behavior changes, run the narrowest targeted test or smoke path from `docs/IMPLEMENTATION_MAP.md`.
 
 Closure:
-- Run targeted tests when behavior changed.
-- If contract semantics changed, update canonical docs and follow OpenSpec workflow.
+- If user-facing defaults, artifact names, entrypoints, or recommended workflows changed, update `docs/`.
+- If stable behavior, config contracts, or metric semantics changed, update OpenSpec too.
+- In the final handoff, state what was verified and what remains unverified.

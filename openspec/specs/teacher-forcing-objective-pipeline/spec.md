@@ -28,7 +28,7 @@ Notes:
 - **AND** no module can supervise tokens across segment boundaries.
 
 ### Requirement: Teacher-forcing objective is declared as an ordered YAML pipeline
-The teacher-forcing pipeline SHALL support the explicit `duplicate_ul` objective module for the canonical clean-prefix Channel-B contract.
+The teacher-forcing pipeline SHALL support the explicit `loss_dead_anchor_suppression` objective module for the canonical clean-prefix Channel-B contract.
 
 Normative configuration shape (conceptual):
 - A pipeline definition contains two ordered lists:
@@ -49,10 +49,10 @@ Execution semantics:
 - Module `config` payloads MUST be validated strictly by the owning module implementation at trainer initialization:
   - unknown config keys MUST fail fast with actionable diagnostics,
   - missing optional keys MUST resolve to documented defaults.
-- `duplicate_ul` is a valid objective module name.
-- `duplicate_ul` MUST be declared with `channels: [B]`.
-- `duplicate_ul.config` MUST be validated strictly and MUST be `{}` in v1.
-- For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `duplicate_ul` after `token_ce` and before `bbox_geo`.
+- `loss_dead_anchor_suppression` is a valid objective module name.
+- `loss_dead_anchor_suppression` MUST be declared with `channels: [B]`.
+- `loss_dead_anchor_suppression.config` MUST be validated strictly and MUST be `{}` in v1.
+- For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `loss_dead_anchor_suppression` after `token_ce` and before `bbox_geo`.
 
 #### Scenario: Ordered pipeline executes deterministically
 - **WHEN** a pipeline defines objective modules `[m1, m2, m3]` in that order
@@ -67,26 +67,26 @@ Execution semantics:
 - **WHEN** a pipeline provides a module `config` containing an unknown key for that module
 - **THEN** config validation fails fast with guidance listing allowed keys for the module.
 
-#### Scenario: duplicate_ul is accepted as a Channel-B-only objective module
-- **WHEN** a teacher-forcing pipeline declares `{name: duplicate_ul, channels: [B], config: {}}`
+#### Scenario: loss_dead_anchor_suppression is accepted as a Channel-B-only objective module
+- **WHEN** a teacher-forcing pipeline declares `{name: loss_dead_anchor_suppression, channels: [B], config: {}}`
 - **THEN** pipeline validation succeeds for module naming/channel shape
 - **AND** the module is eligible to run only on Channel-B steps.
 
 ### Requirement: Module registry is strict and validated before training starts
-The strict teacher-forcing module registry SHALL include `duplicate_ul` as an objective module and fail fast when its prerequisites are unavailable.
+The strict teacher-forcing module registry SHALL include `loss_dead_anchor_suppression` as an objective module and fail fast when its prerequisites are unavailable.
 
 Normative behavior:
 - Unknown module names MUST fail fast before the first training step.
 - Registry resolution MUST be deterministic and MUST NOT depend on runtime reflection of unrelated modules.
-- `duplicate_ul` MUST fail fast if the runtime context does not provide the canonical duplicate-ul supervision metadata required by the clean-prefix Channel-B contract.
+- `loss_dead_anchor_suppression` MUST fail fast if the runtime context does not provide the canonical duplicate-ul supervision metadata required by the clean-prefix Channel-B contract.
 
 #### Scenario: Unknown module name fails fast
 - **WHEN** a pipeline references an unknown module `name`
 - **THEN** training initialization fails fast
 - **AND** the error message lists the unknown name and available module names.
 
-#### Scenario: duplicate_ul fails fast when duplicate-ul metadata is missing
-- **WHEN** a pipeline enables `duplicate_ul`
+#### Scenario: loss_dead_anchor_suppression fails fast when duplicate-ul metadata is missing
+- **WHEN** a pipeline enables `loss_dead_anchor_suppression`
 - **AND** the runtime context lacks canonical duplicate-ul supervision metadata
 - **THEN** the training step raises with actionable diagnostics
 - **AND** training does not proceed with a silently altered objective.

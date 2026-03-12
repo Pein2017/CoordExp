@@ -1,0 +1,47 @@
+---
+doc_id: progress.diagnostics.index
+layer: progress
+doc_type: router
+status: canonical
+domain: research-history
+summary: Router for failure investigations, threshold studies, and operator notes that support diagnosis.
+tags: [progress, diagnostics, investigations]
+updated: 2026-03-12
+---
+
+# Diagnostics Index
+
+Use this folder when the primary question is:
+
+- what is going wrong?
+- why is a behavior happening?
+- which overlap / decoding threshold looks safe?
+- which operator tool should I open to inspect a failure?
+
+Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or checkpoint-vs-checkpoint comparison.
+
+## Current Clusters
+
+- Active Stage-2 duplication / UL investigations
+  - [stage2_near_duplication_2026-03-05.md](stage2_near_duplication_2026-03-05.md)
+  - [stage2_ul_capture_highres1024_2026-03-09.md](stage2_ul_capture_highres1024_2026-03-09.md)
+  - [stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md](stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md)
+  - [gt_overlap_threshold_search_2026-03-11.md](gt_overlap_threshold_search_2026-03-11.md)
+  - [rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md](rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md)
+- Historical Stage-2 failure diagnoses
+  - [stage2_b_ratio_085_instability_2026-02-17.md](stage2_b_ratio_085_instability_2026-02-17.md)
+  - [stage2_channel_a_coord_gate_2026-02-21.md](stage2_channel_a_coord_gate_2026-02-21.md)
+  - [stage2_channel_a_coord_loss_2026-02-25.md](stage2_channel_a_coord_loss_2026-02-25.md)
+  - [stage2_channel_a_visual_audit_2026-02-25.md](stage2_channel_a_visual_audit_2026-02-25.md)
+  - [stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md](stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md)
+- Tooling / operator aids
+  - [visualization_tools_index_2026-03-11.md](visualization_tools_index_2026-03-11.md)
+
+## Non-Diagnostic Workflow Notes
+
+Supported workflows should live in `docs/`, not here.
+
+- The canonical COCO test-dev submission path is:
+  - [docs/eval/COCO_TEST_SUBMISSION.md](../../docs/eval/COCO_TEST_SUBMISSION.md)
+
+If you are recording an official score or a checkpoint-selection result, prefer `progress/benchmarks/`.

@@ -1,12 +1,13 @@
 extends: ./ab_mixed.yaml
 
 model:
-  model: output/stage2_ab/prod/ab_mixed/eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2_merged-ckpt-2442
+  model: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
 
 training:
-  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_2
-  output_dir: output/stage2_ab/prod/ul-res_1024-continued-from-ckpt-2442
-  logging_dir: tb/stage2_ab/prod/ul-res_1024-continued-from-ckpt-2442
+  num_train_epochs: 1
+  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_1
+  output_dir: output/stage2_ab/prod/ul-res_1024-continued-from-ckpt-300
+  logging_dir: tb/stage2_ab/prod/ul-res_1024-continued-from-ckpt-300
 
 template:
   max_pixels: 1048576
@@ -16,5 +17,10 @@ stage2_ab:
     b_ratio: 0.75
 
 custom:
+  offline_max_pixels: 1048576
   train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+
+rollout_matching:
+  train_monitor_dump:
+    every_channel_b_steps: 30

@@ -45,6 +45,7 @@ class RolloutOffloadConfig:
 class RolloutMonitorDumpConfig:
     enabled: bool = False
     every_steps: Optional[int] = None
+    every_channel_b_steps: Optional[int] = None
     dump_first_step: Optional[bool] = None
     only_world_process_zero: bool = True
     max_events: int = 20
@@ -54,6 +55,41 @@ class RolloutMonitorDumpConfig:
     # - async_write avoids blocking the training step on slow filesystems.
     # - min_free_gb skips dumps when disk is low (prevents "disk full" surprises).
     # - max_pending_writes bounds in-flight async dump tasks to avoid memory growth.
+    async_write: bool = True
+    max_pending_writes: int = 2
+    min_free_gb: float = 2.0
+    out_dir: Optional[str] = None
+    write_markdown: bool = True
+
+    def __post_init__(self) -> None:
+        def _validate_positive_optional_int(raw: Any, *, field_name: str) -> None:
+            if raw is None:
+                return
+            try:
+                value = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"rollout_matching.train_monitor_dump.{field_name} must be an int"
+                ) from exc
+            if value <= 0:
+                raise ValueError(
+                    f"rollout_matching.train_monitor_dump.{field_name} must be > 0"
+                )
+
+        _validate_positive_optional_int(self.every_steps, field_name="every_steps")
+        _validate_positive_optional_int(
+            self.every_channel_b_steps, field_name="every_channel_b_steps"
+        )
+
+
+@dataclass(frozen=True)
+class RolloutEvalMonitorDumpConfig:
+    enabled: bool = False
+    every_evals: int = 1
+    only_world_process_zero: bool = True
+    max_events: int = 20
+    max_samples: int = 1
+    max_text_chars: int = 4000
     async_write: bool = True
     max_pending_writes: int = 2
     min_free_gb: float = 2.0
@@ -184,6 +220,7 @@ class VllmServerEntryConfig:
 class VllmServerConfig:
     timeout_s: float = 240.0
     infer_timeout_s: Optional[float] = None
+    allow_infinite_infer_timeout: bool = False
     servers: list[VllmServerEntryConfig] = field(default_factory=list)
     debug_dump: VllmServerDebugDumpConfig = field(
         default_factory=VllmServerDebugDumpConfig
@@ -289,7 +326,10 @@ class RolloutMatchingConfig:
 
     # Nested namespaces.
     offload: Optional[RolloutOffloadConfig] = None
+    # Legacy shared namespace retained as a fallback for older configs.
     monitor_dump: Optional[RolloutMonitorDumpConfig] = None
+    train_monitor_dump: Optional[RolloutMonitorDumpConfig] = None
+    eval_monitor_dump: Optional[RolloutEvalMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
     pipeline: Optional[RolloutPipelineConfig] = None
     eval_detection: RolloutEvalDetectionConfig = field(

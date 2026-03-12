@@ -15,7 +15,7 @@ Authority: explanatory system guide for the current codebase; if this page confl
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
 Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/trainers/stage2_two_channel.py`, `src/infer/pipeline.py`, `src/eval/detection.py`
-Verification: `rg -n "stage2|duplicate_ul|run_infer|DetectionEvalCallback|coord_soft_ce_w1" src scripts configs docs`
+Verification: `rg -n "stage2|loss_dead_anchor_suppression|run_infer|DetectionEvalCallback|coord_soft_ce_w1" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -51,6 +51,8 @@ CoordExp expects offline-prepared JSONL rather than ad-hoc runtime transforms.
 Important invariant:
 - images are resized offline,
 - geometry stays aligned with images,
+- all training and evaluation consume those offline-prepared images as-is,
+- runtime vision processors must not resize them,
 - training uses `do_resize=false`.
 
 ## 2. Dataset Build And Template Encoding
@@ -112,7 +114,7 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
   - `src/trainers/rollout_matching/parsing.py`
   - `src/trainers/rollout_matching/matching.py`
   - `src/trainers/teacher_forcing/module_registry.py`
-  - `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+  - `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 
 Compatibility note:
 - `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
@@ -154,7 +156,7 @@ Primary scored artifact:
 
 Important distinction:
 - offline evaluator logs `eval_det_*`,
-- trainer-native Stage-2 rollout evaluation logs `eval_rollout/*`.
+- trainer-native Stage-2 rollout evaluation logs `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*`.
 
 ## 5. Artifacts And Reproducibility
 

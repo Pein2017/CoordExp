@@ -62,7 +62,7 @@ src/
 │   ├── geometry.py        # Affine transforms, normalization
 │   ├── augment.py         # Image + geometry augmentation
 │   ├── collators.py       # Data collators (padding-free, etc.)
-│   └── data_details.md    # JSONL schema specification (see docs/data/JSONL_CONTRACT.md)
+│   └── data_details.md    # JSONL schema specification (see docs/data/CONTRACT.md)
 ├── utils/
 │   └── auto_detect_aligners.py  # Utility to list aligner modules
 ├── sft.py                  # Training entry point (YAML-driven)
@@ -142,7 +142,7 @@ print(adapter_cfg["modules_to_save"])  # Should list your aligner modules
 ```
 
 ## Data Contract (JSONL)
-JSONL records (see `docs/data/JSONL_CONTRACT.md`):
+JSONL records (see `docs/data/CONTRACT.md`):
 - `images`: List[str] — paths resolved via `ROOT_IMAGE_DIR`
 - `objects`: List — each has one geometry (`bbox_2d`/`poly`) + `desc`
 - `width`, `height`: image dimensions

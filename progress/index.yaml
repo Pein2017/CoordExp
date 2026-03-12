@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-09
+updated: 2026-03-12
 
 entrypoints:
   human: progress/README.md
@@ -18,21 +18,30 @@ groups:
     - progress/directions/stage2_clean_prefix_v2_longform.md
     - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
+    - progress/diagnostics/README.md
     - progress/diagnostics/stage2_near_duplication_2026-03-05.md
+    - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
+    - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
+    - progress/diagnostics/gt_overlap_threshold_search_2026-03-11.md
+    - progress/diagnostics/rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md
     - progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md
     - progress/diagnostics/stage2_channel_a_coord_gate_2026-02-21.md
     - progress/diagnostics/stage2_channel_a_coord_loss_2026-02-25.md
     - progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md
     - progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md
+    - progress/diagnostics/visualization_tools_index_2026-03-11.md
   audits:
     - progress/audits/stage1_softce_logging_2026-01-22.md
     - progress/audits/stage2_channel_a_coord_loss_2026-02-25.md
   benchmarks:
+    - progress/benchmarks/README.md
     - progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md
     - progress/benchmarks/stage1_coco80_temp0_compare_2026-02-26.md
     - progress/benchmarks/stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md
     - progress/benchmarks/stage1_training_dynamics_4b_2026-02-26.md
     - progress/benchmarks/stage2_channel_a_infer_eval_2026-02-01.md
+    - progress/benchmarks/stage2_oracle_k_first200_2026-03-11.md
+    - progress/benchmarks/stage2_rollout_temperature_refinement_2026-03-11.md
   explorations:
     - progress/explorations/stage2_infrastructure_2026-01-26.md
   pretrain:
@@ -40,13 +49,23 @@ groups:
     - progress/pretrain/stage1_ablation_2026-01-26.md
 
 notes:
+  - path: progress/diagnostics/README.md
+    title: Diagnostics Index
+    kind: router
+    status: canonical
+    summary: Router for failure investigations, threshold studies, and operator notes.
+  - path: progress/benchmarks/README.md
+    title: Benchmarks Index
+    kind: router
+    status: canonical
+    summary: Router for measured comparisons, checkpoint selection notes, and evaluation sweeps.
   - path: progress/directions/stage2_clean_prefix_v2.md
     title: Full Idea v2
     kind: direction
     status: active-reference
     summary: Concise current historical summary for the clean-prefix Stage-2 direction.
   - path: progress/directions/stage2_clean_prefix_v2_longform.md
-    title: CoordExp v2: Clean-Prefix Training + Duplicate Unlikelihood for V-LLM Detection
+    title: 'CoordExp v2: Clean-Prefix Training + Duplicate Unlikelihood for V-LLM Detection'
     kind: longform
     status: active-reference
     summary: Extended derivation and design narrative behind the current Stage-2 direction.
@@ -56,12 +75,32 @@ notes:
     status: historical
     summary: Superseded long-form direction for the pre-v2 Stage-2 design.
   - path: progress/diagnostics/stage2_near_duplication_2026-03-05.md
-    title: Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)
+    title: 'Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)'
     kind: diagnosis
     status: active-diagnostic
     summary: Concrete evidence for duplicate-heavy rollout behavior and late-phase instability.
+  - path: progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
+    title: 'Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun'
+    kind: diagnosis
+    status: active-diagnostic
+    summary: Pre-fix baseline plus post-fix rerun showing UL capture largely fixed; labeled eval overlays suggest many apparent FPs are unlabeled real objects while train-side over-generation remains unresolved.
+  - path: progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
+    title: Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300
+    kind: diagnosis
+    status: active-diagnostic
+    summary: Train-plus-first-eval read of the COCO1024 triage-posterior run through step 300, showing strong rollout cleanup overall, a precision-heavy eval endpoint, and a malformed final trainer-state append in the JSONL stream.
+  - path: progress/diagnostics/gt_overlap_threshold_search_2026-03-11.md
+    title: GT Overlap Threshold Search on COCO1024 Val
+    kind: diagnostic-study
+    status: completed-diagnostic
+    summary: Threshold sweep over GT-vs-GT overlap to bound a semantics-agnostic duplicate punishment rule.
+  - path: progress/diagnostics/rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md
+    title: Rollout Duplication Thresholds on `ul_res_1024` vs `ul_res_1024_v2`
+    kind: diagnostic-study
+    status: completed-diagnostic
+    summary: Pairwise predicted-box overlap study locating where duplicate-heavy mass sits across two related Channel-B checkpoints.
   - path: progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md
-    title: Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash
+    title: 'Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash'
     kind: diagnosis
     status: historical-diagnostic
     summary: Earlier symptom note for Stage-2 instability under a hotter Channel-B schedule.
@@ -71,22 +110,27 @@ notes:
     status: historical-diagnostic
     summary: Diagnosis of parseability degradation and coord-vocab gating behavior.
   - path: progress/diagnostics/stage2_channel_a_coord_loss_2026-02-25.md
-    title: Stage-2 (Channel-A only) Diagnosis: Coord Loss Dynamics from Monitor Dumps (2026-02-25)
+    title: 'Stage-2 (Channel-A only) Diagnosis: Coord Loss Dynamics from Monitor Dumps (2026-02-25)'
     kind: diagnosis
     status: historical-diagnostic
     summary: Channel-A-only diagnosis centered on coord-loss dynamics.
   - path: progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md
-    title: Stage-2 (Channel-A Only) Visual Audit: Coord Token Drift, Duplicate Boxes, and A1 Coord-Loss Decision (2026-02-25)
+    title: 'Stage-2 (Channel-A Only) Visual Audit: Coord Token Drift, Duplicate Boxes, and A1 Coord-Loss Decision (2026-02-25)'
     kind: visual-audit
     status: historical-diagnostic
     summary: Qualitative visual audit of duplicate boxes and coord-token drift.
   - path: progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md
-    title: Stage-2 AB: Continuous Soft-Context Mismatch vs Discrete Rollouts (and Stage-1 Loss Alignment)
+    title: 'Stage-2 AB: Continuous Soft-Context Mismatch vs Discrete Rollouts (and Stage-1 Loss Alignment)'
     kind: diagnosis
     status: historical-diagnostic
     summary: Analysis of soft-context mismatch relative to discrete rollout behavior.
+  - path: progress/diagnostics/visualization_tools_index_2026-03-11.md
+    title: Visualization Tools Index for Detection and Rollout Inspection
+    kind: tool-index
+    status: completed-diagnostic
+    summary: Short index of overlay and rollout-inspection tools for diagnosis and qualitative review.
   - path: progress/audits/stage1_softce_logging_2026-01-22.md
-    title: Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)
+    title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
     kind: audit
     status: historical-audit
     summary: Audit of Stage-1 SoftCE behavior and logging surfaces.
@@ -96,7 +140,7 @@ notes:
     status: historical-audit
     summary: Audit and decision note for Channel-A coord-loss behavior.
   - path: progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md
-    title: COCO80 Bench (200 samples): 4B Checkpoints @ max_pixels=32*32*{768,1024} (2026-02-26)
+    title: 'COCO80 Bench (200 samples): 4B Checkpoints @ max_pixels=32*32*{768,1024} (2026-02-26)'
     kind: benchmark
     status: historical-benchmark
     summary: Stage-1 COCO80 evaluation report for 4B checkpoints at two resolutions.
@@ -106,12 +150,12 @@ notes:
     status: historical-benchmark
     summary: Side-by-side comparison across selected detection runs.
   - path: progress/benchmarks/stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md
-    title: COCO Bench (200 samples): 2B Mixed CE+softCE Checkpoint @ max_pixels=32*32*{768,1024} (2026-02-27)
+    title: 'COCO Bench (200 samples): 2B Mixed CE+softCE Checkpoint @ max_pixels=32*32*{768,1024} (2026-02-27)'
     kind: benchmark
     status: historical-benchmark
     summary: Stage-1 benchmark report for the 2B mixed objective checkpoint.
   - path: progress/benchmarks/stage1_training_dynamics_4b_2026-02-26.md
-    title: Stage-1 Training Dynamics (4B): soft_ce_only vs pure_ce_only vs soft_ce_hard_ce_mixed (2026-02-26)
+    title: 'Stage-1 Training Dynamics (4B): soft_ce_only vs pure_ce_only vs soft_ce_hard_ce_mixed (2026-02-26)'
     kind: benchmark
     status: historical-benchmark
     summary: Training-dynamics comparison across three 4B Stage-1 runs.
@@ -120,13 +164,23 @@ notes:
     kind: benchmark
     status: historical-benchmark
     summary: Early infer/eval notes for a Channel-A-only Stage-2 path.
+  - path: progress/benchmarks/stage2_oracle_k_first200_2026-03-11.md
+    title: Oracle-K on Stage-2 High-Res 1024 Runs (First-200 COCO Val)
+    kind: benchmark
+    status: completed-benchmark
+    summary: First-200 checkpoint comparison using Oracle-K sweeps across three related high-resolution Stage-2 runs.
+  - path: progress/benchmarks/stage2_rollout_temperature_refinement_2026-03-11.md
+    title: '`ul_res_1024_v2` Rollout Temperature Refinement'
+    kind: benchmark
+    status: completed-benchmark
+    summary: Temperature sweep used to choose a practical training-time rollout sampling temperature.
   - path: progress/explorations/stage2_infrastructure_2026-01-26.md
     title: Stage-2 Infrastructure Exploration Request
     kind: exploration
     status: historical-exploration
     summary: Exploration request describing required Stage-2 training infrastructure.
   - path: progress/pretrain/stage1_foundation.md
-    title: Phase 1 / Stage-1 Training: Coord-Token SFT (Distribution Supervision)
+    title: 'Phase 1 / Stage-1 Training: Coord-Token SFT (Distribution Supervision)'
     kind: historical-reference
     status: historical-reference
     summary: Stage-1 foundation note describing the original pretraining path.

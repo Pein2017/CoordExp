@@ -24,6 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 class Stage2ABChannelExecutorsMixin:
+    def _stage2_stage_wallclock_ctx(self, stage: str):
+        track = getattr(self, "_track_stage_wallclock", None)
+        if callable(track):
+            return track(str(stage))
+        return contextlib.nullcontext()
+
+    def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
+        """Best-effort hook for subclasses that collect suspicious train dumps.
+
+        The main Stage-2 trainer overrides this with real buffering logic. Keep a
+        no-op default here so executor-level tests and lightweight subclasses can
+        reuse the mixin without implementing the monitoring helpers.
+        """
+
+        return None
+
+    def _stage2_flush_train_monitor_dump(self, *, global_step: int) -> None:
+        """Best-effort hook for subclasses that collect suspicious train dumps."""
+
+        return None
+
     def _stage2_post_rollout_channel(self, channel: str) -> Literal["A", "B"]:
         s = str(channel).strip().upper()
         return "A" if s == "A" else "B"
@@ -289,169 +310,191 @@ class Stage2ABChannelExecutorsMixin:
                 "stage2-ab Channel-A step mode requires non-empty raw_samples"
             )
 
-        # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
-        model.train()
+        with self._stage2_stage_wallclock_ctx("sft"):
+            # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
+            model.train()
 
-        packing_enabled = bool(self._packing_enabled())
-        if not packing_enabled:
-            raise ValueError(
-                "stage2-ab Channel-A step mode requires training.packing=true "
-                "(learner microbatch=1 under global_max_length)."
-            )
-
-        # Step-budgeted mode: do NOT carry segments across optimizer steps.
-        buf = self._stage2_post_rollout_buffer(channel="A")
-        if buf:
-            raise ValueError(
-                "stage2-ab Channel-A step mode requires an empty post-rollout buffer at step start; "
-                "disable carry across steps or investigate unexpected leftovers"
-            )
-
-        total_segments_target = int(len(raw_samples))
-        if total_segments_target <= 0:
-            raise AssertionError("unexpected empty raw_samples")
-
-        from swift.llm import to_device
-
-        def _train_one_pack(
-            *,
-            selected: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
-            pack_metrics: Mapping[str, float],
-            step_totals: Mapping[str, float],
-            sync_gradients: bool,
-        ) -> torch.Tensor:
-            with self._template_packing_enabled():
-                packed = self.template.data_collator([enc for enc, _, _ in selected])
-            batch = to_device(packed, self.model.device)
-            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
-            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
-
-            bm: Dict[str, float] = {}
-            # Attach step-level totals (time/*, packing settings, etc) sparingly.
-            bm.update({str(k): float(v) for k, v in step_totals.items()})
-            bm.update({str(k): float(v) for k, v in pack_metrics.items()})
-
-            self._merge_rollout_matching_batch_metrics(batch, bm)
-            batch["_stage2_ab_channel"] = "A"
-
-            pack_segments = int(len(selected))
-            weight = float(pack_segments) / float(total_segments_target)
-
-            cm = contextlib.nullcontext()
-            if not bool(sync_gradients):
-                acc = getattr(self, "accelerator", None)
-                if acc is not None and hasattr(acc, "no_sync"):
-                    cm = acc.no_sync(model)
-                else:
-                    no_sync = getattr(model, "no_sync", None)
-                    if callable(no_sync):
-                        cm = model.no_sync()
-
-            with cm:
-                loss_cm = getattr(self, "compute_loss_context_manager", None)
-                loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
-                with loss_ctx:
-                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
-                        dist=dist,
-                        ddp_rank=int(ddp_rank),
-                        ddp_world_size=int(ddp_world_size),
-                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
-                    ):
-                        loss = self.compute_loss(model, batch)
-                if not isinstance(loss, torch.Tensor):
-                    raise TypeError("compute_loss must return a torch.Tensor")
-
-                loss_scaled = loss * float(weight)
-
-                acc = getattr(self, "accelerator", None)
-                if acc is not None and hasattr(acc, "backward"):
-                    acc.backward(loss_scaled)
-                else:
-                    loss_scaled.backward()
-
-            return loss.detach() * float(weight)
-
-        segments, batch_metrics = self._prepare_batch_inputs_a(
-            list(raw_samples), _segments_only=True
-        )
-        if not isinstance(segments, list) or not segments:
-            raise ValueError(
-                "stage2-ab Channel-A step mode produced no segments; check dataset contract"
-            )
-
-        step_totals = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
-
-        self._stage2_append_post_rollout_segments(channel="A", segments=segments)
-
-        try:
-            import torch.distributed as dist
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        ddp_rank = 0
-        ddp_world_size = 1
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            ddp_world_size = max(1, int(dist.get_world_size()))
-
-        loss_total = None
-        first_pack = True
-        while self._stage2_post_rollout_buffer(channel="A"):
-            t_pack0 = time.perf_counter()
-            selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="A")
-            pack_metrics = dict(pack_metrics)
-            pack_metrics["time/post_rollout_pack_s"] = float(
-                time.perf_counter() - t_pack0
-            )
-
-            step_totals_pack = step_totals if first_pack else {}
-            sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="A"))
-            if (
-                bool(sync_gradients)
-                and dist is not None
-                and dist.is_available()
-                and dist.is_initialized()
-                and int(ddp_world_size) > 1
-            ):
-                # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
-                # when per-rank pack counts differ.
-                timeout_s = 120.0
-                ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
-                if ddp_phase_timeout_raw is not None:
-                    try:
-                        timeout_s = float(ddp_phase_timeout_raw)
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(
-                            "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
-                        ) from exc
-
-                    if float(timeout_s) <= 0.0:
-                        raise ValueError(
-                            "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 under DDP "
-                            "(coordination barriers must be bounded to prevent deadlocks)."
-                        )
-
-                timeout_s = float(max(30.0, min(3600.0, float(timeout_s))))
-                self._stage2_ab_ddp_monitored_barrier(
-                    dist=dist,
-                    phase="stage2-ab Channel-A final-sync backward",
-                    rank=int(dist.get_rank()),
-                    world_size=int(ddp_world_size),
-                    timeout_s=float(timeout_s),
-                    monitor_group_timeout_s=float(timeout_s),
+            packing_enabled = bool(self._packing_enabled())
+            if not packing_enabled:
+                raise ValueError(
+                    "stage2-ab Channel-A step mode requires training.packing=true "
+                    "(learner microbatch=1 under global_max_length)."
                 )
-            loss_pack = _train_one_pack(
-                selected=selected,
-                pack_metrics=pack_metrics,
-                step_totals=step_totals_pack,
-                sync_gradients=sync_gradients,
+
+            # Step-budgeted mode: do NOT carry segments across optimizer steps.
+            buf = self._stage2_post_rollout_buffer(channel="A")
+            if buf:
+                raise ValueError(
+                    "stage2-ab Channel-A step mode requires an empty post-rollout buffer at step start; "
+                    "disable carry across steps or investigate unexpected leftovers"
+                )
+
+            total_segments_target = int(len(raw_samples))
+            if total_segments_target <= 0:
+                raise AssertionError("unexpected empty raw_samples")
+
+            from swift.llm import to_device
+
+            def _train_one_pack(
+                *,
+                selected: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
+                pack_metrics: Mapping[str, float],
+                step_totals: Mapping[str, float],
+                sync_gradients: bool,
+            ) -> torch.Tensor:
+                with self._template_packing_enabled():
+                    packed = self.template.data_collator([enc for enc, _, _ in selected])
+                batch = to_device(packed, self.model.device)
+                self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
+                batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
+
+                bm: Dict[str, float] = {}
+                # Attach step-level totals (time/*, packing settings, etc) sparingly.
+                bm.update({str(k): float(v) for k, v in step_totals.items()})
+                bm.update({str(k): float(v) for k, v in pack_metrics.items()})
+
+                self._merge_rollout_matching_batch_metrics(batch, bm)
+                batch["_stage2_ab_channel"] = "A"
+
+                pack_segments = int(len(selected))
+                weight = float(pack_segments) / float(total_segments_target)
+
+                cm = contextlib.nullcontext()
+                if not bool(sync_gradients):
+                    acc = getattr(self, "accelerator", None)
+                    if acc is not None and hasattr(acc, "no_sync"):
+                        cm = acc.no_sync(model)
+                    else:
+                        no_sync = getattr(model, "no_sync", None)
+                        if callable(no_sync):
+                            cm = model.no_sync()
+
+                with cm:
+                    loss_cm = getattr(self, "compute_loss_context_manager", None)
+                    loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
+                    prev_gradmon_sync = getattr(
+                        self, "_loss_gradient_monitor_sync_gradients", None
+                    )
+                    setattr(
+                        self,
+                        "_loss_gradient_monitor_sync_gradients",
+                        bool(sync_gradients),
+                    )
+                    try:
+                        with loss_ctx:
+                            with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                                dist=dist,
+                                ddp_rank=int(ddp_rank),
+                                ddp_world_size=int(ddp_world_size),
+                                where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                            ):
+                                loss = self.compute_loss(model, batch)
+                    finally:
+                        if prev_gradmon_sync is None:
+                            try:
+                                delattr(self, "_loss_gradient_monitor_sync_gradients")
+                            except AttributeError:
+                                pass
+                        else:
+                            setattr(
+                                self,
+                                "_loss_gradient_monitor_sync_gradients",
+                                prev_gradmon_sync,
+                            )
+                    if not isinstance(loss, torch.Tensor):
+                        raise TypeError("compute_loss must return a torch.Tensor")
+
+                    loss_scaled = loss * float(weight)
+
+                    acc = getattr(self, "accelerator", None)
+                    if acc is not None and hasattr(acc, "backward"):
+                        acc.backward(loss_scaled)
+                    else:
+                        loss_scaled.backward()
+
+                return loss.detach() * float(weight)
+
+            segments, batch_metrics = self._prepare_batch_inputs_a(
+                list(raw_samples), _segments_only=True
             )
+            if not isinstance(segments, list) or not segments:
+                raise ValueError(
+                    "stage2-ab Channel-A step mode produced no segments; check dataset contract"
+                )
 
-            loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
-            first_pack = False
+            step_totals = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
 
-        if loss_total is None:
-            raise AssertionError("stage2-ab Channel-A step mode produced no packs")
-        return loss_total
+            self._stage2_append_post_rollout_segments(channel="A", segments=segments)
+
+            try:
+                import torch.distributed as dist
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                dist = None  # type: ignore[assignment]
+
+            ddp_rank = 0
+            ddp_world_size = 1
+            if dist is not None and dist.is_available() and dist.is_initialized():
+                ddp_world_size = max(1, int(dist.get_world_size()))
+
+            loss_total = None
+            first_pack = True
+            while self._stage2_post_rollout_buffer(channel="A"):
+                t_pack0 = time.perf_counter()
+                selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="A")
+                pack_metrics = dict(pack_metrics)
+                pack_metrics["time/post_rollout_pack_s"] = float(
+                    time.perf_counter() - t_pack0
+                )
+
+                step_totals_pack = step_totals if first_pack else {}
+                sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="A"))
+                if (
+                    bool(sync_gradients)
+                    and dist is not None
+                    and dist.is_available()
+                    and dist.is_initialized()
+                    and int(ddp_world_size) > 1
+                ):
+                    # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
+                    # when per-rank pack counts differ.
+                    timeout_s = 120.0
+                    ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
+                    if ddp_phase_timeout_raw is not None:
+                        try:
+                            timeout_s = float(ddp_phase_timeout_raw)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError(
+                                "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
+                            ) from exc
+
+                        if float(timeout_s) <= 0.0:
+                            raise ValueError(
+                                "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 under DDP "
+                                "(coordination barriers must be bounded to prevent deadlocks)."
+                            )
+
+                    timeout_s = float(max(30.0, min(3600.0, float(timeout_s))))
+                    self._stage2_ab_ddp_monitored_barrier(
+                        dist=dist,
+                        phase="stage2-ab Channel-A final-sync backward",
+                        rank=int(dist.get_rank()),
+                        world_size=int(ddp_world_size),
+                        timeout_s=float(timeout_s),
+                        monitor_group_timeout_s=float(timeout_s),
+                    )
+                loss_pack = _train_one_pack(
+                    selected=selected,
+                    pack_metrics=pack_metrics,
+                    step_totals=step_totals_pack,
+                    sync_gradients=sync_gradients,
+                )
+
+                loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
+                first_pack = False
+
+            if loss_total is None:
+                raise AssertionError("stage2-ab Channel-A step mode produced no packs")
+            return loss_total
 
     def _stage2_channel_b_pipeline_enabled(
         self,
@@ -522,6 +565,9 @@ class Stage2ABChannelExecutorsMixin:
             raise ValueError(
                 "stage2-ab Channel-B step mode requires non-empty raw_samples"
             )
+
+        target_log_step = int(global_step + 1)
+        self._stage2_reset_train_monitor_dump(global_step=target_log_step)
 
         # Ensure dropout/BN behavior is correct even when we bypass the base Trainer.training_step.
         model.train()
@@ -783,14 +829,35 @@ class Stage2ABChannelExecutorsMixin:
             with cm:
                 loss_cm = getattr(self, "compute_loss_context_manager", None)
                 loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
-                with loss_ctx:
-                    with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
-                        dist=dist,
-                        ddp_rank=int(ddp_rank),
-                        ddp_world_size=int(ddp_world_size),
-                        where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
-                    ):
-                        loss = self.compute_loss(model, batch)
+                prev_gradmon_sync = getattr(
+                    self, "_loss_gradient_monitor_sync_gradients", None
+                )
+                setattr(
+                    self,
+                    "_loss_gradient_monitor_sync_gradients",
+                    bool(sync_gradients),
+                )
+                try:
+                    with loss_ctx:
+                        with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                            dist=dist,
+                            ddp_rank=int(ddp_rank),
+                            ddp_world_size=int(ddp_world_size),
+                            where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                        ):
+                            loss = self.compute_loss(model, batch)
+                finally:
+                    if prev_gradmon_sync is None:
+                        try:
+                            delattr(self, "_loss_gradient_monitor_sync_gradients")
+                        except AttributeError:
+                            pass
+                    else:
+                        setattr(
+                            self,
+                            "_loss_gradient_monitor_sync_gradients",
+                            prev_gradmon_sync,
+                        )
                 if not isinstance(loss, torch.Tensor):
                     raise TypeError("compute_loss must return a torch.Tensor")
 
@@ -805,9 +872,11 @@ class Stage2ABChannelExecutorsMixin:
             return loss.detach() * float(weight)
 
         if not enable_pipeline:
-            segments, batch_metrics = self._prepare_batch_inputs_b(
-                list(raw_samples), _segments_only=True
-            )
+            with self._stage2_stage_wallclock_ctx("rollout"):
+                segments, batch_metrics = self._prepare_batch_inputs_b(
+                    list(raw_samples), _segments_only=True
+                )
+            self._stage2_flush_train_monitor_dump(global_step=target_log_step)
             if not isinstance(segments, list) or not segments:
                 raise ValueError(
                     "stage2-ab Channel-B step mode produced no post-rollout segments; "
@@ -816,6 +885,14 @@ class Stage2ABChannelExecutorsMixin:
 
             batch_metrics = (
                 dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
+            )
+            batch_metrics["stage2_ab/channel_b/train_monitor_dump_written"] = float(
+                1.0
+                if int(
+                    getattr(self, "_stage2_train_monitor_dump_written_step", -1) or -1
+                )
+                == int(target_log_step)
+                else 0.0
             )
             rollout_static, step_totals = _split_metrics(batch_metrics)
             step_totals["stage2/raw_rollouts"] = float(total_segments_target)
@@ -826,27 +903,28 @@ class Stage2ABChannelExecutorsMixin:
             loss_total = None
             first_pack = True
             while self._stage2_post_rollout_buffer(channel="B"):
-                t_pack0 = time.perf_counter()
-                selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="B")
-                pack_metrics = dict(pack_metrics)
-                pack_metrics["time/post_rollout_pack_s"] = float(
-                    time.perf_counter() - t_pack0
-                )
-
-                step_totals_pack = step_totals if first_pack else {}
-                sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="B"))
-                if bool(sync_gradients):
-                    _ddp_phase_barrier(
-                        "channel_b_non_pipeline_before_final_sync_backward",
-                        timeout_s=float(ddp_phase_final_sync_timeout_s),
+                with self._stage2_stage_wallclock_ctx("sft"):
+                    t_pack0 = time.perf_counter()
+                    selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="B")
+                    pack_metrics = dict(pack_metrics)
+                    pack_metrics["time/post_rollout_pack_s"] = float(
+                        time.perf_counter() - t_pack0
                     )
-                loss_pack = _train_one_pack(
-                    selected=selected,
-                    pack_metrics=pack_metrics,
-                    rollout_static=rollout_static,
-                    step_totals=step_totals_pack,
-                    sync_gradients=sync_gradients,
-                )
+
+                    step_totals_pack = step_totals if first_pack else {}
+                    sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="B"))
+                    if bool(sync_gradients):
+                        _ddp_phase_barrier(
+                            "channel_b_non_pipeline_before_final_sync_backward",
+                            timeout_s=float(ddp_phase_final_sync_timeout_s),
+                        )
+                    loss_pack = _train_one_pack(
+                        selected=selected,
+                        pack_metrics=pack_metrics,
+                        rollout_static=rollout_static,
+                        step_totals=step_totals_pack,
+                        sync_gradients=sync_gradients,
+                    )
 
                 loss_total = (
                     loss_pack if loss_total is None else (loss_total + loss_pack)
@@ -877,7 +955,10 @@ class Stage2ABChannelExecutorsMixin:
                     chunk = list(raw_samples[int(off) : int(off + rollout_decode_bs)])
                     if not chunk:
                         continue
-                    segs, m = self._prepare_batch_inputs_b(chunk, _segments_only=True)
+                    with self._stage2_stage_wallclock_ctx("rollout"):
+                        segs, m = self._prepare_batch_inputs_b(
+                            chunk, _segments_only=True
+                        )
                     # `raw_n` counts pre-drop rollouts; under strict format policy
                     # `len(segs)` may be < raw_n due to dropped malformed rollouts.
                     raw_n = int(len(chunk))
@@ -977,37 +1058,38 @@ class Stage2ABChannelExecutorsMixin:
             if not self._stage2_post_rollout_buffer(channel="B"):
                 continue
 
-            t_pack0 = time.perf_counter()
-            selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="B")
-            buf_total_len -= int(sum(int(sl) for _, _, sl in selected))
+            with self._stage2_stage_wallclock_ctx("sft"):
+                t_pack0 = time.perf_counter()
+                selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="B")
+                buf_total_len -= int(sum(int(sl) for _, _, sl in selected))
 
-            pack_metrics = dict(pack_metrics)
-            pack_metrics["time/post_rollout_pack_s"] = float(
-                time.perf_counter() - t_pack0
-            )
-
-            # Attach accumulated totals to this pack, then reset.
-            step_totals_pack = dict(pending_totals)
-            pending_totals = {}
-
-            # IMPORTANT: `total_segments_target` is a raw-rollout target. Under strict format
-            # policies we may drop malformed rollouts, so `seen_segments` can be < target; gate
-            # the final synced backward on `seen_raw` instead to avoid cross-rank sync skew.
-            is_last_pack = (seen_raw >= total_segments_target) and (
-                not bool(self._stage2_post_rollout_buffer(channel="B"))
-            )
-            if bool(is_last_pack):
-                _ddp_phase_barrier(
-                    "channel_b_pipeline_before_final_sync_backward",
-                    timeout_s=float(ddp_phase_final_sync_timeout_s),
+                pack_metrics = dict(pack_metrics)
+                pack_metrics["time/post_rollout_pack_s"] = float(
+                    time.perf_counter() - t_pack0
                 )
-            loss_pack = _train_one_pack(
-                selected=selected,
-                pack_metrics=pack_metrics,
-                rollout_static=rollout_static,
-                step_totals=step_totals_pack,
-                sync_gradients=bool(is_last_pack),
-            )
+
+                # Attach accumulated totals to this pack, then reset.
+                step_totals_pack = dict(pending_totals)
+                pending_totals = {}
+
+                # IMPORTANT: `total_segments_target` is a raw-rollout target. Under strict format
+                # policies we may drop malformed rollouts, so `seen_segments` can be < target; gate
+                # the final synced backward on `seen_raw` instead to avoid cross-rank sync skew.
+                is_last_pack = (seen_raw >= total_segments_target) and (
+                    not bool(self._stage2_post_rollout_buffer(channel="B"))
+                )
+                if bool(is_last_pack):
+                    _ddp_phase_barrier(
+                        "channel_b_pipeline_before_final_sync_backward",
+                        timeout_s=float(ddp_phase_final_sync_timeout_s),
+                    )
+                loss_pack = _train_one_pack(
+                    selected=selected,
+                    pack_metrics=pack_metrics,
+                    rollout_static=rollout_static,
+                    step_totals=step_totals_pack,
+                    sync_gradients=bool(is_last_pack),
+                )
             loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
 
         th.join(timeout=5.0)
@@ -1015,6 +1097,8 @@ class Stage2ABChannelExecutorsMixin:
             raise RuntimeError(
                 "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
             )
+
+        self._stage2_flush_train_monitor_dump(global_step=target_log_step)
 
         if producer_exc:
             # Re-raise the first producer exception.

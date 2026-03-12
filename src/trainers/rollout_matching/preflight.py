@@ -107,6 +107,7 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
         )
 
     base_urls: list[str] = []
+    group_ports: list[int] = []
     for idx, server_entry in enumerate(servers):
         if not isinstance(server_entry, Mapping):
             raise TypeError(
@@ -135,13 +136,33 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
                 "use 127.0.0.1 or a routable host/IP instead." % idx
             )
 
+        group_port_raw = server_entry.get("group_port")
+        if group_port_raw is None:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[%d].group_port is required." % idx
+            )
+        try:
+            group_port = int(group_port_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "rollout_matching.vllm.server.servers[%d].group_port must be an int."
+                % idx
+            ) from exc
+        if group_port <= 0:
+            raise ValueError(
+                "rollout_matching.vllm.server.servers[%d].group_port must be > 0."
+                % idx
+            )
+
         base_urls.append(base_url)
+        group_ports.append(int(group_port))
 
     return {
         "rollout_backend": backend,
         "eval_rollout_backend": eval_backend,
         "vllm_mode": mode,
         "server_base_urls": base_urls,
+        "server_group_ports": group_ports,
     }
 
 
@@ -160,6 +181,7 @@ def build_stage2_launcher_preflight(
     rollout_cfg = _extract_rollout_mapping(training_config)
 
     server_base_urls = list(rollout_contract["server_base_urls"])
+    server_group_ports = list(rollout_contract["server_group_ports"])
     if len(server_base_urls) != 1:
         raise ValueError(
             "scripts/train_stage2.sh supports exactly 1 vLLM rollout server (it selects urls[0]). "
@@ -185,13 +207,31 @@ def build_stage2_launcher_preflight(
     if isinstance(val_jsonl_raw, str) and val_jsonl_raw.strip():
         val_jsonl_path = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
 
-    max_pixels_raw = training_config.template.get("max_pixels")
+    offline_max_pixels_raw = getattr(training_config.custom, "offline_max_pixels", None)
+    max_pixels_source = "custom.offline_max_pixels"
+    if offline_max_pixels_raw is None:
+        max_pixels_raw = training_config.template.get("max_pixels")
+        max_pixels_source = "template.max_pixels"
+    else:
+        max_pixels_raw = offline_max_pixels_raw
     if max_pixels_raw is None:
         raise ValueError(
-            "template.max_pixels must be set for Stage-2 preflight (we treat it as a hard input constraint)."
+            "custom.offline_max_pixels or template.max_pixels must be set for Stage-2 preflight."
         )
     try:
-        template_max_pixels = int(max_pixels_raw)
+        offline_max_pixels = int(max_pixels_raw)
+    except Exception as exc:
+        raise TypeError(f"{max_pixels_source} must be an int") from exc
+    if offline_max_pixels <= 0:
+        raise ValueError(f"{max_pixels_source} must be > 0")
+
+    template_max_pixels_raw = training_config.template.get("max_pixels")
+    if template_max_pixels_raw is None:
+        raise ValueError(
+            "template.max_pixels must be set for Stage-2 server/runtime configuration."
+        )
+    try:
+        template_max_pixels = int(template_max_pixels_raw)
     except Exception as exc:
         raise TypeError("template.max_pixels must be an int") from exc
     if template_max_pixels <= 0:
@@ -294,52 +334,66 @@ def build_stage2_launcher_preflight(
     # change the number of `<|image_pad|>` tokens).
     vllm_engine_kwargs: dict[str, Any] = {}
     mm_processor_kwargs_raw = vllm_cfg.get("mm_processor_kwargs")
-    if mm_processor_kwargs_raw is not None:
-        if not isinstance(mm_processor_kwargs_raw, Mapping):
+    if mm_processor_kwargs_raw is None:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize=false is required for Stage-2 server preflight."
+        )
+    if not isinstance(mm_processor_kwargs_raw, Mapping):
+        raise TypeError(
+            "rollout_matching.vllm.mm_processor_kwargs must be a mapping when provided"
+        )
+    mm_processor_kwargs: dict[str, Any] = dict(mm_processor_kwargs_raw)
+    allowed_keys = {"do_resize"}
+    unknown_keys = set(mm_processor_kwargs.keys()) - set(allowed_keys)
+    if unknown_keys:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs contains unsupported keys: "
+            f"{sorted(unknown_keys)} (allowed: {sorted(allowed_keys)})"
+        )
+
+    if "do_resize" not in mm_processor_kwargs:
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize=false is required for Stage-2 server preflight."
+        )
+
+    raw = mm_processor_kwargs.get("do_resize")
+    if isinstance(raw, bool):
+        do_resize = raw
+    elif isinstance(raw, int) and raw in {0, 1}:
+        do_resize = bool(raw)
+    elif isinstance(raw, str):
+        raw_s = raw.strip().lower()
+        if raw_s in {"true", "1", "yes"}:
+            do_resize = True
+        elif raw_s in {"false", "0", "no"}:
+            do_resize = False
+        else:
             raise TypeError(
-                "rollout_matching.vllm.mm_processor_kwargs must be a mapping when provided"
+                "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
             )
-        mm_processor_kwargs: dict[str, Any] = dict(mm_processor_kwargs_raw)
-        allowed_keys = {"do_resize"}
-        unknown_keys = set(mm_processor_kwargs.keys()) - set(allowed_keys)
-        if unknown_keys:
-            raise ValueError(
-                "rollout_matching.vllm.mm_processor_kwargs contains unsupported keys: "
-                f"{sorted(unknown_keys)} (allowed: {sorted(allowed_keys)})"
-            )
+    else:
+        raise TypeError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
+        )
 
-        if "do_resize" in mm_processor_kwargs:
-            raw = mm_processor_kwargs.get("do_resize")
-            if isinstance(raw, bool):
-                do_resize = raw
-            elif isinstance(raw, int) and raw in {0, 1}:
-                do_resize = bool(raw)
-            elif isinstance(raw, str):
-                raw_s = raw.strip().lower()
-                if raw_s in {"true", "1", "yes"}:
-                    do_resize = True
-                elif raw_s in {"false", "0", "no"}:
-                    do_resize = False
-                else:
-                    raise TypeError(
-                        "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
-                    )
-            else:
-                raise TypeError(
-                    "rollout_matching.vllm.mm_processor_kwargs.do_resize must be a bool"
-                )
-            mm_processor_kwargs["do_resize"] = do_resize
+    if bool(do_resize):
+        raise ValueError(
+            "rollout_matching.vllm.mm_processor_kwargs.do_resize must resolve to false for Stage-2 server preflight."
+        )
 
-        vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
+    mm_processor_kwargs["do_resize"] = False
+    vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
 
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
         "eval_rollout_backend": rollout_contract["eval_rollout_backend"],
         "vllm_mode": rollout_contract["vllm_mode"],
         "server_base_urls": server_base_urls,
+        "server_group_ports": server_group_ports,
         "server_model": model_path,
         "train_jsonl_resolved": str(train_jsonl_path),
         "val_jsonl_resolved": "" if val_jsonl_path is None else str(val_jsonl_path),
+        "offline_max_pixels": offline_max_pixels,
         "template_max_pixels": template_max_pixels,
         "server_template": server_template,
         "server_max_length": server_max_length,

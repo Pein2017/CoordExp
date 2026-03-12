@@ -17,7 +17,7 @@ training:
   save_strategy: steps
   save_steps: 300
   do_eval: true
-  metric_for_best_model: rollout/mAP
+  metric_for_best_model: detection/mAP
 
 stage2_ab:
   schedule:
@@ -38,7 +38,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -100,3 +100,14 @@ custom:
   val_sample_limit: 512
   extra:
     prompt_variant: coco_80
+    loss_gradient_monitor:
+      enabled: true
+      interval_steps: 50
+      ema_beta: 0.98
+      require_sync_gradients: true
+      coord_only: true
+      granularity: atomic
+      param_block:
+        strategy: auto_last_lm_layernorm
+        max_params: 64
+        max_numel: 200000

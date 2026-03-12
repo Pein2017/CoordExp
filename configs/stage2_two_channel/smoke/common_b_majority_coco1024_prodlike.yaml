@@ -24,7 +24,7 @@ rollout_matching:
   eval_rollout_backend: vllm
   channel_b_decode_batch_size: 8
   eval_decode_batch_size: 8
-  max_new_tokens: 2048
+  max_new_tokens: 3084
   monitor_dump:
     enabled: true
     every_steps: 1

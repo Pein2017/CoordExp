@@ -31,10 +31,10 @@ Recommended wrapper (config-driven; handles `PYTHONPATH`, `torchrun`, proxy hygi
 
 ```bash
 # Single GPU
-bash scripts/train.sh config=<yaml> gpus=0
+config=<yaml> gpus=0 bash scripts/train.sh
 
 # Multi-GPU
-bash scripts/train.sh config=<yaml> gpus=0,1,2,3
+config=<yaml> gpus=0,1,2,3 bash scripts/train.sh
 ```
 
 Multi-GPU:
@@ -56,7 +56,7 @@ Where this lives in code:
 - Stage-2 Rollout-Aligned Teacher Forcing trainer: `src/trainers/stage2_rollout_aligned.py`
 - Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) trainer: `src/trainers/stage2_two_channel.py`
 - Channel-B rollout parsing + matching helpers: `src/trainers/rollout_matching/parsing.py`, `src/trainers/rollout_matching/matching.py`
-- Explicit duplicate UL module: `src/trainers/teacher_forcing/modules/duplicate_ul.py`
+- Explicit dead-anchor suppression module: `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
 - Training entrypoint (YAML loader + wiring): `src/sft.py`
 - Import note: `src/trainers/stage2_two_channel/__init__.py` intentionally uses a proxy-style dynamic loader
   to preserve monkeypatch/import compatibility with the historical single-file module; avoid "simplifying"
@@ -72,14 +72,14 @@ rollout (no grad) -> bounded container salvage + strict record acceptance -> tea
 
 For `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B assistant target is:
 
-`Y_train = Y_clean_prefix + SerializeAppend(FN_gt_objects) + EOS`
+`Y_train = Y_anchor_edited_clean + SerializeAppend(FN_gt_objects) + EOS`
 
 Key policies:
 - Rollout parsing uses bounded container salvage plus strict record acceptance. Invalid predicted objects are dropped deterministically and never repaired into positives.
 - Missing GT objects (FN) are always appended in the tail (recall recovery stays mandatory).
 - Bbox geometry loss uses **SmoothL1 + CIoU** on expectation-decoded coords (no GIoU; boxes are canonicalized for CIoU stability).
-- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B now rebuilds its positive prefix from the deduplicated clean accepted sequence, not from raw rollout token ids.
-- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B uses clean-prefix CE plus duplicate UL on duplicate-certified continuations).
+- Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) Channel-B now rebuilds its positive prefix from an anchor-edited clean accepted sequence, not from raw rollout token ids.
+- Text/structure CE is supervised with explicit masking/weights (Channel-A CE@A1; Channel-B uses clean-prefix CE plus dead-anchor duplicate UL).
 
 ---
 
@@ -107,17 +107,18 @@ Key semantics:
   multiple forward/backward passes inside the optimizer step (using `no_sync` for intermediate packs under DDP).
 
 Rollout decode batching:
-- Canonical knob:
-  - `rollout_matching.decode_batch_size`: per-rollout-GPU cap for one `generation()` / `/infer/` call.
+- Canonical knobs:
+  - `rollout_matching.channel_b_decode_batch_size`: per-rollout-GPU cap for Channel-B train-time generation.
+  - `rollout_matching.eval_decode_batch_size`: per-rollout-GPU cap for eval-step generation.
 - HF + vLLM colocate:
-  - Each learner rank chunks its local requests to `decode_batch_size`.
+  - Each learner rank chunks its local requests to the active context knob (`channel_b_decode_batch_size` for train, `eval_decode_batch_size` for eval).
 - vLLM server mode:
   - The learner queries each rollout server DP `world_size` via `/get_world_size/` and derives a per-rank request chunk size so the
     per-GPU cap holds when all learner ranks generate concurrently.
-  - Pipeline overlap (produce segments while consuming packs) is enabled automatically in server mode.
+  - Pipeline overlap (produce segments while consuming packs) is enabled in server mode only for single-process learners; under DDP it is disabled intentionally to prevent cross-rank sync deadlocks.
 
 Worked example (default launcher):
-- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `decode_batch_size=4`:
+- 6 rollout GPUs (server DP world size = 6), 2 learner GPUs (DDP world size = 2), `channel_b_decode_batch_size=4`:
   - per-rank chunk size = `floor(4 * 6 / 2) = 12` requests per call.
   - Across 2 ranks: 24 requests per synchronized round; average 4 per rollout GPU.
 
@@ -126,38 +127,42 @@ Worked example (default launcher):
 - Default grad semantics: `stage2_ab.softctx_grad_mode: unroll` (no detach anywhere in the soft self-context loop). Use `em_detach` only for explicit ablations.
 - CE anchor split: Channel-A computes CE on the **A1** teacher-forced logits and computes geometry (bbox loss + coord regularizers) from the **final** softctx iteration logits.
 
-### Channel-B Contract (Clean-prefix + Duplicate UL)
+### Channel-B Contract (K=2 Triage + Dead-Anchor UL)
 
 - Clean-prefix Channel-B is the only supported `stage2_two_channel` contract.
-- This is the chosen v2 training contract for CoordExp Stage-2 Channel-B; it is not a claim that other mathematical formulations are invalid, only that this is the canonical repo contract.
+- This is the chosen v3 training contract for CoordExp Stage-2 Channel-B; it is not a claim that other mathematical formulations are invalid, only that this is the canonical repo contract.
 - Canonical Channel-B flow:
-  - raw rollout
-  - bounded container salvage + strict record acceptance
-  - bbox-valid filtering
-  - sequential dedup
-  - `accepted_objects_clean + duplicate_bursts_by_boundary`
-  - Hungarian on `accepted_objects_clean`
-  - clean-prefix teacher forcing + duplicate UL
-- Sequential dedup is bbox-only in v1:
+  - anchor rollout (greedy) + explorer rollout (stochastic)
+  - per-run bounded container salvage + strict record acceptance
+  - per-run bbox-valid filtering
+  - per-run sequential dedup
+  - per-run `accepted_objects_clean` + Hungarian matching
+  - deterministic one-to-one anchor/explorer association
+  - triage into `anchor_gt_backed`, `recovered_fn`, `shielded_anchor`, `dead_anchor`, `dead_explorer`
+  - anchor-edited clean-prefix teacher forcing + dead-anchor `loss_dead_anchor_suppression`
+- Per-run sequential dedup is bbox-only in v1:
   - compare each candidate against previously accepted clean bbox objects only,
   - duplicate iff `normalize_desc(desc)` matches exactly and `IoU >= stage2_ab.channel_b.duplicate_iou_threshold`,
   - default `duplicate_iou_threshold: 0.90`.
-- Matching / FN detection / matched geometry all run on `accepted_objects_clean`, not on the raw duplicate-heavy parsed list.
+- Matching / FN detection / matched geometry all run on per-run `accepted_objects_clean`, not on the raw duplicate-heavy parsed list.
 - Positive teacher-forced prefix:
-  - `Y_clean_prefix` is the canonical assistant serialization of `accepted_objects_clean`,
-  - later true positives are teacher-forced on that clean prefix, not on a duplicate-contaminated raw rollout prefix,
+  - `Y_anchor_edited_clean` is the canonical assistant serialization of the kept anchor objects,
+  - anchor order is preserved for retained objects,
+  - `anchor_gt_backed` objects stay positive,
+  - `shielded_anchor` objects stay in-prefix but neutral,
+  - `dead_anchor` objects are removed from the positive prefix,
   - raw rollout token spans are diagnostic-only; they are not the positive-prefix source of truth.
 - CE masking policy (clean-prefix Channel-B):
   - matched clean prefix objects: structure CE ON, desc CE OFF, coord CE OFF;
-  - generic unmatched clean prefix extras: structure/desc/coord CE all OFF (neutral context only);
-  - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF.
-- FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; generic unmatched clean extras contribute no geometry loss.
+  - shielded anchor objects: structure/desc/coord CE all OFF (neutral context only);
+  - FN-injected tail objects: structure CE ON, desc CE ON, coord CE OFF, with recovered GTs receiving higher per-object desc+geo+coord weight.
+- FP-neutral geometry: Channel-B geometry loss includes matched clean prefix objects and FN-injected objects; shielded anchor objects contribute no geometry loss.
 - Duplicate UL:
-  - `duplicate_ul` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
-  - `duplicate_ul.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
-  - duplicates are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
-  - the bad token is the first true LCP-divergence token of the duplicate continuation relative to the canonical clean continuation,
-  - same-boundary duplicates sharing the same divergence token collapse to one UL term.
+  - `loss_dead_anchor_suppression` is an explicit Channel-B-only objective module in `stage2_ab.pipeline.objective`,
+  - `loss_dead_anchor_suppression.config` must be `{}` in v1 and the module `weight` is the only scaling surface,
+  - dead anchor continuations are removed from the positive teacher-forced prefix and reintroduced only as boundary-local UL targets,
+  - the bad token is the first true LCP-divergence token of the dead-anchor continuation relative to the canonical clean continuation,
+  - same-boundary dead-anchor continuations sharing the same divergence token collapse to one UL term.
 - Deterministic FN injection:
   - retain an append-ready canonical clean prefix inside `{"objects": [ ...`,
   - append unmatched GT records as extra `objects[]` elements,
@@ -174,9 +179,22 @@ Worked example (default launcher):
   - `dup/near_iou90_pairs_same_desc_count`
   - `dup/near_iou90_pairs_any_desc_count`
   - `stage2_ab/channel_b/dup/N_{raw_bbox_valid,clean_accepted,duplicates,duplicate_bursts,ul_boundaries,ul_skipped_no_divergence}`
+- Triage diagnostics are also emitted:
+  - `train/triage/{gt_backed_count,unlabeled_consistent_count,dead_anchor_count,explorer_only_dead_count,recovered_ground_truth_count}`
+  - `train/triage/{recovered_ground_truth_rate_num,recovered_ground_truth_rate_den,dead_anchor_rate_num,dead_anchor_rate_den}`
+- Stage-2 Channel-B config block:
+  - `stage2_ab.channel_b.triage_posterior.explorer_temperature`
+  - `stage2_ab.channel_b.triage_posterior.explorer_top_p`
+  - `stage2_ab.channel_b.triage_posterior.explorer_top_k`
+  - `stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold`
+  - `stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier`
 - Optional Channel-B runtime timeouts:
   - `stage2_ab.channel_b.ddp_phase_timeout_s` (seconds): Channel-B DDP phase-barrier watchdog (monitored barrier timeout). Must be `> 0` under DDP; `120` is the default/recommended fail-fast setting for faster error exposure.
   - `stage2_ab.channel_b.producer_wait_timeout_s` (seconds): rollout-producer queue wait timeout (`0` = auto).
+- vLLM server request timeouts:
+  - `rollout_matching.vllm.server.timeout_s` stays the finite connection/control-plane timeout.
+  - `rollout_matching.vllm.server.infer_timeout_s` now defaults to that same finite timeout when unset.
+  - Infinite `/infer/` waits require explicit opt-in via `rollout_matching.vllm.server.allow_infinite_infer_timeout: true`.
 
 ---
 
@@ -241,22 +259,34 @@ Start from a template config and fill in dataset + rollout knobs:
 
 Minimum required edits:
 - Set `custom.train_jsonl` / `custom.val_jsonl`.
+- Set `custom.offline_max_pixels` to the offline resize budget enforced by your prepared JSONLs.
+  - Example: `786432` for the standard `32*32*768` pipeline.
+  - Example: `1048576` for the `32*32*1024` pipeline.
 - Set top-level `rollout_matching.*` (including `rollout_matching.decoding.*` + matching knobs).
 - If using Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`), provide a top-level `stage2_ab` section (typed) including:
   - `stage2_ab.schedule.b_ratio`
 - Stage-2 pipelines are **required** (no implicit defaults):
   - For `custom.trainer_variant: stage2_two_channel`, `stage2_ab.pipeline` MUST be present.
   - For `custom.trainer_variant: stage2_rollout_aligned`, `rollout_matching.pipeline` MUST be present.
+- `template.max_pixels` and `custom.offline_max_pixels` now serve different purposes:
+  - `template.max_pixels`: runtime processor/server setting (often kept large to disable HF auto-resize)
+  - `custom.offline_max_pixels`: offline dataset contract enforced by launcher prechecks and dataset runtime
+- For Stage-2 server-mode rollout configs, `rollout_matching.vllm.mm_processor_kwargs.do_resize: false` is required.
+  - Treat this as a fail-fast invariant, not an optional tuning knob.
+- Golden rule:
+  - preprocessed images are the source of truth for both training and evaluation,
+  - do not let the runtime vision processor resize them,
+  - if a path cannot honor `do_resize=false`, that path is misconfigured.
 - Set `training.packing: true` if you want post-rollout packing for the teacher-forced forward pass.
 
 Objective pipeline declaration (required, ordered):
 - `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
 - `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
 - Canonical module names:
-  - objective: `token_ce`, `duplicate_ul`, `bbox_geo`, `coord_reg`
+  - objective: `token_ce`, `loss_dead_anchor_suppression`, `bbox_geo`, `coord_reg`
   - diagnostics: `coord_diag`
 - **Order matters**:
-  - `stage2_two_channel`: `token_ce -> duplicate_ul -> bbox_geo -> coord_reg`
+  - `stage2_two_channel`: `token_ce -> loss_dead_anchor_suppression -> bbox_geo -> coord_reg`
   - `stage2_rollout_aligned`: `bbox_geo` MUST run before `coord_reg` when both are enabled (coord_reg consumes bbox_geo state).
 - Pipeline module specs are strict and explicit (no silent defaults):
   - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
@@ -289,7 +319,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -350,7 +380,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -411,7 +441,7 @@ stage2_ab:
           self_context_struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-      - name: duplicate_ul
+      - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
@@ -463,7 +493,8 @@ custom:
 
 rollout_matching:
   rollout_backend: vllm
-  decode_batch_size: 4
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
   pipeline:
     objective:
       - name: token_ce
@@ -598,11 +629,12 @@ Combined server-mode launcher contract (`scripts/train_stage2.sh`):
 
 ## Decoding Tips
 
-- Start with deterministic non-beam decoding for stability: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
+- Start with deterministic non-beam decoding for the anchor policy: `rollout_matching.decode_mode: greedy`, `rollout_matching.decoding.temperature: 0.0`.
+- For v3 Channel-B, keep the explorer policy under `stage2_ab.channel_b.triage_posterior` and start with `explorer_temperature: 0.7`.
 - `rollout_matching.decode_mode` is a **beam vs non-beam selector** in Stage-2 configs; sampling is controlled by `rollout_matching.decoding.temperature/top_p/top_k`.
   - `rollout_matching.decode_mode: greedy` can still produce **sampling** rollouts when `rollout_matching.decoding.temperature > 0.0`.
-  - Metrics tip: use `rollout/do_sample` + `rollout/temperature` to disambiguate sampling vs deterministic, not `rollout/decode_non_beam_count`.
-- vLLM rollout backends currently enforce `decode_mode=greedy` (non-beam only); use `rollout_matching.rollout_backend: hf` if you need beam search.
+  - Metrics tip: use `rollout/do_sample` plus the anchor/explorer rollout tags (`rollout/anchor_*`, `rollout/explorer_*`) to disambiguate policies, not `rollout/decode_non_beam_count`.
+- vLLM rollout backends support non-beam dual-policy Channel-B requests (greedy anchor + stochastic explorer), but still reject `decode_mode=beam`; use `rollout_matching.rollout_backend: hf` if you need beam search.
 - For long dense JSON generations, set a mild `repetition_penalty` (e.g. `1.05`) to reduce loop-y rollouts.
 - Ensure `max_new_tokens` is large enough to avoid systematic truncation (dense detection outputs can be very long).
 
@@ -701,14 +733,14 @@ Important:
 - As a result, Stage-2 eval does not report `eval_loss`.
 
 Eval metrics include:
-- `eval_rollout/precision`, `eval_rollout/recall`, `eval_rollout/f1`
-- Counters: `eval_rollout/pred_objects`, `eval_rollout/gt_objects_total`, `eval_rollout/matched`, `eval_rollout/fp_total`, `eval_rollout/fn_total` (aliases: `eval_rollout/fp`, `eval_rollout/fn`)
-- Parse health: `eval_rollout/parse_truncated_rate`, `eval_rollout/parse_dropped_invalid`, `eval_rollout/parse_dropped_ambiguous`
-- Sample health: `eval_rollout/sample_valid_pred_rate`, `eval_rollout/sample_any_match_rate`
-- Geometry quality: `eval_rollout/matched_maskiou_mean`
-- COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval_rollout/mAP`
-  - Eval-step COCO summary keys are intentionally compact: `eval_rollout/mAP` plus a small set of `eval_rollout/coco_counter_*` counters (no `eval_rollout/bbox_*` or `eval_rollout/segm_*` keys).
-  - On COCO-eval failure, training/evaluation continues and `eval_rollout/mAP` is set to `0.0`; status is surfaced via `eval_rollout/coco_eval_ok`.
+- `eval/detection/precision`, `eval/detection/recall`, `eval/detection/f1`
+- Counters: `eval/detection/pred_objects`, `eval/detection/gt_objects_total`, `eval/detection/matched`, `eval/detection/fp_total`, `eval/detection/fn_total` (aliases: `eval/detection/fp`, `eval/detection/fn`)
+- Parse health: `eval/parsing/parse_truncated_rate`, `eval/parsing/parse_dropped_invalid`, `eval/parsing/parse_dropped_ambiguous`
+- Sample health: `eval/parsing/sample_valid_pred_rate`, `eval/detection/sample_any_match_rate`
+- Geometry quality: `eval/detection/matched_maskiou_mean`
+- COCO detection (when `rollout_matching.eval_detection.enabled: true`): `eval/detection/mAP`
+  - Eval-step COCO summary keys are intentionally compact: `eval/detection/mAP` plus a small set of `eval/runtime/coco_counter_*` counters (no `eval/detection/bbox_*` or `eval/detection/segm_*` keys).
+  - On COCO-eval failure, training/evaluation continues and `eval/detection/mAP` is set to `0.0`; status is surfaced via `eval/runtime/coco_eval_ok`.
 
 Best-checkpoint selection:
 - Prefer `training.metric_for_best_model: rollout/f1` and `training.greater_is_better: true`.
@@ -742,25 +774,66 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras (Channel-B step
 
 ### Qualitative Monitoring Dumps
 
-Enable periodic dumps of (Prompt, Rollout, Target) triplets (rank0 only):
+`train_monitor_dump` and `eval_monitor_dump` use the shared dump writer under
+`<training.output_dir>/monitor_dumps/` and write both `.json` and `.md` files
+(rank 0 only).
+
+Behavior depends on the execution path:
+
+- `eval_step` uses `rollout_matching.eval_monitor_dump.every_evals`.
+  `every_evals: N` means “dump every Nth evaluation window”, so dumps align to
+  `N * training.eval_steps` in step-space.
+- `stage2_two_channel` Channel-B `train_step` uses
+  `rollout_matching.train_monitor_dump.every_channel_b_steps` when set, otherwise
+  it falls back to `rollout_matching.train_monitor_dump.every_steps`. It does
+  **not** dump every suspicious step by default. It first applies the train
+  cadence, then buffers the current optimizer step, selects suspicious
+  duplicate-heavy rollouts only, and writes the top `max_samples` candidates for
+  that dumped step.
+- `every_channel_b_steps: N` counts realized Channel-B rollout steps rather than
+  raw `global_step`, so the dump cadence does not alias against the AB schedule
+  or `stage2_ab.schedule.b_ratio`.
+- Suspicious Channel-B train dumps keep the same top-level dump hierarchy as eval
+  (`kind`, `global_step`, `epoch`, `time`, `meta`, `metrics`, `samples`) and each
+  sample includes:
+  - image handle / `image_id`
+  - `gt`
+  - `pred`
+  - full rollout / prefix / train-target text
+  - duplicate diagnostics (`duplicates`, duplicate bursts, near-IoU duplicate counts)
+- For those suspicious Channel-B train dumps, text is written in full even if
+  `max_text_chars` is configured. `max_text_chars` still applies to the periodic
+  eval-side monitor dumps.
+
+Example config:
 
 ```yaml
 rollout_matching:
-  monitor_dump:
+  train_monitor_dump:
     enabled: true
-    # If omitted, follows training.logging_steps.
-    every_steps: 4
+    every_channel_b_steps: 4
     max_events: 50
     max_samples: 1
-    # <=0 disables clipping (full text dumps).
     max_text_chars: 4000
-    # Safety rails: do not let dumps stall training or brick runs when disks are low.
+    async_write: true
+    max_pending_writes: 2
+    min_free_gb: 2.0
+  eval_monitor_dump:
+    enabled: true
+    # Dump every eval window; set 2 for every other eval, etc.
+    every_evals: 1
+    max_events: 50
+    max_samples: 1
+    max_text_chars: 4000
     async_write: true
     max_pending_writes: 2
     min_free_gb: 2.0
 ```
 
-Outputs land in `<training.output_dir>/monitor_dumps/` (both `.json` and `.md` per dump).
+Legacy note:
+- `rollout_matching.monitor_dump` is still accepted as a backward-compatible
+  fallback, but new configs should use the split `train_monitor_dump` and
+  `eval_monitor_dump` namespaces.
 
 ---
 
@@ -813,7 +886,7 @@ Checks:
 
 Mitigations (smoke runs):
 - Reduce rollout length (`rollout_matching.max_new_tokens`) for faster steps.
-- Reduce rollout decode batching by setting `rollout_matching.decode_batch_size: 1`.
+- Reduce rollout decode batching by setting `rollout_matching.channel_b_decode_batch_size: 1` and, if eval is involved, `rollout_matching.eval_decode_batch_size: 1`.
 - Lower `rollout_matching.vllm.gpu_memory_utilization` or increase server GPUs if the server is capacity-bound.
 
 ### Length Constraints ("Long rollout" failures)

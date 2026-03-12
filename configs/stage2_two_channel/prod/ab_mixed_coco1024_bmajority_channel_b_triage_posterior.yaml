@@ -1,0 +1,22 @@
+extends: ./ab_mixed_coco1024_bmajority.yaml
+
+model:
+  model: output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged
+
+training:
+  run_name: eff_size_96-b_ratio_0.75-triage_posterior-epoch_1
+  output_dir: output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior
+  logging_dir: tb/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior
+
+stage2_ab:
+  channel_b:
+    triage_posterior:
+      num_rollouts: 2
+      explorer_temperature: 0.7
+      explorer_top_p: 0.95
+      explorer_top_k: 64
+      unlabeled_consistent_iou_threshold: 0.9
+      recovered_ground_truth_weight_multiplier: 2.0
+
+rollout_matching:
+  max_new_tokens: 3084

@@ -75,9 +75,7 @@ def _validate_section_keys_strict(
             unknown.append(k)
 
     if unknown:
-        rendered = [
-            f"{section}.{str(k)}" for k in sorted(unknown, key=lambda x: str(x))
-        ]
+        rendered = [f"{section}.{str(k)}" for k in sorted(unknown, key=lambda x: str(x))]
         raise ValueError(f"Unknown {section} keys: {rendered}")
 
 
@@ -156,9 +154,7 @@ class TokenTypeMetricsConfig:
         include_raw = payload.get("include", cls.include)
         exclude_raw = payload.get("exclude", cls.exclude)
         log_top5 = bool(payload.get("log_top5", cls.log_top5))
-        coord_monitor_mass = bool(
-            payload.get("coord_monitor_mass", cls.coord_monitor_mass)
-        )
+        coord_monitor_mass = bool(payload.get("coord_monitor_mass", cls.coord_monitor_mass))
         coord_monitor_mass_max_tokens_raw = payload.get(
             "coord_monitor_mass_max_tokens", cls.coord_monitor_mass_max_tokens
         )
@@ -234,9 +230,7 @@ class CoordSoftCEW1Config:
     target_truncate: Optional[int] = None
 
     @classmethod
-    def from_mapping(
-        cls, payload: Optional[Mapping[str, Any]]
-    ) -> "CoordSoftCEW1Config":
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordSoftCEW1Config":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
@@ -266,9 +260,7 @@ class CoordSoftCEW1Config:
             try:
                 target_truncate = int(target_truncate_raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "coord_soft_ce_w1.target_truncate must be an integer or null"
-                ) from exc
+                raise ValueError("coord_soft_ce_w1.target_truncate must be an integer or null") from exc
 
         if ce_weight < 0:
             raise ValueError("coord_soft_ce_w1.ce_weight must be >= 0")
@@ -278,13 +270,7 @@ class CoordSoftCEW1Config:
             raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
         if gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
-        if (
-            enabled
-            and ce_weight == 0
-            and soft_ce_weight == 0
-            and w1_weight == 0
-            and gate_weight == 0
-        ):
+        if enabled and ce_weight == 0 and soft_ce_weight == 0 and w1_weight == 0 and gate_weight == 0:
             raise ValueError(
                 "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, and gate_weight are all 0"
             )
@@ -489,7 +475,6 @@ class SaveDelayConfig:
         epochs = payload.get("epochs")
         return cls.from_raw(steps, epochs)
 
-
 # warnings: this is deprecated and not used
 @dataclass(frozen=True)
 class VisualKDTargetConfig:
@@ -503,12 +488,10 @@ class VisualKDTargetConfig:
         if self.distance not in {"mse", "cosine"}:
             raise ValueError("visual_kd.*.distance must be one of {mse, cosine}")
 
-
 # warnings: this is deprecated and not used
 
 _ALLOWED_VISUAL_KD_KEYS = {"enabled", "vit", "aligner", "deepstack"}
 _ALLOWED_VISUAL_KD_TARGET_KEYS = {"enabled", "weight", "distance"}
-
 
 @dataclass(frozen=True)
 class VisualKDConfig:
@@ -640,11 +623,10 @@ class CustomConfig:
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
+    offline_max_pixels: Optional[int] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
-    token_type_metrics: TokenTypeMetricsConfig = field(
-        default_factory=TokenTypeMetricsConfig
-    )
+    token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
     # Optional path to a fusion config (YAML/JSON) describing multiple datasets.
     # When set, training/eval datasets are built from the fusion config and
@@ -673,11 +655,11 @@ class CustomConfig:
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
         if not isinstance(self.val_sample_with_replacement, bool):
-            raise TypeError(
-                "custom.val_sample_with_replacement must be a boolean value"
-            )
+            raise TypeError("custom.val_sample_with_replacement must be a boolean value")
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
+            raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         # NOTE: Coord tokens can be supervised either via distribution losses
         # (custom.coord_soft_ce_w1) or via the base CE objective (ablations).
         # NOTE: We intentionally do not validate val_sample_with_replacement sizing here
@@ -734,7 +716,9 @@ class CustomConfig:
             )
 
         use_summary_raw = data.pop("use_summary", None)
-        val_sample_with_replacement_raw = data.pop("val_sample_with_replacement", False)
+        val_sample_with_replacement_raw = data.pop(
+            "val_sample_with_replacement", False
+        )
         use_summary = (
             False
             if use_summary_raw is None
@@ -762,6 +746,20 @@ class CustomConfig:
         if object_field_order_raw is None:
             raise ValueError("custom.object_field_order must be provided")
         val_jsonl = data.pop("val_jsonl", None)
+        offline_max_pixels_raw = data.pop("offline_max_pixels", None)
+        if offline_max_pixels_raw in (None, "", False):
+            offline_max_pixels = None
+        else:
+            if isinstance(offline_max_pixels_raw, bool):
+                raise TypeError("custom.offline_max_pixels must be an int when provided")
+            try:
+                offline_max_pixels = int(offline_max_pixels_raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "custom.offline_max_pixels must be an int when provided"
+                ) from exc
+            if offline_max_pixels <= 0:
+                raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         fusion_config_raw = data.pop("fusion_config", None)
         fusion_config: Optional[str]
         if fusion_config_raw in (None, "", False):
@@ -868,6 +866,7 @@ class CustomConfig:
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
+            offline_max_pixels=offline_max_pixels,
             fusion_config=fusion_config,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
@@ -915,9 +914,7 @@ class DebugConfig:
             if isinstance(value, (int, float)):
                 if value in (0, 1, 0.0, 1.0):
                     return bool(value)
-                raise ValueError(
-                    f"{field_name} must be boolean (0 or 1), got {value!r}."
-                )
+                raise ValueError(f"{field_name} must be boolean (0 or 1), got {value!r}.")
             if isinstance(value, str):
                 normalized = value.strip().lower()
                 if normalized in {"true", "1", "yes", "y", "on"}:
@@ -927,17 +924,13 @@ class DebugConfig:
                 raise ValueError(
                     f"{field_name} string value '{value}' is not a recognized boolean representation."
                 )
-            raise TypeError(
-                f"{field_name} must be a boolean value, got {type(value)!r}."
-            )
+            raise TypeError(f"{field_name} must be a boolean value, got {type(value)!r}.")
 
         enabled_raw = data.pop("enabled", False)
         enabled = _parse_bool(enabled_raw, "debug.enabled")
 
         output_dir_raw = data.pop("output_dir", None)
-        output_dir = (
-            None if output_dir_raw in (None, "", False) else str(output_dir_raw)
-        )
+        output_dir = None if output_dir_raw in (None, "", False) else str(output_dir_raw)
 
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
@@ -983,9 +976,7 @@ class Stage2ABScheduleConfig:
         try:
             b_ratio = float(b_ratio_raw)
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "stage2_ab.schedule.b_ratio must be a float in [0,1]"
-            ) from exc
+            raise TypeError("stage2_ab.schedule.b_ratio must be a float in [0,1]") from exc
 
         if not (0.0 <= b_ratio <= 1.0):
             raise ValueError(
@@ -1001,10 +992,151 @@ class Stage2ABScheduleConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBTriagePosteriorConfig:
+    num_rollouts: int = 2
+    explorer_temperature: float = 0.7
+    explorer_top_p: float = 1.0
+    explorer_top_k: int = -1
+    unlabeled_consistent_iou_threshold: float = 0.85
+    recovered_ground_truth_weight_multiplier: float = 2.0
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBTriagePosteriorConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior must be a mapping when provided"
+            )
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        num_rollouts_raw = data.pop("num_rollouts", cls.num_rollouts)
+        try:
+            num_rollouts = int(num_rollouts_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be an int"
+            ) from exc
+        if num_rollouts != 2:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2"
+            )
+
+        explorer_temperature_raw = data.pop(
+            "explorer_temperature",
+            cls.explorer_temperature,
+        )
+        try:
+            explorer_temperature = float(explorer_temperature_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be a float/int"
+            ) from exc
+        if not math.isfinite(explorer_temperature):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be finite"
+            )
+        if explorer_temperature < 0.0:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be >= 0"
+            )
+
+        explorer_top_p_raw = data.pop("explorer_top_p", cls.explorer_top_p)
+        try:
+            explorer_top_p = float(
+                cls.explorer_top_p
+                if explorer_top_p_raw is None
+                else explorer_top_p_raw
+            )
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be a float/int"
+            ) from exc
+        if not math.isfinite(explorer_top_p):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be finite"
+            )
+        if not (0.0 < explorer_top_p <= 1.0):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be in (0, 1]"
+            )
+
+        explorer_top_k_raw = data.pop("explorer_top_k", cls.explorer_top_k)
+        try:
+            explorer_top_k = int(explorer_top_k_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be an int"
+            ) from exc
+        if explorer_top_k != -1 and explorer_top_k < 1:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be -1 (disabled) or >= 1"
+            )
+
+        unlabeled_consistent_iou_threshold_raw = data.pop(
+            "unlabeled_consistent_iou_threshold",
+            cls.unlabeled_consistent_iou_threshold,
+        )
+        try:
+            unlabeled_consistent_iou_threshold = float(unlabeled_consistent_iou_threshold_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be a float/int"
+            ) from exc
+        if not math.isfinite(unlabeled_consistent_iou_threshold):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be finite"
+            )
+        if unlabeled_consistent_iou_threshold < 0.0 or unlabeled_consistent_iou_threshold > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be in [0, 1]"
+            )
+
+        recovered_ground_truth_weight_multiplier_raw = data.pop(
+            "recovered_ground_truth_weight_multiplier",
+            cls.recovered_ground_truth_weight_multiplier,
+        )
+        try:
+            recovered_ground_truth_weight_multiplier = float(recovered_ground_truth_weight_multiplier_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be a float/int"
+            ) from exc
+        if not math.isfinite(recovered_ground_truth_weight_multiplier):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be finite"
+            )
+        if recovered_ground_truth_weight_multiplier < 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be >= 1.0"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.triage_posterior.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown stage2_ab.channel_b.triage_posterior keys: {unknown}")
+
+        return cls(
+            num_rollouts=num_rollouts,
+            explorer_temperature=explorer_temperature,
+            explorer_top_p=explorer_top_p,
+            explorer_top_k=explorer_top_k,
+            unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
+            recovered_ground_truth_weight_multiplier=recovered_ground_truth_weight_multiplier,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    triage_posterior: Stage2ABChannelBTriagePosteriorConfig = field(
+        default_factory=Stage2ABChannelBTriagePosteriorConfig
+    )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
@@ -1034,7 +1166,8 @@ class Stage2ABChannelBConfig:
         if "enable_pipeline" in data:
             raise ValueError(
                 "stage2_ab.channel_b.enable_pipeline has been removed. "
-                "Pipeline overlap is automatic under vLLM server mode."
+                "Pipeline overlap is runtime-managed under vLLM server mode; "
+                "under DDP it may be disabled for safety."
             )
         if "rollout_decode_batch_size" in data:
             raise ValueError(
@@ -1115,6 +1248,8 @@ class Stage2ABChannelBConfig:
                     "(bounded DDP phase barriers are required)"
                 )
 
+        triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(data.pop("triage_posterior", None))
+
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
@@ -1124,6 +1259,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            triage_posterior=triage_posterior,
         )
 
 
@@ -1180,9 +1316,7 @@ class Stage2PipelineModuleSpec:
                 f"{path}.channels must be provided (explicit pipeline spec; no defaults)"
             )
         channels_raw = data.pop("channels")
-        if not isinstance(channels_raw, Sequence) or isinstance(
-            channels_raw, (str, bytes)
-        ):
+        if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
             raise TypeError(f"{path}.channels must be a sequence of 'A'/'B'")
         channels_list: list[str] = []
         for idx, ch in enumerate(channels_raw):
@@ -1206,9 +1340,7 @@ class Stage2PipelineModuleSpec:
         config = dict(cfg_raw)
 
         if data:
-            unknown = [
-                f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
-            ]
+            unknown = [f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
             raise ValueError(f"Unknown pipeline module keys: {unknown}")
 
         return cls(
@@ -1234,13 +1366,9 @@ class Stage2PipelineConfig:
         objective_raw = data.pop("objective", [])
         diagnostics_raw = data.pop("diagnostics", [])
 
-        if not isinstance(objective_raw, Sequence) or isinstance(
-            objective_raw, (str, bytes)
-        ):
+        if not isinstance(objective_raw, Sequence) or isinstance(objective_raw, (str, bytes)):
             raise TypeError("stage2_ab.pipeline.objective must be a list")
-        if not isinstance(diagnostics_raw, Sequence) or isinstance(
-            diagnostics_raw, (str, bytes)
-        ):
+        if not isinstance(diagnostics_raw, Sequence) or isinstance(diagnostics_raw, (str, bytes)):
             raise TypeError("stage2_ab.pipeline.diagnostics must be a list")
 
         objective_specs = [
@@ -1262,9 +1390,7 @@ class Stage2PipelineConfig:
             for idx, item in enumerate(diagnostics_raw)
         ]
 
-        def _assert_no_duplicates(
-            items: list[Stage2PipelineModuleSpec], *, path: str
-        ) -> None:
+        def _assert_no_duplicates(items: list[Stage2PipelineModuleSpec], *, path: str) -> None:
             seen: set[str] = set()
             for spec in items:
                 if spec.name in seen:
@@ -1274,12 +1400,7 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
-        canonical_objective_order = [
-            "token_ce",
-            "duplicate_ul",
-            "bbox_geo",
-            "coord_reg",
-        ]
+        canonical_objective_order = ["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
         if authored_objective_order != canonical_objective_order:
             raise ValueError(
@@ -1325,16 +1446,16 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
-        duplicate_ul = specs_by_name.get("duplicate_ul")
-        if duplicate_ul is None:
+        loss_dead_anchor_suppression = specs_by_name.get("loss_dead_anchor_suppression")
+        if loss_dead_anchor_suppression is None:
             raise ValueError(
-                "stage2_ab.pipeline.objective requires duplicate_ul in the canonical "
+                "stage2_ab.pipeline.objective requires loss_dead_anchor_suppression in the canonical "
                 "clean-prefix Channel-B contract."
             )
-        if tuple(str(ch) for ch in duplicate_ul.channels) != ("B",):
+        if tuple(str(ch) for ch in loss_dead_anchor_suppression.channels) != ("B",):
             raise ValueError(
-                "stage2_ab.pipeline.objective duplicate_ul must declare channels ['B'] "
-                f"for the canonical clean-prefix Channel-B contract; got {list(duplicate_ul.channels)!r}"
+                "stage2_ab.pipeline.objective loss_dead_anchor_suppression must declare channels ['B'] "
+                f"for the canonical clean-prefix Channel-B contract; got {list(loss_dead_anchor_suppression.channels)!r}"
             )
 
         bbox_geo = specs_by_name.get("bbox_geo")
@@ -1370,10 +1491,7 @@ class Stage2PipelineConfig:
                 )
 
         if data:
-            unknown = [
-                f"stage2_ab.pipeline.{str(k)}"
-                for k in sorted(data.keys(), key=lambda x: str(x))
-            ]
+            unknown = [f"stage2_ab.pipeline.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
             raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
 
         return cls(
@@ -1470,9 +1588,9 @@ class Stage2ABConfig:
         coord_ctx_embed_mode_raw = data.pop(
             "coord_ctx_embed_mode", cls.coord_ctx_embed_mode
         )
-        coord_ctx_embed_mode = (
-            str(coord_ctx_embed_mode_raw or cls.coord_ctx_embed_mode).strip().lower()
-        )
+        coord_ctx_embed_mode = str(
+            coord_ctx_embed_mode_raw or cls.coord_ctx_embed_mode
+        ).strip().lower()
         if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
             raise ValueError(
                 "stage2_ab.coord_ctx_embed_mode must be one of {'soft','st','hard'}"
@@ -1486,9 +1604,7 @@ class Stage2ABConfig:
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
-            unknown = [
-                f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
-            ]
+            unknown = [f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
             raise ValueError(
                 "Unknown stage2_ab keys: "
                 f"{unknown}. "
@@ -1714,24 +1830,21 @@ class TrainingConfig:
         # eval-step vLLM backend will truncate/error on long prompts, which is
         # objective-changing.
         if rollout_matching is not None:
-            backend = (
-                str(getattr(rollout_matching, "rollout_backend", "") or "")
-                .strip()
-                .lower()
-            )
+            backend = str(
+                getattr(rollout_matching, "rollout_backend", "") or ""
+            ).strip().lower()
             if backend not in {"hf", "vllm"}:
                 raise ValueError(
                     "rollout_matching.rollout_backend must be one of {'hf', 'vllm'}."
                 )
 
-            effective_eval_backend = (
-                str(getattr(rollout_matching, "eval_rollout_backend", "") or "")
-                .strip()
-                .lower()
-            )
-            if effective_eval_backend not in {"hf", "vllm"}:
+            effective_eval_backend = str(
+                getattr(rollout_matching, "eval_rollout_backend", "") or ""
+            ).strip().lower()
+            if effective_eval_backend != "vllm":
                 raise ValueError(
-                    "rollout_matching.eval_rollout_backend must be one of {'hf', 'vllm'}."
+                    "Stage-2 eval backend is fixed to vLLM; "
+                    "rollout_matching.eval_rollout_backend must be 'vllm'."
                 )
 
             vllm_cfg = getattr(rollout_matching, "vllm", None)

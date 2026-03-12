@@ -1,0 +1,50 @@
+# Stage1 official-submission infer config (COCO-80, desc-first prompt fields).
+# This keeps inference-only behavior and targets the 1024-budget smart-resized
+# COCO test-dev JSONL. Prepare the resized input with:
+#   ./public_data/run.sh coco download -- --include-test
+#   ./public_data/run.sh coco convert -- --include-test --test-split test-dev
+#   PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+#     --input-jsonl public_data/coco/raw/test-dev.jsonl \
+#     --output-jsonl public_data/coco/rescale_32_1024_bbox/test-dev.jsonl \
+#     --output-images public_data/coco/rescale_32_1024_bbox \
+#     --image-factor 32 \
+#     --max-pixels $((32*32*1024)) \
+#     --min-pixels $((32*32*4)) \
+#     --relative-images
+#
+# Usage:
+#   PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+#     --config configs/infer/ablation/coco80_testdev_desc_first.yaml
+run:
+  name: stage1_coco80_testdev_desc_first_res1024
+  output_dir: output/infer
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox/test-dev.jsonl
+  # Replace with your merged checkpoint path.
+  model_checkpoint: output/stage1/coco_bbox_max60-coco80-desc_first/REPLACE_WITH_CHECKPOINT
+
+  mode: auto
+  pred_coord_mode: auto
+  prompt_variant: coco_80
+  object_field_order: desc_first
+
+  backend:
+    type: hf
+
+  generation:
+    temperature: 0.1
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.1
+    batch_size: 8
+    seed: 42
+
+  device: cuda:0
+  limit: 0
+  detect_samples: 128

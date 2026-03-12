@@ -1,24 +1,24 @@
 # Command Cribsheet (Memory)
 
 Role separation:
-- Memory role: short, high-frequency command recall.
-- Canonical docs for full run procedures: `docs/data/README.md`, `docs/training/STAGE2_RUNBOOK.md`, `public_data/README.md`.
-- Update trigger: when script CLIs or recommended launcher patterns change.
+- Memory role: short, high-frequency command recall only.
+- Canonical docs for full procedures: `docs/data/PREPARATION.md`, `docs/training/STAGE2_RUNBOOK.md`, `docs/eval/WORKFLOW.md`, `public_data/README.md`.
+- Update trigger: when recommended launcher patterns or script CLIs change.
 
 Environment baseline:
-- Prefer `PYTHONPATH=. conda run -n ms ...`
+- Prefer `PYTHONPATH=. conda run -n ms ...` from repo root.
 
 Training:
 - `PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> [--base_config <yaml>] [--debug|--verbose]`
-- `PYTHONPATH=. conda run -n ms torchrun --nproc_per_node 4 -m src.sft --config <yaml> [--base_config <yaml>]`
+- `bash scripts/train.sh config=<yaml> gpus=0`
+- `bash scripts/train.sh config=<yaml> gpus=0,1,2,3`
 
-Validation/sanity:
+Validation and sanity:
 - `conda run -n ms python public_data/scripts/validate_jsonl.py <jsonl>`
 - `conda run -n ms python scripts/tools/inspect_chat_template.py --jsonl <path> --index 0`
+- `PYTHONPATH=. conda run -n ms python -m src.sft --config <yaml> --debug`
 
-Inference/eval:
-- `CKPT=<ckpt> GT_JSONL=<gt.jsonl> OUTPUT_BASE_DIR=<out_dir> bash scripts/run_infer_eval.sh`
-- `PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --pred_jsonl <pred.jsonl> --out_dir <eval_out> --metrics both`
-
-Coord-token verification:
-- `conda run -n ms python scripts/tools/verify_coord_tokens.py --original <base_ckpt> --merged <merged_ckpt> [--adapter <adapter_ckpt>]`
+Inference and evaluation:
+- `PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/infer/pipeline.yaml`
+- `PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py --config configs/postop/confidence.yaml`
+- `PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config configs/eval/detection.yaml`

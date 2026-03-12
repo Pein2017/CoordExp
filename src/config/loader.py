@@ -73,7 +73,7 @@ class ConfigLoader:
     def _canonical_stage2_profile_kind(config_path: str) -> Optional[str]:
         config_abs = Path(config_path).resolve()
         repo_root = Path(__file__).resolve().parents[2]
-        stage2_root = (repo_root / "configs" / "stage2_ab").resolve()
+        stage2_root = (repo_root / "configs" / "stage2_two_channel").resolve()
         for kind in ("prod", "smoke"):
             kind_root = (stage2_root / kind).resolve()
             try:
@@ -104,13 +104,15 @@ class ConfigLoader:
 
         extends_value = raw_cfg.get("extends", raw_cfg.get("inherit"))
         extends_list = ConfigLoader._normalize_to_list(extends_value)
-        if len(extends_list) != 1 or extends_list[0] != "../base.yaml":
+        if not extends_list:
             raise ValueError(
-                "Stage-2 canonical profile leaves must extend exactly one parent '../base.yaml'. "
-                f"Invalid extends in {config_path}: {extends_value!r}"
+                "Stage-2 canonical prod/smoke profiles must declare extends/inherit so the "
+                f"resolved contract is explicit. Missing in {config_path}."
             )
 
-        required_leaf_keys = [
+        resolved_cfg = ConfigLoader.load_yaml_with_extends(config_path)
+
+        required_resolved_keys = [
             "model.model",
             "training.run_name",
             "training.output_dir",
@@ -128,13 +130,15 @@ class ConfigLoader:
         ]
 
         missing = [
-            key for key in required_leaf_keys if not ConfigLoader._lookup_nested_key(raw_cfg, key)
+            key
+            for key in required_resolved_keys
+            if not ConfigLoader._lookup_nested_key(resolved_cfg, key)
         ]
         if missing:
             missing_str = ", ".join(missing)
             raise ValueError(
-                "Stage-2 canonical profile leaves must explicitly define required keys. "
-                f"Missing in {config_path}: {missing_str}"
+                "Stage-2 canonical prod/smoke profiles must resolve the required training keys. "
+                f"Missing after inheritance in {config_path}: {missing_str}"
             )
 
     @staticmethod

@@ -27,14 +27,14 @@ The contract MUST define the canonical set of batch extras keys. At minimum, it 
 - AND the trainer strips it before model forward
 
 ### Requirement: Stable metric and batch key names
-The system SHALL preserve the semantics documented in `docs/training/METRICS_LOSSES.md`.
+The system SHALL preserve the semantics documented in `docs/training/METRICS.md`.
 The system MAY remove low-signal or duplicated metric keys when the docs are updated to the new canonical set.
 Compatibility aliases are optional and MAY be omitted.
 
 The system SHALL preserve the existing batch-extra key names listed in "Stable batch extras contract".
 
 Normative behavior for the clean-prefix Channel-B contract:
-- `docs/training/METRICS_LOSSES.md` MUST define the canonical training keys added by this contract.
+- `docs/training/METRICS.md` MUST define the canonical training keys added by this contract.
 - `docs/training/STAGE2_RUNBOOK.md` MUST define the corresponding Channel-B behavior and interpretation.
 - Removed raw-prefix wording and removed legacy metric names MUST NOT linger in the canonical docs after implementation lands.
 
@@ -47,7 +47,7 @@ Normative behavior for the clean-prefix Channel-B contract:
 #### Scenario: Key parity
 - GIVEN a run with some features enabled/disabled (e.g. token-type metrics, coord loss, packing)
 - WHEN running training/evaluation with the refactor enabled
-- THEN every emitted metric key matches a documented train key in `docs/training/METRICS_LOSSES.md`
+- THEN every emitted metric key matches a documented train key in `docs/training/METRICS.md`
 - OR matches the same key prefixed with `eval_` during evaluation (as described in the doc)
 - AND removed legacy keys/aliases are absent (no duplicate emission)
 - AND feature-conditional keys MAY be absent when their feature is disabled or skipped for a batch
@@ -55,8 +55,61 @@ Normative behavior for the clean-prefix Channel-B contract:
 #### Scenario: Canonical duplicate metrics are documented
 - **GIVEN** a training run after the clean-prefix Channel-B feature lands
 - **WHEN** duplicate-ul and duplicate-collapse metrics are emitted
-- **THEN** their canonical key names are documented in `docs/training/METRICS_LOSSES.md`
+- **THEN** their canonical key names are documented in `docs/training/METRICS.md`
 - **AND** the Channel-B contract that produces them is documented in `docs/training/STAGE2_RUNBOOK.md`.
+
+### Requirement: Metric namespace hierarchy is explicit and stable
+The system SHALL keep the metric namespace hierarchy explicit so operators can infer meaning from the key shape alone.
+
+Normative behavior:
+- `loss/<provenance>/<atom>` denotes a post-weighting objective atom.
+- `coord_diag/<metric>` is reserved for Stage-1-style bare coord diagnostics.
+- `coord_diag/<provenance>/<metric>` is reserved for provenance-split Stage-2 coord diagnostics.
+- `gradmon/<metric>` and `gradmon/<group>/<term>` are reserved for optional loss-gradient diagnostics.
+- `rollout/*` and `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*` remain distinct training-vs-eval families.
+- Internal reducer-helper keys MUST remain underscore-prefixed and MUST NOT appear in the final logged payload.
+
+#### Scenario: Key shape disambiguates objective atoms vs diagnostics
+- **WHEN** a log record contains `loss/B_coord/coord_soft_ce` and `coord_diag/B/expected_bin_mae`
+- **THEN** the former is understood as a training objective atom
+- **AND** the latter is understood as a diagnostic-only monitor
+- **AND** the two are not ambiguous despite sharing the same provenance token.
+
+### Requirement: Loss-gradient monitor diagnostics are optional, sparse, and aggregation-safe
+When `custom.extra.loss_gradient_monitor.enabled=true`, the system SHALL expose optional `gradmon/*`
+diagnostics without changing the training objective or optimizer behavior.
+
+Normative behavior:
+- Per-term monitor keys MAY include:
+  - `gradmon/loss_raw/<term>`
+  - `gradmon/loss_ema_norm/<term>`
+  - `gradmon/grad_norm/<term>`
+  - `gradmon/cos_to_total/<term>`
+- Aggregate monitor keys MAY include:
+  - `gradmon/grad_norm_ratio_max_over_median`
+  - `gradmon/neg_cosine_pair_frac`
+  - `gradmon/neg_cosine_pair_pct`
+  - `gradmon/neg_cos_to_total_frac`
+  - `gradmon/num_terms`
+  - `gradmon/shared_param_count`
+  - `gradmon/shared_param_numel`
+- `gradmon/*` keys are diagnostics-only, sparse-emitted on monitor steps, and MUST be absent rather than emitted as placeholder zeros on non-monitor steps.
+- For Stage-2 training logs, `gradmon/*` gauges MUST be computed locally first and synchronized only through the existing optimizer-step reducers.
+- Sparse `gradmon/*` gauges MUST preserve their observation-weighted value at the finalized optimizer-step log boundary (no dilution across unobserved micro-steps or packed forwards).
+- `time/gradmon_s` MAY be emitted and MUST follow the active trainer's existing `time/*` reducer semantics.
+- `gradmon/*` keys MUST NOT introduce per-dataset buckets.
+
+#### Scenario: Sparse gradmon keys are not diluted
+- **GIVEN** gradient accumulation or packed-forward execution where `gradmon/*` keys appear on only a subset of micro-steps
+- **WHEN** the optimizer-step payload is finalized
+- **THEN** the finalized `gradmon/*` value reflects only the observed monitor steps
+- **AND** the value is not divided by the total number of unobserved micro-steps.
+
+#### Scenario: Non-monitor steps omit gradmon keys
+- **GIVEN** `loss_gradient_monitor.interval_steps` is greater than `1`
+- **WHEN** a training step is not a monitor step
+- **THEN** the step log omits `gradmon/*` keys
+- **AND** `time/gradmon_s` is absent for that step.
 
 ### Requirement: Objective metrics emit canonical provenance keys only (atomic objective atoms; no raw component keys)
 For registry-defined objective modules, trainers MUST emit only **atomic objective contributions** under canonical `loss/<provenance>/<atom>` keys and MUST NOT emit raw component loss keys by default.
@@ -74,7 +127,7 @@ Normative behavior:
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
   - Channel-B (rollout context):
-    - `loss/B_rollout_text/{struct_ce,desc_ce,duplicate_ul}` (rollout-context forward; token/UL objective atoms)
+    - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (rollout-context forward; geometry objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - Raw/duplicate loss keys MUST NOT be emitted by default (non-exhaustive):
@@ -87,9 +140,9 @@ Normative behavior:
 - **THEN** emitted keys include only canonical `loss/<provenance>/<atom>` keys for registry-defined objective modules
 - **AND** raw component loss keys and legacy aliases are absent.
 
-#### Scenario: Channel-B emits duplicate_ul as a canonical objective atom
+#### Scenario: Channel-B emits loss_dead_anchor_suppression as a canonical objective atom
 - **WHEN** a Channel-B training step applies duplicate unlikelihood
-- **THEN** the emitted objective key is `loss/B_rollout_text/duplicate_ul`
+- **THEN** the emitted objective key is `train/optimization/loss_dead_anchor_suppression`
 - **AND** no raw alias key for duplicate-unlikelihood is emitted.
 
 ### Requirement: Channel-B duplicate-collapse metrics are explicit and aggregation-safe

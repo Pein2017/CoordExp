@@ -1,0 +1,54 @@
+# Oracle-K repeated-sampling evaluation configuration (CoordExp)
+#
+# The workflow stays additive to `scripts/evaluate_detection.py`:
+# - baseline_run supplies the conservative single-decode artifact
+# - oracle_runs supply repeated stochastic decodes for the same subset
+# - alignment is validated in record order and requires consistent `file_name`
+#   provenance; `record_idx` + `gt_idx` remains the object join key while
+#   `image_id` / `file_name` stay available for downstream visualization analysis
+
+out_dir: output/eval/oracle_k_example
+
+# Reuse the current F1-ish matching semantics.
+strict_parse: false
+f1ish_iou_thrs: [0.3, 0.5]
+f1ish_pred_scope: annotated
+num_workers: 0
+
+semantic_model: sentence-transformers/all-MiniLM-L6-v2
+semantic_threshold: 0.6
+semantic_device: auto
+semantic_batch_size: 64
+
+baseline_run:
+  label: baseline
+  pred_jsonl: output/infer/baseline/gt_vs_pred.jsonl
+  pred_token_trace_jsonl: output/infer/baseline/pred_token_trace.jsonl
+  resolved_config_json: output/infer/baseline/resolved_config.json
+  # Or materialize the baseline through the standard infer pipeline:
+  # pipeline_config: configs/infer/pipeline.yaml
+  # overrides:
+  #   infer.gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  #   infer.limit: 200
+  #   infer.model_checkpoint: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
+  #   infer.generation.temperature: 0.0
+  #   infer.generation.seed: 42
+
+oracle_runs:
+  - label: oracle_temp07_seed101
+    pred_jsonl: output/infer/oracle_temp07_seed101/gt_vs_pred.jsonl
+    pred_token_trace_jsonl: output/infer/oracle_temp07_seed101/pred_token_trace.jsonl
+    resolved_config_json: output/infer/oracle_temp07_seed101/resolved_config.json
+  - label: oracle_temp07_seed102
+    # When pipeline_config is used, Oracle-K materializes the run by calling
+    # the standard infer pipeline with stages.eval=false and stages.vis=false.
+    # If run.output_dir / run.name are omitted here, they default to:
+    #   <out_dir>/materialized / oracle_<ordinal>_<label>
+    pipeline_config: configs/infer/pipeline.yaml
+    overrides:
+      infer.gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+      infer.limit: 200
+      infer.model_checkpoint: output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged
+      infer.generation.temperature: 0.7
+      infer.generation.top_p: 0.95
+      infer.generation.seed: 102

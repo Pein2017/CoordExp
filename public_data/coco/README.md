@@ -2,7 +2,7 @@
 
 This folder contains a **small, reproducible** pipeline to download the official
 COCO 2017 images + annotations and convert them into CoordExp's JSONL contract:
-`docs/data/JSONL_CONTRACT.md`.
+`docs/data/CONTRACT.md`.
 
 Outputs live under:
 - `public_data/coco/raw/` (downloaded artifacts + converted JSONL)
@@ -10,6 +10,7 @@ Outputs live under:
 
 ## What you get
 - Raw COCO 2017 download (images + `instances_{train,val}2017.json`)
+- Optional official-test download (`test2017.zip` + `image_info_test2017.zip`)
 - Conversion to JSONL with:
   - `images`: `["images/<split>/<file_name>"]` (relative to JSONL directory)
   - `objects`: per-instance `{bbox_2d: [x1,y1,x2,y2], desc: <category_name>}`
@@ -22,6 +23,14 @@ These are the standard hosted artifacts on `images.cocodataset.org`:
 - `http://images.cocodataset.org/annotations/annotations_trainval2017.zip`
 
 The downloader writes SHA256 checksums after download to keep runs reproducible.
+
+Official-test artifacts:
+- `http://images.cocodataset.org/zips/test2017.zip`
+- `http://images.cocodataset.org/annotations/image_info_test2017.zip`
+
+`image_info_test2017.zip` contains both:
+- `annotations/image_info_test2017.json`
+- `annotations/image_info_test-dev2017.json`
 
 ## Recommended workflow (via unified runner)
 From repo root (`/data/CoordExp`):
@@ -38,6 +47,35 @@ Convert (full):
 ```bash
 ./public_data/run.sh coco convert
 ```
+
+Official COCO test-dev / test2017 JSONL prep:
+```bash
+./public_data/run.sh coco download -- --include-test
+./public_data/run.sh coco convert -- --include-test --test-split test-dev
+```
+This writes:
+- `public_data/coco/raw/test-dev.jsonl`
+
+To materialize the full hidden-test image-info JSONL too:
+```bash
+./public_data/run.sh coco convert -- --include-test --test-split both
+```
+This additionally writes:
+- `public_data/coco/raw/test.jsonl`
+
+1024-budget resized test-dev inference input:
+```bash
+PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+  --input-jsonl public_data/coco/raw/test-dev.jsonl \
+  --output-jsonl public_data/coco/rescale_32_1024_bbox/test-dev.jsonl \
+  --output-images public_data/coco/rescale_32_1024_bbox \
+  --image-factor 32 \
+  --max-pixels $((32*32*1024)) \
+  --min-pixels $((32*32*4)) \
+  --relative-images
+```
+Use the resized JSONL for inference, and keep the original `raw/test-dev.jsonl` for
+submission export so predictions can be projected back to the official COCO resolution.
 
 Validate raw JSONL contract (structure + bbox sanity):
 ```bash
@@ -80,6 +118,13 @@ PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_1
 This emits:
 - `public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
 - `public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
+
+Current official-test caveat:
+- The unified `public_data/run.sh` preset pipeline still manages `train` / `val` splits only.
+- The current supported official-submission path is therefore:
+  - original-resolution source JSONL under `public_data/coco/raw/`
+  - manual 1024-budget resized inference JSONL under `public_data/coco/rescale_32_1024_bbox/`
+  - inference -> confidence post-op -> submission export
 
 ## Prompt Variant for COCO-80
 
@@ -125,6 +170,16 @@ python public_data/scripts/validate_coco2017_instances.py public_data/coco/raw/t
   --sample_out public_data/coco/raw/sample_first5_train.jsonl
 ```
 
+Tiny official-test conversion smoke:
+```bash
+./public_data/run.sh coco download -- --annotations-only --include-test
+./public_data/run.sh coco convert -- --include-test --test-split test-dev -- --max_samples 100
+conda run -n ms python public_data/scripts/validate_jsonl.py public_data/coco/raw/test-dev.jsonl
+```
+
+Real benchmark follow-up:
+- see `docs/eval/COCO_TEST_SUBMISSION.md` for the full 1024-budget infer -> score -> export -> upload runbook
+
 ## Directory layout (after full download)
 ```text
 public_data/coco/raw/
@@ -136,11 +191,16 @@ public_data/coco/raw/
   images/
     train2017/*.jpg
     val2017/*.jpg
+    test2017/*.jpg
   annotations/
     instances_train2017.json
     instances_val2017.json
+    image_info_test2017.json
+    image_info_test-dev2017.json
   train.jsonl
   val.jsonl
+  test-dev.jsonl
+  test.jsonl
   categories.json
   conversion_stats.json
 ```
