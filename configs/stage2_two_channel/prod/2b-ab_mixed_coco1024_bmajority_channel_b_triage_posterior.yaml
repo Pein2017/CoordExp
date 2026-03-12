@@ -1,5 +1,8 @@
 extends: ./ab_mixed_coco1024_bmajority.yaml
 
+global_max_length: 14000
+
+
 model:
   model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
 
@@ -20,3 +23,7 @@ stage2_ab:
 
 rollout_matching:
   max_new_tokens: 3084
+  channel_b_decode_batch_size: 32
+  eval_decode_batch_size: 32
+  vllm:
+    gpu_memory_utilization: 0.9

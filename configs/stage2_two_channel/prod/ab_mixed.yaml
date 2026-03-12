@@ -1,6 +1,6 @@
 extends: ../base.yaml
-global_max_length: 12000
 
+global_max_length: 12000
 
 model:
   model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-n_softctx_iter_2-merged
