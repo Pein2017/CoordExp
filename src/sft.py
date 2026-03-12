@@ -1150,6 +1150,48 @@ def _scope_logging_dir_under_run_name(train_args: Any) -> str | None:
     return final_logging_dir
 
 
+def _strip_trailing_trainer_state_logging_row(logging_path: str | Path) -> bool:
+    """Remove the final ms-swift trainer-state append from a flat metrics JSONL.
+
+    Upstream ms-swift appends a final status payload with `log_history`, checkpoint
+    pointers, and memory to the same `logging.jsonl` stream used for flat metric rows.
+    That payload is valid JSON but not a metric event, so downstream JSONL viewers
+    and editors render it poorly. Keep the metrics stream flat by dropping only that
+    trailing trainer-state object after training finishes.
+    """
+
+    path = Path(logging_path)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return False
+
+    if not lines:
+        return False
+
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return False
+
+    if not isinstance(payload, Mapping):
+        return False
+    if not isinstance(payload.get("log_history"), list):
+        return False
+    if "global_step" not in payload:
+        return False
+    if any("/" in str(key) for key in payload):
+        return False
+    if any(key in payload for key in ("loss", "step", "global_step/max_steps")):
+        return False
+
+    sanitized = "\n".join(lines[:-1])
+    if sanitized:
+        sanitized += "\n"
+    path.write_text(sanitized, encoding="utf-8")
+    return True
+
+
 def main():
     """Main training entry point - pure config-driven."""
     args = parse_args()
@@ -2781,6 +2823,21 @@ def main():
         except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as e:
             # Non-fatal: training already completed successfully
             logger.debug(f"Cleanup warning (non-fatal): {e}")
+
+        try:
+            rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+            is_rank0 = True if rank_raw is None else (int(rank_raw) == 0)
+        except (TypeError, ValueError):
+            is_rank0 = True
+
+        if is_rank0:
+            output_dir = getattr(train_args, "output_dir", None)
+            if output_dir:
+                logging_path = Path(str(output_dir)) / "logging.jsonl"
+                if _strip_trailing_trainer_state_logging_row(logging_path):
+                    logger.info(
+                        "Sanitized logging.jsonl: removed trailing trainer-state payload appended by upstream ms-swift."
+                    )
 
 
 if __name__ == "__main__":

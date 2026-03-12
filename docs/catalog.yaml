@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-11
+updated: 2026-03-12
 
 entrypoints:
   human:
@@ -162,6 +162,10 @@ progress:
       status: active-diagnostic
     - path: progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
       title: 'Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun'
+      type: diagnosis
+      status: active-diagnostic
+    - path: progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
+      title: Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300
       type: diagnosis
       status: active-diagnostic
     - path: progress/diagnostics/gt_overlap_threshold_search_2026-03-11.md

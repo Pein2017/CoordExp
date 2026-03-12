@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import types
 from pathlib import Path
 
@@ -855,6 +856,56 @@ def test_scope_logging_dir_under_run_name_is_idempotent() -> None:
     assert resolved == "tb/stage2_ab/prod/tb_named_run"
     assert train_args.logging_dir == resolved
     assert train_args.training_args.logging_dir == resolved
+
+
+def test_strip_trailing_trainer_state_logging_row_removes_final_status_append(
+    tmp_path: Path,
+) -> None:
+    from src.sft import _strip_trailing_trainer_state_logging_row
+
+    log_path = tmp_path / "logging.jsonl"
+    metric_row = {"loss": 0.42, "global_step/max_steps": "10/100"}
+    eval_row = {"eval/detection/f1": 0.71, "step": 300}
+    final_status = {
+        "last_model_checkpoint": None,
+        "best_model_checkpoint": None,
+        "best_metric": None,
+        "global_step": 300,
+        "log_history": [metric_row, eval_row],
+        "memory": 72.5,
+    }
+    log_path.write_text(
+        "\n".join(
+            json.dumps(row) for row in (metric_row, eval_row, final_status)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    removed = _strip_trailing_trainer_state_logging_row(log_path)
+
+    assert removed is True
+    rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert rows == [metric_row, eval_row]
+
+
+def test_strip_trailing_trainer_state_logging_row_keeps_flat_metric_rows(
+    tmp_path: Path,
+) -> None:
+    from src.sft import _strip_trailing_trainer_state_logging_row
+
+    log_path = tmp_path / "logging.jsonl"
+    rows = [
+        {"loss": 0.42, "global_step/max_steps": "10/100"},
+        {"eval/detection/f1": 0.71, "step": 300},
+    ]
+    expected = "\n".join(json.dumps(row) for row in rows) + "\n"
+    log_path.write_text(expected, encoding="utf-8")
+
+    removed = _strip_trailing_trainer_state_logging_row(log_path)
+
+    assert removed is False
+    assert log_path.read_text(encoding="utf-8") == expected
 
 
 def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
