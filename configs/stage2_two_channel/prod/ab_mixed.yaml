@@ -19,7 +19,7 @@ training:
   save_steps: 300
   do_eval: true
   eval_steps: 300
-  metric_for_best_model: eval/detection/mAP
+  metric_for_best_model: detection/mAP
 
 stage2_ab:
   schedule: {b_ratio: 0.05}
