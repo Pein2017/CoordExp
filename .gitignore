@@ -101,6 +101,3 @@
 **/*.pt
 **/*.bin
 **/*.safetensors
-
-# Ignore generated/managed local Codex skill runtime artifacts
-.codex_config/pein/skills/.system/
