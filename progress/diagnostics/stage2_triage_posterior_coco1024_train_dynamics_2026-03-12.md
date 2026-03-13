@@ -796,3 +796,183 @@ The earlier incorrect overlays under:
 - `temp/vis_compare_stage2_inits_step300/`
 
 should be ignored.
+
+---
+
+## 12) Addendum (2026-03-13): Stage-2 UL-v1 Init Early Trend
+
+There is now a third matched run with the same Stage-2 config but a different Stage-2 checkpoint
+initialization:
+
+- Stage-2 UL-v1 init:
+  `output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior/stage2_ul_v1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260313-091347/`
+- Init model:
+  `output/stage2_ab/prod/ul-res_1024-ckpt_300_merged`
+
+Important caveat:
+
+- this run currently has only `10` logged Channel-B rows and **no eval row yet**,
+- so the comparison here is an **early-trend diagnostic**, not an endpoint judgment.
+
+### 12.1 Where UL-v1 sits relative to the other two inits
+
+On the first `10` logged Channel-B rows, the three inits look like this:
+
+| First-10 mean | Stage-2 UL-v2 init | Stage-2 UL-v1 init | Stage-1 init |
+|---|---:|---:|---:|
+| `rollout/f1` | `0.418` | `0.577` | `0.678` |
+| `rollout/precision` | `0.289` | `0.472` | `0.771` |
+| `rollout/recall` | `0.803` | `0.769` | `0.611` |
+| `rollout/pred_per_sample` | `22.04` | `12.58` | `5.80` |
+| `rollout/gen_new_tokens_mean` | `623.41` | `311.90` | `145.51` |
+| `rollout/parse_truncated_rate` | `0.100` | `0.026` | `0.002` |
+| `N_duplicates` | `15.3` | `180.9` | `22.2` |
+| `near_iou90_pairs_same_desc_count` | `217.6` | `5300.8` | `976.4` |
+
+Interpretation:
+
+- UL-v1 starts much less chaotic than UL-v2 on length, truncation, and cardinality,
+- and much less conservative than the Stage-1 init on recall and prediction volume,
+- so in terms of *basic rollout compactness* it sits between the two,
+- but in terms of **same-desc duplicate collapse** it is dramatically worse than both.
+
+This is the most important new finding.
+
+### 12.2 UL-v1 is not an “intermediate clean compromise”
+
+At first glance, UL-v1 can look like the natural midpoint between:
+
+- UL-v2’s high-recall / noisy-long start,
+- and Stage-1-init’s clean / sparse start.
+
+But the duplicate telemetry shows that this interpretation is wrong.
+
+The first three rows already look like:
+
+- row `1`:
+  `f1 = 0.593`, `pred_per_sample = 14.64`, `N_duplicates = 100`,
+  `same_desc_pairs = 3102`
+- row `2`:
+  `f1 = 0.645`, `pred_per_sample = 11.43`, `N_duplicates = 121`,
+  `same_desc_pairs = 3183`
+- row `3`:
+  `f1 = 0.587`, `pred_per_sample = 10.84`, `N_duplicates = 127`,
+  `same_desc_pairs = 7630`
+
+So UL-v1 is not simply “shorter and cleaner than UL-v2.”
+It is already carrying strong **local repeated-class attractor behavior** from the beginning.
+
+### 12.3 Temporary clean window, then sharp collapse
+
+UL-v1 briefly enters a healthy-looking regime around rows `4-6`:
+
+- row `4`:
+  `f1 = 0.695`, `precision = 0.637`, `recall = 0.765`,
+  `pred_per_sample = 9.41`, `N_duplicates = 18`
+- row `5`:
+  `f1 = 0.694`, `precision = 0.625`, `recall = 0.781`,
+  `pred_per_sample = 8.48`, `N_duplicates = 7`
+
+But by row `8` it collapses hard:
+
+- row `8`:
+  `f1 = 0.442`, `precision = 0.311`, `recall = 0.767`,
+  `pred_per_sample = 20.48`, `N_duplicates = 622`,
+  `same_desc_pairs = 19885`
+
+and remains clearly unstable through row `10`:
+
+- row `10`:
+  `f1 = 0.506`, `precision = 0.386`, `recall = 0.734`,
+  `pred_per_sample = 13.94`, `N_duplicates = 236`,
+  `same_desc_pairs = 4012`
+
+So the present UL-v1 trajectory is:
+
+- not diffuse overgeneration like the early UL-v2 run,
+- not sparse conservative stabilization like the Stage-1-init run,
+- but a **moderate-cardinality, anchor-duplication-prone regime** with sharp oscillations.
+
+### 12.4 The newer telemetry makes the failure mode very clear
+
+The UL-v1 run has the repaired telemetry surface, and it shows the same pattern as the Stage-1-init
+run but more severely:
+
+- the bad mass is overwhelmingly **anchor-side**,
+- the explorer remains much cleaner,
+- and triage is spending a large amount of effort suppressing dead anchor objects.
+
+Examples:
+
+- row `1`:
+  - `rollout/anchor/near_iou90_same = 1551.0`
+  - `rollout/explorer/near_iou90_same = 1.0`
+  - `dead_anchor_count = 601`
+  - `explorer_only_dead_count = 437`
+- row `8`:
+  - `rollout/anchor/near_iou90_same = 9942.5`
+  - `rollout/explorer/near_iou90_same = 4.5`
+  - `dead_anchor_count = 698`
+  - `explorer_only_dead_count = 448`
+- row `10`:
+  - `rollout/anchor/near_iou90_same = 2006.0`
+  - `rollout/explorer/near_iou90_same = 2.5`
+  - `dead_anchor_count = 546`
+  - `explorer_only_dead_count = 375`
+
+Interpretation:
+
+- the explorer is not the main problem,
+- the anchor policy is already entering severe local self-collision,
+- and the triage path is mostly trying to clean up an anchor that is too duplicate-heavy.
+
+### 12.5 Early monitor dumps support the same story
+
+The run already has train monitor dumps at:
+
+- `monitor_dumps/step_000002.json`
+- `monitor_dumps/step_000040.json`
+- `monitor_dumps/step_000080.json`
+
+These show:
+
+- step `2`: relatively healthy average dump quality
+  - mean raw `11.7`, mean clean `11.3`, mean dup `0.4`, mean `f1 = 0.670`
+- step `40`: still broadly healthy
+  - mean raw `10.2`, mean clean `10.1`, mean dup `0.1`, mean `f1 = 0.656`
+- step `80`: major attractor collapse
+  - mean raw `69.9`, mean clean `34.0`, mean dup `35.9`, same-desc sum `14998`,
+    mean `f1 = 0.430`
+  - worst sample:
+    `raw = 128`, `clean = 11`, `dup = 117`, `same_desc = 6903`,
+    prediction sequence = `128x apple`
+
+So the dump-level picture matches the log:
+
+- UL-v1 can look healthy early,
+- but it is already vulnerable to severe single-class attractor failures by step `80`.
+
+### 12.6 Joint read across the three checkpoint initializations
+
+At the current evidence level:
+
+- **Stage-1 init**
+  - most conservative default policy,
+  - best early syntax/compactness,
+  - but recall-limited and not the best final endpoint.
+- **Stage-2 UL-v2 init**
+  - roughest early global rollout behavior,
+  - but the best endpoint by step `300`,
+  - and the best evidence of actual recovery into a strong clean regime.
+- **Stage-2 UL-v1 init**
+  - intermediate on length / cardinality,
+  - but currently the worst on early same-desc anchor collapse,
+  - and not yet far enough along to know whether it can recover the way UL-v2 did.
+
+So the current best interpretation is:
+
+- UL-v1 is **not** simply “between UL-v2 and Stage-1 init” in a benign sense,
+- it may be inheriting a particularly bad anchor self-collision prior from the earlier Stage-2
+  checkpoint,
+- and it should be treated as a high-risk trajectory until it reaches a later cleaner phase or an
+  eval row proves otherwise.
