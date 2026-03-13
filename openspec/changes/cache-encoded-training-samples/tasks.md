@@ -52,5 +52,5 @@
   `tests/test_stage2_ab_training.py` where appropriate.
 - [x] 4.7 Add artifact/log assertions proving operators can distinguish
   `built`, `reused`, and `bypassed` startup states.
-- [ ] 4.8 Run targeted training-smoke validation on the intended Stage-2 prod
+- [x] 4.8 Run targeted training-smoke validation on the intended Stage-2 prod
   path after the cache contract is implemented.
