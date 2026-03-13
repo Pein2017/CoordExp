@@ -8,6 +8,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
+from src.vis.gt_vs_pred import canonicalize_gt_objects_for_comparison
+
 from .detection import (
     EvalCounters,
     EvalOptions,
@@ -283,22 +285,6 @@ def _run_meta(run: OracleKResolvedRun, *, eval_dir: Path | None = None) -> Dict[
     }
 
 
-def _canonical_gt_object(obj: Mapping[str, Any]) -> Dict[str, Any]:
-    points_in = obj.get("points") or []
-    if points_in and isinstance(points_in[0], (list, tuple)):
-        points_out: List[Any] = [
-            [float(point[0]), float(point[1])] for point in points_in
-        ]
-    else:
-        points_out = [float(point) for point in points_in]
-    return {
-        "type": str(obj.get("type", "")),
-        "desc": str(obj.get("desc", "")),
-        "bbox": [float(x) for x in (obj.get("bbox") or [])],
-        "points": points_out,
-    }
-
-
 def _validate_alignment(
     baseline_gt: Sequence[Sample],
     run_gt: Sequence[Sample],
@@ -327,8 +313,18 @@ def _validate_alignment(
                 "required file_name mismatch for visualization provenance "
                 f"baseline={base_sample.file_name!r} run={run_sample.file_name!r}"
             )
-        base_objects = [_canonical_gt_object(obj) for obj in base_sample.objects]
-        run_objects = [_canonical_gt_object(obj) for obj in run_sample.objects]
+        base_objects = canonicalize_gt_objects_for_comparison(
+            base_sample.objects,
+            width=int(base_sample.width),
+            height=int(base_sample.height),
+            coord_mode="pixel",
+        )
+        run_objects = canonicalize_gt_objects_for_comparison(
+            run_sample.objects,
+            width=int(run_sample.width),
+            height=int(run_sample.height),
+            coord_mode="pixel",
+        )
         if base_objects != run_objects:
             raise ValueError(
                 f"Alignment failure for run '{run_label}' at record_idx={base_record_idx}: "

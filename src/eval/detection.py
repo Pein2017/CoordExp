@@ -37,6 +37,7 @@ from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
 from src.common.paths import resolve_image_path_best_effort
 from src.utils import get_logger
+from src.vis import materialize_gt_vs_pred_vis_resource, render_gt_vs_pred_review
 
 logger = get_logger(__name__)
 
@@ -49,6 +50,20 @@ def _normalize_desc(desc: str) -> str:
 
 def _fmt_iou_thr(iou_thr: float) -> str:
     return f"{float(iou_thr):.2f}"
+
+
+def _matches_by_record_idx(rows: Sequence[Mapping[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    out: Dict[int, Dict[str, Any]] = {}
+    for fallback_idx, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            continue
+        image_id = row.get("image_id")
+        try:
+            record_idx = int(image_id)
+        except (TypeError, ValueError):
+            record_idx = int(fallback_idx)
+        out[int(record_idx)] = dict(row)
+    return out
 
 
 def _validate_score_provenance_for_coco(
@@ -1539,6 +1554,23 @@ def evaluate_and_save(
             options=options,
         )
         summary["metrics"].update(f1ish_summary["metrics"])
+    else:
+        f1ish_summary = {"matches_by_thr": {}}
+
+    vis_matches: Dict[int, Dict[str, Any]] | None = None
+    if want_f1ish:
+        primary_thr = _select_primary_f1ish_iou_thr(options.f1ish_iou_thrs)
+        primary_key = _fmt_iou_thr(primary_thr)
+        vis_matches = _matches_by_record_idx(
+            f1ish_summary.get("matches_by_thr", {}).get(primary_key, [])
+        )
+
+    vis_resource_path = materialize_gt_vs_pred_vis_resource(
+        pred_path,
+        source_kind="detection_eval",
+        external_matches=vis_matches,
+        materialize_matching=True,
+    )
 
     write_outputs(
         options.output_dir,
@@ -1552,19 +1584,19 @@ def evaluate_and_save(
         from src.infer.pipeline import resolve_root_image_dir_for_jsonl
 
         root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
-        base_dir = root_dir if root_dir is not None else pred_path.parent
         if root_dir is not None:
             logger.info(
                 "Overlay image root resolved (source=%s): %s", root_source, root_dir
             )
 
         overlay_dir = options.output_dir / "overlays"
-        _draw_overlays(
-            gt_samples,
-            pred_samples,
-            base_dir=base_dir,
+        render_gt_vs_pred_review(
+            vis_resource_path,
             out_dir=overlay_dir,
-            k=options.overlay_k,
+            limit=options.overlay_k,
+            root_image_dir=root_dir,
+            root_source=root_source,
+            record_order="error_first",
         )
 
     return summary
