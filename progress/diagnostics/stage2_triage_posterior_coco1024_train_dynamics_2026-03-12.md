@@ -14,7 +14,10 @@ references:
 # Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300 (2026-03-12)
 
 Date: 2026-03-12  
-Status note: this note records the run through the first eval at `global_step = 300` and includes an artifact note for the malformed final `logging.jsonl` row.
+Status note: this note records the run through the first eval at `global_step = 300`.
+Update `2026-03-13`: the note now also includes a checkpoint comparison against the matched
+Stage-1-init run, a qualitative comparison of the shared step-`300` eval monitor dumps, and a
+correction note for the custom visualization coordinate mapping.
 
 The short version is:
 
@@ -45,6 +48,15 @@ Run:
 - Init model:
   `output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged`
 
+Matched comparison run:
+
+- Run dir:
+  `output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior/stage1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260312-162706/`
+- Train log:
+  `.../logging.jsonl`
+- Init model:
+  `output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged`
+
 Resolved config surfaces relevant to interpretation:
 
 - `training.logging_steps = 10`
@@ -62,17 +74,19 @@ Important artifact caveat:
 
 - this run still uses the older telemetry surface,
 - there is now a normal train row at step `300` and a normal eval row at step `300`,
-- there is still **no `monitor_dumps/` directory** under the run dir despite the config enabling train dumps,
+- the run dir now contains an eval monitor dump at
+  `monitor_dumps/step_000300.json`,
+- but the expected train monitor dumps at `every_steps = 40` were still not emitted for this
+  older artifact,
 - the log still lacks the later explicit `train/triage/*` and anchor-vs-explorer split metrics,
-- and the final line in `logging.jsonl` is **not** a flat metric row:
-  it is a final trainer-state append carrying `last_model_checkpoint`, `best_model_checkpoint`,
-  `best_metric`, `global_step`, `log_history`, and `memory`.
+- and this historical run originally had a trailing trainer-state append after the eval row,
+  although the local copy of `logging.jsonl` has since been sanitized in place to keep the stream flat.
 
 So the analysis below is necessarily **train-window behavioral diagnosis**, not a fully instrumented v3 telemetry read.
 
-Malformed-row provenance:
+Historical malformed-row provenance:
 
-- the bad final append is not produced by CoordExp code,
+- the original bad final append was not produced by CoordExp code,
 - it is appended by the external ms-swift trainer stack in `swift/llm/train/sft.py::_save_trainer_state`,
 - where the trainer state payload is added to the same `logging.jsonl` stream via `append_to_jsonl(...)`.
 
@@ -450,12 +464,12 @@ The new pending question is:
 
 ---
 
-## 7) Malformed Final Logging Row
+## 7) Historical Malformed Final Logging Row
 
-The last line in `logging.jsonl` is semantically malformed for a flat metric stream.
+The original unsanitized artifact had a semantically malformed final line in `logging.jsonl`.
 
-It is valid JSON, but it is **not** a metric event row.
-Instead it is a final trainer-state payload with:
+It was valid JSON, but it was **not** a metric event row.
+Instead it was a final trainer-state payload with:
 
 - `last_model_checkpoint`
 - `best_model_checkpoint`
@@ -476,10 +490,13 @@ Origin:
 - specifically `swift/llm/train/sft.py::_save_trainer_state`,
 - which calls `append_to_jsonl(jsonl_path, self.train_msg, strict=False)`.
 
-Practical interpretation rule for this artifact:
+Current status:
 
-- treat the train row at step `300` and the eval row at step `300` as the final real metric rows,
-- and ignore the trailing trainer-state row for scalar analysis.
+- the local copy of
+  `output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior/eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260311-165111/logging.jsonl`
+  has now been sanitized in place,
+- so the current file ends cleanly on the step-`300` eval row,
+- but the provenance above is still relevant for understanding the original older artifact.
 
 ---
 
@@ -506,3 +523,276 @@ Most useful next evidence:
   `rollout/anchor/*`,
   `rollout/explorer/*`,
   and dead-anchor denominators.
+
+---
+
+## 9) Addendum (2026-03-13): Matched Checkpoint Comparison
+
+This section compares the main run above against the matched Stage-1-init run:
+
+- Stage-2 UL-v2 init:
+  `output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior/eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260311-165111/`
+- Stage-1 init:
+  `output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior/stage1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260312-162706/`
+
+The two runs use the same Stage-2 config and differ primarily by initialization checkpoint.
+
+### 9.1 High-level comparison
+
+The Stage-1-init run is much more conservative on train rollouts *at the start*:
+
+- first logged Channel-B row:
+  - Stage-2 UL-v2 init: `f1 = 0.288`, `precision = 0.181`, `recall = 0.701`,
+    `pred_per_sample = 32.33`, `parse_truncated_rate = 0.229`
+  - Stage-1 init: `f1 = 0.759`, `precision = 0.811`, `recall = 0.712`,
+    `pred_per_sample = 7.34`, `parse_truncated_rate = 0.0`
+
+So the Stage-1 checkpoint clearly injects a colder and more precision-biased initial policy.
+
+However, by step `300`, the stronger endpoint is still the Stage-2 UL-v2 init run:
+
+| Eval step `300` | Stage-2 UL-v2 init | Stage-1 init |
+|---|---:|---:|
+| `eval/detection/mAP` | `0.4424` | `0.4244` |
+| `eval/detection/precision` | `0.7804` | `0.6638` |
+| `eval/detection/recall` | `0.6533` | `0.6160` |
+| `eval/detection/f1` | `0.7112` | `0.6390` |
+| `eval/detection/pred_objects` | `2850` | `3159` |
+| `eval/parsing/parse_truncated_rate` | `0.0000` | `0.00625` |
+
+Interpretation:
+
+- the Stage-1-init run is not simply “the same model, but more cautious,”
+- it starts cleaner on-policy,
+- but it does **not** land in a better eval regime after `300` steps.
+
+### 9.2 Different training trajectories
+
+The Stage-2 UL-v2 init run learns upward:
+
+- train rollout `f1` rises from `0.288` to a best of `0.676`, ending at `0.625`,
+- precision rises sharply,
+- rollout length and truncation fall sharply,
+- and the final train row is nearly free of duplicate mass.
+
+The Stage-1-init run starts high and then drifts downward:
+
+- it begins at `f1 = 0.759`,
+- but ends at `f1 = 0.577`,
+- while its late rows still contain heavy same-desc duplicate bursts.
+
+The clearest late-stage contrast is the final train row:
+
+- Stage-2 UL-v2 init step `300`:
+  `N_duplicates = 1`, `near_iou90_pairs_same_desc_count = 1`
+- Stage-1 init step `300`:
+  `N_duplicates = 162`, `near_iou90_pairs_same_desc_count = 2612`
+
+So the Stage-1-init policy is cleaner by default early on, but it is **not** more stable by the
+end of the run.
+
+### 9.3 What the newer telemetry reveals about Stage-1-init failure mode
+
+The Stage-1-init run has the newer telemetry surface, so we can localize the late duplicate bursts.
+
+The important pattern is that the bad mass is overwhelmingly **anchor-driven** rather than
+explorer-driven.
+
+Examples:
+
+- row `12`:
+  - `rollout/anchor/near_iou90_same = 5998.0`
+  - `rollout/explorer/near_iou90_same = 0.0`
+- row `24`:
+  - `rollout/anchor/near_iou90_same = 4832.0`
+  - `rollout/explorer/near_iou90_same = 0.0`
+- row `30`:
+  - `rollout/anchor/near_iou90_same = 1306.0`
+  - `rollout/explorer/near_iou90_same = 0.5`
+
+This matters because it means:
+
+- the explorer path is relatively well-behaved,
+- the anchor policy is the one getting trapped in local same-class repetition,
+- and the late-stage instability in the Stage-1-init run is not just “sampling noise.”
+
+---
+
+## 10) Addendum (2026-03-13): Shared Step-300 Eval Dump Comparison
+
+Both runs now have a step-`300` eval dump:
+
+- Stage-2 UL-v2 init:
+  `.../eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260311-165111/monitor_dumps/step_000300.json`
+- Stage-1 init:
+  `.../stage1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1/v0-20260312-162706/monitor_dumps/step_000300.json`
+
+The two dumps share `9` probe images in common:
+
+- `base_idx = 2, 17, 56, 238, 325, 341, 361, 391, 499`
+
+Across those `9` shared images:
+
+- mean sample F1:
+  - Stage-2 UL-v2 init: `0.658`
+  - Stage-1 init: `0.520`
+- mean sample recall:
+  - Stage-2 UL-v2 init: `0.683`
+  - Stage-1 init: `0.500`
+- mean sample precision:
+  - Stage-2 UL-v2 init: `0.683`
+  - Stage-1 init: `0.701`
+- mean matched pairs:
+  - Stage-2 UL-v2 init: `8.0`
+  - Stage-1 init: `5.44`
+- mean FN count:
+  - Stage-2 UL-v2 init: `4.0`
+  - Stage-1 init: `6.56`
+
+The Stage-2 UL-v2 init model wins `6/9` shared samples on F1, ties `2`, and loses `1`.
+
+### 10.1 Preference difference
+
+The Stage-1-init model has a strong **salience bias**:
+
+- it prefers a small set of highly salient objects,
+- undercounts dense or repeated small objects,
+- and only rarely commits to broad scene completion.
+
+This shows up in the per-sample prediction counts:
+
+- Stage-1 init shared-sample median prediction count: `5`
+- Stage-2 UL-v2 init shared-sample median prediction count: `11`
+
+So the Stage-1-init model is indeed more conservative *in its default behavior*.
+
+But that is not the whole story.
+Its shared-sample mean prediction count is actually **higher** (`21.1` vs `15.8`) because one hard
+bookshelf scene explodes into a local attractor failure with `128` predictions.
+
+That is why the right description is:
+
+- conservative by default,
+- but still vulnerable to rare catastrophic repeated-class collapse.
+
+### 10.2 Capability difference
+
+The Stage-2 UL-v2 init model is better at:
+
+- enumerating repeated instances when the scene genuinely contains many of them,
+- recovering medium-salience support objects in clutter,
+- and preserving recall without collapsing into extreme undercounting.
+
+The Stage-1-init model is better at:
+
+- keeping a sparse set on simple or canonical scenes,
+- and occasionally being slightly tighter in clean crowd scenes.
+
+But it is worse at:
+
+- dense bookshelf / repeated small-object regions,
+- scenes where the correct output requires broad scene completion,
+- and robustness against local same-class repetition.
+
+### 10.3 Representative shared samples
+
+`base_idx = 238` (bookshelf room):
+
+- Stage-2 UL-v2 init:
+  `pred = 25`, `f1 = 0.439`, roughly
+  `laptop -> bottle -> chair -> couch -> 16x book -> ...`
+- Stage-1 init:
+  `pred = 128`, `f1 = 0.125`, truncated, ending in
+  `... -> 116x book`
+
+Interpretation:
+
+- both models understand “room with bookshelf,”
+- but the Stage-1-init model loses instance atomicity far more severely and turns the shelf region
+  into a `book` attractor.
+
+`base_idx = 499` (baseball-bat scene):
+
+- Stage-2 UL-v2 init:
+  `pred = 18`, `f1 = 0.667`
+- Stage-1 init:
+  `pred = 4`, `f1 = 0.316`
+
+Interpretation:
+
+- the Stage-2 UL-v2 init model recognizes the repeated bat-like structure of the scene,
+- while the Stage-1-init model mostly refuses to enumerate that structure and falls back to a few
+  salient non-bat anchors.
+
+`base_idx = 391` (kitchen line):
+
+- Stage-2 UL-v2 init:
+  `2x person -> bowl -> oven -> knife -> spoon`
+- Stage-1 init:
+  `2x person -> bowl`
+
+Interpretation:
+
+- both are conservative here,
+- but the Stage-2 UL-v2 init still performs better scene completion on medium-salience kitchen objects.
+
+`base_idx = 341` (snowboard crowd):
+
+- Stage-2 UL-v2 init:
+  `person -> 2x snowboard -> 14x person`, `f1 = 0.625`
+- Stage-1 init:
+  `snowboard -> person -> snowboard -> 15x person`, `f1 = 0.667`
+
+Interpretation:
+
+- the Stage-1-init model can still look competitive or slightly better on clean repeated crowd
+  scenes with strong object cues,
+- so the comparison is not “one model dominates every scene.”
+
+### 10.4 Joint read
+
+The best summary of the two inits is:
+
+- **Stage-1 init**:
+  conservative, anchor-heavy, salience-biased, recall-limited on clutter, and vulnerable to
+  rare local repeated-class attractors.
+- **Stage-2 UL-v2 init**:
+  broader scene completion, better repeated-instance recall, still vulnerable to local repetition,
+  but much stronger as an endpoint by step `300`.
+
+---
+
+## 11) Visualization Correction Note
+
+The custom side-by-side overlays produced during the `2026-03-13` comparison originally used the
+wrong axis ordering and should not be trusted.
+
+The mistaken assumption was:
+
+- interpreting `points_norm1000` as `[y1, x1, y2, x2]`
+
+The correct contract is:
+
+- `bbox_2d = [x1, y1, x2, y2]`
+- `norm1000 -> pixel` conversion uses `(W - 1)` for `x` slots and `(H - 1)` for `y` slots
+
+This is consistent with:
+
+- `src/config/prompts.py`
+- `src/common/geometry/coord_utils.py::ints_to_pixels_norm1000`
+
+The corrected overlays are under:
+
+- `temp/vis_compare_stage2_inits_step300_corrected/`
+
+Representative corrected figures:
+
+- `temp/vis_compare_stage2_inits_step300_corrected/compare_base000238.png`
+- `temp/vis_compare_stage2_inits_step300_corrected/compare_base000499.png`
+- `temp/vis_compare_stage2_inits_step300_corrected/compare_base000002.png`
+
+The earlier incorrect overlays under:
+
+- `temp/vis_compare_stage2_inits_step300/`
+
+should be ignored.
