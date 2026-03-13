@@ -1,0 +1,57 @@
+run:
+  name: unmatched-proposal-verifier-default
+  output_dir: output/analysis
+
+dataset:
+  jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  sample_count: 200
+  seed: 42
+
+prompts:
+  prompt_variant: coco_80
+  object_field_order: desc_first
+
+collection:
+  backend_mode: local
+  device: cuda:0
+  cuda_visible_devices: null
+  temperature: 0.1
+  top_p: 0.9
+  max_new_tokens: 3084
+  repetition_penalty: 1.1
+  batch_size: 16
+  seed: 42
+  gpu_memory_utilization: 0.9
+  gpu_memory_utilization_fallbacks: [0.2, 0.12, 0.08]
+  tensor_parallel_size: 1
+  max_model_len: 12000
+  reuse_existing: true
+
+eval:
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+  num_workers: 8
+  f1ish_iou_thrs: [0.5]
+  f1ish_pred_scope: all
+  use_segm: false
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto
+  gt_batch_size: 8
+  masked_batch_size: 8
+  rollout_counterfactual_scope: all
+  mask_fill: 127
+
+report:
+  histogram_bins: 20
+  top_k_values: [10, 25, 50]
+  audit_pack_top_n: 24
+
+checkpoints:
+  - name: ul-res_1024-ckpt_300_merged
+    path: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
+  - name: ul-res_1024-v2-ckpt_300_merged
+    path: output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged

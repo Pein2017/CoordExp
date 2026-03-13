@@ -149,7 +149,8 @@ def parse_rollout_for_matching(
 
     if bool(parsed.parse_failed) or parsed.objects_array_open_cut is None:
         prefix_token_ids = [
-            int(t) for t in tokenizer.encode(_EMPTY_PREFIX_TEXT, add_special_tokens=False)
+            int(t)
+            for t in tokenizer.encode(_EMPTY_PREFIX_TEXT, add_special_tokens=False)
         ]
         return RolloutParseResult(
             response_token_ids=[int(t) for t in response_token_ids],
@@ -166,7 +167,9 @@ def parse_rollout_for_matching(
 
     cut_candidates = [int(parsed.objects_array_open_cut)]
     cut_candidates.extend(int(v) for v in parsed.record_end_cuts if int(v) > 0)
-    cut_char = max(cut_candidates) if cut_candidates else int(parsed.objects_array_open_cut)
+    cut_char = (
+        max(cut_candidates) if cut_candidates else int(parsed.objects_array_open_cut)
+    )
 
     prefix_token_ids = _build_prefix_from_char_cut(
         tokenizer=tokenizer,
@@ -434,6 +437,30 @@ def find_desc_value_token_positions(
     return out
 
 
+def find_desc_value_token_positions_by_span(
+    *, tokenizer: Any, token_ids: Sequence[int]
+) -> List[List[int]]:
+    """Return token indices for each desc-value span independently."""
+
+    ids = [int(t) for t in token_ids]
+    pieces = decode_pieces(tokenizer, ids)
+    token_start_chars = _build_token_char_offsets(pieces)
+    text = "".join(pieces)
+    spans = find_desc_value_char_spans(text)
+    if not spans:
+        return []
+
+    out: List[List[int]] = []
+    for s, e in spans:
+        token_positions: List[int] = []
+        for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
+            end = start + len(piece)
+            if start < e and end > s:
+                token_positions.append(int(ti))
+        out.append(token_positions)
+    return out
+
+
 __all__ = [
     "coerce_int",
     "decode_pieces",
@@ -442,5 +469,5 @@ __all__ = [
     "serialize_append_fragment",
     "find_desc_value_char_spans",
     "find_desc_value_token_positions",
+    "find_desc_value_token_positions_by_span",
 ]
-
