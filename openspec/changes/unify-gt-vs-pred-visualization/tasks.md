@@ -1,18 +1,18 @@
 ## 1. OpenSpec and Contract Foundation
 
-- [ ] 1.1 Add delta spec files for:
+- [x] 1.1 Add delta spec files for:
   - `gt-vs-pred-visualization`
   - `inference-engine`
   - `detection-evaluator`
-- [ ] 1.2 Validate the change artifacts with:
+- [x] 1.2 Validate the change artifacts with:
   - `openspec validate --type change unify-gt-vs-pred-visualization --strict --no-interactive`
 
 ## 2. Shared Canonical Resource Layer
 
-- [ ] 2.1 Define a shared canonical visualization-resource schema that remains
+- [x] 2.1 Define a shared canonical visualization-resource schema that remains
   `gt_vs_pred` compatible at the top level rather than introducing a second base
   single-view artifact family.
-- [ ] 2.2 Keep the canonical top-level contract tight:
+- [x] 2.2 Keep the canonical top-level contract tight:
   - `schema_version`
   - `source_kind`
   - `record_idx`
@@ -22,29 +22,29 @@
   - `coord_mode`
   - `gt`
   - `pred`
-- [ ] 2.3 Define one canonical visualization object schema:
+- [x] 2.3 Define one canonical visualization object schema:
   - `index`
   - `desc`
   - pixel-space `bbox_2d`
-- [ ] 2.4 Normalize all supported source object forms into that schema through
+- [x] 2.4 Normalize all supported source object forms into that schema through
   shared geometry helpers:
   - offline `type` / `points`
   - scored artifacts
   - monitor `bbox_2d`
   - `points_norm1000`
   - coord-token / `norm1000` payloads in the `0..999` range
-- [ ] 2.5 Define one canonical matching sub-schema with:
+- [x] 2.5 Define one canonical matching sub-schema with:
   - `match_source`
   - `match_policy`
   - canonical index domains
   - `matched_pairs`
   - `fn_gt_indices`
   - `fp_pred_indices`
-- [ ] 2.6 Define canonical GT ordering and source-index remapping rules so
+- [x] 2.6 Define canonical GT ordering and source-index remapping rules so
   `canonical_gt_index` is stable across producers.
-- [ ] 2.7 Preserve ordered predictions as a contract invariant and thread stable
+- [x] 2.7 Preserve ordered predictions as a contract invariant and thread stable
   object indices through normalized records.
-- [ ] 2.8 Keep the visualizer interface strict and small:
+- [x] 2.8 Keep the visualizer interface strict and small:
   - input `gt_vs_pred.jsonl`
   - explicit output path
   - no source-specific path discovery
@@ -52,7 +52,7 @@
 
 ## 3. Shared Renderer Semantics
 
-- [ ] 3.1 Standardize one shared default GT-vs-Pred renderer with:
+- [x] 3.1 Standardize one shared default GT-vs-Pred renderer with:
   - `1x2` layout
   - GT on the left
   - Pred on the right
@@ -60,19 +60,19 @@
   - FN GT = orange
   - matched Pred = green
   - FP Pred = red
-- [ ] 3.2 Make `desc` labels error-focused by default:
+- [x] 3.2 Make `desc` labels error-focused by default:
   - prioritize `FN` / `FP`
   - avoid blanket labeling of matched objects unless requested
-- [ ] 3.3 Add a deterministic label-placement policy that prefers:
+- [x] 3.3 Add a deterministic label-placement policy that prefers:
   - outside-box placement
   - staggered conflict resolution
   - truncation before overlap
-- [ ] 3.4 Reuse existing shared geometry and image-path resolution helpers rather
+- [x] 3.4 Reuse existing shared geometry and image-path resolution helpers rather
   than embedding new parallel implementations in each visualization tool.
 
 ## 4. Source Adapters and Scene Families
 
-- [ ] 4.1 Add / refactor a shared adapter for offline single-run resources:
+- [x] 4.1 Add / refactor a shared adapter for offline single-run resources:
   - `gt_vs_pred.jsonl`
   - `gt_vs_pred_scored.jsonl`
   - materialize canonical matching as part of the sidecar generation step
@@ -80,33 +80,33 @@
   carry canonical matching from:
   - `matches.jsonl`
   - `per_image.json`
-- [ ] 4.3 Keep monitor-dump path layout unchanged; any upstream normalization
+- [x] 4.3 Keep monitor-dump path layout unchanged; any upstream normalization
   into compatible `gt_vs_pred.jsonl` inputs is outside the visualizer’s path
   ownership.
-- [ ] 4.5 Support composition of pairwise / multi-run scenes by aligning multiple
+- [x] 4.5 Support composition of pairwise / multi-run scenes by aligning multiple
   canonical resources on candidate join keys:
   - `record_idx`
   - `image_id` when available
   - `file_name` / `image` for auditability
-- [ ] 4.5a Fail fast when aligned members disagree on:
+- [x] 4.5a Fail fast when aligned members disagree on:
   - `width`
   - `height`
   - canonical normalized GT content
-- [ ] 4.5b Materialize derived canonical visualization resources at a distinct
+- [x] 4.5b Materialize derived canonical visualization resources at a distinct
   sidecar path by default, rather than overloading the raw inference
   `gt_vs_pred.jsonl` path.
-- [ ] 4.6 Keep backend-compare and Oracle-K workflows as compositions of the same
+- [x] 4.6 Keep backend-compare and Oracle-K workflows as compositions of the same
   canonical single-view resource rather than adding compare-only per-object
   schemas.
 
 ## 5. Legacy Tool Convergence
 
-- [ ] 5.1 Converge `scripts/run_vis.sh`, `vis_tools/vis_coordexp.py`, and the
+- [x] 5.1 Converge `scripts/run_vis.sh`, `vis_tools/vis_coordexp.py`, and the
   evaluator overlay path on the shared canonical renderer semantics.
 - [ ] 5.2 Keep `vis_tools/vis_monitor_dump_gt_vs_pred.py` as the semantic
   reference for error-focused review behavior during migration, but remove
   duplicated contract logic once shared adapters exist.
-- [ ] 5.3 Avoid introducing new parallel visualization entry points unless an
+- [x] 5.3 Avoid introducing new parallel visualization entry points unless an
   existing workflow boundary requires a thin wrapper.
 
 ## 6. Tests and Docs
