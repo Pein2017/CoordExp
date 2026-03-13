@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-03-10
+updated: 2026-03-13
 ---
 
 # Evaluation Workflow
@@ -74,6 +74,8 @@ After evaluation:
 - `metrics.json`
 - `per_image.json`
 - optional `per_class.csv`, `matches.jsonl`, and overlays
+- `vis_resources/gt_vs_pred.jsonl` when the shared GT-vs-Pred reviewer is
+  materialized for `scripts/run_vis.sh` or evaluator overlays
 
 After Oracle-K analysis:
 
@@ -98,6 +100,26 @@ The Oracle-K workflow is additive:
 - standard `scripts/evaluate_detection.py` behavior does not change
 - Oracle-K reuses the same F1-ish matching semantics for IoU thresholds, semantic matching, and prediction scope
 - cross-run alignment is validated in record order and requires consistent `file_name` provenance; `record_idx` + `gt_idx` remains the normative object key and `image_id` / `file_name` are preserved for downstream visualization analysis
+
+## Shared GT-vs-Pred Review Flow
+
+The default repo visualization path now goes through the canonical sidecar:
+
+```text
+gt_vs_pred.jsonl
+  -> vis_resources/gt_vs_pred.jsonl
+  -> shared 1x2 GT-vs-Pred reviewer
+  -> vis_*.png
+```
+
+Key points:
+
+- `scripts/run_vis.sh` and `vis_tools/vis_coordexp.py` materialize the canonical
+  sidecar before rendering.
+- evaluator overlays reuse the same shared reviewer semantics instead of a
+  second renderer-local box contract.
+- post-eval audit materialization may reuse `matches.jsonl` and `per_image.json`
+  to preserve canonical matching and join keys.
 
 The YAML config can work in two modes:
 

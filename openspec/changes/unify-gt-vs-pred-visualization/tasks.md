@@ -76,7 +76,7 @@
   - `gt_vs_pred.jsonl`
   - `gt_vs_pred_scored.jsonl`
   - materialize canonical matching as part of the sidecar generation step
-- [ ] 4.2 Add / refactor a shared adapter for evaluator-selected scenes that can
+- [x] 4.2 Add / refactor a shared adapter for evaluator-selected scenes that can
   carry canonical matching from:
   - `matches.jsonl`
   - `per_image.json`
@@ -103,7 +103,7 @@
 
 - [x] 5.1 Converge `scripts/run_vis.sh`, `vis_tools/vis_coordexp.py`, and the
   evaluator overlay path on the shared canonical renderer semantics.
-- [ ] 5.2 Keep `vis_tools/vis_monitor_dump_gt_vs_pred.py` as the semantic
+- [x] 5.2 Keep `vis_tools/vis_monitor_dump_gt_vs_pred.py` as the semantic
   reference for error-focused review behavior during migration, but remove
   duplicated contract logic once shared adapters exist.
 - [x] 5.3 Avoid introducing new parallel visualization entry points unless an
@@ -111,13 +111,13 @@
 
 ## 6. Tests and Docs
 
-- [ ] 6.1 Add fixtures covering:
+- [x] 6.1 Add fixtures covering:
   - offline `gt_vs_pred.jsonl`
   - scored artifact input
   - eval-selected error scene
   - duplicate-GT annotation scene with identical `bbox_2d` + `desc`
   - Oracle-K aligned baseline/oracle scene
-- [ ] 6.2 Add tests for:
+- [x] 6.2 Add tests for:
   - canonical GT ordering and source-index remapping,
   - preserved prediction order,
   - canonical object normalization into pixel-space `bbox_2d`,
@@ -126,7 +126,7 @@
   - GT-equivalence validation for multi-run composition,
   - fail-fast when canonical matching is missing for shared review rendering,
   - label-placement determinism under crowded scenes.
-- [ ] 6.3 Update docs after implementation:
+- [x] 6.3 Update docs after implementation:
   - `docs/eval/WORKFLOW.md`
   - `docs/eval/CONTRACT.md`
   - `docs/training/STAGE2_RUNBOOK.md`

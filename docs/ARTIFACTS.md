@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-03-10
+updated: 2026-03-13
 ---
 
 # Artifacts & Provenance
@@ -29,6 +29,9 @@ During inference and offline evaluation, CoordExp writes reproducibility and ana
   - Base inference artifact with inline GT and parsed predictions per sample.
 - `pred_token_trace.jsonl`
   - Optional per-sample generation trace artifact for later rollout inspection.
+- `vis_resources/gt_vs_pred.jsonl`
+  - Derived canonical visualization sidecar used by the shared GT-vs-Pred
+    reviewer and evaluator overlay path.
 - `summary.json`
   - Inference-stage summary emitted by the YAML infer pipeline.
 - `resolved_config.json`
@@ -92,6 +95,9 @@ During training (`python -m src.sft ...`), rank 0 writes reproducibility artifac
   - `eval_step` uses the configured eval-window cadence (`every_evals`).
   - `stage2_two_channel` Channel-B `train_step` writes only suspicious duplicate-heavy rollouts for the current optimizer step.
     `train_monitor_dump.every_channel_b_steps` counts realized Channel-B rollout steps when set; otherwise the trainer falls back to `every_steps`.
+  - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
+    uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar instead
+    of taking ownership of the monitor-dump path layout.
 
 Notes:
 - If `training.add_version: true` (default in `configs/base.yaml`), ms-swift scopes outputs under a versioned run directory.

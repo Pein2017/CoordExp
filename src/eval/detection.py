@@ -35,7 +35,6 @@ from src.common.geometry.object_geometry import extract_single_geometry
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
-from src.common.paths import resolve_image_path_best_effort
 from src.utils import get_logger
 from src.vis import materialize_gt_vs_pred_vis_resource, render_gt_vs_pred_review
 
@@ -1102,94 +1101,6 @@ def _run_coco_eval(
                 cat_name = coco_gt.loadCats(cat_id)[0]["name"]
                 per_class[cat_name] = ap
     return metrics, per_class
-
-
-def _resolve_image_path(base_dir: Path, image_rel: str | None) -> Path:
-    if image_rel is None:
-        return base_dir / "missing.jpg"
-
-    return resolve_image_path_best_effort(
-        image_rel,
-        jsonl_dir=None,
-        root_image_dir=base_dir,
-        env_root_var=None,
-    )
-
-
-def _draw_overlays(
-    gt_samples: List[Sample],
-    pred_samples: List[Tuple[int, List[Dict[str, Any]]]],
-    *,
-    base_dir: Path,
-    out_dir: Path,
-    k: int,
-) -> None:
-    try:
-        import matplotlib.patches as patches
-        import matplotlib.pyplot as plt
-        from PIL import Image
-    except (ImportError, OSError) as exc:
-        logger.warning("Overlay rendering skipped (missing matplotlib/PIL): %s", exc)
-        return
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pred_lookup = {img_id: preds for img_id, preds in pred_samples}
-    for sample in gt_samples[: max(0, k)]:
-        img_path = _resolve_image_path(base_dir, sample.file_name)
-        if not img_path.exists():
-            logger.warning("Overlay skipped: image not found %s", img_path)
-            continue
-        try:
-            img = Image.open(img_path).convert("RGB")
-        except (OSError, ValueError) as exc:
-            logger.warning("Overlay skipped: failed to load %s (%s)", img_path, exc)
-            continue
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.imshow(img)
-        ax.axis("off")
-
-        def _add_box(x1, y1, x2, y2, color, linestyle="-"):
-            rect = patches.Rectangle(
-                (x1, y1),
-                x2 - x1,
-                y2 - y1,
-                linewidth=2,
-                edgecolor=color,
-                facecolor="none",
-                linestyle=linestyle,
-            )
-            ax.add_patch(rect)
-
-        colors = {"gt": "#2ca02c", "pred": "#d62728"}
-        for obj in sample.objects:
-            x1, y1, x2, y2 = obj["bbox"]
-            _add_box(x1, y1, x2, y2, colors["gt"], "-")
-            ax.text(
-                x1,
-                y1 - 2,
-                obj.get("desc", ""),
-                color=colors["gt"],
-                fontsize=8,
-                backgroundcolor="white",
-            )
-
-        for obj in pred_lookup.get(sample.image_id, []):
-            x1, y1, x2, y2 = obj["bbox"]
-            _add_box(x1, y1, x2, y2, colors["pred"], "--")
-            ax.text(
-                x1,
-                y2 + 2,
-                obj.get("desc", ""),
-                color=colors["pred"],
-                fontsize=8,
-                backgroundcolor="white",
-            )
-
-        save_path = out_dir / f"overlay_{sample.image_id:04d}.png"
-        fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
-        plt.close(fig)
 
 
 def _prepare_all_from_records(

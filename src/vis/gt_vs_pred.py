@@ -50,8 +50,47 @@ def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
                 yield payload
 
 
+def _load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def default_vis_resource_path(source_jsonl: Path) -> Path:
     return source_jsonl.parent / "vis_resources" / "gt_vs_pred.jsonl"
+
+
+def _load_matches_by_record_idx(matches_jsonl: Path) -> Dict[int, Dict[str, Any]]:
+    out: Dict[int, Dict[str, Any]] = {}
+    for fallback_record_idx, row in enumerate(_iter_jsonl(matches_jsonl)):
+        image_id = row.get("image_id")
+        try:
+            record_idx = int(image_id)
+        except (TypeError, ValueError):
+            record_idx = int(fallback_record_idx)
+        out[int(record_idx)] = dict(row)
+    return out
+
+
+def _load_per_image_by_record_idx(per_image_json: Path) -> Dict[int, Dict[str, Any]]:
+    payload = _load_json(per_image_json)
+    if not isinstance(payload, list):
+        raise ValueError(
+            f"per-image evaluator report must be a list, got {type(payload).__name__}"
+        )
+    out: Dict[int, Dict[str, Any]] = {}
+    for fallback_record_idx, row in enumerate(payload):
+        if not isinstance(row, Mapping):
+            raise ValueError(
+                "per-image evaluator report rows must be mappings, "
+                f"got {type(row).__name__}"
+            )
+        image_id = row.get("image_id")
+        try:
+            record_idx = int(image_id)
+        except (TypeError, ValueError):
+            record_idx = int(fallback_record_idx)
+        out[int(record_idx)] = dict(row)
+    return out
 
 
 def _coerce_record_idx(record: Mapping[str, Any], fallback: int) -> int:
@@ -733,6 +772,59 @@ def materialize_gt_vs_pred_vis_resource(
             )
             provenance = dict(canonical.get("provenance") or {})
             provenance.setdefault("source_jsonl_dir", str(source_jsonl.parent))
+            canonical["provenance"] = provenance
+            handle.write(json.dumps(canonical, ensure_ascii=False) + "\n")
+    return out_path
+
+
+def materialize_eval_gt_vs_pred_vis_resource(
+    source_jsonl: Path,
+    *,
+    matches_jsonl: Path | None = None,
+    per_image_json: Path | None = None,
+    output_path: Path | None = None,
+    source_kind: str = "detection_eval",
+) -> Path:
+    external_matches = (
+        _load_matches_by_record_idx(matches_jsonl) if matches_jsonl is not None else None
+    )
+    per_image_by_record = (
+        _load_per_image_by_record_idx(per_image_json) if per_image_json is not None else {}
+    )
+
+    out_path = output_path or default_vis_resource_path(source_jsonl)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with out_path.open("w", encoding="utf-8") as handle:
+        for fallback_record_idx, raw_record in enumerate(_iter_jsonl(source_jsonl)):
+            record = dict(raw_record)
+            record_idx = _coerce_record_idx(record, fallback_record_idx)
+            per_image_row = per_image_by_record.get(int(record_idx))
+            if per_image_row is not None:
+                image_id = per_image_row.get("image_id")
+                file_name = per_image_row.get("file_name")
+                if image_id is not None:
+                    record.setdefault("image_id", image_id)
+                if isinstance(file_name, str) and file_name.strip():
+                    record.setdefault("file_name", file_name.strip())
+
+            explicit_matching = None
+            if external_matches is not None:
+                explicit_matching = external_matches.get(int(record_idx))
+
+            canonical = _canonicalize_record(
+                record,
+                fallback_record_idx=fallback_record_idx,
+                source_kind=source_kind,
+                explicit_matching=explicit_matching,
+                materialize_matching=True,
+            )
+            provenance = dict(canonical.get("provenance") or {})
+            provenance.setdefault("source_jsonl_dir", str(source_jsonl.parent))
+            if matches_jsonl is not None:
+                provenance.setdefault("matches_jsonl", str(matches_jsonl))
+            if per_image_json is not None:
+                provenance.setdefault("per_image_json", str(per_image_json))
             canonical["provenance"] = provenance
             handle.write(json.dumps(canonical, ensure_ascii=False) + "\n")
     return out_path

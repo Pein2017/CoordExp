@@ -5,7 +5,7 @@ doc_type: runbook
 status: canonical
 domain: training
 summary: Operational Stage-2 workflow and YAML-first run guidance.
-updated: 2026-03-09
+updated: 2026-03-13
 ---
 
 # Stage-2 Training Runbook (Rollout-Aligned + Two-Channel)
@@ -777,6 +777,10 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) extras (Channel-B step
 `train_monitor_dump` and `eval_monitor_dump` use the shared dump writer under
 `<training.output_dir>/monitor_dumps/` and write both `.json` and `.md` files
 (rank 0 only).
+
+These dumps remain raw rollout telemetry. Shared GT-vs-Pred review rendering is
+an explicit downstream normalization step into `vis_resources/gt_vs_pred.jsonl`,
+so the reviewer does not take ownership of the monitor-dump path contract.
 
 Behavior depends on the execution path:
 

@@ -39,9 +39,10 @@ Entry points:
 
 What it does:
 
-- reads a unified `gt_vs_pred.jsonl`
+- materializes `vis_resources/gt_vs_pred.jsonl`
 - resolves the image path
-- renders GT in green and predictions in red
+- renders the shared `1x2` GT-left / Pred-right reviewer
+- uses error-focused labels by default (`FN` / `FP`)
 - writes one PNG per sample
 
 Key code handles:
@@ -83,12 +84,13 @@ Entry points:
 What it does:
 
 - runs standard evaluation
+- materializes the canonical visualization sidecar
 - optionally renders overlay PNGs into `<eval_out>/overlays/`
-- draws GT and prediction boxes with labels
+- reuses the same shared `1x2` reviewer semantics as `run_vis.sh`
 
 Key code handles:
 
-- `src/eval.detection/_draw_overlays`
+- `src/vis.gt_vs_pred/materialize_eval_gt_vs_pred_vis_resource`
 - `src/eval.detection/evaluate_and_save`
 
 Relevant config keys:
