@@ -70,6 +70,37 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_length_precompute_workers"] == 8
 
 
+def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
+    payload = _base_training_payload()
+    payload["training"] = {
+        "encoded_sample_cache": {
+            "enabled": True,
+            "wait_timeout_s": 42,
+        }
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    cache_cfg = cfg.training["encoded_sample_cache"]
+    assert cache_cfg["enabled"] is True
+    assert cache_cfg["ineligible_policy"] == "error"
+    assert cache_cfg["wait_timeout_s"] == 42
+
+
+def test_training_encoded_sample_cache_unknown_nested_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["training"] = {
+        "encoded_sample_cache": {
+            "enabled": True,
+            "unknown_flag": True,
+        }
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.encoded_sample_cache.unknown_flag" in str(exc.value)
+
+
 def test_training_removed_packing_exact_key_fails_fast():
     payload = _base_training_payload()
     payload["training"] = {

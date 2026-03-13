@@ -16,6 +16,7 @@ from src.coord_tokens.validator import annotate_coord_tokens
 
 from .builders import JSONLinesBuilder
 from .contracts import ConversationRecord, validate_conversation_record
+from .encoded_sample_cache import setup_encoded_sample_cache_for_dataset
 from .preprocessors import AugmentationPreprocessor, SequentialPreprocessor
 from .utils import (
     find_first_unsorted_object_pair_by_topleft,
@@ -55,6 +56,7 @@ class BaseCaptionDataset(Dataset):
         offline_max_pixels: Optional[int] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
+        encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)
         self.system_prompt_dense = system_prompt_dense
@@ -65,6 +67,7 @@ class BaseCaptionDataset(Dataset):
         self.bypass_prob = float(bypass_prob)
         self.seed = int(seed)
         self.template = template
+        self._curriculum_state = curriculum_state
         self.offline_max_pixels = (
             None if offline_max_pixels is None else int(offline_max_pixels)
         )
@@ -142,6 +145,16 @@ class BaseCaptionDataset(Dataset):
         self._rebuild_perm_for_epoch()
         self.dataset_name = dataset_name or "dataset"
         self.last_sample_debug: Dict[str, Any] = {}
+        self._encoded_sample_cache = None
+        self._encoded_sample_cache_info: Dict[str, Any] | None = None
+        if encoded_sample_cache is not None:
+            cache_store, cache_info = setup_encoded_sample_cache_for_dataset(
+                self, encoded_sample_cache
+            )
+            self._encoded_sample_cache = cache_store
+            self._encoded_sample_cache_info = (
+                None if cache_info is None else dict(cache_info)
+            )
 
     @staticmethod
     def _make_sample_id(dataset_name: str, base_idx: int) -> int:
@@ -220,10 +233,21 @@ class BaseCaptionDataset(Dataset):
                 self._index_perm = perm + extra
 
     def set_hard_sample_plan(self, plan: Optional[Mapping[str, Any]]) -> None:
+        if plan is not None and self._encoded_sample_cache is not None:
+            raise ValueError(
+                "Encoded sample cache does not support hard-sample or epoch-varying "
+                "sample plans. Disable training.encoded_sample_cache or set "
+                "training.encoded_sample_cache.ineligible_policy=bypass for this run."
+            )
         self._hard_sample_plan = dict(plan) if plan is not None else None
 
     def __len__(self) -> int:
         return len(self.base_records)
+
+    def get_encoded_sample_cache_info(self) -> Optional[Dict[str, Any]]:
+        if self._encoded_sample_cache_info is None:
+            return None
+        return copy.deepcopy(self._encoded_sample_cache_info)
 
     def _create_builder(self, mode: Literal["dense", "summary"]) -> JSONLinesBuilder:
         user_prompt = USER_PROMPT_SUMMARY if mode == "summary" else self.user_prompt
@@ -401,78 +425,16 @@ class BaseCaptionDataset(Dataset):
 
         return encoded
 
-    def __getitem__(self, index: int) -> Dict[str, Any]:
-        if not self.base_records:
-            raise IndexError("BaseCaptionDataset is empty")
+    def _current_system_prompt(self) -> Optional[str]:
+        if self.mode == "summary" and self.system_prompt_summary:
+            return self.system_prompt_summary
+        if self.mode == "dense" and self.system_prompt_dense:
+            return self.system_prompt_dense
+        return None
 
-        base_idx = self._index_perm[index % len(self._index_perm)]
-        record = copy.deepcopy(self.base_records[base_idx])
-
-        # Deterministic per-sample RNG:
-        # Avoid order-sensitive randomness under multi-worker prefetching by deriving the seed
-        # as a pure function of (epoch, dataset seed, base_idx, requested index).
-        epoch_seed = self._seed_for_epoch(self._epoch)
-        seed_local = (
-            int(epoch_seed)
-            ^ ((int(base_idx) + 1) * 0x9E3779B1)
-            ^ ((int(index) + 1) * 0xC2B2AE35)
-        ) & 0xFFFFFFFF
-        rng_local = random.Random(int(seed_local))
-
-        if self.preprocessor is not None:
-            if hasattr(self.preprocessor, "rng"):
-                self.preprocessor.rng = rng_local
-            processed = self.preprocessor(record)
-            if processed is None:
-                raise ValueError(
-                    "Preprocessor removed the record; dataset does not duplicate samples"
-                )
-            record = processed
-
-        self._enforce_max_pixels(record, base_idx=base_idx)
-
-        self._apply_object_ordering(record, rng_local)
-        self._maybe_annotate_coord_tokens(record)
-
-        mode = self.mode
-        builder = self._create_builder(mode)
-
-        system_prompt = None
-        if mode == "summary" and self.system_prompt_summary:
-            system_prompt = self.system_prompt_summary
-        elif mode == "dense" and self.system_prompt_dense:
-            system_prompt = self.system_prompt_dense
-
-        encoded = self._encode_record(
-            record=record,
-            builder=builder,
-            system_prompt=system_prompt,
-        )
-
-        if not isinstance(encoded, MutableMapping):
-            raise TypeError(
-                "Dataset encode output must be a mutable mapping to attach metadata keys "
-                "('sample_id', 'dataset', 'base_idx')."
-            )
-
-        objects = record.get("objects") or []
-        max_poly = 0
-        for obj in objects:
-            if "poly_points" in obj:
-                max_poly = max(max_poly, int(obj.get("poly_points") or 0))
-        info = {
-            "dataset": self.dataset_name,
-            "base_idx": base_idx,
-            "objects": len(objects),
-            "max_poly_points": max_poly,
-            "width": record.get("width"),
-            "height": record.get("height"),
-            "mode": mode,
-        }
-        input_ids = encoded.get("input_ids")
-        if input_ids is not None and hasattr(input_ids, "__len__"):
-            info["input_ids_len"] = len(input_ids)
-
+    def _attach_runtime_metadata(
+        self, encoded: MutableMapping[str, Any], *, base_idx: int
+    ) -> None:
         sample_id = self._make_sample_id(self.dataset_name, base_idx)
         try:
             encoded["sample_id"] = sample_id
@@ -483,6 +445,122 @@ class BaseCaptionDataset(Dataset):
                 "Failed to attach sample metadata keys ('sample_id', 'dataset', 'base_idx') "
                 f"for dataset={self.dataset_name!r}, base_idx={base_idx}."
             ) from exc
+
+    def _build_sample_debug_info(
+        self,
+        *,
+        base_idx: int,
+        record: Mapping[str, Any],
+        encoded: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        objects = encoded.get("objects")
+        if not isinstance(objects, list):
+            objects = record.get("objects") or []
+
+        max_poly = 0
+        for obj in objects:
+            if isinstance(obj, Mapping) and "poly_points" in obj:
+                max_poly = max(max_poly, int(obj.get("poly_points") or 0))
+
+        info = {
+            "dataset": self.dataset_name,
+            "base_idx": base_idx,
+            "objects": len(objects),
+            "max_poly_points": max_poly,
+            "width": record.get("width"),
+            "height": record.get("height"),
+            "mode": self.mode,
+        }
+        input_ids = encoded.get("input_ids")
+        if input_ids is not None and hasattr(input_ids, "__len__"):
+            info["input_ids_len"] = len(input_ids)
+        return info
+
+    def _encode_base_record_for_cache(self, base_idx: int) -> Dict[str, Any]:
+        if self.preprocessor is not None:
+            raise ValueError(
+                "Encoded sample cache requires datasets without fetch-time preprocessors."
+            )
+
+        record = copy.deepcopy(self.base_records[int(base_idx)])
+        self._enforce_max_pixels(record, base_idx=int(base_idx))
+
+        rng_local = random.Random(self.seed ^ ((int(base_idx) + 1) * 0x9E3779B1))
+        self._apply_object_ordering(record, rng_local)
+        self._maybe_annotate_coord_tokens(record)
+
+        encoded = self._encode_record(
+            record=record,
+            builder=self._create_builder(self.mode),
+            system_prompt=self._current_system_prompt(),
+        )
+        if not isinstance(encoded, MutableMapping):
+            raise TypeError(
+                "Encoded sample cache build requires template.encode(...) to return "
+                "a mutable mapping."
+            )
+        encoded.pop("sample_id", None)
+        encoded.pop("dataset", None)
+        encoded.pop("base_idx", None)
+        return dict(encoded)
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        if not self.base_records:
+            raise IndexError("BaseCaptionDataset is empty")
+
+        base_idx = self._index_perm[index % len(self._index_perm)]
+        record_for_debug: Mapping[str, Any] = self.base_records[base_idx]
+
+        if self._encoded_sample_cache is not None:
+            encoded = copy.deepcopy(self._encoded_sample_cache.load_sample(base_idx))
+        else:
+            record = copy.deepcopy(self.base_records[base_idx])
+
+            # Deterministic per-sample RNG:
+            # Avoid order-sensitive randomness under multi-worker prefetching by deriving the seed
+            # as a pure function of (epoch, dataset seed, base_idx, requested index).
+            epoch_seed = self._seed_for_epoch(self._epoch)
+            seed_local = (
+                int(epoch_seed)
+                ^ ((int(base_idx) + 1) * 0x9E3779B1)
+                ^ ((int(index) + 1) * 0xC2B2AE35)
+            ) & 0xFFFFFFFF
+            rng_local = random.Random(int(seed_local))
+
+            if self.preprocessor is not None:
+                if hasattr(self.preprocessor, "rng"):
+                    self.preprocessor.rng = rng_local
+                processed = self.preprocessor(record)
+                if processed is None:
+                    raise ValueError(
+                        "Preprocessor removed the record; dataset does not duplicate samples"
+                    )
+                record = processed
+
+            self._enforce_max_pixels(record, base_idx=base_idx)
+
+            self._apply_object_ordering(record, rng_local)
+            self._maybe_annotate_coord_tokens(record)
+
+            encoded = self._encode_record(
+                record=record,
+                builder=self._create_builder(self.mode),
+                system_prompt=self._current_system_prompt(),
+            )
+            record_for_debug = record
+
+        if not isinstance(encoded, MutableMapping):
+            raise TypeError(
+                "Dataset encode output must be a mutable mapping to attach metadata keys "
+                "('sample_id', 'dataset', 'base_idx')."
+            )
+
+        info = self._build_sample_debug_info(
+            base_idx=base_idx,
+            record=record_for_debug,
+            encoded=encoded,
+        )
+        self._attach_runtime_metadata(encoded, base_idx=base_idx)
 
         self.last_sample_debug = info
         LAST_SAMPLE_DEBUG.update(info)

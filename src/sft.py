@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence, cast
 
 import torch
 from swift.llm.train.rlhf import SwiftRLHF
@@ -102,6 +102,14 @@ class PackingRuntimeConfig:
     wait_timeout_s: float = 7200.0
     length_cache_persist_every: int | None = None
     length_precompute_workers: int = 8
+
+
+@dataclass(frozen=True)
+class EncodedSampleCacheRuntimeConfig:
+    enabled: bool = False
+    root_dir: str | None = None
+    ineligible_policy: Literal["error", "bypass"] = "error"
+    wait_timeout_s: float = 7200.0
 
 
 def _parse_packing_config(
@@ -198,6 +206,64 @@ def _parse_packing_config(
         wait_timeout_s=wait_timeout_s,
         length_cache_persist_every=length_cache_persist_every,
         length_precompute_workers=length_precompute_workers,
+    )
+
+
+def _parse_encoded_sample_cache_config(
+    training_cfg: Any, train_args: Any
+) -> EncodedSampleCacheRuntimeConfig:
+    cfg = dict((training_cfg or {}).get("encoded_sample_cache") or {})
+    enabled = bool(cfg.get("enabled", False))
+    if not enabled:
+        return EncodedSampleCacheRuntimeConfig(enabled=False)
+
+    root_dir_raw = cfg.get("root_dir")
+    if root_dir_raw is None:
+        output_dir_raw = getattr(train_args, "output_dir", None)
+        if not output_dir_raw:
+            raise ValueError(
+                "training.output_dir must be set when training.encoded_sample_cache.enabled=true"
+            )
+        root_dir = str(
+            Path(str(output_dir_raw)).resolve() / "cache" / "encoded_samples"
+        )
+    else:
+        root_dir = str(Path(str(root_dir_raw)).resolve())
+        if not root_dir:
+            raise ValueError(
+                "training.encoded_sample_cache.root_dir must be a non-empty string when provided"
+            )
+
+    policy = str(cfg.get("ineligible_policy", "error") or "error").strip().lower()
+    if policy not in {"error", "bypass"}:
+        raise ValueError(
+            "training.encoded_sample_cache.ineligible_policy must be one of "
+            "{'error', 'bypass'}"
+        )
+
+    wait_timeout_raw = cfg.get("wait_timeout_s", 7200)
+    try:
+        wait_timeout_s = float(wait_timeout_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "training.encoded_sample_cache.wait_timeout_s must be a numeric value (seconds)"
+        ) from exc
+    if not math.isfinite(wait_timeout_s):
+        raise ValueError(
+            "training.encoded_sample_cache.wait_timeout_s must be finite, "
+            f"got {wait_timeout_raw!r}"
+        )
+    if wait_timeout_s < 0:
+        raise ValueError(
+            "training.encoded_sample_cache.wait_timeout_s must be >= 0 "
+            "(set 0 to wait indefinitely)"
+        )
+
+    return EncodedSampleCacheRuntimeConfig(
+        enabled=True,
+        root_dir=root_dir,
+        ineligible_policy=cast(Literal["error", "bypass"], policy),
+        wait_timeout_s=wait_timeout_s,
     )
 
 
@@ -457,6 +523,168 @@ def _build_static_packing_fingerprint(
         if isinstance(training_cfg, Mapping)
         else None,
     }
+
+
+def _normalize_optional_sample_limit(sample_limit: Any) -> int | None:
+    if isinstance(sample_limit, int):
+        return int(sample_limit)
+    if isinstance(sample_limit, str) and sample_limit.isdigit():
+        return int(sample_limit)
+    return None
+
+
+def _build_encoded_sample_cache_fingerprint(
+    *,
+    training_config: Any,
+    custom_config: Any,
+    template: Any,
+    train_args: Any,
+    dataset_seed: int,
+    dataset_jsonl: str | None,
+    fusion_config_path: str | None,
+    dataset_split: str,
+    dataset_mode: str,
+    sample_limit: int | None = None,
+    system_prompt_dense: str | None = None,
+    system_prompt_summary: str | None = None,
+) -> dict[str, Any]:
+    template_cfg = getattr(training_config, "template", {}) or {}
+    split = str(dataset_split or "train").strip().lower()
+    if split not in {"train", "eval"}:
+        raise ValueError(
+            "dataset_split must be one of {'train', 'eval'}, "
+            f"got {dataset_split!r}"
+        )
+
+    coord_tokens_cfg = getattr(custom_config, "coord_tokens", None)
+    if coord_tokens_cfg is not None and is_dataclass(coord_tokens_cfg):
+        coord_tokens_payload = dataclass_asdict_no_none(coord_tokens_cfg)
+    else:
+        coord_tokens_payload = None
+
+    return {
+        "cache_schema_version": 1,
+        "dataset_seed": int(dataset_seed),
+        "dataset_split": split,
+        "dataset_mode": str(dataset_mode),
+        "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
+        "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
+        "dataset_source_fusion_config": _build_source_path_identity(
+            fusion_config_path
+        ),
+        "sample_limit": int(sample_limit) if sample_limit is not None else None,
+        "global_max_length": getattr(training_config, "global_max_length", None),
+        "template_max_length": getattr(template, "max_length", None),
+        "train_args_max_model_len": getattr(train_args, "max_model_len", None),
+        "template_system": template_cfg.get("system")
+        if isinstance(template_cfg, Mapping)
+        else None,
+        "template_truncation_strategy": template_cfg.get("truncation_strategy")
+        if isinstance(template_cfg, Mapping)
+        else None,
+        "custom_user_prompt": getattr(custom_config, "user_prompt", None),
+        "custom_emit_norm": getattr(custom_config, "emit_norm", None),
+        "custom_json_format": getattr(custom_config, "json_format", None),
+        "custom_object_ordering": getattr(custom_config, "object_ordering", None),
+        "custom_object_field_order": getattr(
+            custom_config, "object_field_order", None
+        ),
+        "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
+        "custom_offline_max_pixels": getattr(
+            custom_config, "offline_max_pixels", None
+        ),
+        "coord_tokens": coord_tokens_payload,
+        "system_prompt_dense": system_prompt_dense,
+        "system_prompt_summary": system_prompt_summary,
+    }
+
+
+def _build_encoded_sample_cache_request(
+    *,
+    runtime_cfg: EncodedSampleCacheRuntimeConfig,
+    training_config: Any,
+    custom_config: Any,
+    template: Any,
+    train_args: Any,
+    dataset_seed: int,
+    dataset_jsonl: str | None,
+    fusion_config_path: str | None,
+    dataset_split: str,
+    dataset_mode: str,
+    sample_limit: int | None = None,
+    system_prompt_dense: str | None = None,
+    system_prompt_summary: str | None = None,
+) -> dict[str, Any] | None:
+    if not runtime_cfg.enabled:
+        return None
+
+    fingerprint = _build_encoded_sample_cache_fingerprint(
+        training_config=training_config,
+        custom_config=custom_config,
+        template=template,
+        train_args=train_args,
+        dataset_seed=dataset_seed,
+        dataset_jsonl=dataset_jsonl,
+        fusion_config_path=fusion_config_path,
+        dataset_split=dataset_split,
+        dataset_mode=dataset_mode,
+        sample_limit=sample_limit,
+        system_prompt_dense=system_prompt_dense,
+        system_prompt_summary=system_prompt_summary,
+    )
+    fingerprint_sha256 = hashlib.sha256(
+        json.dumps(
+            fingerprint, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    cache_dir = Path(str(runtime_cfg.root_dir)) / fingerprint_sha256
+    return {
+        "enabled": True,
+        "root_dir": str(runtime_cfg.root_dir),
+        "ineligible_policy": runtime_cfg.ineligible_policy,
+        "wait_timeout_s": float(runtime_cfg.wait_timeout_s),
+        "dataset_split": str(dataset_split),
+        "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
+        "fingerprint": fingerprint,
+        "fingerprint_sha256": fingerprint_sha256,
+        "cache_dir": str(cache_dir),
+    }
+
+
+def _build_encoded_sample_cache_bypass_info(
+    request: Mapping[str, Any],
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "status": "bypassed",
+        "reason": str(reason),
+        "policy": str(request.get("ineligible_policy") or "error"),
+        "wait_timeout_s": float(request.get("wait_timeout_s", 7200.0) or 0.0),
+        "dataset_split": str(request.get("dataset_split") or "train"),
+        "dataset_jsonl": request.get("dataset_jsonl"),
+        "fingerprint": dict(request.get("fingerprint") or {}),
+        "fingerprint_sha256": request.get("fingerprint_sha256"),
+        "root_dir": request.get("root_dir"),
+        "cache_dir": request.get("cache_dir"),
+        "manifest_path": str(Path(str(request.get("cache_dir") or ".")) / "manifest.json"),
+    }
+
+
+def _attach_encoded_sample_cache_run_metadata(
+    meta: dict[str, Any],
+    *,
+    train_cache_info: Mapping[str, Any] | None,
+    eval_cache_info: Mapping[str, Any] | None,
+) -> None:
+    encoded_sample_cache: dict[str, Any] = {}
+    if train_cache_info is not None:
+        encoded_sample_cache["train"] = copy.deepcopy(dict(train_cache_info))
+    if eval_cache_info is not None:
+        encoded_sample_cache["eval"] = copy.deepcopy(dict(eval_cache_info))
+    if encoded_sample_cache:
+        meta["encoded_sample_cache"] = encoded_sample_cache
 
 
 def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
@@ -1489,6 +1717,26 @@ def main():
         logger.info("Dense mode only (custom.use_summary=false)")
 
     dataset_seed = _resolve_dataset_seed(training_config=training_config, train_args=train_args)
+    encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
+        training_config.training, train_args
+    )
+    train_encoded_sample_cache_info: dict[str, Any] | None = None
+    eval_encoded_sample_cache_info: dict[str, Any] | None = None
+    train_encoded_sample_cache_request = _build_encoded_sample_cache_request(
+        runtime_cfg=encoded_sample_cache_cfg,
+        training_config=training_config,
+        custom_config=custom_config,
+        template=sft.template,
+        train_args=train_args,
+        dataset_seed=dataset_seed,
+        dataset_jsonl=str(train_jsonl) if train_jsonl else None,
+        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+        dataset_split="train",
+        dataset_mode="summary" if use_summary else "dense",
+        sample_limit=_normalize_optional_sample_limit(train_sample_limit),
+        system_prompt_dense=system_prompt_dense,
+        system_prompt_summary=system_prompt_summary,
+    )
     dataset: Any
     fusion_cfg = None
     logger.info(
@@ -1504,6 +1752,28 @@ def main():
         fusion_path = str(custom_config.fusion_config)
         logger.info(f"Loading training datasets from fusion config: {fusion_path}")
         fusion_cfg = FusionConfig.from_file(fusion_path)
+        if train_encoded_sample_cache_request is not None:
+            reason = (
+                "Encoded sample cache does not support custom.fusion_config in v1."
+            )
+            if encoded_sample_cache_cfg.ineligible_policy == "bypass":
+                train_encoded_sample_cache_info = (
+                    _build_encoded_sample_cache_bypass_info(
+                        train_encoded_sample_cache_request,
+                        reason=reason,
+                    )
+                )
+                logger.warning(
+                    "Encoded sample cache bypassed: split=%s reason=%s fingerprint_sha256=%s root=%s cache_dir=%s",
+                    train_encoded_sample_cache_info["dataset_split"],
+                    train_encoded_sample_cache_info["reason"],
+                    train_encoded_sample_cache_info["fingerprint_sha256"],
+                    train_encoded_sample_cache_info["root_dir"],
+                    train_encoded_sample_cache_info["cache_dir"],
+                )
+                train_encoded_sample_cache_request = None
+            else:
+                raise ValueError(reason)
 
         # For fusion, interpret sample_limit as a per-dataset cap for debug/smoke runs.
         fusion_train_limit: int | None = None
@@ -1553,7 +1823,10 @@ def main():
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
+            encoded_sample_cache=train_encoded_sample_cache_request,
         )
+        if train_encoded_sample_cache_request is not None:
+            train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
@@ -2065,6 +2338,21 @@ def main():
     # Build validation dataset (single JSONL or fusion config).
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
+    eval_encoded_sample_cache_request = _build_encoded_sample_cache_request(
+        runtime_cfg=encoded_sample_cache_cfg,
+        training_config=training_config,
+        custom_config=custom_config,
+        template=sft.template,
+        train_args=train_args,
+        dataset_seed=dataset_seed,
+        dataset_jsonl=str(val_jsonl) if val_jsonl else None,
+        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+        dataset_split="eval",
+        dataset_mode="summary" if use_summary else "dense",
+        sample_limit=_normalize_optional_sample_limit(val_sample_limit),
+        system_prompt_dense=system_prompt_dense,
+        system_prompt_summary=system_prompt_summary,
+    )
     if fusion_cfg is not None:
         from .datasets.unified_fusion_dataset import FusionCaptionDataset
 
@@ -2081,6 +2369,28 @@ def main():
                 fusion_eval_limit = eval_sample_limit
             elif isinstance(eval_sample_limit, str) and eval_sample_limit.isdigit():
                 fusion_eval_limit = int(eval_sample_limit)
+            if eval_encoded_sample_cache_request is not None:
+                reason = (
+                    "Encoded sample cache does not support custom.fusion_config in v1."
+                )
+                if encoded_sample_cache_cfg.ineligible_policy == "bypass":
+                    eval_encoded_sample_cache_info = (
+                        _build_encoded_sample_cache_bypass_info(
+                            eval_encoded_sample_cache_request,
+                            reason=reason,
+                        )
+                    )
+                    logger.warning(
+                        "Encoded sample cache bypassed: split=%s reason=%s fingerprint_sha256=%s root=%s cache_dir=%s",
+                        eval_encoded_sample_cache_info["dataset_split"],
+                        eval_encoded_sample_cache_info["reason"],
+                        eval_encoded_sample_cache_info["fingerprint_sha256"],
+                        eval_encoded_sample_cache_info["root_dir"],
+                        eval_encoded_sample_cache_info["cache_dir"],
+                    )
+                    eval_encoded_sample_cache_request = None
+                else:
+                    raise ValueError(reason)
 
             eval_dataset = FusionCaptionDataset(
                 fusion_config=fusion_cfg,
@@ -2140,8 +2450,11 @@ def main():
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
+            encoded_sample_cache=eval_encoded_sample_cache_request,
         )
         base_eval_len = len(eval_dataset)
+        if eval_encoded_sample_cache_request is not None:
+            eval_encoded_sample_cache_info = eval_dataset.get_encoded_sample_cache_info()
         if val_sample_with_replacement:
             eval_dataset = RandomSampleDataset(
                 eval_dataset, sample_size=val_sample_size, seed=dataset_seed + 11
@@ -2749,6 +3062,11 @@ def main():
         launcher_meta = _collect_launcher_metadata_from_env()
         if launcher_meta:
             meta["launcher"] = launcher_meta
+        _attach_encoded_sample_cache_run_metadata(
+            meta,
+            train_cache_info=train_encoded_sample_cache_info,
+            eval_cache_info=eval_encoded_sample_cache_info,
+        )
 
         out_path = Path(str(out_dir)) / "run_metadata.json"
         out_path.parent.mkdir(parents=True, exist_ok=True)
