@@ -86,6 +86,32 @@ def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
     assert (out_dir / "per_image.json").exists()
 
 
+def test_evaluate_and_save_overlay_materializes_shared_vis_sidecar(
+    tmp_path: Path,
+) -> None:
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), color=(128, 128, 128)).save(tmp_path / "img.png")
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(pred_path, [_one_record(image="img.png")])
+
+    out_dir = tmp_path / "eval"
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=out_dir,
+        overlay=True,
+        overlay_k=1,
+        num_workers=0,
+    )
+
+    evaluate_and_save(pred_path, options=options)
+
+    assert (out_dir / "overlays" / "vis_0000.png").exists()
+    assert (tmp_path / "vis_resources" / "gt_vs_pred.jsonl").exists()
+
+
 def test_evaluate_and_save_reports_zero_coco_metrics_when_no_predictions(
     tmp_path: Path,
 ) -> None:

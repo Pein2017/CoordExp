@@ -1,196 +1,138 @@
 """Visualization: compare rollout predictions between HF and vLLM backends.
 
-Input is the `compare_*.jsonl` produced by:
-  scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py
+Preferred input is two single-view prediction JSONLs, one per backend:
+- `pred_hf.jsonl`
+- `pred_vllm.jsonl`
 
-Each record should contain:
-  - image, width, height
-  - gt: List[{type, points, desc}]            (pixel-space)
-  - pred_hf: List[{type, points, desc}]       (pixel-space)
-  - pred_vllm: List[{type, points, desc}]     (pixel-space)
-
-Usage:
-  /root/miniconda3/envs/ms/bin/python scripts/analysis/rollout_backend_bench/vis_rollout_backend_compare.py \\
-    --compare_jsonl output/bench/rollout_backend_bench/<run>/compare_gpu0_seed17.jsonl \\
-    --save_dir vis_out/rollout_backend_compare --limit 50
+Those member files are canonicalized independently and then composed only after
+GT equivalence is verified. The legacy `compare_*.jsonl` flag is kept as a thin
+compatibility wrapper that resolves those member files next to the compare
+artifact produced by the benchmark script.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from PIL import Image
-from tqdm import tqdm
 
-from src.common.geometry import pair_points
+# Allow direct `python scripts/.../vis_rollout_backend_compare.py` invocation.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.common.paths import resolve_image_path_strict
+from src.vis import compose_comparison_scenes_from_jsonls
 
 
 @dataclass
 class Config:
-    compare_jsonl: str
+    hf_jsonl: str | None
+    vllm_jsonl: str | None
+    compare_jsonl: str | None
     save_dir: str = "vis_out/rollout_backend_compare"
     limit: int = 0
 
 
-def load_jsonl(path: Path, limit: int | None) -> List[Dict[str, Any]]:
-    records: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except Exception:
-                continue
-            records.append(rec)
-            if limit and limit > 0 and len(records) >= limit:
-                break
-    return records
+def _derive_member_paths(compare_jsonl: Path) -> tuple[Path, Path]:
+    stem = compare_jsonl.stem
+    if not stem.startswith("compare_"):
+        raise ValueError(
+            "Legacy --compare_jsonl must be named like compare_<run_id>.jsonl so the "
+            "member prediction JSONLs can be resolved."
+        )
+    run_id = stem[len("compare_") :]
+    hf_jsonl = compare_jsonl.parent / f"{run_id}_hf" / "pred_hf.jsonl"
+    vllm_jsonl = compare_jsonl.parent / f"{run_id}_vllm" / "pred_vllm.jsonl"
+    if not hf_jsonl.exists() or not vllm_jsonl.exists():
+        raise FileNotFoundError(
+            "Could not resolve member prediction JSONLs from legacy compare artifact. "
+            f"Expected {hf_jsonl} and {vllm_jsonl}."
+        )
+    return hf_jsonl, vllm_jsonl
 
 
-def resolve_image_path(base: Path, image_rel: str | None) -> Optional[Path]:
+def _resolve_member_inputs(cfg: Config) -> tuple[Path, Path]:
+    if cfg.hf_jsonl and cfg.vllm_jsonl:
+        return Path(cfg.hf_jsonl), Path(cfg.vllm_jsonl)
+    if cfg.compare_jsonl:
+        return _derive_member_paths(Path(cfg.compare_jsonl))
+    raise ValueError("Provide either --hf_jsonl/--vllm_jsonl or legacy --compare_jsonl")
+
+
+def _resolve_image_path(base_dir: Path, image_rel: str | None) -> Optional[Path]:
     if image_rel is None:
         return None
-    if os.path.isabs(image_rel):
-        return Path(image_rel)
     root = os.environ.get("ROOT_IMAGE_DIR")
-    base_dir = Path(root) if root else base
-    return (base_dir / image_rel).resolve()
+    root_dir = Path(root).resolve() if root else None
+    return resolve_image_path_strict(
+        image_rel,
+        jsonl_dir=base_dir,
+        root_image_dir=root_dir,
+    )
 
 
-def _generate_colors(labels: List[str]) -> Dict[str, str]:
-    base_colors = [
-        "#FF6B6B",
-        "#4ECDC4",
-        "#45B7D1",
-        "#96CEB4",
-        "#FFEAA7",
-        "#DDA0DD",
-        "#98D8C8",
-        "#F7DC6F",
-        "#BB8FCE",
-        "#85C1E9",
-        "#F8C471",
-        "#82E0AA",
-        "#F1948A",
-        "#85929E",
-        "#F4D03F",
-        "#AED6F1",
-        "#A9DFBF",
-        "#F9E79F",
-        "#D7BDE2",
-        "#A2D9CE",
-        "#FADBD8",
-        "#D5DBDB",
-    ]
-    colors: Dict[str, str] = {}
-    for i, label in enumerate(sorted(set(labels))):
-        colors[label] = base_colors[i % len(base_colors)]
-    return colors
-
-
-def _draw(
-    ax, img: Image.Image, objs: List[Dict[str, Any]], color_map: Dict[str, str]
-) -> None:
+def _draw_objects(ax, objs: Sequence[Dict[str, Any]], *, color: str, linestyle: str) -> None:
     import matplotlib.patches as patches
 
-    ax.imshow(img)
-    ax.axis("off")
     for obj in objs:
-        pts = obj.get("points") or []
-        gtype = obj.get("type", "")
-        label = obj.get("desc", "") or "object"
-        color = color_map.get(label, "#1f77b4")
-        linestyle = "-" if gtype == "bbox_2d" else "--" if gtype == "poly" else ":"
-        if gtype == "bbox_2d" and len(pts) == 4:
-            x1, y1, x2, y2 = pts
-            rect = patches.Rectangle(
-                (x1, y1),
-                x2 - x1,
-                y2 - y1,
-                linewidth=2,
-                edgecolor=color,
-                facecolor="none",
-                linestyle=linestyle,
-            )
-            ax.add_patch(rect)
-        elif gtype == "poly" and len(pts) >= 6:
-            poly_pts = pair_points(pts)
-            poly = patches.Polygon(
-                poly_pts,
-                closed=True,
-                linewidth=2,
-                edgecolor=color,
-                facecolor="none",
-                linestyle=linestyle,
-            )
-            ax.add_patch(poly)
-        elif gtype == "line" and len(pts) >= 4:
-            xy = pair_points(pts)
-            xs, ys = zip(*xy)
-            ax.plot(xs, ys, color=color, linewidth=2, linestyle=linestyle)
+        bbox = obj.get("bbox_2d") or []
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        rect = patches.Rectangle(
+            (x1, y1),
+            x2 - x1,
+            y2 - y1,
+            linewidth=2,
+            edgecolor=color,
+            facecolor="none",
+            linestyle=linestyle,
+        )
+        ax.add_patch(rect)
 
 
-def draw_compare(
+def _draw_scene(
     *,
+    scene: Dict[str, Any],
     image_path: Path,
-    gt: List[Dict[str, Any]],
-    pred_hf: List[Dict[str, Any]],
-    pred_vllm: List[Dict[str, Any]],
     save_path: Path,
-    title_suffix: str = "",
 ) -> None:
-    import matplotlib.patches as patches
     import matplotlib.pyplot as plt
 
     img = Image.open(image_path).convert("RGB")
-    fig, axes = plt.subplots(1, 4, figsize=(22, 6))
-    ax_gt, ax_hf, ax_vv, ax_leg = axes
+    members = list(scene.get("members") or [])
+    fig, axes = plt.subplots(1, len(members) + 1, figsize=(6 * (len(members) + 1), 6))
+    if not isinstance(axes, (list, tuple)):
+        axes = list(axes)
+    else:
+        axes = list(axes)
 
-    # Color map shared across panels.
-    labels = [obj.get("desc", "") or "object" for obj in (gt + pred_hf + pred_vllm)]
-    color_map = _generate_colors(labels or ["object"])
+    gt_ax = axes[0]
+    gt_ax.imshow(img)
+    gt_ax.axis("off")
+    gt_ax.set_title(f"Ground Truth (record {scene.get('record_idx')})")
+    _draw_objects(gt_ax, list(scene.get("gt") or []), color="#2ca02c", linestyle="-")
 
-    ax_gt.set_title("Ground Truth" + title_suffix)
-    _draw(ax_gt, img, gt, color_map)
-
-    ax_hf.set_title("HF Rollout" + title_suffix)
-    _draw(ax_hf, img, pred_hf, color_map)
-
-    ax_vv.set_title("vLLM Rollout" + title_suffix)
-    _draw(ax_vv, img, pred_vllm, color_map)
-
-    # Legend (counts per label: gt / hf / vllm)
-    counts: Dict[str, List[int]] = {lab: [0, 0, 0] for lab in color_map.keys()}
-    for obj in gt:
-        lab = obj.get("desc", "") or "object"
-        counts.setdefault(lab, [0, 0, 0])[0] += 1
-    for obj in pred_hf:
-        lab = obj.get("desc", "") or "object"
-        counts.setdefault(lab, [0, 0, 0])[1] += 1
-    for obj in pred_vllm:
-        lab = obj.get("desc", "") or "object"
-        counts.setdefault(lab, [0, 0, 0])[2] += 1
-
-    ax_leg.axis("off")
-    legend_handles = []
-    active = [lab for lab, c in counts.items() if any(x > 0 for x in c)]
-    active.sort(key=lambda lab: sum(counts[lab]), reverse=True)
-    for lab in active[:30]:  # cap legend length for readability
-        gt_c, hf_c, vv_c = counts[lab]
-        legend_label = f"{lab} (gt {gt_c} / hf {hf_c} / vllm {vv_c})"
-        handle = patches.Patch(
-            facecolor="none", edgecolor=color_map[lab], label=legend_label
+    member_colors = ["#1f77b4", "#d62728", "#ff7f0e", "#9467bd"]
+    for idx, member in enumerate(members, start=1):
+        ax = axes[idx]
+        ax.imshow(img)
+        ax.axis("off")
+        label = str(member.get("label") or f"member_{idx}")
+        record = member.get("record") or {}
+        ax.set_title(label)
+        _draw_objects(
+            ax,
+            list(record.get("pred") or []),
+            color=member_colors[(idx - 1) % len(member_colors)],
+            linestyle="--",
         )
-        legend_handles.append(handle)
-    if legend_handles:
-        ax_leg.legend(handles=legend_handles, loc="center", framealpha=0.95, fontsize=9)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -199,41 +141,46 @@ def draw_compare(
 
 
 def parse_args() -> Config:
-    p = argparse.ArgumentParser(
-        description="Compare rollout outputs between HF and vLLM"
+    parser = argparse.ArgumentParser(description="Compare rollout outputs between HF and vLLM")
+    parser.add_argument("--hf_jsonl", default=None)
+    parser.add_argument("--vllm_jsonl", default=None)
+    parser.add_argument("--compare_jsonl", default=None)
+    parser.add_argument("--save_dir", default="vis_out/rollout_backend_compare")
+    parser.add_argument("--limit", type=int, default=0)
+    args = parser.parse_args()
+    return Config(
+        hf_jsonl=args.hf_jsonl,
+        vllm_jsonl=args.vllm_jsonl,
+        compare_jsonl=args.compare_jsonl,
+        save_dir=args.save_dir,
+        limit=args.limit,
     )
-    p.add_argument("--compare_jsonl", required=True)
-    p.add_argument("--save_dir", default="vis_out/rollout_backend_compare")
-    p.add_argument("--limit", type=int, default=0)
-    a = p.parse_args()
-    return Config(compare_jsonl=a.compare_jsonl, save_dir=a.save_dir, limit=a.limit)
 
 
 def main() -> None:
     cfg = parse_args()
-    compare_path = Path(cfg.compare_jsonl)
-    records = load_jsonl(compare_path, cfg.limit)
-    base_dir = compare_path.parent
+    hf_jsonl, vllm_jsonl = _resolve_member_inputs(cfg)
+    scenes = compose_comparison_scenes_from_jsonls(
+        {
+            "hf": hf_jsonl,
+            "vllm": vllm_jsonl,
+        }
+    )
     out_dir = Path(cfg.save_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, rec in enumerate(tqdm(records, desc="Render", unit="img")):
-        img_rel = rec.get("image")
-        img_path = resolve_image_path(base_dir, img_rel)
-        if not img_path or not img_path.exists():
+    base_dir = hf_jsonl.parent
+    for index, scene in enumerate(scenes):
+        if cfg.limit and index >= int(cfg.limit):
+            break
+        image_path = _resolve_image_path(base_dir, str(scene.get("image") or ""))
+        if image_path is None or not image_path.exists():
             continue
-        gt = rec.get("gt") or []
-        pred_hf = rec.get("pred_hf") or []
-        pred_vv = rec.get("pred_vllm") or []
-        title_suffix = f" (line {rec.get('line_idx', '')})"
-        save_path = out_dir / f"compare_{i:04d}.png"
-        draw_compare(
-            image_path=img_path,
-            gt=gt,
-            pred_hf=pred_hf,
-            pred_vllm=pred_vv,
+        save_path = out_dir / f"compare_{index:04d}.png"
+        _draw_scene(
+            scene=scene,
+            image_path=image_path,
             save_path=save_path,
-            title_suffix=title_suffix,
         )
 
 

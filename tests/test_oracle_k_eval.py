@@ -226,6 +226,50 @@ def test_oracle_k_rejects_gt_content_mismatch(
         evaluate_oracle_k(config)
 
 
+def test_oracle_k_accepts_reordered_gt_objects_when_scene_is_equivalent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_semantic_encoder(monkeypatch)
+
+    baseline_path = tmp_path / "baseline.jsonl"
+    oracle_path = tmp_path / "oracle.jsonl"
+    baseline_record = {
+        "image": "img.png",
+        "width": 32,
+        "height": 32,
+        "mode": "text",
+        "coord_mode": "pixel",
+        "gt": [
+            _box("zebra", points=[16, 16, 31, 31]),
+            _box("apple", points=[0, 0, 8, 8]),
+        ],
+        "pred": [],
+        "raw_output_json": {},
+        "raw_special_tokens": [],
+        "raw_ends_with_im_end": True,
+        "errors": [],
+    }
+    oracle_record = {
+        **baseline_record,
+        "gt": [
+            _box("apple", points=[0, 0, 8, 8]),
+            _box("zebra", points=[16, 16, 31, 31]),
+        ],
+    }
+    _write_jsonl(baseline_path, [baseline_record])
+    _write_jsonl(oracle_path, [oracle_record])
+
+    config = OracleKConfig(
+        out_dir=tmp_path / "oracle_k",
+        eval_options=_base_options(tmp_path / "oracle_k"),
+        baseline_run=OracleKRunSpec(label="baseline", pred_jsonl=baseline_path),
+        oracle_runs=(OracleKRunSpec(label="oracle", pred_jsonl=oracle_path),),
+    )
+
+    summary = evaluate_oracle_k(config)
+    assert summary["oracle_run_count"] == 1
+
+
 def test_oracle_k_rejects_record_order_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
