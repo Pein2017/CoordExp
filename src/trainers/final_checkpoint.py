@@ -1,4 +1,4 @@
-"""Trainer mixin to guarantee the last checkpoint exists after training."""
+"""Trainer checkpoint-state adapters for upstream save behavior gaps."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import os
 import weakref
 from typing import TYPE_CHECKING, Dict, Type, cast
 
+from transformers.trainer import TRAINER_STATE_NAME
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, SaveStrategy
 
@@ -38,22 +39,80 @@ class _FinalCheckpointCallback(TrainerCallback):
 
 
 class FinalCheckpointMixin:
-    """Adds a post-training checkpoint check without modifying upstream trainers."""
+    """Adds checkpoint-state repairs and optional final-save fallback."""
 
     _final_checkpoint_callback_attr = "_final_checkpoint_callback"
     _final_checkpoint_wrapper_cache: Dict[Type, Type] = {}
+    _pending_best_checkpoint_step_attr = "_pending_best_checkpoint_step"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)  # type: ignore[misc]
-        if not hasattr(self, self._final_checkpoint_callback_attr):
+        setattr(self, self._pending_best_checkpoint_step_attr, None)
+        if (
+            not hasattr(self, self._final_checkpoint_callback_attr)
+            and self._should_install_final_checkpoint_callback()
+        ):
             callback = _FinalCheckpointCallback(self)
             setattr(self, self._final_checkpoint_callback_attr, callback)
             trainer = cast("_TrainerBase", self)
             trainer.add_callback(callback)
 
+    def _determine_best_metric(self, metrics, trial):
+        """Track best-checkpoint saves for `save_strategy='best'`.
+
+        Upstream `transformers` saves the checkpoint when a new best metric is found,
+        but does not populate `state.best_model_checkpoint` for `SaveStrategy.BEST`.
+        Record the step here so `_save_checkpoint()` can stamp the correct path after
+        the checkpoint directory exists on disk.
+        """
+
+        setattr(self, self._pending_best_checkpoint_step_attr, None)
+        is_new_best_metric = super()._determine_best_metric(metrics, trial)
+
+        if getattr(self.args, "save_strategy", SaveStrategy.NO) != SaveStrategy.BEST:
+            return is_new_best_metric
+        if not is_new_best_metric:
+            return is_new_best_metric
+
+        global_step = getattr(self.state, "global_step", None)
+        if isinstance(global_step, int) and global_step > 0:
+            setattr(self, self._pending_best_checkpoint_step_attr, global_step)
+        return is_new_best_metric
+
+    def _save_checkpoint(self, model, trial, *args, **kwargs):
+        """Preserve best-checkpoint pointers for best-only save cadence."""
+
+        super()._save_checkpoint(model, trial, *args, **kwargs)
+
+        checkpoint_dir = self._get_current_checkpoint_dir(trial=trial)
+        if checkpoint_dir is None:
+            setattr(self, self._pending_best_checkpoint_step_attr, None)
+            return
+
+        if self._record_best_checkpoint_if_pending(checkpoint_dir):
+            if getattr(self.args, "should_save", False):
+                self.state.save_to_json(os.path.join(checkpoint_dir, TRAINER_STATE_NAME))
+
     # ------------------------------------------------------------------
     # Final checkpoint helpers
     # ------------------------------------------------------------------
+    def _should_install_final_checkpoint_callback(self) -> bool:
+        """Return True when the repo-owned final-save fallback should be active."""
+
+        trainer = cast("_TrainerBase", self)
+        save_last_epoch = bool(getattr(trainer.args, "save_last_epoch", True))
+        if not save_last_epoch:
+            return False
+        return self._save_strategy_requires_final_checkpoint_fallback(
+            getattr(trainer.args, "save_strategy", SaveStrategy.NO)
+        )
+
+    @staticmethod
+    def _save_strategy_requires_final_checkpoint_fallback(save_strategy) -> bool:
+        """Return True when upstream may skip the terminal checkpoint save."""
+
+        return save_strategy == SaveStrategy.BEST
+
     def _maybe_save_final_checkpoint(  # noqa: PLR0912
         self,
         args,
@@ -65,8 +124,11 @@ class FinalCheckpointMixin:
         trainer = cast("_TrainerBase", self)
 
         save_strategy = getattr(args, "save_strategy", SaveStrategy.NO)
-        if save_strategy == SaveStrategy.NO:
-            logger.debug("Final checkpoint skipped because save_strategy is 'no'.")
+        if not self._save_strategy_requires_final_checkpoint_fallback(save_strategy):
+            logger.debug(
+                "Final checkpoint fallback skipped because save_strategy=%s is handled upstream.",
+                save_strategy,
+            )
             return
 
         should_save_rank = bool(getattr(args, "should_save", False))
@@ -128,6 +190,37 @@ class FinalCheckpointMixin:
 
         # Mirror Trainer.train() behaviour so callbacks observe the save event.
         trainer.callback_handler.on_save(args, state, control)
+
+    def _record_best_checkpoint_if_pending(self, checkpoint_dir: str) -> bool:
+        """Update best-checkpoint state when the just-saved checkpoint is the new best."""
+
+        pending_step = getattr(self, self._pending_best_checkpoint_step_attr, None)
+        global_step = getattr(self.state, "global_step", None)
+        setattr(self, self._pending_best_checkpoint_step_attr, None)
+
+        if getattr(self.args, "save_strategy", SaveStrategy.NO) != SaveStrategy.BEST:
+            return False
+        if not isinstance(global_step, int) or global_step <= 0:
+            return False
+        if pending_step != global_step:
+            return False
+        if not os.path.isdir(checkpoint_dir):
+            return False
+
+        self.state.best_model_checkpoint = checkpoint_dir
+        self.state.best_global_step = global_step
+        return True
+
+    def _get_current_checkpoint_dir(self, trial) -> str | None:
+        """Return the on-disk path for the current checkpoint save."""
+
+        trainer = cast("_TrainerBase", self)
+        global_step = getattr(self.state, "global_step", None)
+        if not isinstance(global_step, int) or global_step <= 0:
+            return None
+
+        run_dir = trainer._get_output_dir(trial=trial)
+        return self._format_checkpoint_dir(run_dir, global_step)
 
     def _final_checkpoint_exists(self, output_dir: str, step: int) -> bool:
         """Return True if the checkpoint directory (or flash record) already exists."""

@@ -18,6 +18,7 @@ from transformers.trainer_utils import SaveStrategy
 
 from ..config import SaveDelayConfig
 from ..utils import get_logger
+from ..utils.metric_key_lookup import metric_lookup_candidates
 
 logger = get_logger(__name__)
 
@@ -54,7 +55,7 @@ class SaveDelayCallback(TrainerCallback):
         self._release_logged = False
         self._pending_reset = False
         self._warned_missing_metric = False
-        self._metric_key_cache: Optional[str] = None
+        self._metric_key_cache: Optional[tuple[str, ...]] = None
         self._metric_epsilon = 1e-12
 
     def _in_delay_period(self, state: TrainerState) -> bool:
@@ -65,7 +66,9 @@ class SaveDelayCallback(TrainerCallback):
             return epoch < self.save_delay_epochs
         return False
 
-    def _resolve_metric_key(self, args: TrainingArguments) -> Optional[str]:
+    def _resolve_metric_keys(
+        self, args: TrainingArguments
+    ) -> Optional[tuple[str, ...]]:
         if self._metric_key_cache is not None:
             return self._metric_key_cache
 
@@ -73,9 +76,11 @@ class SaveDelayCallback(TrainerCallback):
         if not metric_name:
             return None
 
-        key = metric_name if metric_name.startswith("eval_") else f"eval_{metric_name}"
-        self._metric_key_cache = key
-        return key
+        keys = metric_lookup_candidates(str(metric_name))
+        if not keys:
+            return None
+        self._metric_key_cache = keys
+        return keys
 
     def _guard_metric(
         self, metric_value: float, greater_is_better: Optional[bool]
@@ -157,8 +162,8 @@ class SaveDelayCallback(TrainerCallback):
                 # Worker ranks do not receive metrics but must still block saving.
                 return
 
-            metric_key = self._resolve_metric_key(args)
-            if metric_key is None:
+            metric_keys = self._resolve_metric_keys(args)
+            if metric_keys is None:
                 if not self._warned_missing_metric:
                     logger.warning(
                         "SaveDelayCallback: save_strategy='best' requires metric_for_best_model to guard saves during the delay window."
@@ -166,15 +171,22 @@ class SaveDelayCallback(TrainerCallback):
                     self._warned_missing_metric = True
                 return
 
-            metric_value = metrics.get(metric_key)
+            metric_value = None
+            resolved_key = None
+            for metric_key in metric_keys:
+                metric_value = metrics.get(metric_key)
+                if metric_value is not None:
+                    resolved_key = metric_key
+                    break
             if metric_value is None:
                 if not self._warned_missing_metric:
                     logger.warning(
-                        "SaveDelayCallback: Metric '%s' not found in evaluation results; cannot delay best-checkpoint saves.",
-                        metric_key,
+                        "SaveDelayCallback: Metric candidates %s not found in evaluation results; cannot delay best-checkpoint saves.",
+                        list(metric_keys),
                     )
                     self._warned_missing_metric = True
                 return
+            del resolved_key
 
             greater_is_better = getattr(args, "greater_is_better", None)
 

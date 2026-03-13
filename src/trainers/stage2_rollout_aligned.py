@@ -38,6 +38,7 @@ from typing import (
 import numpy as np
 import torch
 import torch.nn.functional as F
+from transformers.trainer_utils import SaveStrategy
 from swift.trainers import Seq2SeqTrainer
 from swift.trainers.rlhf_trainer.utils import (
     get_gather_if_zero3_context,
@@ -57,6 +58,12 @@ from src.coord_tokens.codec import (
     token_to_int,
 )
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
+from src.utils.metric_key_lookup import (
+    metric_lookup_candidates,
+    metric_name_matches_key,
+    resolve_metric_value,
+    stage2_eval_metric_key,
+)
 
 from .rollout_matching.contracts import (
     GTObject,
@@ -8893,6 +8900,52 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return dl
 
+    def _determine_best_metric(self, metrics, trial):
+        """Resolve Stage-2 metric aliases before best-checkpoint selection.
+
+        `transformers.Trainer` looks up `eval_<metric_for_best_model>`, but this
+        trainer emits grouped eval keys like `eval/detection/mAP`.
+        """
+
+        is_new_best_metric = False
+
+        metric_name = getattr(self.args, "metric_for_best_model", None)
+        if metric_name is None:
+            return is_new_best_metric
+
+        resolved_metric = resolve_metric_value(metrics, str(metric_name))
+        if resolved_metric is None:
+            metric_candidates = list(metric_lookup_candidates(str(metric_name)))
+            display_metric = (
+                metric_candidates[1]
+                if len(metric_candidates) > 1
+                and metric_candidates[0] == str(metric_name).strip()
+                else (metric_candidates[0] if metric_candidates else str(metric_name))
+            )
+            raise KeyError(
+                f"The `metric_for_best_model` training argument is set to '{display_metric}', which is not found in the evaluation metrics. "
+                f"Tried aliases: {metric_candidates}. The available evaluation metrics are: {list(metrics.keys())}. "
+                "Consider changing the `metric_for_best_model` via the TrainingArguments."
+            )
+
+        _resolved_metric_key, metric_value = resolved_metric
+        operator = np.greater if self.args.greater_is_better else np.less
+
+        if self.state.best_metric is None:
+            self.state.best_metric = (
+                float("-inf") if self.args.greater_is_better else float("inf")
+            )
+
+        if operator(metric_value, self.state.best_metric):
+            self.state.best_metric = metric_value
+
+            if self.args.save_strategy in [SaveStrategy.STEPS, SaveStrategy.EPOCH]:
+                self.state.best_global_step = self.state.global_step
+
+            is_new_best_metric = True
+
+        return is_new_best_metric
+
     def evaluate(
         self,
         eval_dataset=None,
@@ -9664,62 +9717,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         )
 
         def _k(suffix: str) -> str:
-            if str(metric_key_prefix) == "eval":
-                if str(suffix).startswith("time/"):
-                    leaf = str(suffix)[len("time/") :]
-                    return f"eval/runtime/{leaf}"
-                if str(suffix).startswith("rollout/"):
-                    leaf = str(suffix)[len("rollout/") :]
-                    detection_keys = {
-                        "precision",
-                        "recall",
-                        "f1",
-                        "pred_objects",
-                        "gt_objects_total",
-                        "matched",
-                        "fp_total",
-                        "fn_total",
-                        "matched_maskiou_mean",
-                        "sample_any_match_rate",
-                        "mAP",
-                    }
-                    parsing_keys = {
-                        "gating_rejections",
-                        "parse_dropped_invalid",
-                        "parse_dropped_ambiguous",
-                        "parse_truncated_rate",
-                        "sample_valid_pred_rate",
-                    }
-                    description_keys = {
-                        "desc_pairs_total",
-                        "desc_exact_acc_on_matched",
-                        "desc_sem_enabled",
-                        "desc_sem_acc_on_matched",
-                        "desc_sem_sim_mean",
-                        "desc_sem_sim_count",
-                    }
-                    config_keys = {
-                        "prompt_variant_is_coco_80",
-                        "effective_score_mode_is_constant",
-                        "effective_score_mode_is_confidence_postop",
-                    }
-                    runtime_keys = {
-                        "trace_fallback_count",
-                        "vllm_decode_error_count",
-                        "coco_eval_ok",
-                    }
-                    if leaf in detection_keys:
-                        return f"eval/detection/{leaf}"
-                    if leaf in parsing_keys:
-                        return f"eval/parsing/{leaf}"
-                    if leaf in description_keys:
-                        return f"eval/description/{leaf}"
-                    if leaf in config_keys:
-                        return f"eval/config/{leaf}"
-                    if leaf in runtime_keys or leaf.startswith("coco_counter_"):
-                        return f"eval/runtime/{leaf}"
-                    return f"eval/runtime/{leaf}"
-            return f"{metric_key_prefix}_{suffix}"
+            return stage2_eval_metric_key(
+                metric_key_prefix=str(metric_key_prefix), suffix=str(suffix)
+            )
 
         metrics: Dict[str, float] = {}
         metrics[_k("time/runtime_s")] = float(runtime)
@@ -9954,13 +9954,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metric_for_best_model = str(
                 getattr(getattr(self, "args", None), "metric_for_best_model", "") or ""
             ).strip()
-            metric_for_best_model_norm = str(metric_for_best_model)
-            if metric_for_best_model_norm.startswith("eval_"):
-                metric_for_best_model_norm = metric_for_best_model_norm[len("eval_") :]
             coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
             if coco_ok <= 0.0:
                 coco_err = str(recv_payload.get("error", "") or "").strip()
-                if metric_for_best_model_norm == "eval/detection/mAP":
+                if metric_name_matches_key(
+                    metric_for_best_model,
+                    stage2_eval_metric_key("eval", "rollout/mAP"),
+                ):
                     msg = (
                         "Eval-step COCO/mAP failed while metric_for_best_model targets eval/detection/mAP; "
                         "aborting to avoid invalid best-checkpoint selection. "

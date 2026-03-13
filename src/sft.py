@@ -81,10 +81,7 @@ def resolve_trainer_cls(train_args):
     else:
         trainer_cls = TrainerFactory.get_trainer_cls(train_args)
 
-    save_last_epoch = getattr(train_args, "save_last_epoch", True)
-    if save_last_epoch:
-        return with_final_checkpoint(trainer_cls)
-    return trainer_cls
+    return with_final_checkpoint(trainer_cls)
 
 
 # Use the model's native chat_template (JSON/Jinja) shipped with the tokenizer
@@ -1385,7 +1382,6 @@ def main():
     # This avoids optional external dependency failures in data loading.
     augmenter = None
     bypass_prob = float(custom_config.bypass_prob)
-    curriculum_cfg = None
     if custom_config.augmentation:
         logger.warning(
             "custom.augmentation is configured but ignored because augmentation is disabled in this repo."

@@ -1,11 +1,13 @@
 import os
-from dataclasses import dataclass
+import json
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import Trainer, TrainingArguments
+
+from src.trainers import with_final_checkpoint
 
 
 class _TinyDataset(torch.utils.data.Dataset):
@@ -112,3 +114,175 @@ def test_audited_configs_enable_save_only_model() -> None:
             f"{path} must set training.save_only_model=true via YAML inheritance "
             f"(got {val!r})"
         )
+
+
+def test_best_save_strategy_records_best_checkpoint_state(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="best",
+        metric_for_best_model="loss",
+        greater_is_better=False,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args, "save_last_epoch", False)
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=1)
+    trainer.state.global_step = 1
+    assert trainer._determine_best_metric({"eval_loss": 0.25}, trial=None) is True
+
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    ckpt = out_dir / "checkpoint-1"
+    assert trainer.state.best_model_checkpoint == str(ckpt)
+    assert trainer.state.best_global_step == 1
+
+    state = json.loads((ckpt / "trainer_state.json").read_text())
+    assert state["best_model_checkpoint"] == str(ckpt)
+    assert state["best_global_step"] == 1
+
+
+def test_final_checkpoint_callback_installation_tracks_configured_fallback_policy(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+
+    args_best = TrainingArguments(
+        output_dir=str(out_dir / "best"),
+        per_device_train_batch_size=2,
+        save_strategy="best",
+        metric_for_best_model="loss",
+        greater_is_better=False,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args_best, "save_last_epoch", True)
+    trainer_best = trainer_cls(
+        model=_TinyModel(),
+        args=args_best,
+        train_dataset=_TinyDataset(),
+    )
+    assert hasattr(trainer_best, trainer_best._final_checkpoint_callback_attr)
+
+    args_best_no_final = TrainingArguments(
+        output_dir=str(out_dir / "best_no_final"),
+        per_device_train_batch_size=2,
+        save_strategy="best",
+        metric_for_best_model="loss",
+        greater_is_better=False,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args_best_no_final, "save_last_epoch", False)
+    trainer_best_no_final = trainer_cls(
+        model=_TinyModel(),
+        args=args_best_no_final,
+        train_dataset=_TinyDataset(),
+    )
+    assert not hasattr(
+        trainer_best_no_final, trainer_best_no_final._final_checkpoint_callback_attr
+    )
+
+    args_steps = TrainingArguments(
+        output_dir=str(out_dir / "steps"),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=10,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args_steps, "save_last_epoch", True)
+    trainer_steps = trainer_cls(
+        model=_TinyModel(),
+        args=args_steps,
+        train_dataset=_TinyDataset(),
+    )
+    assert not hasattr(trainer_steps, trainer_steps._final_checkpoint_callback_attr)
+
+
+def test_non_best_followup_save_preserves_best_checkpoint_state(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="best",
+        metric_for_best_model="loss",
+        greater_is_better=False,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args, "save_last_epoch", False)
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=2)
+    trainer.state.global_step = 1
+    assert trainer._determine_best_metric({"eval_loss": 0.25}, trial=None) is True
+
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    best_ckpt = out_dir / "checkpoint-1"
+
+    trainer.state.global_step = 2
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    final_ckpt = out_dir / "checkpoint-2"
+    assert final_ckpt.is_dir()
+    assert trainer.state.best_model_checkpoint == str(best_ckpt)
+    assert trainer.state.best_global_step == 1
+
+    state = json.loads((final_ckpt / "trainer_state.json").read_text())
+    assert state["best_model_checkpoint"] == str(best_ckpt)
+    assert state["best_global_step"] == 1

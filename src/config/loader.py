@@ -586,13 +586,6 @@ class ConfigLoader:
             )
 
         try:
-            setattr(inner_args, "save_last_epoch", save_last_epoch)
-        except (AttributeError, TypeError) as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Unable to attach save_last_epoch to inner training arguments; ensure ms-swift exposes this attribute."
-            ) from exc
-
-        try:
             setattr(inner_args, "visual_kd_config", config.custom.visual_kd)
         except (AttributeError, TypeError) as exc:  # pragma: no cover
             raise RuntimeError(
