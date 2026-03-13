@@ -28,7 +28,7 @@ from src.trainers.teacher_forcing.module_registry import (
 )
 
 from .rollout_matching_schema import RolloutMatchingConfig
-from .strict_dataclass import parse_dataclass_strict
+from .strict_dataclass import dataclass_asdict_no_none, parse_dataclass_strict
 
 
 AllowedNorm = Literal["none", "norm100", "norm1000"]
@@ -105,6 +105,7 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_wait_timeout_s",
     "packing_length_cache_persist_every",
     "packing_length_precompute_workers",
+    "encoded_sample_cache",
 }
 
 
@@ -474,6 +475,66 @@ class SaveDelayConfig:
         steps = payload.get("steps")
         epochs = payload.get("epochs")
         return cls.from_raw(steps, epochs)
+
+
+@dataclass(frozen=True)
+class EncodedSampleCacheConfig:
+    enabled: bool = False
+    root_dir: Optional[str] = None
+    ineligible_policy: Literal["error", "bypass"] = "error"
+    wait_timeout_s: int = 7200
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError("training.encoded_sample_cache.enabled must be a boolean")
+
+        root_dir = self.root_dir
+        if root_dir is not None:
+            root_dir = str(root_dir).strip()
+            if not root_dir:
+                raise ValueError(
+                    "training.encoded_sample_cache.root_dir must be a non-empty string when provided"
+                )
+            object.__setattr__(self, "root_dir", root_dir)
+
+        policy = str(self.ineligible_policy or "").strip().lower()
+        if policy not in {"error", "bypass"}:
+            raise ValueError(
+                "training.encoded_sample_cache.ineligible_policy must be one of "
+                "{'error', 'bypass'}"
+            )
+        object.__setattr__(
+            self, "ineligible_policy", cast(Literal["error", "bypass"], policy)
+        )
+
+        wait_timeout_raw = self.wait_timeout_s
+        if isinstance(wait_timeout_raw, bool):
+            raise TypeError(
+                "training.encoded_sample_cache.wait_timeout_s must be an integer"
+            )
+        try:
+            wait_timeout = int(wait_timeout_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "training.encoded_sample_cache.wait_timeout_s must be an integer"
+            ) from exc
+        if wait_timeout < 0:
+            raise ValueError(
+                "training.encoded_sample_cache.wait_timeout_s must be >= 0 "
+                "(set 0 to wait indefinitely)"
+            )
+        object.__setattr__(self, "wait_timeout_s", wait_timeout)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "EncodedSampleCacheConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(
+            cls, payload, path="training.encoded_sample_cache"
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return dataclass_asdict_no_none(self)
 
 # warnings: this is deprecated and not used
 @dataclass(frozen=True)
@@ -1700,6 +1761,11 @@ class TrainingConfig:
         _validate_section_keys_strict(
             "training", training, allowed=_training_allowed_keys()
         )
+        if "encoded_sample_cache" in training:
+            encoded_sample_cache = EncodedSampleCacheConfig.from_mapping(
+                training.get("encoded_sample_cache")
+            )
+            training["encoded_sample_cache"] = encoded_sample_cache.to_mapping()
 
         stage2_ab_raw = data.pop("stage2_ab", None)
         rollout_matching_raw = data.pop("rollout_matching", None)
