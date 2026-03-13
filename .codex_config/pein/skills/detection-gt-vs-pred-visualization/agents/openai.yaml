@@ -1,0 +1,4 @@
+interface:
+  display_name: "Detection Visualization"
+  short_description: "Canonical detection GT/pred visualization"
+  default_prompt: "Use $detection-gt-vs-pred-visualization to render or modify detection GT/pred visualizations through the shared CoordExp pipeline and contract."
