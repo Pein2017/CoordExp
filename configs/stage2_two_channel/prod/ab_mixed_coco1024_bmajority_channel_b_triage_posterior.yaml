@@ -1,10 +1,10 @@
 extends: ./ab_mixed_coco1024_bmajority.yaml
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
 
 training:
-  run_name: stage1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1
+  run_name: stage2_ul_v1_ckpt-eff_size_96-b_ratio_0.75-triage_posterior-epoch_1
   output_dir: output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior
   logging_dir: tb/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior
 
