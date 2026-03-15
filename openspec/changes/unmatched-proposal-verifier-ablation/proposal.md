@@ -1,106 +1,166 @@
 ## Why
 
-CoordExp already exposes several ways to score generated detections, but the
-current tooling still leaves one important research question unresolved:
+The original goal of this change was never just to show that a teacher-forced
+proxy can separate clean positives from synthetic negatives.
+The real question is the one stated at the start of this study:
 
-- when a rollout prediction is unmatched to GT, is it usually a dead / duplicate
-  / bad proposal,
-- or is it often a real visually grounded object that the annotations miss or
+- when a rollout proposal is unmatched to GT, is it a dead / duplicate / bad
+  proposal,
+- or is it often a real visually grounded object that annotations miss or
   underspecify?
 
-This matters directly for the next pseudo-labeling step.
-If unmatched proposals already carry a reliable verifier signal, we can promote
-them softly without training a new detector head or changing the model
-architecture.
+That question is deployment-facing, because it determines whether unmatched
+proposals can be promoted later as soft pseudo-labels.
 
-The repo already has the core ingredients we need:
+The current implementation already established something useful:
 
-- existing checkpoint families with different behavior,
-- inference and evaluation artifacts that preserve proposal order and
-  matched-vs-unmatched buckets,
-- teacher-forced forward utilities,
-- and confidence post-op code that proves object-level offline scoring is a good
-  fit for this stack.
+- on the clean GT-vs-hard-negative slice,
+  `counterfactual` is stronger than plain `commitment`.
 
-What is missing is one explicit, reproducible offline ablation that compares
-proposal-verification proxies on a small shared subset using the existing model,
-vision tower, and teacher-forced forward path.
+But that is not yet a trustworthy end conclusion for pseudo-label promotion,
+because the current evidence chain is incomplete:
+
+- successful runs mainly validate the clean teacher-forced slice,
+- rollout-facing unmatched analysis is not yet a reliable primary benchmark,
+- temperature effects cannot be trusted when rollout collection itself is not
+  first screened for validity,
+- and there is no small manual audit layer anchoring the meaning of
+  high-scoring unmatched proposals.
+
+In other words, the current study can say:
+
+- encode-side verification has signal,
+
+but it cannot yet safely say:
+
+- unmatched rollout proposals are reliable pseudo-label candidates,
+- nor how rollout temperature changes that conclusion.
+
+So this change now needs to be reframed around a more trustworthy evidence
+stack rather than a single monolithic run.
 
 ## What Changes
 
-- Add a new capability, `unmatched-proposal-verifier-study`, for a reproducible
-  offline ablation over unmatched proposal verifiers.
-- Keep the study intentionally narrow and config-first:
-  - no new detector head,
-  - no DETR-style branch,
-  - no large-scale training,
-  - no changes to upstream HF model files.
-- Define one study workflow that:
-  - samples a deterministic subset from a COCO 1024 JSONL,
-  - records the source dataset root explicitly when the sampled subset is
-    materialized outside the source JSONL directory,
-  - runs rollout proposal collection with the existing inference pipeline using
-    `backend.type: vllm`,
-  - evaluates proposals with the existing detection evaluator using
-    `f1ish_pred_scope: all`,
-  - builds GT positives and GT-derived hard negatives offline,
-  - freezes the collected proposal artifacts before scoring/reporting,
-  - scores proposals with one fixed-sequence teacher-forced baseline forward on
-    the original image and batched masked teacher-forced forwards on the same
-    fixed assistant sequence,
-  - aggregates metrics, plots, and a concise markdown report.
-- Make the initial matrix explicit and editable:
-  - checkpoints default to:
-    - `output/stage2_ab/prod/ul-res_1024-ckpt_300_merged`
-    - `output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged`
-  - dataset defaults to:
-    - `public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
-  - allow:
-    - `public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
-  - default sample count:
-    - `200`
-  - initial rollout decode settings:
-    - `temperature: 0.1`
-    - `repetition_penalty: 1.1`
-    - `infer.generation.batch_size: 16`
-    - `infer.backend.server_options.vllm_gpu_memory_utilization: 0.9`
-  - extend the collection matrix to support an explicit temperature sweep over
-    multiple rollout temperatures while keeping the rest of the study controls
-    fixed
-  - prompt/control provenance must be recorded per checkpoint:
-    - `prompt_variant`
-    - `object_field_order`
-    - evaluator semantic model path
-- Keep proxy scope small and auditable:
-  - primary commitment = desc-only teacher-forced average log-probability,
-  - primary counterfactual = commitment drop under bbox masking,
-  - primary combination = transparent linear combination,
-  - optional logistic calibration only as a secondary comparison.
+This change should be tightened into an authority-first offline study with
+three explicit evidence layers:
 
-## Capabilities
+1. `Layer A: clean verifier benchmark`
+2. `Layer B: rollout proposal benchmark`
+3. `Layer C: small manual audit benchmark`
 
-### Added Capabilities
-- `unmatched-proposal-verifier-study`: deterministic subset selection, vLLM
-  proposal collection, GT-positive and hard-negative table construction,
-  teacher-forced proxy scoring, cross-checkpoint aggregation, and concise study
-  reporting for unmatched proposal verification.
+### Layer A: clean verifier benchmark
+
+Keep the existing GT positives and deterministic GT-derived hard negatives.
+
+Purpose:
+
+- answer whether `commitment`, `counterfactual`, and their combination have
+  real grounding signal in the cleanest possible setting,
+- isolate verifier quality from decode randomness, stop behavior, and parser
+  instability.
+
+This layer remains necessary, but it is no longer sufficient by itself.
+
+### Layer B: rollout proposal benchmark
+
+This is the core deployment-facing layer and must become primary for the final
+recommendation.
+
+It should be split into two stages:
+
+- `B1. collection validity gate`
+- `B2. rollout proposal scoring`
+
+`B1` exists because temperature comparisons are not trustworthy unless the
+proposal population is first shown to be healthy enough for analysis.
+
+Each checkpoint × temperature run must first record collection-health metrics
+such as:
+
+- total prediction count,
+- non-empty prediction image rate,
+- matched count,
+- unmatched count,
+- ignored count,
+- parse / invalid-rollout diagnostics,
+- duplicate-like rate.
+
+Only runs that pass an explicit validity gate should enter the main
+temperature-comparison tables.
+
+`B2` then scores the rollout proposals with the existing teacher-forced verifier
+path and compares:
+
+- matched vs unmatched separation,
+- unmatched top-k proposal quality,
+- score distributions by temperature,
+- and whether `counterfactual` adds useful signal beyond `commitment`.
+
+### Layer C: small manual audit benchmark
+
+Add a small manually auditable unmatched subset.
+
+Purpose:
+
+- ground the meaning of high-scoring unmatched proposals,
+- distinguish real visible objects from duplicates, wrong-location proposals,
+  and dead / hallucinated proposals,
+- provide the strongest trust anchor before any pseudo-label promotion claim.
+
+This manual audit should remain small and lightweight, but it should be treated
+as required for the final recommendation, not optional decoration.
+
+## Temperature Scope
+
+The authoritative temperature sweep should be reduced to four explicit values:
+
+- `0.0`
+- `0.3`
+- `0.5`
+- `0.7`
+
+Reason:
+
+- `0.0` is the greedy baseline,
+- `0.3 / 0.5 / 0.7` cover low / medium / high decode stochasticity,
+- extra points such as `0.05`, `0.1`, or `1.0` add runtime cost without clearly
+  improving interpretability in the current study.
+
+The temperature sweep should be interpreted primarily through rollout proposal
+collection and unmatched quality, not through the clean GT slice alone.
+
+## Study Contract Changes
+
+The study should move from a single monolithic “run everything and report” shape
+to a staged workflow:
+
+- prepare subset and GT tables,
+- collect rollouts,
+- validate collection health,
+- score only collection-valid rollout runs,
+- aggregate reports,
+- run a small manual audit.
+
+This change is still intentionally narrow:
+
+- no new detector head,
+- no architectural changes,
+- no retraining,
+- no DETR-style branch,
+- no upstream HF model edits.
 
 ## Impact
 
-- No training objective or model architecture changes are required.
-- The study reuses existing infer / eval / teacher-forced infrastructure rather
-  than introducing a parallel runtime stack.
-- Proposal collection is accelerated with vLLM, but verifier scoring remains an
-  offline teacher-forced analysis path over frozen proposal artifacts.
-- vLLM collection is treated as best-effort repeatable rather than byte-identical
-  deterministic; deterministic claims apply to subset selection, study config,
-  and fixed-sequence teacher-forced scoring after collection artifacts are
-  frozen.
-- The study treats duplicate suppression as an external concern:
-  duplicate-like metadata may be carried for analysis, but the core question is
-  realism / groundedness of unmatched proposals.
-- The output is intended to support a later decision about soft pseudo-label
-  promotion, not to claim a final production policy by itself.
-- The full run should also answer whether rollout temperature materially changes
-  unmatched proposal quality and the usefulness of commitment / counterfactual
-  as verifier proxies.
+This revised framing should produce a conclusion that is substantially more
+trustworthy for the original pseudo-label question:
+
+- strongest single proxy on the clean slice,
+- whether the proxy remains useful on real rollout unmatched proposals,
+- how decode temperature changes proposal quality,
+- and whether unmatched promotion is justified at all.
+
+The key shift is:
+
+- clean GT evidence remains necessary,
+- rollout validity and manual unmatched audit become mandatory for a final
+  pseudo-label recommendation.

@@ -1,6 +1,7 @@
 run:
   name: unmatched-proposal-verifier-smoke
   output_dir: output/analysis
+  stages: [prepare, collect, gate, score, audit, report]
 
 dataset:
   jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
@@ -15,7 +16,7 @@ collection:
   backend_mode: hf
   device: cuda:7
   cuda_visible_devices: null
-  temperature: 0.1
+  temperature: 0.3
   top_p: 0.9
   max_new_tokens: 512
   repetition_penalty: 1.1
@@ -26,6 +27,11 @@ collection:
   tensor_parallel_size: 1
   max_model_len: 2048
   reuse_existing: true
+
+collection_gate:
+  nonempty_pred_image_rate_min: 0.3
+  pred_count_total_min: 10
+  unmatched_count_min: 2
 
 eval:
   semantic_model: model_cache/all-MiniLM-L6-v2-local
@@ -49,6 +55,14 @@ report:
   histogram_bins: 12
   top_k_values: [5, 10]
   audit_pack_top_n: 12
+  authoritative_temperatures: [0.0, 0.3, 0.5, 0.7]
+  authoritative_temperatures: [0.0, 0.3, 0.5, 0.7]
+  audit_labels_path: null
+
+manual_audit:
+  sample_count: 16
+  score_key: combined_linear
+  label_path: null
 
 checkpoints:
   - name: ul-res_1024-ckpt_300_merged

@@ -1,129 +1,105 @@
-## 1. OpenSpec Foundation
+## 1. Spec Reset
 
-- [x] 1.1 Add a delta spec for `unmatched-proposal-verifier-study`.
-- [x] 1.2 Validate the change artifacts with:
+- [x] 1.1 Reconcile the active change artifacts with the authority-first study
+  framing.
+- [x] 1.2 Validate the updated change artifacts with:
   - `openspec validate unmatched-proposal-verifier-ablation --type change --strict --no-interactive`
 
-## 2. Study Configuration And Subset Control
+## 2. Staged Workflow Refactor
 
-- [x] 2.1 Add a study config that records:
-  - checkpoint list
-  - dataset JSONL path
-  - sample count
-  - seed
-  - rollout backend and decode knobs
-  - `run.root_image_dir` when the subset lives outside the source dataset root
-  - `prompt_variant`
-  - `object_field_order`
-  - evaluator semantic model path
-  - verifier scoring knobs
-- [x] 2.2 Support deterministic subset sampling from:
-  - `public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
-  - `public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
-- [x] 2.3 Default to:
-  - `val.coord.jsonl`
-  - `N=200`
-  - the two merged UL checkpoints supplied in this change
+- [x] 2.1 Refactor the study into explicit stages:
+  - subset / GT preparation
+  - rollout collection
+  - collection-health summarization and gating
+  - rollout scoring for collection-valid runs
+  - report aggregation
+  - manual audit artifact preparation / ingestion
+- [x] 2.2 Emit stage manifests or equivalent resumable provenance artifacts.
+- [x] 2.3 Ensure later stages can reuse frozen earlier-stage outputs.
 
-## 3. Rollout Proposal Collection
+## 3. Clean Verifier Benchmark
 
-- [x] 3.1 Reuse the existing infer pipeline to collect proposals with:
-  - `backend.type: vllm`
-  - `temperature: 0.1`
-  - `repetition_penalty: 1.1`
-  - `infer.generation.batch_size: 16`
-  - `infer.backend.server_options.vllm_gpu_memory_utilization: 0.9`
-- [x] 3.1a Treat vLLM proposal collection as best-effort repeatable and freeze
-  the collected rollout artifacts before final scoring/reporting.
-- [x] 3.2 Reuse the existing detection evaluator to derive matched vs unmatched
-  proposal buckets with:
-  - `f1ish_pred_scope: all`
-  - a primary IoU threshold suitable for the report
-- [x] 3.3 Materialize a proposal-level table that preserves:
-  - checkpoint
-  - record / image identifiers
-  - proposal index
-  - desc
-  - bbox
-  - matched / unmatched status
-  - nearest-GT analysis fields where available
+- [x] 3.1 Preserve the clean GT-positive / GT-hard-negative benchmark.
+- [x] 3.2 Keep the negative-family metadata explicit and sliceable.
+- [x] 3.3 Report `commitment`, `counterfactual`, and combination metrics on the
+  clean benchmark.
 
-## 4. GT Positives And Hard Negatives
+## 4. Rollout Collection Validity Gate
 
-- [x] 4.1 Build a GT-positive table from the sampled subset.
-- [x] 4.2 Build GT-derived hard negatives with deterministic families:
-  - same-desc wrong-location jitter
-  - desc / box cross-swap
-  - same-class wrong-location
-  - optional oversized / group-box negatives
-- [x] 4.3 Keep the negative-construction metadata explicit enough for audit and
-  report slicing.
+- [x] 4.1 Add collection-health outputs per checkpoint × temperature with at
+  least:
+  - `pred_count_total`
+  - `pred_count_per_image_mean`
+  - `nonempty_pred_image_rate`
+  - `matched_count`
+  - `unmatched_count`
+  - `ignored_count`
+  - `invalid_rollout_count`
+  - parser failure counts
+  - duplicate-like rate
+- [x] 4.2 Add:
+  - `collection_valid`
+  - `collection_invalid_reason`
+- [x] 4.3 Exclude collection-invalid runs from the main rollout comparison
+  tables while preserving them in artifacts / appendices.
+- [x] 4.4 Explicitly verify the gate behavior with artifacts:
+  - collection-valid runs enter the main comparison tables
+  - collection-invalid runs remain visible in collection-health outputs /
+    appendices but not in the main comparison tables
 
-## 5. Teacher-Forced Proxy Scoring
+## 5. Rollout Proposal Benchmark
 
-- [x] 5.1 Reuse the existing teacher-forced encode / forward utilities to score
-  desc-only commitment from one fixed teacher-forced assistant sequence on the
-  original image.
-- [x] 5.2 Add bbox-masked counterfactual scoring by reusing that same fixed
-  teacher-forced sequence and batching masked images where feasible.
-- [x] 5.3 Materialize one normative fixed-sequence source mode for v1:
-  - `canonicalized_fixed_sequence_v1`
-  - fail fast on sequence canonicalization mismatches.
-- [x] 5.4 Emit per-proposal score columns for:
-  - commitment
-  - masked commitment
-  - counterfactual
-  - simple combined score
-  - optional logistic score
-- [x] 5.5 Emit scoring provenance and failure metadata:
-  - `scoring_status`
-  - `failure_reason`
-  - exclusion-from-metrics accounting
-
-## 6. Reporting And Audit Artifacts
-
-- [x] 6.1 Compute and save:
-  - AUROC
-  - AUPRC
-  - score distributions
+- [x] 5.1 Score rollout proposals only for collection-valid runs.
+- [x] 5.2 Report:
   - matched-vs-unmatched separation
-  - commitment / counterfactual correlation
-  - top-k unmatched precision-style analysis
-  - calibration / reliability bins, or an explicit skip reason
-- [x] 6.2 Produce a concise markdown report that states:
-  - exact subset used
-  - checkpoints compared
-  - prompt/control provenance used for scoring
-  - proxy definitions
-  - quantitative results
-  - qualitative observations
-  - recommendation for pseudo-label promotion
-- [x] 6.3 Prepare an optional small unmatched audit pack with overlays / crops
-  for later manual review.
-- [x] 6.4 Document the study entrypoint, config keys, and artifact layout in a
-  small runbook or canonical docs update.
+  - unmatched top-k proxy analysis
+  - proposal score distributions
+  - checkpoint × temperature proposal statistics
+- [x] 5.3 Make rollout-facing temperature conclusions depend on this layer, not
+  the clean GT slice alone.
 
-## 7. End-To-End Verification
+## 6. Manual Unmatched Audit
 
-- [x] 7.1 Run a smallest end-to-end smoke on:
-  - 1 checkpoint
-  - 8 sampled images
-- [x] 7.2 Verify the smoke emits:
-  - subset metadata
-  - infer / eval artifacts
-  - GT-positive and hard-negative tables
-  - scored proposal table
-  - aggregate report
-- [ ] 7.3 Run the default two-checkpoint matrix after the smoke passes.
+- [x] 6.1 Prepare a small manually auditable unmatched subset.
+- [x] 6.2 Stratify the audit subset by:
+  - checkpoint
+  - temperature
+  - score quantile
+  - nearest-GT weak-overlap bucket
+- [x] 6.3 Define and document the audit label schema:
+  - `real_visible_object`
+  - `duplicate_like`
+  - `wrong_location`
+  - `dead_or_hallucinated`
+  - `uncertain`
+- [x] 6.4 Collect / ingest manual audit labels into a canonical artifact.
+- [x] 6.5 Regenerate the final report using the audit labels.
+- [x] 6.6 Use the manual audit layer in the final recommendation logic.
 
-## 8. Temperature Sweep Extension
+## 7. Temperature Sweep
 
-- [ ] 8.1 Extend the study config to accept an explicit list of rollout
-  temperatures for the full run while keeping the other collection/scoring
-  knobs fixed.
-- [ ] 8.2 Materialize per-temperature collection / scoring artifacts separately
-  and record temperature in the checkpoint manifests and proposal outputs.
-- [ ] 8.3 Compare verifier metrics and proposal distributions across
-  temperatures in the aggregate report.
-- [ ] 8.4 Run the full temperature sweep on the merged `main` branch and save a
-  concise cross-temperature summary.
+- [x] 7.1 Restrict the authoritative sweep to exactly:
+  - `0.0`
+  - `0.3`
+  - `0.5`
+  - `0.7`
+- [x] 7.2 Record temperature in all per-run manifests and aggregate tables.
+- [x] 7.3 Compare collection-health, rollout proxy metrics, and audit outcomes
+  across these four temperatures.
+- [x] 7.4 Keep any auxiliary / failed / exploratory temperatures out of the
+  authoritative main conclusion tables and label them appendix-only.
+
+## 8. Final Report
+
+- [x] 8.1 Produce separate summary tables for:
+  - clean GT-vs-hard-negative evidence
+  - rollout collection health
+  - rollout proposal scoring
+  - manual unmatched audit
+- [x] 8.2 Explicitly answer:
+  - strongest single proxy
+  - whether combination helps
+  - whether rollout evidence is valid enough for interpretation
+  - whether pseudo-label promotion is actually justified
+- [x] 8.3 Downgrade the final conclusion to “promising but not yet
+  promotion-ready” whenever rollout or audit evidence is insufficient.
