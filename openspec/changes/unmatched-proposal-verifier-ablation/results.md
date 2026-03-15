@@ -42,6 +42,14 @@ Manual audit artifacts:
 - `output/analysis/unmatched-proposal-verifier-manual-audit-v1/manual_audit_recommended96.csv`
 - `output/analysis/unmatched-proposal-verifier-manual-audit-v1/manual_audit_labels.jsonl`
 
+Additional comparative artifacts for the later checkpoint extension:
+
+- `temp/stage1_stage2a_authoritative_summary.csv`
+- `temp/stage1_stage2a_report_summary.csv`
+- `temp/stage1_stage2a_image_trajectories.csv`
+- `temp/stage1_stage2a_high_cardinality_cases.json`
+- `temp/stage1_stage2a_unmatched_topk_summary.csv`
+
 ## Layer A: Clean Verifier Benchmark
 
 This layer is stable across temperatures because it does not depend on rollout
@@ -277,6 +285,405 @@ This note-level evidence strongly supports a mixed-distribution interpretation:
 - unmatched proposals are not pure hallucinations
 - but they are also not promotion-ready by default
 - the largest mass is wrong-location / oversized / group-box proposals
+
+## Additional Checkpoint Extension: Stage1 vs Stage2a
+
+After the main UL-checkpoint study closed out, the same authoritative
+`stage2_parity_vllm` experiment was repeated for two additional checkpoints:
+
+- `stage1-coco80-ckpt-1832-merged`
+- `stage2a-eff64-softctx2-merged`
+
+The experiment contract was kept fixed:
+
+- same subset size (`200`)
+- same dataset (`coco 1024 val`)
+- same prompt controls (`coco_80`, `desc_first`)
+- same temperatures (`0.0 / 0.3 / 0.5 / 0.7`)
+- same verifier/scoring pipeline
+
+These runs did **not** include a fresh manual audit layer, so they provide a
+useful rollout-personality comparison, but they do not change the main
+pseudo-label-readiness conclusion.
+
+### Clean-Slice Comparison
+
+The two checkpoints are nearly indistinguishable on the clean verifier slice.
+
+For `stage1-coco80-ckpt-1832-merged`:
+
+- `commitment`: AUROC `0.5015`, AUPRC `0.3004`
+- `counterfactual`: AUROC `0.6183`, AUPRC `0.4644`
+- `combined_linear`: AUROC `0.5460`, AUPRC `0.3935`
+
+For `stage2a-eff64-softctx2-merged`:
+
+- `commitment`: AUROC `0.5019`, AUPRC `0.3019`
+- `counterfactual`: AUROC `0.6231`, AUPRC `0.4734`
+- `combined_linear`: AUROC `0.5529`, AUPRC `0.4056`
+
+Interpretation:
+
+- the main difference between these two checkpoints is not clean teacher-forced
+  verifier ability
+- the main difference is rollout behavior
+
+### Rollout Collection Personality
+
+`stage2a-eff64-softctx2-merged` is more aggressive at low temperature.
+
+At `t=0.0`:
+
+- `stage1`: `pred_total=879`, `matched=429`, `unmatched=450`,
+  `duplicate_like_rate=0.1854`, `degenerate=5`
+- `stage2a`: `pred_total=1087`, `matched=460`, `unmatched=626`,
+  `duplicate_like_rate=0.2199`, `degenerate=72`
+
+At `t=0.7`:
+
+- `stage1`: `pred_total=590`, `matched=294`, `unmatched=291`,
+  `duplicate_like_rate=0.0085`
+- `stage2a`: `pred_total=614`, `matched=267`, `unmatched=334`,
+  `duplicate_like_rate=0.0228`
+
+Interpretation:
+
+- both checkpoints share the same broad temperature trend
+- but `stage2a` preserves a wider, noisier unmatched population
+- `stage1` is more conservative and less degenerate
+
+### Single-Image Trajectory Behavior
+
+Object-level trajectory files again support the cardinality hypothesis.
+
+From `temp/stage1_stage2a_image_trajectories.csv`:
+
+- `stage1`: `mean_swing=6.32`, `median_swing=3`, `max_swing=117`
+- `stage2a`: `mean_swing=6.72`, `median_swing=4`, `max_swing=125`
+
+Representative mode-switch examples:
+
+- `stage1`, `images/val2017/000000258911.jpg`: `128 -> 11 -> 14 -> 16`
+- `stage1`, `images/val2017/000000039405.jpg`: `1 -> 27 -> 22 -> 0`
+- `stage2a`, `images/val2017/000000425361.jpg`: `127 -> 9 -> 9 -> 2`
+- `stage2a`, `images/val2017/000000381587.jpg`: `23 -> 0 -> 28 -> 27`
+
+These trajectories again show that rollout mode-switching, not pure geometry,
+dominates the behavior.
+
+### High-Cardinality Cases
+
+The most extreme proposal explosions are not all the same.
+
+#### Clear collapse / duplication cases
+
+- `stage1 @ t=0.0`, `images/val2017/000000258911.jpg`
+  - `pred_count=128`
+  - `person x128`
+  - `dup_any_rate=0.977`
+- `stage2a @ t=0.0`, `images/val2017/000000425361.jpg`
+  - `pred_count=127`
+  - `cup x119`
+  - `dup_any_rate=0.976`
+  - `near_full_rate=0.984`
+- `stage1 @ t=0.3`, `images/val2017/000000046804.jpg`
+  - `pred_count=26`
+  - `sheep x26`
+  - `dup_any_rate=0.885`
+
+Interpretation:
+
+- `stage1` low-temperature collapse is more often person/sheep-centric
+- `stage2a` low-temperature collapse is more likely to involve household /
+  clutter categories such as `cup`
+
+#### High-count but partly healthy crowded-scene cases
+
+- `stage1 @ t=0.0`, `images/val2017/000000238410.jpg`
+  - `pred_count=34`
+  - `person/chair/bottle/wine glass` mixture
+  - `dup_any_rate=0.0`
+- `stage2a @ t=0.3`, same image
+  - `pred_count=32`
+  - similar mixture
+  - `dup_any_rate=0.031`
+- `stage2a @ t=0.5`, `images/val2017/000000381587.jpg`
+  - `pred_count=28`
+  - `bowl/cup/person` mixture
+  - `dup_any_rate=0.0`
+
+Interpretation:
+
+- not every high-cardinality image is bad
+- some genuinely reflect crowded-scene proposal richness
+- but the collapse cases remain numerous enough to matter
+
+### Rollout Proxy Comparison
+
+Overall matched-vs-unmatched separation is slightly better for `stage1` in the
+more practical `0.5 / 0.7` regime.
+
+Examples:
+
+- `stage1 @ t=0.5`: best rollout AUROC `combined_linear = 0.6340`
+- `stage2a @ t=0.5`: best rollout AUROC `combined_linear = 0.6089`
+- `stage1 @ t=0.7`: best rollout AUROC `combined_linear = 0.6530`
+- `stage2a @ t=0.7`: best rollout AUROC `counterfactual = 0.6404`
+
+However, `stage2a` has an interesting top-k behavior:
+
+- for several `t>=0.3` settings, `commitment` top-25 unmatched proposals have
+  surprisingly strong weak-IoU quality
+- e.g. `stage2a @ t=0.3`, top-25 commitment-ranked unmatched has
+  `IoU>=0.3 = 0.72` with very low duplicate rate
+
+Interpretation:
+
+- `stage2a` is not simply “worse”
+- it is wider and noisier at the population level
+- but some of its semantic top-k slices are stronger than expected
+
+### Missing Token-Level Trace
+
+One limitation of this checkpoint extension is that all eight runs wrote empty
+`pred_token_trace.jsonl` files.
+
+This means:
+
+- token-by-token generation trajectory is not available
+- the usable trajectory evidence is object-level only
+- all conclusions in this section are based on:
+  - `gt_vs_pred.jsonl`
+  - `proposal_table.jsonl`
+  - collection/proxy summaries
+
+So the comparison is still informative, but only at proposal-population scale.
+
+### Comparative Conclusion
+
+The additional checkpoints reinforce the main study logic:
+
+- clean verifier ability is fairly stable across checkpoints
+- rollout personality differs materially across checkpoints
+- low-temperature behavior remains the main source of pathological variance
+
+More specifically:
+
+- `stage1-coco80-ckpt-1832-merged` is more conservative and rollout-stable
+- `stage2a-eff64-softctx2-merged` is more aggressive, more degenerate at low
+  temperature, and more semantically biased toward some clutter/household
+  classes
+
+This extension does not change the main final decision:
+
+- rollout behavior varies substantially across checkpoints
+- verifier-guided triage remains promising
+- but promotion-readiness still requires stronger control of wrong-location and
+  oversized-box failure modes
+
+## Manual Audit Extension: Stage1 vs Stage2a
+
+To raise the newer checkpoint comparison above pure automatic evidence, a small
+follow-up audit was completed on a `48`-proposal queue built from:
+
+- `stage1-coco80-ckpt-1832-merged @ t=0.5 / 0.7`
+- `stage2a-eff64-softctx2-merged @ t=0.5 / 0.7`
+
+The labeled audit file is:
+
+- `output/analysis/manual-audit-stage1-stage2a-v1/manual_audit_recommended48.csv`
+
+Every row in this audit has a free-form note, so the conclusions below use both
+labels and note content.
+
+### Label Distribution
+
+Final label counts across the `48` audited proposals:
+
+- `wrong_location`: `30`
+- `real_visible_object`: `10`
+- `dead_or_hallucinated`: `8`
+
+No rows were labeled `duplicate_like` or `uncertain` in this smaller follow-up
+set.
+
+This immediately shows that the newer checkpoint extension does **not** weaken
+the main conclusion from the first audit:
+
+- `wrong_location` is still the dominant failure mode
+- even after restricting to `0.5 / 0.7`
+
+### By Checkpoint and Temperature
+
+`stage1-coco80-ckpt-1832-merged @ t=0.5`
+
+- real: `4/12`
+- wrong-location: `6/12`
+- dead: `2/12`
+
+`stage1-coco80-ckpt-1832-merged @ t=0.7`
+
+- real: `3/12`
+- wrong-location: `7/12`
+- dead: `2/12`
+
+`stage2a-eff64-softctx2-merged @ t=0.5`
+
+- real: `1/12`
+- wrong-location: `10/12`
+- dead: `1/12`
+
+`stage2a-eff64-softctx2-merged @ t=0.7`
+
+- real: `2/12`
+- wrong-location: `7/12`
+- dead: `3/12`
+
+Interpretation:
+
+- `stage1` is clearly better than `stage2a` on this pseudo-label-facing audit
+  slice
+- `stage2a @ t=0.5` is the weakest condition in this extension
+- both checkpoints remain dominated by wrong-location proposals, but `stage1`
+  contains a materially larger share of proposals that are at least recognizable
+  as real visible objects
+
+### By Score Quantile
+
+The same pathology from the earlier 96-sample audit shows up again.
+
+`q1_top`:
+
+- real: `3/16`
+- wrong-location: `12/16`
+- dead: `1/16`
+
+`q2_upper_mid`:
+
+- real: `1/16`
+- wrong-location: `11/16`
+- dead: `4/16`
+
+`q3_lower_mid`:
+
+- real: `6/16`
+- wrong-location: `7/16`
+- dead: `3/16`
+
+Interpretation:
+
+- the highest-score bucket is again heavily polluted by wrong-location cases
+- this is consistent with bbox-mask `counterfactual` over-rewarding broad or
+  coarse proposals
+- unlike a well-calibrated promotion score, the top bucket is *not* the most
+  trustworthy bucket
+
+### By Overlap Bucket
+
+`0.1_to_0.3`:
+
+- real: `2/12`
+- wrong-location: `9/12`
+- dead: `1/12`
+
+`0.3_to_0.5`:
+
+- real: `1/12`
+- wrong-location: `10/12`
+- dead: `1/12`
+
+`ge_0.5`:
+
+- real: `4/12`
+- wrong-location: `8/12`
+
+`lt_0.1`:
+
+- real: `3/12`
+- wrong-location: `3/12`
+- dead: `6/12`
+
+Interpretation:
+
+- high weak-IoU is still not enough to certify promotion quality
+- `ge_0.5` proposals are often still wrong-location rather than genuinely good
+  single-instance boxes
+- `lt_0.1` is much more likely to be truly dead or semantically off
+
+### Notes-Based Failure Themes
+
+The notes are highly consistent and sharpen the automatic diagnosis.
+
+For `wrong_location`, the notes repeatedly mention:
+
+- “整张图片 / 全局”
+- “包含了太多无关信息”
+- “只框了一小部分 / 只框了上半部分 / 只框了下半部分”
+- “本来是对的类，但 bbox 太大、太宽、或没有把物体框全”
+
+For `real_visible_object`, the notes often describe:
+
+- real objects that are partially visible
+- small but semantically clear objects
+- region proposals that point to the correct entity but do not fully capture it
+
+For `dead_or_hallucinated`, the notes repeatedly describe:
+
+- extremely tiny or unreadable regions
+- clear class mismatch
+- boxes on background or irrelevant elongated regions
+
+This notes-based evidence again supports the same practical interpretation:
+
+- the current verifier is better at separating “obviously dead” from “something
+  semantically present”
+- but it is still not strong enough to separate “good single-instance proposal”
+  from “coarse wrong-location proposal”
+
+### Score Statistics by Human Label
+
+Average scores on this 48-row audit:
+
+- `real_visible_object`
+  - mean commitment `-0.2324`
+  - mean counterfactual `1.8066`
+  - mean combined `1.5742`
+  - mean nearest-GT IoU `0.4170`
+- `wrong_location`
+  - mean commitment `-0.3729`
+  - mean counterfactual `2.9146`
+  - mean combined `2.5417`
+  - mean nearest-GT IoU `0.3817`
+- `dead_or_hallucinated`
+  - mean commitment `-0.3478`
+  - mean counterfactual `0.5072`
+  - mean combined `0.1593`
+  - mean nearest-GT IoU `0.0590`
+
+Interpretation:
+
+- `dead_or_hallucinated` does score lower on average, which is good
+- but `wrong_location` still scores *higher* than `real_visible_object` on the
+  current proxy stack
+- so the dominant unresolved issue is not “hallucination vs truth”
+- it is “coarse wrong-location vs genuinely useful object proposal”
+
+### Updated Comparative Conclusion
+
+The manual audit extension makes the checkpoint comparison much sharper:
+
+- `stage1-coco80-ckpt-1832-merged` is the more trustworthy rollout source of
+  the two
+- `stage2a-eff64-softctx2-merged` remains more aggressive and noisier
+- neither checkpoint is close to promotion-ready under the current bbox-mask
+  verifier
+
+Most importantly, this extension confirms that the main unresolved problem is
+still the same as in the UL-checkpoint audit:
+
+- `wrong_location` dominates
+- top-scoring unmatched proposals are often too coarse
+- and the verifier still over-rewards broad regions
 
 ## Final Decision Answers
 
