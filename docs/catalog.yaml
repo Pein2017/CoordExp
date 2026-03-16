@@ -168,6 +168,10 @@ progress:
       title: Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300
       type: diagnosis
       status: active-diagnostic
+    - path: progress/diagnostics/stage2_2b_stage1_vs_aonly_prefix_fn_2026-03-16.md
+      title: 2B COCO1024 Channel-A-Only Similarity, FN Hypotheses, and Prefix-Sensitivity Plan
+      type: diagnosis
+      status: active-diagnostic
     - path: progress/diagnostics/gt_overlap_threshold_search_2026-03-11.md
       title: GT Overlap Threshold Search on COCO1024 Val
       type: diagnostic-study
