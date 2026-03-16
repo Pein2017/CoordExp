@@ -480,9 +480,6 @@ def _make_stage2_pipeline_manifest(
     bbox_log_wh_weight: float = 0.0,
     bbox_log_area_weight: float = 0.0,
     bbox_oversize_weight: float = 0.0,
-    bbox_a1_log_wh_weight: float = 0.0,
-    bbox_a1_log_area_weight: float = 0.0,
-    bbox_a1_oversize_weight: float = 0.0,
     coord_reg_enabled: bool = True,
     coord_reg_weight: float = 1.0,
     coord_ce_weight: float = 0.0,
@@ -496,7 +493,7 @@ def _make_stage2_pipeline_manifest(
 ) -> dict:
     token_cfg: dict[str, float] = {
         "desc_ce_weight": float(desc_ce_weight),
-        "self_context_struct_ce_weight": float(self_context_struct_ce_weight),
+        "struct_ce_weight": float(self_context_struct_ce_weight),
         "rollout_matched_prefix_struct_weight": float(rollout_matched_prefix_struct_weight),
     }
     if rollout_fn_desc_weight is not None:
@@ -509,6 +506,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(token_ce_enabled),
                 "weight": float(token_ce_weight),
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_text_plus_final_struct"},
                 "config": token_cfg,
             },
             {
@@ -516,6 +514,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(dead_anchor_suppression_enabled),
                 "weight": float(dead_anchor_suppression_weight),
                 "channels": ["B"],
+                "application": {"preset": "rollout_only"},
                 "config": {},
             },
             {
@@ -523,6 +522,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(bbox_geo_enabled),
                 "weight": float(bbox_geo_weight),
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": {
                     "smoothl1_weight": float(bbox_smoothl1_weight),
                     "ciou_weight": float(bbox_ciou_weight),
@@ -533,6 +533,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(bbox_size_aux_enabled),
                 "weight": float(bbox_size_aux_weight),
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": {
                     "log_wh_weight": float(bbox_log_wh_weight),
                     "log_area_weight": float(bbox_log_area_weight),
@@ -540,9 +541,6 @@ def _make_stage2_pipeline_manifest(
                     "oversize_area_frac_threshold": None,
                     "oversize_log_w_threshold": None,
                     "oversize_log_h_threshold": None,
-                    "a1_log_wh_weight": float(bbox_a1_log_wh_weight),
-                    "a1_log_area_weight": float(bbox_a1_log_area_weight),
-                    "a1_oversize_penalty_weight": float(bbox_a1_oversize_weight),
                     "eps": 1e-6,
                 },
             },
@@ -551,6 +549,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(coord_reg_enabled),
                 "weight": float(coord_reg_weight),
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": {
                     "coord_ce_weight": float(coord_ce_weight),
                     "soft_ce_weight": float(coord_soft_ce_weight),
@@ -3526,7 +3525,7 @@ def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
 
 
 def test_channel_a_a1_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
-    t = _make_min_trainer(n_softctx_iter=2)
+    t = _make_min_trainer(n_softctx_iter=1)
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
@@ -3536,8 +3535,7 @@ def test_channel_a_a1_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
         bbox_ciou_weight=0.0,
         bbox_size_aux_enabled=True,
         bbox_size_aux_weight=1.0,
-        bbox_log_wh_weight=0.0,
-        bbox_a1_log_wh_weight=0.05,
+        bbox_log_wh_weight=0.05,
         coord_reg_enabled=False,
         coord_reg_weight=0.0,
     )

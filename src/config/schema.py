@@ -24,6 +24,7 @@ from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
     DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
 )
 
@@ -1433,6 +1434,7 @@ class Stage2PipelineModuleSpec:
     enabled: bool = True
     weight: float = 1.0
     channels: tuple[str, ...] = ("A", "B")
+    application: Mapping[str, Any] = field(default_factory=dict)
     config: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -1492,6 +1494,11 @@ class Stage2PipelineModuleSpec:
             raise ValueError(f"{path}.channels must not be empty")
         channels = tuple(dict.fromkeys(channels_list).keys())
 
+        application_raw = data.pop("application", {})
+        if not isinstance(application_raw, Mapping):
+            raise TypeError(f"{path}.application must be a mapping")
+        application = dict(application_raw)
+
         if "config" not in data:
             raise ValueError(
                 f"{path}.config must be provided (explicit pipeline spec; no defaults)"
@@ -1512,6 +1519,7 @@ class Stage2PipelineModuleSpec:
             enabled=enabled,
             weight=weight,
             channels=channels,
+            application=application,
             config=config,
         )
 
@@ -1579,6 +1587,31 @@ class Stage2PipelineConfig:
             )
 
         for idx, spec in enumerate(objective_specs):
+            if not isinstance(spec.application, Mapping):
+                raise TypeError(
+                    f"stage2_ab.pipeline.objective[{idx}].application must be a mapping"
+                )
+            app_unknown = set(spec.application.keys()) - {"preset"}
+            if app_unknown:
+                raise ValueError(
+                    "Unknown stage2_ab.pipeline.objective"
+                    f"[{idx}].application keys for module {spec.name!r}: "
+                    f"{sorted(str(k) for k in app_unknown)}"
+                )
+            preset = str(spec.application.get("preset", "") or "").strip()
+            if not preset:
+                raise ValueError(
+                    f"stage2_ab.pipeline.objective[{idx}].application.preset must be provided"
+                )
+            allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
+                str(spec.name), set()
+            )
+            if preset not in allowed_presets:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective"
+                    f"[{idx}].application.preset for module {spec.name!r} must be one of "
+                    f"{sorted(str(x) for x in allowed_presets)}; got {preset!r}"
+                )
             if (
                 str(spec.name) == "token_ce"
                 and "rollout_drop_invalid_struct_ce_multiplier" in spec.config
@@ -1631,6 +1664,18 @@ class Stage2PipelineConfig:
         bbox_geo = specs_by_name.get("bbox_geo")
         bbox_size_aux = specs_by_name.get("bbox_size_aux")
         coord_reg = specs_by_name.get("coord_reg")
+
+        def _coord_targets_for_preset(preset: str) -> tuple[set[str], set[str]]:
+            if preset == "anchor_if_single_iter_else_final":
+                return {"A1_coord"}, {"A2_coord"}
+            if preset == "anchor_only":
+                return {"A1_coord"}, {"A1_coord"}
+            if preset == "final_only":
+                return {"A2_coord"}, {"A2_coord"}
+            if preset == "anchor_and_final":
+                return {"A1_coord", "A2_coord"}, {"A1_coord", "A2_coord"}
+            raise ValueError(f"Unsupported coord/bbox application preset: {preset!r}")
+
         if bbox_size_aux is not None and bool(bbox_size_aux.enabled):
             if bbox_geo is None or not bool(bbox_geo.enabled):
                 raise ValueError(
@@ -1655,6 +1700,30 @@ class Stage2PipelineConfig:
                     "stage2_ab.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
                     f"missing={sorted(missing_channels)}"
                 )
+
+        if bbox_geo is not None and bool(bbox_geo.enabled):
+            bbox_geo_preset = str(bbox_geo.application.get("preset", "") or "").strip()
+            bbox_geo_single, bbox_geo_multi = _coord_targets_for_preset(bbox_geo_preset)
+            for dep_name, dep_spec in (
+                ("bbox_size_aux", bbox_size_aux),
+                ("coord_reg", coord_reg),
+            ):
+                if dep_spec is None or not bool(dep_spec.enabled):
+                    continue
+                dep_preset = str(dep_spec.application.get("preset", "") or "").strip()
+                dep_single, dep_multi = _coord_targets_for_preset(dep_preset)
+                if not dep_single.issubset(bbox_geo_single):
+                    raise ValueError(
+                        "stage2_ab.pipeline.objective "
+                        f"{dep_name} single-iter application must be a subset of bbox_geo; "
+                        f"bbox_geo={sorted(bbox_geo_single)} {dep_name}={sorted(dep_single)}"
+                    )
+                if not dep_multi.issubset(bbox_geo_multi):
+                    raise ValueError(
+                        "stage2_ab.pipeline.objective "
+                        f"{dep_name} multi-iter application must be a subset of bbox_geo; "
+                        f"bbox_geo={sorted(bbox_geo_multi)} {dep_name}={sorted(dep_multi)}"
+                    )
 
         for dspec in diagnostics_specs:
             if not bool(dspec.enabled):

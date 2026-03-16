@@ -109,24 +109,28 @@ rollout_matching:
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
         config:
           desc_ce_weight: 1.0
-          self_context_struct_ce_weight: 0.0
+          struct_ce_weight: 0.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: bbox_geo
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           smoothl1_weight: 1.0
           ciou_weight: 1.0
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
       - name: bbox_size_aux
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
           log_area_weight: 0.0
@@ -134,14 +138,13 @@ rollout_matching:
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
           oversize_log_h_threshold: null
-          a1_log_wh_weight: 0.0
-          a1_log_area_weight: 0.0
-          a1_oversize_penalty_weight: 0.0
           eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           coord_ce_weight: 0.0
           coord_el1_weight: 0.0
@@ -149,10 +152,7 @@ rollout_matching:
           coord_huber_delta: 0.001
           coord_entropy_weight: 0.0
           soft_ce_weight: 1.0
-          self_context_soft_ce_weight: 0.0
           w1_weight: 1.0
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
           coord_gate_weight: 1.0
           text_gate_weight: 0.0
           temperature: 1.0
@@ -210,8 +210,6 @@ rollout_matching:
     # merge adapters and sync weights into vLLM on E-steps.
     enable_lora: false
     enable_prefix_caching: true
-    sleep_level: 0
-
   # vLLM path currently supports greedy only.
   decode_mode: greedy
   # NOTE: Dense LVIS outputs can be very long; keep this large for real runs.

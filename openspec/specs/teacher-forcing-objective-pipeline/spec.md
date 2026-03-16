@@ -38,10 +38,10 @@ Normative configuration shape (conceptual):
   - `diagnostics`: metrics-only modules
 - Each module entry MUST include:
   - `name` (string; registry key)
-- Each module entry MAY include:
-  - `enabled` (boolean; default true)
-  - `weight` (float; default 1.0)
-  - `channels` (list containing `"A"` and/or `"B"`; default both)
+  - `enabled` (boolean)
+  - `weight` (float)
+  - `channels` (list containing `"A"` and/or `"B"`)
+  - `application` (mapping with required `preset`)
   - `config` (mapping; module-specific knobs)
 
 Execution semantics:
@@ -50,7 +50,10 @@ Execution semantics:
 - A module list MUST NOT contain duplicate `name` entries (fail fast).
 - Module `config` payloads MUST be validated strictly by the owning module implementation at trainer initialization:
   - unknown config keys MUST fail fast with actionable diagnostics,
-  - missing optional keys MUST resolve to documented defaults.
+  - missing required keys MUST fail fast (no implicit defaults on authored pipeline surfaces).
+- Module `application` payloads MUST be validated strictly by the owning module family:
+  - `application` MUST contain exactly one key, `preset`,
+  - unknown or missing presets MUST fail fast with actionable diagnostics.
 - `loss_dead_anchor_suppression` is a valid objective module name.
 - `bbox_size_aux` is a valid objective module name.
 - `loss_dead_anchor_suppression` MUST be declared with `channels: [B]`.
@@ -58,6 +61,12 @@ Execution semantics:
 - For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `loss_dead_anchor_suppression` after `token_ce` and before `bbox_geo`.
 - When `bbox_size_aux` is enabled, canonical Stage-2 objective order MUST place it after `bbox_geo` because
   `bbox_size_aux` depends on the decoded canonicalized box state produced on the same matched supervision path.
+- Canonical Stage-2 routing presets MUST be:
+  - `token_ce.application.preset: anchor_text_plus_final_struct`
+  - `loss_dead_anchor_suppression.application.preset: rollout_only`
+  - `bbox_geo.application.preset: anchor_if_single_iter_else_final`
+  - `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
+  - `coord_reg.application.preset: anchor_if_single_iter_else_final`
 - `bbox_size_aux.config` MUST accept the canonical decoded-box size-aux keys:
   - `log_wh_weight`
   - `log_area_weight`
@@ -66,9 +75,6 @@ Execution semantics:
   - `oversize_log_w_threshold`
   - `oversize_log_h_threshold`
   - `eps`
-  - `a1_log_wh_weight`
-  - `a1_log_area_weight`
-  - `a1_oversize_penalty_weight`
 - the `bbox_size_aux` plugin/module MUST continue to consume the current
   coord-token decode path and current `bbox_2d=[x1,y1,x2,y2]` external
   expression rather than redefining bbox parameterization.
@@ -85,6 +91,10 @@ Execution semantics:
 #### Scenario: Unknown module config key fails fast
 - **WHEN** a pipeline provides a module `config` containing an unknown key for that module
 - **THEN** config validation fails fast with guidance listing allowed keys for the module.
+
+#### Scenario: Missing module application preset fails fast
+- **WHEN** a pipeline provides an objective module without `application.preset`
+- **THEN** config validation fails fast with guidance listing the required application field.
 
 #### Scenario: bbox_size_aux accepts decoded-box size-aux config keys
 - **WHEN** a teacher-forcing pipeline declares `bbox_size_aux.config.log_wh_weight`
@@ -233,4 +243,3 @@ Normative behavior:
   state required by the plugin
 - **THEN** the training step raises with actionable diagnostics
 - **AND** training does not proceed with a silently altered objective.
-

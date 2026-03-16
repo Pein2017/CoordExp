@@ -566,7 +566,7 @@ def _base_stage2_rollout_aligned_payload() -> dict:
 def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict | None = None) -> dict:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
-        "self_context_struct_ce_weight": 0.1,
+        "struct_ce_weight": 0.1,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
     }
@@ -577,6 +577,7 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
         "enabled": True,
         "weight": 1.0,
         "channels": list(channels) if channels is not None else ["A", "B"],
+        "application": {"preset": "anchor_text_plus_final_struct"},
         "config": token_ce_cfg,
     }
 
@@ -589,6 +590,7 @@ def _pipeline_loss_dead_anchor_suppression_spec(
         "enabled": True,
         "weight": 1.0,
         "channels": list(channels) if channels is not None else ["B"],
+        "application": {"preset": "rollout_only"},
         "config": dict(config or {}),
     }
 
@@ -597,8 +599,6 @@ def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
     bbox_geo_cfg = {
         "smoothl1_weight": 0.0,
         "ciou_weight": 0.0,
-        "a1_smoothl1_weight": 0.0,
-        "a1_ciou_weight": 0.0,
     }
     if isinstance(config, dict):
         bbox_geo_cfg.update(dict(config))
@@ -607,6 +607,7 @@ def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
+        "application": {"preset": "anchor_if_single_iter_else_final"},
         "config": bbox_geo_cfg,
     }
 
@@ -619,9 +620,6 @@ def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
         "oversize_area_frac_threshold": None,
         "oversize_log_w_threshold": None,
         "oversize_log_h_threshold": None,
-        "a1_log_wh_weight": 0.0,
-        "a1_log_area_weight": 0.0,
-        "a1_oversize_penalty_weight": 0.0,
         "eps": 1e-6,
     }
     if isinstance(config, dict):
@@ -631,6 +629,7 @@ def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
+        "application": {"preset": "anchor_if_single_iter_else_final"},
         "config": bbox_size_aux_cfg,
     }
 
@@ -645,10 +644,7 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
         "coord_gate_weight": 0.0,
         "text_gate_weight": 0.0,
         "soft_ce_weight": 0.0,
-        "self_context_soft_ce_weight": 0.0,
         "w1_weight": 0.0,
-        "a1_soft_ce_weight": 0.0,
-        "a1_w1_weight": 0.0,
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
@@ -660,6 +656,7 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
+        "application": {"preset": "anchor_if_single_iter_else_final"},
         "config": coord_reg_cfg,
     }
 

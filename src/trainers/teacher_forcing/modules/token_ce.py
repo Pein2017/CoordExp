@@ -51,9 +51,9 @@ def run_token_ce_module(
             1.0,
         ),
     )
-    self_context_struct_ce_weight = max(
+    struct_ce_weight = max(
         0.0,
-        _coerce_float(cfg.get("self_context_struct_ce_weight", 0.0), 0.0),
+        _coerce_float(cfg.get("struct_ce_weight", 0.0), 0.0),
     )
 
     labels_masked = torch.full_like(input_ids, -100)
@@ -66,10 +66,10 @@ def run_token_ce_module(
     # Stage-2 Channel-A (self_context): optional format/EOS stabilizer.
     #
     # This is a separate forward with self-context logits. It is *struct-only* by
-    # default (desc disabled) and is internally scaled by self_context_struct_ce_weight,
+    # default (desc disabled) and is internally scaled by struct_ce_weight,
     # so that the pipeline sees a single module loss contribution.
     if registry_context == "self_context" and channel != "B":
-        if float(self_context_struct_ce_weight) == 0.0:
+        if float(struct_ce_weight) == 0.0:
             z = logits_ce.new_tensor(0.0)
             metrics = {
                 "loss/token_ce_struct": 0.0,
@@ -257,7 +257,7 @@ def run_token_ce_module(
     token_ce_struct_contrib = token_ce_struct
     token_ce_desc_contrib = token_ce_desc
     if registry_context == "self_context" and channel != "B":
-        scale = float(self_context_struct_ce_weight)
+        scale = float(struct_ce_weight)
         loss = loss * scale
         token_ce_struct_contrib = token_ce_struct_contrib * scale
         token_ce_desc_contrib = token_ce_desc_contrib * scale

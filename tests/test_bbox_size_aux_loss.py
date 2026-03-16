@@ -215,11 +215,10 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
             "enabled": True,
             "weight": 0.0,
             "channels": ["B"],
+            "application": {"preset": "anchor_if_single_iter_else_final"},
             "config": {
                 "smoothl1_weight": 0.0,
                 "ciou_weight": 0.0,
-                "a1_smoothl1_weight": 0.0,
-                "a1_ciou_weight": 0.0,
             },
         },
         {
@@ -227,6 +226,7 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
             "enabled": True,
             "weight": 1.0,
             "channels": ["B"],
+            "application": {"preset": "anchor_if_single_iter_else_final"},
             "config": {
                 "log_wh_weight": 0.05,
                 "log_area_weight": 0.0,
@@ -234,9 +234,6 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
                 "oversize_area_frac_threshold": None,
                 "oversize_log_w_threshold": None,
                 "oversize_log_h_threshold": None,
-                "a1_log_wh_weight": 0.0,
-                "a1_log_area_weight": 0.0,
-                "a1_oversize_penalty_weight": 0.0,
                 "eps": 1.0e-6,
             },
         },

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import torch
 
@@ -14,6 +14,7 @@ class PipelineModuleSpec:
     enabled: bool = True
     weight: float = 1.0
     channels: tuple[str, ...] = ("A", "B")
+    application: Mapping[str, Any] = field(default_factory=dict)
     config: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -30,6 +31,10 @@ class PipelineModuleSpec:
 
         cfg_raw = payload.get("config", {})
         cfg = dict(cfg_raw) if isinstance(cfg_raw, Mapping) else {}
+        application_raw = payload.get("application", {})
+        application = (
+            dict(application_raw) if isinstance(application_raw, Mapping) else {}
+        )
 
         try:
             weight = float(payload.get("weight", 1.0) or 0.0)
@@ -41,6 +46,7 @@ class PipelineModuleSpec:
             enabled=bool(payload.get("enabled", True)),
             weight=max(0.0, float(weight)),
             channels=tuple(channels),
+            application=application,
             config=cfg,
         )
 

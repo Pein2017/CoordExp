@@ -59,7 +59,7 @@ def _canonical_stage2_pipeline(
     if token_ce_cfg is None:
         token_ce_cfg = {
             "desc_ce_weight": 1.0,
-            "self_context_struct_ce_weight": 0.1,
+            "struct_ce_weight": 0.1,
             "rollout_fn_desc_weight": 1.0,
             "rollout_matched_prefix_struct_weight": 1.0,
         }
@@ -71,8 +71,6 @@ def _canonical_stage2_pipeline(
         bbox_geo_cfg = {
             "smoothl1_weight": 0.0,
             "ciou_weight": 0.0,
-            "a1_smoothl1_weight": 0.0,
-            "a1_ciou_weight": 0.0,
         }
     if bbox_size_aux_cfg is None:
         bbox_size_aux_cfg = {
@@ -82,9 +80,6 @@ def _canonical_stage2_pipeline(
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,
             "oversize_log_h_threshold": None,
-            "a1_log_wh_weight": 0.0,
-            "a1_log_area_weight": 0.0,
-            "a1_oversize_penalty_weight": 0.0,
             "eps": 1e-6,
         }
     if coord_reg_cfg is None:
@@ -97,10 +92,7 @@ def _canonical_stage2_pipeline(
             "coord_gate_weight": 0.0,
             "text_gate_weight": 0.0,
             "soft_ce_weight": 0.0,
-            "self_context_soft_ce_weight": 0.0,
             "w1_weight": 0.0,
-            "a1_soft_ce_weight": 0.0,
-            "a1_w1_weight": 0.0,
             "temperature": 1.0,
             "target_sigma": 2.0,
             "target_truncate": None,
@@ -112,6 +104,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 1.0,
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_text_plus_final_struct"},
                 "config": dict(token_ce_cfg),
             },
             {
@@ -119,6 +112,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 1.0,
                 "channels": list(dead_anchor_suppression_channels),
+                "application": {"preset": "rollout_only"},
                 "config": dict(dead_anchor_suppression_cfg),
             },
             {
@@ -126,6 +120,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": dict(bbox_geo_cfg),
             },
             {
@@ -133,6 +128,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": dict(bbox_size_aux_cfg),
             },
             {
@@ -140,6 +136,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
+                "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": dict(coord_reg_cfg),
             },
         ],
@@ -409,7 +406,7 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
             "pipeline": _canonical_stage2_pipeline(
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
-                    "self_context_struct_ce_weight": 0.1,
+                    "struct_ce_weight": 0.1,
                     "rollout_fn_desc_weight": 1.0,
                     "rollout_matched_prefix_struct_weight": 1.0,
                     "rollout_drop_invalid_struct_ce_multiplier": 1.0,
@@ -561,7 +558,7 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
 def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
-        "self_context_struct_ce_weight": 0.0,
+        "struct_ce_weight": 0.0,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
     }
@@ -588,6 +585,7 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
+                        "application": {"preset": "anchor_text_plus_final_struct"},
                         "config": dict(token_ce_cfg),
                     }
                 ],
@@ -611,10 +609,7 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         "coord_gate_weight": 0.0,
         "text_gate_weight": 0.25,
         "soft_ce_weight": 0.0,
-        "self_context_soft_ce_weight": 0.0,
         "w1_weight": 0.0,
-        "a1_soft_ce_weight": 0.0,
-        "a1_w1_weight": 0.0,
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
@@ -662,10 +657,7 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
         "coord_gate_weight": 0.0,
         "text_gate_weight": 0.25,
         "soft_ce_weight": 0.0,
-        "self_context_soft_ce_weight": 0.0,
         "w1_weight": 0.0,
-        "a1_soft_ce_weight": 0.0,
-        "a1_w1_weight": 0.0,
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
@@ -692,11 +684,10 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
                         "enabled": True,
                         "weight": 0.0,
                         "channels": ["A", "B"],
+                        "application": {"preset": "anchor_if_single_iter_else_final"},
                         "config": {
                             "smoothl1_weight": 0.0,
                             "ciou_weight": 0.0,
-                            "a1_smoothl1_weight": 0.0,
-                            "a1_ciou_weight": 0.0,
                         },
                     },
                     {
@@ -704,6 +695,7 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
+                        "application": {"preset": "anchor_if_single_iter_else_final"},
                         "config": {
                             **coord_reg_cfg,
                             "unknown_weight": 1.0,

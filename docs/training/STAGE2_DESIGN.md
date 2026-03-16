@@ -5,7 +5,7 @@ doc_type: design
 status: canonical
 domain: training
 summary: Stable design overview for the current Stage-2 training path.
-updated: 2026-03-09
+updated: 2026-03-16
 ---
 
 # Full Idea v3
@@ -82,6 +82,8 @@ The resulting v1 implementation is intentionally conservative:
 - Stage-1 remains the language-of-boxes foundation
 - Channel-A remains the hot stabilizer path
 - geometry still uses CoordExp expectation decode with SmoothL1 + CIoU
+- bbox representation stays `xyxy` (`[x1, y1, x2, y2]`) with the existing top-left / bottom-right coord-token expression
+- decoded-box size regularization, when enabled, stays a separate `bbox_size_aux` pipeline plugin layered on top of the existing decode path rather than redefining bbox format
 
 ## Current Recommended Reading
 
@@ -111,6 +113,7 @@ If you are moving from design to implementation, these are the main code handles
 ## Key Config Surfaces
 
 - `stage2_ab.pipeline`
+- `stage2_ab.pipeline.objective[*].application.preset`
 - `stage2_ab.channel_b`
 - `stage2_ab.channel_b.triage_posterior.*`
 - `rollout_matching.*`

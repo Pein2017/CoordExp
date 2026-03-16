@@ -104,8 +104,6 @@ def run_coord_reg_module(
             dtype=context.logits.dtype,
         )
 
-    registry_context = str(context.registry_context or "").strip().lower()
-
     soft_ce_weight = _coerce_float(
         cfg.get(
             "soft_ce_weight",
@@ -113,11 +111,6 @@ def run_coord_reg_module(
         ),
         0.0,
     )
-    if registry_context == "self_context":
-        soft_ce_weight = _coerce_float(
-            cfg.get("self_context_soft_ce_weight", soft_ce_weight),
-            soft_ce_weight,
-        )
 
     weights = {
         "coord_ce_weight": max(

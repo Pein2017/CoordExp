@@ -1116,7 +1116,6 @@ def _build_pipeline_manifest(
     def _default_module_config(name: str) -> dict[str, Any]:
         variant = str(trainer_variant or "")
         coord_soft_defaults = _coord_soft_defaults()
-        coord_soft_enabled = bool(coord_soft_cfg.get("enabled", False))
 
         if variant == "stage2_two_channel":
             desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
@@ -1124,7 +1123,7 @@ def _build_pipeline_manifest(
             if name == "token_ce":
                 return {
                     "desc_ce_weight": desc_w,
-                    "self_context_struct_ce_weight": _finite_float(
+                    "struct_ce_weight": _finite_float(
                         cfg.get("fmt_struct_ce_weight", 0.1),
                         0.1,
                     ),
@@ -1189,12 +1188,6 @@ def _build_pipeline_manifest(
                     "soft_ce_weight": _finite_float(
                         coord_soft_defaults.get("soft_ce_weight", 0.0),
                         0.0,
-                    ),
-                    "self_context_soft_ce_weight": _finite_float(
-                        coord_soft_defaults.get("soft_ce_weight", 0.0)
-                        if coord_soft_enabled
-                        else 0.05,
-                        0.05,
                     ),
                     "w1_weight": _finite_float(
                         coord_soft_defaults.get("w1_weight", 0.0),
@@ -1289,6 +1282,12 @@ def _build_pipeline_manifest(
                 if isinstance(authored_cfg_raw, Mapping)
                 else {}
             )
+            authored_app_raw = spec.get("application", {})
+            authored_app = (
+                dict(authored_app_raw)
+                if isinstance(authored_app_raw, Mapping)
+                else {}
+            )
             merged_cfg = dict(_default_module_config(name))
             merged_cfg.update(authored_cfg)
 
@@ -1298,6 +1297,7 @@ def _build_pipeline_manifest(
                     "enabled": bool(spec.get("enabled", True)),
                     "weight": max(0.0, _finite_float(spec.get("weight", 1.0), 1.0)),
                     "channels": _normalize_channels(spec.get("channels", ["A", "B"])),
+                    "application": authored_app,
                     "config": merged_cfg,
                 }
             )

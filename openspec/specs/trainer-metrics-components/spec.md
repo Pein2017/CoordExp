@@ -123,11 +123,9 @@ Normative behavior:
 - Stage-2 AB and rollout-aligned trainers MUST emit only the following objective keys (minimum set), and only when the effective weight is non-zero:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}` (GT-anchor forward; token CE objective atoms)
-    - `loss/A1_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; optional A1 anchor-forward size-aux atoms)
+    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the anchor forward
     - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer atom)
-    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; final self-context forward; geometry objective atoms)
-    - `loss/A2_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; final self-context forward; size-aux objective atoms)
-    - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the final self-context forward
   - Channel-B (rollout context):
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; rollout-context forward; geometry objective atoms)
@@ -181,6 +179,7 @@ Rationale:
 - Channel-A runs two teacher-forced forwards (`A1` and `A2`) when `n_softctx_iter >= 2`.
 - Stage-1 runs only one forward and reports coord distribution monitors without forward provenance.
 - Provenance-splitting makes Stage-2 comparable to Stage-1 and makes self-context drift visible.
+- Under the canonical `anchor_if_single_iter_else_final` preset, `n_softctx_iter = 1` routes Channel-A bbox/coord objective atoms to `A1_coord` and suppresses `A2_coord` objective atoms for that step.
 
 Normative behavior:
 - Stage-2 two-channel MUST emit coord-vocab distribution monitors under:
@@ -437,4 +436,3 @@ Normative behavior:
 - **THEN** the emitted keys use `loss/geo/{bbox_log_wh,bbox_log_area,bbox_oversize}`
 - **AND** the same atom names remain recognizable relative to Stage-2
   provenance-split geometry atoms.
-

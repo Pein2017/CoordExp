@@ -57,14 +57,29 @@ Stage-2 AB pipeline module specs MUST be authored with explicit fields and compl
 
 Normative behavior:
 - Each entry in `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` MUST include:
-  - `name`, `enabled`, `weight`, `channels`, `config`.
+  - `name`, `enabled`, `weight`, `channels`, `application`, `config`.
 - `channels` MUST be explicitly authored as a subset of `{A,B}`.
+- `application` MUST be an explicitly authored mapping with exactly one key:
+  - `preset`
+- `application.preset` MUST be valid for the referenced module:
+  - `token_ce`: `anchor_text_plus_final_struct`, `anchor_text_only`, `rollout_text_only`
+  - `loss_dead_anchor_suppression`: `rollout_only`
+  - `bbox_geo`, `bbox_size_aux`, `coord_reg`:
+    - `anchor_if_single_iter_else_final`
+    - `anchor_only`
+    - `final_only`
+    - `anchor_and_final`
 - `config` MUST include exactly the allowlisted keys for the referenced module:
   - missing required keys MUST fail fast (no implicit defaults),
   - unknown keys MUST fail fast (no escape-hatch aliases).
 
 #### Scenario: Missing module spec field fails fast
 - **WHEN** a Stage-2 AB config omits `stage2_ab.pipeline.objective[i].channels`
+- **THEN** configuration parsing fails fast
+- **AND** the error indicates the missing required field and its full path.
+
+#### Scenario: Missing application preset fails fast
+- **WHEN** a Stage-2 AB config omits `stage2_ab.pipeline.objective[i].application.preset`
 - **THEN** configuration parsing fails fast
 - **AND** the error indicates the missing required field and its full path.
 
@@ -83,11 +98,12 @@ Normative behavior:
   - `oversize_log_w_threshold`
   - `oversize_log_h_threshold`
   - `eps`
-  - `a1_log_wh_weight`
-  - `a1_log_area_weight`
-  - `a1_oversize_penalty_weight`
-- `coord_reg.config` MUST accept only canonical keys, including:
+- `coord_reg.config` MUST accept only:
   - `coord_ce_weight`
+  - `coord_el1_weight`
+  - `coord_ehuber_weight`
+  - `coord_huber_delta`
+  - `coord_entropy_weight`
   - `soft_ce_weight`
   - `w1_weight`
   - `coord_gate_weight`
@@ -115,9 +131,47 @@ Normative behavior:
 - **WHEN** `coord_reg.config.text_gate_weight > 0`
 - **AND** the model places substantial coord-vocab probability mass at supervised `type=struct|desc` positions
 - **THEN** the emitted `text_gate` objective atom increases relative to the same run with `text_gate_weight = 0`:
-  - Channel-A: `loss/A2_coord/text_gate`
+  - Channel-A: `loss/A1_coord/text_gate` or `loss/A2_coord/text_gate` depending on `coord_reg.application.preset` and `n_softctx_iter`
   - Channel-B: `loss/B_coord/text_gate`
 - **AND** the increase is attributable to the `text_gate` sub-term inside `coord_reg`.
+
+### Requirement: Stage-2 AB objective application is explicit and non-redundant
+Stage-2 AB SHALL route Channel-A objective provenance through `application.preset`
+instead of duplicating loss strengths across separate `a1_*` config families.
+
+Normative behavior:
+- `bbox_geo`, `bbox_size_aux`, and `coord_reg` MUST express Channel-A routing
+  through `stage2_ab.pipeline.objective[*].application.preset`.
+- The canonical non-redundant preset is `anchor_if_single_iter_else_final`:
+  - when `n_softctx_iter = 1`, Channel-A bbox/coord atoms MUST emit only under
+    `loss/A1_coord/*`,
+  - when `n_softctx_iter > 1`, the same modules MUST emit only under
+    `loss/A2_coord/*`.
+- `token_ce.application.preset=anchor_text_plus_final_struct` MUST keep
+  `loss/A1_text/{struct_ce,desc_ce}` on the GT anchor path and MAY emit
+  `loss/A2_text/struct_ce` only when `n_softctx_iter > 1`.
+- Stage-2 AB module configs MUST NOT reintroduce duplicated Channel-A routing
+  weights such as `a1_smoothl1_weight`, `a1_ciou_weight`,
+  `a1_log_wh_weight`, `a1_log_area_weight`, `a1_oversize_penalty_weight`,
+  `a1_soft_ce_weight`, or `a1_w1_weight`.
+
+#### Scenario: Single-iteration Channel-A routes bbox/coord atoms to A1
+- **GIVEN** `stage2_ab.n_softctx_iter: 1`
+- **AND** `bbox_geo.application.preset: anchor_if_single_iter_else_final`
+- **AND** `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
+- **AND** `coord_reg.application.preset: anchor_if_single_iter_else_final`
+- **WHEN** Channel-A executes
+- **THEN** bbox/coord objective atoms emit under `loss/A1_coord/*`
+- **AND** the same step does not emit `loss/A2_coord/*`.
+
+#### Scenario: Multi-iteration Channel-A routes bbox/coord atoms to A2
+- **GIVEN** `stage2_ab.n_softctx_iter: 3`
+- **AND** `bbox_geo.application.preset: anchor_if_single_iter_else_final`
+- **AND** `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
+- **AND** `coord_reg.application.preset: anchor_if_single_iter_else_final`
+- **WHEN** Channel-A executes
+- **THEN** bbox/coord objective atoms emit under `loss/A2_coord/*`
+- **AND** the same step does not emit `loss/A1_coord/*`.
 
 ### Requirement: Coord diagnostics are attributed to A1 vs A2 logits in Channel-A
 Stage-2 AB SHALL provide coord-distribution monitors that let operators compare the GT-anchor logits (`A1`) versus the final softctx logits (`A2`) on the same GT coord-token positions.
@@ -1062,7 +1116,7 @@ Stage-2 AB trainer MUST support Stage-1-style coord distribution penalties in St
   - and FN-injected groups (`bbox_groups_fn`).
 - The coord distribution for each supervised coord slot MUST follow the same causal shift contract as other Stage-2 coord losses (coord token at position `p` uses logits at `p-1`).
 - These terms MUST contribute to the Stage-2 coord regularization objective (coord_reg module), and MUST be surfaced in training logs as **objective atoms** under provenance keys:
-  - Channel-A (self-context): `loss/A2_coord/{coord_soft_ce,coord_w1}`
+  - Channel-A: `loss/A1_coord/{coord_soft_ce,coord_w1}` or `loss/A2_coord/{coord_soft_ce,coord_w1}` depending on `coord_reg.application.preset` and `n_softctx_iter`
   - Channel-B (rollout-context): `loss/B_coord/{coord_soft_ce,coord_w1}`
 - The trainer MUST NOT apply these terms to unsupervised FP-only coord slots.
 
@@ -1399,12 +1453,12 @@ Normative behavior:
   thresholded oversize penalty on decoded boxes for the same context,
 - Channel-A and Channel-B applicability MUST remain controlled by the authored
   `channels` field on the `bbox_size_aux` module entry,
+- Channel-A provenance MUST remain controlled by
+  `bbox_size_aux.application.preset`,
 - `bbox_size_aux` MUST remain separate from `bbox_geo` in the authored pipeline
   so the new size loss is an independently removable plugin module,
 - `bbox_size_aux` MUST consume the current four bbox coord slots in the existing
   `xyxy` order rather than introducing a new bbox expression,
-- when any `bbox_size_aux.config.a1_*` weight is non-zero, Channel-A MUST also
-  support the plugin on the optional A1 anchor forward,
 - the default canonical Stage-2 profile behavior SHOULD enable only the matched
   `log_wh` term at a small weight and keep `log_area` / `oversize` off.
 
@@ -1424,10 +1478,20 @@ Normative behavior:
   matched-clean + FN supervision set
 - **AND** unmatched clean extras remain outside positive geometry supervision.
 
-#### Scenario: Channel-A A1 anchor path can include log-size aux immediately
+#### Scenario: Single-iteration Channel-A matched geometry can include A1 log-size aux immediately
 - **GIVEN** a Stage-2 AB config with `bbox_size_aux.channels: [A]`
-- **AND** `bbox_size_aux.config.a1_log_wh_weight > 0`
+- **AND** `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
+- **AND** `stage2_ab.n_softctx_iter: 1`
+- **AND** `bbox_size_aux.config.log_wh_weight > 0`
 - **WHEN** the Channel-A anchor forward (`A1`) is supervised
 - **THEN** `bbox_size_aux` contributes `bbox_log_wh` on the A1 decoded-box path
-- **AND** the A1 term remains explicitly opt-in through the `a1_*` weights.
+- **AND** the same weight surface remains the ordinary `log_wh_weight`.
 
+#### Scenario: Multi-iteration Channel-A routes log-size aux to A2
+- **GIVEN** a Stage-2 AB config with `bbox_size_aux.channels: [A]`
+- **AND** `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
+- **AND** `stage2_ab.n_softctx_iter: 2`
+- **AND** `bbox_size_aux.config.log_wh_weight > 0`
+- **WHEN** Channel-A computes matched geometry from final self-context logits
+- **THEN** `bbox_size_aux` contributes `bbox_log_wh` on the `A2` decoded-box path
+- **AND** `loss/A2_coord/bbox_log_wh` is the emitted objective atom.

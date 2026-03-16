@@ -5,7 +5,7 @@ doc_type: runbook
 status: canonical
 domain: training
 summary: Operational Stage-2 workflow and YAML-first run guidance.
-updated: 2026-03-13
+updated: 2026-03-16
 ---
 
 # Stage-2 Training Runbook (Rollout-Aligned + Two-Channel)
@@ -283,20 +283,23 @@ Objective pipeline declaration (required, ordered):
 - `stage2_ab.pipeline.objective` declares loss-changing modules in execution order.
 - `stage2_ab.pipeline.diagnostics` declares metrics-only modules in execution order.
 - Canonical module names:
-  - objective: `token_ce`, `loss_dead_anchor_suppression`, `bbox_geo`, `coord_reg`
+  - objective: `token_ce`, `loss_dead_anchor_suppression`, `bbox_geo`, `bbox_size_aux`, `coord_reg`
   - diagnostics: `coord_diag`
 - **Order matters**:
-  - `stage2_two_channel`: `token_ce -> loss_dead_anchor_suppression -> bbox_geo -> coord_reg`
-  - `stage2_rollout_aligned`: `bbox_geo` MUST run before `coord_reg` when both are enabled (coord_reg consumes bbox_geo state).
+  - `stage2_two_channel`: `token_ce -> loss_dead_anchor_suppression -> bbox_geo -> bbox_size_aux -> coord_reg`
+  - `stage2_rollout_aligned`: `token_ce -> bbox_geo -> bbox_size_aux -> coord_reg`
+    remains the canonical shared order; `bbox_size_aux` depends on decoded canonicalized box state produced by `bbox_geo`.
 - Pipeline module specs are strict and explicit (no silent defaults):
-  - each module spec MUST include `enabled`, `weight`, `channels`, `config`;
+  - each module spec MUST include `enabled`, `weight`, `channels`, `application`, `config`;
   - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
+- `application.preset` is the non-redundant routing surface for Channel-A provenance:
+  - `token_ce` uses `anchor_text_plus_final_struct`,
+  - `bbox_geo`, `bbox_size_aux`, and `coord_reg` typically use `anchor_if_single_iter_else_final`,
+  - `loss_dead_anchor_suppression` uses `rollout_only`.
+- With `anchor_if_single_iter_else_final`:
+  - `n_softctx_iter=1` routes Channel-A bbox/coord atoms to `loss/A1_coord/*`,
+  - `n_softctx_iter>1` routes the same modules to `loss/A2_coord/*`.
 - Flat objective knobs are intentionally removed; author all loss weights in `*.pipeline.<objective|diagnostics>[i].config`.
-
-Optional Channel-A A1 anchor losses (ablation knobs):
-- `bbox_geo.config.{a1_smoothl1_weight,a1_ciou_weight}` add bbox-geometry supervision on the A1 (GT-anchor) forward.
-- `coord_reg.config.{a1_soft_ce_weight,a1_w1_weight}` add coord distribution supervision on the A1 (GT-anchor) forward (SoftCE/W1 only; no hard CE or gates in this path).
-- When enabled (non-zero), these atoms are logged under `loss/A1_coord/*` and contribute to the total loss.
 
 ### Stage-2 Two-Channel examples (A-only / B-only / AB-mixed)
 
@@ -314,45 +317,62 @@ stage2_ab:
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
         config:
           desc_ce_weight: 1.0
-          self_context_struct_ce_weight: 0.1
+          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
+        application:
+          preset: rollout_only
         config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           smoothl1_weight: 2.0
-          ciou_weight: 0.2
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
+          ciou_weight: 0.5
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.0
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
           coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
-          text_gate_weight: 0.1
-          soft_ce_weight: 0.1
-          self_context_soft_ce_weight: 0.1
-          w1_weight: 0.1
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 0.02
+          w1_weight: 0.02
           temperature: 1.0
           target_sigma: 2.0
-          target_truncate: 8
+          target_truncate: null
     diagnostics:
       - name: coord_diag
         enabled: true
@@ -375,45 +395,62 @@ stage2_ab:
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
         config:
           desc_ce_weight: 1.0
-          self_context_struct_ce_weight: 0.1
+          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
+        application:
+          preset: rollout_only
         config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           smoothl1_weight: 2.0
-          ciou_weight: 0.2
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
+          ciou_weight: 0.5
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.0
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
           coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
-          text_gate_weight: 0.1
-          soft_ce_weight: 0.1
-          self_context_soft_ce_weight: 0.1
-          w1_weight: 0.1
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 0.02
+          w1_weight: 0.02
           temperature: 1.0
           target_sigma: 2.0
-          target_truncate: 8
+          target_truncate: null
     diagnostics:
       - name: coord_diag
         enabled: true
@@ -436,45 +473,62 @@ stage2_ab:
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
         config:
           desc_ce_weight: 1.0
-          self_context_struct_ce_weight: 0.1
+          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
         channels: [B]
+        application:
+          preset: rollout_only
         config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           smoothl1_weight: 2.0
-          ciou_weight: 0.2
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
+          ciou_weight: 0.5
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.0
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
           coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
-          text_gate_weight: 0.1
-          soft_ce_weight: 0.1
-          self_context_soft_ce_weight: 0.1
-          w1_weight: 0.1
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 0.02
+          w1_weight: 0.02
           temperature: 1.0
           target_sigma: 2.0
-          target_truncate: 8
+          target_truncate: null
     diagnostics:
       - name: coord_diag
         enabled: true
@@ -501,24 +555,42 @@ rollout_matching:
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
         config:
           desc_ce_weight: 1.0
-          self_context_struct_ce_weight: 0.0
+          struct_ce_weight: 0.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: bbox_geo
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           smoothl1_weight: 1.0
           ciou_weight: 1.0
-          a1_smoothl1_weight: 0.0
-          a1_ciou_weight: 0.0
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0
         channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
         config:
           coord_ce_weight: 0.0
           coord_el1_weight: 0.0
@@ -528,10 +600,7 @@ rollout_matching:
           coord_gate_weight: 1.0
           text_gate_weight: 0.0
           soft_ce_weight: 1.0
-          self_context_soft_ce_weight: 0.0
           w1_weight: 1.0
-          a1_soft_ce_weight: 0.0
-          a1_w1_weight: 0.0
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 16

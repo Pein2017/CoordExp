@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Metric and loss-key interpretation for current training surfaces.
-updated: 2026-03-09
+updated: 2026-03-16
 ---
 
 # Training Metrics and Losses (Quick Reference)
@@ -87,14 +87,12 @@ Key replacements (non-exhaustive):
   - Use provenance keys instead:
     - Channel-A:
       - `loss/A1_text/{struct_ce,desc_ce}`
-      - Optional A1 anchor coord/geo atoms (only when configured via `bbox_geo.config.a1_*` / `coord_reg.config.a1_*`):
-        - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}`
-      - `loss/A2_text/struct_ce`
-      - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
-      - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+      - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the anchor forward
+      - `loss/A2_text/struct_ce` when `token_ce.application.preset` includes the final self-context struct/EOS stabilizer and `n_softctx_iter > 1`
+      - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the final self-context forward
     - Channel-B:
       - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
-      - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
+      - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize}`
       - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 - Old provenance prefix: `obj/<provenance>/<atom>` (removed) -> `loss/<provenance>/<atom>`
 - Legacy aliases removed: `loss/ce`, `loss/coord`, `loss/coord_prefix`, `loss/coord_tail`
@@ -125,13 +123,12 @@ ST bridge diagnostics surface:
 - Canonical Stage-2 objective keys (objective atoms; emitted only when effective weight is non-zero) include:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}`
-    - Optional: `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}` (A1 anchor ablation knobs in pipeline module configs)
-    - `loss/A2_text/struct_ce`
-    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}`
-    - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the anchor forward
+    - `loss/A2_text/struct_ce` when the effective `token_ce.application.preset` includes the final self-context struct/EOS stabilizer
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the final self-context forward
   - Channel-B:
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
-    - `loss/B_coord/{bbox_smoothl1,bbox_ciou}`
+    - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize}`
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 
 Reduction/naming contract:
@@ -155,20 +152,20 @@ Stage-2 note (Stage-2 Rollout-Aligned Teacher Forcing):
 
 Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
 - Stage_2 Two-Channel Teacher Forcing (Expectation/Rollout) (`custom.trainer_variant: stage2_two_channel`) runs a
-  two-surface objective in Channel-A:
+  routing-aware objective in Channel-A:
   - **Anchor (GT / A1 logits):** full CE on JSON structure + `desc` value tokens (coord tokens excluded from CE).
-  - **Self-context (final-iteration logits):** a format/closure CE stabilizer on `struct` + `<|im_end|>` only (no `desc` CE; coord tokens excluded from token-CE),
-    with a small stabilizer weight controlled by `token_ce.config.self_context_struct_ce_weight` (pipeline-only; flat `stage2_ab.fmt_struct_ce_weight` removed).
-  - Optional A1 coord/geo anchors (ablation knobs): enable via `bbox_geo.config.a1_*` / `coord_reg.config.a1_*` to add anchor supervision and emit `loss/A1_coord/*`.
+  - **Final self-context (A2 logits when iterations exist):** optional format/closure CE stabilizer on `struct` + `<|im_end|>` only (no `desc` CE; coord tokens excluded from token-CE), controlled by `token_ce.config.struct_ce_weight`.
+  - **BBox/coord routing:** `bbox_geo`, `bbox_size_aux`, and `coord_reg` use `application.preset` to decide whether their Channel-A atoms land on `A1_coord` or `A2_coord` without duplicating weights.
+  - Recommended preset: `anchor_if_single_iter_else_final`, which means:
+    - `n_softctx_iter = 1` -> Channel-A bbox/coord atoms emit under `loss/A1_coord/*`
+    - `n_softctx_iter > 1` -> the same atoms emit under `loss/A2_coord/*`
 - Canonical objective keys for this split include:
   - `loss/A1_text/{struct_ce,desc_ce}` (GT anchor forward; token CE objective atoms)
-  - Optional: `loss/A1_coord/{bbox_smoothl1,bbox_ciou,coord_soft_ce,coord_w1}` (A1 anchor coord/geo atoms; see Stage-2 runbook)
+  - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the anchor forward
   - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer)
-  - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
-  - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
-- Channel-A coord losses are computed from the self-context logits (final iteration). By default, a small coord
-  distribution regularizer may be enabled only for Channel-A via `coord_reg.config.self_context_soft_ce_weight`.
-  Optional hard coord-token CE (peaky logits stabilizer) is controlled by `coord_reg.config.coord_ce_weight`.
+  - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the final self-context forward
+- Channel-A coord losses are routed by `application.preset`, not by duplicated `a1_*` or `self_context_*` weight families.
+  Hard coord-token CE remains controlled by `coord_reg.config.coord_ce_weight`, and distribution losses remain controlled by `coord_reg.config.soft_ce_weight` / `coord_reg.config.w1_weight`.
 
 Stage-2 coord-distribution diagnostics (`coord_diag/<provenance>/*`):
 - These are **monitor-only** metrics derived from the coord-vocab slice at GT coord-token positions (not part of the loss).

@@ -20,6 +20,7 @@ from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
     DIAGNOSTIC_CONFIG_ALLOWLIST,
+    OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
 )
 
@@ -283,6 +284,7 @@ class RolloutPipelineModuleSpec:
     weight: float
     channels: tuple[str, ...]
     config: Mapping[str, Any]
+    application: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -509,6 +511,31 @@ class RolloutMatchingConfig:
 
                     if not isinstance(spec.config, Mapping):
                         raise TypeError(f"{path}[{idx}].config must be a mapping")
+
+                    if path.endswith(".objective"):
+                        if not isinstance(spec.application, Mapping):
+                            raise TypeError(
+                                f"{path}[{idx}].application must be a mapping"
+                            )
+                        app_unknown = set(spec.application.keys()) - {"preset"}
+                        if app_unknown:
+                            raise ValueError(
+                                f"Unknown {path}[{idx}].application keys for module {name!r}: "
+                                f"{sorted(str(k) for k in app_unknown)}"
+                            )
+                        preset = str(spec.application.get("preset", "") or "").strip()
+                        if not preset:
+                            raise ValueError(
+                                f"{path}[{idx}].application.preset must be provided"
+                            )
+                        allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
+                            name, set()
+                        )
+                        if preset not in allowed_presets:
+                            raise ValueError(
+                                f"{path}[{idx}].application.preset for module {name!r} "
+                                f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
+                            )
 
                     allowed_cfg = config_allowlist_by_name.get(name, set())
                     unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)

@@ -227,14 +227,23 @@ Normative behavior:
   - `type=coord` tokens MUST have CE weight `0` in `context=self_context`,
   - `type=struct|eos` tokens remain supervised.
   This stabilizer MUST be controlled by an explicit typed weight in the objective pipeline (e.g.,
-  `token_ce.config.self_context_struct_ce_weight`) and MUST be recorded in pipeline identity so runs are auditable.
-- Channel-A geometry (`geo`) MUST be computed from `context=self_context` logits (to train under self-conditioned coord
-  context).
+  `token_ce.config.struct_ce_weight`) together with `token_ce.application.preset`, and MUST be recorded in pipeline identity so runs are auditable.
+- Channel-A bbox/coord provenance MUST be controlled by the objective `application.preset` rather than duplicated
+  `a1_*` or `self_context_*` weight families:
+  - under the canonical `anchor_if_single_iter_else_final` preset,
+    - `n_softctx_iter = 1` routes Channel-A bbox/coord supervision through the anchor logits,
+    - `n_softctx_iter > 1` routes the same supervision through the final self-context logits.
 
 #### Scenario: Channel-A CE uses A1 logits
 - **WHEN** Stage-2 Channel-A executes with `n_softctx_iter >= 2`
 - **THEN** the CE anchor loss uses A1 logits (context `gt`)
 - **AND** geometry uses final-iteration logits (context `self_context`).
+
+#### Scenario: Single-iteration Channel-A routes bbox/coord supervision through anchor logits
+- **WHEN** Stage-2 Channel-A executes with `n_softctx_iter = 1`
+- **AND** bbox/coord objectives use `application.preset=anchor_if_single_iter_else_final`
+- **THEN** the CE anchor loss uses A1 logits (context `gt`)
+- **AND** bbox/coord supervision also uses the anchor logits for that single-iteration run.
 
 ### Requirement: Straight-Through (ST) bridge modes are configurable
 The system SHALL support ST modes for:
@@ -379,4 +388,3 @@ Normative behavior:
 - **WHEN** `bbox_size_aux` is enabled
 - **THEN** the public bbox expression remains `bbox_2d: [x1, y1, x2, y2]`
 - **AND** internal canonicalization does not redefine the serialized slot order.
-

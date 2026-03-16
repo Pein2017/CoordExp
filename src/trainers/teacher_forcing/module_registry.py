@@ -20,7 +20,7 @@ ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = {"coord_diag"}
 OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "token_ce": {
         "desc_ce_weight",
-        "self_context_struct_ce_weight",
+        "struct_ce_weight",
         "rollout_fn_desc_weight",
         "rollout_matched_prefix_struct_weight",
     },
@@ -28,8 +28,6 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "bbox_geo": {
         "smoothl1_weight",
         "ciou_weight",
-        "a1_smoothl1_weight",
-        "a1_ciou_weight",
     },
     "bbox_size_aux": {
         "log_wh_weight",
@@ -38,9 +36,6 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "oversize_area_frac_threshold",
         "oversize_log_w_threshold",
         "oversize_log_h_threshold",
-        "a1_log_wh_weight",
-        "a1_log_area_weight",
-        "a1_oversize_penalty_weight",
         "eps",
     },
     "coord_reg": {
@@ -52,13 +47,37 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "coord_gate_weight",
         "text_gate_weight",
         "soft_ce_weight",
-        "self_context_soft_ce_weight",
         "w1_weight",
-        "a1_soft_ce_weight",
-        "a1_w1_weight",
         "temperature",
         "target_sigma",
         "target_truncate",
+    },
+}
+
+OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
+    "token_ce": {
+        "anchor_text_plus_final_struct",
+        "anchor_text_only",
+        "rollout_text_only",
+    },
+    "loss_dead_anchor_suppression": {"rollout_only"},
+    "bbox_geo": {
+        "anchor_if_single_iter_else_final",
+        "anchor_only",
+        "final_only",
+        "anchor_and_final",
+    },
+    "bbox_size_aux": {
+        "anchor_if_single_iter_else_final",
+        "anchor_only",
+        "final_only",
+        "anchor_and_final",
+    },
+    "coord_reg": {
+        "anchor_if_single_iter_else_final",
+        "anchor_only",
+        "final_only",
+        "anchor_and_final",
     },
 }
 
