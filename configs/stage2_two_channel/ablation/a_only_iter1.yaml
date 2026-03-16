@@ -43,8 +43,8 @@ stage2_ab:
         channels: [A, B]
         config:
           # Required: SmoothL1 on decoded bbox geometry.
-          smoothl1_weight: 2.0
-          ciou_weight: 0.2
+          smoothl1_weight: 1.0
+          ciou_weight: 0.5
           a1_smoothl1_weight: 0.0
           a1_ciou_weight: 0.0
       - name: bbox_size_aux
@@ -52,8 +52,8 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         config:
-          log_wh_weight: 0.05
-          log_area_weight: 0.0
+          log_wh_weight: 0.1
+          log_area_weight: 0.1
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
