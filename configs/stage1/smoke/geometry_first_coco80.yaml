@@ -1,4 +1,4 @@
-extends: ../ablation/geometry_first_coco80.yaml
+extends: ../profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml
 
 # GPU-required smoke config (kept in-repo so the command is deterministic).
 # This config should differ from the audited stage-1 config only by runtime-ish
@@ -26,4 +26,3 @@ debug:
   output_dir: output/stage1/smoke/geometry_first_coco80
   train_sample_limit: 256
   val_sample_limit: 64
-

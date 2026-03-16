@@ -1,10 +1,12 @@
-extends: desc_first_a_only.yaml
+extends: ../_shared/prod_a_only_hf.yaml
 
-# Canonical Stage-2 production A-only profile:
-# - training rollouts on HF (inherited)
-# - eval_step rollouts on HF (inherited)
+model:
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
-# Under DDP we require bounded phase barriers to prevent deadlocks/hangs if ranks diverge.
-stage2_ab:
-  channel_b:
-    ddp_phase_timeout_s: 120.0
+training:
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-add_coord_ce
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
+
+custom:
+  val_sample_limit: 512

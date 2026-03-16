@@ -47,7 +47,7 @@ Open these docs first:
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
-- `configs/stage1/ablation/`
+- `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
 
 Historical lineage only:

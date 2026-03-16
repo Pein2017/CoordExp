@@ -1,0 +1,11 @@
+# Stronger coord-only softCE + gate ablation (no W1).
+
+custom:
+  coord_soft_ce_w1:
+    enabled: true
+    soft_ce_weight: 2.0
+    w1_weight: 0.0
+    gate_weight: 2.0
+    temperature: 0.7
+    target_sigma: 1
+    target_truncate: 8

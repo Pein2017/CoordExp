@@ -1,4 +1,4 @@
-extends: ../prod/desc_first_a_only.yaml
+extends: ../prod/a_only.yaml
 
 # Ablation: disable Channel-A iterative self-context by setting n_softctx_iter=1.
 # Notes:

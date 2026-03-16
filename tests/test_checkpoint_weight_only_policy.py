@@ -102,7 +102,7 @@ def test_audited_configs_enable_save_only_model() -> None:
     from src.config.loader import ConfigLoader
 
     audited = [
-        "configs/stage1/ablation/geometry_first_coco80.yaml",
+        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml",
         "configs/stage2_two_channel/prod/ab_mixed.yaml",
     ]
 

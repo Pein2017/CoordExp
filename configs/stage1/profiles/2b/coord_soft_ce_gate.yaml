@@ -1,0 +1,8 @@
+extends:
+  - ../../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../_shared/loss_coord_soft_ce_gate_strong.yaml
+
+training:
+  output_dir: ./output/stage1_2b/coco_bbox_max60-soft_ce_gate
+  run_name: epoch_4-softce_gate-from-base-2B
+  logging_dir: ./tb/stage1_2b/coco_bbox_max60-soft_ce_gate

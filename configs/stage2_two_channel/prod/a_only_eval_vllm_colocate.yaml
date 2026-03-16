@@ -1,0 +1,37 @@
+extends: a_only.yaml
+
+# Keep train/eval context length coherent with vLLM max_model_len.
+global_max_length: 8192
+
+training:
+  run_name: epoch_2-eff_size_64-n_softctx_iter_2-a_only-eval_vllm_colocate
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only_eval_vllm_colocate
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_eval_vllm_colocate
+
+# Eval-only vLLM (colocate) rollout profile.
+#
+# - Training stays HF (no change to training-time rollout behavior).
+# - Evaluation rollouts use vLLM colocated in the learner processes (no separate rollout server).
+# - vLLM rollouts are supported only via full merged-weight sync (adapter-only sync is unsupported).
+# - Optional: offload HF training state during the eval window for VRAM headroom (DDP only; DeepSpeed/ZeRO not supported).
+
+rollout_matching:
+  # Eval-only backend override (training backend unchanged).
+  eval_rollout_backend: vllm
+  # Keep train/eval rollout decode caps explicit in this profile.
+  channel_b_decode_batch_size: 8
+  eval_decode_batch_size: 8
+
+  # Optional: offload HF training state during the eval window to maximize VRAM headroom.
+  offload:
+    enabled: true
+
+  vllm:
+    mode: colocate
+    # Full-sync only (multimodal): adapter-only sync is unsupported and will fail fast.
+    enable_lora: false
+    # Required: must cover prompt_len + max_new_tokens, and should be >= global_max_length.
+    max_model_len: 8192
+    # A100-80GB starting points (tune for your prompt/image length distribution):
+    # gpu_memory_utilization: 0.45
+    # max_num_seqs: 128

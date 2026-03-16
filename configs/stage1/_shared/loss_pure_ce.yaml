@@ -1,0 +1,5 @@
+# Pure CE baseline: standard full-vocab CE on all tokens (including <|coord_*|>).
+
+custom:
+  coord_soft_ce_w1:
+    enabled: false

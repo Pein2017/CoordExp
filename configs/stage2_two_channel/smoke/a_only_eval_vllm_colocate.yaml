@@ -1,9 +1,9 @@
-extends: ../prod/desc_first_a_only_eval_vllm_colocate.yaml
+extends: ../prod/a_only_eval_vllm_colocate.yaml
 
 training:
-  run_name: smoke_desc_first_a_only_eval_vllm_colocate
-  output_dir: output/stage2_ab/smoke/desc_first_a_only_eval_vllm_colocate
-  logging_dir: tb/stage2_ab/smoke/desc_first_a_only_eval_vllm_colocate
+  run_name: smoke_a_only_eval_vllm_colocate
+  output_dir: output/stage2_ab/smoke/a_only_eval_vllm_colocate
+  logging_dir: tb/stage2_ab/smoke/a_only_eval_vllm_colocate
   eval_strategy: steps
   eval_steps: 1
   save_strategy: steps

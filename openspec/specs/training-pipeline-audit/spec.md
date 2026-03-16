@@ -5,7 +5,7 @@ Define audit contracts that keep Stage-1/Stage-2 training entrypoints reproducib
 ## Requirements
 ### Requirement: Audit scope is anchored to operational entrypoints
 The audit process SHALL explicitly cover the pipeline exercised by the following operational entrypoints:
-- `scripts/train.sh` with `configs/stage1/ablation/geometry_first_coco80.yaml`
+- `scripts/train.sh` with `configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml`
 - `scripts/train_stage2.sh` with `configs/stage2_two_channel/prod/ab_mixed.yaml`
 
 The audit SHALL map `data -> transforms/packing -> training/inference -> artifacts` and SHALL enumerate

@@ -1,0 +1,50 @@
+extends:
+  - ../base.yaml
+  - ./objective_tuned.yaml
+  - ./prod_common.yaml
+
+global_max_length: 12000
+
+training:
+  effective_batch_size: 96
+
+stage2_ab:
+  schedule:
+    b_ratio: 0.05
+
+rollout_matching:
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  offload:
+    enabled: false
+  max_new_tokens: 3084
+  channel_b_decode_batch_size: 16
+  eval_decode_batch_size: 16
+  train_monitor_dump:
+    enabled: true
+    every_steps: 40
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
+  eval_monitor_dump:
+    enabled: true
+    every_evals: 1
+    max_events: 0
+    max_samples: 10
+    max_text_chars: 0
+    write_markdown: false
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    enforce_eager: true
+    gpu_memory_utilization: 0.8
+    max_model_len: 14000
+    enable_lora: false
+    enable_prefix_caching: true
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

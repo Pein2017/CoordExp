@@ -1,0 +1,8 @@
+extends:
+  - ../../_shared/coord_soft_ce_gate_4b.yaml
+  - ../../_shared/prompt_coco80_desc_first.yaml
+
+training:
+  output_dir: ./output/stage1/coco_bbox_max60-coco80-desc_first
+  run_name: epoch_4-softce_gate-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-4B
+  logging_dir: ./tb/stage1/coco_bbox_max60-coco80-desc_first

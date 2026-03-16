@@ -1,0 +1,4 @@
+custom:
+  object_field_order: desc_first
+  extra:
+    prompt_variant: coco_80

@@ -1,15 +1,9 @@
-extends: desc_first_coco80.yaml
-
-model:
-  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+extends:
+  - ./coord_soft_ce_gate_coco80_desc_first.yaml
+  - ../../_shared/loss_pure_ce.yaml
 
 training:
   output_dir: ./output/stage1_2b/coco_bbox_max60-coco80-desc_first-pure_ce
   run_name: epoch_4-pure_ce-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-2B
   logging_dir: ./tb/stage1_2b/coco_bbox_max60-coco80-desc_first-pure_ce
   num_train_epochs: 4
-
-custom:
-  # Pure CE baseline: standard full-vocab CE on all tokens (including <|coord_*|>).
-  coord_soft_ce_w1:
-    enabled: false

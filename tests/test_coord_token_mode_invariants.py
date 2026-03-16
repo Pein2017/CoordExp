@@ -5,7 +5,7 @@ from src.config.loader import ConfigLoader
 
 def test_coord_token_mode_invariants_for_anchored_configs() -> None:
     stage1 = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/ablation/geometry_first_coco80.yaml"
+        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml"
     )
     stage2 = ConfigLoader.load_materialized_training_config(
         "configs/stage2_two_channel/prod/ab_mixed.yaml"
@@ -26,4 +26,3 @@ def test_coord_token_mode_invariants_for_anchored_configs() -> None:
 
     # Stage-2 AB should not enable the coord-offset adapter.
     assert stage2.custom.coord_offset.enabled is False
-

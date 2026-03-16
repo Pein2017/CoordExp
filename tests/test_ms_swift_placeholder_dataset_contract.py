@@ -19,7 +19,6 @@ def _assert_placeholder_datasets_present(config_path: str) -> None:
 
 def test_placeholder_datasets_present_for_stage1_and_stage2_anchored_configs() -> None:
     _assert_placeholder_datasets_present(
-        "configs/stage1/ablation/geometry_first_coco80.yaml"
+        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml"
     )
     _assert_placeholder_datasets_present("configs/stage2_two_channel/prod/ab_mixed.yaml")
-

@@ -1,0 +1,24 @@
+extends:
+  - ../../_shared/coord_soft_ce_gate_2b.yaml
+
+global_max_length: 16000
+
+training:
+  output_dir: ./output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_gate
+  run_name: epoch_4-hard_ce_soft_ce_gate-from-base-2B
+  logging_dir: ./tb/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_gate
+  effective_batch_size: 24
+
+custom:
+  # Mixed coord loss:
+  #   - base CE: standard full-vocab CE on non-coord tokens (coord targets are masked)
+  #   - coord loss: coord-only (CE + softCE + gate) on coord-token positions
+  coord_soft_ce_w1:
+    enabled: true
+    ce_weight: 1.0
+    soft_ce_weight: 1.0
+    w1_weight: 0.0
+    gate_weight: 2.0
+    temperature: 0.7
+    target_sigma: 1
+    target_truncate: 8
