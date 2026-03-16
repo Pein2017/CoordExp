@@ -129,7 +129,9 @@ class RolloutEvalConfidencePostOpConfig:
 class RolloutEvalDetectionConfig:
     # Enable COCO-style AP/mAP during trainer eval_step.
     enabled: bool = True
-    metrics: str = "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
+    metrics: str = (
+        "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
+    )
 
     # COCO evaluator knobs.
     use_segm: bool = False
@@ -221,7 +223,9 @@ class VllmServerConfig:
     infer_timeout_s: Optional[float] = None
     allow_infinite_infer_timeout: bool = False
     servers: list[VllmServerEntryConfig] = field(default_factory=list)
-    debug_dump: VllmServerDebugDumpConfig = field(default_factory=VllmServerDebugDumpConfig)
+    debug_dump: VllmServerDebugDumpConfig = field(
+        default_factory=VllmServerDebugDumpConfig
+    )
 
 
 @dataclass(frozen=True)
@@ -330,7 +334,9 @@ class RolloutMatchingConfig:
     eval_monitor_dump: Optional[RolloutEvalMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
     pipeline: Optional[RolloutPipelineConfig] = None
-    eval_detection: RolloutEvalDetectionConfig = field(default_factory=RolloutEvalDetectionConfig)
+    eval_detection: RolloutEvalDetectionConfig = field(
+        default_factory=RolloutEvalDetectionConfig
+    )
     vllm: Optional[VllmConfig] = None
     # Optional override applied only to eval-step rollouts.
     eval_prompt_variant: Optional[str] = None
@@ -387,9 +393,7 @@ class RolloutMatchingConfig:
                 "rollout_matching.channel_b_decode_batch_size must be an int"
             ) from exc
         if channel_b_decode_bs <= 0:
-            raise ValueError(
-                "rollout_matching.channel_b_decode_batch_size must be > 0"
-            )
+            raise ValueError("rollout_matching.channel_b_decode_batch_size must be > 0")
 
         if self.eval_decode_batch_size is None:
             raise ValueError(
@@ -402,9 +406,7 @@ class RolloutMatchingConfig:
                 "rollout_matching.eval_decode_batch_size must be an int"
             ) from exc
         if eval_decode_bs <= 0:
-            raise ValueError(
-                "rollout_matching.eval_decode_batch_size must be > 0"
-            )
+            raise ValueError("rollout_matching.eval_decode_batch_size must be > 0")
 
         coord_decode_mode = str(self.coord_decode_mode or "exp").strip().lower()
         if coord_decode_mode not in {"exp", "st"}:
@@ -421,21 +423,25 @@ class RolloutMatchingConfig:
                     "rollout_matching.decoding.temperature must be a float"
                 ) from exc
             if temperature < 0.0:
-                raise ValueError(
-                    "rollout_matching.decoding.temperature must be >= 0"
-                )
+                raise ValueError("rollout_matching.decoding.temperature must be >= 0")
 
             try:
-                top_p = float(getattr(dec, "top_p", 1.0) if dec.top_p is not None else 1.0)
+                top_p = float(
+                    getattr(dec, "top_p", 1.0) if dec.top_p is not None else 1.0
+                )
             except (TypeError, ValueError) as exc:
-                raise TypeError("rollout_matching.decoding.top_p must be a float") from exc
+                raise TypeError(
+                    "rollout_matching.decoding.top_p must be a float"
+                ) from exc
             if not (0.0 < top_p <= 1.0):
                 raise ValueError("rollout_matching.decoding.top_p must be in (0, 1]")
 
             try:
                 top_k = int(getattr(dec, "top_k", -1))
             except (TypeError, ValueError) as exc:
-                raise TypeError("rollout_matching.decoding.top_k must be an int") from exc
+                raise TypeError(
+                    "rollout_matching.decoding.top_k must be an int"
+                ) from exc
             if top_k != -1 and top_k < 1:
                 raise ValueError(
                     "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
@@ -460,10 +466,14 @@ class RolloutMatchingConfig:
 
         if self.pipeline is not None:
             if not isinstance(self.pipeline, RolloutPipelineConfig):
-                raise TypeError("rollout_matching.pipeline must be a RolloutPipelineConfig")
+                raise TypeError(
+                    "rollout_matching.pipeline must be a RolloutPipelineConfig"
+                )
 
             if not self.pipeline.objective:
-                raise ValueError("rollout_matching.pipeline.objective must be non-empty")
+                raise ValueError(
+                    "rollout_matching.pipeline.objective must be non-empty"
+                )
 
             def _validate_specs(
                 specs: tuple[RolloutPipelineModuleSpec, ...],
@@ -475,7 +485,9 @@ class RolloutMatchingConfig:
                 seen: set[str] = set()
                 for idx, spec in enumerate(specs):
                     if not isinstance(spec, RolloutPipelineModuleSpec):
-                        raise TypeError(f"{path}[{idx}] must be RolloutPipelineModuleSpec")
+                        raise TypeError(
+                            f"{path}[{idx}] must be RolloutPipelineModuleSpec"
+                        )
                     name = str(spec.name or "").strip()
                     if not name:
                         raise ValueError(f"{path}[{idx}].name must be non-empty")
@@ -490,11 +502,15 @@ class RolloutMatchingConfig:
                     try:
                         weight = float(spec.weight)
                     except (TypeError, ValueError) as exc:
-                        raise TypeError(f"{path}[{idx}].weight must be numeric") from exc
+                        raise TypeError(
+                            f"{path}[{idx}].weight must be numeric"
+                        ) from exc
                     if weight < 0.0:
                         raise ValueError(f"{path}[{idx}].weight must be >= 0")
 
-                    if not isinstance(spec.channels, Sequence) or isinstance(spec.channels, (str, bytes)):
+                    if not isinstance(spec.channels, Sequence) or isinstance(
+                        spec.channels, (str, bytes)
+                    ):
                         raise TypeError(f"{path}[{idx}].channels must be a sequence")
                     if not spec.channels:
                         raise ValueError(f"{path}[{idx}].channels must not be empty")
@@ -615,7 +631,9 @@ class RolloutMatchingConfig:
 
         if self.eval_detection is not None:
             eval_det = self.eval_detection
-            metrics = str(getattr(eval_det, "metrics", "coco") or "coco").strip().lower()
+            metrics = (
+                str(getattr(eval_det, "metrics", "coco") or "coco").strip().lower()
+            )
             if metrics not in {"coco", "both"}:
                 raise ValueError(
                     "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
