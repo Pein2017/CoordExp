@@ -41,7 +41,6 @@ def run_bbox_size_aux_module(
         z = context.logits.new_tensor(0.0)
         metrics = {
             "loss/bbox_log_wh": 0.0,
-            "loss/bbox_log_area": 0.0,
             "loss/bbox_oversize": 0.0,
             "bbox_size_aux/groups_total": 0.0,
             "bbox_size_aux/mean_width": 0.0,
@@ -60,7 +59,6 @@ def run_bbox_size_aux_module(
         z = context.logits.new_tensor(0.0)
         metrics = {
             "loss/bbox_log_wh": 0.0,
-            "loss/bbox_log_area": 0.0,
             "loss/bbox_oversize": 0.0,
             "bbox_size_aux/groups_total": 0.0,
             "bbox_size_aux/mean_width": 0.0,
@@ -74,7 +72,6 @@ def run_bbox_size_aux_module(
         target_boxes_xyxy=target_boxes if isinstance(target_boxes, torch.Tensor) else None,
         box_weights=box_weights if isinstance(box_weights, torch.Tensor) else None,
         log_wh_weight=_term_weight(cfg, key="log_wh_weight", registry_context=registry_context),
-        log_area_weight=_term_weight(cfg, key="log_area_weight", registry_context=registry_context),
         oversize_penalty_weight=_term_weight(
             cfg,
             key="oversize_penalty_weight",
@@ -88,7 +85,6 @@ def run_bbox_size_aux_module(
 
     metrics = {
         "loss/bbox_log_wh": float(result.log_wh_loss.detach().cpu().item()),
-        "loss/bbox_log_area": float(result.log_area_loss.detach().cpu().item()),
         "loss/bbox_oversize": float(result.oversize_loss.detach().cpu().item()),
         "bbox_size_aux/groups_total": float(result.bbox_groups),
         "bbox_size_aux/mean_width": float(result.stats.mean_width.detach().cpu().item()),
@@ -99,7 +95,6 @@ def run_bbox_size_aux_module(
     state_out = {
         "bbox_size_aux": module_loss,
         "bbox_log_wh_contrib": result.log_wh_contrib.to(dtype=context.logits.dtype),
-        "bbox_log_area_contrib": result.log_area_contrib.to(dtype=context.logits.dtype),
         "bbox_oversize_contrib": result.oversize_contrib.to(dtype=context.logits.dtype),
     }
     return ModuleResult(loss=module_loss, metrics=metrics, state=state_out)

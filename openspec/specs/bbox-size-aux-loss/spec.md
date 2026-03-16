@@ -72,7 +72,6 @@ Normative keys:
 
 - `enabled`
 - `log_wh_weight`
-- `log_area_weight`
 - `oversize_penalty_weight`
 - `oversize_area_frac_threshold`
 - `oversize_log_w_threshold`
@@ -85,7 +84,6 @@ Validation behavior:
 - `eps` MUST be `> 0`,
 - if `enabled=true`, at least one of:
   - `log_wh_weight`
-  - `log_area_weight`
   - `oversize_penalty_weight`
   MUST be non-zero.
 

@@ -166,3 +166,20 @@ def test_eval_only_vllm_rejects_enable_lora_true() -> None:
     msg = str(exc.value).lower()
     assert "enable_lora" in msg
     assert "full" in msg and "sync" in msg
+
+
+def test_hf_eval_skips_vllm_length_guardrails() -> None:
+    payload = _base_training_payload()
+    payload["global_max_length"] = 2048
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "channel_b_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
+        "max_new_tokens": 2048,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.rollout_matching is not None
+    assert str(cfg.rollout_matching.eval_rollout_backend).lower() == "hf"

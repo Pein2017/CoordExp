@@ -51,7 +51,6 @@ Normative behavior:
   - `ciou_weight`
 - `bbox_size_aux.config` MUST accept only:
   - `log_wh_weight`
-  - `log_area_weight`
   - `oversize_penalty_weight`
   - `oversize_area_frac_threshold`
   - `oversize_log_w_threshold`

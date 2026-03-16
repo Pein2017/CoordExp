@@ -31,7 +31,6 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     },
     "bbox_size_aux": {
         "log_wh_weight",
-        "log_area_weight",
         "oversize_penalty_weight",
         "oversize_area_frac_threshold",
         "oversize_log_w_threshold",

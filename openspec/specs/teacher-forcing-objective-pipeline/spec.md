@@ -69,7 +69,6 @@ Execution semantics:
   - `coord_reg.application.preset: anchor_if_single_iter_else_final`
 - `bbox_size_aux.config` MUST accept the canonical decoded-box size-aux keys:
   - `log_wh_weight`
-  - `log_area_weight`
   - `oversize_penalty_weight`
   - `oversize_area_frac_threshold`
   - `oversize_log_w_threshold`

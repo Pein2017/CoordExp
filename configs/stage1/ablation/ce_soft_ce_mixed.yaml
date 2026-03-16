@@ -13,7 +13,7 @@ custom:
     enabled: true
     ce_weight: 1.0
     soft_ce_weight: 2.0
-    w1_weight: 1.0
+    w1_weight: 0.0
     gate_weight: 2.0
     temperature: 0.7
     target_sigma: 1

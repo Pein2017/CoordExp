@@ -217,6 +217,22 @@ def test_rollout_eval_detection_defaults_to_enabled_coco_when_omitted():
     assert cfg.rollout_matching.eval_detection.metrics == "coco"
 
 
+def test_rollout_eval_rollout_backend_hf_is_accepted() -> None:
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.rollout_backend == "hf"
+    assert cfg.rollout_matching.eval_rollout_backend == "hf"
+
+
 def test_rollout_eval_rollout_backend_null_inherits() -> None:
     payload = _base_training_payload()
     payload["rollout_matching"] = {
@@ -615,7 +631,6 @@ def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
 def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
     bbox_size_aux_cfg = {
         "log_wh_weight": 0.0,
-        "log_area_weight": 0.0,
         "oversize_penalty_weight": 0.0,
         "oversize_area_frac_threshold": None,
         "oversize_log_w_threshold": None,
@@ -725,7 +740,6 @@ def test_stage2_pipeline_disallows_custom_bbox_size_aux_knobs() -> None:
     payload["custom"]["bbox_size_aux"] = {
         "enabled": True,
         "log_wh_weight": 0.05,
-        "log_area_weight": 0.0,
         "oversize_penalty_weight": 0.0,
         "oversize_area_frac_threshold": None,
         "oversize_log_w_threshold": None,

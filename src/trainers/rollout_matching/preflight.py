@@ -79,12 +79,12 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
     eval_backend_raw = rollout_cfg.get("eval_rollout_backend")
     if eval_backend_raw is None:
         raise ValueError(
-            "rollout_matching.eval_rollout_backend must be set to 'vllm' for Stage-2 rollout preflight."
+            "rollout_matching.eval_rollout_backend must be set to one of {'hf', 'vllm'} for Stage-2 rollout preflight."
         )
     eval_backend = str(eval_backend_raw).strip().lower()
-    if eval_backend != "vllm":
+    if eval_backend not in {"hf", "vllm"}:
         raise ValueError(
-            "rollout_matching.eval_rollout_backend must be 'vllm' for Stage-2 rollout preflight."
+            "rollout_matching.eval_rollout_backend must be one of {'hf', 'vllm'} for Stage-2 rollout preflight."
         )
 
     vllm_cfg = _extract_required_mapping(rollout_cfg, "rollout_matching.vllm")

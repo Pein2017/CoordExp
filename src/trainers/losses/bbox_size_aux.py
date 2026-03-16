@@ -19,10 +19,8 @@ from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
 class BBoxSizeAuxResult:
     total_loss: torch.Tensor
     log_wh_loss: torch.Tensor
-    log_area_loss: torch.Tensor
     oversize_loss: torch.Tensor
     log_wh_contrib: torch.Tensor
-    log_area_contrib: torch.Tensor
     oversize_contrib: torch.Tensor
     stats: BBoxSizeStats
     bbox_groups: int
@@ -53,7 +51,6 @@ def compute_bbox_size_aux_from_boxes(
     target_boxes_xyxy: torch.Tensor | None = None,
     box_weights: torch.Tensor | None = None,
     log_wh_weight: float = 0.0,
-    log_area_weight: float = 0.0,
     oversize_penalty_weight: float = 0.0,
     oversize_area_frac_threshold: float | None = None,
     oversize_log_w_threshold: float | None = None,
@@ -68,10 +65,7 @@ def compute_bbox_size_aux_from_boxes(
     )
 
     log_wh_loss = zero
-    log_area_loss = zero
-    if target_boxes_xyxy is not None and (
-        float(log_wh_weight) != 0.0 or float(log_area_weight) != 0.0
-    ):
+    if target_boxes_xyxy is not None and float(log_wh_weight) != 0.0:
         matched = compute_bbox_log_size_loss(
             pred_boxes_xyxy=pred_boxes_xyxy,
             target_boxes_xyxy=target_boxes_xyxy,
@@ -79,7 +73,6 @@ def compute_bbox_size_aux_from_boxes(
             eps=eps,
         )
         log_wh_loss = matched.log_wh
-        log_area_loss = matched.log_area
         stats = matched.stats
 
     oversize_loss = zero
@@ -94,17 +87,14 @@ def compute_bbox_size_aux_from_boxes(
         )
 
     log_wh_contrib = float(max(0.0, log_wh_weight)) * log_wh_loss
-    log_area_contrib = float(max(0.0, log_area_weight)) * log_area_loss
     oversize_contrib = float(max(0.0, oversize_penalty_weight)) * oversize_loss
-    total_loss = log_wh_contrib + log_area_contrib + oversize_contrib
+    total_loss = log_wh_contrib + oversize_contrib
 
     return BBoxSizeAuxResult(
         total_loss=torch.nan_to_num(total_loss, nan=0.0, posinf=0.0, neginf=0.0),
         log_wh_loss=torch.nan_to_num(log_wh_loss, nan=0.0, posinf=0.0, neginf=0.0),
-        log_area_loss=torch.nan_to_num(log_area_loss, nan=0.0, posinf=0.0, neginf=0.0),
         oversize_loss=torch.nan_to_num(oversize_loss, nan=0.0, posinf=0.0, neginf=0.0),
         log_wh_contrib=torch.nan_to_num(log_wh_contrib, nan=0.0, posinf=0.0, neginf=0.0),
-        log_area_contrib=torch.nan_to_num(log_area_contrib, nan=0.0, posinf=0.0, neginf=0.0),
         oversize_contrib=torch.nan_to_num(oversize_contrib, nan=0.0, posinf=0.0, neginf=0.0),
         stats=stats,
         bbox_groups=int(pred_boxes_xyxy.shape[0]) if pred_boxes_xyxy.ndim == 2 else 0,
@@ -145,7 +135,6 @@ def compute_stage1_bbox_size_aux_loss(
         target_boxes_xyxy=quartets.target_boxes_xyxy,
         box_weights=None,
         log_wh_weight=_cfg_float(cfg, "log_wh_weight", 0.0),
-        log_area_weight=_cfg_float(cfg, "log_area_weight", 0.0),
         oversize_penalty_weight=_cfg_float(cfg, "oversize_penalty_weight", 0.0),
         oversize_area_frac_threshold=_cfg_optional_float(cfg, "oversize_area_frac_threshold"),
         oversize_log_w_threshold=_cfg_optional_float(cfg, "oversize_log_w_threshold"),
@@ -156,10 +145,8 @@ def compute_stage1_bbox_size_aux_loss(
     return BBoxSizeAuxResult(
         total_loss=result.total_loss,
         log_wh_loss=result.log_wh_loss,
-        log_area_loss=result.log_area_loss,
         oversize_loss=result.oversize_loss,
         log_wh_contrib=result.log_wh_contrib,
-        log_area_contrib=result.log_area_contrib,
         oversize_contrib=result.oversize_contrib,
         stats=result.stats,
         bbox_groups=int(quartets.bbox_groups),

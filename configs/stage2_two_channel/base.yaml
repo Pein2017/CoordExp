@@ -123,7 +123,6 @@ stage2_ab:
           preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
-          log_area_weight: 0.0
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
@@ -185,7 +184,9 @@ rollout_matching:
   offload:
     enabled: false
   rollout_backend: hf
-  eval_rollout_backend: vllm
+  # Default to HF for both train/eval. Channel-B configs that need vLLM
+  # should opt in explicitly via rollout_backend/eval_rollout_backend overrides.
+  eval_rollout_backend: hf
   channel_b_decode_batch_size: 4
   eval_decode_batch_size: 4
   vllm:

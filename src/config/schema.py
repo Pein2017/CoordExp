@@ -299,7 +299,6 @@ class CoordSoftCEW1Config:
 class BBoxSizeAuxConfig:
     enabled: bool = False
     log_wh_weight: float = 0.05
-    log_area_weight: float = 0.0
     oversize_penalty_weight: float = 0.0
     oversize_area_frac_threshold: Optional[float] = None
     oversize_log_w_threshold: Optional[float] = None
@@ -317,7 +316,6 @@ class BBoxSizeAuxConfig:
         required = {
             "enabled",
             "log_wh_weight",
-            "log_area_weight",
             "oversize_penalty_weight",
             "oversize_area_frac_threshold",
             "oversize_log_w_threshold",
@@ -354,7 +352,6 @@ class BBoxSizeAuxConfig:
                 raise ValueError(f"bbox_size_aux.{key} must be numeric or null") from exc
 
         log_wh_weight = _parse_float("log_wh_weight", cls.log_wh_weight)
-        log_area_weight = _parse_float("log_area_weight", cls.log_area_weight)
         oversize_penalty_weight = _parse_float("oversize_penalty_weight", cls.oversize_penalty_weight)
         oversize_area_frac_threshold = _parse_optional_float("oversize_area_frac_threshold")
         oversize_log_w_threshold = _parse_optional_float("oversize_log_w_threshold")
@@ -363,17 +360,14 @@ class BBoxSizeAuxConfig:
 
         if log_wh_weight < 0:
             raise ValueError("bbox_size_aux.log_wh_weight must be >= 0")
-        if log_area_weight < 0:
-            raise ValueError("bbox_size_aux.log_area_weight must be >= 0")
         if oversize_penalty_weight < 0:
             raise ValueError("bbox_size_aux.oversize_penalty_weight must be >= 0")
         if enabled and (
             log_wh_weight == 0
-            and log_area_weight == 0
             and oversize_penalty_weight == 0
         ):
             raise ValueError(
-                "bbox_size_aux is enabled but log_wh_weight, log_area_weight, and oversize_penalty_weight are all 0"
+                "bbox_size_aux is enabled but log_wh_weight and oversize_penalty_weight are both 0"
             )
         if eps <= 0:
             raise ValueError("bbox_size_aux.eps must be > 0")
@@ -385,7 +379,6 @@ class BBoxSizeAuxConfig:
         return cls(
             enabled=enabled,
             log_wh_weight=log_wh_weight,
-            log_area_weight=log_area_weight,
             oversize_penalty_weight=oversize_penalty_weight,
             oversize_area_frac_threshold=oversize_area_frac_threshold,
             oversize_log_w_threshold=oversize_log_w_threshold,
@@ -2111,45 +2104,45 @@ class TrainingConfig:
             effective_eval_backend = str(
                 getattr(rollout_matching, "eval_rollout_backend", "") or ""
             ).strip().lower()
-            if effective_eval_backend != "vllm":
+            if effective_eval_backend not in {"hf", "vllm"}:
                 raise ValueError(
-                    "Stage-2 eval backend is fixed to vLLM; "
-                    "rollout_matching.eval_rollout_backend must be 'vllm'."
+                    "rollout_matching.eval_rollout_backend must be one of {'hf', 'vllm'}."
                 )
 
-            vllm_cfg = getattr(rollout_matching, "vllm", None)
-            if bool(getattr(vllm_cfg, "enable_lora", False)):
-                raise ValueError(
-                    "vLLM rollouts require full merged-weight sync in this stack: "
-                    "set rollout_matching.vllm.enable_lora=false."
-                )
-            vllm_max_model_len_raw = getattr(vllm_cfg, "max_model_len", None)
-            max_new_tokens_raw = getattr(rollout_matching, "max_new_tokens", None)
-
-            if vllm_max_model_len_raw is not None:
-                vllm_max_model_len = int(vllm_max_model_len_raw)
-                if vllm_max_model_len <= 0:
+            if backend == "vllm" or effective_eval_backend == "vllm":
+                vllm_cfg = getattr(rollout_matching, "vllm", None)
+                if bool(getattr(vllm_cfg, "enable_lora", False)):
                     raise ValueError(
-                        "rollout_matching.vllm.max_model_len must be > 0 when provided."
+                        "vLLM rollouts require full merged-weight sync in this stack: "
+                        "set rollout_matching.vllm.enable_lora=false."
                     )
+                vllm_max_model_len_raw = getattr(vllm_cfg, "max_model_len", None)
+                max_new_tokens_raw = getattr(rollout_matching, "max_new_tokens", None)
 
-                if max_new_tokens_raw is not None:
-                    max_new_tokens = int(max_new_tokens_raw)
-                    if max_new_tokens >= vllm_max_model_len:
+                if vllm_max_model_len_raw is not None:
+                    vllm_max_model_len = int(vllm_max_model_len_raw)
+                    if vllm_max_model_len <= 0:
                         raise ValueError(
-                            "rollout_matching.max_new_tokens must be < rollout_matching.vllm.max_model_len "
-                            f"to avoid truncation/overflow. Got max_new_tokens={max_new_tokens} "
-                            f"vllm.max_model_len={vllm_max_model_len}."
+                            "rollout_matching.vllm.max_model_len must be > 0 when provided."
                         )
 
-                if global_max_length is not None and vllm_max_model_len < int(
-                    global_max_length
-                ):
-                    raise ValueError(
-                        "rollout_matching.vllm.max_model_len must be >= global_max_length to avoid "
-                        "silent truncation drift between training and rollouts. "
-                        f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
-                    )
+                    if max_new_tokens_raw is not None:
+                        max_new_tokens = int(max_new_tokens_raw)
+                        if max_new_tokens >= vllm_max_model_len:
+                            raise ValueError(
+                                "rollout_matching.max_new_tokens must be < rollout_matching.vllm.max_model_len "
+                                f"to avoid truncation/overflow. Got max_new_tokens={max_new_tokens} "
+                                f"vllm.max_model_len={vllm_max_model_len}."
+                            )
+
+                    if global_max_length is not None and vllm_max_model_len < int(
+                        global_max_length
+                    ):
+                        raise ValueError(
+                            "rollout_matching.vllm.max_model_len must be >= global_max_length to avoid "
+                            "silent truncation drift between training and rollouts. "
+                            f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
+                        )
 
         return cls(
             template=template,

@@ -1537,12 +1537,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             allow_none=False,
         )
         assert eval_backend is not None
-        if eval_backend != "vllm":
-            raise ValueError(
-                "Eval backend is fixed to vLLM in the Stage-2 pipeline; "
-                "set rollout_matching.eval_rollout_backend='vllm'."
-            )
-
         return train_backend if context == "train" else eval_backend
 
     def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:

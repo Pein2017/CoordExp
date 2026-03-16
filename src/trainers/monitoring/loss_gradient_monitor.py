@@ -37,7 +37,6 @@ _BBOX_TERM_STATE_KEYS = {
 }
 _BBOX_SIZE_AUX_TERM_STATE_KEYS = {
     "bbox_log_wh": "bbox_log_wh_contrib",
-    "bbox_log_area": "bbox_log_area_contrib",
     "bbox_oversize": "bbox_oversize_contrib",
 }
 _COORD_TERM_STATE_KEYS = {
@@ -122,7 +121,6 @@ def build_stage1_bbox_size_monitor_terms(
     terms: Dict[str, torch.Tensor] = {}
     candidates = (
         ("S1/bbox_log_wh", "log_wh_contrib", "log_wh_weight"),
-        ("S1/bbox_log_area", "log_area_contrib", "log_area_weight"),
         ("S1/bbox_oversize", "oversize_contrib", "oversize_penalty_weight"),
     )
     for name, attr_name, weight_key in candidates:

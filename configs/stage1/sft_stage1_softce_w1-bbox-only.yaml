@@ -55,7 +55,7 @@ custom:
     enabled: true
     # Loss composition at coord positions: soft_ce_weight * softCE + w1_weight * W1(CDF)
     soft_ce_weight: 1.0
-    w1_weight: 3.0
+    w1_weight: 0.0
     gate_weight: 5.0
     # Distribution temperature for coord-gated softmax.
     temperature: 0.9

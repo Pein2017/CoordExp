@@ -478,7 +478,6 @@ def _make_stage2_pipeline_manifest(
     bbox_size_aux_enabled: bool = True,
     bbox_size_aux_weight: float = 1.0,
     bbox_log_wh_weight: float = 0.0,
-    bbox_log_area_weight: float = 0.0,
     bbox_oversize_weight: float = 0.0,
     coord_reg_enabled: bool = True,
     coord_reg_weight: float = 1.0,
@@ -536,7 +535,6 @@ def _make_stage2_pipeline_manifest(
                 "application": {"preset": "anchor_if_single_iter_else_final"},
                 "config": {
                     "log_wh_weight": float(bbox_log_wh_weight),
-                    "log_area_weight": float(bbox_log_area_weight),
                     "oversize_penalty_weight": float(bbox_oversize_weight),
                     "oversize_area_frac_threshold": None,
                     "oversize_log_w_threshold": None,

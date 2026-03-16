@@ -24,7 +24,6 @@ class BBoxSizeStats:
 @dataclass(frozen=True)
 class BBoxLogSizeLossResult:
     log_wh: torch.Tensor
-    log_area: torch.Tensor
     stats: BBoxSizeStats
 
 
@@ -200,7 +199,7 @@ def compute_bbox_log_size_loss(
     )
     if not bool((eff_weights > 0).any().item()):
         z = pred_boxes_xyxy.new_tensor(0.0)
-        return BBoxLogSizeLossResult(log_wh=z, log_area=z, stats=stats)
+        return BBoxLogSizeLossResult(log_wh=z, stats=stats)
 
     pred = canonicalize_bbox_xyxy(pred_raw)
     target = canonicalize_bbox_xyxy(target_raw)
@@ -219,17 +218,8 @@ def compute_bbox_log_size_loss(
         torch.log(target_h),
         reduction="none",
     )
-    log_area_per = F.smooth_l1_loss(
-        torch.log((pred_w * pred_h).clamp(min=float(eps))),
-        torch.log((target_w * target_h).clamp(min=float(eps))),
-        reduction="none",
-    )
-
     log_wh = _reduce_weighted_mean(log_wh_per, weights=eff_weights).to(dtype=pred_boxes_xyxy.dtype)
-    log_area = _reduce_weighted_mean(log_area_per, weights=eff_weights).to(
-        dtype=pred_boxes_xyxy.dtype
-    )
-    return BBoxLogSizeLossResult(log_wh=log_wh, log_area=log_area, stats=stats)
+    return BBoxLogSizeLossResult(log_wh=log_wh, stats=stats)
 
 
 def compute_bbox_oversize_penalty(

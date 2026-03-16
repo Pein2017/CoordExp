@@ -87,12 +87,12 @@ Key replacements (non-exhaustive):
   - Use provenance keys instead:
     - Channel-A:
       - `loss/A1_text/{struct_ce,desc_ce}`
-      - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the anchor forward
+      - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the anchor forward
       - `loss/A2_text/struct_ce` when `token_ce.application.preset` includes the final self-context struct/EOS stabilizer and `n_softctx_iter > 1`
-      - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the final self-context forward
+      - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the final self-context forward
     - Channel-B:
       - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
-      - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize}`
+      - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize}`
       - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 - Old provenance prefix: `obj/<provenance>/<atom>` (removed) -> `loss/<provenance>/<atom>`
 - Legacy aliases removed: `loss/ce`, `loss/coord`, `loss/coord_prefix`, `loss/coord_tail`
@@ -123,12 +123,12 @@ ST bridge diagnostics surface:
 - Canonical Stage-2 objective keys (objective atoms; emitted only when effective weight is non-zero) include:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}`
-    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the anchor forward
+    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the anchor forward
     - `loss/A2_text/struct_ce` when the effective `token_ce.application.preset` includes the final self-context struct/EOS stabilizer
-    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the final self-context forward
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the final self-context forward
   - Channel-B:
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}`
-    - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize}`
+    - `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize}`
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
 
 Reduction/naming contract:
@@ -161,9 +161,9 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
     - `n_softctx_iter > 1` -> the same atoms emit under `loss/A2_coord/*`
 - Canonical objective keys for this split include:
   - `loss/A1_text/{struct_ce,desc_ce}` (GT anchor forward; token CE objective atoms)
-  - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the anchor forward
+  - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the anchor forward
   - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer)
-  - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the final self-context forward
+  - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the final self-context forward
 - Channel-A coord losses are routed by `application.preset`, not by duplicated `a1_*` or `self_context_*` weight families.
   Hard coord-token CE remains controlled by `coord_reg.config.coord_ce_weight`, and distribution losses remain controlled by `coord_reg.config.soft_ce_weight` / `coord_reg.config.w1_weight`.
 
@@ -711,10 +711,6 @@ Legacy coord-loss note:
 - `loss/geo/bbox_log_wh`
   - **What:** weighted matched log-width/log-height auxiliary term computed from decoded `bbox_2d=[x1,y1,x2,y2]`.
   - **In loss:** YES iff `custom.bbox_size_aux.enabled: true` and `log_wh_weight != 0`.
-
-- `loss/geo/bbox_log_area`
-  - **What:** weighted matched log-area auxiliary term computed from decoded `bbox_2d=[x1,y1,x2,y2]`.
-  - **In loss:** YES iff `custom.bbox_size_aux.enabled: true` and `log_area_weight != 0`.
 
 - `loss/geo/bbox_oversize`
   - **What:** weighted oversize-only penalty above configured thresholds.

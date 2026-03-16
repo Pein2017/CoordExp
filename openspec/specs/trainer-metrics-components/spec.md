@@ -123,13 +123,13 @@ Normative behavior:
 - Stage-2 AB and rollout-aligned trainers MUST emit only the following objective keys (minimum set), and only when the effective weight is non-zero:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}` (GT-anchor forward; token CE objective atoms)
-    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the anchor forward
+    - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the anchor forward
     - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer atom)
-    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_log_area,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the final self-context forward
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when `application.preset` routes Channel-A bbox/coord supervision to the final self-context forward
   - Channel-B (rollout context):
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; rollout-context forward; geometry objective atoms)
-    - `loss/B_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; rollout-context forward; size-aux objective atoms)
+    - `loss/B_coord/{bbox_log_wh,bbox_oversize}` (from `bbox_size_aux`; rollout-context forward; size-aux objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - Raw/duplicate loss keys MUST NOT be emitted by default (non-exhaustive):
   - Per-component registry metrics: `loss/token_ce`, `loss/struct_ce`, `loss/desc_ce`, `loss/geo`, `loss/bbox_size_aux`, `loss/coord_reg`, `loss/coord_gate`, `loss/text_gate`
@@ -425,7 +425,7 @@ plugin-owned geometry objectives.
 Normative behavior:
 
 - Stage-1 single-forward emission MUST use:
-  - `loss/geo/{bbox_log_wh,bbox_log_area,bbox_oversize}`
+  - `loss/geo/{bbox_log_wh,bbox_oversize}`
 - Stage-1 MUST NOT invent a second Stage-1-only loss namespace for the same
   bbox-size plugin math,
 - because Stage-1 has one GT forward, these keys remain unsplit by provenance.
@@ -433,6 +433,6 @@ Normative behavior:
 #### Scenario: Stage-1 plugin-owned bbox size aux uses canonical loss atoms
 - **GIVEN** Stage-1 bbox size auxiliary is enabled
 - **WHEN** a training step emits geometry objective atoms
-- **THEN** the emitted keys use `loss/geo/{bbox_log_wh,bbox_log_area,bbox_oversize}`
+- **THEN** the emitted keys use `loss/geo/{bbox_log_wh,bbox_oversize}`
 - **AND** the same atom names remain recognizable relative to Stage-2
   provenance-split geometry atoms.

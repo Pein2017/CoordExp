@@ -58,8 +58,7 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          log_wh_weight: 0.1
-          log_area_weight: 0.1
+          log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
@@ -73,7 +72,7 @@ stage2_ab:
           preset: anchor_if_single_iter_else_final
         config:
           # Required: hard CE on coord-token bins (coord tokens are NOT covered by text/struct CE).
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.04
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
@@ -83,7 +82,7 @@ stage2_ab:
           text_gate_weight: 0.1
           # Required: distribution losses at coord-token positions.
           soft_ce_weight: 0.1
-          w1_weight: 0.1
+          w1_weight: 0.02
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8

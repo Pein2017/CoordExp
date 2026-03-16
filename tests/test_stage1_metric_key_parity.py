@@ -179,7 +179,6 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
         {
             "enabled": bool(bbox_enabled),
             "log_wh_weight": 0.05,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,

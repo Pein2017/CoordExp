@@ -932,7 +932,6 @@ class BBoxSizeAuxLossMixin:
             return
 
         log_wh = getattr(result, "log_wh_contrib", None)
-        log_area = getattr(result, "log_area_contrib", None)
         oversize = getattr(result, "oversize_contrib", None)
         stats = getattr(result, "stats", None)
         bbox_groups = int(getattr(result, "bbox_groups", 0) or 0)
@@ -941,8 +940,6 @@ class BBoxSizeAuxLossMixin:
         reporter.update("loss/geo/bbox_size_aux", float(total_loss.detach().cpu().item()))
         if isinstance(log_wh, torch.Tensor):
             reporter.update("loss/geo/bbox_log_wh", float(log_wh.detach().cpu().item()))
-        if isinstance(log_area, torch.Tensor):
-            reporter.update("loss/geo/bbox_log_area", float(log_area.detach().cpu().item()))
         if isinstance(oversize, torch.Tensor):
             reporter.update("loss/geo/bbox_oversize", float(oversize.detach().cpu().item()))
 

@@ -129,7 +129,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "application": {"preset": "anchor_if_single_iter_else_final"},
                         "config": {
                             "log_wh_weight": 0.0,
-                            "log_area_weight": 0.0,
                             "oversize_penalty_weight": 0.0,
                             "oversize_area_frac_threshold": None,
                             "oversize_log_w_threshold": None,

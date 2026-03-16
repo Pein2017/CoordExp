@@ -264,7 +264,6 @@ def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches()
         {
             "enabled": False,
             "log_wh_weight": 0.0,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,
@@ -276,7 +275,6 @@ def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches()
         {
             "enabled": True,
             "log_wh_weight": 0.05,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,

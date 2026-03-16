@@ -92,7 +92,6 @@ Normative behavior:
   - `ciou_weight`
 - `bbox_size_aux.config` MUST accept only:
   - `log_wh_weight`
-  - `log_area_weight`
   - `oversize_penalty_weight`
   - `oversize_area_frac_threshold`
   - `oversize_log_w_threshold`
@@ -152,7 +151,7 @@ Normative behavior:
   `loss/A2_text/struct_ce` only when `n_softctx_iter > 1`.
 - Stage-2 AB module configs MUST NOT reintroduce duplicated Channel-A routing
   weights such as `a1_smoothl1_weight`, `a1_ciou_weight`,
-  `a1_log_wh_weight`, `a1_log_area_weight`, `a1_oversize_penalty_weight`,
+  `a1_log_wh_weight`, `a1_oversize_penalty_weight`,
   `a1_soft_ce_weight`, or `a1_w1_weight`.
 
 #### Scenario: Single-iteration Channel-A routes bbox/coord atoms to A1
@@ -1447,8 +1446,6 @@ Normative behavior:
 
 - when `bbox_size_aux.config.log_wh_weight > 0`, the trainer MUST add matched
   log-width/log-height supervision on canonicalized decoded boxes,
-- when `bbox_size_aux.config.log_area_weight > 0`, the trainer MUST add matched
-  log-area supervision on canonicalized decoded boxes,
 - when `bbox_size_aux.config.oversize_penalty_weight > 0`, the trainer MAY add the
   thresholded oversize penalty on decoded boxes for the same context,
 - Channel-A and Channel-B applicability MUST remain controlled by the authored

@@ -55,7 +55,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
         "bbox_log_wh_contrib": _t(0.3),
-        "bbox_log_area_contrib": _t(0.05),
         "bbox_oversize_contrib": _t(0.0),
         "coord_token_ce_contrib": _t(0.05),
         "coord_soft_ce_contrib": _t(0.0),
@@ -70,7 +69,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     token_loss = _t(0.3 + 0.2)
     dead_anchor_suppression_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
-    bbox_size_aux_loss = _t(0.3 + 0.05 + 0.0)
+    bbox_size_aux_loss = _t(0.3 + 0.0)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
@@ -111,7 +110,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
     assert atoms["loss/B_coord/bbox_log_wh"] == pytest.approx(0.25 * 0.3)
-    assert atoms["loss/B_coord/bbox_log_area"] == pytest.approx(0.25 * 0.05)
     assert atoms["loss/B_coord/coord_token_ce"] == pytest.approx(0.5 * 0.05)
     assert atoms["loss/B_coord/coord_w1"] == pytest.approx(0.5 * 0.01)
     assert atoms["loss/B_coord/coord_entropy"] == pytest.approx(0.5 * -0.02)

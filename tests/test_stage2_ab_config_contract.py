@@ -75,7 +75,6 @@ def _canonical_stage2_pipeline(
     if bbox_size_aux_cfg is None:
         bbox_size_aux_cfg = {
             "log_wh_weight": 0.0,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,

@@ -3742,12 +3742,6 @@ class Stage2ABTrainingTrainer(
             default=0.0,
             min_value=0.0,
         )
-        bbox_log_area_w = _cfg_float(
-            bbox_size_aux_cfg,
-            keys=("log_area_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
         bbox_oversize_w = _cfg_float(
             bbox_size_aux_cfg,
             keys=("oversize_penalty_weight",),
@@ -4289,9 +4283,6 @@ class Stage2ABTrainingTrainer(
 
                         _emit_a1_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
                         _emit_a1_bbox_size(
-                            "bbox_log_area", bbox_log_area_w, "loss/bbox_log_area"
-                        )
-                        _emit_a1_bbox_size(
                             "bbox_oversize", bbox_oversize_w, "loss/bbox_oversize"
                         )
 
@@ -4347,7 +4338,6 @@ class Stage2ABTrainingTrainer(
                         )
 
                     _emit_a2_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                    _emit_a2_bbox_size("bbox_log_area", bbox_log_area_w, "loss/bbox_log_area")
                     _emit_a2_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
 
                 if float(coord_reg_module_w) != 0.0 and run_a2_coord_reg:
@@ -4450,7 +4440,6 @@ class Stage2ABTrainingTrainer(
                         )
 
                     _emit_b_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                    _emit_b_bbox_size("bbox_log_area", bbox_log_area_w, "loss/bbox_log_area")
                     _emit_b_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
 
                 if float(coord_reg_module_w) != 0.0:

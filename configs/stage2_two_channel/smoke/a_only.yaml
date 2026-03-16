@@ -31,13 +31,3 @@ rollout_matching:
     max_events: 200
     max_samples: 1
     max_text_chars: 4000
-  vllm:
-    mode: server
-    server:
-      debug_dump:
-        enabled: true
-        every_steps: 1
-        dump_first_step: true
-        max_events: 20
-        max_samples: 10
-        max_chars: 0

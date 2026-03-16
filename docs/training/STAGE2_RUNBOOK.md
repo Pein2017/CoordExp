@@ -348,7 +348,6 @@ stage2_ab:
           preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
-          log_area_weight: 0.0
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
@@ -426,7 +425,6 @@ stage2_ab:
           preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
-          log_area_weight: 0.0
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
@@ -504,7 +502,6 @@ stage2_ab:
           preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
-          log_area_weight: 0.0
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null
@@ -579,7 +576,6 @@ rollout_matching:
           preset: anchor_if_single_iter_else_final
         config:
           log_wh_weight: 0.05
-          log_area_weight: 0.0
           oversize_penalty_weight: 0.0
           oversize_area_frac_threshold: null
           oversize_log_w_threshold: null

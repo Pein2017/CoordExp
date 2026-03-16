@@ -369,7 +369,6 @@ Normative behavior:
   `bbox_2d: [x1, y1, x2, y2]` and the current coord-token `0..999` contract,
 - `bbox_size_aux` MAY include:
   - matched `bbox_log_wh`,
-  - matched `bbox_log_area`,
   - thresholded `bbox_oversize`,
 - `bbox_size_aux` MUST be mean-like over the supervised object set for the
   current context,
@@ -380,8 +379,7 @@ Normative behavior:
 
 #### Scenario: Matched size auxiliaries vanish on exact match
 - **WHEN** predicted and target boxes are identical after canonicalization
-- **THEN** the matched `bbox_log_wh` and `bbox_log_area` auxiliaries are near
-  zero
+- **THEN** the matched `bbox_log_wh` auxiliary is near zero
 - **AND** the result does not depend on original corner ordering.
 
 #### Scenario: Public bbox slot order remains unchanged

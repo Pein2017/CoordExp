@@ -374,10 +374,6 @@ class RolloutMatchingConfig:
             field_name="eval_rollout_backend",
             allow_none=False,
         )
-        if eval_backend != "vllm":
-            raise ValueError(
-                "rollout_matching.eval_rollout_backend must be 'vllm' (eval-step backend is fixed)."
-            )
         effective_eval_backend = eval_backend
 
         if self.channel_b_decode_batch_size is None:

@@ -40,7 +40,6 @@ def test_bbox_log_size_loss_exact_match_is_near_zero() -> None:
     )
 
     assert float(result.log_wh.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
-    assert float(result.log_area.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
 
 
 def test_bbox_log_size_loss_is_positive_for_larger_predicted_box() -> None:
@@ -53,7 +52,6 @@ def test_bbox_log_size_loss_is_positive_for_larger_predicted_box() -> None:
     )
 
     assert float(result.log_wh.detach().cpu().item()) > 0.0
-    assert float(result.log_area.detach().cpu().item()) > 0.0
 
 
 def test_bbox_log_size_loss_canonicalizes_reversed_corners() -> None:
@@ -66,7 +64,6 @@ def test_bbox_log_size_loss_canonicalizes_reversed_corners() -> None:
     )
 
     assert float(result.log_wh.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
-    assert float(result.log_area.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
 
 
 def test_bbox_log_size_loss_empty_mask_returns_zero() -> None:
@@ -81,7 +78,6 @@ def test_bbox_log_size_loss_empty_mask_returns_zero() -> None:
     )
 
     assert float(result.log_wh.detach().cpu().item()) == pytest.approx(0.0)
-    assert float(result.log_area.detach().cpu().item()) == pytest.approx(0.0)
     assert result.stats.valid_count == 0
 
 
@@ -122,7 +118,6 @@ def test_stage1_bbox_size_aux_loss_exact_match_is_near_zero() -> None:
         {
             "enabled": True,
             "log_wh_weight": 0.05,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,
@@ -159,7 +154,6 @@ def test_stage1_bbox_size_aux_loss_rejects_non_bbox_four_n_coord_sequences() -> 
         {
             "enabled": True,
             "log_wh_weight": 0.05,
-            "log_area_weight": 0.0,
             "oversize_penalty_weight": 0.0,
             "oversize_area_frac_threshold": None,
             "oversize_log_w_threshold": None,
@@ -229,7 +223,6 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
             "application": {"preset": "anchor_if_single_iter_else_final"},
             "config": {
                 "log_wh_weight": 0.05,
-                "log_area_weight": 0.0,
                 "oversize_penalty_weight": 0.0,
                 "oversize_area_frac_threshold": None,
                 "oversize_log_w_threshold": None,

@@ -226,7 +226,7 @@ def project_stage2_objective_atoms(
                         atol=atol,
                     )
 
-    # bbox_size_aux -> {bbox_log_wh, bbox_log_area, bbox_oversize}
+    # bbox_size_aux -> {bbox_log_wh, bbox_oversize}
     if "bbox_size_aux" in module_losses:
         bbox_size_spec = _spec("bbox_size_aux")
         bbox_size_w = float(bbox_size_spec.weight)
@@ -251,7 +251,6 @@ def project_stage2_objective_atoms(
         elif bbox_size_w != 0.0:
             contrib_keys = {
                 "bbox_log_wh": "bbox_log_wh_contrib",
-                "bbox_log_area": "bbox_log_area_contrib",
                 "bbox_oversize": "bbox_oversize_contrib",
             }
             terms: Dict[str, torch.Tensor] = {}

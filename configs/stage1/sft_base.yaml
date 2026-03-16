@@ -74,7 +74,7 @@ custom:
   coord_soft_ce_w1:
     enabled: true
     soft_ce_weight: 1.0
-    w1_weight: 1.0
+    w1_weight: 0.0
     gate_weight: 1.0
     temperature: 1.0
     target_sigma: 2.0
