@@ -1,6 +1,6 @@
 # teacher-forcing-unified-loss-registry Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Channel-B rollout context is defined over anchor-edited triage subsets
 For Stage-2 Channel-B (`context=rollout`), the rollout-context contract SHALL be defined over the edited anchor clean sequence produced by the v3 triage stage.

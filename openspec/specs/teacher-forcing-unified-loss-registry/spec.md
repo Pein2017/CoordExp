@@ -282,9 +282,9 @@ Normative behavior:
 - The system MUST canonicalize decoded boxes before applying IoU-based losses:
   - `x_lo = min(x1, x2)`, `x_hi = max(x1, x2)`
   - `y_lo = min(y1, y2)`, `y_hi = max(y1, y2)`
-  - enforce non-zero size with an `eps` floor (to prevent NaNs in CIoU-like terms).
+  - enforce non-zero size with an `eps` floor where required for CIoU-like terms.
 - The system MUST implement `geo` as a weighted sum of:
-  - SmoothL1 (Huber) on `(x_lo,y_lo,x_hi,y_hi)` and
+  - SmoothL1 (Huber) on `(x_lo,y_lo,x_hi,y_hi)`,
   - CIoU on the same canonicalized box representation.
 - The system MUST aggregate `geo` as a mean over the supervised object set for the current context:
   - Stage-2 Channel-A `self_context`: identity-aligned GT objects,
@@ -333,3 +333,50 @@ Normative behavior:
   - FP-neutral in `context=rollout` (FP spans excluded),
   - matched-prefix `desc` excluded where `CE_desc=0`,
   - closure/EOS supervision remains unchanged (gate terms MAY ignore `type=eos`).
+
+### Requirement: Recovered FN weighting is part of rollout-context supervision
+The rollout-context contract SHALL support higher positive weighting for recovered FN objects while keeping them on the canonical FN tail.
+
+Normative behavior:
+
+- `recovered_fn` objects MUST be identifiable in the rollout-context metadata,
+- positive CE/geo/coord terms derived from those objects MUST use the configured recovered-FN weight,
+- ordinary FN objects MUST remain supported with their baseline positive weight.
+
+#### Scenario: Recovered FN weight changes only recovered tail objects
+- **WHEN** a rollout-context sample contains both ordinary FN objects and recovered FN objects
+- **THEN** only the recovered subset uses the higher recovered-FN positive weight across CE/geo/coord
+- **AND** ordinary FN objects continue to use the baseline FN positive weight.
+
+### Requirement: `bbox_size_aux` is a separate optional decoded-box loss component
+The unified loss registry SHALL treat bbox size supervision as a separate
+optional loss component `bbox_size_aux`, not as an implicit expansion of `geo`.
+
+Normative behavior:
+
+- `bbox_size_aux` MUST consume canonicalized decoded boxes in the current
+  `xyxy` / top-left-bottom-right contract,
+- `bbox_size_aux` MUST preserve the current public bbox expression
+  `bbox_2d: [x1, y1, x2, y2]` and the current coord-token `0..999` contract,
+- `bbox_size_aux` MAY include:
+  - matched `bbox_log_wh`,
+  - matched `bbox_log_area`,
+  - thresholded `bbox_oversize`,
+- `bbox_size_aux` MUST be mean-like over the supervised object set for the
+  current context,
+- the oversize term MUST remain opt-in and MUST NOT define a default small-box
+  prior,
+- the supervised object subsets MUST match the existing matched bbox contract
+  for the active context.
+
+#### Scenario: Matched size auxiliaries vanish on exact match
+- **WHEN** predicted and target boxes are identical after canonicalization
+- **THEN** the matched `bbox_log_wh` and `bbox_log_area` auxiliaries are near
+  zero
+- **AND** the result does not depend on original corner ordering.
+
+#### Scenario: Public bbox slot order remains unchanged
+- **WHEN** `bbox_size_aux` is enabled
+- **THEN** the public bbox expression remains `bbox_2d: [x1, y1, x2, y2]`
+- **AND** internal canonicalization does not redefine the serialized slot order.
+

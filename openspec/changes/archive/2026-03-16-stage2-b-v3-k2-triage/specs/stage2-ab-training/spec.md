@@ -1,6 +1,6 @@
 # stage2-ab-training Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Stage-2 AB Channel-B uses the canonical K=2 anchor/explorer triage contract
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from two rollout views:
@@ -62,8 +62,6 @@ Normative behavior:
 - **THEN** it is appended through the normal FN-injection path
 - **AND** it receives the configured recovered-FN positive weight
 - **AND** no separate explore-prefix teacher-forced pass is created.
-
-## ADDED Requirements
 
 ### Requirement: Channel-B v3 uses deterministic one-to-one anchor/explorer association
 The canonical v1 v3 contract SHALL associate anchor and explorer accepted objects deterministically before projecting triage actions.

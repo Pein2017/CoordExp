@@ -1,6 +1,6 @@
 # teacher-forcing-objective-pipeline Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: loss_dead_anchor_suppression remains the canonical B-only suppression module
 The teacher-forcing objective pipeline SHALL continue to use `loss_dead_anchor_suppression` as the canonical Channel-B local suppression module for the v3 contract.

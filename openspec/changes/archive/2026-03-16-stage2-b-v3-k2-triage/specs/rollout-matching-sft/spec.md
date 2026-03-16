@@ -1,6 +1,6 @@
 # rollout-matching-sft Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Rollout-aware trainers may issue per-call decode overrides
 The rollout-matching infrastructure SHALL support call-local decode overrides when a trainer needs multiple rollout policies within the same optimizer step.

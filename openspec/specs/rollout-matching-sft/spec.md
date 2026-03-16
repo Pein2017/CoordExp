@@ -40,6 +40,14 @@ Normative behavior:
 - `bbox_geo.config` MUST accept only:
   - `smoothl1_weight`
   - `ciou_weight`
+- `bbox_size_aux.config` MUST accept only:
+  - `log_wh_weight`
+  - `log_area_weight`
+  - `oversize_penalty_weight`
+  - `oversize_area_frac_threshold`
+  - `oversize_log_w_threshold`
+  - `oversize_log_h_threshold`
+  - `eps`
 - `coord_reg.config` MUST accept only canonical keys, including:
   - `coord_ce_weight`
   - `soft_ce_weight`
@@ -52,10 +60,11 @@ Normative behavior:
 - Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
 
 #### Scenario: Alias key in rollout module config fails fast
-- **WHEN** `rollout_matching.pipeline.objective[*].name=coord_reg`
-- **AND** the module config contains `coord_soft_ce_weight`
+- **WHEN** `rollout_matching.pipeline.objective[*].name=bbox_size_aux`
+- **AND** the module config contains `bbox_smoothl1_weight`
 - **THEN** configuration parsing fails fast
-- **AND** the error indicates `soft_ce_weight` is the only accepted key.
+- **AND** the error indicates the canonical `bbox_size_aux.config.*` key family
+  must be used.
 
 ### Requirement: Rollout-aligned Stage-2 supports text_gate via coord_reg module config
 Rollout-aligned Stage-2 MUST support `text_gate` as part of `coord_reg` with a typed weight:
@@ -1421,3 +1430,66 @@ Normative behavior:
 - **THEN** evaluation skips that sample, increments `eval/runtime/vllm_decode_error_count`, and continues
 - **AND WHEN** a later engine-level vLLM failure occurs
 - **THEN** evaluation fails fast with an actionable error and does not fall back to HF.
+
+### Requirement: Rollout-aware trainers may issue per-call decode overrides
+The rollout-matching infrastructure SHALL support call-local decode overrides when a trainer needs multiple rollout policies within the same optimizer step.
+
+Normative behavior:
+
+- the rollout API MUST allow a caller to override decode parameters for a specific rollout request without mutating global config state,
+- supported override fields MUST include at least:
+  - `decode_mode`
+  - `temperature`
+  - `top_p`
+  - `top_k`
+- when no override is provided, existing global decoding semantics remain unchanged.
+
+#### Scenario: Trainer requests greedy and stochastic rollouts in one step
+- **WHEN** a rollout-aware trainer issues one anchor rollout and one explorer rollout for the same raw sample set
+- **THEN** it may supply distinct per-call decode overrides for the two requests
+- **AND** the rollout backend honors those request-local settings without rewriting global config state.
+
+### Requirement: Dual-policy rollout support applies across HF and vLLM backends
+When a rollout-aware trainer selects a backend/runtime combination for the canonical v3 Channel-B contract, that combination SHALL either honor the dual-policy rollout contract or fail fast before training.
+
+Normative behavior:
+
+- HF rollout helpers MUST honor the per-call decode overrides above,
+- vLLM colocate rollout helpers MUST honor the same per-call decode overrides,
+- vLLM server rollout helpers MUST honor the same per-call decode overrides,
+- if a configured backend/runtime cannot honor greedy anchor plus stochastic explorer requests, trainer initialization MUST fail fast with actionable guidance.
+
+#### Scenario: Unsupported dual-policy backend fails fast
+- **WHEN** a rollout backend/runtime combination cannot honor both greedy anchor and stochastic explorer policies
+- **THEN** Stage-2 trainer initialization fails fast before training starts
+- **AND** the error identifies the unsupported backend/runtime requirement.
+
+### Requirement: Rollout-aligned training SHALL reuse the same decoded-box size auxiliaries through `bbox_size_aux`
+The rollout-aligned trainer MUST reuse the same decoded-box size auxiliaries
+through `bbox_size_aux` that Stage-2 AB uses.
+
+When `custom.trainer_variant: stage2_rollout_aligned`, the rollout-aligned
+teacher-forcing path SHALL support the same optional decoded-box size
+auxiliaries through `bbox_size_aux` that Stage-2 AB uses.
+
+Normative behavior:
+
+- matched decoded-box size auxiliaries MUST reuse the shared `bbox_size_aux`
+  module
+  and shared decoded-box helper implementation,
+- the rollout-aligned path MUST NOT fork a second geometry implementation just
+  for `log_wh`, `log_area`, or oversize penalty,
+- `bbox_size_aux` MUST consume the current bbox coord slots in the same public
+  `bbox_2d: [x1, y1, x2, y2]` order used elsewhere in the stack,
+- the default rollout-aligned behavior SHOULD mirror the conservative Stage-2
+  default:
+  - small `log_wh` weight only when explicitly enabled,
+  - `log_area` and `oversize` off unless explicitly authored.
+
+#### Scenario: Rollout-aligned matched geometry can include log-size aux
+- **GIVEN** a rollout-aligned config with `bbox_size_aux.config.log_wh_weight > 0`
+- **WHEN** rollout-context matched geometry loss is computed
+- **THEN** the matched log-width/log-height auxiliary contributes through the
+  shared `bbox_size_aux` implementation
+- **AND** no trainer-specific duplicate geometry path is required.
+

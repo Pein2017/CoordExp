@@ -123,15 +123,18 @@ Normative behavior:
 - Stage-2 AB and rollout-aligned trainers MUST emit only the following objective keys (minimum set), and only when the effective weight is non-zero:
   - Channel-A:
     - `loss/A1_text/{struct_ce,desc_ce}` (GT-anchor forward; token CE objective atoms)
+    - `loss/A1_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; optional A1 anchor-forward size-aux atoms)
     - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer atom)
-    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (final self-context forward; geometry objective atoms)
+    - `loss/A2_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; final self-context forward; geometry objective atoms)
+    - `loss/A2_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; final self-context forward; size-aux objective atoms)
     - `loss/A2_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (final self-context forward; coord_reg objective atoms)
   - Channel-B (rollout context):
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
-    - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (rollout-context forward; geometry objective atoms)
+    - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; rollout-context forward; geometry objective atoms)
+    - `loss/B_coord/{bbox_log_wh,bbox_log_area,bbox_oversize}` (from `bbox_size_aux`; rollout-context forward; size-aux objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - Raw/duplicate loss keys MUST NOT be emitted by default (non-exhaustive):
-  - Per-component registry metrics: `loss/token_ce`, `loss/struct_ce`, `loss/desc_ce`, `loss/geo`, `loss/coord_reg`, `loss/coord_gate`, `loss/text_gate`
+  - Per-component registry metrics: `loss/token_ce`, `loss/struct_ce`, `loss/desc_ce`, `loss/geo`, `loss/bbox_size_aux`, `loss/coord_reg`, `loss/coord_gate`, `loss/text_gate`
   - Legacy objective suffixes: `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj`
   - Trainer-specific aliases: `loss/ce`, `loss/coord`, `loss/coord_prefix`, `loss/coord_tail`
 
@@ -383,3 +386,55 @@ Under DDP, any diagnostic that requires collectives (e.g., key synchronization) 
 - **WHEN** a diagnostics helper raises unexpectedly
 - **THEN** the system does not skip a required collective on only a subset of ranks
 - **AND** the job either fails fast or disables the diagnostic via a rank-symmetric decision.
+
+### Requirement: Channel-B triage metrics are explicit and aggregation-safe
+The trainer metrics contract SHALL expose the v3 triage bookkeeping separately from legacy duplicate diagnostics.
+
+Normative count-like metrics:
+
+- `train/triage/gt_backed_count`
+- `train/triage/unlabeled_consistent_count`
+- `train/triage/dead_anchor_count`
+- `train/triage/explorer_only_dead_count`
+- `train/triage/recovered_ground_truth_count`
+
+Normative numerator / denominator metrics:
+
+- `train/triage/recovered_ground_truth_rate_num`
+- `train/triage/recovered_ground_truth_rate_den`
+- `train/triage/dead_anchor_rate_num`
+- `train/triage/dead_anchor_rate_den`
+
+Normative behavior:
+
+- count-like metrics MUST aggregate additively across micro-steps,
+- numerator / denominator metrics MUST aggregate additively across micro-steps,
+- monitor-dump payloads SHOULD expose both rollout views plus the final triage decision for high-signal samples.
+
+#### Scenario: Triage counts aggregate additively
+- **WHEN** multiple micro-steps emit triage count metrics within one optimizer step
+- **THEN** the finalized step metrics are additive totals rather than mean-diluted gauges.
+
+### Requirement: Stage-1 bbox size aux SHALL use canonical geometry atom names
+The Stage-1 trainer MUST emit canonical geometry atom names for the
+`bbox_size_aux` plugin.
+
+When Stage-1 bbox size auxiliary supervision is enabled through the Stage-1 aux
+plugin host, the trainer SHALL emit the same geometry atom names used by later
+plugin-owned geometry objectives.
+
+Normative behavior:
+
+- Stage-1 single-forward emission MUST use:
+  - `loss/geo/{bbox_log_wh,bbox_log_area,bbox_oversize}`
+- Stage-1 MUST NOT invent a second Stage-1-only loss namespace for the same
+  bbox-size plugin math,
+- because Stage-1 has one GT forward, these keys remain unsplit by provenance.
+
+#### Scenario: Stage-1 plugin-owned bbox size aux uses canonical loss atoms
+- **GIVEN** Stage-1 bbox size auxiliary is enabled
+- **WHEN** a training step emits geometry objective atoms
+- **THEN** the emitted keys use `loss/geo/{bbox_log_wh,bbox_log_area,bbox_oversize}`
+- **AND** the same atom names remain recognizable relative to Stage-2
+  provenance-split geometry atoms.
+

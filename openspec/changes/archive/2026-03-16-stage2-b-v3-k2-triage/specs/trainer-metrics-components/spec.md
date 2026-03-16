@@ -1,6 +1,6 @@
 # trainer-metrics-components Specification (Delta)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Canonical metric docs and logs reflect v3 triage semantics
 The canonical metric docs SHALL describe the v3 K=2 triage metrics and the broadened meaning of `train/optimization/loss_dead_anchor_suppression`.

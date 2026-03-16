@@ -16,6 +16,8 @@ Normative behavior:
   ad-hoc per-trainer meta formats when a standardized derived view is available.
 - Objective modules MUST treat missing prerequisites as a hard error (fail-fast).
 - Diagnostics modules MUST be best-effort (warn once and skip on unexpected failures).
+- The context contract MUST remain sufficient for geometry modules to compute optional decoded-box size auxiliaries from
+  the same predicted/target bbox groups already used for `bbox_geo`.
 
 Notes:
 - This capability defines pipeline execution mechanics and module contract shapes.
@@ -50,9 +52,26 @@ Execution semantics:
   - unknown config keys MUST fail fast with actionable diagnostics,
   - missing optional keys MUST resolve to documented defaults.
 - `loss_dead_anchor_suppression` is a valid objective module name.
+- `bbox_size_aux` is a valid objective module name.
 - `loss_dead_anchor_suppression` MUST be declared with `channels: [B]`.
 - `loss_dead_anchor_suppression.config` MUST be validated strictly and MUST be `{}` in v1.
 - For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `loss_dead_anchor_suppression` after `token_ce` and before `bbox_geo`.
+- When `bbox_size_aux` is enabled, canonical Stage-2 objective order MUST place it after `bbox_geo` because
+  `bbox_size_aux` depends on the decoded canonicalized box state produced on the same matched supervision path.
+- `bbox_size_aux.config` MUST accept the canonical decoded-box size-aux keys:
+  - `log_wh_weight`
+  - `log_area_weight`
+  - `oversize_penalty_weight`
+  - `oversize_area_frac_threshold`
+  - `oversize_log_w_threshold`
+  - `oversize_log_h_threshold`
+  - `eps`
+  - `a1_log_wh_weight`
+  - `a1_log_area_weight`
+  - `a1_oversize_penalty_weight`
+- the `bbox_size_aux` plugin/module MUST continue to consume the current
+  coord-token decode path and current `bbox_2d=[x1,y1,x2,y2]` external
+  expression rather than redefining bbox parameterization.
 
 #### Scenario: Ordered pipeline executes deterministically
 - **WHEN** a pipeline defines objective modules `[m1, m2, m3]` in that order
@@ -67,10 +86,11 @@ Execution semantics:
 - **WHEN** a pipeline provides a module `config` containing an unknown key for that module
 - **THEN** config validation fails fast with guidance listing allowed keys for the module.
 
-#### Scenario: loss_dead_anchor_suppression is accepted as a Channel-B-only objective module
-- **WHEN** a teacher-forcing pipeline declares `{name: loss_dead_anchor_suppression, channels: [B], config: {}}`
-- **THEN** pipeline validation succeeds for module naming/channel shape
-- **AND** the module is eligible to run only on Channel-B steps.
+#### Scenario: bbox_size_aux accepts decoded-box size-aux config keys
+- **WHEN** a teacher-forcing pipeline declares `bbox_size_aux.config.log_wh_weight`
+- **AND** the config contains only canonical bbox-size-aux keys
+- **THEN** pipeline validation succeeds for that module config shape
+- **AND** the decoded-box size auxiliary remains controlled entirely by authored YAML.
 
 ### Requirement: Module registry is strict and validated before training starts
 The strict teacher-forcing module registry SHALL include `loss_dead_anchor_suppression` as an objective module and fail fast when its prerequisites are unavailable.
@@ -164,3 +184,53 @@ Normative checksum definition (this repo; required for implementers):
 - **WHEN** training starts with a resolved module pipeline
 - **THEN** logs include a stable pipeline checksum
 - **AND** the checksum is identical across runs when the pipeline config and code version are identical.
+
+### Requirement: loss_dead_anchor_suppression remains the canonical B-only suppression module
+The teacher-forcing objective pipeline SHALL continue to use `loss_dead_anchor_suppression` as the canonical Channel-B local suppression module for the v3 contract.
+
+Normative behavior:
+
+- `loss_dead_anchor_suppression` remains a valid objective module name,
+- `loss_dead_anchor_suppression` MUST continue to declare `channels: [B]`,
+- `loss_dead_anchor_suppression.config` MUST remain `{}` in v1,
+- the runtime metadata consumed by `loss_dead_anchor_suppression` MAY now encode any dead anchor-side continuation chosen by the v3 triage stage, not only same-desc duplicate bursts.
+
+#### Scenario: loss_dead_anchor_suppression accepts dead-anchor continuation metadata
+- **WHEN** Channel-B v3 provides canonical dead-anchor first-divergence targets
+- **THEN** the `loss_dead_anchor_suppression` module may consume them without requiring a new module name
+- **AND** pipeline validation still treats `loss_dead_anchor_suppression` as the canonical B-only suppression module.
+
+### Requirement: Objective-module prerequisites remain strict
+The strict objective pipeline SHALL fail fast if the runtime context does not provide the canonical metadata required by the configured suppression module.
+
+Normative behavior:
+
+- enabling `loss_dead_anchor_suppression` without the canonical per-segment target metadata MUST fail fast,
+- silent fallback from dead-anchor UL to “no suppression” is forbidden once `loss_dead_anchor_suppression` is configured.
+
+#### Scenario: Missing dead-anchor UL metadata fails fast
+- **WHEN** a Stage-2 AB v3 pipeline enables `loss_dead_anchor_suppression`
+- **AND** the runtime context omits the canonical suppression targets for a rollout segment
+- **THEN** the training step raises with actionable diagnostics
+- **AND** training does not proceed with a silently altered objective.
+
+### Requirement: `bbox_size_aux` is a strict objective plugin that depends on `bbox_geo` decoded-box state
+The strict teacher-forcing module registry SHALL include `bbox_size_aux` as a
+separate objective plugin for decoded-box size supervision.
+
+Normative behavior:
+
+- `bbox_size_aux` MUST fail fast if the current context does not provide the
+  decoded predicted / target box state it requires,
+- `bbox_size_aux` MUST NOT introduce an alternate bbox expression or alternate
+  coord-token decode path,
+- `bbox_size_aux` MUST remain reusable across Stage-2 two-channel and
+  rollout-aligned trainers through the same module contract.
+
+#### Scenario: bbox_size_aux fails fast when bbox_geo-derived state is missing
+- **WHEN** a pipeline enables `bbox_size_aux`
+- **AND** the runtime context does not provide the decoded canonicalized bbox
+  state required by the plugin
+- **THEN** the training step raises with actionable diagnostics
+- **AND** training does not proceed with a silently altered objective.
+
