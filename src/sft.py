@@ -38,6 +38,7 @@ from .datasets import (
 )
 from .trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
+    BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
@@ -1146,6 +1147,9 @@ def _build_pipeline_manifest(
                     ),
                 }
 
+            if name == "bbox_size_aux":
+                return {}
+
             if name == "coord_reg":
                 return {
                     "coord_ce_weight": _finite_float(
@@ -1225,6 +1229,9 @@ def _build_pipeline_manifest(
                         1.0,
                     ),
                 }
+
+            if name == "bbox_size_aux":
+                return {}
 
             if name == "coord_reg":
                 return {
@@ -2600,6 +2607,7 @@ def main():
         base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
+    bbox_size_aux_cfg = getattr(custom_config, "bbox_size_aux", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
     extra_cfg = getattr(custom_config, "extra", None)
@@ -2651,6 +2659,8 @@ def main():
             mixins.append(InstabilityMonitorMixin)
         if token_type_cfg and getattr(token_type_cfg, "enabled", False):
             mixins.append(AggregateTokenTypeMetricsMixin)
+        if bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
+            mixins.append(BBoxSizeAuxLossMixin)
         if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
             mixins.append(CoordSoftCEW1LossMixin)
     if mixins:
@@ -2861,7 +2871,7 @@ def main():
             if trainer_variant == "stage2_rollout_aligned":
                 rollout_manifest = _resolve_pipeline_manifest(
                     rollout_cfg,
-                    default_objective=["token_ce", "bbox_geo", "coord_reg"],
+                    default_objective=["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"],
                     default_diagnostics=["coord_diag"],
                     coord_soft_cfg=coord_soft_cfg_for_manifest,
                 )
@@ -2917,7 +2927,13 @@ def main():
 
         stage2_manifest = _resolve_pipeline_manifest(
             stage2_ab_cfg,
-            default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
+            default_objective=[
+                "token_ce",
+                "loss_dead_anchor_suppression",
+                "bbox_geo",
+                "bbox_size_aux",
+                "coord_reg",
+            ],
             default_diagnostics=["coord_diag"],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )
@@ -2937,6 +2953,8 @@ def main():
         )
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
+    if bbox_size_aux_cfg is not None:
+        setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
     if instability_monitor_cfg is not None:

@@ -617,6 +617,25 @@ Legacy coord-loss note:
 - Canonical coord supervision now flows through the pipeline modules, primarily `coord_reg`, with diagnostics such as `coord_diag`.
 - Do not expect legacy `coord_softce_w1/*` aliases or implicit aux-loss defaults on the latest Stage-2 and rollout-aligned surfaces.
 
+- `base_ce/loss`
+- `base_ce/noncoord_tokens`
+- `base_ce/noncoord_tokens_per_sample`
+- `base_ce/loss_per_sample`
+  - **What:** Stage-1 base CE summaries after coord targets are optionally masked out for coord-specific supervision.
+  - **In loss:** `base_ce/loss` is the Stage-1 base CE term itself; the others are diagnostics only.
+
+- `coord_softce_w1/loss`
+- `coord_softce_w1/soft_ce`
+- `coord_softce_w1/w1`
+- `coord_softce_w1/ce`
+- `coord_softce_w1/gate`
+  - **What:** legacy Stage-1 trainer-side coord-loss summaries emitted by the compatibility mixin.
+  - **In loss:** YES iff `custom.coord_soft_ce_w1.enabled: true` and the corresponding sub-weight is non-zero.
+
+- `coord_diag/enabled`
+  - **What:** binary flag indicating that coord diagnostics were emitted for the current Stage-1 step/window.
+  - **In loss:** NO (diagnostic only).
+
 - `coord_diag/soft_ce`
   - **What:** soft cross-entropy between the predicted coord distribution and a Gaussian
     soft target centered at the GT bin.
@@ -685,8 +704,43 @@ Legacy coord-loss note:
   - **In loss:** NO (diagnostic only).
 
 - `stage1/total_loss_per_sample_est`
-  - **What:** `base_ce/loss_per_sample + coord_diag/loss_per_sample` (approx. total per-sample objective).
+  - **What:** `base_ce/loss_per_sample + coord_diag/loss_per_sample + bbox_size_aux/loss_per_sample` when bbox-size aux is enabled; otherwise base CE plus coord loss only.
   - **In loss:** NO (diagnostic only; useful for packed runs).
+
+- `loss/geo/bbox_size_aux`
+  - **What:** aggregate Stage-1 bbox-size auxiliary loss added on top of the existing CE/coord objectives.
+  - **In loss:** YES iff `custom.bbox_size_aux.enabled: true`.
+
+- `loss/geo/bbox_log_wh`
+  - **What:** weighted matched log-width/log-height auxiliary term computed from decoded `bbox_2d=[x1,y1,x2,y2]`.
+  - **In loss:** YES iff `custom.bbox_size_aux.enabled: true` and `log_wh_weight != 0`.
+
+- `loss/geo/bbox_log_area`
+  - **What:** weighted matched log-area auxiliary term computed from decoded `bbox_2d=[x1,y1,x2,y2]`.
+  - **In loss:** YES iff `custom.bbox_size_aux.enabled: true` and `log_area_weight != 0`.
+
+- `loss/geo/bbox_oversize`
+  - **What:** weighted oversize-only penalty above configured thresholds.
+  - **In loss:** YES iff `custom.bbox_size_aux.enabled: true` and `oversize_penalty_weight != 0`.
+
+- `bbox_size_aux/groups_total`
+  - **What:** number of decoded bbox quartets contributing to the Stage-1 bbox-size auxiliary loss.
+  - **In loss:** NO (diagnostic only).
+
+- `bbox_size_aux/coord_slots_total`
+  - **What:** number of coord-token slots consumed by the Stage-1 bbox-size auxiliary loss.
+  - **In loss:** NO (diagnostic only).
+
+- `bbox_size_aux/mean_width`
+- `bbox_size_aux/mean_height`
+- `bbox_size_aux/mean_log_area`
+  - **What:** batch-level decoded-box size summaries computed after canonicalizing to top-left / bottom-right `xyxy`.
+  - **In loss:** NO (diagnostic only).
+
+- `bbox_size_aux/groups_per_sample`
+- `bbox_size_aux/loss_per_sample`
+  - **What:** packed-run normalized summaries for bbox groups and bbox-size auxiliary loss.
+  - **In loss:** NO (diagnostic only).
 
 ## Token Accuracy and Token-Type Metrics
 

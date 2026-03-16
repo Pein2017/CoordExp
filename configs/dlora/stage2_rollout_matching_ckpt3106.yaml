@@ -114,7 +114,6 @@ rollout_matching:
           self_context_struct_ce_weight: 0.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          rollout_drop_invalid_struct_ce_multiplier: 1.0
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -124,6 +123,21 @@ rollout_matching:
           ciou_weight: 1.0
           a1_smoothl1_weight: 0.0
           a1_ciou_weight: 0.0
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          a1_log_wh_weight: 0.0
+          a1_log_area_weight: 0.0
+          a1_oversize_penalty_weight: 0.0
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0

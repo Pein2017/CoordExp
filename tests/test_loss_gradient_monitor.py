@@ -100,6 +100,8 @@ def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() ->
         state={
             "bbox_smoothl1_contrib": _t(0.4),
             "bbox_ciou_contrib": _t(0.6),
+            "bbox_log_wh_contrib": _t(0.1),
+            "bbox_log_area_contrib": _t(0.2),
             "coord_token_ce_contrib": _t(0.2),
             "coord_soft_ce_contrib": _t(0.3),
             "coord_w1_contrib": _t(0.5),
@@ -111,6 +113,7 @@ def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() ->
     objective_specs = [
         {"name": "token_ce", "weight": 7.0},
         {"name": "bbox_geo", "weight": 2.0},
+        {"name": "bbox_size_aux", "weight": 4.0},
         {"name": "coord_reg", "weight": 3.0},
     ]
 
@@ -123,6 +126,8 @@ def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() ->
     assert set(terms.keys()) == {
         "B_coord/bbox_smoothl1",
         "B_coord/bbox_ciou",
+        "B_coord/bbox_log_wh",
+        "B_coord/bbox_log_area",
         "B_coord/coord_token_ce",
         "B_coord/coord_soft_ce",
         "B_coord/coord_w1",
@@ -130,6 +135,7 @@ def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() ->
         "B_coord/coord_gate",
     }
     assert float(terms["B_coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(0.8)
+    assert float(terms["B_coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(0.4)
     assert float(terms["B_coord/coord_soft_ce"].detach().cpu().item()) == pytest.approx(0.9)
     assert "B_coord/text_gate" not in terms
 
@@ -140,17 +146,20 @@ def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None
         state={
             "bbox_smoothl1_contrib": _t(0.4),
             "bbox_ciou_contrib": _t(0.6),
+            "bbox_log_wh_contrib": _t(0.2),
             "coord_soft_ce_contrib": _t(0.2),
             "coord_w1_contrib": _t(0.3),
         },
     )
     objective_specs = [
         {"name": "bbox_geo", "weight": 2.0},
+        {"name": "bbox_size_aux", "weight": 3.0},
         {"name": "coord_reg", "weight": 5.0},
     ]
     a1_bbox_state = {
         "bbox_smoothl1_contrib": _t(0.7),
         "bbox_ciou_contrib": _t(0.8),
+        "bbox_log_wh_contrib": _t(0.5),
     }
     a1_coord_state = {
         "coord_soft_ce_contrib": _t(0.9),
@@ -163,6 +172,7 @@ def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None
         pipeline_result=pipeline_result,
         objective_specs=objective_specs,
         bbox_module_weight=2.0,
+        bbox_size_aux_module_weight=3.0,
         coord_module_weight=5.0,
         a1_bbox_state=a1_bbox_state,
         a1_coord_state=a1_coord_state,
@@ -171,14 +181,17 @@ def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None
     assert set(terms.keys()) == {
         "A1_coord/bbox_smoothl1",
         "A1_coord/bbox_ciou",
+        "A1_coord/bbox_log_wh",
         "A1_coord/coord_soft_ce",
         "A1_coord/coord_w1",
         "A2_coord/bbox_smoothl1",
         "A2_coord/bbox_ciou",
+        "A2_coord/bbox_log_wh",
         "A2_coord/coord_soft_ce",
         "A2_coord/coord_w1",
     }
     assert float(terms["A1_coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(1.4)
+    assert float(terms["A1_coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(1.5)
     assert float(terms["A2_coord/coord_w1"].detach().cpu().item()) == pytest.approx(1.5)
     assert all("text_gate" not in key for key in terms)
 

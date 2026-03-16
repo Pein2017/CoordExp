@@ -13,6 +13,21 @@ class BBoxLossResult:
     ciou: torch.Tensor
 
 
+@dataclass(frozen=True)
+class BBoxSizeStats:
+    mean_width: torch.Tensor
+    mean_height: torch.Tensor
+    mean_log_area: torch.Tensor
+    valid_count: int
+
+
+@dataclass(frozen=True)
+class BBoxLogSizeLossResult:
+    log_wh: torch.Tensor
+    log_area: torch.Tensor
+    stats: BBoxSizeStats
+
+
 def expectation_decode_coords(
     *,
     coord_logits: torch.Tensor,
@@ -56,6 +71,209 @@ def canonicalize_bbox_xyxy(box_xyxy: torch.Tensor) -> torch.Tensor:
     x_hi = torch.maximum(x1, x2).clamp(0.0, 1.0)
     y_hi = torch.maximum(y1, y2).clamp(0.0, 1.0)
     return torch.stack([x_lo, y_lo, x_hi, y_hi], dim=-1)
+
+
+def _reduce_weighted_mean(
+    values: torch.Tensor,
+    *,
+    weights: torch.Tensor | None = None,
+) -> torch.Tensor:
+    if int(values.numel()) == 0:
+        return values.new_tensor(0.0)
+
+    values_f = values.float().reshape(-1)
+    if weights is None:
+        out = values_f.mean()
+    else:
+        weights_f = weights.float().reshape(-1)
+        if int(weights_f.numel()) != int(values_f.numel()):
+            raise ValueError("weights must align with values")
+        positive = weights_f > 0
+        if not bool(positive.any().item()):
+            return values.new_tensor(0.0)
+        values_f = values_f[positive]
+        weights_f = weights_f[positive]
+        denom = weights_f.sum().clamp(min=1e-6)
+        out = (values_f * weights_f).sum() / denom
+
+    return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).to(dtype=values.dtype)
+
+
+def _coerce_box_weights(
+    *,
+    boxes_xyxy: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    weights: torch.Tensor | None = None,
+    require_target: torch.Tensor | None = None,
+) -> torch.Tensor:
+    if boxes_xyxy.ndim != 2 or int(boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("boxes_xyxy must have shape [N, 4]")
+
+    n = int(boxes_xyxy.shape[0])
+    out = torch.ones((n,), device=boxes_xyxy.device, dtype=torch.float32)
+
+    if mask is not None:
+        mask_t = mask.to(device=boxes_xyxy.device)
+        if mask_t.ndim != 1 or int(mask_t.numel()) != n:
+            raise ValueError("mask must have shape [N]")
+        out = out * mask_t.to(dtype=torch.float32)
+
+    if weights is not None:
+        weights_t = weights.to(device=boxes_xyxy.device, dtype=torch.float32)
+        if weights_t.ndim != 1 or int(weights_t.numel()) != n:
+            raise ValueError("weights must have shape [N]")
+        out = out * weights_t
+
+    valid = torch.isfinite(boxes_xyxy.float()).all(dim=-1)
+    if require_target is not None:
+        valid = valid & torch.isfinite(require_target.float()).all(dim=-1)
+
+    out = out * valid.to(dtype=torch.float32)
+    return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def summarize_bbox_size_stats(
+    pred_boxes_xyxy: torch.Tensor,
+    *,
+    mask: torch.Tensor | None = None,
+    weights: torch.Tensor | None = None,
+    eps: float = 1e-6,
+) -> BBoxSizeStats:
+    pred_raw = pred_boxes_xyxy.float()
+    if pred_raw.numel() == 0:
+        z = pred_boxes_xyxy.new_tensor(0.0)
+        return BBoxSizeStats(mean_width=z, mean_height=z, mean_log_area=z, valid_count=0)
+
+    eff_weights = _coerce_box_weights(
+        boxes_xyxy=pred_raw,
+        mask=mask,
+        weights=weights,
+    )
+    if not bool((eff_weights > 0).any().item()):
+        z = pred_boxes_xyxy.new_tensor(0.0)
+        return BBoxSizeStats(mean_width=z, mean_height=z, mean_log_area=z, valid_count=0)
+
+    pred = canonicalize_bbox_xyxy(pred_raw)
+    widths = (pred[:, 2] - pred[:, 0]).clamp(min=float(eps))
+    heights = (pred[:, 3] - pred[:, 1]).clamp(min=float(eps))
+    log_area = torch.log((widths * heights).clamp(min=float(eps)))
+
+    return BBoxSizeStats(
+        mean_width=_reduce_weighted_mean(widths, weights=eff_weights),
+        mean_height=_reduce_weighted_mean(heights, weights=eff_weights),
+        mean_log_area=_reduce_weighted_mean(log_area, weights=eff_weights),
+        valid_count=int((eff_weights > 0).sum().detach().item()),
+    )
+
+
+def compute_bbox_log_size_loss(
+    *,
+    pred_boxes_xyxy: torch.Tensor,
+    target_boxes_xyxy: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    weights: torch.Tensor | None = None,
+    eps: float = 1e-6,
+    reduction: str = "mean",
+) -> BBoxLogSizeLossResult:
+    if reduction != "mean":
+        raise ValueError("compute_bbox_log_size_loss only supports reduction='mean'")
+    if pred_boxes_xyxy.ndim != 2 or int(pred_boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("pred_boxes_xyxy must have shape [N, 4]")
+    if target_boxes_xyxy.ndim != 2 or int(target_boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("target_boxes_xyxy must have shape [N, 4]")
+    if int(pred_boxes_xyxy.shape[0]) != int(target_boxes_xyxy.shape[0]):
+        raise ValueError("pred_boxes_xyxy and target_boxes_xyxy must align")
+
+    pred_raw = pred_boxes_xyxy.float()
+    target_raw = target_boxes_xyxy.float()
+    eff_weights = _coerce_box_weights(
+        boxes_xyxy=pred_raw,
+        mask=mask,
+        weights=weights,
+        require_target=target_raw,
+    )
+    stats = summarize_bbox_size_stats(
+        pred_boxes_xyxy=pred_boxes_xyxy,
+        mask=mask,
+        weights=weights,
+        eps=eps,
+    )
+    if not bool((eff_weights > 0).any().item()):
+        z = pred_boxes_xyxy.new_tensor(0.0)
+        return BBoxLogSizeLossResult(log_wh=z, log_area=z, stats=stats)
+
+    pred = canonicalize_bbox_xyxy(pred_raw)
+    target = canonicalize_bbox_xyxy(target_raw)
+
+    pred_w = (pred[:, 2] - pred[:, 0]).clamp(min=float(eps))
+    pred_h = (pred[:, 3] - pred[:, 1]).clamp(min=float(eps))
+    target_w = (target[:, 2] - target[:, 0]).clamp(min=float(eps))
+    target_h = (target[:, 3] - target[:, 1]).clamp(min=float(eps))
+
+    log_wh_per = F.smooth_l1_loss(
+        torch.log(pred_w),
+        torch.log(target_w),
+        reduction="none",
+    ) + F.smooth_l1_loss(
+        torch.log(pred_h),
+        torch.log(target_h),
+        reduction="none",
+    )
+    log_area_per = F.smooth_l1_loss(
+        torch.log((pred_w * pred_h).clamp(min=float(eps))),
+        torch.log((target_w * target_h).clamp(min=float(eps))),
+        reduction="none",
+    )
+
+    log_wh = _reduce_weighted_mean(log_wh_per, weights=eff_weights).to(dtype=pred_boxes_xyxy.dtype)
+    log_area = _reduce_weighted_mean(log_area_per, weights=eff_weights).to(
+        dtype=pred_boxes_xyxy.dtype
+    )
+    return BBoxLogSizeLossResult(log_wh=log_wh, log_area=log_area, stats=stats)
+
+
+def compute_bbox_oversize_penalty(
+    *,
+    pred_boxes_xyxy: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    weights: torch.Tensor | None = None,
+    area_frac_threshold: float | None = None,
+    log_w_threshold: float | None = None,
+    log_h_threshold: float | None = None,
+    eps: float = 1e-6,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    if reduction != "mean":
+        raise ValueError("compute_bbox_oversize_penalty only supports reduction='mean'")
+    if pred_boxes_xyxy.ndim != 2 or int(pred_boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("pred_boxes_xyxy must have shape [N, 4]")
+    if pred_boxes_xyxy.numel() == 0:
+        return pred_boxes_xyxy.new_tensor(0.0)
+    if area_frac_threshold is None and log_w_threshold is None and log_h_threshold is None:
+        return pred_boxes_xyxy.new_tensor(0.0)
+
+    pred_raw = pred_boxes_xyxy.float()
+    eff_weights = _coerce_box_weights(
+        boxes_xyxy=pred_raw,
+        mask=mask,
+        weights=weights,
+    )
+    if not bool((eff_weights > 0).any().item()):
+        return pred_boxes_xyxy.new_tensor(0.0)
+
+    pred = canonicalize_bbox_xyxy(pred_raw)
+    widths = (pred[:, 2] - pred[:, 0]).clamp(min=float(eps))
+    heights = (pred[:, 3] - pred[:, 1]).clamp(min=float(eps))
+    penalty = pred_raw.new_zeros((int(pred.shape[0]),), dtype=torch.float32)
+
+    if log_w_threshold is not None:
+        penalty = penalty + torch.relu(torch.log(widths) - float(log_w_threshold))
+    if log_h_threshold is not None:
+        penalty = penalty + torch.relu(torch.log(heights) - float(log_h_threshold))
+    if area_frac_threshold is not None:
+        penalty = penalty + torch.relu(widths * heights - float(area_frac_threshold))
+
+    return _reduce_weighted_mean(penalty, weights=eff_weights).to(dtype=pred_boxes_xyxy.dtype)
 
 
 def bbox_smoothl1_ciou_loss(

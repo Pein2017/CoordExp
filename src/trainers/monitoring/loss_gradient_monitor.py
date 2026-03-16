@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -35,6 +34,11 @@ _AUTO_NORM_TOKENS = (
 _BBOX_TERM_STATE_KEYS = {
     "bbox_smoothl1": "bbox_smoothl1_contrib",
     "bbox_ciou": "bbox_ciou_contrib",
+}
+_BBOX_SIZE_AUX_TERM_STATE_KEYS = {
+    "bbox_log_wh": "bbox_log_wh_contrib",
+    "bbox_log_area": "bbox_log_area_contrib",
+    "bbox_oversize": "bbox_oversize_contrib",
 }
 _COORD_TERM_STATE_KEYS = {
     "coord_token_ce": "coord_token_ce_contrib",
@@ -110,11 +114,33 @@ def build_stage1_coord_monitor_terms(
     return terms
 
 
+def build_stage1_bbox_size_monitor_terms(
+    *,
+    result: Any,
+    cfg: Any,
+) -> Dict[str, torch.Tensor]:
+    terms: Dict[str, torch.Tensor] = {}
+    candidates = (
+        ("S1/bbox_log_wh", "log_wh_contrib", "log_wh_weight"),
+        ("S1/bbox_log_area", "log_area_contrib", "log_area_weight"),
+        ("S1/bbox_oversize", "oversize_contrib", "oversize_penalty_weight"),
+    )
+    for name, attr_name, weight_key in candidates:
+        if float(_cfg_float(cfg, weight_key, 0.0)) == 0.0:
+            continue
+        tensor = _as_scalar_tensor(getattr(result, attr_name, None))
+        if tensor is None:
+            continue
+        terms[name] = tensor
+    return terms
+
+
 def _collect_weighted_coord_terms_from_state(
     *,
     state: Mapping[str, Any],
     coord_provenance: str,
     bbox_module_weight: float,
+    bbox_size_aux_module_weight: float,
     coord_module_weight: float,
 ) -> Dict[str, torch.Tensor]:
     out: Dict[str, torch.Tensor] = {}
@@ -125,6 +151,15 @@ def _collect_weighted_coord_terms_from_state(
             if tensor is None:
                 continue
             out[f"{coord_provenance}/{atom_name}"] = tensor * float(bbox_module_weight)
+
+    if float(bbox_size_aux_module_weight) != 0.0:
+        for atom_name, state_key in _BBOX_SIZE_AUX_TERM_STATE_KEYS.items():
+            tensor = _as_scalar_tensor(state.get(state_key))
+            if tensor is None:
+                continue
+            out[f"{coord_provenance}/{atom_name}"] = tensor * float(
+                bbox_size_aux_module_weight
+            )
 
     if float(coord_module_weight) != 0.0:
         for atom_name, state_key in _COORD_TERM_STATE_KEYS.items():
@@ -144,13 +179,18 @@ def build_stage2_coord_monitor_terms_from_pipeline(
 ) -> Dict[str, torch.Tensor]:
     specs = _parse_objective_specs(objective_specs)
     bbox_spec = specs.get("bbox_geo")
+    bbox_size_aux_spec = specs.get("bbox_size_aux")
     coord_spec = specs.get("coord_reg")
     bbox_module_weight = float(bbox_spec.weight) if bbox_spec is not None else 0.0
+    bbox_size_aux_module_weight = (
+        float(bbox_size_aux_spec.weight) if bbox_size_aux_spec is not None else 0.0
+    )
     coord_module_weight = float(coord_spec.weight) if coord_spec is not None else 0.0
     return _collect_weighted_coord_terms_from_state(
         state=dict(pipeline_result.state or {}),
         coord_provenance=str(coord_provenance),
         bbox_module_weight=float(bbox_module_weight),
+        bbox_size_aux_module_weight=float(bbox_size_aux_module_weight),
         coord_module_weight=float(coord_module_weight),
     )
 
@@ -161,6 +201,7 @@ def build_stage2_two_channel_coord_monitor_terms(
     pipeline_result: PipelineResult,
     objective_specs: Optional[Sequence[Mapping[str, Any]]],
     bbox_module_weight: float,
+    bbox_size_aux_module_weight: float,
     coord_module_weight: float,
     a1_bbox_state: Optional[Mapping[str, Any]] = None,
     a1_coord_state: Optional[Mapping[str, Any]] = None,
@@ -183,6 +224,7 @@ def build_stage2_two_channel_coord_monitor_terms(
                     state=a1_state,
                     coord_provenance="A1_coord",
                     bbox_module_weight=float(bbox_module_weight),
+                    bbox_size_aux_module_weight=float(bbox_size_aux_module_weight),
                     coord_module_weight=float(coord_module_weight),
                 )
             )

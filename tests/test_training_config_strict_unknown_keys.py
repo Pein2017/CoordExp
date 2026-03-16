@@ -70,6 +70,30 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_length_precompute_workers"] == 8
 
 
+def test_custom_bbox_size_aux_unknown_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_size_aux"] = {
+        "enabled": True,
+        "unknown_flag": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "bbox_size_aux.unknown_flag" in str(exc.value)
+
+
+def test_custom_bbox_size_aux_requires_explicit_keys() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_size_aux"] = {
+        "enabled": True,
+        "log_wh_weight": 0.05,
+    }
+
+    with pytest.raises(ValueError, match=r"bbox_size_aux requires explicit keys"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
     payload = _base_training_payload()
     payload["training"] = {
@@ -587,6 +611,30 @@ def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
     }
 
 
+def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
+    bbox_size_aux_cfg = {
+        "log_wh_weight": 0.0,
+        "log_area_weight": 0.0,
+        "oversize_penalty_weight": 0.0,
+        "oversize_area_frac_threshold": None,
+        "oversize_log_w_threshold": None,
+        "oversize_log_h_threshold": None,
+        "a1_log_wh_weight": 0.0,
+        "a1_log_area_weight": 0.0,
+        "a1_oversize_penalty_weight": 0.0,
+        "eps": 1e-6,
+    }
+    if isinstance(config, dict):
+        bbox_size_aux_cfg.update(dict(config))
+    return {
+        "name": "bbox_size_aux",
+        "enabled": True,
+        "weight": 0.0,
+        "channels": ["A", "B"],
+        "config": bbox_size_aux_cfg,
+    }
+
+
 def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
     coord_reg_cfg = {
         "coord_ce_weight": 0.0,
@@ -621,6 +669,7 @@ def _canonical_stage2_two_channel_objective() -> list[dict]:
         _pipeline_token_ce_spec(),
         _pipeline_loss_dead_anchor_suppression_spec(),
         _pipeline_bbox_geo_spec(),
+        _pipeline_bbox_size_aux_spec(),
         _pipeline_coord_reg_spec(),
     ]
 
@@ -638,6 +687,7 @@ def test_stage2_pipeline_unknown_module_name_fails_fast():
                 "config": {},
             },
             _pipeline_bbox_geo_spec(),
+            _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),
         ],
     }
@@ -653,6 +703,7 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
             _pipeline_token_ce_spec(),
             _pipeline_token_ce_spec(),
             _pipeline_bbox_geo_spec(),
+            _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),
         ],
     }
@@ -672,6 +723,24 @@ def test_stage2_pipeline_canonical_channels_scope_parses():
     assert cfg.stage2_ab.pipeline.objective[1].channels == ("B",)
 
 
+def test_stage2_pipeline_disallows_custom_bbox_size_aux_knobs() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["custom"]["bbox_size_aux"] = {
+        "enabled": True,
+        "log_wh_weight": 0.05,
+        "log_area_weight": 0.0,
+        "oversize_penalty_weight": 0.0,
+        "oversize_area_frac_threshold": None,
+        "oversize_log_w_threshold": None,
+        "oversize_log_h_threshold": None,
+        "eps": 1e-6,
+    }
+    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+
+    with pytest.raises(ValueError, match=r"custom\.bbox_size_aux"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload = _base_stage2_two_channel_payload()
     payload["stage2_ab"]["pipeline"] = {
@@ -679,6 +748,7 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
             _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
             _pipeline_loss_dead_anchor_suppression_spec(),
             _pipeline_bbox_geo_spec(),
+            _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),
         ]
     }

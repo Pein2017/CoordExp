@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 import torch.nn.functional as F
 
-from src.config.schema import CoordSoftCEW1Config
-from src.metrics.dataset_metrics import CoordSoftCEW1LossMixin
+from src.config.schema import BBoxSizeAuxConfig, CoordSoftCEW1Config
+from src.metrics.dataset_metrics import BBoxSizeAuxLossMixin, CoordSoftCEW1LossMixin
 
 
 class DummyTokenizer:
@@ -20,6 +21,24 @@ class DummyTokenizer:
             else:
                 out.append(1)
         return out
+
+    def decode(
+        self,
+        token_ids,
+        *,
+        skip_special_tokens: bool = False,
+        clean_up_tokenization_spaces: bool = False,
+    ):
+        mapping = {
+            0: '{"objects":[{"desc":"x","bbox_2d":[',
+            5: "text",
+            6: "fmt",
+            103: "<|coord_3|>",
+            104: "<|coord_4|>",
+            107: "<|coord_7|>",
+            108: "<|coord_8|>",
+        }
+        return "".join(mapping.get(int(t), f"<tok_{int(t)}>") for t in token_ids)
 
 
 class DummyTemplate:
@@ -59,6 +78,16 @@ class DummyTrainer(CoordSoftCEW1LossMixin, DummyBaseTrainer):
     def __init__(self, cfg):
         super().__init__()
         self.coord_soft_ce_w1_cfg = cfg
+        self.template = DummyTemplate()
+        self.model = None
+        self.args = SimpleNamespace(average_tokens_across_devices=False)
+        self.model_accepts_loss_kwargs = False
+
+
+class DummyBBoxTrainer(BBoxSizeAuxLossMixin, DummyBaseTrainer):
+    def __init__(self, cfg):
+        super().__init__()
+        self.bbox_size_aux_cfg = cfg
         self.template = DummyTemplate()
         self.model = None
         self.args = SimpleNamespace(average_tokens_across_devices=False)
@@ -214,3 +243,80 @@ def test_stage1_softce_w1_manual_grad_accum_scaling_matches_transformers_path():
     )
 
     assert torch.allclose(loss_mixin, loss_scaled, atol=1e-6)
+
+
+def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches():
+    vocab = 1200
+    labels = torch.tensor([[0, 5, 103, 104, 107, 108]], dtype=torch.long)
+
+    logits_exact = torch.full((1, labels.shape[1], vocab), -20.0, dtype=torch.float32)
+    logits_exact[0, 0, 5] = 20.0
+    logits_exact[0, 1, 103] = 20.0
+    logits_exact[0, 2, 104] = 20.0
+    logits_exact[0, 3, 107] = 20.0
+    logits_exact[0, 4, 108] = 20.0
+
+    logits_mismatch = logits_exact.clone()
+    logits_mismatch[0, 3, 109] = 25.0
+    logits_mismatch[0, 4, 111] = 25.0
+
+    cfg_disabled = BBoxSizeAuxConfig.from_mapping(
+        {
+            "enabled": False,
+            "log_wh_weight": 0.0,
+            "log_area_weight": 0.0,
+            "oversize_penalty_weight": 0.0,
+            "oversize_area_frac_threshold": None,
+            "oversize_log_w_threshold": None,
+            "oversize_log_h_threshold": None,
+            "eps": 1e-6,
+        }
+    )
+    cfg_enabled = BBoxSizeAuxConfig.from_mapping(
+        {
+            "enabled": True,
+            "log_wh_weight": 0.05,
+            "log_area_weight": 0.0,
+            "oversize_penalty_weight": 0.0,
+            "oversize_area_frac_threshold": None,
+            "oversize_log_w_threshold": None,
+            "oversize_log_h_threshold": None,
+            "eps": 1e-6,
+        }
+    )
+
+    trainer_disabled = DummyBBoxTrainer(cfg_disabled)
+    trainer_enabled = DummyBBoxTrainer(cfg_enabled)
+
+    loss_exact_disabled = trainer_disabled.compute_loss(
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits_exact},
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+    loss_exact_enabled = trainer_enabled.compute_loss(
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits_exact},
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+    assert float(loss_exact_enabled.detach().item()) == pytest.approx(
+        float(loss_exact_disabled.detach().item()),
+        abs=1e-5,
+    )
+
+    loss_mismatch_disabled = trainer_disabled.compute_loss(
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits_mismatch},
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+    loss_mismatch_enabled = trainer_enabled.compute_loss(
+        model=None,
+        inputs={"labels": labels, "fake_logits": logits_mismatch},
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+    assert float(loss_mismatch_enabled.detach().item()) > float(
+        loss_mismatch_disabled.detach().item()
+    )

@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Unified teacher-forcing module registry (names + config allowlists).
 
 This module is intentionally dependency-light so it can be imported from config
 schema validation without pulling in torch/trainer runtime code.
 """
+
+from __future__ import annotations
 
 from typing import Final
 
@@ -12,6 +12,7 @@ ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {
     "token_ce",
     "loss_dead_anchor_suppression",
     "bbox_geo",
+    "bbox_size_aux",
     "coord_reg",
 }
 ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = {"coord_diag"}
@@ -29,6 +30,18 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "ciou_weight",
         "a1_smoothl1_weight",
         "a1_ciou_weight",
+    },
+    "bbox_size_aux": {
+        "log_wh_weight",
+        "log_area_weight",
+        "oversize_penalty_weight",
+        "oversize_area_frac_threshold",
+        "oversize_log_w_threshold",
+        "oversize_log_h_threshold",
+        "a1_log_wh_weight",
+        "a1_log_area_weight",
+        "a1_oversize_penalty_weight",
+        "eps",
     },
     "coord_reg": {
         "coord_ce_weight",

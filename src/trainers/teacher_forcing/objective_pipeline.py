@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping, MutableMapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import torch
 
-from .contracts import ModuleResult, PipelineModuleSpec, PipelineResult, TeacherForcingContext
+from .contracts import PipelineModuleSpec, PipelineResult, TeacherForcingContext
 from .modules import (
+    run_bbox_size_aux_module,
     run_bbox_geo_module,
     run_coord_diag_module,
     run_coord_reg_module,
@@ -51,6 +52,11 @@ def run_teacher_forcing_pipeline(
             context=context, spec=spec
         ),
         "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
+        "bbox_size_aux": lambda spec: run_bbox_size_aux_module(
+            context=context,
+            spec=spec,
+            state=state,
+        ),
         "coord_reg": lambda spec: run_coord_reg_module(context=context, spec=spec, state=state),
     }
 

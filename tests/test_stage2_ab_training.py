@@ -475,6 +475,14 @@ def _make_stage2_pipeline_manifest(
     bbox_geo_weight: float = 1.0,
     bbox_smoothl1_weight: float = 1.0,
     bbox_ciou_weight: float = 1.0,
+    bbox_size_aux_enabled: bool = True,
+    bbox_size_aux_weight: float = 1.0,
+    bbox_log_wh_weight: float = 0.0,
+    bbox_log_area_weight: float = 0.0,
+    bbox_oversize_weight: float = 0.0,
+    bbox_a1_log_wh_weight: float = 0.0,
+    bbox_a1_log_area_weight: float = 0.0,
+    bbox_a1_oversize_weight: float = 0.0,
     coord_reg_enabled: bool = True,
     coord_reg_weight: float = 1.0,
     coord_ce_weight: float = 0.0,
@@ -518,6 +526,24 @@ def _make_stage2_pipeline_manifest(
                 "config": {
                     "smoothl1_weight": float(bbox_smoothl1_weight),
                     "ciou_weight": float(bbox_ciou_weight),
+                },
+            },
+            {
+                "name": "bbox_size_aux",
+                "enabled": bool(bbox_size_aux_enabled),
+                "weight": float(bbox_size_aux_weight),
+                "channels": ["A", "B"],
+                "config": {
+                    "log_wh_weight": float(bbox_log_wh_weight),
+                    "log_area_weight": float(bbox_log_area_weight),
+                    "oversize_penalty_weight": float(bbox_oversize_weight),
+                    "oversize_area_frac_threshold": None,
+                    "oversize_log_w_threshold": None,
+                    "oversize_log_h_threshold": None,
+                    "a1_log_wh_weight": float(bbox_a1_log_wh_weight),
+                    "a1_log_area_weight": float(bbox_a1_log_area_weight),
+                    "a1_oversize_penalty_weight": float(bbox_a1_oversize_weight),
+                    "eps": 1e-6,
                 },
             },
             {
@@ -3334,7 +3360,7 @@ def test_channel_b_includes_fn_geometry_loss():
     t._get_coord_token_ids = lambda: list(range(1000))
     t.state = types.SimpleNamespace(global_step=0)
 
-    model = _DummyAlwaysTokenModel(pred_id=999)
+    model = _DummyConstantCoord999Model()
     input_ids = torch.tensor([[1100, 1100, 0, 1, 2, 3]], dtype=torch.long)
 
     # Only FN groups are present in Channel-B metadata; this should still contribute
@@ -3395,7 +3421,7 @@ def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
         coord_w1_weight=float(w1_weight),
     )
 
-    model = _DummyAlwaysTokenModel(pred_id=999)
+    model = _DummyConstantCoord999Model()
     input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
     meta = [
         {
@@ -3497,6 +3523,61 @@ def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
     assert "loss/coord_soft_ce" not in finalized
     assert "loss/coord_w1" not in finalized
     assert "loss/coord_reg" not in finalized
+
+
+def test_channel_a_a1_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
+    t = _make_min_trainer(n_softctx_iter=2)
+    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+        token_ce_enabled=False,
+        token_ce_weight=0.0,
+        bbox_geo_enabled=True,
+        bbox_geo_weight=0.0,
+        bbox_smoothl1_weight=0.0,
+        bbox_ciou_weight=0.0,
+        bbox_size_aux_enabled=True,
+        bbox_size_aux_weight=1.0,
+        bbox_log_wh_weight=0.0,
+        bbox_a1_log_wh_weight=0.05,
+        coord_reg_enabled=False,
+        coord_reg_weight=0.0,
+    )
+
+    model = _DummyConstantCoord999Model()
+    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
+    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
+    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
+    meta = [
+        {
+            "prompt_len": 2,
+            "prefix_len": 0,
+            "train_len": 5,
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [
+                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
+            ],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "A",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+            "position_ids": position_ids,
+            "text_position_ids": text_position_ids,
+        },
+    )
+
+    assert float(loss.detach().cpu().item()) > 0.0
+
+    pending = t._stage2_pending_train_logs.get(1)
+    assert pending is not None
+    finalized = pending.finalize()
+    assert float(finalized["loss/A1_coord/bbox_log_wh"]) > 0.0
+    assert "loss/A2_coord/bbox_log_wh" not in finalized
 
 
 def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:

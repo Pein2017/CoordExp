@@ -539,7 +539,20 @@ class RolloutMatchingConfig:
 
             obj_by_name = {str(spec.name): spec for spec in self.pipeline.objective}
             bbox_geo = obj_by_name.get("bbox_geo")
+            bbox_size_aux = obj_by_name.get("bbox_size_aux")
             coord_reg = obj_by_name.get("coord_reg")
+            if bbox_size_aux is not None and bool(getattr(bbox_size_aux, "enabled", False)):
+                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective requires bbox_geo to be present+enabled when bbox_size_aux is enabled "
+                        "(bbox_size_aux depends on bbox_geo state)."
+                    )
+                missing_channels = set(bbox_size_aux.channels) - set(bbox_geo.channels)
+                if missing_channels:
+                    raise ValueError(
+                        "rollout_matching.pipeline.objective bbox_size_aux channels must be a subset of bbox_geo channels; "
+                        f"missing={sorted(missing_channels)}"
+                    )
             if coord_reg is not None and bool(getattr(coord_reg, "enabled", False)):
                 if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
                     raise ValueError(

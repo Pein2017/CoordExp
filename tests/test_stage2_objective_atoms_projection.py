@@ -33,6 +33,13 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
             "config": {},
         },
         {
+            "name": "bbox_size_aux",
+            "enabled": True,
+            "weight": 0.25,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+        {
             "name": "coord_reg",
             "enabled": True,
             "weight": 0.5,
@@ -47,6 +54,9 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
         "loss_dead_anchor_suppression_contrib": _t(0.4),
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
+        "bbox_log_wh_contrib": _t(0.3),
+        "bbox_log_area_contrib": _t(0.05),
+        "bbox_oversize_contrib": _t(0.0),
         "coord_token_ce_contrib": _t(0.05),
         "coord_soft_ce_contrib": _t(0.0),
         "coord_w1_contrib": _t(0.01),
@@ -60,18 +70,21 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     token_loss = _t(0.3 + 0.2)
     dead_anchor_suppression_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
+    bbox_size_aux_loss = _t(0.3 + 0.05 + 0.0)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
         "token_ce": 1.0 * token_loss,
         "loss_dead_anchor_suppression": 0.25 * dead_anchor_suppression_loss,
         "bbox_geo": 2.0 * bbox_loss,
+        "bbox_size_aux": 0.25 * bbox_size_aux_loss,
         "coord_reg": 0.5 * coord_loss,
     }
     total_loss = (
         module_losses["token_ce"]
         + module_losses["loss_dead_anchor_suppression"]
         + module_losses["bbox_geo"]
+        + module_losses["bbox_size_aux"]
         + module_losses["coord_reg"]
     )
 
@@ -97,6 +110,8 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert atoms["loss/B_rollout_text/loss_dead_anchor_suppression"] == pytest.approx(0.25 * 0.4)
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
+    assert atoms["loss/B_coord/bbox_log_wh"] == pytest.approx(0.25 * 0.3)
+    assert atoms["loss/B_coord/bbox_log_area"] == pytest.approx(0.25 * 0.05)
     assert atoms["loss/B_coord/coord_token_ce"] == pytest.approx(0.5 * 0.05)
     assert atoms["loss/B_coord/coord_w1"] == pytest.approx(0.5 * 0.01)
     assert atoms["loss/B_coord/coord_entropy"] == pytest.approx(0.5 * -0.02)
@@ -147,6 +162,13 @@ def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> Non
         },
         {
             "name": "bbox_geo",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+        {
+            "name": "bbox_size_aux",
             "enabled": True,
             "weight": 1.0,
             "channels": ["A", "B"],

@@ -226,6 +226,63 @@ def project_stage2_objective_atoms(
                         atol=atol,
                     )
 
+    # bbox_size_aux -> {bbox_log_wh, bbox_log_area, bbox_oversize}
+    if "bbox_size_aux" in module_losses:
+        bbox_size_spec = _spec("bbox_size_aux")
+        bbox_size_w = float(bbox_size_spec.weight)
+        weighted_loss = module_losses.get("bbox_size_aux")
+        if weighted_loss is None:
+            raise ValueError("pipeline_result.module_losses missing bbox_size_aux")
+
+        if (not emit_coord) or not coord_provenance:
+            if require_additive:
+                got = _as_scalar_tensor(weighted_loss)
+                if got is None:
+                    raise ValueError(
+                        "pipeline_result.module_losses['bbox_size_aux'] must be a scalar tensor"
+                    )
+                _assert_allclose(
+                    where="bbox_size_aux disabled emission",
+                    got=got,
+                    expected=weighted_loss.new_tensor(0.0),
+                    rtol=rtol,
+                    atol=atol,
+                )
+        elif bbox_size_w != 0.0:
+            contrib_keys = {
+                "bbox_log_wh": "bbox_log_wh_contrib",
+                "bbox_log_area": "bbox_log_area_contrib",
+                "bbox_oversize": "bbox_oversize_contrib",
+            }
+            terms: Dict[str, torch.Tensor] = {}
+            for atom_name, state_key in contrib_keys.items():
+                t = _as_scalar_tensor(state.get(state_key))
+                if t is None:
+                    if require_additive:
+                        raise ValueError(
+                            f"bbox_size_aux module did not expose '{state_key}' tensor in pipeline state"
+                        )
+                    continue
+                terms[atom_name] = t
+
+            for atom_name, t in terms.items():
+                _maybe_add(
+                    f"loss/{str(coord_provenance)}/{atom_name}",
+                    _weighted(t, module_weight=bbox_size_w),
+                )
+
+            if require_additive:
+                total = weighted_loss.new_tensor(0.0)
+                for t in terms.values():
+                    total = total + _weighted(t, module_weight=bbox_size_w)
+                _assert_allclose(
+                    where="bbox_size_aux",
+                    got=total,
+                    expected=weighted_loss,
+                    rtol=rtol,
+                    atol=atol,
+                )
+
     # loss_dead_anchor_suppression -> {loss_dead_anchor_suppression}
     if "loss_dead_anchor_suppression" in module_losses:
         duplicate_spec = _spec("loss_dead_anchor_suppression")

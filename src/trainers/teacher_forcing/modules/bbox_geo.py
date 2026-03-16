@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, List, Mapping, Sequence
 
 import torch
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
-from ..geometry import bbox_smoothl1_ciou_loss, expectation_decode_coords
+from ..geometry import bbox_smoothl1_ciou_loss, canonicalize_bbox_xyxy, expectation_decode_coords
 from ..token_types import iter_segment_views
 
 
@@ -17,6 +17,8 @@ class _DecodedGroups:
     group_weights: torch.Tensor
     n_groups: int
     n_slots: int
+    pred_boxes_xyxy: torch.Tensor
+    target_boxes_xyxy: torch.Tensor
     logits_full: torch.Tensor
     coord_logits: torch.Tensor
     target_bins: torch.Tensor
@@ -82,8 +84,8 @@ def _decode_groups(
         meta=meta,
     )
     if not pos_list:
-        z = logits.new_tensor(0.0)
         empty = logits.new_zeros((0, logits.shape[-1]))
+        empty_boxes = logits.new_zeros((0, 4))
         empty_coord = logits.new_zeros((0, coord_ids_t.numel()))
         empty_bins = logits.new_zeros((0,), dtype=torch.long)
         empty_weights = logits.new_zeros((0,), dtype=torch.float32)
@@ -93,6 +95,8 @@ def _decode_groups(
             group_weights=empty_weights,
             n_groups=0,
             n_slots=0,
+            pred_boxes_xyxy=empty_boxes,
+            target_boxes_xyxy=empty_boxes,
             logits_full=empty,
             coord_logits=empty_coord,
             target_bins=empty_bins,
@@ -122,8 +126,8 @@ def _decode_groups(
 
     n_groups = int(pos_g.shape[0])
     if n_groups == 0:
-        z = logits.new_tensor(0.0)
         empty = logits.new_zeros((0, logits.shape[-1]))
+        empty_boxes = logits.new_zeros((0, 4))
         empty_coord = logits.new_zeros((0, coord_ids_t.numel()))
         empty_bins = logits.new_zeros((0,), dtype=torch.long)
         empty_weights = logits.new_zeros((0,), dtype=torch.float32)
@@ -133,6 +137,8 @@ def _decode_groups(
             group_weights=empty_weights,
             n_groups=0,
             n_slots=0,
+            pred_boxes_xyxy=empty_boxes,
+            target_boxes_xyxy=empty_boxes,
             logits_full=empty,
             coord_logits=empty_coord,
             target_bins=empty_bins,
@@ -159,8 +165,8 @@ def _decode_groups(
     )
     gt = bin_t.float() / 999.0
 
-    pred_boxes = pred.reshape(-1, 4)
-    gt_boxes = gt.reshape(-1, 4)
+    pred_boxes = canonicalize_bbox_xyxy(pred.reshape(-1, 4))
+    gt_boxes = canonicalize_bbox_xyxy(gt.reshape(-1, 4))
     smoothl1_terms: list[torch.Tensor] = []
     ciou_terms: list[torch.Tensor] = []
     for pred_box, gt_box in zip(pred_boxes, gt_boxes):
@@ -180,6 +186,8 @@ def _decode_groups(
         group_weights=group_weights,
         n_groups=int(n_groups),
         n_slots=int(pos_t.numel()),
+        pred_boxes_xyxy=pred_boxes,
+        target_boxes_xyxy=gt_boxes,
         logits_full=logits_prev,
         coord_logits=coord_logits,
         target_bins=bin_t,
@@ -282,6 +290,15 @@ def run_bbox_geo_module(
         "ciou": ciou,
         "bbox_smoothl1_contrib": bbox_smoothl1_contrib,
         "bbox_ciou_contrib": bbox_ciou_contrib,
+        "bbox_pred_boxes_xyxy": torch.cat(
+            [dec_prefix.pred_boxes_xyxy, dec_fn.pred_boxes_xyxy],
+            dim=0,
+        ),
+        "bbox_target_boxes_xyxy": torch.cat(
+            [dec_prefix.target_boxes_xyxy, dec_fn.target_boxes_xyxy],
+            dim=0,
+        ),
+        "bbox_group_weights": all_group_weights.to(dtype=context.logits.dtype),
         "coord_logits": coord_logits,
         "coord_logits_full": logits_full,
         "coord_target_bins": target_bins,

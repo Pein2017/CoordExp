@@ -48,6 +48,21 @@ stage2_ab:
           ciou_weight: 0.2
           a1_smoothl1_weight: 0.0
           a1_ciou_weight: 0.0
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config:
+          log_wh_weight: 0.05
+          log_area_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          a1_log_wh_weight: 0.0
+          a1_log_area_weight: 0.0
+          a1_oversize_penalty_weight: 0.0
+          eps: 1.0e-6
       - name: coord_reg
         enabled: true
         weight: 1.0

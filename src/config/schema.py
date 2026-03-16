@@ -295,6 +295,105 @@ class CoordSoftCEW1Config:
 
 
 @dataclass(frozen=True)
+class BBoxSizeAuxConfig:
+    enabled: bool = False
+    log_wh_weight: float = 0.05
+    log_area_weight: float = 0.0
+    oversize_penalty_weight: float = 0.0
+    oversize_area_frac_threshold: Optional[float] = None
+    oversize_log_w_threshold: Optional[float] = None
+    oversize_log_h_threshold: Optional[float] = None
+    eps: float = 1e-6
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "BBoxSizeAuxConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("bbox_size_aux section must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+        required = {
+            "enabled",
+            "log_wh_weight",
+            "log_area_weight",
+            "oversize_penalty_weight",
+            "oversize_area_frac_threshold",
+            "oversize_log_w_threshold",
+            "oversize_log_h_threshold",
+            "eps",
+        }
+        unknown = sorted(str(k) for k in data.keys() if k not in required)
+        if unknown:
+            raise ValueError(
+                f"Unknown bbox_size_aux keys: {[f'bbox_size_aux.{k}' for k in unknown]}"
+            )
+        missing = sorted(str(k) for k in required if k not in data)
+        if missing:
+            raise ValueError(
+                f"bbox_size_aux requires explicit keys: {[f'bbox_size_aux.{k}' for k in missing]}"
+            )
+
+        enabled = bool(data.pop("enabled"))
+
+        def _parse_float(key: str, default: float) -> float:
+            raw = data.pop(key)
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"bbox_size_aux.{key} must be numeric") from exc
+
+        def _parse_optional_float(key: str) -> Optional[float]:
+            raw = data.pop(key)
+            if raw is None:
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"bbox_size_aux.{key} must be numeric or null") from exc
+
+        log_wh_weight = _parse_float("log_wh_weight", cls.log_wh_weight)
+        log_area_weight = _parse_float("log_area_weight", cls.log_area_weight)
+        oversize_penalty_weight = _parse_float("oversize_penalty_weight", cls.oversize_penalty_weight)
+        oversize_area_frac_threshold = _parse_optional_float("oversize_area_frac_threshold")
+        oversize_log_w_threshold = _parse_optional_float("oversize_log_w_threshold")
+        oversize_log_h_threshold = _parse_optional_float("oversize_log_h_threshold")
+        eps = _parse_float("eps", cls.eps)
+
+        if log_wh_weight < 0:
+            raise ValueError("bbox_size_aux.log_wh_weight must be >= 0")
+        if log_area_weight < 0:
+            raise ValueError("bbox_size_aux.log_area_weight must be >= 0")
+        if oversize_penalty_weight < 0:
+            raise ValueError("bbox_size_aux.oversize_penalty_weight must be >= 0")
+        if enabled and (
+            log_wh_weight == 0
+            and log_area_weight == 0
+            and oversize_penalty_weight == 0
+        ):
+            raise ValueError(
+                "bbox_size_aux is enabled but log_wh_weight, log_area_weight, and oversize_penalty_weight are all 0"
+            )
+        if eps <= 0:
+            raise ValueError("bbox_size_aux.eps must be > 0")
+        if (
+            oversize_area_frac_threshold is not None
+            and oversize_area_frac_threshold < 0
+        ):
+            raise ValueError("bbox_size_aux.oversize_area_frac_threshold must be >= 0 or null")
+        return cls(
+            enabled=enabled,
+            log_wh_weight=log_wh_weight,
+            log_area_weight=log_area_weight,
+            oversize_penalty_weight=oversize_penalty_weight,
+            oversize_area_frac_threshold=oversize_area_frac_threshold,
+            oversize_log_w_threshold=oversize_log_w_threshold,
+            oversize_log_h_threshold=oversize_log_h_threshold,
+            eps=eps,
+        )
+
+
+@dataclass(frozen=True)
 class CoordOffsetConfig:
     enabled: bool = False
     tie_head: bool = True
@@ -672,6 +771,7 @@ class CustomConfig:
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
+    bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
     augmentation: Optional[Mapping[str, Any]] = None
@@ -882,6 +982,8 @@ class CustomConfig:
         data.pop("coord_loss", None)
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
+        bbox_size_aux_raw = data.pop("bbox_size_aux", None)
+        bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
 
         object_ordering = str(object_ordering_raw).lower()
         if object_ordering not in {"sorted", "random"}:
@@ -907,6 +1009,7 @@ class CustomConfig:
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             coord_soft_ce_w1=coord_soft_ce_w1,
+            bbox_size_aux=bbox_size_aux,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
             augmentation=augmentation
@@ -1461,7 +1564,13 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
-        canonical_objective_order = ["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"]
+        canonical_objective_order = [
+            "token_ce",
+            "loss_dead_anchor_suppression",
+            "bbox_geo",
+            "bbox_size_aux",
+            "coord_reg",
+        ]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
         if authored_objective_order != canonical_objective_order:
             raise ValueError(
@@ -1520,7 +1629,20 @@ class Stage2PipelineConfig:
             )
 
         bbox_geo = specs_by_name.get("bbox_geo")
+        bbox_size_aux = specs_by_name.get("bbox_size_aux")
         coord_reg = specs_by_name.get("coord_reg")
+        if bbox_size_aux is not None and bool(bbox_size_aux.enabled):
+            if bbox_geo is None or not bool(bbox_geo.enabled):
+                raise ValueError(
+                    "stage2_ab.pipeline.objective requires bbox_geo to be present+enabled when bbox_size_aux is enabled "
+                    "(bbox_size_aux depends on bbox_geo state: decoded bbox tensors + weights)."
+                )
+            missing_channels = set(bbox_size_aux.channels) - set(bbox_geo.channels)
+            if missing_channels:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective bbox_size_aux channels must be a subset of bbox_geo channels; "
+                    f"missing={sorted(missing_channels)}"
+                )
         if coord_reg is not None and bool(coord_reg.enabled):
             if bbox_geo is None or not bool(bbox_geo.enabled):
                 raise ValueError(
@@ -1778,6 +1900,9 @@ class TrainingConfig:
         custom_coord_soft_ce_w1_present = bool(
             isinstance(custom_raw, Mapping) and "coord_soft_ce_w1" in custom_raw
         )
+        custom_bbox_size_aux_present = bool(
+            isinstance(custom_raw, Mapping) and "bbox_size_aux" in custom_raw
+        )
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
@@ -1875,10 +2000,20 @@ class TrainingConfig:
                 "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
                 "stage2_ab.pipeline.objective[*].config for the coord_reg module"
             )
+        if stage2_pipeline_present and custom_bbox_size_aux_present:
+            raise ValueError(
+                "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
+                "stage2_ab.pipeline.objective[*].config for the bbox_size_aux module"
+            )
         if rollout_pipeline_present and custom_coord_soft_ce_w1_present:
             raise ValueError(
                 "rollout_matching.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
                 "rollout_matching.pipeline.objective[*].config for the coord_reg module"
+            )
+        if rollout_pipeline_present and custom_bbox_size_aux_present:
+            raise ValueError(
+                "rollout_matching.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
+                "rollout_matching.pipeline.objective[*].config for the bbox_size_aux module"
             )
 
         if trainer_variant == "stage2_two_channel" and rollout_pipeline_present:

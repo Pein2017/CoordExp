@@ -53,6 +53,7 @@ def _canonical_stage2_pipeline(
     dead_anchor_suppression_cfg: dict | None = None,
     dead_anchor_suppression_channels: list[str] | None = None,
     bbox_geo_cfg: dict | None = None,
+    bbox_size_aux_cfg: dict | None = None,
     coord_reg_cfg: dict | None = None,
 ) -> dict:
     if token_ce_cfg is None:
@@ -72,6 +73,19 @@ def _canonical_stage2_pipeline(
             "ciou_weight": 0.0,
             "a1_smoothl1_weight": 0.0,
             "a1_ciou_weight": 0.0,
+        }
+    if bbox_size_aux_cfg is None:
+        bbox_size_aux_cfg = {
+            "log_wh_weight": 0.0,
+            "log_area_weight": 0.0,
+            "oversize_penalty_weight": 0.0,
+            "oversize_area_frac_threshold": None,
+            "oversize_log_w_threshold": None,
+            "oversize_log_h_threshold": None,
+            "a1_log_wh_weight": 0.0,
+            "a1_log_area_weight": 0.0,
+            "a1_oversize_penalty_weight": 0.0,
+            "eps": 1e-6,
         }
     if coord_reg_cfg is None:
         coord_reg_cfg = {
@@ -113,6 +127,13 @@ def _canonical_stage2_pipeline(
                 "weight": 0.0,
                 "channels": ["A", "B"],
                 "config": dict(bbox_geo_cfg),
+            },
+            {
+                "name": "bbox_size_aux",
+                "enabled": True,
+                "weight": 0.0,
+                "channels": ["A", "B"],
+                "config": dict(bbox_size_aux_cfg),
             },
             {
                 "name": "coord_reg",
@@ -626,7 +647,7 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[3\]\.config keys.*unknown_weight",
+        match=r"Unknown stage2_ab\.pipeline\.objective\[4\]\.config keys.*unknown_weight",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -930,7 +951,13 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
     with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):
         _build_pipeline_manifest(
             cfg,
-            default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
+            default_objective=[
+                "token_ce",
+                "loss_dead_anchor_suppression",
+                "bbox_geo",
+                "bbox_size_aux",
+                "coord_reg",
+            ],
             default_diagnostics=["coord_diag"],
             trainer_variant="stage2_two_channel",
             config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
@@ -968,7 +995,13 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
 
     manifest = _build_pipeline_manifest(
         cfg,
-        default_objective=["token_ce", "loss_dead_anchor_suppression", "bbox_geo", "coord_reg"],
+        default_objective=[
+            "token_ce",
+            "loss_dead_anchor_suppression",
+            "bbox_geo",
+            "bbox_size_aux",
+            "coord_reg",
+        ],
         default_diagnostics=["coord_diag"],
         trainer_variant="stage2_two_channel",
         config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",

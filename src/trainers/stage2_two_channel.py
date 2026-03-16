@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import torch
-import torch.nn.functional as F
 
 from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
@@ -3595,6 +3594,12 @@ class Stage2ABTrainingTrainer(
             channel_name=channel,
             default=0.0,
         )
+        bbox_size_aux_module_w = _module_weight(
+            objective_specs,
+            name="bbox_size_aux",
+            channel_name=channel,
+            default=0.0,
+        )
         dead_anchor_suppression_module_w = _module_weight(
             objective_specs,
             name="loss_dead_anchor_suppression",
@@ -3619,10 +3624,16 @@ class Stage2ABTrainingTrainer(
 
         token_module_cfg = _module_config(objective_specs, name="token_ce")
         bbox_module_cfg = _module_config(objective_specs, name="bbox_geo")
+        bbox_size_aux_module_cfg = _module_config(objective_specs, name="bbox_size_aux")
         coord_module_cfg = _module_config(objective_specs, name="coord_reg")
 
         token_cfg = token_module_cfg if isinstance(token_module_cfg, Mapping) else {}
         bbox_cfg = bbox_module_cfg if isinstance(bbox_module_cfg, Mapping) else {}
+        bbox_size_aux_cfg = (
+            bbox_size_aux_module_cfg
+            if isinstance(bbox_size_aux_module_cfg, Mapping)
+            else {}
+        )
         coord_cfg = coord_module_cfg if isinstance(coord_module_cfg, Mapping) else {}
 
         def _cfg_float(
@@ -3657,12 +3668,6 @@ class Stage2ABTrainingTrainer(
             default=0.1,
             min_value=0.0,
         )
-        matched_prefix_struct_ce_weight = _cfg_float(
-            token_cfg,
-            keys=("rollout_matched_prefix_struct_weight",),
-            default=1.0,
-            min_value=0.0,
-        )
         fn_desc_ce_weight = _cfg_float(
             token_cfg,
             keys=("rollout_fn_desc_weight",),
@@ -3679,6 +3684,24 @@ class Stage2ABTrainingTrainer(
             bbox_cfg,
             keys=("ciou_weight",),
             default=1.0,
+            min_value=0.0,
+        )
+        bbox_log_wh_w = _cfg_float(
+            bbox_size_aux_cfg,
+            keys=("log_wh_weight",),
+            default=0.0,
+            min_value=0.0,
+        )
+        bbox_log_area_w = _cfg_float(
+            bbox_size_aux_cfg,
+            keys=("log_area_weight",),
+            default=0.0,
+            min_value=0.0,
+        )
+        bbox_oversize_w = _cfg_float(
+            bbox_size_aux_cfg,
+            keys=("oversize_penalty_weight",),
+            default=0.0,
             min_value=0.0,
         )
 
@@ -3700,12 +3723,6 @@ class Stage2ABTrainingTrainer(
             keys=("coord_ehuber_weight",),
             default=0.0,
             min_value=0.0,
-        )
-        coord_huber_delta = _cfg_float(
-            coord_cfg,
-            keys=("coord_huber_delta",),
-            default=0.001,
-            min_value=1e-6,
         )
         # Entropy regularizer (sign controls direction): +w increases entropy, -w sharpens.
         coord_entropy_w = _cfg_float(
@@ -4046,8 +4063,10 @@ class Stage2ABTrainingTrainer(
             # Motivation: A1 (GT-prefix) logits are used to bootstrap A2 self-context.
             # Adding a weak A1 anchor can reduce self-context noise and stabilize bbox loss.
             a1_bbox_obj = logits_ce.new_tensor(0.0)
+            a1_bbox_size_aux_obj = logits_ce.new_tensor(0.0)
             a1_coord_obj = logits_ce.new_tensor(0.0)
             a1_bbox_metrics: Dict[str, float] = {}
+            a1_bbox_size_aux_metrics: Dict[str, float] = {}
             a1_coord_metrics: Dict[str, float] = {}
 
             try:
@@ -4058,6 +4077,17 @@ class Stage2ABTrainingTrainer(
                 a1_ciou_w = 0.0
 
             try:
+                a1_log_wh_w = float(bbox_size_aux_cfg.get("a1_log_wh_weight", 0.0) or 0.0)
+                a1_log_area_w = float(bbox_size_aux_cfg.get("a1_log_area_weight", 0.0) or 0.0)
+                a1_oversize_w = float(
+                    bbox_size_aux_cfg.get("a1_oversize_penalty_weight", 0.0) or 0.0
+                )
+            except (TypeError, ValueError):
+                a1_log_wh_w = 0.0
+                a1_log_area_w = 0.0
+                a1_oversize_w = 0.0
+
+            try:
                 a1_soft_ce_w = float(coord_cfg.get("a1_soft_ce_weight", 0.0) or 0.0)
                 a1_w1_w = float(coord_cfg.get("a1_w1_weight", 0.0) or 0.0)
             except (TypeError, ValueError):
@@ -4065,15 +4095,26 @@ class Stage2ABTrainingTrainer(
                 a1_w1_w = 0.0
 
             if (
-                (float(bbox_geo_module_w) != 0.0 or float(coord_reg_module_w) != 0.0)
+                (
+                    float(bbox_geo_module_w) != 0.0
+                    or float(bbox_size_aux_module_w) != 0.0
+                    or float(coord_reg_module_w) != 0.0
+                )
                 and (
                     float(a1_smoothl1_w) != 0.0
                     or float(a1_ciou_w) != 0.0
+                    or float(a1_log_wh_w) != 0.0
+                    or float(a1_log_area_w) != 0.0
+                    or float(a1_oversize_w) != 0.0
                     or float(a1_soft_ce_w) != 0.0
                     or float(a1_w1_w) != 0.0
                 )
             ):
-                from .teacher_forcing.modules import run_bbox_geo_module, run_coord_reg_module
+                from .teacher_forcing.modules import (
+                    run_bbox_geo_module,
+                    run_bbox_size_aux_module,
+                    run_coord_reg_module,
+                )
 
                 ctx_a1_obj = TeacherForcingContext(
                     channel="A",
@@ -4106,6 +4147,50 @@ class Stage2ABTrainingTrainer(
                     str(k): float(v) for k, v in dict(bbox_out_a1.metrics or {}).items()
                 }
                 a1_bbox_state = dict(bbox_out_a1.state or {})
+
+                if (
+                    float(a1_log_wh_w) != 0.0
+                    or float(a1_log_area_w) != 0.0
+                    or float(a1_oversize_w) != 0.0
+                ):
+                    bbox_size_aux_spec_a1 = PipelineModuleSpec(
+                        name="bbox_size_aux",
+                        enabled=True,
+                        weight=1.0,
+                        channels=("A",),
+                        config={
+                            "log_wh_weight": float(max(float(a1_log_wh_w), 0.0)),
+                            "log_area_weight": float(max(float(a1_log_area_w), 0.0)),
+                            "oversize_penalty_weight": float(
+                                max(float(a1_oversize_w), 0.0)
+                            ),
+                            "oversize_area_frac_threshold": bbox_size_aux_cfg.get(
+                                "oversize_area_frac_threshold", None
+                            ),
+                            "oversize_log_w_threshold": bbox_size_aux_cfg.get(
+                                "oversize_log_w_threshold", None
+                            ),
+                            "oversize_log_h_threshold": bbox_size_aux_cfg.get(
+                                "oversize_log_h_threshold", None
+                            ),
+                            "eps": bbox_size_aux_cfg.get("eps", 1e-6),
+                        },
+                    )
+                    bbox_size_aux_out_a1 = run_bbox_size_aux_module(
+                        context=ctx_a1_obj,
+                        spec=bbox_size_aux_spec_a1,
+                        state=bbox_out_a1.state,
+                    )
+                    a1_bbox_size_aux_obj = (
+                        bbox_size_aux_out_a1.loss * float(bbox_size_aux_module_w)
+                    )
+                    a1_bbox_size_aux_metrics = {
+                        str(k): float(v)
+                        for k, v in dict(bbox_size_aux_out_a1.metrics or {}).items()
+                    }
+                    merged_a1_state = dict(bbox_out_a1.state or {})
+                    merged_a1_state.update(dict(bbox_size_aux_out_a1.state or {}))
+                    a1_bbox_state = merged_a1_state
 
                 if float(a1_soft_ce_w) != 0.0 or float(a1_w1_w) != 0.0:
                     coord_spec_a1 = PipelineModuleSpec(
@@ -4142,6 +4227,7 @@ class Stage2ABTrainingTrainer(
                 pipeline_gt_total_loss
                 + pipeline_ctx_total_loss
                 + a1_bbox_obj
+                + a1_bbox_size_aux_obj
                 + a1_coord_obj
             )
         else:
@@ -4162,6 +4248,7 @@ class Stage2ABTrainingTrainer(
                         pipeline_result=pipeline_ctx_result,
                         objective_specs=objective_specs_ctx,
                         bbox_module_weight=float(bbox_geo_module_w),
+                        bbox_size_aux_module_weight=float(bbox_size_aux_module_w),
                         coord_module_weight=float(coord_reg_module_w),
                         a1_bbox_state=a1_bbox_state,
                         a1_coord_state=a1_coord_state,
@@ -4220,6 +4307,9 @@ class Stage2ABTrainingTrainer(
                 if (
                     float(a1_smoothl1_w) != 0.0
                     or float(a1_ciou_w) != 0.0
+                    or float(a1_log_wh_w) != 0.0
+                    or float(a1_log_area_w) != 0.0
+                    or float(a1_oversize_w) != 0.0
                     or float(a1_soft_ce_w) != 0.0
                     or float(a1_w1_w) != 0.0
                 ):
@@ -4243,6 +4333,37 @@ class Stage2ABTrainingTrainer(
                                 * float(ciou_a1)
                             )
 
+                    if float(bbox_size_aux_module_w) != 0.0:
+                        log_wh_a1 = float(
+                            a1_bbox_size_aux_metrics.get("loss/bbox_log_wh", 0.0) or 0.0
+                        )
+                        log_area_a1 = float(
+                            a1_bbox_size_aux_metrics.get("loss/bbox_log_area", 0.0)
+                            or 0.0
+                        )
+                        oversize_a1 = float(
+                            a1_bbox_size_aux_metrics.get("loss/bbox_oversize", 0.0)
+                            or 0.0
+                        )
+                        if float(a1_log_wh_w) != 0.0:
+                            stage2_logs["loss/A1_coord/bbox_log_wh"] = float(
+                                float(bbox_size_aux_module_w)
+                                * float(a1_log_wh_w)
+                                * float(log_wh_a1)
+                            )
+                        if float(a1_log_area_w) != 0.0:
+                            stage2_logs["loss/A1_coord/bbox_log_area"] = float(
+                                float(bbox_size_aux_module_w)
+                                * float(a1_log_area_w)
+                                * float(log_area_a1)
+                            )
+                        if float(a1_oversize_w) != 0.0:
+                            stage2_logs["loss/A1_coord/bbox_oversize"] = float(
+                                float(bbox_size_aux_module_w)
+                                * float(a1_oversize_w)
+                                * float(oversize_a1)
+                            )
+
                     if float(coord_reg_module_w) != 0.0 and (
                         float(a1_soft_ce_w) != 0.0 or float(a1_w1_w) != 0.0
                     ):
@@ -4264,7 +4385,9 @@ class Stage2ABTrainingTrainer(
                             )
 
                     stage2_logs["loss/A1_coord/total"] = float(
-                        float(a1_bbox_obj + a1_coord_obj).detach().cpu().item()
+                        (
+                            a1_bbox_obj + a1_bbox_size_aux_obj + a1_coord_obj
+                        ).detach().cpu().item()
                     )
 
                 if float(bbox_geo_module_w) != 0.0:
@@ -4286,6 +4409,19 @@ class Stage2ABTrainingTrainer(
                             * float(bbox_ciou_w)
                             * float(ciou)
                         )
+
+                if float(bbox_size_aux_module_w) != 0.0:
+                    def _emit_a2_bbox_size(term: str, weight: float, raw_key: str) -> None:
+                        if float(weight) == 0.0:
+                            return
+                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
+                        stage2_logs[f"loss/A2_coord/{term}"] = float(
+                            float(bbox_size_aux_module_w) * float(weight) * float(value)
+                        )
+
+                    _emit_a2_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
+                    _emit_a2_bbox_size("bbox_log_area", bbox_log_area_w, "loss/bbox_log_area")
+                    _emit_a2_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
 
                 if float(coord_reg_module_w) != 0.0:
                     def _emit_a2(term: str, weight: float, raw_key: str) -> None:
@@ -4376,6 +4512,19 @@ class Stage2ABTrainingTrainer(
                         stage2_logs["loss/B_coord/bbox_ciou"] = float(
                             float(bbox_geo_module_w) * float(bbox_ciou_w) * float(ciou)
                         )
+
+                if float(bbox_size_aux_module_w) != 0.0:
+                    def _emit_b_bbox_size(term: str, weight: float, raw_key: str) -> None:
+                        if float(weight) == 0.0:
+                            return
+                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
+                        stage2_logs[f"loss/B_coord/{term}"] = float(
+                            float(bbox_size_aux_module_w) * float(weight) * float(value)
+                        )
+
+                    _emit_b_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
+                    _emit_b_bbox_size("bbox_log_area", bbox_log_area_w, "loss/bbox_log_area")
+                    _emit_b_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
 
                 if float(coord_reg_module_w) != 0.0:
                     def _emit_b(term: str, weight: float, raw_key: str) -> None:
