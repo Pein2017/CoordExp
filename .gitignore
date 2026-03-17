@@ -83,8 +83,9 @@
 **/*.log
 **/*.tmp
 
-# Ignore common build and output directories
-**/output/
+# Allow output/ directory but ignore safetensors files
+!output/
+output/**/*.safetensors
 **/build/
 **/dist/
 **/target/
