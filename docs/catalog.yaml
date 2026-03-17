@@ -172,6 +172,18 @@ progress:
       title: 2B COCO1024 Channel-A-Only Similarity, FN Hypotheses, and Prefix-Sensitivity Plan
       type: diagnosis
       status: active-diagnostic
+    - path: progress/diagnostics/stage2_2b_fn_factor_results_2026-03-17.md
+      title: 2B Rollout FN-Factor Results After Hard-16 Prefix Repair
+      type: diagnosis
+      status: completed-diagnostic
+    - path: progress/diagnostics/stage2_2b_fn_factor_artifact_bundle_2026-03-17.md
+      title: 2B FN-Factor Artifact Bundle Summary
+      type: diagnosis
+      status: completed-diagnostic
+    - path: progress/diagnostics/stage2_2b_prefix_random_order_followup_2026-03-17.md
+      title: 2B Prefix-Control Repair and Random-Order Stage-1 Follow-Up
+      type: diagnosis
+      status: active-diagnostic
     - path: progress/diagnostics/gt_overlap_threshold_search_2026-03-11.md
       title: GT Overlap Threshold Search on COCO1024 Val
       type: diagnostic-study
