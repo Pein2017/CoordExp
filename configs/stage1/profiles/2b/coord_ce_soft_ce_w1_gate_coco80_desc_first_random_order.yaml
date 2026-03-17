@@ -1,0 +1,26 @@
+extends:
+  - ./coord_ce_soft_ce_gate.yaml
+  - ../../_shared/prompt_coco80_desc_first.yaml
+
+# Follow-up ablation for the 2B Stage-1 baseline:
+# keep the hardCE + softCE + W1 + gate recipe, but randomize object order
+# during serialization so we can test how much of the later FN behavior is
+# coming from the top-left ordering prior.
+
+training:
+  output_dir: ./output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
+  run_name: epoch_4-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order-from-base-2B
+  logging_dir: ./tb/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
+  encoded_sample_cache:
+    enabled: false
+
+template:
+  max_pixels: 1048576
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: ../../../../public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: ../../../../public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  object_ordering: random
+  coord_soft_ce_w1:
+    w1_weight: 1.0

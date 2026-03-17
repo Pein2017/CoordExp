@@ -1,0 +1,33 @@
+extends: ../profiles/2b/coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml
+
+# Short end-to-end smoke for the random-order Stage-1 2B ablation.
+# Keep the model/data path identical to the full recipe and only shrink the
+# runtime knobs so we can validate dataset ordering, prompt wiring, and cache
+# bypass behavior.
+
+training:
+  output_dir: ./output/smoke/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
+  logging_dir: ./tb/smoke/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
+  run_name: smoke_stage1_2b_hard_ce_soft_ce_w1_gate_coco80_desc_first_random_order
+  max_steps: 4
+  save_strategy: steps
+  save_steps: 4
+  save_delay_steps: 0
+  eval_strategy: steps
+  eval_steps: 2
+  logging_steps: 1
+
+data:
+  dataloader_num_workers: 2
+  dataloader_prefetch_factor: 2
+  dataloader_persistent_workers: false
+
+debug:
+  enabled: true
+  output_dir: output/stage1/smoke/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order
+  train_sample_limit: 128
+  val_sample_limit: 32
+
+custom:
+  train_jsonl: ../../../public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: ../../../public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
