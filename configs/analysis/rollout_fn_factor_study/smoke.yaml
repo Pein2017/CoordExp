@@ -1,0 +1,83 @@
+run:
+  name: rollout-fn-factor-2b-smoke-20260316
+  output_dir: output/analysis
+  stages: [bootstrap, baseline, sampling, prefix, stress, length, report]
+
+prompts:
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  do_resize: false
+
+bootstrap:
+  candidate_pool_strategy: top_gt_count
+  candidate_pool_limit: 16
+  hard32_size: 8
+  hard16_size: 4
+
+baseline_decode:
+  temperature: 0.0
+  top_p: 1.0
+  max_new_tokens: 1024
+  repetition_penalty: 1.05
+  batch_size: 2
+
+sampling:
+  k: 2
+  temperature: 0.6
+  top_p: 0.95
+  max_new_tokens: 1024
+  repetition_penalty: 1.0
+  batch_size: 1
+  seed: 42
+
+prefix:
+  lengths: [1, 2]
+  random_seed: 17
+
+stress:
+  prefix_length: 2
+  mutations: [delete, adjacent_swap]
+
+length:
+  extended_max_new_tokens: 1536
+
+eval:
+  metrics: f1ish
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: all
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:0
+  semantic_batch_size: 32
+  num_workers: 4
+  overlay_top_n_per_bucket: 4
+
+health_gate:
+  min_parse_valid_rate: 1.0
+  min_nonempty_rate: 1.0
+  min_pred_count_total: 1
+  max_duplicate_like_rate: 0.35
+
+execution:
+  gpu_ids: [0, 1, 2, 3]
+  reuse_existing: false
+  start_method: spawn
+
+report:
+  review_top_n_per_bucket: 4
+
+checkpoints:
+  - alias: original
+    path: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+    artifact_kind: executable_checkpoint
+  - alias: a_only
+    path: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
+    artifact_kind: executable_checkpoint
+    provenance_sidecars:
+      config_source: output/stage2_ab/2b_1024/a_only_iter1/epoch_2-eff_size_64-n_softctx_iter_1-a_only/v0-20260309-102351/config_source.yaml
+
+splits:
+  train:
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val:
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
