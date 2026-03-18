@@ -1,0 +1,7 @@
+interface:
+  display_name: "RTK Token Saver"
+  short_description: "Default to RTK for applicable Codex shell commands"
+  default_prompt: "Use $rtk-token-saver and default to RTK for applicable shell commands in this Codex session."
+
+policy:
+  allow_implicit_invocation: true
