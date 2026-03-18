@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-03-13
+updated: 2026-03-18
 ---
 
 # Evaluation Workflow
@@ -62,8 +62,12 @@ After inference:
 - `gt_vs_pred.jsonl`
 - `summary.json`
 - `resolved_config.json` when using the YAML pipeline
-- verify `infer.prompt_variant` and `infer.object_ordering` in both
-  `summary.json` and `resolved_config.json` when comparing prompt/order ablations
+- verify `infer.prompt_variant`, `infer.object_field_order`, and
+  `infer.object_ordering` in both `summary.json` and `resolved_config.json`
+  when comparing prompt/order ablations
+- if the checkpoint was trained with non-default dense prompt controls, keep
+  those infer-time values aligned with training so evaluation does not measure
+  prompt drift instead of model behavior
 
 After confidence post-op:
 

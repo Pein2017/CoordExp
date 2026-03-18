@@ -681,8 +681,13 @@ Normative behavior:
 `custom.object_field_order` SHALL NOT modify stage-2 object instance ordering behavior.
 
 Normative behavior:
-- Object sequence remains determined by existing pipeline semantics (GT order, parsed rollout appearance order, and current matching/index continuation logic).
-- Only intra-object field order is configurable.
+- When Channel-A is selected, teacher-forced assistant payload construction SHALL follow `custom.object_ordering`.
+- When Channel-A is selected, canonical clean-prefix construction SHALL serialize objects in the same effective order as the Channel-A teacher-forced assistant payload.
+- For Channel-A, `custom.object_ordering: sorted` means canonical top-left ordering by `(minY, minX)`.
+- For Channel-A, `custom.object_ordering: random` means the trainer SHALL use the current epoch’s deterministic dataset order for that sample.
+- Channel-A object key numbering (`object_1`, `object_2`, ...`) SHALL follow the effective configured instance order.
+- Channel-B object sequence remains determined by existing pipeline semantics (parsed rollout appearance order, matching/index continuation logic, and FN append order).
+- Only intra-object field order is configurable through `custom.object_field_order`.
 
 #### Scenario: geometry-first does not change rollout appearance order handling
 - **GIVEN** rollout parsed objects appear in a specific raw-text order
@@ -690,6 +695,20 @@ Normative behavior:
 - **WHEN** Stage-2 performs matching and FN append
 - **THEN** parsed predicted order remains the same as raw-text appearance
 - **AND** only field order inside serialized object payloads differs.
+
+#### Scenario: Channel-A sorted ordering uses canonical top-left order
+- **GIVEN** Channel-A is selected
+- **AND** `custom.object_ordering: sorted`
+- **WHEN** the trainer builds the teacher-forced assistant payload and canonical clean prefix
+- **THEN** both surfaces serialize GT objects in canonical top-left order
+- **AND** object key numbering follows that same order.
+
+#### Scenario: Channel-A random ordering reuses the sample’s current epoch order
+- **GIVEN** Channel-A is selected
+- **AND** `custom.object_ordering: random`
+- **WHEN** the trainer builds the teacher-forced assistant payload and canonical clean prefix
+- **THEN** both surfaces serialize GT objects in the sample’s current epoch order
+- **AND** object key numbering follows that same order.
 
 ### Requirement: Channel-B invalid rollouts fall back deterministically (no silent skips)
 When Channel-B is selected and a rollout response cannot be recovered into an append-ready `{"objects": [...]}` prefix, the trainer MUST:
@@ -1492,3 +1511,4 @@ Normative behavior:
 - **WHEN** Channel-A computes matched geometry from final self-context logits
 - **THEN** `bbox_size_aux` contributes `bbox_log_wh` on the `A2` decoded-box path
 - **AND** `loss/A2_coord/bbox_log_wh` is the emitted objective atom.
+

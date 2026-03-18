@@ -5,7 +5,7 @@ doc_type: contract
 status: canonical
 domain: data
 summary: Authoritative JSONL, geometry, and runtime assumptions for dataset ingestion.
-updated: 2026-03-09
+updated: 2026-03-18
 ---
 
 # Data JSONL Contract (Global)
@@ -53,7 +53,8 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
-- Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL. `random` ordering is supported only as an ablation mode.
+- Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL.
+- `custom.object_ordering: random` is supported for ablation-style dataset-backed training/eval only and means a deterministic per-epoch reshuffle derived from sample identity plus epoch; it does not change per-object field order inside each object payload.
 - Polygon vertices should be canonicalized offline for determinism (recommended; not enforced by the runtime loader/builder):
   - drop duplicated closing point if present
   - order vertices clockwise around the centroid (angle sort)

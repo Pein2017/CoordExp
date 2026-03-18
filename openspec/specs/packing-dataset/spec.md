@@ -156,14 +156,25 @@ Determinism scope:
   - Packs within the plan SHALL be ordered by the smallest raw index in the pack (ascending), with deterministic tie-breaking by lexicographic comparison of the full index lists.
 
 Epoch semantics:
-- Static pack-plan mode MUST NOT rely on dataset-level `set_epoch` hooks to reshuffle or rebuild the plan.
-- Per-epoch ordering randomness (if desired) is provided by the dataloader sampler shuffling pack indices, not by regenerating the plan.
-- Static pack-plan mode MUST be restricted to datasets where per-index encoding is order-invariant and epoch-invariant. Datasets that resample per epoch or depend on `set_epoch` to change the sample schedule (e.g., fusion/mixing schedulers) MUST be rejected (fail fast) when `training.packing_mode=static`.
+- Static pack-plan mode MUST NOT regenerate `raw_plan` or `aligned_plan` per epoch for eligible datasets.
+- Static pack-plan mode MAY propagate dataset-level `set_epoch` hooks into the underlying raw dataset only when epoch changes do not change base sample identity, raw-sample index membership, per-index planning length, or pack membership/order.
+- For such eligible datasets, per-epoch variation MAY change only deterministic, length-invariant sample content (for example object instance order inside a sample).
+- The packed dataset wrapper MUST forward epoch changes to the underlying dataset before sample fetches for the new epoch.
+- Datasets that resample per epoch, depend on `set_epoch` to change the sample schedule, or change per-index planning length MUST still be rejected (fail fast) when `training.packing_mode=static`.
 
 #### Scenario: Identical inputs produce identical pack plans
 - **GIVEN** the same dataset, seed, and packing knobs across two runs
 - **WHEN** pack-plan construction runs in static mode
 - **THEN** the emitted sequence of packs (index sets and order) is identical between runs.
+
+#### Scenario: Length-invariant random ordering preserves the static plan across epochs
+- **GIVEN** `training.packing=true` and `training.packing_mode=static`
+- **AND** the underlying dataset uses `custom.object_ordering: random`
+- **AND** per-index planning length is invariant across epochs
+- **WHEN** the packed dataset advances from one epoch to the next
+- **THEN** `raw_plan` and `aligned_plan` remain unchanged
+- **AND** the underlying dataset receives the new epoch before sample fetches
+- **AND** fetched samples MAY reflect the new epoch’s deterministic object order without rebuilding the plan.
 
 ### Requirement: Static packing enforces deterministic DDP remainder semantics (pad vs drop)
 When static pack-plan mode is selected (`training.packing_mode=static`), the system SHALL ensure all DDP ranks execute the same number of training steps per epoch and that `training.dataloader_drop_last` has deterministic semantics under the current ms-swift sized-dataset path (which floors `total_samples // world_size`):
@@ -218,7 +229,8 @@ Normative behavior:
 - Length computation MUST be deterministic for a fixed dataset record, template, and configuration.
 - Any static length/plan cache fingerprint MUST include dataset source identity (for example, resolved `custom.train_jsonl` / `custom.fusion_config` identity) so stale cache reuse across different dataset sources fails fast.
 - The run-scoped static cache directory under `training.output_dir` is the primary safety boundary; changing uncaptured length-affecting factors SHOULD use a fresh output directory.
-- Static pack-plan mode MUST be restricted to datasets whose per-index encoding (and therefore per-index length) does not depend on call order or non-deterministic preprocessing. If this cannot be guaranteed, the system MUST fail fast with actionable guidance (e.g., disable static packing).
+- Static pack-plan mode MUST allow epoch-varying serialized content only when the per-index planning length is invariant across epochs.
+- If epoch-varying content can change the planning length or invalidate `sum(length_i) <= packing_length` for an existing pack, the system MUST fail fast with actionable guidance.
 - Static length precompute MAY use rank0 multiprocessing, but computed lengths MUST be written back by dataset index so results are deterministic and byte-identical to serial precompute for the same inputs.
 - Non-rank0 ranks MUST continue to use the same cache synchronization path (`training.packing_wait_timeout_s`) regardless of rank0 worker count.
 
@@ -227,6 +239,12 @@ Normative behavior:
 - **WHEN** static packing computes the sample’s planning length
 - **THEN** the computed `length` is deterministic across runs for the same configuration
 - **AND** the length is usable to enforce `sum(length_i) <= packing_length` without truncating or splitting samples.
+
+#### Scenario: Random-order dataset is accepted only when planning length stays invariant
+- **GIVEN** static packing is enabled for a dataset with epoch-varying object order
+- **WHEN** the system validates the dataset for static pack planning
+- **THEN** it MUST accept the dataset only if the per-index planning length is invariant across epochs
+- **AND** otherwise it MUST fail fast with guidance to disable static packing or use a length-invariant configuration.
 
 ### Requirement: Packing preserves effective_batch_size semantics when batch size is forced to 1
 When dataset-level packing wrappers are enabled (dynamic or static) and the system forces `per_device_train_batch_size=1`, the system SHALL preserve the intended effective batch semantics driven by `training.effective_batch_size`:
