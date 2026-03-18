@@ -6,10 +6,10 @@ from src.common.semantic_desc import normalize_desc
 from src.common.object_field_order import build_object_payload
 from src.utils.assistant_json import dumps_coordjson
 
-from ..rollout_matching.contracts import GTObject
+from ..rollout_matching.contracts import GTObject, MatchResult
 from ..rollout_matching.matching import associate_one_to_one_max_iou
 from ..rollout_matching.parsing import decode_pieces, find_desc_value_char_spans
-from .types import Stage2DeadAnchorSuppressionTarget
+from .types import Stage2ChannelBMeta, Stage2DeadAnchorSuppressionTarget
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,71 @@ class _ChannelBTriageResult:
     kept_anchor_objects: List[GTObject]
     kept_anchor_new_index_by_old: Dict[int, int]
     dead_anchor_bursts_by_boundary: Dict[int, List[GTObject]]
+
+
+@dataclass(frozen=True)
+class _ChannelBSupervisionTargets:
+    clean_prefix: _CanonicalPrefixData
+    prefix_len_raw_local: int
+    prefix_bbox_groups: List[Dict[str, Any]]
+    fn_bbox_groups: List[Dict[str, Any]]
+    prefix_pos: List[int]
+    prefix_bins: List[int]
+    prefix_struct_pos: List[int]
+    matched_gt_indices: List[int]
+    fn_gt_indices_final: List[int]
+    fn_objs: List[GTObject]
+    fn_object_weights: List[float]
+    fn_count_for_meta: int
+    append_text: str
+    append_ids: List[int]
+    tail_desc_pos: List[int]
+    tail_desc_weights: List[float]
+    y_train_ids: List[int]
+    clean_target_text: str
+    dead_anchor_suppression_targets: List[Stage2DeadAnchorSuppressionTarget]
+    dead_anchor_suppression_boundary_count: int
+    dead_anchor_suppression_skipped_no_divergence: int
+
+
+def _shift_bbox_groups_with_weights(
+    *,
+    groups: Sequence[Mapping[str, Any]],
+    delta_prompt: int,
+    lower: int,
+    upper: int,
+    encoded_len: int,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for g in groups:
+        if not isinstance(g, Mapping):
+            continue
+        pos = g.get("pos")
+        gb = g.get("gt_bins")
+        weight_raw = g.get("weight", 1.0)
+        if not isinstance(pos, Sequence) or not isinstance(gb, Sequence):
+            continue
+        if len(pos) != 4 or len(gb) != 4:
+            continue
+        try:
+            pos_i = [int(p) + int(delta_prompt) for p in pos]
+            gb_i = [int(x) for x in gb]
+            weight_i = float(weight_raw)
+        except (TypeError, ValueError):
+            continue
+        if any(p < int(lower) or p >= int(upper) for p in pos_i):
+            raise ValueError(
+                "stage2-ab bbox group pos escaped expected span after prompt shift "
+                f"(possible truncation/misalignment). pos={pos_i} span=[{int(lower)},{int(upper)}) "
+                f"delta_prompt={int(delta_prompt)}"
+            )
+        if any(p >= int(encoded_len) for p in pos_i):
+            raise ValueError(
+                "stage2-ab bbox group pos exceeds encoded_len after prompt shift "
+                f"(possible truncation/misalignment). pos={pos_i} encoded_len={int(encoded_len)}"
+            )
+        out.append({"pos": pos_i, "gt_bins": gb_i, "weight": float(weight_i)})
+    return out
 
 
 def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float:
@@ -217,6 +282,344 @@ def _build_channel_b_triage(
         kept_anchor_new_index_by_old=kept_anchor_new_index_by_old,
         dead_anchor_bursts_by_boundary=dead_anchor_bursts_by_boundary,
     )
+
+
+def _build_channel_b_supervision_targets(
+    *,
+    tokenizer: Any,
+    prompt_ids: Sequence[int],
+    coord_id_set: set[int],
+    gts: Sequence[GTObject],
+    match: MatchResult,
+    triage: _ChannelBTriageResult,
+    recovered_ground_truth_weight_multiplier: float,
+    object_field_order: str,
+    bbox_groups_from_token_ids_fn: Any,
+    matched_prefix_structure_positions_fn: Any,
+    serialize_append_fragment_fn: Any,
+) -> _ChannelBSupervisionTargets:
+    prefix_bbox_groups: List[Dict[str, Any]] = []
+    fn_bbox_groups: List[Dict[str, Any]] = []
+    prefix_pos: List[int] = []
+    prefix_bins: List[int] = []
+    matched_gt_for_supervision: set[int] = set()
+
+    clean_prefix = _build_canonical_prefix_data(
+        tokenizer=tokenizer,
+        objects=triage.kept_anchor_objects,
+        object_field_order=object_field_order,
+    )
+    prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
+
+    prefix_coord_positions_all = [
+        int(i)
+        for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
+        if int(tok_id) in coord_id_set
+    ]
+    expected_prefix_coord_slots = int(len(triage.kept_anchor_objects) * 4)
+    if len(prefix_coord_positions_all) != expected_prefix_coord_slots:
+        raise ValueError(
+            "clean-prefix canonical serialization produced an unexpected number "
+            "of coord tokens for accepted Channel-B bbox objects: "
+            f"got={len(prefix_coord_positions_all)} expected={expected_prefix_coord_slots}"
+        )
+
+    matched_clean_indices: List[int] = []
+    for pred_i, gt_i in sorted(match.matched_pairs, key=lambda item: int(item[0])):
+        if pred_i < 0 or pred_i >= len(triage.kept_anchor_objects) + len(triage.dead_anchor_indices):
+            continue
+        if gt_i < 0 or gt_i >= len(gts):
+            continue
+        if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+            continue
+
+        matched_gt_for_supervision.add(int(gt_i))
+        kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+        matched_clean_indices.append(int(kept_pred_i))
+
+        coord_group = prefix_coord_positions_all[
+            int(kept_pred_i) * 4 : int(kept_pred_i + 1) * 4
+        ]
+        if len(coord_group) != 4:
+            raise ValueError(
+                "clean-prefix Channel-B expected exactly four coord slots per bbox object"
+            )
+
+        gt_bins = list(gts[gt_i].points_norm1000)
+        prefix_bbox_groups.append(
+            {
+                "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                "gt_bins": gt_bins,
+            }
+        )
+        for local_idx, tbin in zip(coord_group, gt_bins):
+            prefix_pos.append(int(local_idx))
+            prefix_bins.append(int(tbin))
+
+    matched_prefix_objects = [
+        _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
+        for i in matched_clean_indices
+        if 0 <= int(i) < len(clean_prefix.object_value_spans)
+    ]
+    prefix_struct_pos = matched_prefix_structure_positions_fn(
+        tokenizer=tokenizer,
+        prefix_token_ids=clean_prefix.prefix_token_ids,
+        prefix_text=clean_prefix.prefix_text,
+        matched_pred_objects=matched_prefix_objects,
+    )
+
+    fn_gt_indices_final = [
+        i for i in range(len(gts)) if i not in matched_gt_for_supervision
+    ]
+    fn_objs = [gts[i] for i in fn_gt_indices_final]
+    fn_object_weights = [
+        float(recovered_ground_truth_weight_multiplier)
+        if int(gt_i) in triage.recovered_gt_indices
+        else 1.0
+        for gt_i in fn_gt_indices_final
+    ]
+    fn_count_for_meta = int(len(fn_objs))
+
+    append_text = serialize_append_fragment_fn(
+        fn_objects=fn_objs,
+        prefix_text=clean_prefix.prefix_text,
+        object_field_order=object_field_order,
+    )
+    append_ids = [
+        int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
+    ]
+
+    tail_desc_pos, tail_desc_weights = _desc_tail_positions_and_weights(
+        tokenizer=tokenizer,
+        token_ids=append_ids,
+        object_weights=fn_object_weights,
+    )
+
+    y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
+    clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+    (
+        dead_anchor_suppression_targets,
+        dead_anchor_suppression_boundary_count,
+        dead_anchor_suppression_skipped_no_divergence,
+    ) = _build_dead_anchor_suppression_targets(
+        tokenizer=tokenizer,
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_target_text,
+        accepted_objects_clean=triage.kept_anchor_objects,
+        fn_objects=fn_objs,
+        duplicate_bursts_by_boundary=triage.dead_anchor_bursts_by_boundary,
+        boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+        object_field_order=object_field_order,
+    )
+
+    rel_groups = bbox_groups_from_token_ids_fn(
+        token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
+    )
+    for obj, rel_pos, obj_weight in zip(fn_objs, rel_groups, fn_object_weights):
+        fn_bbox_groups.append(
+            {
+                "pos": [
+                    int(len(prompt_ids) + int(prefix_len_raw_local) + int(p))
+                    for p in rel_pos
+                ],
+                "gt_bins": list(obj.points_norm1000),
+                "weight": float(obj_weight),
+            }
+        )
+
+    return _ChannelBSupervisionTargets(
+        clean_prefix=clean_prefix,
+        prefix_len_raw_local=prefix_len_raw_local,
+        prefix_bbox_groups=prefix_bbox_groups,
+        fn_bbox_groups=fn_bbox_groups,
+        prefix_pos=prefix_pos,
+        prefix_bins=prefix_bins,
+        prefix_struct_pos=[int(p) for p in prefix_struct_pos],
+        matched_gt_indices=sorted(int(idx) for idx in matched_gt_for_supervision),
+        fn_gt_indices_final=[int(idx) for idx in fn_gt_indices_final],
+        fn_objs=fn_objs,
+        fn_object_weights=[float(w) for w in fn_object_weights],
+        fn_count_for_meta=int(fn_count_for_meta),
+        append_text=str(append_text),
+        append_ids=[int(t) for t in append_ids],
+        tail_desc_pos=[int(p) for p in tail_desc_pos],
+        tail_desc_weights=[float(w) for w in tail_desc_weights],
+        y_train_ids=[int(t) for t in y_train_ids],
+        clean_target_text=str(clean_target_text),
+        dead_anchor_suppression_targets=list(dead_anchor_suppression_targets),
+        dead_anchor_suppression_boundary_count=int(
+            dead_anchor_suppression_boundary_count
+        ),
+        dead_anchor_suppression_skipped_no_divergence=int(
+            dead_anchor_suppression_skipped_no_divergence
+        ),
+    )
+
+
+def _build_channel_b_meta_entry(
+    *,
+    tokenizer: Any,
+    enc_ids_list: Sequence[int],
+    prompt_len: int,
+    prompt_ids: Sequence[int],
+    train_len_eff: int,
+    prefix_len_eff: int,
+    encoded_len: int,
+    parse: Any,
+    invalid_rollout: int,
+    seed_base: int,
+    decode_mode: str,
+    n_drop_invalid: int,
+    valid_pred_objects: int,
+    matched_for_supervision_count: int,
+    match: MatchResult,
+    gt_objects_count: int,
+    fn_count_for_meta: int,
+    prefix_pos: Sequence[int],
+    prefix_bins: Sequence[int],
+    prefix_struct_pos: Sequence[int],
+    prefix_bbox_groups: Sequence[Mapping[str, Any]],
+    fn_bbox_groups: Sequence[Mapping[str, Any]],
+    tail_desc_pos: Sequence[int],
+    tail_desc_weights: Sequence[float],
+    fn_object_weights: Sequence[float],
+    anchor_decode_mode: str,
+    explorer_decode_mode: str,
+    anchor_gt_backed_indices: Sequence[int],
+    shielded_anchor_indices: Sequence[int],
+    dead_anchor_indices: Sequence[int],
+    dead_explorer_indices: Sequence[int],
+    recovered_gt_indices: Sequence[int],
+    dead_anchor_suppression_targets: Sequence[Stage2DeadAnchorSuppressionTarget],
+    dead_anchor_suppression_boundary_count: int,
+    dead_anchor_suppression_skipped_no_divergence: int,
+    stage2_tail_closure_positions_fn: Any,
+    stage2_semantic_stop_branch_metadata_fn: Any,
+) -> Tuple[Stage2ChannelBMeta, int]:
+    prompt_ids_local = [int(x) for x in enc_ids_list[: int(prompt_len)]]
+    delta_prompt = int(prompt_len) - int(len(prompt_ids))
+
+    bbox_groups_prefix = _shift_bbox_groups_with_weights(
+        groups=prefix_bbox_groups,
+        delta_prompt=int(delta_prompt),
+        lower=int(prompt_len),
+        upper=int(prompt_len + prefix_len_eff),
+        encoded_len=int(encoded_len),
+    )
+    bbox_groups_fn = _shift_bbox_groups_with_weights(
+        groups=fn_bbox_groups,
+        delta_prompt=int(delta_prompt),
+        lower=int(prompt_len + prefix_len_eff),
+        upper=int(prompt_len + train_len_eff),
+        encoded_len=int(encoded_len),
+    )
+
+    tail_desc_pos_eff: List[int] = []
+    tail_desc_weights_eff: List[float] = []
+    tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
+    tail_ignore_pos_eff: List[int] = []
+    assistant_span_ids = list(enc_ids_list[int(prompt_len) : int(prompt_len) + int(train_len_eff)])
+    semantic_stop_meta: Dict[str, Any] | None = None
+    closure_supervision_drop_count = 0
+    try:
+        tail_closure_pos_eff = stage2_tail_closure_positions_fn(
+            tokenizer=tokenizer,
+            assistant_span_ids=assistant_span_ids,
+            prefix_len=int(prefix_len_eff),
+        )
+    except ValueError:
+        closure_supervision_drop_count = 1
+        tail_closure_pos_eff = []
+    try:
+        semantic_stop_meta = stage2_semantic_stop_branch_metadata_fn(
+            tokenizer=tokenizer,
+            assistant_span_ids=assistant_span_ids,
+            prefix_len=int(prefix_len_eff),
+        )
+    except ValueError:
+        semantic_stop_meta = None
+
+    for rel, weight in zip(tail_desc_pos, tail_desc_weights):
+        try:
+            rel_i = int(rel)
+            weight_f = float(weight)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= rel_i < tail_cap:
+            tail_desc_pos_eff.append(rel_i)
+            tail_desc_weights_eff.append(weight_f)
+
+    meta_entry: Stage2ChannelBMeta = {
+        "stage2_channel": "B",
+        "stage2_invalid_rollout": int(invalid_rollout),
+        "rollout_seed_base": int(seed_base),
+        "prompt_len": int(prompt_len),
+        "prompt_ids": prompt_ids_local,
+        "rollout_len": int(len(parse.response_token_ids)),
+        "prefix_len": int(prefix_len_eff),
+        "train_len": int(train_len_eff),
+        "encoded_len": int(encoded_len),
+        "decode_mode": str(decode_mode),
+        "parse_dropped_invalid": int(parse.dropped_invalid),
+        "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
+        "parse_truncated": bool(parse.truncated),
+        "drop_invalid_total": int(n_drop_invalid),
+        "valid_pred_objects": int(valid_pred_objects),
+        "matched_for_supervision": int(matched_for_supervision_count),
+        "matched_maskiou_sum": float(match.matched_maskiou_sum),
+        "matched_maskiou_count": int(match.matched_maskiou_count),
+        "gt_objects": int(gt_objects_count),
+        "fn_count": int(fn_count_for_meta),
+        "gating_rejections": int(match.gating_rejections),
+        "excluded_from_supervision": int(0),
+        "prefix_coord_pos": [int(p) for p in prefix_pos],
+        "prefix_coord_target_bins": [int(b) for b in prefix_bins],
+        "prefix_struct_pos": [int(p) for p in prefix_struct_pos],
+        "tail_closure_pos": [int(p) for p in tail_closure_pos_eff],
+        "tail_ignore_pos": tail_ignore_pos_eff,
+        "tail_desc_pos": [int(p) for p in tail_desc_pos_eff],
+        "tail_desc_weights": [float(w) for w in tail_desc_weights_eff],
+        "stop_rel_pos": (
+            int(semantic_stop_meta["stop_rel_pos"])
+            if isinstance(semantic_stop_meta, Mapping)
+            else None
+        ),
+        "stop_token_id": (
+            int(semantic_stop_meta["stop_token_id"])
+            if isinstance(semantic_stop_meta, Mapping)
+            else None
+        ),
+        "continue_token_id": (
+            int(semantic_stop_meta["continue_token_id"])
+            if isinstance(semantic_stop_meta, Mapping)
+            else None
+        ),
+        "fn_object_weights": [float(w) for w in fn_object_weights],
+        "bbox_groups_prefix": bbox_groups_prefix,
+        "bbox_groups_fn": bbox_groups_fn,
+        "anchor_decode_mode": str(anchor_decode_mode),
+        "explorer_decode_mode": str(explorer_decode_mode),
+        "anchor_gt_backed_indices": [int(idx) for idx in anchor_gt_backed_indices],
+        "shielded_anchor_indices": [int(idx) for idx in shielded_anchor_indices],
+        "dead_anchor_indices": [int(idx) for idx in dead_anchor_indices],
+        "dead_explorer_indices": [int(idx) for idx in dead_explorer_indices],
+        "recovered_gt_indices": [int(idx) for idx in recovered_gt_indices],
+        "dead_anchor_suppression_targets": [
+            {
+                "boundary": int(item["boundary"]),
+                "rel_pos": int(item["rel_pos"]),
+                "token_id": int(item["token_id"]),
+            }
+            for item in dead_anchor_suppression_targets
+        ],
+        "dead_anchor_suppression_boundary_count": int(
+            dead_anchor_suppression_boundary_count
+        ),
+        "dead_anchor_suppression_skipped_no_divergence": int(
+            dead_anchor_suppression_skipped_no_divergence
+        ),
+    }
+    return meta_entry, int(closure_supervision_drop_count)
 
 
 def _serialize_gt_object_entry(
@@ -490,7 +893,10 @@ __all__ = [
     "_ValueSpanObject",
     "_CanonicalPrefixData",
     "_ChannelBTriageResult",
+    "_ChannelBSupervisionTargets",
     "_build_channel_b_triage",
+    "_build_channel_b_supervision_targets",
+    "_build_channel_b_meta_entry",
     "_bbox_iou_norm1000_xyxy",
     "_compute_duplicate_diagnostics",
     "_build_canonical_prefix_data",

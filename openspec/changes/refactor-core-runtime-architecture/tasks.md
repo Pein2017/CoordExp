@@ -44,7 +44,7 @@
 ## Workstream 1. Stage-2 Two-Channel Internal Boundary Extraction
 
 - [x] 1.1 Introduce explicit internal types for Channel-A / Channel-B prepared payloads, including the metadata currently threaded through `_rollout_matching_meta`.
-- [ ] 1.2 Extract Channel-B clean-prefix target construction out of `src/trainers/stage2_two_channel.py` into dedicated package-local modules without changing semantics.
+- [x] 1.2 Extract Channel-B clean-prefix target construction out of `src/trainers/stage2_two_channel.py` into dedicated package-local modules without changing semantics.
 - [ ] 1.3 Extract channel-specific objective execution and log projection out of `compute_loss` into a dedicated `objective_runner` layer.
 - [ ] 1.4 Keep `src/trainers/stage2_two_channel.py` as the public assembly surface, with the current `scheduler.py`, `executors.py`, compatibility wrapper, and legacy Stage-2 import shims preserved.
 - [ ] 1.5 Validate after each logical slice:
