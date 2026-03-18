@@ -1,27 +1,35 @@
-extends: ../prod/a_only.yaml
+extends: a_only_iter1-res_1024.yaml
 
-# Ablation: disable Channel-A iterative self-context by setting n_softctx_iter=1.
-# Notes:
-# - For n_softctx_iter<=1, Channel-A self-context struct-CE stabilizer is disabled in code.
-# - softctx_grad_mode / coord_ctx_embed_mode become effectively irrelevant because the
-#   iterative loop does not run when n_softctx_iter=1.
+# 1024-res random-order ablation with 4 soft-context iterations.
 #
-# Loss-composition guardrails (explicit, to avoid accidental drift via inheritance):
-# - bbox_geo: SmoothL1 (+ CIoU)
-# - coord_reg: hardCE (coord_token_ce) + softCE + W1 + coord/text gating
-
+# NOTE: the current Stage-2 trainer still routes bbox/coord supervision through the
+# existing A1/final-A2 contract when n_softctx_iter > 1. This config sets n_softctx_iter
+# to 4 and keeps the conservative weights we discussed; a true A1/A2/A3/A4 per-iteration
+# routing scheme would require a trainer/schema change.
 model:
-  model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-n_softctx_iter_2-merged
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_3-a_only-from_stage1_2B
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only_iter3
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_iter3
+  seed: 17
+  run_name: epoch-1-eff_bs_128
+  output_dir: output/a_only/random_order-iter_4
+  logging_dir: tb/a_only/random_order-iter_4
+  num_train_epochs: 1
+  effective_batch_size: 128
+  encoded_sample_cache:
+    enabled: false
+
+template:
+  max_pixels: 1048576
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  object_ordering: random
 
 stage2_ab:
-  schedule:
-    b_ratio: 0.0
-  n_softctx_iter: 3
+  n_softctx_iter: 4
   pipeline:
     objective:
       - name: token_ce
@@ -49,7 +57,6 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          # Required: SmoothL1 on decoded bbox geometry.
           smoothl1_weight: 2.0
           ciou_weight: 0.2
       - name: bbox_size_aux
@@ -72,16 +79,13 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          # Required: hard CE on coord-token bins (coord tokens are NOT covered by text/struct CE).
           coord_ce_weight: 0.02
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
           coord_entropy_weight: 0.0
-          # Required: gating at coord-token positions.
           coord_gate_weight: 1.0
           text_gate_weight: 0.1
-          # Required: distribution losses at coord-token positions.
           soft_ce_weight: 0.1
           w1_weight: 0.02
           temperature: 1.0
