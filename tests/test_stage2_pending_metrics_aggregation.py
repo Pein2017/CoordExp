@@ -116,6 +116,41 @@ def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
     assert "rollout/_parse_truncated_den" not in out
 
 
+def test_stage2_pending_log_stop_signal_metrics_use_counter_and_mean_semantics() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "stop_signal/A1/eligible_seq_count": 1.0,
+            "stop_signal/A1/branch_count": 2.0,
+            "stop_signal/A1/weight_mean": 0.25,
+            "stop_signal/A1/p_stop_mean": 0.4,
+            "stop_signal/A1/p_cont_mean": 0.6,
+            "stop_signal/A1/margin_mean": -0.2,
+            "stage2/_log_weight": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "stop_signal/A1/eligible_seq_count": 3.0,
+            "stop_signal/A1/branch_count": 5.0,
+            "stop_signal/A1/weight_mean": 0.75,
+            "stop_signal/A1/p_stop_mean": 0.8,
+            "stop_signal/A1/p_cont_mean": 0.2,
+            "stop_signal/A1/margin_mean": 0.6,
+            "stage2/_log_weight": 3.0,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["stop_signal/A1/eligible_seq_count"] == pytest.approx(4.0)
+    assert out["stop_signal/A1/branch_count"] == pytest.approx(7.0)
+    assert out["stop_signal/A1/weight_mean"] == pytest.approx((0.25 * 1.0 + 0.75 * 3.0) / 4.0)
+    assert out["stop_signal/A1/p_stop_mean"] == pytest.approx((0.4 * 1.0 + 0.8 * 3.0) / 4.0)
+    assert out["stop_signal/A1/p_cont_mean"] == pytest.approx((0.6 * 1.0 + 0.2 * 3.0) / 4.0)
+    assert out["stop_signal/A1/margin_mean"] == pytest.approx((-0.2 * 1.0 + 0.6 * 3.0) / 4.0)
+
+
 def test_stage2_pending_log_emits_canonical_loss_prefix_only() -> None:
     pending = _PendingStage2Log()
     pending.add(
@@ -176,6 +211,7 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
         snapshots,
         {
             "loss/A1_text/struct_ce": 0.5,
+            "stop_signal/A1/weight_mean": 0.4,
             "coord_diag/A1/acc_top5": 0.4,
             "stage2/channel_a": 1.0,
             "time/channel_a_teacher_encode_s": 1.2,
@@ -184,6 +220,7 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
     )
 
     assert first["loss/A1_text/struct_ce"] == pytest.approx(0.5)
+    assert first["stop_signal/A1/weight_mean"] == pytest.approx(0.4)
     assert first["coord_diag/A1/acc_top5"] == pytest.approx(0.4)
     assert first["stage2/channel_a"] == pytest.approx(1.0)
     assert first["time/channel_a_teacher_encode_s"] == pytest.approx(1.2)

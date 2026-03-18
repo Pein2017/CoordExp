@@ -105,6 +105,7 @@ from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
     bbox_groups_from_token_ids as _tf_bbox_groups_from_token_ids,
     matched_prefix_structure_positions as _tf_matched_prefix_structure_positions,
+    semantic_stop_branch_metadata as _tf_semantic_stop_branch_metadata,
     tail_closure_positions as _tf_tail_closure_positions,
     tail_desc_positions as _tf_tail_desc_positions,
 )
@@ -7453,6 +7454,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 assistant_span_ids=y_train_ids,
                 prefix_len=int(len(parse.prefix_token_ids)),
             )
+            semantic_stop_meta = _tf_semantic_stop_branch_metadata(
+                tokenizer=tok,
+                assistant_span_ids=y_train_ids,
+                prefix_len=int(len(parse.prefix_token_ids)),
+            )
             t_parse_match_s += time.perf_counter() - t_pm0
 
             # 5) Teacher-forced encoding using the exact token ids (no re-tokenization)
@@ -7644,6 +7650,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "tail_ignore_pos": tail_ignore_pos,
                 "tail_desc_pos": [int(p) for p in tail_desc_pos],
                 "tail_closure_pos": [int(p) for p in tail_closure_pos],
+                "stop_rel_pos": int(semantic_stop_meta["stop_rel_pos"]),
+                "stop_token_id": int(semantic_stop_meta["stop_token_id"]),
+                "continue_token_id": int(semantic_stop_meta["continue_token_id"]),
                 "bbox_groups_prefix": prefix_bbox_groups,
                 "bbox_groups_fn": fn_bbox_groups,
                 # Optional desc monitor (metrics-only).

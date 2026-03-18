@@ -646,6 +646,109 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
+def test_stage2_pipeline_accepts_token_ce_stop_signal_damping_defaults() -> None:
+    cfg = _make_stage2_training_config(
+        {
+            "per_device_train_batch_size": 1,
+            "effective_batch_size": 1,
+        }
+    )
+
+    token_ce_cfg = dict(cfg.stage2_ab.pipeline.objective[0].config)
+    assert token_ce_cfg["stop_signal_damping"] == {
+        "enabled": False,
+        "min_weight": 0.2,
+        "max_weight": 1.0,
+        "branch_temperature": 1.0,
+        "curve_gamma": 2.0,
+        "detach_gate": True,
+    }
+
+
+def test_stage2_pipeline_rejects_unknown_stop_signal_damping_key() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                token_ce_cfg={
+                    "desc_ce_weight": 1.0,
+                    "struct_ce_weight": 0.1,
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "stop_signal_damping": {"unknown_key": 1.0},
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[0\]\.config\.stop_signal_damping",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_rejects_invalid_stop_signal_damping_range() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                token_ce_cfg={
+                    "desc_ce_weight": 1.0,
+                    "struct_ce_weight": 0.1,
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "stop_signal_damping": {
+                        "enabled": True,
+                        "min_weight": 0.9,
+                        "max_weight": 0.2,
+                    },
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"min_weight must be <= .*max_weight",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
 def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
     coord_reg_cfg = {
         "coord_ce_weight": 0.0,
@@ -710,6 +813,52 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
     with pytest.raises(
         ValueError,
         match=r"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_rollout_pipeline_rejects_unknown_stop_signal_damping_key() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_rollout_aligned",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "token_ce",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "application": {"preset": "anchor_text_plus_final_struct"},
+                        "config": {
+                            "desc_ce_weight": 1.0,
+                            "struct_ce_weight": 0.1,
+                            "rollout_fn_desc_weight": 1.0,
+                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "stop_signal_damping": {"oops": 1.0},
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matching\.pipeline\.objective\[0\]\.config\.stop_signal_damping",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 

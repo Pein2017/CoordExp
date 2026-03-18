@@ -6,7 +6,7 @@ schema validation without pulling in torch/trainer runtime code.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final, Mapping
 
 ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {
     "token_ce",
@@ -23,6 +23,7 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "struct_ce_weight",
         "rollout_fn_desc_weight",
         "rollout_matched_prefix_struct_weight",
+        "stop_signal_damping",
     },
     "loss_dead_anchor_suppression": set(),
     "bbox_geo": {
@@ -51,6 +52,10 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "target_sigma",
         "target_truncate",
     },
+}
+
+OBJECTIVE_OPTIONAL_CONFIG_KEYS: Final[dict[str, set[str]]] = {
+    "token_ce": {"stop_signal_damping"},
 }
 
 OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
@@ -83,3 +88,76 @@ OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
 DIAGNOSTIC_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "coord_diag": set(),
 }
+
+TOKEN_CE_STOP_SIGNAL_DAMPING_ALLOWED_KEYS: Final[set[str]] = {
+    "enabled",
+    "min_weight",
+    "max_weight",
+    "branch_temperature",
+    "curve_gamma",
+    "detach_gate",
+}
+
+TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS: Final[dict[str, Any]] = {
+    "enabled": False,
+    "min_weight": 0.2,
+    "max_weight": 1.0,
+    "branch_temperature": 1.0,
+    "curve_gamma": 2.0,
+    "detach_gate": True,
+}
+
+
+def normalize_token_ce_stop_signal_damping_config(
+    value: Any,
+    *,
+    path: str,
+) -> dict[str, Any]:
+    if value is None:
+        return dict(TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS)
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{path} must be a mapping when provided")
+
+    payload = dict(value)
+    unknown = set(payload.keys()) - set(TOKEN_CE_STOP_SIGNAL_DAMPING_ALLOWED_KEYS)
+    if unknown:
+        raise ValueError(
+            f"Unknown {path} keys: {sorted(str(k) for k in unknown)}; "
+            f"allowed={sorted(TOKEN_CE_STOP_SIGNAL_DAMPING_ALLOWED_KEYS)}"
+        )
+
+    out = dict(TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS)
+    out.update(payload)
+
+    out["enabled"] = bool(out.get("enabled", False))
+    out["detach_gate"] = bool(out.get("detach_gate", True))
+
+    def _coerce_float(key: str) -> float:
+        raw = out.get(key)
+        try:
+            value_f = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.{key} must be a float/int") from exc
+        return float(value_f)
+
+    min_weight = _coerce_float("min_weight")
+    max_weight = _coerce_float("max_weight")
+    branch_temperature = _coerce_float("branch_temperature")
+    curve_gamma = _coerce_float("curve_gamma")
+
+    if min_weight < 0.0:
+        raise ValueError(f"{path}.min_weight must be >= 0")
+    if max_weight < 0.0:
+        raise ValueError(f"{path}.max_weight must be >= 0")
+    if min_weight > max_weight:
+        raise ValueError(f"{path}.min_weight must be <= {path}.max_weight")
+    if branch_temperature <= 0.0:
+        raise ValueError(f"{path}.branch_temperature must be > 0")
+    if curve_gamma <= 0.0:
+        raise ValueError(f"{path}.curve_gamma must be > 0")
+
+    out["min_weight"] = float(min_weight)
+    out["max_weight"] = float(max_weight)
+    out["branch_temperature"] = float(branch_temperature)
+    out["curve_gamma"] = float(curve_gamma)
+    return out

@@ -22,6 +22,8 @@ from src.trainers.teacher_forcing.module_registry import (
     DIAGNOSTIC_CONFIG_ALLOWLIST,
     OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
+    OBJECTIVE_OPTIONAL_CONFIG_KEYS,
+    normalize_token_ce_stop_signal_damping_config,
 )
 
 
@@ -556,11 +558,17 @@ class RolloutMatchingConfig:
                             f"Unknown {path}[{idx}].config keys for module {name!r}: "
                             f"{sorted(str(k) for k in unknown_cfg)}"
                         )
-                    missing_cfg = set(allowed_cfg) - set(spec.config.keys())
+                    optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(name, set())
+                    missing_cfg = set(allowed_cfg) - set(spec.config.keys()) - set(optional_cfg)
                     if missing_cfg:
                         raise ValueError(
                             f"Missing required {path}[{idx}].config keys for module {name!r}: "
                             f"{sorted(str(k) for k in missing_cfg)}"
+                        )
+                    if name == "token_ce":
+                        normalize_token_ce_stop_signal_damping_config(
+                            spec.config.get("stop_signal_damping"),
+                            path=f"{path}[{idx}].config.stop_signal_damping",
                         )
 
             _validate_specs(

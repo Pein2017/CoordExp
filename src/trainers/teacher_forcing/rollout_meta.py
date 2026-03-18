@@ -9,6 +9,201 @@ from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions,
 )
 
+_SEMANTIC_STOP_PIECE = "]}"
+_SEMANTIC_CONTINUE_PIECE = "]},"
+_IM_END = "<|im_end|>"
+
+
+def _coerce_token_id_list(token_ids: Sequence[int]) -> List[int]:
+    try:
+        return [int(t) for t in token_ids]
+    except (TypeError, ValueError):
+        return [int(t) for t in list(token_ids)]
+
+
+def _build_piece_offsets(pieces: Sequence[str]) -> List[int]:
+    offsets: List[int] = []
+    cursor = 0
+    for piece in pieces:
+        offsets.append(int(cursor))
+        cursor += int(len(piece))
+    return offsets
+
+
+def _tok_indices_overlapping(
+    *,
+    token_start_chars: Sequence[int],
+    pieces: Sequence[str],
+    char_start: int,
+    char_end: int,
+) -> List[int]:
+    out: List[int] = []
+    for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
+        end = int(start) + int(len(piece))
+        if end <= int(char_start) or int(start) >= int(char_end):
+            continue
+        out.append(int(ti))
+    return out
+
+
+def _find_top_level_close_char(text: str) -> int:
+    depth = 0
+    in_string = False
+    escape = False
+    close_char: Optional[int] = None
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            if depth == 1:
+                close_char = int(i)
+                break
+            if depth > 0:
+                depth -= 1
+    if close_char is None:
+        raise ValueError(
+            "could not locate top-level JSON closing brace for closure supervision"
+        )
+    return int(close_char)
+
+
+def _resolve_exact_piece_token_id(tokenizer: Any, piece: str) -> int:
+    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+    if callable(convert):
+        try:
+            candidate = int(convert(piece))
+        except (TypeError, ValueError):
+            candidate = -1
+        if candidate >= 0:
+            decoded = tokenizer.decode(
+                [candidate],
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+            if decoded == str(piece):
+                return int(candidate)
+
+    encode = getattr(tokenizer, "encode", None)
+    if callable(encode):
+        try:
+            encoded = [int(t) for t in encode(str(piece), add_special_tokens=False)]
+        except TypeError:
+            encoded = [int(t) for t in encode(str(piece))]
+        if len(encoded) == 1:
+            decoded = tokenizer.decode(
+                encoded,
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+            if decoded == str(piece):
+                return int(encoded[0])
+
+    raise ValueError(
+        f"tokenizer does not expose an exact single-token piece for semantic stop marker {piece!r}"
+    )
+
+
+def semantic_stop_branch_metadata(
+    *,
+    tokenizer: Any,
+    assistant_span_ids: Sequence[int],
+    prefix_len: int,
+) -> Dict[str, Any]:
+    """Resolve tokenizer-aware semantic stop metadata for dense object-list targets.
+
+    Returns tail-local metadata for the first terminal semantic stop token `']}'`,
+    the later closure-tail markers, and the exact stop/continue token ids used to
+    form the branch-local damping calculation.
+    """
+
+    prefix_len_i = max(0, int(prefix_len))
+    span_ids = _coerce_token_id_list(assistant_span_ids)
+    tail_cap = max(0, int(len(span_ids)) - int(prefix_len_i))
+    if tail_cap <= 0:
+        raise ValueError("assistant span has no tail-local region for semantic stop discovery")
+
+    pieces = decode_pieces(tokenizer, span_ids)
+    token_start_chars = _build_piece_offsets(pieces)
+    text = "".join(pieces)
+
+    stop_token_id = _resolve_exact_piece_token_id(tokenizer, _SEMANTIC_STOP_PIECE)
+    continue_token_id = _resolve_exact_piece_token_id(
+        tokenizer,
+        _SEMANTIC_CONTINUE_PIECE,
+    )
+
+    close_char = _find_top_level_close_char(text)
+    close_toks = _tok_indices_overlapping(
+        token_start_chars=token_start_chars,
+        pieces=pieces,
+        char_start=int(close_char),
+        char_end=int(close_char) + 1,
+    )
+    if not close_toks:
+        raise ValueError("could not map top-level JSON closing brace to token indices")
+
+    top_close_tok = min(int(t) for t in close_toks)
+    stop_piece_matches = [
+        int(i) for i, piece in enumerate(pieces) if str(piece) == _SEMANTIC_STOP_PIECE
+    ]
+    stop_candidates = [int(i) for i in stop_piece_matches if int(i) < int(top_close_tok)]
+    if not stop_candidates:
+        raise ValueError(
+            "could not locate a semantic stop token before the top-level closure tail"
+        )
+
+    stop_tok = int(stop_candidates[-1])
+    stop_end = int(token_start_chars[stop_tok]) + int(len(pieces[stop_tok]))
+    gap_text = str(text[int(stop_end) : int(token_start_chars[top_close_tok])]).strip()
+    if gap_text:
+        raise ValueError(
+            "semantic stop token is not immediately followed by the closure tail"
+        )
+
+    im_toks: List[int] = []
+    im_pos = int(text.find(_IM_END, int(close_char) + 1))
+    if im_pos >= 0:
+        im_toks = _tok_indices_overlapping(
+            token_start_chars=token_start_chars,
+            pieces=pieces,
+            char_start=int(im_pos),
+            char_end=int(im_pos) + int(len(_IM_END)),
+        )
+        if not im_toks:
+            raise ValueError("could not map <|im_end|> to token indices")
+
+    tail_closure_positions: List[int] = []
+    for ti in list(close_toks) + list(im_toks):
+        rel = int(ti) - int(prefix_len_i)
+        if 0 <= rel < int(tail_cap):
+            tail_closure_positions.append(int(rel))
+    tail_closure_positions = sorted({int(p) for p in tail_closure_positions})
+
+    stop_rel = int(stop_tok) - int(prefix_len_i)
+    if stop_rel < 0 or stop_rel >= int(tail_cap):
+        raise ValueError(
+            f"semantic stop token escaped the tail-local region: rel={int(stop_rel)} tail_cap={int(tail_cap)}"
+        )
+
+    return {
+        "stop_rel_pos": int(stop_rel),
+        "tail_closure_pos": [int(p) for p in tail_closure_positions],
+        "stop_token_id": int(stop_token_id),
+        "continue_token_id": int(continue_token_id),
+    }
+
 
 def bbox_groups_from_token_ids(
     *,
@@ -116,73 +311,34 @@ def tail_closure_positions(
 
     prefix_len_i = max(0, int(prefix_len))
 
-    try:
-        span_ids = [int(t) for t in assistant_span_ids]
-    except (TypeError, ValueError):
-        span_ids = [int(t) for t in list(assistant_span_ids)]
+    span_ids = _coerce_token_id_list(assistant_span_ids)
 
     tail_cap = max(0, int(len(span_ids)) - int(prefix_len_i))
     if tail_cap <= 0:
         return []
 
     pieces = decode_pieces(tokenizer, span_ids)
-    token_start_chars: List[int] = []
-    cursor = 0
-    for p in pieces:
-        token_start_chars.append(int(cursor))
-        cursor += int(len(p))
+    token_start_chars = _build_piece_offsets(pieces)
     text = "".join(pieces)
 
-    def _tok_indices_overlapping(char_start: int, char_end: int) -> List[int]:
-        out: List[int] = []
-        for ti, (start, piece) in enumerate(zip(token_start_chars, pieces)):
-            end = int(start) + int(len(piece))
-            if end <= int(char_start) or int(start) >= int(char_end):
-                continue
-            out.append(int(ti))
-        return out
-
-    depth = 0
-    in_string = False
-    escape = False
-    close_char: Optional[int] = None
-    for i, ch in enumerate(text):
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-            continue
-        if ch == "{":
-            depth += 1
-            continue
-        if ch == "}":
-            if depth == 1:
-                close_char = int(i)
-                break
-            if depth > 0:
-                depth -= 1
-
-    if close_char is None:
-        raise ValueError(
-            "could not locate top-level JSON closing brace for closure supervision"
-        )
-
-    close_toks = _tok_indices_overlapping(int(close_char), int(close_char) + 1)
+    close_char = _find_top_level_close_char(text)
+    close_toks = _tok_indices_overlapping(
+        token_start_chars=token_start_chars,
+        pieces=pieces,
+        char_start=int(close_char),
+        char_end=int(close_char) + 1,
+    )
     if not close_toks:
         raise ValueError("could not map JSON closing brace to token indices")
 
-    marker = "<|im_end|>"
     im_toks: List[int] = []
-    im_pos = int(text.find(marker, int(close_char) + 1))
+    im_pos = int(text.find(_IM_END, int(close_char) + 1))
     if im_pos >= 0:
         im_toks = _tok_indices_overlapping(
-            int(im_pos), int(im_pos) + int(len(marker))
+            token_start_chars=token_start_chars,
+            pieces=pieces,
+            char_start=int(im_pos),
+            char_end=int(im_pos) + int(len(_IM_END)),
         )
         if not im_toks:
             raise ValueError("could not map <|im_end|> to token indices")

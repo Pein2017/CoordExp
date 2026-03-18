@@ -55,6 +55,7 @@ from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
     bbox_groups_from_token_ids as _tf_bbox_groups_from_token_ids,
     matched_prefix_structure_positions as _tf_matched_prefix_structure_positions,
+    semantic_stop_branch_metadata as _tf_semantic_stop_branch_metadata,
     tail_closure_positions as _tf_tail_closure_positions,
 )
 from .teacher_forcing.token_types import build_token_type_masks
@@ -85,6 +86,12 @@ class _PendingStage2Log:
         "_num",
         "_den",
     )
+    _STOP_SIGNAL_COUNTER_KEYS: ClassVar[set[str]] = {
+        "stop_signal/A1/eligible_seq_count",
+        "stop_signal/A1/branch_count",
+        "stop_signal/gt/eligible_seq_count",
+        "stop_signal/gt/branch_count",
+    }
 
     @staticmethod
     def _is_counter_like_key(key: str) -> bool:
@@ -108,6 +115,8 @@ class _PendingStage2Log:
             return True
         if key.startswith("stage2_ab/") and "/N_" in key:
             return True
+        if key in _PendingStage2Log._STOP_SIGNAL_COUNTER_KEYS:
+            return True
 
         return key.endswith(_PendingStage2Log._COUNTER_SUFFIXES)
 
@@ -120,6 +129,7 @@ class _PendingStage2Log:
             or key.startswith("stage2/channel_")
             or key.startswith("rollout/")
             or key.startswith("coord_diag/")
+            or key.startswith("stop_signal/")
             or key == "stage2_ab/b_ratio_realized"
             or (key.startswith("stage2_ab/") and "/is_" in key)
         )
@@ -251,6 +261,7 @@ def _stage2_snapshot_key(metric_key: str) -> str | None:
     if (
         key.startswith(("loss/A1_", "loss/A2_"))
         or key.startswith(("coord_diag/A1/", "coord_diag/A2/"))
+        or key.startswith("stop_signal/A1/")
         or key.startswith("time/channel_a_")
         or key == "stage2/channel_a"
     ):
@@ -562,6 +573,19 @@ def _stage2_ab_tail_closure_positions(
     prefix_len: int,
 ) -> List[int]:
     return _tf_tail_closure_positions(
+        tokenizer=tokenizer,
+        assistant_span_ids=assistant_span_ids,
+        prefix_len=int(prefix_len),
+    )
+
+
+def _stage2_ab_semantic_stop_branch_metadata(
+    *,
+    tokenizer: Any,
+    assistant_span_ids: Sequence[int],
+    prefix_len: int,
+) -> Dict[str, Any]:
+    return _tf_semantic_stop_branch_metadata(
         tokenizer=tokenizer,
         assistant_span_ids=assistant_span_ids,
         prefix_len=int(prefix_len),
@@ -1970,6 +1994,15 @@ class Stage2ABTrainingTrainer(
                     }
                 )
 
+            assistant_span_ids = enc_ids_list[
+                int(prompt_len) : int(prompt_len) + int(train_len_eff)
+            ]
+            stop_meta = _stage2_ab_semantic_stop_branch_metadata(
+                tokenizer=tok,
+                assistant_span_ids=assistant_span_ids,
+                prefix_len=0,
+            )
+
             meta_entry: Dict[str, Any] = {
                 "stage2_channel": "A",
                 "prompt_len": int(prompt_len),
@@ -1992,8 +2025,14 @@ class Stage2ABTrainingTrainer(
                 "excluded_from_supervision": int(0),
                 "prefix_coord_pos": [],
                 "prefix_coord_target_bins": [],
+                "tail_closure_pos": [
+                    int(p) for p in stop_meta.get("tail_closure_pos", [])
+                ],
                 "tail_ignore_pos": [],
                 "tail_desc_pos": tail_desc_pos_eff,
+                "stop_rel_pos": int(stop_meta["stop_rel_pos"]),
+                "stop_token_id": int(stop_meta["stop_token_id"]),
+                "continue_token_id": int(stop_meta["continue_token_id"]),
                 "bbox_groups_prefix": [],
                 "bbox_groups_fn": bbox_groups_fn,
             }
@@ -3129,6 +3168,7 @@ class Stage2ABTrainingTrainer(
             assistant_span_ids = enc_ids_list[
                 int(prompt_len) : int(prompt_len) + int(train_len_eff)
             ]
+            semantic_stop_meta: Dict[str, Any] | None = None
             try:
                 tail_closure_pos_eff = _stage2_ab_tail_closure_positions(
                     tokenizer=tok,
@@ -3138,6 +3178,14 @@ class Stage2ABTrainingTrainer(
             except ValueError:
                 closure_supervision_drop_total += 1
                 tail_closure_pos_eff = []
+            try:
+                semantic_stop_meta = _stage2_ab_semantic_stop_branch_metadata(
+                    tokenizer=tok,
+                    assistant_span_ids=assistant_span_ids,
+                    prefix_len=int(prefix_len_eff),
+                )
+            except ValueError:
+                semantic_stop_meta = None
 
             for rel, weight in zip(tail_desc_pos, tail_desc_weights):
                 try:
@@ -3181,6 +3229,21 @@ class Stage2ABTrainingTrainer(
                 "tail_ignore_pos": tail_ignore_pos_eff,
                 "tail_desc_pos": tail_desc_pos_eff,
                 "tail_desc_weights": [float(w) for w in tail_desc_weights_eff],
+                "stop_rel_pos": (
+                    int(semantic_stop_meta["stop_rel_pos"])
+                    if isinstance(semantic_stop_meta, Mapping)
+                    else None
+                ),
+                "stop_token_id": (
+                    int(semantic_stop_meta["stop_token_id"])
+                    if isinstance(semantic_stop_meta, Mapping)
+                    else None
+                ),
+                "continue_token_id": (
+                    int(semantic_stop_meta["continue_token_id"])
+                    if isinstance(semantic_stop_meta, Mapping)
+                    else None
+                ),
                 "fn_object_weights": [float(w) for w in fn_object_weights],
                 "bbox_groups_prefix": bbox_groups_prefix,
                 "bbox_groups_fn": bbox_groups_fn,
@@ -4225,6 +4288,20 @@ class Stage2ABTrainingTrainer(
                     token_desc = float(
                         pipeline_metrics_gt.get("loss/token_ce_desc", 0.0) or 0.0
                     )
+                    token_stop_signal = float(
+                        pipeline_metrics_gt.get("loss/token_ce_stop_signal", 0.0) or 0.0
+                    )
+                    has_stop_signal = any(
+                        f"stop_signal/{suffix}" in pipeline_metrics_gt
+                        for suffix in (
+                            "eligible_seq_count",
+                            "branch_count",
+                            "weight_mean",
+                            "p_stop_mean",
+                            "p_cont_mean",
+                            "margin_mean",
+                        )
+                    ) or ("loss/token_ce_stop_signal" in pipeline_metrics_gt)
 
                     stage2_logs["loss/A1_text/struct_ce"] = float(
                         float(token_ce_module_w) * float(token_struct)
@@ -4233,6 +4310,24 @@ class Stage2ABTrainingTrainer(
                         stage2_logs["loss/A1_text/desc_ce"] = float(
                             float(token_ce_module_w) * float(token_desc)
                         )
+                    if has_stop_signal:
+                        stage2_logs["loss/A1_text/stop_signal_ce"] = float(
+                            float(token_ce_module_w) * float(token_stop_signal)
+                        )
+                        for suffix in (
+                            "eligible_seq_count",
+                            "branch_count",
+                            "weight_mean",
+                            "p_stop_mean",
+                            "p_cont_mean",
+                            "margin_mean",
+                        ):
+                            raw_key = f"stop_signal/{suffix}"
+                            if raw_key not in pipeline_metrics_gt:
+                                continue
+                            stage2_logs[f"stop_signal/A1/{suffix}"] = float(
+                                pipeline_metrics_gt[raw_key]
+                            )
 
                     fmt_weight = (
                         float(self_context_struct_ce_weight)
