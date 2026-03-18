@@ -23,6 +23,11 @@ def build_channel_b_rollout_view(
     max_new_tokens: int,
     gts: Sequence[GTObject],
     rollout_result: Tuple[List[int], str, str, List[int]],
+    parse_rollout_for_matching_fn: Any,
+    points_from_coord_tokens_fn: Any,
+    sequential_dedup_fn: Any,
+    duplicate_diagnostics_fn: Any,
+    hungarian_match_maskiou_fn: Any,
 ) -> Dict[str, Any]:
     resp_ids, _resp_text, rollout_decode_mode, prompt_ids = rollout_result
     resp_ids_local = [int(t) for t in resp_ids]
@@ -35,7 +40,7 @@ def build_channel_b_rollout_view(
         if eos >= 0 and (not resp_ids_local or int(resp_ids_local[-1]) != eos):
             resp_ids_local.append(int(eos))
 
-    parse = parse_rollout_for_matching(
+    parse = parse_rollout_for_matching_fn(
         tokenizer=tokenizer,
         response_token_ids=resp_ids_local,
         object_field_order=object_field_order,
@@ -63,7 +68,7 @@ def build_channel_b_rollout_view(
                 drop_unknown += 1
             continue
 
-        pts = points_from_coord_tokens(
+        pts = points_from_coord_tokens_fn(
             response_token_ids=parse.response_token_ids,
             coord_token_indices=pobj.coord_token_indices,
             coord_id_to_bin=coord_id_to_bin,
@@ -112,13 +117,13 @@ def build_channel_b_rollout_view(
     )
 
     accepted_objects_clean, duplicate_bursts_by_boundary = (
-        _sequential_dedup_bbox_objects(
+        sequential_dedup_fn(
             parsed_bbox_objects_raw=parsed_bbox_objects_raw,
             duplicate_iou_threshold=duplicate_iou_threshold,
         )
     )
-    duplicate_metrics = _compute_duplicate_diagnostics(parsed_bbox_objects_raw)
-    match = hungarian_match_maskiou(
+    duplicate_metrics = duplicate_diagnostics_fn(parsed_bbox_objects_raw)
+    match = hungarian_match_maskiou_fn(
         preds=accepted_objects_clean,
         gts=gts,
         top_k=match_top_k,
