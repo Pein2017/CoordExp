@@ -128,7 +128,7 @@ def project_stage2_objective_atoms(
 
     module_losses = dict(pipeline_result.module_losses or {})
 
-    # token_ce -> {struct_ce, desc_ce}
+    # token_ce -> {struct_ce, desc_ce, stop_signal_ce?}
     if "token_ce" in module_losses:
         token_spec = _spec("token_ce")
         token_w = float(token_spec.weight)
@@ -153,6 +153,7 @@ def project_stage2_objective_atoms(
         elif token_w != 0.0:
             struct = _as_scalar_tensor(state.get("token_ce_struct_contrib"))
             desc = _as_scalar_tensor(state.get("token_ce_desc_contrib"))
+            stop_signal = _as_scalar_tensor(state.get("token_ce_stop_signal_contrib"))
             if struct is None or desc is None:
                 if require_additive:
                     raise ValueError(
@@ -167,11 +168,21 @@ def project_stage2_objective_atoms(
                     f"loss/{str(text_provenance)}/desc_ce",
                     _weighted(desc, module_weight=token_w),
                 )
+                if stop_signal is not None:
+                    _maybe_add(
+                        f"loss/{str(text_provenance)}/stop_signal_ce",
+                        _weighted(stop_signal, module_weight=token_w),
+                    )
 
                 if require_additive:
+                    stop_term = (
+                        stop_signal
+                        if isinstance(stop_signal, torch.Tensor)
+                        else struct.new_tensor(0.0)
+                    )
                     _assert_allclose(
                         where="token_ce",
-                        got=_weighted(struct + desc, module_weight=token_w),
+                        got=_weighted(struct + desc + stop_term, module_weight=token_w),
                         expected=weighted_loss,
                         rtol=rtol,
                         atol=atol,

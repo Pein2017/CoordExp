@@ -1,15 +1,26 @@
-extends: ../_shared/prod_a_only_hf.yaml
+extends: ../ablation/a_only_iter1-res_1024.yaml
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: /data/home/xiaoyan/AIteam/data/CoordExp/output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_2-add_coord_ce
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
+  run_name: smoke_a_only_iter1_res1024_stop_signal_damping
+  output_dir: output/stage2_ab/smoke/a_only_iter1_res1024_stop_signal_damping
+  logging_dir: tb/stage2_ab/smoke/a_only_iter1_res1024_stop_signal_damping
+  effective_batch_size: 8
+  eval_strategy: "no"
+  save_strategy: steps
+  save_steps: 2
+  max_steps: 4
+  save_delay_steps: 0
+  logging_steps: 1
+  do_eval: false
 
 custom:
-  val_sample_limit: 512
+  train_jsonl: /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  train_sample_limit: 128
+  val_sample_limit: 16
 
 stage2_ab:
   pipeline:
@@ -46,8 +57,8 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          smoothl1_weight: 2.0
-          ciou_weight: 0.2
+          smoothl1_weight: 1.0
+          ciou_weight: 0.5
       - name: bbox_size_aux
         enabled: true
         weight: 1.0
@@ -68,7 +79,7 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.04
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001
@@ -86,3 +97,13 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         config: {}
+
+# Reproducibility checkpoints for the smoke:
+# - config path: configs/stage2_two_channel/smoke/a_only_iter1_res_1024_stop_signal_damping.yaml
+# - run_name: smoke_a_only_iter1_res1024_stop_signal_damping
+# - output_dir: output/stage2_ab/smoke/a_only_iter1_res1024_stop_signal_damping
+# - logging_dir: tb/stage2_ab/smoke/a_only_iter1_res1024_stop_signal_damping
+# - seed / deterministic knobs: inherited from the resolved base config via YAML extends
+# - expected emitted keys:
+#   - loss/A1_text/stop_signal_ce
+#   - stop_signal/A1/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}

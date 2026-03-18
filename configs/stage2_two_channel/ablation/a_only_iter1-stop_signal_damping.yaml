@@ -1,15 +1,9 @@
-extends: ../_shared/prod_a_only_hf.yaml
-
-model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+extends: a_only_iter1.yaml
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_2-add_coord_ce
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
-
-custom:
-  val_sample_limit: 512
+  run_name: epoch_2-eff_size_64-n_softctx_iter_1-a_only-stop_signal_damping
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only_iter1_stop_signal_damping
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_iter1_stop_signal_damping
 
 stage2_ab:
   pipeline:
@@ -46,8 +40,8 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          smoothl1_weight: 2.0
-          ciou_weight: 0.2
+          smoothl1_weight: 1.0
+          ciou_weight: 0.5
       - name: bbox_size_aux
         enabled: true
         weight: 1.0
@@ -68,7 +62,7 @@ stage2_ab:
         application:
           preset: anchor_if_single_iter_else_final
         config:
-          coord_ce_weight: 0.02
+          coord_ce_weight: 0.04
           coord_el1_weight: 0.0
           coord_ehuber_weight: 0.0
           coord_huber_delta: 0.001

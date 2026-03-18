@@ -26,6 +26,8 @@ from src.trainers.teacher_forcing.module_registry import (
     DIAGNOSTIC_CONFIG_ALLOWLIST,
     OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
+    OBJECTIVE_OPTIONAL_CONFIG_KEYS,
+    normalize_token_ce_stop_signal_damping_config,
 )
 
 from .rollout_matching_schema import RolloutMatchingConfig
@@ -1623,12 +1625,32 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in unknown_cfg)}"
                 )
-            missing_cfg = allowed_cfg - set(spec.config.keys())
+            optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
+            missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
             if missing_cfg:
                 raise ValueError(
                     "Missing required stage2_ab.pipeline.objective"
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
+                )
+            if str(spec.name) == "token_ce":
+                merged_cfg = dict(spec.config)
+                merged_cfg["stop_signal_damping"] = (
+                    normalize_token_ce_stop_signal_damping_config(
+                        spec.config.get("stop_signal_damping"),
+                        path=(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.stop_signal_damping"
+                        ),
+                    )
+                )
+                objective_specs[idx] = Stage2PipelineModuleSpec(
+                    name=spec.name,
+                    enabled=spec.enabled,
+                    weight=spec.weight,
+                    channels=spec.channels,
+                    application=spec.application,
+                    config=merged_cfg,
                 )
 
         for idx, spec in enumerate(diagnostics_specs):
