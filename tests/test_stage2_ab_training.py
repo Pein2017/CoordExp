@@ -18,6 +18,7 @@ from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
     _bbox_groups_from_token_ids,
+    _build_canonical_prefix_text_data,
     _bbox_smoothl1_ciou_loss,
     _build_canonical_prefix_data,
     _build_dead_anchor_suppression_targets,
@@ -78,7 +79,6 @@ class _DummyModel(nn.Module):
 
         x = self.embed(input_ids) if inputs_embeds is None else inputs_embeds
         return _DummyOut(self.lm_head(x))
-
 
 class _DummySlicedModel(_DummyModel):
     def forward(self, *args, **kwargs):
@@ -3276,6 +3276,48 @@ def test_build_teacher_forced_payload_honors_object_field_order():
 
     assert list(desc_first["objects"][0].keys()) == ["desc", "bbox_2d"]
     assert list(geometry_first["objects"][0].keys()) == ["bbox_2d", "desc"]
+
+
+def test_extract_gt_bboxonly_preserves_assistant_payload_order() -> None:
+    sample = {
+        "assistant_payload": {
+            "objects": [
+                {"desc": "later", "bbox_2d": [10, 10, 20, 20]},
+                {"desc": "earlier", "bbox_2d": [0, 0, 5, 5]},
+            ]
+        }
+    }
+
+    gt_objects = _extract_gt_bboxonly(sample)
+
+    assert [obj.desc for obj in gt_objects] == ["later", "earlier"]
+    assert [obj.index for obj in gt_objects] == [0, 1]
+
+
+def test_build_canonical_prefix_text_data_preserves_object_sequence() -> None:
+    gt_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 10, 20, 20],
+            desc="later",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[0, 0, 5, 5],
+            desc="earlier",
+        ),
+    ]
+
+    prefix_text, boundary_prefix_texts, _spans = _build_canonical_prefix_text_data(
+        objects=gt_objects,
+        object_field_order="desc_first",
+    )
+
+    assert prefix_text.index("later") < prefix_text.index("earlier")
+    assert "later" in boundary_prefix_texts[1]
+    assert "earlier" not in boundary_prefix_texts[1]
 
 
 def test_stage2_channel_b_fragment_supports_geometry_first_order():

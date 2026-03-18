@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import pytest
 import torch
 
-from src.config.prompts import build_dense_user_prompt
+from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
@@ -1317,6 +1317,40 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
         object_field_order="geometry_first",
     )
     assert user_content[-1]["text"] == expected_prompt
+
+
+def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_prompt() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "object_ordering": "random",
+        "prompt_variant": "coco_80",
+    }
+    trainer.object_field_order = "geometry_first"
+    trainer.template = types.SimpleNamespace(system="")
+    trainer._cfg = lambda key, default=None: trainer.rollout_matching_cfg.get(key, default)
+
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "old prompt"}],
+            }
+        ]
+    }
+
+    prepared = trainer._prepare_samples_for_rollout([sample], rollout_backend="vllm")
+
+    assert len(prepared) == 1
+    messages = prepared[0]["messages"]
+    assert isinstance(messages, list)
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == build_dense_system_prompt(
+        ordering="random",
+        coord_mode="coord_tokens",
+        prompt_variant="coco_80",
+        object_field_order="geometry_first",
+    )
 
 
 def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:

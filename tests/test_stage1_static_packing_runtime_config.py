@@ -5,9 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.callbacks import DatasetEpochCallback
+from src.config.loader import ConfigLoader
 import src.sft as sft_module
 from src.sft import (
     PackingRuntimeConfig,
+    _append_dataset_epoch_callback,
     _build_static_packing_fingerprint,
     _parse_packing_config,
     _recompute_gas_for_packing,
@@ -19,6 +22,14 @@ from src.sft import (
 class _Template:
     def __init__(self, max_length: int):
         self.max_length = int(max_length)
+
+
+class _EpochDataset:
+    def __init__(self) -> None:
+        self.epochs: list[int] = []
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epochs.append(int(epoch))
 
 
 def test_parse_packing_config_defaults_to_static_mode() -> None:
@@ -176,6 +187,21 @@ def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants()
     )
 
 
+def test_append_dataset_epoch_callback_registers_set_epoch_datasets() -> None:
+    dataset = _EpochDataset()
+    callbacks = _append_dataset_epoch_callback([], dataset)
+
+    assert len(callbacks) == 1
+    assert isinstance(callbacks[0], DatasetEpochCallback)
+
+    callbacks[0].on_epoch_begin(
+        args=SimpleNamespace(),
+        state=SimpleNamespace(epoch=3.0, global_step=0),
+        control=SimpleNamespace(),
+    )
+    assert dataset.epochs == [3]
+
+
 def test_static_packing_fingerprint_includes_dataset_source_identity(
     tmp_path: Path,
 ) -> None:
@@ -265,6 +291,34 @@ def test_static_packing_fingerprint_tracks_eval_split_inputs(
     assert fingerprint["dataset_split"] == "eval"
     assert fingerprint["eval_sample_limit"] == 99
     assert fingerprint["eval_sample_with_replacement"] is False
+
+
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_ordering"),
+    [
+        (
+            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
+            "sorted",
+        ),
+        (
+            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
+            "random",
+        ),
+    ],
+)
+def test_stage1_ablation_profiles_pin_cache_parity_and_ordering(
+    config_relpath: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
+
+    assert cfg.training["seed"] == 17
+    assert cfg.training["encoded_sample_cache"]["enabled"] is False
+    assert cfg.custom.object_ordering == expected_ordering
+    assert expected_ordering in cfg.training["run_name"]
+    assert expected_ordering in cfg.training["output_dir"]
+    assert expected_ordering in cfg.training["logging_dir"]
 
 
 def test_recompute_gas_for_packing_uses_effective_batch_size() -> None:
@@ -416,3 +470,39 @@ def test_validate_static_packing_accumulation_windows_warns_on_remainder(
         "is not divisible by gradient_accumulation_steps=8" in msg
         for msg in warning_logs
     )
+
+
+@pytest.mark.parametrize(
+    ("config_name", "expected_ordering"),
+    [
+        (
+            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
+            "sorted",
+        ),
+        (
+            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
+            "random",
+        ),
+    ],
+)
+def test_stage1_ablation_leaves_pin_ordering_cache_seed_and_paths(
+    config_name: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs" / "stage1" / "ablation" / config_name)
+    )
+
+    training = cfg.training
+    custom = cfg.custom
+    template = cfg.template
+
+    assert custom.object_ordering == expected_ordering
+    assert training["encoded_sample_cache"]["enabled"] is False
+    assert training["seed"] == 17
+    assert expected_ordering in str(training["run_name"])
+    assert expected_ordering in str(training["output_dir"])
+    assert expected_ordering in str(training["logging_dir"])
+    assert template["max_pixels"] == 1048576
+    assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)

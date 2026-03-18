@@ -16,7 +16,9 @@ from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
 from src.common.object_field_order import (
     ObjectFieldOrder,
+    ObjectOrdering,
     normalize_object_field_order,
+    normalize_object_ordering,
 )
 from src.config.prompts import resolve_dense_prompt_variant_key
 from src.utils import get_logger
@@ -99,11 +101,16 @@ def _get_int(cfg: Mapping[str, Any], key: str, default: int) -> int:
 
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
-) -> Tuple[str, ObjectFieldOrder]:
+) -> Tuple[str, ObjectFieldOrder, ObjectOrdering]:
     prompt_variant_raw = infer_cfg.get("prompt_variant", None)
     if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
         raise ValueError("infer.prompt_variant must be a string when provided")
     prompt_variant = resolve_dense_prompt_variant_key(prompt_variant_raw)
+
+    object_ordering = normalize_object_ordering(
+        infer_cfg.get("object_ordering", "sorted"),
+        path="infer.object_ordering",
+    )
 
     object_field_order_raw = infer_cfg.get("object_field_order", "desc_first")
     object_field_order = normalize_object_field_order(
@@ -111,7 +118,7 @@ def _resolve_infer_prompt_controls(
         path="infer.object_field_order",
     )
 
-    return prompt_variant, object_field_order
+    return prompt_variant, object_field_order, object_ordering
 
 
 def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
@@ -455,7 +462,7 @@ def run_pipeline(
         cfg = apply_overrides(cfg, overrides)
 
     infer_cfg = _get_map(cfg, "infer")
-    resolved_prompt_variant, resolved_object_field_order = (
+    resolved_prompt_variant, resolved_object_field_order, resolved_object_ordering = (
         _resolve_infer_prompt_controls(infer_cfg)
     )
 
@@ -496,6 +503,7 @@ def run_pipeline(
         "infer": {
             "prompt_variant": resolved_prompt_variant,
             "object_field_order": resolved_object_field_order,
+            "object_ordering": resolved_object_ordering,
         },
         # Persist a redacted view of the config (avoid leaking secrets into artifacts).
         "cfg": cfg_redacted,
@@ -569,7 +577,9 @@ def _run_infer_stage(
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
     mode = cast(Literal["coord", "text", "auto"], mode_raw)
 
-    prompt_variant, object_field_order = _resolve_infer_prompt_controls(infer_cfg)
+    prompt_variant, object_field_order, object_ordering = _resolve_infer_prompt_controls(
+        infer_cfg
+    )
 
     pred_coord_mode_raw = _require_choice(
         infer_cfg, "pred_coord_mode", {"auto", "norm1000", "pixel"}
@@ -623,6 +633,7 @@ def _run_infer_stage(
         mode=mode,
         prompt_variant=prompt_variant,
         object_field_order=object_field_order,
+        object_ordering=object_ordering,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),

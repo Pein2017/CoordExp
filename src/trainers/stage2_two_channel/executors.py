@@ -342,8 +342,10 @@ class Stage2ABChannelExecutorsMixin:
                 step_totals: Mapping[str, float],
                 sync_gradients: bool,
             ) -> torch.Tensor:
+                t_collate0 = time.perf_counter()
                 with self._template_packing_enabled():
                     packed = self.template.data_collator([enc for enc, _, _ in selected])
+                t_collate_s = float(time.perf_counter() - t_collate0)
                 batch = to_device(packed, self.model.device)
                 self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
                 batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
@@ -352,13 +354,13 @@ class Stage2ABChannelExecutorsMixin:
                 # Attach step-level totals (time/*, packing settings, etc) sparingly.
                 bm.update({str(k): float(v) for k, v in step_totals.items()})
                 bm.update({str(k): float(v) for k, v in pack_metrics.items()})
+                bm["time/channel_a_collate_s"] = float(t_collate_s)
 
                 self._merge_rollout_matching_batch_metrics(batch, bm)
                 batch["_stage2_ab_channel"] = "A"
 
                 pack_segments = int(len(selected))
                 weight = float(pack_segments) / float(total_segments_target)
-
                 cm = contextlib.nullcontext()
                 if not bool(sync_gradients):
                     acc = getattr(self, "accelerator", None)
@@ -380,6 +382,7 @@ class Stage2ABChannelExecutorsMixin:
                         "_loss_gradient_monitor_sync_gradients",
                         bool(sync_gradients),
                     )
+                    t_compute0 = time.perf_counter()
                     try:
                         with loss_ctx:
                             with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
@@ -401,29 +404,35 @@ class Stage2ABChannelExecutorsMixin:
                                 "_loss_gradient_monitor_sync_gradients",
                                 prev_gradmon_sync,
                             )
+                    t_compute_s = float(time.perf_counter() - t_compute0)
                     if not isinstance(loss, torch.Tensor):
                         raise TypeError("compute_loss must return a torch.Tensor")
 
                     loss_scaled = loss * float(weight)
 
                     acc = getattr(self, "accelerator", None)
+                    t_backward0 = time.perf_counter()
                     if acc is not None and hasattr(acc, "backward"):
                         acc.backward(loss_scaled)
                     else:
                         loss_scaled.backward()
+                    t_backward_s = float(time.perf_counter() - t_backward0)
 
+                loss_value = float(loss.detach().float().cpu().item())
                 return loss.detach() * float(weight)
 
+            t_segments0 = time.perf_counter()
             segments, batch_metrics = self._prepare_batch_inputs_a(
                 list(raw_samples), _segments_only=True
             )
+            t_segments_s = float(time.perf_counter() - t_segments0)
             if not isinstance(segments, list) or not segments:
                 raise ValueError(
                     "stage2-ab Channel-A step mode produced no segments; check dataset contract"
                 )
 
             step_totals = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
-
+            step_totals["time/channel_a_prepare_segments_s"] = float(t_segments_s)
             self._stage2_append_post_rollout_segments(channel="A", segments=segments)
 
             try:

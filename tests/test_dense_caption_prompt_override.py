@@ -78,6 +78,52 @@ def _unsorted_record() -> dict[str, Any]:
     }
 
 
+def _four_object_record() -> dict[str, Any]:
+    return {
+        "images": ["img.jpg"],
+        "width": 32,
+        "height": 32,
+        "objects": [
+            {
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_1|>",
+                    "<|coord_6|>",
+                    "<|coord_6|>",
+                ],
+                "desc": "alpha",
+            },
+            {
+                "bbox_2d": [
+                    "<|coord_8|>",
+                    "<|coord_8|>",
+                    "<|coord_12|>",
+                    "<|coord_12|>",
+                ],
+                "desc": "beta",
+            },
+            {
+                "bbox_2d": [
+                    "<|coord_14|>",
+                    "<|coord_14|>",
+                    "<|coord_18|>",
+                    "<|coord_18|>",
+                ],
+                "desc": "gamma",
+            },
+            {
+                "bbox_2d": [
+                    "<|coord_20|>",
+                    "<|coord_20|>",
+                    "<|coord_24|>",
+                    "<|coord_24|>",
+                ],
+                "desc": "delta",
+            },
+        ],
+    }
+
+
 def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> None:
     template = _FakeTemplate()
     ds = BaseCaptionDataset(
@@ -140,6 +186,47 @@ def test_random_ordering_accepts_unsorted_objects() -> None:
 
     encoded = ds[0]
     assert "input_ids" in encoded
+
+
+def test_random_ordering_reshuffles_each_epoch_deterministically() -> None:
+    template = _FakeTemplate()
+
+    def _epoch_descs(dataset: BaseCaptionDataset, epoch: int) -> list[str]:
+        dataset.set_epoch(epoch)
+        encoded = dataset[0]
+        objects = encoded["assistant_payload"]["objects"]
+        return [str(obj.get("desc", "")) for obj in objects]
+
+    ds_a = BaseCaptionDataset(
+        base_records=[_four_object_record()],
+        template=template,
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=True),
+        object_ordering="random",
+        seed=17,
+    )
+    ds_b = BaseCaptionDataset(
+        base_records=[_four_object_record()],
+        template=_FakeTemplate(),
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=True),
+        object_ordering="random",
+        seed=17,
+    )
+
+    observed = {tuple(_epoch_descs(ds_a, epoch)) for epoch in range(5)}
+    assert len(observed) >= 2
+
+    for epoch in range(5):
+        assert _epoch_descs(ds_a, epoch) == _epoch_descs(ds_b, epoch)
 
 
 def test_template_boundary_reflects_geometry_first_assistant_text_order() -> None:

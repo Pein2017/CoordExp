@@ -46,7 +46,11 @@ from swift.trainers.rlhf_trainer.utils import (
 )
 from swift.utils import get_logger, unwrap_model_for_generation
 
-from src.common.object_field_order import build_object_payload, normalize_object_field_order
+from src.common.object_field_order import (
+    build_object_payload,
+    normalize_object_field_order,
+    normalize_object_ordering,
+)
 from src.common.geometry import bbox_from_points, flatten_points
 from src.config.prompts import (
     build_dense_system_prompt,
@@ -1546,8 +1550,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         return normalize_object_field_order(raw, path="custom.object_field_order")
 
     def _object_ordering(self) -> Literal["sorted", "random"]:
-        raw = str(self._cfg("object_ordering", "sorted") or "sorted").strip().lower()
-        return "random" if raw == "random" else "sorted"
+        return normalize_object_ordering(
+            self._cfg("object_ordering", "sorted"),
+            path="custom.object_ordering",
+        )
 
     def _eval_prompt_variant(self) -> Optional[str]:
         raw = self._cfg("eval_prompt_variant", None)
@@ -1556,6 +1562,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not isinstance(raw, str):
             raise TypeError(
                 "rollout_matching.eval_prompt_variant must be a string when provided"
+            )
+        key = raw.strip()
+        if not key:
+            return None
+        return resolve_dense_prompt_variant_key(key)
+
+    def _training_prompt_variant(self) -> Optional[str]:
+        raw = self._cfg("prompt_variant", None)
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise TypeError(
+                "rollout_matching.prompt_variant must be a string when provided"
             )
         key = raw.strip()
         if not key:
@@ -6548,9 +6567,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     # as `template.system` in all execution contexts. Use CoordExp's
                     # canonical dense system prompt to stabilize server-mode rollouts.
                     try:
-                        from src.config.prompts import SYSTEM_PROMPT_SORTED_TOKENS
-
-                        system_prompt = str(SYSTEM_PROMPT_SORTED_TOKENS)
+                        system_prompt = build_dense_system_prompt(
+                            ordering=self._object_ordering(),
+                            coord_mode="coord_tokens",
+                            prompt_variant=self._training_prompt_variant(),
+                            object_field_order=self._object_field_order(),
+                        )
                     except (TypeError, ValueError):
                         system_prompt = None
 

@@ -401,6 +401,7 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
         mode="text",
         prompt_variant="coco_80",
         object_field_order="geometry_first",
+        object_ordering="random",
         pred_coord_mode="auto",
         out_path=str(out_path),
         summary_path=str(summary_path),
@@ -433,3 +434,24 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["infer"]["prompt_variant"] == "coco_80"
     assert summary["infer"]["object_field_order"] == "geometry_first"
+    assert summary["infer"]["object_ordering"] == "random"
+
+
+def test_infer_build_messages_respects_random_ordering() -> None:
+    engine = InferenceEngine(
+        InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy",
+            mode="text",
+            prompt_variant="coco_80",
+            object_ordering="random",
+        ),
+        GenerationConfig(),
+    )
+
+    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
+    system_text = messages[0]["content"][0]["text"]
+    user_text = messages[1]["content"][0]["text"]
+
+    assert "any ordering is acceptable" in system_text
+    assert "any ordering is acceptable" in user_text

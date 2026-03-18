@@ -32,6 +32,24 @@ _DEFAULT_LENGTH_PRECOMPUTE_WORKERS = 8
 _LENGTH_PRECOMPUTE_DATASET: Any | None = None
 
 
+def _current_dataset_epoch(dataset: Any) -> int:
+    for attr in ("_epoch", "current_epoch", "epoch"):
+        raw = getattr(dataset, attr, None)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _set_dataset_epoch(dataset: Any, epoch: int) -> None:
+    set_epoch_fn = getattr(dataset, "set_epoch", None)
+    if callable(set_epoch_fn):
+        set_epoch_fn(int(epoch))
+
+
 def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
     length = sample.get("length")
     if isinstance(length, int):
@@ -206,19 +224,51 @@ def _probe_order_invariant_lengths(
             lengths[int(index)] = int(length)
         return lengths
 
-    lengths_forward = _collect(probe_indices)
-    lengths_reverse = _collect(list(reversed(probe_indices)))
-    changed = [
-        i for i in probe_indices if lengths_forward.get(i) != lengths_reverse.get(i)
-    ]
-    if changed:
-        preview = changed[:8]
+    original_epoch = _current_dataset_epoch(dataset)
+    ordering = str(getattr(dataset, "object_ordering", "sorted") or "sorted").strip().lower()
+    if ordering == "random" and not callable(getattr(dataset, "set_epoch", None)):
         raise ValueError(
-            "Static packing requires order-invariant per-index token lengths, but the probe "
-            f"detected mismatches for indices {preview}. This usually indicates an order-sensitive "
-            "dataset schedule (e.g., fusion/mixing) or non-deterministic preprocessing. "
-            "Use training.packing_mode=dynamic for this run."
+            "Static packing requires dataset.set_epoch(...) support when "
+            "custom.object_ordering='random' so per-epoch reshuffle can be honored "
+            "without rebuilding the static plan."
         )
+
+    try:
+        _set_dataset_epoch(dataset, original_epoch)
+        lengths_forward = _collect(probe_indices)
+        lengths_reverse = _collect(list(reversed(probe_indices)))
+        changed = [
+            i for i in probe_indices if lengths_forward.get(i) != lengths_reverse.get(i)
+        ]
+        if changed:
+            preview = changed[:8]
+            raise ValueError(
+                "Static packing requires order-invariant per-index token lengths, but the probe "
+                f"detected mismatches for indices {preview}. This usually indicates an order-sensitive "
+                "dataset schedule (e.g., fusion/mixing) or non-deterministic preprocessing. "
+                "Use training.packing_mode=dynamic for this run."
+            )
+
+        if ordering == "random":
+            next_epoch = int(original_epoch) + 1
+            _set_dataset_epoch(dataset, next_epoch)
+            lengths_next_epoch = _collect(probe_indices)
+            epoch_changed = [
+                i
+                for i in probe_indices
+                if lengths_forward.get(i) != lengths_next_epoch.get(i)
+            ]
+            if epoch_changed:
+                preview = epoch_changed[:8]
+                raise ValueError(
+                    "Static packing requires epoch-invariant per-index token lengths when "
+                    "custom.object_ordering='random', but the probe detected mismatches for "
+                    f"indices {preview} between epochs {original_epoch} and {next_epoch}. "
+                    "Use a length-invariant ordering configuration or disable static packing "
+                    "for this run."
+                )
+    finally:
+        _set_dataset_epoch(dataset, original_epoch)
 
 
 def _validate_cache_fingerprint(
@@ -864,6 +914,7 @@ class StaticPackedCaptionDataset(Dataset):
         self.avg_fill = float(avg_fill)
         self.single_long = int(single_long)
         self.skipped_long = int(skipped_long)
+        self._epoch = _current_dataset_epoch(dataset)
 
         try:
             self.template.packing = True
@@ -884,7 +935,8 @@ class StaticPackedCaptionDataset(Dataset):
         return [self.dataset[int(raw_index)] for raw_index in pack_indices]
 
     def set_epoch(self, epoch: int) -> None:
-        _ = int(epoch)
+        self._epoch = int(epoch)
+        _set_dataset_epoch(self.dataset, self._epoch)
 
 
 def build_packed_dataset(

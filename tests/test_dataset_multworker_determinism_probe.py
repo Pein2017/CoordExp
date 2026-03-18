@@ -33,7 +33,7 @@ def _make_record(*, image: str, objects: List[Dict[str, Any]]) -> Dict[str, Any]
     }
 
 
-def _collect_samples(*, num_workers: int) -> List[Tuple[int, List[str]]]:
+def _collect_samples(*, num_workers: int, epoch: int = 0) -> List[Tuple[int, List[str]]]:
     records = [
         _make_record(
             image="img_0.png",
@@ -70,6 +70,7 @@ def _collect_samples(*, num_workers: int) -> List[Tuple[int, List[str]]]:
         object_ordering="random",
         object_field_order="desc_first",
     )
+    ds.set_epoch(epoch)
 
     dl = DataLoader(
         ds,
@@ -95,8 +96,21 @@ def test_dataset_multiworker_determinism_probe() -> None:
     # This catches order-sensitive RNG usage in __getitem__ under multi-worker prefetching.
     torch.manual_seed(0)
 
-    single = _collect_samples(num_workers=0)
-    multi = _collect_samples(num_workers=2)
+    single = _collect_samples(num_workers=0, epoch=0)
+    multi = _collect_samples(num_workers=2, epoch=0)
 
     assert single == multi
 
+
+def test_dataset_random_order_changes_across_epochs_but_stays_worker_deterministic() -> None:
+    torch.manual_seed(0)
+
+    single_epoch_orders = {
+        tuple((sample_id, tuple(descs)) for sample_id, descs in _collect_samples(num_workers=0, epoch=epoch))
+        for epoch in range(5)
+    }
+    assert len(single_epoch_orders) >= 2
+
+    single = _collect_samples(num_workers=0, epoch=3)
+    multi = _collect_samples(num_workers=2, epoch=3)
+    assert single == multi

@@ -65,6 +65,102 @@ class _OrderSensitiveDataset:
         }
 
 
+class _EpochLengthInvariantRandomDataset:
+    object_ordering = "random"
+
+    def __init__(self, lengths):
+        self.lengths = list(lengths)
+        self.current_epoch = 0
+        self.epoch_history: list[int] = []
+
+    def __len__(self):
+        return len(self.lengths)
+
+    def __getitem__(self, idx):
+        length = int(self.lengths[idx])
+        return {
+            "idx": int(idx),
+            "epoch": int(self.current_epoch),
+            "input_ids": [int(self.current_epoch)] * length,
+            "labels": [0] * length,
+            "length": length,
+            "pixel_values": torch.zeros(1),
+            "image_grid_thw": torch.tensor([1, 1, 1]),
+        }
+
+    def set_epoch(self, epoch):
+        self.current_epoch = int(epoch)
+        self.epoch_history.append(self.current_epoch)
+
+
+class _EpochLengthChangingRandomDataset(_EpochLengthInvariantRandomDataset):
+    def __getitem__(self, idx):
+        length = int(self.lengths[idx]) + (1 if (self.current_epoch % 2 == 1 and int(idx) == 0) else 0)
+        return {
+            "idx": int(idx),
+            "epoch": int(self.current_epoch),
+            "input_ids": [int(self.current_epoch)] * length,
+            "labels": [0] * length,
+            "length": length,
+            "pixel_values": torch.zeros(1),
+            "image_grid_thw": torch.tensor([1, 1, 1]),
+        }
+
+
+class _EpochLengthInvariantDataset:
+    def __init__(self, size: int = 8, length: int = 16):
+        self.size = int(size)
+        self.length = int(length)
+        self._epoch = 0
+        self.epoch_set = 0
+        self.object_ordering = "random"
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        token = (int(idx) + int(self._epoch)) % 7
+        return {
+            "idx": int(idx),
+            "epoch": int(self._epoch),
+            "input_ids": [token] * self.length,
+            "labels": [0] * self.length,
+            "length": self.length,
+            "pixel_values": torch.zeros(1),
+            "image_grid_thw": torch.tensor([1, 1, 1]),
+        }
+
+    def set_epoch(self, epoch):
+        self._epoch = int(epoch)
+        self.epoch_set = int(epoch)
+
+
+class _EpochLengthVaryingDataset:
+    def __init__(self, size: int = 8, base_length: int = 16):
+        self.size = int(size)
+        self.base_length = int(base_length)
+        self._epoch = 0
+        self.object_ordering = "random"
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        length = int(self.base_length + ((int(idx) + int(self._epoch)) % 2))
+        return {
+            "idx": int(idx),
+            "epoch": int(self._epoch),
+            "input_ids": [0] * length,
+            "labels": [0] * length,
+            "length": length,
+            "pixel_values": torch.zeros(1),
+            "image_grid_thw": torch.tensor([1, 1, 1]),
+        }
+
+    def set_epoch(self, epoch):
+        self._epoch = int(epoch)
+
+
 class FusionCaptionDataset:
     def __init__(self, lengths):
         self.lengths = list(lengths)
@@ -247,6 +343,93 @@ def test_static_packing_deterministic_plan(tmp_path: Path):
     assert run1.pack_plan == run2.pack_plan
     assert run1.raw_plan_checksum == run2.raw_plan_checksum
     assert run1.aligned_plan_checksum == run2.aligned_plan_checksum
+
+
+def test_static_packing_random_order_propagates_epoch_without_rebuilding_plan(
+    tmp_path: Path,
+):
+    dataset = _EpochLengthInvariantRandomDataset([20, 20, 20, 20])
+    wrapped = build_static_packed_dataset(
+        dataset,
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / "epoch_random",
+        fingerprint=_static_fingerprint("epoch_random"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    assert dataset.epoch_history[:3] == [0, 1, 0]
+    raw_plan = [list(pack) for pack in wrapped.raw_plan]
+    pack_plan = [list(pack) for pack in wrapped.pack_plan]
+
+    wrapped.set_epoch(5)
+    fetched = wrapped[0]
+
+    assert dataset.current_epoch == 5
+    assert wrapped.raw_plan == raw_plan
+    assert wrapped.pack_plan == pack_plan
+    assert fetched
+    assert all(int(sample["epoch"]) == 5 for sample in fetched)
+
+
+def test_static_packing_rejects_epoch_variant_lengths_for_random_order(
+    tmp_path: Path,
+):
+    with pytest.raises(ValueError, match="epoch-invariant per-index token lengths"):
+        build_static_packed_dataset(
+            _EpochLengthChangingRandomDataset([20, 20, 20, 20]),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=tmp_path / "epoch_length_change",
+            fingerprint=_static_fingerprint("epoch_length_change"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=1,
+        )
+
+
+def test_static_packing_random_order_dataset_forwards_epoch_without_rebuilding_plan(
+    tmp_path: Path,
+):
+    dataset = _EpochLengthInvariantDataset(size=8, length=20)
+    static_ds = build_static_packed_dataset(
+        dataset,
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / "random_epoch_forward",
+        fingerprint=_static_fingerprint("random_epoch_forward"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    raw_plan_before = [list(pack) for pack in static_ds.raw_plan]
+    aligned_plan_before = [list(pack) for pack in static_ds.pack_plan]
+
+    first_pack = static_ds[0]
+    assert all(int(item["epoch"]) == 0 for item in first_pack)
+
+    static_ds.set_epoch(3)
+    second_pack = static_ds[0]
+
+    assert dataset.epoch_set == 3
+    assert all(int(item["epoch"]) == 3 for item in second_pack)
+    assert static_ds.raw_plan == raw_plan_before
+    assert static_ds.pack_plan == aligned_plan_before
 
 
 def test_static_packing_ddp_drop_last_truncates_tail(tmp_path: Path):
@@ -531,6 +714,26 @@ def test_static_packing_rejects_order_sensitive_dataset(tmp_path: Path):
             allow_single_long=True,
             cache_dir=tmp_path / "order_sensitive",
             fingerprint=_static_fingerprint("order_sensitive"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=1,
+        )
+
+
+def test_static_packing_rejects_epoch_varying_lengths_for_random_order_dataset(
+    tmp_path: Path,
+):
+    with pytest.raises(ValueError, match="epoch-invariant per-index token lengths"):
+        build_static_packed_dataset(
+            _EpochLengthVaryingDataset(size=12, base_length=16),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=tmp_path / "epoch_varying_length",
+            fingerprint=_static_fingerprint("epoch_varying_length"),
             world_size=1,
             train_dataloader_shuffle=False,
             length_precompute_workers=1,

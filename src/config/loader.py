@@ -9,7 +9,10 @@ import yaml
 from swift.llm.argument import RLHFArguments, TrainArguments
 from swift.utils import get_dist_setting
 
-from src.common.object_field_order import normalize_object_field_order
+from src.common.object_field_order import (
+    normalize_object_field_order,
+    normalize_object_ordering,
+)
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -74,7 +77,7 @@ class ConfigLoader:
         config_abs = Path(config_path).resolve()
         repo_root = Path(__file__).resolve().parents[2]
         stage2_root = (repo_root / "configs" / "stage2_two_channel").resolve()
-        for kind in ("prod", "smoke"):
+        for kind in ("prod", "smoke", "ablation"):
             kind_root = (stage2_root / kind).resolve()
             try:
                 config_abs.relative_to(kind_root)
@@ -106,7 +109,7 @@ class ConfigLoader:
         extends_list = ConfigLoader._normalize_to_list(extends_value)
         if not extends_list:
             raise ValueError(
-                "Stage-2 canonical prod/smoke profiles must declare extends/inherit so the "
+                "Stage-2 canonical prod/smoke/ablation profiles must declare extends/inherit so the "
                 f"resolved contract is explicit. Missing in {config_path}."
             )
 
@@ -137,7 +140,7 @@ class ConfigLoader:
         if missing:
             missing_str = ", ".join(missing)
             raise ValueError(
-                "Stage-2 canonical prod/smoke profiles must resolve the required training keys. "
+                "Stage-2 canonical prod/smoke/ablation profiles must resolve the required training keys. "
                 f"Missing after inheritance in {config_path}: {missing_str}"
             )
 
@@ -240,11 +243,10 @@ class ConfigLoader:
 
             ordering_hint_raw = custom_section.get("object_ordering")
             if ordering_hint_raw is not None:
-                ordering_hint = str(ordering_hint_raw).lower()
-                if ordering_hint not in {"sorted", "random"}:
-                    raise ValueError(
-                        "custom.object_ordering must be 'sorted' or 'random' when provided"
-                    )
+                ordering_hint = normalize_object_ordering(
+                    ordering_hint_raw,
+                    path="custom.object_ordering",
+                )
 
             object_field_order_raw = custom_section.get("object_field_order", None)
             if object_field_order_raw is None:

@@ -39,11 +39,14 @@ def test_prompt_variant_resolution_is_deterministic_across_repeated_calls() -> N
     assert first == second
 
 
-def test_prompt_variant_cross_surface_parity_between_training_and_inference() -> None:
+@pytest.mark.parametrize("object_ordering", ["sorted", "random"])
+def test_prompt_variant_cross_surface_parity_between_training_and_inference(
+    object_ordering: str,
+) -> None:
     train_prompts = ConfigLoader.resolve_prompts(
         {
             "custom": {
-                "object_ordering": "sorted",
+                "object_ordering": object_ordering,
                 "object_field_order": "desc_first",
                 "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "coco_80"},
@@ -56,6 +59,7 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference() ->
         model_checkpoint="dummy",
         mode="text",
         prompt_variant="coco_80",
+        object_ordering=object_ordering,
     )
     engine = InferenceEngine(inf_cfg, GenerationConfig())
 
@@ -65,6 +69,19 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference() ->
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
+
+
+def test_inference_object_ordering_defaults_to_sorted() -> None:
+    engine = InferenceEngine(
+        InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy",
+            mode="text",
+        ),
+        GenerationConfig(),
+    )
+
+    assert engine.object_ordering == "sorted"
 
 
 def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
@@ -153,7 +170,11 @@ def test_coco_80_prompt_variant_has_compact_canonical_unique_list() -> None:
     assert "Restrict `desc` to this COCO-80 class list" in user_prompt
 
     prefix = "Restrict `desc` to this COCO-80 class list: "
-    class_list = user_prompt.split(prefix, maxsplit=1)[1].rstrip(".")
+    class_clause = user_prompt.split(prefix, maxsplit=1)[1]
+    class_list = class_clause.split(
+        ". Locate each clearly visible object instance",
+        maxsplit=1,
+    )[0].rstrip(".")
     parsed = [name.strip() for name in class_list.split(",")]
 
     assert parsed == list(COCO_80_CLASS_NAMES)

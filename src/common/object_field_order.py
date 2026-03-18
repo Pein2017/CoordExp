@@ -7,6 +7,11 @@ ALLOWED_OBJECT_FIELD_ORDER: tuple[ObjectFieldOrder, ObjectFieldOrder] = (
     "desc_first",
     "geometry_first",
 )
+ObjectOrdering = Literal["sorted", "random"]
+ALLOWED_OBJECT_ORDERING: tuple[ObjectOrdering, ObjectOrdering] = (
+    "sorted",
+    "random",
+)
 
 
 def normalize_object_field_order(
@@ -18,6 +23,15 @@ def normalize_object_field_order(
             f"{path} must be one of {{'desc_first', 'geometry_first'}}; got {value!r}"
         )
     return "geometry_first" if normalized == "geometry_first" else "desc_first"
+
+
+def normalize_object_ordering(
+    value: Any, *, path: str = "custom.object_ordering"
+) -> ObjectOrdering:
+    normalized = str(value).strip().lower()
+    if normalized not in ALLOWED_OBJECT_ORDERING:
+        raise ValueError(f"{path} must be one of {{'sorted', 'random'}}; got {value!r}")
+    return "random" if normalized == "random" else "sorted"
 
 
 def build_object_payload(
@@ -45,6 +59,9 @@ def build_object_payload(
 __all__ = [
     "ObjectFieldOrder",
     "ALLOWED_OBJECT_FIELD_ORDER",
+    "ObjectOrdering",
+    "ALLOWED_OBJECT_ORDERING",
     "normalize_object_field_order",
+    "normalize_object_ordering",
     "build_object_payload",
 ]

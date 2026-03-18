@@ -34,8 +34,12 @@ During inference and offline evaluation, CoordExp writes reproducibility and ana
     reviewer and evaluator overlay path.
 - `summary.json`
   - Inference-stage summary emitted by the YAML infer pipeline.
+  - Check `infer.prompt_variant`, `infer.object_field_order`, and `infer.object_ordering`
+    when reproducing prompt-sensitive evaluations.
 - `resolved_config.json`
   - Canonical snapshot of the resolved infer pipeline config.
+  - Check `infer.prompt_variant`, `infer.object_field_order`, and
+    `infer.object_ordering` before launching long evaluation jobs.
 - `metrics.json`
   - Offline evaluator metrics and diagnostic counters.
 - `per_image.json`
