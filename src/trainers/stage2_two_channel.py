@@ -19,7 +19,6 @@ from src.utils.assistant_json import dumps_coordjson
 from .stage2_rollout_aligned import RolloutMatchingSFTTrainer
 from .rollout_matching.contracts import GTObject
 from .rollout_matching.matching import (
-    associate_one_to_one_max_iou,
     hungarian_match_maskiou,
 )
 from .rollout_matching.parsing import (
@@ -39,6 +38,7 @@ from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
 from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
 from .stage2_two_channel.target_builder import (
+    _build_channel_b_triage,
     _ValueSpanObject,
     _bbox_iou_norm1000_xyxy,
     _compute_duplicate_diagnostics,
@@ -2111,48 +2111,21 @@ class Stage2ABTrainingTrainer(
                 or 0.0
             )
 
-            association_pairs = associate_one_to_one_max_iou(
-                anchors=accepted_objects_clean,
-                explorers=explorer_accepted_objects_clean,
-                min_iou=float(unlabeled_consistent_iou_threshold),
+            triage = _build_channel_b_triage(
+                accepted_objects_clean=accepted_objects_clean,
+                explorer_accepted_objects_clean=explorer_accepted_objects_clean,
+                anchor_match_by_pred=anchor_match_by_pred,
+                explorer_match_by_pred=explorer_match_by_pred,
+                unlabeled_consistent_iou_threshold=float(
+                    unlabeled_consistent_iou_threshold
+                ),
             )
-            anchor_to_explorer = {
-                int(anchor_i): int(explorer_i)
-                for anchor_i, explorer_i in association_pairs
-            }
-
-            anchor_gt_backed_indices = sorted(anchor_match_by_pred.keys())
-            shielded_anchor_indices: set[int] = set()
-            dead_anchor_indices: set[int] = set()
-            for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
-                if int(anchor_i) in anchor_match_by_pred:
-                    continue
-                explorer_i = anchor_to_explorer.get(int(anchor_i))
-                if (
-                    explorer_i is not None
-                    and explorer_i not in explorer_match_by_pred
-                ):
-                    conflicts_gt_backed = any(
-                        _bbox_iou_norm1000_xyxy(
-                            anchor_obj.points_norm1000,
-                            accepted_objects_clean[int(gt_anchor_i)].points_norm1000,
-                        )
-                        >= float(unlabeled_consistent_iou_threshold)
-                        for gt_anchor_i in anchor_gt_backed_indices
-                    )
-                    if not conflicts_gt_backed:
-                        shielded_anchor_indices.add(int(anchor_i))
-                        continue
-                dead_anchor_indices.add(int(anchor_i))
-
-            recovered_gt_indices = sorted(
-                int(gt_i) for gt_i in (explorer_gt_indices - anchor_gt_indices)
-            )
-            dead_explorer_indices = sorted(
-                int(explorer_i)
-                for explorer_i in range(len(explorer_accepted_objects_clean))
-                if int(explorer_i) not in explorer_match_by_pred
-            )
+            association_pairs = list(triage.association_pairs)
+            anchor_gt_backed_indices = list(triage.anchor_gt_backed_indices)
+            shielded_anchor_indices = set(triage.shielded_anchor_indices)
+            dead_anchor_indices = set(triage.dead_anchor_indices)
+            recovered_gt_indices = list(triage.recovered_gt_indices)
+            dead_explorer_indices = list(triage.dead_explorer_indices)
 
             triage_anchor_gt_backed_total += int(len(anchor_gt_backed_indices))
             triage_shielded_anchor_total += int(len(shielded_anchor_indices))
@@ -2174,19 +2147,9 @@ class Stage2ABTrainingTrainer(
 
             fn_count_for_meta = 0
 
-            kept_anchor_objects: List[GTObject] = []
-            kept_anchor_new_index_by_old: Dict[int, int] = {}
-            dead_anchor_bursts_by_boundary: Dict[int, List[GTObject]] = {}
-            kept_anchor_count = 0
-            for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
-                if int(anchor_i) in dead_anchor_indices:
-                    dead_anchor_bursts_by_boundary.setdefault(
-                        int(kept_anchor_count), []
-                    ).append(anchor_obj)
-                    continue
-                kept_anchor_new_index_by_old[int(anchor_i)] = int(len(kept_anchor_objects))
-                kept_anchor_objects.append(anchor_obj)
-                kept_anchor_count += 1
+            kept_anchor_objects = list(triage.kept_anchor_objects)
+            kept_anchor_new_index_by_old = dict(triage.kept_anchor_new_index_by_old)
+            dead_anchor_bursts_by_boundary = dict(triage.dead_anchor_bursts_by_boundary)
 
             clean_prefix = _build_canonical_prefix_data(
                 tokenizer=tok,
