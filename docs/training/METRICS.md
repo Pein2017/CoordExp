@@ -86,7 +86,7 @@ Key replacements (non-exhaustive):
 - Old objective suffix keys: `loss/token_ce_obj`, `loss/bbox_geo_obj`, `loss/coord_reg_obj` (removed)
   - Use provenance keys instead:
     - Channel-A:
-      - `loss/A1_text/{struct_ce,desc_ce,stop_signal_ce}`
+      - `loss/A1_text/{struct_ce,desc_ce}`
       - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the anchor forward
       - `loss/A2_text/struct_ce` when `token_ce.application.preset` includes the final self-context struct/EOS stabilizer and `n_softctx_iter > 1`
       - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the module `application.preset` routes Channel-A coord/bbox supervision to the final self-context forward
@@ -122,7 +122,7 @@ ST bridge diagnostics surface:
   `stage2_ab.coord_decode_mode: exp` (soft expectation decode) for geometry output decode.
 - Canonical Stage-2 objective keys (objective atoms; emitted only when effective weight is non-zero) include:
   - Channel-A:
-    - `loss/A1_text/{struct_ce,desc_ce,stop_signal_ce}`
+    - `loss/A1_text/{struct_ce,desc_ce}`
     - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the anchor forward
     - `loss/A2_text/struct_ce` when the effective `token_ce.application.preset` includes the final self-context struct/EOS stabilizer
     - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when the effective `application.preset` routes bbox/coord supervision to the final self-context forward
@@ -160,17 +160,12 @@ Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout) note (Channel-A path):
     - `n_softctx_iter = 1` -> Channel-A bbox/coord atoms emit under `loss/A1_coord/*`
     - `n_softctx_iter > 1` -> the same atoms emit under `loss/A2_coord/*`
 - Canonical objective keys for this split include:
-  - `loss/A1_text/{struct_ce,desc_ce,stop_signal_ce}` (GT anchor forward; token CE objective atoms; `stop_signal_ce` is emitted only when `token_ce.config.stop_signal_damping.enabled=true` and at least one eligible semantic stop branch is present)
+  - `loss/A1_text/{struct_ce,desc_ce}` (GT anchor forward; token CE objective atoms)
   - `loss/A1_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the anchor forward
   - `loss/A2_text/struct_ce` (final self-context forward; optional struct/EOS CE stabilizer)
   - `loss/A2_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` when routing resolves to the final self-context forward
 - Channel-A coord losses are routed by `application.preset`, not by duplicated `a1_*` or `self_context_*` weight families.
   Hard coord-token CE remains controlled by `coord_reg.config.coord_ce_weight`, and distribution losses remain controlled by `coord_reg.config.soft_ce_weight` / `coord_reg.config.w1_weight`.
-- Adaptive stop-signal diagnostics are sparse-emitted under `stop_signal/A1/*`:
-  - `stop_signal/A1/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}`
-  - `eligible_seq_count` / `branch_count` are additive counters.
-  - `weight_mean`, `p_stop_mean`, `p_cont_mean`, and `margin_mean` are mean-like branch diagnostics.
-  - These keys are omitted when stop-signal damping is disabled or no eligible semantic stop branches were observed for the finalized step.
 - Downstream interpretation does not move to a new feature-specific eval namespace.
   Continue judging the experiment through the existing `rollout/*`, `eval/parsing/*`, and `eval/detection/*` families.
 
@@ -741,13 +736,6 @@ Legacy coord-loss note:
 - `bbox_size_aux/loss_per_sample`
   - **What:** packed-run normalized summaries for bbox groups and bbox-size auxiliary loss.
   - **In loss:** NO (diagnostic only).
-
-Stage-1 GT stop-signal reference naming:
-- The canonical GT-text objective atom name is `loss/gt_text/stop_signal_ce`.
-- The canonical GT stop-signal diagnostics are:
-  - `stop_signal/gt/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}`
-- In this change, the executable trainer integration is the shared GT token-ce path plus the Stage-2 Channel-A A1 logging surface.
-  The Stage-1 YAML reference lives at `configs/stage1/research/gt_stop_signal_damping_reference.yaml`.
 
 ## Token Accuracy and Token-Type Metrics
 

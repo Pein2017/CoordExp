@@ -545,12 +545,17 @@ class RolloutMatchingConfig:
                         allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
                             name, set()
                         )
-                        if preset not in allowed_presets:
-                            raise ValueError(
-                                f"{path}[{idx}].application.preset for module {name!r} "
-                                f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
-                            )
+                    if preset not in allowed_presets:
+                        raise ValueError(
+                            f"{path}[{idx}].application.preset for module {name!r} "
+                            f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
+                        )
 
+                    if name == "token_ce" and "stop_signal_damping" in spec.config:
+                        normalize_token_ce_stop_signal_damping_config(
+                            spec.config.get("stop_signal_damping"),
+                            path=f"{path}[{idx}].config.stop_signal_damping",
+                        )
                     allowed_cfg = config_allowlist_by_name.get(name, set())
                     unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)
                     if unknown_cfg:
@@ -564,11 +569,6 @@ class RolloutMatchingConfig:
                         raise ValueError(
                             f"Missing required {path}[{idx}].config keys for module {name!r}: "
                             f"{sorted(str(k) for k in missing_cfg)}"
-                        )
-                    if name == "token_ce":
-                        normalize_token_ce_stop_signal_damping_config(
-                            spec.config.get("stop_signal_damping"),
-                            path=f"{path}[{idx}].config.stop_signal_damping",
                         )
 
             _validate_specs(

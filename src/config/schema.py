@@ -1615,6 +1615,14 @@ class Stage2PipelineConfig:
                     "is not part of the canonical clean-prefix Channel-B contract."
                     % int(idx)
                 )
+            if str(spec.name) == "token_ce" and "stop_signal_damping" in spec.config:
+                normalize_token_ce_stop_signal_damping_config(
+                    spec.config.get("stop_signal_damping"),
+                    path=(
+                        "stage2_ab.pipeline.objective"
+                        f"[{idx}].config.stop_signal_damping"
+                    ),
+                )
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
@@ -1630,25 +1638,6 @@ class Stage2PipelineConfig:
                     "Missing required stage2_ab.pipeline.objective"
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
-                )
-            if str(spec.name) == "token_ce":
-                merged_cfg = dict(spec.config)
-                merged_cfg["stop_signal_damping"] = (
-                    normalize_token_ce_stop_signal_damping_config(
-                        spec.config.get("stop_signal_damping"),
-                        path=(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.stop_signal_damping"
-                        ),
-                    )
-                )
-                objective_specs[idx] = Stage2PipelineModuleSpec(
-                    name=spec.name,
-                    enabled=spec.enabled,
-                    weight=spec.weight,
-                    channels=spec.channels,
-                    application=spec.application,
-                    config=merged_cfg,
                 )
 
         for idx, spec in enumerate(diagnostics_specs):

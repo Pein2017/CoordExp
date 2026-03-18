@@ -292,21 +292,6 @@ Objective pipeline declaration (required, ordered):
 - Pipeline module specs are strict and explicit (no silent defaults):
   - each module spec MUST include `enabled`, `weight`, `channels`, `application`, `config`;
   - each module config MUST include exactly the allowlisted keys (missing/unknown fail fast).
-- `token_ce.config.stop_signal_damping` is an optional nested mapping for the adaptive semantic stop experiment.
-  When authored, it accepts only:
-  - `enabled`
-  - `min_weight`
-  - `max_weight`
-  - `branch_temperature`
-  - `curve_gamma`
-  - `detach_gate`
-  Omitted nested keys resolve to:
-  - `enabled: false`
-  - `min_weight: 0.2`
-  - `max_weight: 1.0`
-  - `branch_temperature: 1.0`
-  - `curve_gamma: 2.0`
-  - `detach_gate: true`
 - `application.preset` is the non-redundant routing surface for Channel-A provenance:
   - `token_ce` uses `anchor_text_plus_final_struct`,
   - `bbox_geo`, `bbox_size_aux`, and `coord_reg` typically use `anchor_if_single_iter_else_final`,
@@ -339,13 +324,6 @@ stage2_ab:
           struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          stop_signal_damping:
-            enabled: false
-            min_weight: 0.3
-            max_weight: 0.75
-            branch_temperature: 1.25
-            curve_gamma: 2.0
-            detach_gate: true
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0
@@ -401,18 +379,6 @@ stage2_ab:
         channels: [A, B]
         config: {}
 ```
-
-Adaptive stop-signal smoke / authored examples:
-- Stage-2 authored example:
-  - `configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml`
-- Requested 1024-pixel smoke:
-  - `configs/stage2_two_channel/smoke/a_only_iter1_res_1024_stop_signal_damping.yaml`
-  - Run with:
-    - `config=configs/stage2_two_channel/smoke/a_only_iter1_res_1024_stop_signal_damping.yaml gpus=0,1 bash scripts/train.sh`
-  - Expected new training keys:
-    - `loss/A1_text/stop_signal_ce`
-    - `stop_signal/A1/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}`
-  - Downstream comparison still uses the existing `rollout/*`, `eval/parsing/*`, and `eval/detection/*` surfaces.
 
 A-only (disable rollouts; keep Channel-A expectation loop + self-context objectives):
 

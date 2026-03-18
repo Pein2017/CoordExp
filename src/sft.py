@@ -43,9 +43,6 @@ from .trainers.metrics.mixins import (
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
 )
-from .trainers.teacher_forcing.module_registry import (
-    TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS,
-)
 from .trainers import with_final_checkpoint
 from .utils import (
     FileLoggingConfig,
@@ -1141,7 +1138,6 @@ def _build_pipeline_manifest(
                     ),
                     "rollout_fn_desc_weight": desc_w,
                     "rollout_matched_prefix_struct_weight": 1.0,
-                    "stop_signal_damping": dict(TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS),
                 }
 
             if name == "loss_dead_anchor_suppression":
@@ -1222,7 +1218,6 @@ def _build_pipeline_manifest(
                 return {
                     "rollout_fn_desc_weight": 1.0,
                     "rollout_matched_prefix_struct_weight": 1.0,
-                    "stop_signal_damping": dict(TOKEN_CE_STOP_SIGNAL_DAMPING_DEFAULTS),
                 }
 
             if name == "bbox_geo":

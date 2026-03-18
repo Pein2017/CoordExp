@@ -28,6 +28,11 @@ def run_token_ce_module(
     coord_id_set = context.coord_id_set
 
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
+    if "stop_signal_damping" in cfg:
+        normalize_token_ce_stop_signal_damping_config(
+            cfg.get("stop_signal_damping"),
+            path="token_ce.config.stop_signal_damping",
+        )
 
     registry_context = str(context.registry_context or "").strip().lower()
 
@@ -56,11 +61,6 @@ def run_token_ce_module(
         0.0,
         _coerce_float(cfg.get("struct_ce_weight", 0.0), 0.0),
     )
-    stop_cfg = normalize_token_ce_stop_signal_damping_config(
-        cfg.get("stop_signal_damping"),
-        path="token_ce.config.stop_signal_damping",
-    )
-    stop_signal_enabled = bool(stop_cfg["enabled"]) and registry_context == "gt"
 
     labels_masked = torch.full_like(input_ids, -100)
     base_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
@@ -84,10 +84,6 @@ def run_token_ce_module(
             return ModuleResult(loss=z, metrics=metrics, state={})
         desc_ce_weight = 0.0
         fn_desc_ce_weight = 0.0
-        stop_signal_enabled = False
-
-    eligible_seq_count = 0
-    stop_branch_specs: list[tuple[int, int, int, int]] = []
 
     for b, seg_start, seg_end, seg in iter_segment_views(input_ids=input_ids, meta=meta):
         prompt_len = int(seg.get("prompt_len", 0) or 0)
@@ -149,42 +145,6 @@ def run_token_ce_module(
                 tail_desc_weight_by_pos[int(rel_i)] = float(weight_i)
         tail_closure = {int(x) for x in tail_closure_pos if int(x) >= 0}
 
-        stop_rel_pos: Optional[int] = None
-        if stop_signal_enabled:
-            stop_rel_raw = seg.get("stop_rel_pos")
-            stop_token_raw = seg.get("stop_token_id")
-            continue_token_raw = seg.get("continue_token_id")
-            if stop_rel_raw is None or stop_token_raw is None or continue_token_raw is None:
-                raise ValueError(
-                    "token_ce stop_signal_damping enabled but segment is missing stop-rel/token metadata"
-                )
-            try:
-                stop_rel_pos = int(stop_rel_raw)
-                stop_token_id = int(stop_token_raw)
-                continue_token_id = int(continue_token_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "token_ce stop_signal_damping metadata must be int-compatible"
-                ) from exc
-            if continue_token_id == stop_token_id:
-                raise ValueError(
-                    "token_ce stop_signal_damping requires distinct stop and continue token ids"
-                )
-            p_stop = int(tail_start + stop_rel_pos)
-            if p_stop < int(tail_start) or p_stop >= int(tail_end):
-                raise ValueError(
-                    f"token_ce stop_signal_damping stop_rel_pos out of range: rel={int(stop_rel_pos)} "
-                    f"tail=[{int(tail_start)},{int(tail_end)})"
-                )
-            if int(input_ids[b, p_stop].item()) != int(stop_token_id):
-                raise ValueError(
-                    "token_ce stop_signal_damping metadata does not match the supervised stop token id"
-                )
-            eligible_seq_count += 1
-            stop_branch_specs.append(
-                (int(b), int(p_stop), int(stop_token_id), int(continue_token_id))
-            )
-
         for p in range(int(tail_start), int(tail_end)):
             tok_id = int(input_ids[b, p].item())
             if tok_id in coord_id_set:
@@ -201,10 +161,6 @@ def run_token_ce_module(
                 w_desc *= float(desc_multiplier)
                 base_weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
-            elif stop_signal_enabled and stop_rel_pos is not None and rel == int(stop_rel_pos):
-                # Semantic stop positions get their own optional bounded CE path and
-                # are excluded from the ordinary structure bucket when enabled.
-                continue
             else:
                 base_weights[b, p] = 1.0
                 struct_weights[b, p] = 1.0
@@ -225,77 +181,7 @@ def run_token_ce_module(
     base_weights_next = base_weights[:, 1:]
     struct_weights_next = struct_weights[:, 1:]
     desc_weights_next = desc_weights[:, 1:]
-    stop_weights_next = torch.zeros_like(base_weights_next)
-
-    stop_signal_ce = logits_ce.new_tensor(0.0)
-    token_ce_stop_signal = logits_ce.new_tensor(0.0)
-    stop_weight_mean = logits_ce.new_tensor(0.0)
-    stop_p_mean = logits_ce.new_tensor(0.0)
-    stop_p_cont_mean = logits_ce.new_tensor(0.0)
-    stop_margin_mean = logits_ce.new_tensor(0.0)
-
-    branch_count = 0
-    if stop_signal_enabled and stop_branch_specs:
-        batch_idx = torch.tensor(
-            [int(item[0]) for item in stop_branch_specs],
-            device=logits_next.device,
-            dtype=torch.long,
-        )
-        stop_pos = torch.tensor(
-            [int(item[1]) for item in stop_branch_specs],
-            device=logits_next.device,
-            dtype=torch.long,
-        )
-        stop_row_idx = stop_pos - 1
-        if bool((stop_row_idx < 0).any().item()):
-            raise ValueError("token_ce stop_signal_damping produced a pre-shift stop row")
-
-        stop_token_ids = torch.tensor(
-            [int(item[2]) for item in stop_branch_specs],
-            device=logits_next.device,
-            dtype=torch.long,
-        )
-        continue_token_ids = torch.tensor(
-            [int(item[3]) for item in stop_branch_specs],
-            device=logits_next.device,
-            dtype=torch.long,
-        )
-
-        stop_labels = labels_next[batch_idx, stop_row_idx]
-        if not bool(torch.equal(stop_labels, stop_token_ids)):
-            raise ValueError(
-                "token_ce stop_signal_damping metadata/labels mismatch at stop rows"
-            )
-
-        branch_logits = logits_next[batch_idx, stop_row_idx, :]
-        stop_logits = branch_logits.gather(1, stop_token_ids.view(-1, 1)).squeeze(1)
-        continue_logits = branch_logits.gather(
-            1, continue_token_ids.view(-1, 1)
-        ).squeeze(1)
-
-        branch_temperature = float(stop_cfg["branch_temperature"])
-        margin = (stop_logits - continue_logits) / float(branch_temperature)
-        p_stop = torch.sigmoid(margin)
-        p_cont = 1.0 - p_stop
-
-        gate_input = p_stop.detach() if bool(stop_cfg["detach_gate"]) else p_stop
-        min_weight = float(stop_cfg["min_weight"])
-        max_weight = float(stop_cfg["max_weight"])
-        curve_gamma = float(stop_cfg["curve_gamma"])
-        stop_weights_eff = float(min_weight) + (
-            float(max_weight) - float(min_weight)
-        ) * gate_input.pow(float(curve_gamma))
-
-        stop_weights_next[batch_idx, stop_row_idx] = stop_weights_eff.to(
-            dtype=stop_weights_next.dtype
-        )
-        branch_count = int(stop_weights_eff.numel())
-        stop_weight_mean = stop_weights_eff.mean()
-        stop_p_mean = p_stop.mean()
-        stop_p_cont_mean = p_cont.mean()
-        stop_margin_mean = margin.mean()
-
-    total_weights_next = base_weights_next + stop_weights_next
+    total_weights_next = base_weights_next
 
     # Keep CE memory bounded by chunking flattened rows. This avoids materializing
     # a full [bsz*(seq-1)] per-token CE tensor for long packed sequences.
@@ -304,7 +190,6 @@ def run_token_ce_module(
     flat_total_weights = total_weights_next.reshape(-1)
     flat_struct_weights = struct_weights_next.reshape(-1)
     flat_desc_weights = desc_weights_next.reshape(-1)
-    flat_stop_weights = stop_weights_next.reshape(-1)
 
     # A small constant chunk keeps peak memory stable while preserving exact math.
     rows_per_chunk = 4096
@@ -313,7 +198,6 @@ def run_token_ce_module(
     ce_num_total: Optional[torch.Tensor] = None
     ce_num_struct: Optional[torch.Tensor] = None
     ce_num_desc: Optional[torch.Tensor] = None
-    ce_num_stop: Optional[torch.Tensor] = None
     for start in range(0, n_rows, rows_per_chunk):
         end = min(start + rows_per_chunk, n_rows)
         ce_chunk = F.cross_entropy(
@@ -327,29 +211,19 @@ def run_token_ce_module(
             ce_num_total = z
             ce_num_struct = z
             ce_num_desc = z
-            ce_num_stop = z
 
         w_total_chunk = flat_total_weights[start:end].to(dtype=ce_chunk.dtype)
         w_struct_chunk = flat_struct_weights[start:end].to(dtype=ce_chunk.dtype)
         w_desc_chunk = flat_desc_weights[start:end].to(dtype=ce_chunk.dtype)
-        w_stop_chunk = flat_stop_weights[start:end].to(dtype=ce_chunk.dtype)
 
         ce_num_total = ce_num_total + (ce_chunk * w_total_chunk).sum()
         ce_num_struct = ce_num_struct + (ce_chunk * w_struct_chunk).sum()
         ce_num_desc = ce_num_desc + (ce_chunk * w_desc_chunk).sum()
-        ce_num_stop = ce_num_stop + (ce_chunk * w_stop_chunk).sum()
-
-    if (
-        ce_num_total is None
-        or ce_num_struct is None
-        or ce_num_desc is None
-        or ce_num_stop is None
-    ):
+    if ce_num_total is None or ce_num_struct is None or ce_num_desc is None:
         z = logits_ce.new_tensor(0.0)
         ce_num_total = z
         ce_num_struct = z
         ce_num_desc = z
-        ce_num_stop = z
 
     def _weighted_mean(num: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         denom = w.sum().to(dtype=num.dtype)
@@ -359,29 +233,19 @@ def run_token_ce_module(
 
     struct_ce = _weighted_mean(ce_num_struct, flat_struct_weights)
     desc_ce = _weighted_mean(ce_num_desc, flat_desc_weights)
-    if branch_count > 0:
-        stop_signal_ce = _weighted_mean(ce_num_stop, flat_stop_weights)
 
-    # Decompose the token_ce objective into atomic contributions by token type.
-    #
-    # token_ce is a single weighted mean over (struct + desc + optional stop-signal)
-    # supervised positions:
-    #   token_ce = sum(per_tok * (w_struct + w_desc + w_stop)) / sum(...)
-    #
-    # We expose the corresponding per-type contributions using the *same* global
-    # denominator, so the parts sum exactly to token_ce.
+    # Decompose the token_ce objective into atomic contributions by token type
+    # using the same global denominator so the parts sum exactly to token_ce.
     denom_total = flat_total_weights.sum()
     if float(denom_total.detach().cpu().item()) > 0.0:
         denom_safe = denom_total.to(dtype=ce_num_total.dtype).clamp(min=1e-6)
         token_ce_struct = ce_num_struct / denom_safe
         token_ce_desc = ce_num_desc / denom_safe
-        token_ce_stop_signal = ce_num_stop / denom_safe
     else:
         token_ce_struct = ce_num_total.new_tensor(0.0)
         token_ce_desc = ce_num_total.new_tensor(0.0)
-        token_ce_stop_signal = ce_num_total.new_tensor(0.0)
 
-    token_ce = token_ce_struct + token_ce_desc + token_ce_stop_signal
+    token_ce = token_ce_struct + token_ce_desc
 
     token_masks = build_token_type_masks(
         input_ids=input_ids,
@@ -394,13 +258,11 @@ def run_token_ce_module(
 
     token_ce_struct_contrib = token_ce_struct
     token_ce_desc_contrib = token_ce_desc
-    token_ce_stop_signal_contrib = token_ce_stop_signal
     if registry_context == "self_context" and channel != "B":
         scale = float(struct_ce_weight)
         loss = loss * scale
         token_ce_struct_contrib = token_ce_struct_contrib * scale
         token_ce_desc_contrib = token_ce_desc_contrib * scale
-        token_ce_stop_signal_contrib = token_ce_stop_signal_contrib * scale
 
     metrics = {
         "loss/token_ce": float(token_ce.detach().cpu().item()),
@@ -409,28 +271,6 @@ def run_token_ce_module(
         "loss/token_ce_struct": float(token_ce_struct.detach().cpu().item()),
         "loss/token_ce_desc": float(token_ce_desc.detach().cpu().item()),
     }
-    if branch_count > 0:
-        metrics.update(
-            {
-                "loss/stop_signal_ce": float(stop_signal_ce.detach().cpu().item()),
-                "loss/token_ce_stop_signal": float(
-                    token_ce_stop_signal.detach().cpu().item()
-                ),
-                "stop_signal/eligible_seq_count": float(eligible_seq_count),
-                "stop_signal/branch_count": float(branch_count),
-                "stop_signal/weight_mean": float(stop_weight_mean.detach().cpu().item()),
-                "stop_signal/p_stop_mean": float(stop_p_mean.detach().cpu().item()),
-                "stop_signal/p_cont_mean": float(
-                    stop_p_cont_mean.detach().cpu().item()
-                ),
-                "stop_signal/margin_mean": float(
-                    stop_margin_mean.detach().cpu().item()
-                ),
-            }
-        )
-
-    stop_weights_masked = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
-    stop_weights_masked[:, 1:] = stop_weights_next
 
     state = {
         "token_ce": loss,
@@ -439,15 +279,8 @@ def run_token_ce_module(
         "token_ce_struct_contrib": token_ce_struct_contrib,
         "token_ce_desc_contrib": token_ce_desc_contrib,
         "labels_masked": labels_masked,
-        "weights_masked": base_weights + stop_weights_masked,
+        "weights_masked": base_weights,
         "token_type_masks": token_masks,
     }
-    if branch_count > 0:
-        state.update(
-            {
-                "stop_signal_ce": stop_signal_ce,
-                "token_ce_stop_signal_contrib": token_ce_stop_signal_contrib,
-            }
-        )
 
     return ModuleResult(loss=loss, metrics=metrics, state=state)

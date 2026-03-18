@@ -7,7 +7,7 @@ model:
   
 training:
   seed: 17
-  run_name: epoch-1-iter_1-eff_bs_128
+  run_name: epoch-1-iter_1-eff_bs_128-random_order
   output_dir: output/a_only/random_order
   logging_dir: tb/a_only/random_order
   num_train_epochs: 1
@@ -38,13 +38,6 @@ stage2_ab:
           struct_ce_weight: 1.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
-          stop_signal_damping:
-            enabled: false
-            min_weight: 0.3
-            max_weight: 0.75
-            branch_temperature: 1.25
-            curve_gamma: 2.0
-            detach_gate: true
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0

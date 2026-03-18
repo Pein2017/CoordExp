@@ -471,7 +471,6 @@ def _make_stage2_pipeline_manifest(
     self_context_struct_ce_weight: float = 0.1,
     rollout_fn_desc_weight: float | None = None,
     rollout_matched_prefix_struct_weight: float = 1.0,
-    stop_signal_damping_cfg: dict | None = None,
     bbox_geo_enabled: bool = True,
     bbox_geo_weight: float = 1.0,
     bbox_smoothl1_weight: float = 1.0,
@@ -498,8 +497,6 @@ def _make_stage2_pipeline_manifest(
     }
     if rollout_fn_desc_weight is not None:
         token_cfg["rollout_fn_desc_weight"] = float(rollout_fn_desc_weight)
-    if stop_signal_damping_cfg is not None:
-        token_cfg["stop_signal_damping"] = dict(stop_signal_damping_cfg)
 
     return {
         "objective": [
@@ -4509,9 +4506,9 @@ def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom()
     assert pending["train/optimization/loss_dead_anchor_suppression"] > 0.0
 
 
-def test_stage2_channel_a_stop_signal_logs_weighted_objective_atom_and_diagnostics() -> None:
+def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> None:
     t = _make_min_trainer(n_softctx_iter=1)
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+    manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=True,
         token_ce_weight=2.0,
         dead_anchor_suppression_enabled=False,
@@ -4522,15 +4519,9 @@ def test_stage2_channel_a_stop_signal_logs_weighted_objective_atom_and_diagnosti
         bbox_size_aux_weight=0.0,
         coord_reg_enabled=False,
         coord_reg_weight=0.0,
-        stop_signal_damping_cfg={
-            "enabled": True,
-            "min_weight": 0.5,
-            "max_weight": 0.5,
-            "branch_temperature": 1.0,
-            "curve_gamma": 1.0,
-            "detach_gate": True,
-        },
     )
+    manifest["objective"][0]["config"]["stop_signal_damping"] = {"enabled": True}
+    t.stage2_pipeline_manifest = manifest
     model = _DummyCallIndexedTokenModel(pred_ids=[1107], vocab=1200)
     input_ids = torch.tensor([[10, 1002, 1107, 1003, 1004]], dtype=torch.long)
     meta = [
@@ -4554,22 +4545,18 @@ def test_stage2_channel_a_stop_signal_logs_weighted_objective_atom_and_diagnosti
         }
     ]
 
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss.detach().cpu().item()) > 0.0
-    pending = t._stage2_pending_train_logs[1].finalize()
-    assert "loss/A1_text/stop_signal_ce" in pending
-    assert pending["loss/A1_text/stop_signal_ce"] == pytest.approx(0.0)
-    assert pending["stop_signal/A1/eligible_seq_count"] == pytest.approx(1.0)
-    assert pending["stop_signal/A1/branch_count"] == pytest.approx(1.0)
-    assert pending["stop_signal/A1/weight_mean"] == pytest.approx(0.5)
+    with pytest.raises(
+        ValueError,
+        match=r"token_ce\.config\.stop_signal_damping is deprecated and unsupported",
+    ):
+        t.compute_loss(
+            model,
+            {
+                "_stage2_ab_channel": "A",
+                "_rollout_matching_meta": meta,
+                "input_ids": input_ids,
+            },
+        )
 
 
 def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> None:

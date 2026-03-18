@@ -86,12 +86,6 @@ class _PendingStage2Log:
         "_num",
         "_den",
     )
-    _STOP_SIGNAL_COUNTER_KEYS: ClassVar[set[str]] = {
-        "stop_signal/A1/eligible_seq_count",
-        "stop_signal/A1/branch_count",
-        "stop_signal/gt/eligible_seq_count",
-        "stop_signal/gt/branch_count",
-    }
 
     @staticmethod
     def _is_counter_like_key(key: str) -> bool:
@@ -115,8 +109,6 @@ class _PendingStage2Log:
             return True
         if key.startswith("stage2_ab/") and "/N_" in key:
             return True
-        if key in _PendingStage2Log._STOP_SIGNAL_COUNTER_KEYS:
-            return True
 
         return key.endswith(_PendingStage2Log._COUNTER_SUFFIXES)
 
@@ -129,7 +121,6 @@ class _PendingStage2Log:
             or key.startswith("stage2/channel_")
             or key.startswith("rollout/")
             or key.startswith("coord_diag/")
-            or key.startswith("stop_signal/")
             or key == "stage2_ab/b_ratio_realized"
             or (key.startswith("stage2_ab/") and "/is_" in key)
         )
@@ -261,7 +252,6 @@ def _stage2_snapshot_key(metric_key: str) -> str | None:
     if (
         key.startswith(("loss/A1_", "loss/A2_"))
         or key.startswith(("coord_diag/A1/", "coord_diag/A2/"))
-        or key.startswith("stop_signal/A1/")
         or key.startswith("time/channel_a_")
         or key == "stage2/channel_a"
     ):
@@ -4288,20 +4278,6 @@ class Stage2ABTrainingTrainer(
                     token_desc = float(
                         pipeline_metrics_gt.get("loss/token_ce_desc", 0.0) or 0.0
                     )
-                    token_stop_signal = float(
-                        pipeline_metrics_gt.get("loss/token_ce_stop_signal", 0.0) or 0.0
-                    )
-                    has_stop_signal = any(
-                        f"stop_signal/{suffix}" in pipeline_metrics_gt
-                        for suffix in (
-                            "eligible_seq_count",
-                            "branch_count",
-                            "weight_mean",
-                            "p_stop_mean",
-                            "p_cont_mean",
-                            "margin_mean",
-                        )
-                    ) or ("loss/token_ce_stop_signal" in pipeline_metrics_gt)
 
                     stage2_logs["loss/A1_text/struct_ce"] = float(
                         float(token_ce_module_w) * float(token_struct)
@@ -4310,24 +4286,6 @@ class Stage2ABTrainingTrainer(
                         stage2_logs["loss/A1_text/desc_ce"] = float(
                             float(token_ce_module_w) * float(token_desc)
                         )
-                    if has_stop_signal:
-                        stage2_logs["loss/A1_text/stop_signal_ce"] = float(
-                            float(token_ce_module_w) * float(token_stop_signal)
-                        )
-                        for suffix in (
-                            "eligible_seq_count",
-                            "branch_count",
-                            "weight_mean",
-                            "p_stop_mean",
-                            "p_cont_mean",
-                            "margin_mean",
-                        ):
-                            raw_key = f"stop_signal/{suffix}"
-                            if raw_key not in pipeline_metrics_gt:
-                                continue
-                            stage2_logs[f"stop_signal/A1/{suffix}"] = float(
-                                pipeline_metrics_gt[raw_key]
-                            )
 
                     fmt_weight = (
                         float(self_context_struct_ce_weight)
