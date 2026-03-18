@@ -37,6 +37,10 @@ from ..common.geometry.coord_utils import decode_coord
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
 from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
+from .stage2_two_channel.objective_runner import (
+    run_channel_a_a1_coord_diagnostics,
+    run_stage2_objective_pipelines,
+)
 from .stage2_two_channel.target_builder import (
     _build_channel_b_meta_entry,
     _build_channel_b_triage,
@@ -55,7 +59,6 @@ from .stage2_two_channel.types import (
     Stage2PreparedSegment,
     Stage2RolloutMeta,
 )
-from .teacher_forcing.contracts import TeacherForcingContext, PipelineModuleSpec
 from .teacher_forcing.forwards import (
     assert_unsliced_logits,
     prepare_forward_inputs,
@@ -65,7 +68,6 @@ from .teacher_forcing.geometry import (
     bbox_smoothl1_ciou_loss as _tf_bbox_smoothl1_ciou_loss,
     expectation_decode_coords as _tf_expectation_decode_coords,
 )
-from .teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
 from .teacher_forcing.rollout_masks import build_rollout_subset_masks
 from .teacher_forcing.rollout_meta import (
     bbox_groups_from_token_ids as _tf_bbox_groups_from_token_ids,
@@ -3345,163 +3347,44 @@ class Stage2ABTrainingTrainer(
             coord_id_set=coord_id_set,
         )
 
-        tf_context = TeacherForcingContext(
-            channel=str(channel),
-            registry_context=("self_context" if channel == "A" else "rollout"),
-            input_ids=input_ids,
-            logits=logits,
-            logits_ce=logits,
-            meta=meta,
-            coord_token_ids=coord_token_ids,
-            temperature=float(temperature),
-            decode_mode=str(coord_decode_mode),
-            token_type_masks=token_type_masks,
-            rollout_subset_masks=rollout_subset_masks,
-            extra={},
-        )
-
         warn_once = getattr(self, "_tf_diag_warn_once", None)
         if not isinstance(warn_once, set):
             warn_once = set()
             setattr(self, "_tf_diag_warn_once", warn_once)
-
-        def _spec_name(spec: Mapping[str, Any]) -> str:
-            return str(spec.get("name", "") or "").strip()
-
-        def _filter_channel_a_gt_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            if not run_a1_text:
-                return []
-            return [
-                spec
-                for spec in list(specs or [])
-                if isinstance(spec, Mapping) and _spec_name(spec) == "token_ce"
-            ]
-
-        def _filter_channel_a_ctx_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            out: list[Mapping[str, Any]] = []
-            for spec in list(specs or []):
-                if not isinstance(spec, Mapping):
-                    continue
-                name = _spec_name(spec)
-                if name == "token_ce":
-                    if run_a2_text:
-                        out.append(spec)
-                    continue
-                if name == "bbox_geo" and run_a2_bbox_geo:
-                    out.append(spec)
-                    continue
-                if name == "bbox_size_aux" and run_a2_bbox_size_aux:
-                    out.append(spec)
-                    continue
-                if name == "coord_reg" and run_a2_coord_reg:
-                    out.append(spec)
-                    continue
-                if name == "loss_dead_anchor_suppression":
-                    out.append(spec)
-            return out
-
-        def _filter_channel_a_a1_coord_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            out: list[Mapping[str, Any]] = []
-            for spec in list(specs or []):
-                if not isinstance(spec, Mapping):
-                    continue
-                name = _spec_name(spec)
-                if name == "bbox_geo" and run_a1_bbox_geo:
-                    out.append(spec)
-                    continue
-                if name == "bbox_size_aux" and run_a1_bbox_size_aux:
-                    out.append(spec)
-                    continue
-                if name == "coord_reg" and run_a1_coord_reg:
-                    out.append(spec)
-            return out
-
-        objective_specs_ctx = (
-            _filter_channel_a_ctx_specs(objective_specs)
-            if channel == "A"
-            else list(objective_specs or [])
-        )
-
-        pipeline_ctx_result = run_teacher_forcing_pipeline(
-            context=tf_context,
-            objective_specs=objective_specs_ctx,
-            diagnostics_specs=diagnostic_specs,
-            initial_state=None,
+        objective_run = run_stage2_objective_pipelines(
+            channel=str(channel),
+            objective_specs=list(objective_specs or []),
+            diagnostic_specs=list(diagnostic_specs or []),
+            input_ids=input_ids,
+            logits=logits,
+            logits_ce=logits_ce,
+            meta=meta,
+            coord_token_ids=coord_token_ids,
+            temperature=float(temperature),
+            coord_decode_mode=str(coord_decode_mode),
+            token_type_masks=token_type_masks,
+            rollout_subset_masks=rollout_subset_masks,
+            run_a1_text=run_a1_text,
+            run_a1_bbox_geo=run_a1_bbox_geo,
+            run_a1_bbox_size_aux=run_a1_bbox_size_aux,
+            run_a1_coord_reg=run_a1_coord_reg,
+            run_a2_text=run_a2_text,
+            run_a2_bbox_geo=run_a2_bbox_geo,
+            run_a2_bbox_size_aux=run_a2_bbox_size_aux,
+            run_a2_coord_reg=run_a2_coord_reg,
             warn_once_cache=warn_once,
         )
-        pipeline_metrics_ctx = dict(pipeline_ctx_result.metrics)
-        pipeline_ctx_total_loss = pipeline_ctx_result.total_loss
-
-        pipeline_metrics_gt: Dict[str, float] = {}
-        a1_bbox_state: Optional[Mapping[str, Any]] = None
-        a1_coord_state: Optional[Mapping[str, Any]] = None
-        pipeline_metrics_a1: Dict[str, float] = {}
-        pipeline_a1_total_loss = logits_ce.new_tensor(0.0)
-        pipeline_gt_total_loss = logits_ce.new_tensor(0.0)
-        if channel == "A":
-            objective_specs_gt = _filter_channel_a_gt_specs(objective_specs)
-            token_ctx_gt = TeacherForcingContext(
-                channel="A",
-                registry_context="gt",
-                input_ids=input_ids,
-                logits=logits_ce,
-                logits_ce=logits_ce,
-                meta=meta,
-                coord_token_ids=coord_token_ids,
-                temperature=float(temperature),
-                decode_mode=str(coord_decode_mode),
-                extra={},
-            )
-            if objective_specs_gt:
-                pipeline_gt = run_teacher_forcing_pipeline(
-                    context=token_ctx_gt,
-                    objective_specs=objective_specs_gt,
-                    diagnostics_specs=diagnostic_specs,
-                    initial_state=None,
-                    warn_once_cache=warn_once,
-                )
-                pipeline_metrics_gt = dict(pipeline_gt.metrics)
-                pipeline_gt_total_loss = pipeline_gt.total_loss
-                del pipeline_gt
-
-            objective_specs_a1 = _filter_channel_a_a1_coord_specs(objective_specs)
-            if objective_specs_a1:
-                ctx_a1_obj = TeacherForcingContext(
-                    channel="A",
-                    registry_context="a1",
-                    input_ids=input_ids,
-                    logits=logits_ce,
-                    logits_ce=logits_ce,
-                    meta=meta,
-                    coord_token_ids=coord_token_ids,
-                    temperature=float(temperature),
-                    decode_mode=str(coord_decode_mode),
-                    token_type_masks=token_type_masks,
-                    rollout_subset_masks=rollout_subset_masks,
-                    extra={},
-                )
-                pipeline_a1 = run_teacher_forcing_pipeline(
-                    context=ctx_a1_obj,
-                    objective_specs=objective_specs_a1,
-                    diagnostics_specs=[],
-                    initial_state=None,
-                    warn_once_cache=warn_once,
-                )
-                pipeline_metrics_a1 = dict(pipeline_a1.metrics)
-                pipeline_a1_total_loss = pipeline_a1.total_loss
-                a1_bbox_state = dict(pipeline_a1.state or {})
-                a1_coord_state = dict(pipeline_a1.state or {})
-                del pipeline_a1
-
-            total = pipeline_gt_total_loss + pipeline_ctx_total_loss + pipeline_a1_total_loss
-        else:
-            total = pipeline_ctx_total_loss
+        objective_specs_ctx = list(objective_run.objective_specs_ctx)
+        pipeline_ctx_result = objective_run.pipeline_ctx_result
+        pipeline_metrics_ctx = dict(objective_run.pipeline_metrics_ctx)
+        pipeline_ctx_total_loss = objective_run.pipeline_ctx_total_loss
+        pipeline_metrics_gt = dict(objective_run.pipeline_metrics_gt)
+        a1_bbox_state = objective_run.a1_bbox_state
+        a1_coord_state = objective_run.a1_coord_state
+        pipeline_metrics_a1 = dict(objective_run.pipeline_metrics_a1)
+        pipeline_a1_total_loss = objective_run.pipeline_a1_total_loss
+        pipeline_gt_total_loss = objective_run.pipeline_gt_total_loss
+        total = objective_run.total_loss
 
         from src.metrics.reporter import best_effort_value
 
@@ -3809,50 +3692,20 @@ class Stage2ABTrainingTrainer(
                     # A1: diagnostics from the GT-anchor logits (it==0).
                     try:
                         with torch.no_grad():
-                            from .teacher_forcing.modules import (
-                                run_bbox_geo_module,
-                                run_coord_diag_module,
+                            _emit_coord_diag(
+                                "A1",
+                                run_channel_a_a1_coord_diagnostics(
+                                    input_ids=input_ids,
+                                    logits_ce=logits_ce,
+                                    meta=meta,
+                                    coord_token_ids=coord_token_ids,
+                                    temperature=float(temperature),
+                                    coord_decode_mode=str(coord_decode_mode),
+                                    token_type_masks=token_type_masks,
+                                    rollout_subset_masks=rollout_subset_masks,
+                                    bbox_cfg=bbox_cfg,
+                                ),
                             )
-
-                            ctx_a1 = TeacherForcingContext(
-                                channel="A",
-                                registry_context="self_context",
-                                input_ids=input_ids,
-                                logits=logits_ce,
-                                logits_ce=logits_ce,
-                                meta=meta,
-                                coord_token_ids=coord_token_ids,
-                                temperature=float(temperature),
-                                decode_mode=str(coord_decode_mode),
-                                token_type_masks=token_type_masks,
-                                rollout_subset_masks=rollout_subset_masks,
-                                extra={},
-                            )
-                            bbox_spec = PipelineModuleSpec(
-                                name="bbox_geo",
-                                enabled=True,
-                                weight=0.0,
-                                channels=("A",),
-                                config=dict(bbox_cfg),
-                            )
-                            diag_spec = PipelineModuleSpec(
-                                name="coord_diag",
-                                enabled=True,
-                                weight=0.0,
-                                channels=("A",),
-                                config={},
-                            )
-
-                            bbox_out = run_bbox_geo_module(
-                                context=ctx_a1,
-                                spec=bbox_spec,
-                            )
-                            diag_out = run_coord_diag_module(
-                                context=ctx_a1,
-                                spec=diag_spec,
-                                state=bbox_out.state,
-                            )
-                            _emit_coord_diag("A1", diag_out.metrics)
                     except Exception:
                         key = "coord_diag/A1_failed"
                         if isinstance(warn_once, set) and key not in warn_once:
