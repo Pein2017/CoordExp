@@ -38,6 +38,7 @@ from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
 from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
 from .stage2_two_channel.objective_runner import (
+    build_stage2_core_loss_logs,
     run_channel_a_a1_coord_diagnostics,
     run_stage2_objective_pipelines,
 )
@@ -3420,250 +3421,42 @@ class Stage2ABTrainingTrainer(
                 pending2 = _PendingStage2Log()
                 self._stage2_pending_train_logs[target_step] = pending2
             # Counters should be summed across micro-batches; objective/monitor scalars averaged.
-            stage2_logs: Dict[str, float] = {}
-
-            if channel == "A":
-                if float(token_ce_module_w) != 0.0 and run_a1_text:
-                    token_struct = float(
-                        pipeline_metrics_gt.get("loss/token_ce_struct", 0.0) or 0.0
-                    )
-                    token_desc = float(
-                        pipeline_metrics_gt.get("loss/token_ce_desc", 0.0) or 0.0
-                    )
-
-                    stage2_logs["loss/A1_text/struct_ce"] = float(
-                        float(token_ce_module_w) * float(token_struct)
-                    )
-                    if float(token_desc_ce_weight) != 0.0:
-                        stage2_logs["loss/A1_text/desc_ce"] = float(
-                            float(token_ce_module_w) * float(token_desc)
-                        )
-
-                    fmt_weight = (
-                        float(self_context_struct_ce_weight)
-                        if int(n_softctx_iter) > 1 and run_a2_text
-                        else 0.0
-                    )
-                    if float(fmt_weight) != 0.0:
-                        token_self_struct = float(
-                            pipeline_metrics_ctx.get("loss/token_ce_struct", 0.0) or 0.0
-                        )
-                        stage2_logs["loss/A2_text/struct_ce"] = float(
-                            float(token_ce_module_w)
-                            * float(fmt_weight)
-                            * float(token_self_struct)
-                        )
-
-                if pipeline_metrics_a1:
-                    if float(bbox_geo_module_w) != 0.0 and run_a1_bbox_geo:
-                        smoothl1_a1 = float(
-                            pipeline_metrics_a1.get("loss/bbox_smoothl1", 0.0) or 0.0
-                        )
-                        ciou_a1 = float(
-                            pipeline_metrics_a1.get("loss/bbox_ciou", 0.0) or 0.0
-                        )
-                        if float(bbox_smoothl1_w) != 0.0:
-                            stage2_logs["loss/A1_coord/bbox_smoothl1"] = float(
-                                float(bbox_geo_module_w)
-                                * float(bbox_smoothl1_w)
-                                * float(smoothl1_a1)
-                            )
-                        if float(bbox_ciou_w) != 0.0:
-                            stage2_logs["loss/A1_coord/bbox_ciou"] = float(
-                                float(bbox_geo_module_w)
-                                * float(bbox_ciou_w)
-                                * float(ciou_a1)
-                            )
-
-                    if float(bbox_size_aux_module_w) != 0.0 and run_a1_bbox_size_aux:
-                        def _emit_a1_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                            if float(weight) == 0.0:
-                                return
-                            value = float(pipeline_metrics_a1.get(raw_key, 0.0) or 0.0)
-                            stage2_logs[f"loss/A1_coord/{term}"] = float(
-                                float(bbox_size_aux_module_w)
-                                * float(weight)
-                                * float(value)
-                            )
-
-                        _emit_a1_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                        _emit_a1_bbox_size(
-                            "bbox_oversize", bbox_oversize_w, "loss/bbox_oversize"
-                        )
-
-                    if float(coord_reg_module_w) != 0.0 and run_a1_coord_reg:
-                        def _emit_a1(term: str, weight: float, raw_key: str) -> None:
-                            if float(weight) == 0.0:
-                                return
-                            value = float(pipeline_metrics_a1.get(raw_key, 0.0) or 0.0)
-                            stage2_logs[f"loss/A1_coord/{term}"] = float(
-                                float(coord_reg_module_w) * float(weight) * float(value)
-                            )
-
-                        _emit_a1("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-                        _emit_a1("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-                        _emit_a1("coord_w1", coord_w1_w, "loss/coord_w1")
-                        _emit_a1("coord_el1", coord_el1_w, "loss/coord_el1")
-                        _emit_a1("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
-                        _emit_a1("coord_entropy", coord_entropy_w, "loss/coord_entropy")
-                        _emit_a1("coord_gate", coord_gate_w, "loss/coord_gate")
-                        _emit_a1("text_gate", text_gate_w, "loss/text_gate")
-
-                    stage2_logs["loss/A1_coord/total"] = float(
-                        pipeline_a1_total_loss.detach().cpu().item()
-                    )
-
-                if float(bbox_geo_module_w) != 0.0 and run_a2_bbox_geo:
-                    smoothl1 = float(
-                        pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
-                    )
-                    ciou = float(
-                        pipeline_metrics_ctx.get("loss/bbox_ciou", 0.0) or 0.0
-                    )
-                    if float(bbox_smoothl1_w) != 0.0:
-                        stage2_logs["loss/A2_coord/bbox_smoothl1"] = float(
-                            float(bbox_geo_module_w)
-                            * float(bbox_smoothl1_w)
-                            * float(smoothl1)
-                        )
-                    if float(bbox_ciou_w) != 0.0:
-                        stage2_logs["loss/A2_coord/bbox_ciou"] = float(
-                            float(bbox_geo_module_w)
-                            * float(bbox_ciou_w)
-                            * float(ciou)
-                        )
-
-                if float(bbox_size_aux_module_w) != 0.0 and run_a2_bbox_size_aux:
-                    def _emit_a2_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                        if float(weight) == 0.0:
-                            return
-                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/A2_coord/{term}"] = float(
-                            float(bbox_size_aux_module_w) * float(weight) * float(value)
-                        )
-
-                    _emit_a2_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                    _emit_a2_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
-
-                if float(coord_reg_module_w) != 0.0 and run_a2_coord_reg:
-                    def _emit_a2(term: str, weight: float, raw_key: str) -> None:
-                        if float(weight) == 0.0:
-                            return
-                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/A2_coord/{term}"] = float(
-                            float(coord_reg_module_w) * float(weight) * float(value)
-                        )
-
-                    _emit_a2("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-                    _emit_a2("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-                    _emit_a2("coord_w1", coord_w1_w, "loss/coord_w1")
-                    _emit_a2("coord_el1", coord_el1_w, "loss/coord_el1")
-                    _emit_a2("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
-                    _emit_a2("coord_entropy", coord_entropy_w, "loss/coord_entropy")
-                    _emit_a2("coord_gate", coord_gate_w, "loss/coord_gate")
-                    _emit_a2("text_gate", text_gate_w, "loss/text_gate")
-            else:
-                if float(token_ce_module_w) != 0.0:
-                    token_struct = float(
-                        pipeline_metrics_ctx.get("loss/token_ce_struct", 0.0) or 0.0
-                    )
-                    token_desc = float(
-                        pipeline_metrics_ctx.get("loss/token_ce_desc", 0.0) or 0.0
-                    )
-
-                    stage2_logs["loss/B_rollout_text/struct_ce"] = float(
-                        float(token_ce_module_w) * float(token_struct)
-                    )
-                    if float(fn_desc_ce_weight) != 0.0:
-                        stage2_logs["loss/B_rollout_text/desc_ce"] = float(
-                            float(token_ce_module_w) * float(token_desc)
-                        )
-
-                if float(dead_anchor_suppression_module_w) != 0.0:
-                    dead_anchor_loss = float(
-                        pipeline_metrics_ctx.get(
-                            "train/optimization/loss_dead_anchor_suppression", 0.0
-                        )
-                        or 0.0
-                    )
-                    dead_anchor_num_terms = float(
-                        pipeline_metrics_ctx.get(
-                            "train/triage/dead_anchor_suppression_target_count", 0.0
-                        )
-                        or 0.0
-                    )
-                    dead_anchor_num_boundaries = float(
-                        pipeline_metrics_ctx.get(
-                            "train/triage/dead_anchor_suppression_boundary_count", 0.0
-                        )
-                        or 0.0
-                    )
-                    stage2_logs["train/optimization/loss_dead_anchor_suppression"] = float(
-                        dead_anchor_loss
-                    )
-                    # Compatibility alias so dead-anchor UL is visible beside the
-                    # other Channel-B text losses under loss/B_rollout_text/*.
-                    stage2_logs["loss/B_rollout_text/dead_anchor_suppression"] = float(
-                        dead_anchor_loss
-                    )
-                    # Counts explain whether low UL is "healthy" or simply "few terms."
-                    stage2_logs["diag/dead_anchor/num_terms"] = float(
-                        dead_anchor_num_terms
-                    )
-                    stage2_logs["diag/dead_anchor/num_ul_boundaries"] = float(
-                        dead_anchor_num_boundaries
-                    )
-                    stage2_logs["diag/dead_anchor/loss_per_term"] = float(
-                        dead_anchor_loss if dead_anchor_num_terms > 0.0 else 0.0
-                    )
-
-                if float(bbox_geo_module_w) != 0.0:
-                    smoothl1 = float(
-                        pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
-                    )
-                    ciou = float(
-                        pipeline_metrics_ctx.get("loss/bbox_ciou", 0.0) or 0.0
-                    )
-                    if float(bbox_smoothl1_w) != 0.0:
-                        stage2_logs["loss/B_coord/bbox_smoothl1"] = float(
-                            float(bbox_geo_module_w)
-                            * float(bbox_smoothl1_w)
-                            * float(smoothl1)
-                        )
-                    if float(bbox_ciou_w) != 0.0:
-                        stage2_logs["loss/B_coord/bbox_ciou"] = float(
-                            float(bbox_geo_module_w) * float(bbox_ciou_w) * float(ciou)
-                        )
-
-                if float(bbox_size_aux_module_w) != 0.0:
-                    def _emit_b_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                        if float(weight) == 0.0:
-                            return
-                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/B_coord/{term}"] = float(
-                            float(bbox_size_aux_module_w) * float(weight) * float(value)
-                        )
-
-                    _emit_b_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                    _emit_b_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
-
-                if float(coord_reg_module_w) != 0.0:
-                    def _emit_b(term: str, weight: float, raw_key: str) -> None:
-                        if float(weight) == 0.0:
-                            return
-                        value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/B_coord/{term}"] = float(
-                            float(coord_reg_module_w) * float(weight) * float(value)
-                        )
-
-                    _emit_b("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-                    _emit_b("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-                    _emit_b("coord_w1", coord_w1_w, "loss/coord_w1")
-                    _emit_b("coord_el1", coord_el1_w, "loss/coord_el1")
-                    _emit_b("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
-                    _emit_b("coord_entropy", coord_entropy_w, "loss/coord_entropy")
-                    _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
-                    _emit_b("text_gate", text_gate_w, "loss/text_gate")
+            stage2_logs: Dict[str, float] = build_stage2_core_loss_logs(
+                channel=str(channel),
+                pipeline_metrics_ctx=pipeline_metrics_ctx,
+                pipeline_metrics_gt=pipeline_metrics_gt,
+                pipeline_metrics_a1=pipeline_metrics_a1,
+                pipeline_a1_total_loss=pipeline_a1_total_loss,
+                token_ce_module_w=float(token_ce_module_w),
+                bbox_geo_module_w=float(bbox_geo_module_w),
+                bbox_size_aux_module_w=float(bbox_size_aux_module_w),
+                coord_reg_module_w=float(coord_reg_module_w),
+                dead_anchor_suppression_module_w=float(dead_anchor_suppression_module_w),
+                run_a1_text=bool(run_a1_text),
+                run_a1_bbox_geo=bool(run_a1_bbox_geo),
+                run_a1_bbox_size_aux=bool(run_a1_bbox_size_aux),
+                run_a1_coord_reg=bool(run_a1_coord_reg),
+                run_a2_text=bool(run_a2_text),
+                run_a2_bbox_geo=bool(run_a2_bbox_geo),
+                run_a2_bbox_size_aux=bool(run_a2_bbox_size_aux),
+                run_a2_coord_reg=bool(run_a2_coord_reg),
+                n_softctx_iter=int(n_softctx_iter),
+                self_context_struct_ce_weight=float(self_context_struct_ce_weight),
+                token_desc_ce_weight=float(token_desc_ce_weight),
+                fn_desc_ce_weight=float(fn_desc_ce_weight),
+                bbox_smoothl1_w=float(bbox_smoothl1_w),
+                bbox_ciou_w=float(bbox_ciou_w),
+                bbox_log_wh_w=float(bbox_log_wh_w),
+                bbox_oversize_w=float(bbox_oversize_w),
+                coord_ce_w=float(coord_ce_w),
+                coord_soft_ce_w=float(coord_soft_ce_w),
+                coord_w1_w=float(coord_w1_w),
+                coord_el1_w=float(coord_el1_w),
+                coord_ehuber_w=float(coord_ehuber_w),
+                coord_entropy_w=float(coord_entropy_w),
+                coord_gate_w=float(coord_gate_w),
+                text_gate_w=float(text_gate_w),
+            )
 
             if isinstance(gradmon_metrics, Mapping):
                 for k, v in gradmon_metrics.items():
