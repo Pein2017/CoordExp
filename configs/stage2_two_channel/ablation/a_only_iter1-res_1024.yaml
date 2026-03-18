@@ -8,8 +8,8 @@ model:
 training:
   seed: 17
   run_name: epoch-1-iter_1-eff_bs_128
-  output_dir: output/a_only/random_order-stop_signal_damping
-  logging_dir: tb/a_only/a_only_iter1_res1024_random_order-stop_signal_damping
+  output_dir: output/a_only/random_order
+  logging_dir: tb/a_only/random_order
   num_train_epochs: 1
   effective_batch_size: 128
   encoded_sample_cache:
@@ -39,7 +39,7 @@ stage2_ab:
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
           stop_signal_damping:
-            enabled: true
+            enabled: false
             min_weight: 0.3
             max_weight: 0.75
             branch_temperature: 1.25

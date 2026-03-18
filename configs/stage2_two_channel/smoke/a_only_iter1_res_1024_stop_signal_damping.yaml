@@ -37,7 +37,7 @@ stage2_ab:
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
           stop_signal_damping:
-            enabled: true
+            enabled: false
             min_weight: 0.3
             max_weight: 0.75
             branch_temperature: 1.25
