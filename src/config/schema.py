@@ -18,7 +18,9 @@ from typing import (
 
 from src.common.object_field_order import (
     ObjectFieldOrder,
+    ObjectOrdering,
     normalize_object_field_order,
+    normalize_object_ordering,
 )
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
@@ -763,7 +765,7 @@ class CustomConfig:
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
     object_field_order: ObjectFieldOrder
-    object_ordering: Literal["sorted", "random"] = "sorted"
+    object_ordering: ObjectOrdering = "sorted"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
@@ -801,10 +803,7 @@ class CustomConfig:
             raise ValueError(
                 "Pre-normalized data is required; set custom.emit_norm: none (runtime normalization is disabled)."
             )
-        if self.object_ordering not in {"sorted", "random"}:
-            raise ValueError(
-                "custom.object_ordering must be one of {'sorted', 'random'}"
-            )
+        normalize_object_ordering(self.object_ordering, path="custom.object_ordering")
         if self.object_field_order not in {"desc_first", "geometry_first"}:
             raise ValueError(
                 "custom.object_field_order must be one of {'desc_first', 'geometry_first'}"
@@ -981,11 +980,10 @@ class CustomConfig:
         bbox_size_aux_raw = data.pop("bbox_size_aux", None)
         bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
 
-        object_ordering = str(object_ordering_raw).lower()
-        if object_ordering not in {"sorted", "random"}:
-            raise ValueError(
-                "custom.object_ordering must be 'sorted' or 'random' when provided"
-            )
+        object_ordering = normalize_object_ordering(
+            object_ordering_raw,
+            path="custom.object_ordering",
+        )
         object_field_order = normalize_object_field_order(
             object_field_order_raw, path="custom.object_field_order"
         )
@@ -1000,7 +998,7 @@ class CustomConfig:
             user_prompt=str(user_prompt) if user_prompt is not None else "",
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
-            object_ordering=cast(Literal["sorted", "random"], object_ordering),
+            object_ordering=object_ordering,
             object_field_order=object_field_order,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,

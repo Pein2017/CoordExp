@@ -676,6 +676,15 @@ def _build_encoded_sample_cache_bypass_info(
     }
 
 
+def _append_dataset_epoch_callback(callbacks: list[Any], dataset: Any) -> list[Any]:
+    if not callable(getattr(dataset, "set_epoch", None)):
+        return callbacks
+    from .callbacks import DatasetEpochCallback
+
+    callbacks.append(DatasetEpochCallback(dataset))
+    return callbacks
+
+
 def _attach_encoded_sample_cache_run_metadata(
     meta: dict[str, Any],
     *,
@@ -2677,6 +2686,7 @@ def main():
 
     # Add callbacks (including optional heartbeat instrumentation for debug/smokes).
     callbacks = sft.callbacks.copy() if sft.callbacks else []
+    callbacks = _append_dataset_epoch_callback(callbacks, dataset)
     if heartbeat_callback is not None:
         callbacks.append(heartbeat_callback)
     if curriculum_scheduler is not None and curriculum_state is not None:
@@ -2862,6 +2872,7 @@ def main():
                     "packing_buffer": int(packing_cfg.buffer_size),
                     "packing_min_fill_ratio": float(packing_cfg.min_fill_ratio),
                     "packing_drop_last": bool(packing_cfg.drop_last),
+                    "prompt_variant": prompt_variant_from_extra,
                     "object_ordering": str(custom_config.object_ordering),
                     "object_field_order": str(custom_config.object_field_order),
                 }

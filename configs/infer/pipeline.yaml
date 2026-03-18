@@ -24,6 +24,7 @@ infer:
   # Prompt controls (keep train/infer parity)
   prompt_variant: default            # default | coco_80
   object_field_order: desc_first     # desc_first | geometry_first
+  object_ordering: sorted            # sorted | random
 
   # coord | text | auto
   mode: auto

@@ -1169,6 +1169,24 @@ def test_stage2_profile_kind_detects_live_two_channel_tree() -> None:
         )
         == "smoke"
     )
+    assert (
+        ConfigLoader._canonical_stage2_profile_kind(
+            str(
+                repo_root
+                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+            )
+        )
+        == "ablation"
+    )
+    assert (
+        ConfigLoader._canonical_stage2_profile_kind(
+            str(
+                repo_root
+                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+            )
+        )
+        == "ablation"
+    )
 
 
 def test_stage2_leaf_contract_accepts_live_prod_profile() -> None:
@@ -1176,6 +1194,63 @@ def test_stage2_leaf_contract_accepts_live_prod_profile() -> None:
     ConfigLoader._validate_stage2_leaf_contract(
         str(repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml")
     )
+
+
+def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    ConfigLoader._validate_stage2_leaf_contract(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+        )
+    )
+
+
+def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    ConfigLoader._validate_stage2_leaf_contract(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("config_rel", "expected_ordering"),
+    [
+        ("ablation/a_only_iter1-res_1024_sorted_order.yaml", "sorted"),
+        ("ablation/a_only_iter1-res_1024_random_order.yaml", "random"),
+        ("smoke/a_only_iter1-res_1024_random_order.yaml", "random"),
+    ],
+)
+def test_stage2_ablation_leaves_pin_ordering_cache_seed_and_names(
+    config_rel: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs" / "stage2_two_channel" / config_rel)
+    )
+
+    training = cfg.training
+    custom = cfg.custom
+
+    assert custom.object_ordering == expected_ordering
+    assert training["encoded_sample_cache"]["enabled"] is False
+    assert training["seed"] == 17
+    assert expected_ordering in str(training["run_name"])
+    assert expected_ordering in str(training["output_dir"])
+    assert expected_ordering in str(training["logging_dir"])
+
+    if config_rel.startswith("smoke/"):
+        data = cfg.data
+        assert training["max_steps"] == 2
+        assert training["eval_strategy"] == "no"
+        assert training["save_strategy"] == "no"
+        assert custom.train_sample_limit == 128
+        assert custom.val_sample_limit == 8
+        assert data["dataloader_num_workers"] == 0
 
 
 def test_stage2_leaf_contract_rejects_live_tree_profile_without_extends() -> None:

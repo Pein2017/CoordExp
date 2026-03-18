@@ -62,6 +62,8 @@ After inference:
 - `gt_vs_pred.jsonl`
 - `summary.json`
 - `resolved_config.json` when using the YAML pipeline
+- verify `infer.prompt_variant` and `infer.object_ordering` in both
+  `summary.json` and `resolved_config.json` when comparing prompt/order ablations
 
 After confidence post-op:
 

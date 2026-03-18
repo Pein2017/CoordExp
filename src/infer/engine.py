@@ -66,7 +66,9 @@ from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.common.object_field_order import (
     ObjectFieldOrder,
+    ObjectOrdering,
     normalize_object_field_order,
+    normalize_object_ordering,
 )
 from src.config.prompts import (
     DEFAULT_PROMPT_VARIANT,
@@ -123,6 +125,7 @@ class InferenceConfig:
     mode: Literal["coord", "text", "auto"]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
     object_field_order: ObjectFieldOrder = "desc_first"
+    object_ordering: ObjectOrdering = "sorted"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
@@ -286,6 +289,11 @@ class InferenceEngine:
             path="infer.object_field_order",
         )
         self.cfg.object_field_order = self.object_field_order
+        self.object_ordering = normalize_object_ordering(
+            cfg.object_ordering,
+            path="infer.object_ordering",
+        )
+        self.cfg.object_ordering = self.object_ordering
 
         self.requested_mode = cfg.mode
         self.resolved_mode = cfg.mode
@@ -580,7 +588,7 @@ class InferenceEngine:
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
         system_prompt, user_prompt = get_template_prompts(
-            ordering="sorted",
+            ordering=self.object_ordering,
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
@@ -862,7 +870,7 @@ class InferenceEngine:
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
         system_prompt, user_prompt = get_template_prompts(
-            ordering="sorted",
+            ordering=self.object_ordering,
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
@@ -948,7 +956,7 @@ class InferenceEngine:
             return [GenerationResult(text="", error=exc) for _ in images]
 
         system_prompt, user_prompt = get_template_prompts(
-            ordering="sorted",
+            ordering=self.object_ordering,
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
@@ -1251,6 +1259,7 @@ class InferenceEngine:
             "pred_coord_mode": self.cfg.pred_coord_mode,
             "prompt_variant": self.prompt_variant,
             "object_field_order": self.object_field_order,
+            "object_ordering": self.object_ordering,
             "device": self.cfg.device,
             "limit": self.cfg.limit,
             "generation": {
@@ -1512,6 +1521,7 @@ class InferenceEngine:
                 "pred_coord_mode": self.cfg.pred_coord_mode,
                 "prompt_variant": self.prompt_variant,
                 "object_field_order": self.object_field_order,
+                "object_ordering": self.object_ordering,
                 "device": self.cfg.device,
                 "limit": self.cfg.limit,
             },

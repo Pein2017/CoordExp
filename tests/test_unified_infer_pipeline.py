@@ -531,6 +531,7 @@ def test_run_pipeline_wires_and_records_prompt_variant(
             "mode": "text",
             "prompt_variant": "coco_80",
             "object_field_order": "geometry_first",
+            "object_ordering": "random",
             "pred_coord_mode": "auto",
             "generation": {
                 "temperature": 0.0,
@@ -553,6 +554,7 @@ def test_run_pipeline_wires_and_records_prompt_variant(
     def _fake_infer(self):
         captured["prompt_variant"] = self.cfg.prompt_variant
         captured["object_field_order"] = self.cfg.object_field_order
+        captured["object_ordering"] = self.cfg.object_ordering
         Path(self.cfg.out_path).write_text("", encoding="utf-8")
         Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
         return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
@@ -564,8 +566,63 @@ def test_run_pipeline_wires_and_records_prompt_variant(
     resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
     assert captured["prompt_variant"] == "coco_80"
     assert captured["object_field_order"] == "geometry_first"
+    assert captured["object_ordering"] == "random"
     assert resolved["infer"]["prompt_variant"] == "coco_80"
     assert resolved["infer"]["object_field_order"] == "geometry_first"
+    assert resolved["infer"]["object_ordering"] == "random"
+
+
+def test_run_pipeline_defaults_object_ordering_to_sorted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "dummy",
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "hf"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    import src.infer.engine as infer_engine
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(self):
+        captured["object_ordering"] = self.cfg.object_ordering
+        Path(self.cfg.out_path).write_text("", encoding="utf-8")
+        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
+        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+
+    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+
+    artifacts = run_pipeline(config_path=config_path)
+    resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
+
+    assert captured["object_ordering"] == "sorted"
+    assert resolved["infer"]["object_ordering"] == "sorted"
 
 
 def test_run_pipeline_rejects_unknown_prompt_variant_with_available_keys(
@@ -622,6 +679,35 @@ def test_run_pipeline_rejects_unknown_object_field_order(tmp_path: Path, monkeyp
     assert "invalid_order" in message
     assert "desc_first" in message
     assert "geometry_first" in message
+
+
+def test_run_pipeline_rejects_unknown_object_ordering(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": "unused.jsonl",
+            "object_ordering": "diagonal",
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="infer.object_ordering") as exc_info:
+        run_pipeline(config_path=config_path)
+
+    message = str(exc_info.value)
+    assert "diagonal" in message
+    assert "sorted" in message
+    assert "random" in message
 
 def test_pipeline_vis_stage_renders_using_resolved_root(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)

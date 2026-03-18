@@ -13,14 +13,65 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
     stage2_root = repo_root / "configs" / "stage2_two_channel"
 
     profiles: list[Path] = []
-    for kind in ("prod", "smoke"):
-        profiles.extend(sorted((stage2_root / kind).glob("*.yaml")))
+    for kind in ("prod", "smoke", "ablation"):
+        profiles.extend(
+            sorted(
+                path
+                for path in (stage2_root / kind).glob("*.yaml")
+                if not path.name.startswith("common_")
+            )
+        )
 
-    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/ and smoke/."
+    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/, smoke/, and ablation/."
 
     for path in profiles:
         # `load_materialized_training_config` is intentionally side-effect free.
         ConfigLoader.load_materialized_training_config(str(path))
+
+
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_ordering"),
+    [
+        (
+            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_sorted_order.yaml",
+            "sorted",
+        ),
+        (
+            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml",
+            "random",
+        ),
+    ],
+)
+def test_stage2_ablation_profiles_pin_cache_parity_and_ordering(
+    config_relpath: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
+
+    assert cfg.training["seed"] == 17
+    assert cfg.training["encoded_sample_cache"]["enabled"] is False
+    assert cfg.custom.object_ordering == expected_ordering
+    assert expected_ordering in cfg.training["run_name"]
+    assert expected_ordering in cfg.training["output_dir"]
+    assert expected_ordering in cfg.training["logging_dir"]
+
+
+def test_stage2_random_order_smoke_profile_overrides_runtime_only() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/smoke/a_only_iter1-res_1024_random_order.yaml"
+        )
+    )
+
+    assert cfg.custom.object_ordering == "random"
+    assert cfg.training["encoded_sample_cache"]["enabled"] is False
+    assert cfg.training["max_steps"] == 2
+    assert cfg.custom.train_sample_limit == 128
+    assert cfg.custom.val_sample_limit == 8
+    assert "smoke" in cfg.training["run_name"]
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
@@ -43,7 +94,7 @@ def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
         ConfigLoader.load_materialized_training_config(str(cfg_path))
 
     msg = str(exc.value)
-    assert "Stage-2 canonical prod/smoke profiles must resolve the required training keys" in msg
+    assert "Stage-2 canonical prod/smoke/ablation profiles must resolve the required training keys" in msg
     # A few representative dotted paths from the spec-required list.
     assert "model.model" in msg
     assert "training.output_dir" in msg
