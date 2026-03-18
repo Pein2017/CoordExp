@@ -1173,7 +1173,7 @@ def test_stage2_profile_kind_detects_live_two_channel_tree() -> None:
         ConfigLoader._canonical_stage2_profile_kind(
             str(
                 repo_root
-                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml"
             )
         )
         == "ablation"
@@ -1182,7 +1182,7 @@ def test_stage2_profile_kind_detects_live_two_channel_tree() -> None:
         ConfigLoader._canonical_stage2_profile_kind(
             str(
                 repo_root
-                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+                / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml"
             )
         )
         == "ablation"
@@ -1201,7 +1201,7 @@ def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
     ConfigLoader._validate_stage2_leaf_contract(
         str(
             repo_root
-            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml"
         )
     )
 
@@ -1211,7 +1211,7 @@ def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
     ConfigLoader._validate_stage2_leaf_contract(
         str(
             repo_root
-            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml"
+            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml"
         )
     )
 
@@ -1219,8 +1219,7 @@ def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
 @pytest.mark.parametrize(
     ("config_rel", "expected_ordering"),
     [
-        ("ablation/a_only_iter1-res_1024_sorted_order.yaml", "sorted"),
-        ("ablation/a_only_iter1-res_1024_random_order.yaml", "random"),
+        ("ablation/a_only_iter1-res_1024.yaml", "random"),
         ("smoke/a_only_iter1-res_1024_random_order.yaml", "random"),
     ],
 )

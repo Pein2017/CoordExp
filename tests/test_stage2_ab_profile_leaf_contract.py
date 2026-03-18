@@ -33,11 +33,7 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
     ("config_relpath", "expected_ordering"),
     [
         (
-            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_sorted_order.yaml",
-            "sorted",
-        ),
-        (
-            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024_random_order.yaml",
+            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml",
             "random",
         ),
     ],

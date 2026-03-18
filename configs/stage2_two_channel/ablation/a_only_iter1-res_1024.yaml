@@ -6,11 +6,14 @@ model:
   # model: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
   
 training:
-  run_name: epoch_1-eff_size_128-n_softctx_iter_1-a_only
-  output_dir: output/a_only/ciou_bbox_area/4b-softce_w1-coco80
-  logging_dir: tb/a_only/ciou_bbox_area/4b-softce_w1-coco80
+  seed: 17
+  run_name: epoch-1-iter_1-eff_bs_128
+  output_dir: output/a_only/random_order-stop_signal_damping
+  logging_dir: tb/a_only/a_only_iter1_res1024_random_order-stop_signal_damping
   num_train_epochs: 1
   effective_batch_size: 128
+  encoded_sample_cache:
+    enabled: false
 
 template:
   max_pixels: 1048576
@@ -19,3 +22,80 @@ custom:
   offline_max_pixels: 1048576
   train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  object_ordering: random
+
+stage2_ab:
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_text_plus_final_struct
+        config:
+          desc_ce_weight: 1.0
+          struct_ce_weight: 1.0
+          rollout_fn_desc_weight: 1.0
+          rollout_matched_prefix_struct_weight: 1.0
+          stop_signal_damping:
+            enabled: true
+            min_weight: 0.3
+            max_weight: 0.75
+            branch_temperature: 1.25
+            curve_gamma: 2.0
+            detach_gate: true
+      - name: loss_dead_anchor_suppression
+        enabled: true
+        weight: 1.0
+        channels: [B]
+        application:
+          preset: rollout_only
+        config: {}
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          smoothl1_weight: 1.0
+          ciou_weight: 0.5
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          log_wh_weight: 0.05
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_if_single_iter_else_final
+        config:
+          coord_ce_weight: 0.04
+          coord_el1_weight: 0.0
+          coord_ehuber_weight: 0.0
+          coord_huber_delta: 0.001
+          coord_entropy_weight: 0.0
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.1
+          soft_ce_weight: 0.1
+          w1_weight: 0.02
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+    diagnostics:
+      - name: coord_diag
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        config: {}

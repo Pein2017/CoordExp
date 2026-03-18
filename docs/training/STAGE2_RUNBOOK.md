@@ -404,7 +404,7 @@ stage2_ab:
 
 Adaptive stop-signal smoke / authored examples:
 - Stage-2 authored example:
-  - `configs/stage2_two_channel/ablation/a_only_iter1-stop_signal_damping.yaml`
+  - `configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml`
 - Requested 1024-pixel smoke:
   - `configs/stage2_two_channel/smoke/a_only_iter1_res_1024_stop_signal_damping.yaml`
   - Run with:

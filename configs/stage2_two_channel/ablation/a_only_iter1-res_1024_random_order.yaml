@@ -1,9 +1,0 @@
-extends: a_only_iter1-res_1024_sorted_order.yaml
-
-training:
-  run_name: ablation_seed17_stage2_a_only_iter1_res1024_random_order
-  output_dir: output/stage2_ab/ablation/a_only_iter1_res1024_random_order
-  logging_dir: tb/stage2_ab/ablation/a_only_iter1_res1024_random_order
-
-custom:
-  object_ordering: random
