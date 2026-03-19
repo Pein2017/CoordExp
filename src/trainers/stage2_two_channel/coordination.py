@@ -1,5 +1,8 @@
+import contextlib
 from datetime import timedelta
 from typing import Any, Dict, Mapping, Sequence, Tuple
+
+import torch
 
 
 def run_stage2_ab_ddp_monitored_barrier(
@@ -263,6 +266,85 @@ def finalize_channel_b_pipeline_step(
     return loss_total
 
 
+def run_channel_b_train_one_pack(
+    *,
+    owner: Any,
+    model: Any,
+    selected: Sequence[tuple[dict[str, Any], dict[str, Any], int]],
+    pack_metrics: Mapping[str, float],
+    rollout_static: Mapping[str, float],
+    step_totals: Mapping[str, float],
+    total_segments_target: int,
+    sync_gradients: bool,
+    dist: Any,
+    ddp_rank: int,
+    ddp_world_size: int,
+) -> torch.Tensor:
+    from swift.llm import to_device
+
+    with owner._template_packing_enabled():
+        packed = owner.template.data_collator([enc for enc, _, _ in selected])
+    batch = to_device(packed, owner.model.device)
+    owner._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
+    batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
+
+    bm: Dict[str, float] = {}
+    bm.update({str(k): float(v) for k, v in rollout_static.items()})
+    bm.update({str(k): float(v) for k, v in step_totals.items()})
+    bm.update({str(k): float(v) for k, v in pack_metrics.items()})
+
+    owner._merge_rollout_matching_batch_metrics(batch, bm)
+    batch["_stage2_ab_channel"] = "B"
+
+    pack_segments = int(len(selected))
+    weight = float(pack_segments) / float(total_segments_target)
+
+    cm = contextlib.nullcontext()
+    if not bool(sync_gradients):
+        acc = getattr(owner, "accelerator", None)
+        if acc is not None and hasattr(acc, "no_sync"):
+            cm = acc.no_sync(model)
+        else:
+            no_sync = getattr(model, "no_sync", None)
+            if callable(no_sync):
+                cm = model.no_sync()
+
+    with cm:
+        loss_cm = getattr(owner, "compute_loss_context_manager", None)
+        loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
+        prev_gradmon_sync = getattr(owner, "_loss_gradient_monitor_sync_gradients", None)
+        setattr(owner, "_loss_gradient_monitor_sync_gradients", bool(sync_gradients))
+        try:
+            with loss_ctx:
+                with owner._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
+                    dist=dist,
+                    ddp_rank=int(ddp_rank),
+                    ddp_world_size=int(ddp_world_size),
+                    where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
+                ):
+                    loss = owner.compute_loss(model, batch)
+        finally:
+            if prev_gradmon_sync is None:
+                try:
+                    delattr(owner, "_loss_gradient_monitor_sync_gradients")
+                except AttributeError:
+                    pass
+            else:
+                setattr(owner, "_loss_gradient_monitor_sync_gradients", prev_gradmon_sync)
+        if not isinstance(loss, torch.Tensor):
+            raise TypeError("compute_loss must return a torch.Tensor")
+
+        loss_scaled = loss * float(weight)
+
+        acc = getattr(owner, "accelerator", None)
+        if acc is not None and hasattr(acc, "backward"):
+            acc.backward(loss_scaled)
+        else:
+            loss_scaled.backward()
+
+    return loss.detach() * float(weight)
+
+
 def run_channel_b_pipeline_producer(
     *,
     owner: Any,
@@ -307,6 +389,7 @@ __all__ = [
     "consume_channel_b_queue_item",
     "finalize_channel_b_pipeline_step",
     "prepare_channel_b_pipeline_pack_step",
+    "run_channel_b_train_one_pack",
     "run_stage2_ab_ddp_monitored_barrier",
     "run_channel_b_pipeline_producer",
     "resolve_channel_b_timeouts",

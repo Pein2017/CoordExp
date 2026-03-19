@@ -25,6 +25,7 @@ from .coordination import (
     finalize_channel_b_pipeline_step,
     prepare_channel_b_pipeline_pack_step,
     resolve_channel_b_timeouts,
+    run_channel_b_train_one_pack,
     run_stage2_ab_ddp_monitored_barrier,
     run_channel_b_pipeline_producer,
     split_rollout_metrics,
@@ -707,90 +708,6 @@ class Stage2ABChannelExecutorsMixin:
         if total_segments_target <= 0:
             raise AssertionError("unexpected empty raw_samples")
 
-        from swift.llm import to_device
-
-        def _train_one_pack(
-            *,
-            selected: List[Tuple[Dict[str, Any], Dict[str, Any], int]],
-            pack_metrics: Mapping[str, float],
-            rollout_static: Mapping[str, float],
-            step_totals: Mapping[str, float],
-            sync_gradients: bool,
-        ) -> torch.Tensor:
-            with self._template_packing_enabled():
-                packed = self.template.data_collator([enc for enc, _, _ in selected])
-            batch = to_device(packed, self.model.device)
-            self._assert_single_packed_forward(batch, where="stage2_ab/packed_forward")
-            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
-
-            bm: Dict[str, float] = {}
-            # rollout/* keys are averaged in Stage2 pending logs; include on EVERY micro-pack.
-            bm.update({str(k): float(v) for k, v in rollout_static.items()})
-            # step-level totals (time/*, stage2/* counters, etc) can be attached sparsely.
-            bm.update({str(k): float(v) for k, v in step_totals.items()})
-            bm.update({str(k): float(v) for k, v in pack_metrics.items()})
-
-            self._merge_rollout_matching_batch_metrics(batch, bm)
-            batch["_stage2_ab_channel"] = "B"
-
-            pack_segments = int(len(selected))
-            weight = float(pack_segments) / float(total_segments_target)
-
-            cm = contextlib.nullcontext()
-            if not bool(sync_gradients):
-                acc = getattr(self, "accelerator", None)
-                if acc is not None and hasattr(acc, "no_sync"):
-                    cm = acc.no_sync(model)
-                else:
-                    no_sync = getattr(model, "no_sync", None)
-                    if callable(no_sync):
-                        cm = model.no_sync()
-
-            with cm:
-                loss_cm = getattr(self, "compute_loss_context_manager", None)
-                loss_ctx = loss_cm() if callable(loss_cm) else contextlib.nullcontext()
-                prev_gradmon_sync = getattr(
-                    self, "_loss_gradient_monitor_sync_gradients", None
-                )
-                setattr(
-                    self,
-                    "_loss_gradient_monitor_sync_gradients",
-                    bool(sync_gradients),
-                )
-                try:
-                    with loss_ctx:
-                        with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
-                            dist=dist,
-                            ddp_rank=int(ddp_rank),
-                            ddp_world_size=int(ddp_world_size),
-                            where=f"stage2_ab/channel_{str(batch.get('_stage2_ab_channel', '?'))}/train_one_pack",
-                        ):
-                            loss = self.compute_loss(model, batch)
-                finally:
-                    if prev_gradmon_sync is None:
-                        try:
-                            delattr(self, "_loss_gradient_monitor_sync_gradients")
-                        except AttributeError:
-                            pass
-                    else:
-                        setattr(
-                            self,
-                            "_loss_gradient_monitor_sync_gradients",
-                            prev_gradmon_sync,
-                        )
-                if not isinstance(loss, torch.Tensor):
-                    raise TypeError("compute_loss must return a torch.Tensor")
-
-                loss_scaled = loss * float(weight)
-
-                acc = getattr(self, "accelerator", None)
-                if acc is not None and hasattr(acc, "backward"):
-                    acc.backward(loss_scaled)
-                else:
-                    loss_scaled.backward()
-
-            return loss.detach() * float(weight)
-
         if not enable_pipeline:
             with self._stage2_stage_wallclock_ctx("rollout"):
                 segments, batch_metrics = self._prepare_batch_inputs_b(
@@ -838,12 +755,18 @@ class Stage2ABChannelExecutorsMixin:
                             "channel_b_non_pipeline_before_final_sync_backward",
                             timeout_s=float(ddp_phase_final_sync_timeout_s),
                         )
-                    loss_pack = _train_one_pack(
+                    loss_pack = run_channel_b_train_one_pack(
+                        owner=self,
+                        model=model,
                         selected=selected,
                         pack_metrics=pack_metrics,
                         rollout_static=rollout_static,
                         step_totals=step_totals_pack,
+                        total_segments_target=int(total_segments_target),
                         sync_gradients=sync_gradients,
+                        dist=dist,
+                        ddp_rank=int(ddp_rank),
+                        ddp_world_size=int(ddp_world_size),
                     )
 
                 loss_total = (
@@ -954,12 +877,18 @@ class Stage2ABChannelExecutorsMixin:
                     ddp_phase_barrier_fn=_ddp_phase_barrier,
                 )
                 pending_totals = {}
-                loss_pack = _train_one_pack(
+                loss_pack = run_channel_b_train_one_pack(
+                    owner=self,
+                    model=model,
                     selected=selected,
                     pack_metrics=pack_metrics,
                     rollout_static=rollout_static,
                     step_totals=step_totals_pack,
+                    total_segments_target=int(total_segments_target),
                     sync_gradients=bool(is_last_pack),
+                    dist=dist,
+                    ddp_rank=int(ddp_rank),
+                    ddp_world_size=int(ddp_world_size),
                 )
             loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
 
