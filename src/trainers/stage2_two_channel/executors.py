@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 import torch
 
 from .coordination import (
+    accumulate_channel_b_producer_item,
     resolve_channel_b_timeouts,
     run_stage2_ab_ddp_monitored_barrier,
     split_rollout_metrics,
@@ -948,26 +949,17 @@ class Stage2ABChannelExecutorsMixin:
                     metrics = {}
                 raw_n = int(raw_n)
 
-                # Track raw rollouts separately from valid segments; strict-drop affects only the latter.
-                seen_segments += int(len(segs))
-                seen_raw += int(raw_n)
-                buf_total_len += int(sum(int(sl) for _, _, sl in segs))
-
                 self._stage2_append_post_rollout_segments(channel="B", segments=segs)
-
-                r_static, step_tot = split_rollout_metrics(metrics)
-                if not rollout_static:
-                    rollout_static.update(r_static)
-                else:
-                    # Keep the first-seen rollout/* values (should be constant per step).
-                    for k, v in r_static.items():
-                        rollout_static.setdefault(k, float(v))
-
-                # Accumulate step-level totals to be attached to the next trained pack.
-                for k, v in step_tot.items():
-                    pending_totals[str(k)] = float(
-                        pending_totals.get(str(k), 0.0)
-                    ) + float(v)
+                seen_segments, seen_raw, buf_total_len = accumulate_channel_b_producer_item(
+                    segs=segs,
+                    metrics=metrics,
+                    raw_n=int(raw_n),
+                    rollout_static=rollout_static,
+                    pending_totals=pending_totals,
+                    seen_segments=int(seen_segments),
+                    seen_raw=int(seen_raw),
+                    buf_total_len=int(buf_total_len),
+                )
 
             # Train one pack if available.
             if not self._stage2_post_rollout_buffer(channel="B"):

@@ -144,7 +144,36 @@ def split_rollout_metrics(
     return rollout_static, step_totals
 
 
+def accumulate_channel_b_producer_item(
+    *,
+    segs: list[tuple[dict[str, Any], dict[str, Any], int]],
+    metrics: Mapping[str, Any],
+    raw_n: int,
+    rollout_static: Dict[str, float],
+    pending_totals: Dict[str, float],
+    seen_segments: int,
+    seen_raw: int,
+    buf_total_len: int,
+) -> Tuple[int, int, int]:
+    seen_segments += int(len(segs))
+    seen_raw += int(raw_n)
+    buf_total_len += int(sum(int(sl) for _, _, sl in segs))
+
+    r_static, step_tot = split_rollout_metrics(metrics)
+    if not rollout_static:
+        rollout_static.update(r_static)
+    else:
+        for k, v in r_static.items():
+            rollout_static.setdefault(k, float(v))
+
+    for k, v in step_tot.items():
+        pending_totals[str(k)] = float(pending_totals.get(str(k), 0.0)) + float(v)
+
+    return int(seen_segments), int(seen_raw), int(buf_total_len)
+
+
 __all__ = [
+    "accumulate_channel_b_producer_item",
     "run_stage2_ab_ddp_monitored_barrier",
     "resolve_channel_b_timeouts",
     "split_rollout_metrics",
