@@ -22,6 +22,8 @@ import torch
 from .coordination import (
     accumulate_channel_b_producer_item,
     consume_channel_b_queue_item,
+    finalize_channel_b_pipeline_step,
+    prepare_channel_b_pipeline_pack_step,
     resolve_channel_b_timeouts,
     run_stage2_ab_ddp_monitored_barrier,
     run_channel_b_pipeline_producer,
@@ -942,21 +944,16 @@ class Stage2ABChannelExecutorsMixin:
                     time.perf_counter() - t_pack0
                 )
 
-                # Attach accumulated totals to this pack, then reset.
-                step_totals_pack = dict(pending_totals)
-                pending_totals = {}
-
-                # IMPORTANT: `total_segments_target` is a raw-rollout target. Under strict format
-                # policies we may drop malformed rollouts, so `seen_segments` can be < target; gate
-                # the final synced backward on `seen_raw` instead to avoid cross-rank sync skew.
-                is_last_pack = (seen_raw >= total_segments_target) and (
-                    not bool(self._stage2_post_rollout_buffer(channel="B"))
+                step_totals_pack, is_last_pack = prepare_channel_b_pipeline_pack_step(
+                    owner=self,
+                    selected=selected,
+                    pending_totals=pending_totals,
+                    seen_raw=int(seen_raw),
+                    total_segments_target=int(total_segments_target),
+                    ddp_phase_final_sync_timeout_s=float(ddp_phase_final_sync_timeout_s),
+                    ddp_phase_barrier_fn=_ddp_phase_barrier,
                 )
-                if bool(is_last_pack):
-                    _ddp_phase_barrier(
-                        "channel_b_pipeline_before_final_sync_backward",
-                        timeout_s=float(ddp_phase_final_sync_timeout_s),
-                    )
+                pending_totals = {}
                 loss_pack = _train_one_pack(
                     selected=selected,
                     pack_metrics=pack_metrics,
@@ -966,36 +963,18 @@ class Stage2ABChannelExecutorsMixin:
                 )
             loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
 
-        th.join(timeout=5.0)
-        if th.is_alive():
-            raise RuntimeError(
-                "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
-            )
-
-        self._stage2_flush_train_monitor_dump(global_step=target_log_step)
-
-        if producer_exc:
-            # Re-raise the first producer exception.
-            raise producer_exc[0]
-
-        if total_segments_target > 0 and seen_raw != total_segments_target:
-            raise ValueError(
-                "stage2-ab Channel-B pipeline produced unexpected raw-rollout count: "
-                f"seen_raw={seen_raw} target={total_segments_target}"
-            )
-
-        if total_segments_target > 0 and seen_segments > total_segments_target:
-            raise ValueError(
-                "stage2-ab Channel-B pipeline produced too many segments: "
-                f"seen_segments={seen_segments} target={total_segments_target}"
-            )
-
         # Under strict rollout-format policies, `seen_segments < total_segments_target` is expected:
         # malformed rollouts are dropped (emit no segment) instead of training on ambiguous supervision.
-
-        if loss_total is None:
-            raise AssertionError("stage2-ab Channel-B pipelined step produced no packs")
-        return loss_total
+        return finalize_channel_b_pipeline_step(
+            thread_obj=th,
+            owner=self,
+            target_log_step=int(target_log_step),
+            producer_exc=producer_exc,
+            total_segments_target=int(total_segments_target),
+            seen_raw=int(seen_raw),
+            seen_segments=int(seen_segments),
+            loss_total=loss_total,
+        )
 
     def _stage2_training_step_a_step_mode(
         self,

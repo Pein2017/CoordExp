@@ -202,6 +202,67 @@ def consume_channel_b_queue_item(
     )
 
 
+def prepare_channel_b_pipeline_pack_step(
+    *,
+    owner: Any,
+    selected: Sequence[tuple[dict[str, Any], dict[str, Any], int]],
+    pending_totals: Dict[str, float],
+    seen_raw: int,
+    total_segments_target: int,
+    ddp_phase_final_sync_timeout_s: float,
+    ddp_phase_barrier_fn: Any,
+) -> Tuple[Dict[str, float], bool]:
+    step_totals_pack = dict(pending_totals)
+    is_last_pack = (int(seen_raw) >= int(total_segments_target)) and (
+        not bool(owner._stage2_post_rollout_buffer(channel="B"))
+    )
+    if bool(is_last_pack):
+        ddp_phase_barrier_fn(
+            "channel_b_pipeline_before_final_sync_backward",
+            timeout_s=float(ddp_phase_final_sync_timeout_s),
+        )
+    return step_totals_pack, bool(is_last_pack)
+
+
+def finalize_channel_b_pipeline_step(
+    *,
+    thread_obj: Any,
+    owner: Any,
+    target_log_step: int,
+    producer_exc: Sequence[Exception],
+    total_segments_target: int,
+    seen_raw: int,
+    seen_segments: int,
+    loss_total: Any,
+) -> Any:
+    thread_obj.join(timeout=5.0)
+    if thread_obj.is_alive():
+        raise RuntimeError(
+            "stage2-ab Channel-B producer thread did not terminate cleanly after pipeline step"
+        )
+
+    owner._stage2_flush_train_monitor_dump(global_step=target_log_step)
+
+    if producer_exc:
+        raise producer_exc[0]
+
+    if int(total_segments_target) > 0 and int(seen_raw) != int(total_segments_target):
+        raise ValueError(
+            "stage2-ab Channel-B pipeline produced unexpected raw-rollout count: "
+            f"seen_raw={int(seen_raw)} target={int(total_segments_target)}"
+        )
+
+    if int(total_segments_target) > 0 and int(seen_segments) > int(total_segments_target):
+        raise ValueError(
+            "stage2-ab Channel-B pipeline produced too many segments: "
+            f"seen_segments={int(seen_segments)} target={int(total_segments_target)}"
+        )
+
+    if loss_total is None:
+        raise AssertionError("stage2-ab Channel-B pipelined step produced no packs")
+    return loss_total
+
+
 def run_channel_b_pipeline_producer(
     *,
     owner: Any,
@@ -244,6 +305,8 @@ def run_channel_b_pipeline_producer(
 __all__ = [
     "accumulate_channel_b_producer_item",
     "consume_channel_b_queue_item",
+    "finalize_channel_b_pipeline_step",
+    "prepare_channel_b_pipeline_pack_step",
     "run_stage2_ab_ddp_monitored_barrier",
     "run_channel_b_pipeline_producer",
     "resolve_channel_b_timeouts",
