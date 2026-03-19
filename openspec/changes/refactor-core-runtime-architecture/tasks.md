@@ -55,10 +55,10 @@
 
 ## Workstream 2. Channel-B Executor And Coordination Cleanup
 
-- [ ] 2.1 Extract Channel-B producer/consumer execution from `src/trainers/stage2_two_channel/executors.py` into a narrower execution helper or module.
-- [ ] 2.2 Extract DDP monitored-barrier and timeout policy into explicit coordination helpers so queue/runtime logic is no longer mixed with synchronization rules.
-- [ ] 2.3 Preserve current no-sync, packed-step weighting, timeout behavior, and legacy Stage-2 compatibility imports.
-- [ ] 2.4 Validate Channel-B runtime behavior with targeted tests:
+- [x] 2.1 Extract Channel-B producer/consumer execution from `src/trainers/stage2_two_channel/executors.py` into a narrower execution helper or module.
+- [x] 2.2 Extract DDP monitored-barrier and timeout policy into explicit coordination helpers so queue/runtime logic is no longer mixed with synchronization rules.
+- [x] 2.3 Preserve current no-sync, packed-step weighting, timeout behavior, and legacy Stage-2 compatibility imports.
+- [x] 2.4 Validate Channel-B runtime behavior with targeted tests:
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_ddp_phase_monitor_disable.py`
