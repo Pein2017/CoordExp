@@ -21,6 +21,7 @@ import torch
 
 from .coordination import (
     accumulate_channel_b_producer_item,
+    consume_channel_b_queue_item,
     resolve_channel_b_timeouts,
     run_stage2_ab_ddp_monitored_barrier,
     run_channel_b_pipeline_producer,
@@ -917,18 +918,9 @@ class Stage2ABChannelExecutorsMixin:
                     producer_done = True
                     break
 
-                segs, metrics, raw_n = item
-                if not isinstance(segs, list):
-                    raise TypeError("producer returned non-list segments")
-                if not isinstance(metrics, Mapping):
-                    metrics = {}
-                raw_n = int(raw_n)
-
-                self._stage2_append_post_rollout_segments(channel="B", segments=segs)
-                seen_segments, seen_raw, buf_total_len = accumulate_channel_b_producer_item(
-                    segs=segs,
-                    metrics=metrics,
-                    raw_n=int(raw_n),
+                seen_segments, seen_raw, buf_total_len = consume_channel_b_queue_item(
+                    owner=self,
+                    item=item,
                     rollout_static=rollout_static,
                     pending_totals=pending_totals,
                     seen_segments=int(seen_segments),

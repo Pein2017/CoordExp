@@ -172,6 +172,36 @@ def accumulate_channel_b_producer_item(
     return int(seen_segments), int(seen_raw), int(buf_total_len)
 
 
+def consume_channel_b_queue_item(
+    *,
+    owner: Any,
+    item: Any,
+    rollout_static: Dict[str, float],
+    pending_totals: Dict[str, float],
+    seen_segments: int,
+    seen_raw: int,
+    buf_total_len: int,
+) -> Tuple[int, int, int]:
+    segs, metrics, raw_n = item
+    if not isinstance(segs, list):
+        raise TypeError("producer returned non-list segments")
+    if not isinstance(metrics, Mapping):
+        metrics = {}
+    raw_n = int(raw_n)
+
+    owner._stage2_append_post_rollout_segments(channel="B", segments=segs)
+    return accumulate_channel_b_producer_item(
+        segs=segs,
+        metrics=metrics,
+        raw_n=int(raw_n),
+        rollout_static=rollout_static,
+        pending_totals=pending_totals,
+        seen_segments=int(seen_segments),
+        seen_raw=int(seen_raw),
+        buf_total_len=int(buf_total_len),
+    )
+
+
 def run_channel_b_pipeline_producer(
     *,
     owner: Any,
@@ -213,6 +243,7 @@ def run_channel_b_pipeline_producer(
 
 __all__ = [
     "accumulate_channel_b_producer_item",
+    "consume_channel_b_queue_item",
     "run_stage2_ab_ddp_monitored_barrier",
     "run_channel_b_pipeline_producer",
     "resolve_channel_b_timeouts",
