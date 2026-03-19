@@ -19,7 +19,6 @@ import tempfile
 import threading
 import time
 from contextlib import contextmanager, nullcontext
-from copy import copy as shallow_copy
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -69,6 +68,7 @@ from src.utils.metric_key_lookup import (
     stage2_eval_metric_key,
 )
 from .rollout_runtime.vllm_config import resolve_vllm_engine_config
+from .rollout_runtime.vllm_engine import instantiate_vllm_engine
 
 from .rollout_matching.contracts import (
     GTObject,
@@ -4083,31 +4083,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             getattr(model_info, "torch_dtype", None) if model_info is not None else None
         )
 
-        max_lora_rank = 16
-
-        # Build TP subgroup (colocate only; server mode unsupported here).
-        if tp_size > 1:
-            if dist is None or not dist.is_initialized():
-                raise RuntimeError(
-                    "vLLM tensor parallel requires torch.distributed to be initialized"
-                )
-            self._vllm_tp_group, _ = dist.new_subgroups_by_enumeration(
-                [
-                    list(range(i * tp_size, (i + 1) * tp_size))
-                    for i in range(world_size // tp_size)
-                ]
-            )
-        self._vllm_tp_size = int(tp_size)
-
-        # Use a shallow-copied template; vLLM expects template.mode='vllm'.
-        vllm_template = shallow_copy(self.template)
-        try:
-            vllm_template.packing = False
-            vllm_template.padding_free = False
-            vllm_template.set_mode("vllm")
-        except (TypeError, ValueError):
-            raise
-
         logger.info(
             "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
             "decode_batch_size_per_rank=%s max_num_seqs=%s sleep_mode=%s limit_mm_per_prompt=%s engine_kwargs=%s",
@@ -4122,51 +4097,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             vllm_engine_kwargs or {},
         )
 
-        # Snapshot CUDA allocator before vLLM init. vLLM sleep mode can switch
-        # the active allocator; if left active until interpreter finalization,
-        # PyTorch can attempt to free pointers via the wrong allocator and abort.
-        self._vllm_saved_cuda_allocator = None
-        try:
-            if torch.cuda.is_available():
-                import torch.cuda.memory as cuda_mem
-
-                self._vllm_saved_cuda_allocator = cuda_mem._get_current_allocator()
-        except Exception:
-            self._vllm_saved_cuda_allocator = None
-
-        try:
-            from swift.llm import VllmEngine
-
-            engine = VllmEngine(
-                model_dir,
-                torch_dtype=torch_dtype,
-                template=vllm_template,
-                tensor_parallel_size=tp_size,
-                gpu_memory_utilization=gpu_mem,
-                max_model_len=max_model_len,
-                max_num_seqs=max_num_seqs,
-                enforce_eager=enforce_eager,
-                disable_custom_all_reduce=disable_custom_all_reduce,
-                limit_mm_per_prompt=limit_mm_per_prompt,
-                load_format=load_format,
-                enable_lora=enable_lora,
-                max_loras=1,
-                max_lora_rank=max_lora_rank,
-                enable_prefix_caching=enable_prefix_caching,
-                engine_kwargs=vllm_engine_kwargs or None,
-                distributed_executor_backend=dist_backend,
-            )
-        except (TypeError, ValueError) as exc:
-            logger.exception(
-                "vLLM engine init failed (backend=%s): %s", dist_backend, exc
-            )
-            raise RuntimeError(
-                "Failed to initialize vLLM engine for rollout generation. "
-                "Set rollout_backend: hf to bypass vLLM."
-            ) from exc
-
-        self._vllm_engine = engine
-        return engine
+        return instantiate_vllm_engine(
+            owner=self,
+            engine_cfg=engine_cfg,
+            model_dir=str(model_dir),
+            torch_dtype=torch_dtype,
+            logger=logger,
+        )
 
     def _sync_vllm_rollout_model_if_needed(self) -> None:
         """Sync merged rollout weights into the colocated vLLM engine.
