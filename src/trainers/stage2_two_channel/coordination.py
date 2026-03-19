@@ -1,5 +1,6 @@
 import contextlib
 from datetime import timedelta
+import time
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import torch
@@ -345,6 +346,78 @@ def run_channel_b_train_one_pack(
     return loss.detach() * float(weight)
 
 
+def run_channel_b_nonpipeline_learning_loop(
+    *,
+    owner: Any,
+    model: Any,
+    segments: list[tuple[dict[str, Any], dict[str, Any], int]],
+    batch_metrics: Mapping[str, Any],
+    target_log_step: int,
+    total_segments_target: int,
+    ddp_phase_final_sync_timeout_s: float,
+    ddp_phase_barrier_fn: Any,
+    dist: Any,
+    ddp_rank: int,
+    ddp_world_size: int,
+) -> torch.Tensor:
+    owner._stage2_flush_train_monitor_dump(global_step=target_log_step)
+    if not isinstance(segments, list) or not segments:
+        raise ValueError(
+            "stage2-ab Channel-B step mode produced no post-rollout segments; "
+            "check rollout parsing / dataset contract"
+        )
+
+    batch_metrics = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
+    batch_metrics["stage2_ab/channel_b/train_monitor_dump_written"] = float(
+        1.0
+        if int(getattr(owner, "_stage2_train_monitor_dump_written_step", -1) or -1)
+        == int(target_log_step)
+        else 0.0
+    )
+    rollout_static, step_totals = split_rollout_metrics(batch_metrics)
+    step_totals["stage2/raw_rollouts"] = float(total_segments_target)
+
+    owner._stage2_append_post_rollout_segments(channel="B", segments=segments)
+    ddp_phase_barrier_fn("channel_b_non_pipeline_after_prepare")
+
+    loss_total = None
+    first_pack = True
+    while owner._stage2_post_rollout_buffer(channel="B"):
+        with owner._stage2_stage_wallclock_ctx("sft"):
+            t_pack0 = time.perf_counter()
+            selected, pack_metrics = owner._stage2_pop_post_rollout_pack(channel="B")
+            pack_metrics = dict(pack_metrics)
+            pack_metrics["time/post_rollout_pack_s"] = float(time.perf_counter() - t_pack0)
+
+            step_totals_pack = step_totals if first_pack else {}
+            sync_gradients = not bool(owner._stage2_post_rollout_buffer(channel="B"))
+            if bool(sync_gradients):
+                ddp_phase_barrier_fn(
+                    "channel_b_non_pipeline_before_final_sync_backward",
+                    timeout_s=float(ddp_phase_final_sync_timeout_s),
+                )
+            loss_pack = run_channel_b_train_one_pack(
+                owner=owner,
+                model=model,
+                selected=selected,
+                pack_metrics=pack_metrics,
+                rollout_static=rollout_static,
+                step_totals=step_totals_pack,
+                total_segments_target=int(total_segments_target),
+                sync_gradients=bool(sync_gradients),
+                dist=dist,
+                ddp_rank=int(ddp_rank),
+                ddp_world_size=int(ddp_world_size),
+            )
+
+        loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
+        first_pack = False
+
+    if loss_total is None:
+        raise AssertionError("stage2-ab Channel-B step mode produced no packs")
+    return loss_total
+
+
 def run_channel_b_pipeline_producer(
     *,
     owner: Any,
@@ -389,6 +462,7 @@ __all__ = [
     "consume_channel_b_queue_item",
     "finalize_channel_b_pipeline_step",
     "prepare_channel_b_pipeline_pack_step",
+    "run_channel_b_nonpipeline_learning_loop",
     "run_channel_b_train_one_pack",
     "run_stage2_ab_ddp_monitored_barrier",
     "run_channel_b_pipeline_producer",

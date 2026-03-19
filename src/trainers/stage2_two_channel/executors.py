@@ -25,6 +25,7 @@ from .coordination import (
     finalize_channel_b_pipeline_step,
     prepare_channel_b_pipeline_pack_step,
     resolve_channel_b_timeouts,
+    run_channel_b_nonpipeline_learning_loop,
     run_channel_b_train_one_pack,
     run_stage2_ab_ddp_monitored_barrier,
     run_channel_b_pipeline_producer,
@@ -713,70 +714,19 @@ class Stage2ABChannelExecutorsMixin:
                 segments, batch_metrics = self._prepare_batch_inputs_b(
                     list(raw_samples), _segments_only=True
                 )
-            self._stage2_flush_train_monitor_dump(global_step=target_log_step)
-            if not isinstance(segments, list) or not segments:
-                raise ValueError(
-                    "stage2-ab Channel-B step mode produced no post-rollout segments; "
-                    "check rollout parsing / dataset contract"
-                )
-
-            batch_metrics = (
-                dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
+            return run_channel_b_nonpipeline_learning_loop(
+                owner=self,
+                model=model,
+                segments=segments,
+                batch_metrics=batch_metrics,
+                target_log_step=int(target_log_step),
+                total_segments_target=int(total_segments_target),
+                ddp_phase_final_sync_timeout_s=float(ddp_phase_final_sync_timeout_s),
+                ddp_phase_barrier_fn=_ddp_phase_barrier,
+                dist=dist,
+                ddp_rank=int(ddp_rank),
+                ddp_world_size=int(ddp_world_size),
             )
-            batch_metrics["stage2_ab/channel_b/train_monitor_dump_written"] = float(
-                1.0
-                if int(
-                    getattr(self, "_stage2_train_monitor_dump_written_step", -1) or -1
-                )
-                == int(target_log_step)
-                else 0.0
-            )
-            rollout_static, step_totals = split_rollout_metrics(batch_metrics)
-            step_totals["stage2/raw_rollouts"] = float(total_segments_target)
-
-            self._stage2_append_post_rollout_segments(channel="B", segments=segments)
-            _ddp_phase_barrier("channel_b_non_pipeline_after_prepare")
-
-            loss_total = None
-            first_pack = True
-            while self._stage2_post_rollout_buffer(channel="B"):
-                with self._stage2_stage_wallclock_ctx("sft"):
-                    t_pack0 = time.perf_counter()
-                    selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="B")
-                    pack_metrics = dict(pack_metrics)
-                    pack_metrics["time/post_rollout_pack_s"] = float(
-                        time.perf_counter() - t_pack0
-                    )
-
-                    step_totals_pack = step_totals if first_pack else {}
-                    sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="B"))
-                    if bool(sync_gradients):
-                        _ddp_phase_barrier(
-                            "channel_b_non_pipeline_before_final_sync_backward",
-                            timeout_s=float(ddp_phase_final_sync_timeout_s),
-                        )
-                    loss_pack = run_channel_b_train_one_pack(
-                        owner=self,
-                        model=model,
-                        selected=selected,
-                        pack_metrics=pack_metrics,
-                        rollout_static=rollout_static,
-                        step_totals=step_totals_pack,
-                        total_segments_target=int(total_segments_target),
-                        sync_gradients=sync_gradients,
-                        dist=dist,
-                        ddp_rank=int(ddp_rank),
-                        ddp_world_size=int(ddp_world_size),
-                    )
-
-                loss_total = (
-                    loss_pack if loss_total is None else (loss_total + loss_pack)
-                )
-                first_pack = False
-
-            if loss_total is None:
-                raise AssertionError("stage2-ab Channel-B step mode produced no packs")
-            return loss_total
 
         # Pipelined mode: produce segments in small decode micro-batches while the learner
         # consumes packed sequences. A bounded queue prevents unbounded rollout pooling.
