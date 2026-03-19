@@ -78,9 +78,10 @@ from .rollout_runtime.vllm_infer import (
     vllm_infer_tp_group,
 )
 from .rollout_runtime.vllm_server import (
+    build_vllm_server_seed_plan,
+    dispatch_vllm_server_rounds,
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
-    infer_on_vllm_server_slice,
     sync_vllm_server_full_weights,
     sync_vllm_server_rollout_model_if_needed,
     vllm_server_update_state_dict,
@@ -5224,42 +5225,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Log reproducibility metadata once per optimizer step (E-steps only).
         if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
-            seed_plan: List[Dict[str, Any]] = []
-            if int(len(infer_requests)) > 0 and round_cap_total > 0:
-                cursor = 0
-                round_idx = 0
-                while cursor < int(len(infer_requests)):
-                    remaining = int(len(infer_requests) - cursor)
-                    round_budget = int(min(remaining, round_cap_total))
-                    counts = _allocate_weighted_counts_with_caps(
-                        int(round_budget), per_server_rank_caps
-                    )
-                    offset = int(cursor)
-                    for i, cnt in enumerate(counts):
-                        if int(cnt) <= 0:
-                            continue
-                        start = int(offset)
-                        end = int(offset + int(cnt))
-                        seed_plan.append(
-                            {
-                                "round": int(round_idx),
-                                "server_idx": int(i),
-                                "base_url": str(servers[i].get("base_url", "")),
-                                "start": int(start),
-                                "end": int(end),
-                                "cap_for_rank": int(per_server_rank_caps[i]),
-                                # Effective per-server-call seed used for RequestConfig.seed:
-                                # seed = rollout_seed_base + chunk_start
-                                "seed": int(
-                                    self._normalize_rollout_seed_int32(
-                                        int(effective_seed_base + int(start))
-                                    )
-                                ),
-                            }
-                        )
-                        offset = int(end)
-                    cursor = int(cursor + round_budget)
-                    round_idx = int(round_idx + 1)
+            seed_plan = build_vllm_server_seed_plan(
+                owner=self,
+                servers=servers,
+                infer_requests=infer_requests,
+                effective_seed_base=int(effective_seed_base),
+                per_server_rank_caps=per_server_rank_caps,
+                round_cap_total=int(round_cap_total),
+                allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
+            )
 
             logger.info(
                 "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
@@ -5280,70 +5254,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             self._vllm_server_last_logged_step = int(gs)
 
-        results: List[Any] = [None] * len(infer_requests)
-
-
-        # Parallelize by server within each round.
-        # Each round enforces strict per-server caps for this learner rank.
-        from concurrent.futures import ThreadPoolExecutor
-
-        cursor = 0
-        while cursor < int(len(infer_requests)):
-            remaining = int(len(infer_requests) - cursor)
-            round_budget = int(min(remaining, max(1, int(round_cap_total))))
-            counts = _allocate_weighted_counts_with_caps(
-                int(round_budget), per_server_rank_caps
-            )
-
-            round_slices: List[Tuple[int, int, int]] = []
-            offset = int(cursor)
-            for i, cnt in enumerate(counts):
-                if int(cnt) <= 0:
-                    continue
-                start = int(offset)
-                end = int(offset + int(cnt))
-                round_slices.append((int(i), int(start), int(end)))
-                offset = int(end)
-
-            if not round_slices:
-                raise RuntimeError(
-                    "vLLM server rollout produced an empty dispatch round under non-empty workload: "
-                    f"cursor={int(cursor)} remaining={int(remaining)} per_server_rank_caps={per_server_rank_caps}"
-                )
-
-            with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
-                futs = [
-                    ex.submit(
-                        infer_on_vllm_server_slice,
-                        owner=self,
-                        logger=logger,
-                        client=client,
-                        servers=servers,
-                        infer_requests=infer_requests,
-                        base_request_config_dict=base_request_config_dict,
-                        effective_seed_base=int(effective_seed_base),
-                        infer_timeout_s=infer_timeout_s,
-                        with_logprobs=bool(with_logprobs),
-                        decode_mode=str(decode_mode),
-                        results=results,
-                        server_idx=int(i),
-                        start=int(start),
-                        end=int(end),
-                    )
-                    for i, start, end in round_slices
-                ]
-                for f in futs:
-                    f.result()
-
-            cursor = int(cursor + round_budget)
-
-        out: List[Any] = []
-        for r in results:
-            if r is None:
-                raise RuntimeError(
-                    "vLLM server failed to produce outputs for all requests"
-                )
-            out.append(r)
+        out = dispatch_vllm_server_rounds(
+            owner=self,
+            logger=logger,
+            client=client,
+            servers=servers,
+            infer_requests=infer_requests,
+            base_request_config_dict=base_request_config_dict,
+            effective_seed_base=int(effective_seed_base),
+            infer_timeout_s=infer_timeout_s,
+            with_logprobs=bool(with_logprobs),
+            decode_mode=str(decode_mode),
+            per_server_rank_caps=per_server_rank_caps,
+            round_cap_total=int(round_cap_total),
+            allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
+        )
 
         self._maybe_debug_dump_vllm_server_rollouts(
             global_step=gs,

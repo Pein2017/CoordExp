@@ -572,3 +572,132 @@ def infer_on_vllm_server_slice(
                 pad_token_id=getattr(owner.tokenizer, "pad_token_id", None),
             )
             results[idx] = (token_ids, text, decode_mode, prompt_ids)
+
+
+def dispatch_vllm_server_rounds(
+    *,
+    owner: Any,
+    logger: Any,
+    client: Any,
+    servers: Sequence[Mapping[str, Any]],
+    infer_requests: Sequence[Any],
+    base_request_config_dict: Mapping[str, Any],
+    effective_seed_base: int,
+    infer_timeout_s: Optional[float],
+    with_logprobs: bool,
+    decode_mode: str,
+    per_server_rank_caps: Sequence[int],
+    round_cap_total: int,
+    allocate_weighted_counts_with_caps_fn: Any,
+) -> List[Any]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: List[Any] = [None] * len(infer_requests)
+
+    cursor = 0
+    while cursor < int(len(infer_requests)):
+        remaining = int(len(infer_requests) - cursor)
+        round_budget = int(min(remaining, max(1, int(round_cap_total))))
+        counts = allocate_weighted_counts_with_caps_fn(
+            int(round_budget), list(int(x) for x in per_server_rank_caps)
+        )
+
+        round_slices: List[Tuple[int, int, int]] = []
+        offset = int(cursor)
+        for i, cnt in enumerate(counts):
+            if int(cnt) <= 0:
+                continue
+            start = int(offset)
+            end = int(offset + int(cnt))
+            round_slices.append((int(i), int(start), int(end)))
+            offset = int(end)
+
+        if not round_slices:
+            raise RuntimeError(
+                "vLLM server rollout produced an empty dispatch round under non-empty workload: "
+                f"cursor={int(cursor)} remaining={int(remaining)} per_server_rank_caps={list(int(x) for x in per_server_rank_caps)}"
+            )
+
+        with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
+            futs = [
+                ex.submit(
+                    infer_on_vllm_server_slice,
+                    owner=owner,
+                    logger=logger,
+                    client=client,
+                    servers=servers,
+                    infer_requests=infer_requests,
+                    base_request_config_dict=base_request_config_dict,
+                    effective_seed_base=int(effective_seed_base),
+                    infer_timeout_s=infer_timeout_s,
+                    with_logprobs=bool(with_logprobs),
+                    decode_mode=str(decode_mode),
+                    results=results,
+                    server_idx=int(i),
+                    start=int(start),
+                    end=int(end),
+                )
+                for i, start, end in round_slices
+            ]
+            for f in futs:
+                f.result()
+
+        cursor = int(cursor + round_budget)
+
+    out: List[Any] = []
+    for r in results:
+        if r is None:
+            raise RuntimeError("vLLM server failed to produce outputs for all requests")
+        out.append(r)
+
+    return out
+
+
+def build_vllm_server_seed_plan(
+    *,
+    owner: Any,
+    servers: Sequence[Mapping[str, Any]],
+    infer_requests: Sequence[Any],
+    effective_seed_base: int,
+    per_server_rank_caps: Sequence[int],
+    round_cap_total: int,
+    allocate_weighted_counts_with_caps_fn: Any,
+) -> List[Dict[str, Any]]:
+    seed_plan: List[Dict[str, Any]] = []
+    if int(len(infer_requests)) <= 0 or int(round_cap_total) <= 0:
+        return seed_plan
+
+    cursor = 0
+    round_idx = 0
+    while cursor < int(len(infer_requests)):
+        remaining = int(len(infer_requests) - cursor)
+        round_budget = int(min(remaining, int(round_cap_total)))
+        counts = allocate_weighted_counts_with_caps_fn(
+            int(round_budget), list(int(x) for x in per_server_rank_caps)
+        )
+        offset = int(cursor)
+        for i, cnt in enumerate(counts):
+            if int(cnt) <= 0:
+                continue
+            start = int(offset)
+            end = int(offset + int(cnt))
+            seed_plan.append(
+                {
+                    "round": int(round_idx),
+                    "server_idx": int(i),
+                    "base_url": str(servers[i].get("base_url", "")),
+                    "start": int(start),
+                    "end": int(end),
+                    "cap_for_rank": int(per_server_rank_caps[i]),
+                    "seed": int(
+                        owner._normalize_rollout_seed_int32(
+                            int(effective_seed_base + int(start))
+                        )
+                    ),
+                }
+            )
+            offset = int(end)
+        cursor = int(cursor + round_budget)
+        round_idx = int(round_idx + 1)
+
+    return seed_plan
