@@ -12,8 +12,8 @@ model:
 training:
   seed: 17
   run_name: epoch-1-eff_bs_128
-  output_dir: output/a_only/random_order-iter_4
-  logging_dir: tb/a_only/random_order-iter_4
+  output_dir: output/a_only/random_order-iter_2
+  logging_dir: tb/a_only/random_order-iter_2
   num_train_epochs: 1
   effective_batch_size: 128
   encoded_sample_cache:
@@ -29,7 +29,7 @@ custom:
   object_ordering: random
 
 stage2_ab:
-  n_softctx_iter: 4
+  n_softctx_iter: 2
   pipeline:
     objective:
       - name: token_ce
