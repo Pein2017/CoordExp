@@ -19,7 +19,11 @@ from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 
 import torch
 
-from .coordination import run_stage2_ab_ddp_monitored_barrier
+from .coordination import (
+    resolve_channel_b_timeouts,
+    run_stage2_ab_ddp_monitored_barrier,
+    split_rollout_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -560,28 +564,6 @@ class Stage2ABChannelExecutorsMixin:
         packing_length = int(self._packing_length())
         target_fill = float(self._packing_min_fill_ratio())
 
-        wait_timeout_cfg = self._ab_channel_b_get("producer_wait_timeout_s", None)
-        if wait_timeout_cfg is None:
-            producer_wait_timeout_s = 0.0
-        else:
-            try:
-                producer_wait_timeout_s = float(wait_timeout_cfg)
-            except Exception as exc:
-                raise ValueError(
-                    "stage2_ab.channel_b.producer_wait_timeout_s must be a float/int when set"
-                ) from exc
-        if producer_wait_timeout_s <= 0.0:
-            try:
-                conn_timeout_s, infer_timeout_s = self._vllm_server_timeouts()  # type: ignore[attr-defined]
-                base_timeout = (
-                    float(infer_timeout_s)
-                    if infer_timeout_s is not None
-                    else float(conn_timeout_s)
-                )
-                producer_wait_timeout_s = max(120.0, float(base_timeout) * 2.0)
-            except Exception:
-                producer_wait_timeout_s = 300.0
-
         try:
             import torch.distributed as dist
         except (AttributeError, RuntimeError, TypeError, ValueError):
@@ -593,33 +575,15 @@ class Stage2ABChannelExecutorsMixin:
             ddp_rank = int(dist.get_rank())
             ddp_world_size = max(1, int(dist.get_world_size()))
 
-        ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
-        if ddp_phase_timeout_raw is None:
-            ddp_phase_monitor_enabled = True
-            ddp_phase_timeout_s = 120.0
-        else:
-            try:
-                ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
-                ) from exc
-
-            if float(ddp_phase_timeout_s) <= 0.0:
-                if int(ddp_world_size) > 1:
-                    raise ValueError(
-                        "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 under DDP "
-                        "(coordination barriers must be bounded to prevent deadlocks)."
-                    )
-                ddp_phase_monitor_enabled = False
-                ddp_phase_timeout_s = 0.0
-            else:
-                ddp_phase_monitor_enabled = True
-                ddp_phase_timeout_s = float(max(30.0, min(3600.0, ddp_phase_timeout_s)))
-
-        # Keep all DDP coordination waits bounded and consistent.
-        ddp_phase_final_sync_timeout_s = float(ddp_phase_timeout_s)
-        ddp_monitor_group_timeout_s = float(ddp_phase_timeout_s)
+        (
+            producer_wait_timeout_s,
+            ddp_phase_monitor_enabled,
+            ddp_phase_final_sync_timeout_s,
+            ddp_monitor_group_timeout_s,
+        ) = resolve_channel_b_timeouts(
+            owner=self,
+            ddp_world_size=int(ddp_world_size),
+        )
 
         # Eagerly initialize the optional gloo monitor group at a safe synchronized
         # boundary (start of Channel-B step) so later monitored barriers can time out
@@ -700,7 +664,9 @@ class Stage2ABChannelExecutorsMixin:
                 )
 
             local_timeout_s = (
-                float(ddp_phase_timeout_s) if timeout_s is None else float(timeout_s)
+                float(ddp_phase_final_sync_timeout_s)
+                if timeout_s is None
+                else float(timeout_s)
             )
             local_timeout_s = float(max(30.0, min(3600.0, local_timeout_s)))
 
@@ -723,23 +689,6 @@ class Stage2ABChannelExecutorsMixin:
                     f"timeout_s={float(local_timeout_s):.1f}. "
                     "This indicates a cross-rank stage skew or deadlock after rollout."
                 ) from exc
-
-        def _split_metrics(
-            metrics: Mapping[str, Any],
-        ) -> Tuple[Dict[str, float], Dict[str, float]]:
-            rollout_static: Dict[str, float] = {}
-            step_totals: Dict[str, float] = {}
-            for k, v in metrics.items():
-                ks = str(k)
-                try:
-                    fv = float(v)  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    continue
-                if ks.startswith("rollout/"):
-                    rollout_static[ks] = float(fv)
-                else:
-                    step_totals[ks] = float(fv)
-            return rollout_static, step_totals
 
         # Step-budgeted mode: do NOT carry segments across optimizer steps.
         buf = self._stage2_post_rollout_buffer(channel="B")
@@ -860,7 +809,7 @@ class Stage2ABChannelExecutorsMixin:
                 == int(target_log_step)
                 else 0.0
             )
-            rollout_static, step_totals = _split_metrics(batch_metrics)
+            rollout_static, step_totals = split_rollout_metrics(batch_metrics)
             step_totals["stage2/raw_rollouts"] = float(total_segments_target)
 
             self._stage2_append_post_rollout_segments(channel="B", segments=segments)
@@ -1006,7 +955,7 @@ class Stage2ABChannelExecutorsMixin:
 
                 self._stage2_append_post_rollout_segments(channel="B", segments=segs)
 
-                r_static, step_tot = _split_metrics(metrics)
+                r_static, step_tot = split_rollout_metrics(metrics)
                 if not rollout_static:
                     rollout_static.update(r_static)
                 else:
