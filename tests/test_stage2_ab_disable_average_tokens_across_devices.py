@@ -83,8 +83,7 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
 
         def _ab_channel_b_get(self, key: str, default=None):
             if key == "ddp_phase_timeout_s":
-                # Avoid needing dist.monitored_barrier in unit tests.
-                return 0.0
+                return 120.0
             return default
 
     monkeypatch.setattr(dist, "is_available", lambda: True)
@@ -92,6 +91,8 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
     monkeypatch.setattr(dist, "get_world_size", lambda: 2)
     monkeypatch.setattr(dist, "get_rank", lambda: 0)
     monkeypatch.setattr(dist, "barrier", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(dist, "new_group", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(dist, "monitored_barrier", lambda *_args, **_kwargs: None)
 
     t = DummyTrainer()
 
