@@ -45,9 +45,9 @@
 
 - [x] 1.1 Introduce explicit internal types for Channel-A / Channel-B prepared payloads, including the metadata currently threaded through `_rollout_matching_meta`.
 - [x] 1.2 Extract Channel-B clean-prefix target construction out of `src/trainers/stage2_two_channel.py` into dedicated package-local modules without changing semantics.
-- [ ] 1.3 Extract channel-specific objective execution and log projection out of `compute_loss` into a dedicated `objective_runner` layer.
-- [ ] 1.4 Keep `src/trainers/stage2_two_channel.py` as the public assembly surface, with the current `scheduler.py`, `executors.py`, compatibility wrapper, and legacy Stage-2 import shims preserved.
-- [ ] 1.5 Validate after each logical slice:
+- [x] 1.3 Extract channel-specific objective execution and log projection out of `compute_loss` into a dedicated `objective_runner` layer.
+- [x] 1.4 Keep `src/trainers/stage2_two_channel.py` as the public assembly surface, with the current `scheduler.py`, `executors.py`, compatibility wrapper, and legacy Stage-2 import shims preserved.
+- [x] 1.5 Validate after each logical slice:
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_config_contract.py`
