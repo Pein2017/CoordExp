@@ -23,6 +23,7 @@ from .coordination import (
     accumulate_channel_b_producer_item,
     resolve_channel_b_timeouts,
     run_stage2_ab_ddp_monitored_barrier,
+    run_channel_b_pipeline_producer,
     split_rollout_metrics,
 )
 
@@ -864,39 +865,13 @@ class Stage2ABChannelExecutorsMixin:
         producer_exc: List[Exception] = []
 
         def _producer() -> None:
-            prev_skip = bool(getattr(self, "_stage2_skip_vllm_server_sync", False))
-            setattr(self, "_stage2_skip_vllm_server_sync", True)
-            try:
-                for off in range(0, int(len(raw_samples)), int(rollout_decode_bs)):
-                    chunk = list(raw_samples[int(off) : int(off + rollout_decode_bs)])
-                    if not chunk:
-                        continue
-                    with self._stage2_stage_wallclock_ctx("rollout"):
-                        segs, m = self._prepare_batch_inputs_b(
-                            chunk, _segments_only=True
-                        )
-                    # `raw_n` counts pre-drop rollouts; under strict format policy
-                    # `len(segs)` may be < raw_n due to dropped malformed rollouts.
-                    raw_n = int(len(chunk))
-                    q.put((segs, dict(m) if isinstance(m, Mapping) else {}, raw_n))
-            except (
-                AttributeError,
-                IndexError,
-                KeyError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as exc:
-                producer_exc.append(exc)
-            finally:
-                setattr(self, "_stage2_skip_vllm_server_sync", prev_skip)
-                while True:
-                    try:
-                        q.put(None, timeout=1.0)
-                        break
-                    except queue.Full:
-                        continue
+            run_channel_b_pipeline_producer(
+                owner=self,
+                raw_samples=raw_samples,
+                rollout_decode_bs=int(rollout_decode_bs),
+                queue_obj=q,
+                producer_exc=producer_exc,
+            )
 
         th = threading.Thread(target=_producer, daemon=True)
         th.start()

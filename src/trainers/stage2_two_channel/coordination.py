@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 
 def run_stage2_ab_ddp_monitored_barrier(
@@ -172,9 +172,49 @@ def accumulate_channel_b_producer_item(
     return int(seen_segments), int(seen_raw), int(buf_total_len)
 
 
+def run_channel_b_pipeline_producer(
+    *,
+    owner: Any,
+    raw_samples: Sequence[Mapping[str, Any]],
+    rollout_decode_bs: int,
+    queue_obj: Any,
+    producer_exc: list[Exception],
+) -> None:
+    prev_skip = bool(getattr(owner, "_stage2_skip_vllm_server_sync", False))
+    setattr(owner, "_stage2_skip_vllm_server_sync", True)
+    try:
+        for off in range(0, int(len(raw_samples)), int(rollout_decode_bs)):
+            chunk = list(raw_samples[int(off) : int(off + rollout_decode_bs)])
+            if not chunk:
+                continue
+            with owner._stage2_stage_wallclock_ctx("rollout"):
+                segs, m = owner._prepare_batch_inputs_b(chunk, _segments_only=True)
+            raw_n = int(len(chunk))
+            queue_obj.put((segs, dict(m) if isinstance(m, Mapping) else {}, raw_n))
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        producer_exc.append(exc)
+    finally:
+        setattr(owner, "_stage2_skip_vllm_server_sync", prev_skip)
+        while True:
+            try:
+                queue_obj.put(None, timeout=1.0)
+                break
+            except Exception:
+                continue
+
+
 __all__ = [
     "accumulate_channel_b_producer_item",
     "run_stage2_ab_ddp_monitored_barrier",
+    "run_channel_b_pipeline_producer",
     "resolve_channel_b_timeouts",
     "split_rollout_metrics",
 ]
