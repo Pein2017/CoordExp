@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
@@ -421,3 +421,154 @@ def sync_vllm_server_full_weights(
         logger.warning(
             "Failed to reset vLLM server prefix cache after full sync: %s", exc
         )
+
+
+def infer_on_vllm_server_slice(
+    *,
+    owner: Any,
+    logger: Any,
+    client: Any,
+    servers: Sequence[Mapping[str, Any]],
+    infer_requests: Sequence[Any],
+    base_request_config_dict: Mapping[str, Any],
+    effective_seed_base: int,
+    infer_timeout_s: Optional[float],
+    with_logprobs: bool,
+    decode_mode: str,
+    results: List[Any],
+    server_idx: int,
+    start: int,
+    end: int,
+) -> None:
+    if start >= end:
+        return
+    base_url = str(servers[server_idx]["base_url"]).rstrip("/")
+
+    req_cfg = dict(base_request_config_dict)
+    req_cfg["seed"] = int(
+        owner._normalize_rollout_seed_int32(int(effective_seed_base + int(start)))
+    )
+
+    payload = {
+        "infer_requests": infer_requests[start:end],
+        "request_config": req_cfg,
+        "metrics": None,
+        "template": None,
+        "use_tqdm": None,
+        "adapter_request": None,
+    }
+
+    url = f"{base_url}/infer/"
+    session = client.sessions[server_idx]
+    req_timeout: Optional[Tuple[float, float]]
+    if infer_timeout_s is None:
+        req_timeout = None
+    else:
+        req_timeout_s = float(infer_timeout_s)
+        req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
+
+    import requests
+
+    request_errors: Tuple[type[BaseException], ...] = (
+        requests.exceptions.RequestException,
+        TypeError,
+        ValueError,
+    )
+    try:
+        with owner._vllm_server_infer_guard():
+            resp = session.post(url, json=payload, timeout=req_timeout)
+    except request_errors as exc:
+        try:
+            client.sessions[server_idx] = requests.Session()
+            session = client.sessions[server_idx]
+            with owner._vllm_server_infer_guard():
+                resp = session.post(url, json=payload, timeout=req_timeout)
+        except request_errors as exc2:
+            if int(end - start) > 1:
+                mid = int((start + end) // 2)
+                logger.warning(
+                    "vLLM server infer request failed; splitting batch: url=%s start=%s end=%s mid=%s exc=%r",
+                    url,
+                    int(start),
+                    int(end),
+                    int(mid),
+                    exc2,
+                )
+                infer_on_vllm_server_slice(
+                    owner=owner,
+                    logger=logger,
+                    client=client,
+                    servers=servers,
+                    infer_requests=infer_requests,
+                    base_request_config_dict=base_request_config_dict,
+                    effective_seed_base=int(effective_seed_base),
+                    infer_timeout_s=infer_timeout_s,
+                    with_logprobs=bool(with_logprobs),
+                    decode_mode=str(decode_mode),
+                    results=results,
+                    server_idx=int(server_idx),
+                    start=int(start),
+                    end=int(mid),
+                )
+                infer_on_vllm_server_slice(
+                    owner=owner,
+                    logger=logger,
+                    client=client,
+                    servers=servers,
+                    infer_requests=infer_requests,
+                    base_request_config_dict=base_request_config_dict,
+                    effective_seed_base=int(effective_seed_base),
+                    infer_timeout_s=infer_timeout_s,
+                    with_logprobs=bool(with_logprobs),
+                    decode_mode=str(decode_mode),
+                    results=results,
+                    server_idx=int(server_idx),
+                    start=int(mid),
+                    end=int(end),
+                )
+                return
+
+            raise RuntimeError(
+                "vLLM server infer request failed after retry: "
+                f"url={url} timeout={req_timeout!r} first_exc={exc!r} retry_exc={exc2!r}"
+            ) from exc2
+
+    if int(getattr(resp, "status_code", 0) or 0) != 200:
+        raise RuntimeError(
+            f"vLLM server infer failed: url={url} status={getattr(resp, 'status_code', None)} body={getattr(resp, 'text', '')}"
+        )
+
+    data = resp.json()
+    if not isinstance(data, list):
+        raise RuntimeError("vLLM server returned non-list JSON")
+    if len(data) != int(end - start):
+        raise RuntimeError(
+            "vLLM server returned unexpected number of outputs: "
+            f"expected={int(end - start)} got={len(data)}"
+        )
+
+    for j, raw_out in enumerate(data):
+        idx = int(start + j)
+        if with_logprobs:
+            (
+                token_ids,
+                text,
+                prompt_ids,
+                token_logprobs,
+                generated_token_text,
+            ) = owner._parse_vllm_server_output_traced(raw_out, tokenizer=owner.tokenizer)
+            results[idx] = (
+                token_ids,
+                text,
+                decode_mode,
+                prompt_ids,
+                token_logprobs,
+                generated_token_text,
+            )
+        else:
+            token_ids, text, prompt_ids = owner._parse_vllm_server_output(raw_out)
+            prompt_ids = owner._strip_left_padding_token_ids(
+                prompt_ids,
+                pad_token_id=getattr(owner.tokenizer, "pad_token_id", None),
+            )
+            results[idx] = (token_ids, text, decode_mode, prompt_ids)

@@ -80,6 +80,7 @@ from .rollout_runtime.vllm_infer import (
 from .rollout_runtime.vllm_server import (
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
+    infer_on_vllm_server_slice,
     sync_vllm_server_full_weights,
     sync_vllm_server_rollout_model_if_needed,
     vllm_server_update_state_dict,
@@ -5282,119 +5283,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         results: List[Any] = [None] * len(infer_requests)
 
 
-        def _infer_on_server(server_idx: int, start: int, end: int) -> None:
-            if start >= end:
-                return
-            base_url = str(servers[server_idx]["base_url"]).rstrip("/")
-
-            # Derive per-server-call seed so per-request seeds are stable.
-            req_cfg = dict(base_request_config_dict)
-            req_cfg["seed"] = int(
-                self._normalize_rollout_seed_int32(int(effective_seed_base + int(start)))
-            )
-
-            payload = {
-                "infer_requests": infer_requests[start:end],
-                "request_config": req_cfg,
-                "metrics": None,
-                "template": None,
-                "use_tqdm": None,
-                "adapter_request": None,
-            }
-
-            url = f"{base_url}/infer/"
-            session = client.sessions[server_idx]
-            req_timeout: Optional[Tuple[float, float]]
-            if infer_timeout_s is None:
-                req_timeout = None
-            else:
-                req_timeout_s = float(infer_timeout_s)
-                # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
-                req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
-
-            import requests
-
-            request_errors: Tuple[type[BaseException], ...] = (
-                requests.exceptions.RequestException,
-                TypeError,
-                ValueError,
-            )
-            try:
-                with self._vllm_server_infer_guard():
-                    resp = session.post(url, json=payload, timeout=req_timeout)
-            except request_errors as exc:
-                # Retry once with a fresh session. This helps when the server was idle for A steps
-                # (AAB schedules) and the underlying keep-alive connection was dropped.
-                try:
-                    client.sessions[server_idx] = requests.Session()
-                    session = client.sessions[server_idx]
-                    with self._vllm_server_infer_guard():
-                        resp = session.post(url, json=payload, timeout=req_timeout)
-                except request_errors as exc2:
-                    # If this was a batched request, fall back to smaller batches. This is a
-                    # common failure mode when a few samples hit max_new_tokens and the read
-                    # timeout is exceeded.
-                    if int(end - start) > 1:
-                        mid = int((start + end) // 2)
-                        logger.warning(
-                            "vLLM server infer request failed; splitting batch: url=%s start=%s end=%s mid=%s exc=%r",
-                            url,
-                            int(start),
-                            int(end),
-                            int(mid),
-                            exc2,
-                        )
-                        _infer_on_server(int(server_idx), int(start), int(mid))
-                        _infer_on_server(int(server_idx), int(mid), int(end))
-                        return
-
-                    raise RuntimeError(
-                        "vLLM server infer request failed after retry: "
-                        f"url={url} timeout={req_timeout!r} first_exc={exc!r} retry_exc={exc2!r}"
-                    ) from exc2
-
-            if int(getattr(resp, "status_code", 0) or 0) != 200:
-                raise RuntimeError(
-                    f"vLLM server infer failed: url={url} status={getattr(resp, 'status_code', None)} body={getattr(resp, 'text', '')}"
-                )
-
-            data = resp.json()
-            if not isinstance(data, list):
-                raise RuntimeError("vLLM server returned non-list JSON")
-            if len(data) != int(end - start):
-                raise RuntimeError(
-                    "vLLM server returned unexpected number of outputs: "
-                    f"expected={int(end - start)} got={len(data)}"
-                )
-
-            for j, raw_out in enumerate(data):
-                idx = int(start + j)
-                if with_logprobs:
-                    (
-                        token_ids,
-                        text,
-                        prompt_ids,
-                        token_logprobs,
-                        generated_token_text,
-                    ) = self._parse_vllm_server_output_traced(
-                        raw_out, tokenizer=self.tokenizer
-                    )
-                    results[idx] = (
-                        token_ids,
-                        text,
-                        decode_mode,
-                        prompt_ids,
-                        token_logprobs,
-                        generated_token_text,
-                    )
-                else:
-                    token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
-                    prompt_ids = self._strip_left_padding_token_ids(
-                        prompt_ids,
-                        pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
-                    )
-                    results[idx] = (token_ids, text, decode_mode, prompt_ids)
-
         # Parallelize by server within each round.
         # Each round enforces strict per-server caps for this learner rank.
         from concurrent.futures import ThreadPoolExecutor
@@ -5425,7 +5313,23 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
                 futs = [
-                    ex.submit(_infer_on_server, int(i), int(start), int(end))
+                    ex.submit(
+                        infer_on_vllm_server_slice,
+                        owner=self,
+                        logger=logger,
+                        client=client,
+                        servers=servers,
+                        infer_requests=infer_requests,
+                        base_request_config_dict=base_request_config_dict,
+                        effective_seed_base=int(effective_seed_base),
+                        infer_timeout_s=infer_timeout_s,
+                        with_logprobs=bool(with_logprobs),
+                        decode_mode=str(decode_mode),
+                        results=results,
+                        server_idx=int(i),
+                        start=int(start),
+                        end=int(end),
+                    )
                     for i, start, end in round_slices
                 ]
                 for f in futs:
