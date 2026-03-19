@@ -37,6 +37,7 @@ Recent grouped commits:
 - `f70d60c` `refactor(rollout): extract vllm server infer helpers`
 - `36eb09e` `refactor(rollout): extract vllm colocate rollout helper`
 - `80171b7` `refactor(rollout): extract vllm server dispatch helpers`
+- `2215ef4` `refactor(rollout): extract vllm server client lifecycle`
 
 ## Validation Status
 
