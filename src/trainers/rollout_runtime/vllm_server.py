@@ -174,3 +174,120 @@ def shutdown_vllm_server_client(
 
         owner._vllm_server_client = None
         setattr(owner, "_vllm_server_comm_inited", False)
+
+
+def sync_vllm_server_rollout_model_if_needed(
+    *,
+    owner: Any,
+) -> None:
+    step = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
+
+    rank = 0
+    world_size = 1
+    try:
+        import torch
+        import torch.distributed as dist
+    except (TypeError, ValueError):
+        dist = None  # type: ignore[assignment]
+        torch = None  # type: ignore[assignment]
+
+    if dist is not None and dist.is_available() and dist.is_initialized():
+        rank = int(dist.get_rank())
+        world_size = int(dist.get_world_size())
+
+    last = int(getattr(owner, "_vllm_server_last_synced_step", -1))
+    need_sync = int(step != last)
+
+    if (
+        dist is not None
+        and dist.is_available()
+        and dist.is_initialized()
+        and int(world_size) > 1
+    ):
+        try:
+            backend = str(dist.get_backend()).lower()
+        except (TypeError, ValueError):
+            backend = ""
+
+        reduce_device = torch.device("cpu")
+        if backend == "nccl" and torch is not None and torch.cuda.is_available():
+            reduce_device = owner.model.device
+
+        flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
+        dist.broadcast(flag, src=0)
+        need_sync = int(flag.item())
+
+    if need_sync == 0:
+        return
+
+    eff_mode = owner._effective_vllm_server_sync_mode()
+    if eff_mode != "full":
+        raise ValueError(
+            "rollout_matching.vllm.sync.mode must be 'full' in this stack "
+            "(adapter/auto sync modes are unsupported)."
+        )
+
+    if (
+        dist is None
+        or (not dist.is_available())
+        or (not dist.is_initialized())
+        or int(world_size) == 1
+    ):
+        client = owner._ensure_vllm_server_client()
+        if not bool(getattr(owner, "_vllm_server_comm_inited", False)):
+            try:
+                client.init_communicator(device=0)
+                setattr(owner, "_vllm_server_comm_inited", True)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "Failed to initialize NCCL communicator with vLLM rollout server(s). "
+                    "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
+                ) from exc
+
+        owner._sync_vllm_server_full_weights(client)
+        owner._vllm_server_last_synced_step = step
+        return
+
+    assert dist is not None and dist.is_initialized()
+
+    sync_failed = 0
+    sync_err_msg = ""
+    if int(rank) == 0:
+        try:
+            client = owner._ensure_vllm_server_client()
+            owner._ensure_vllm_server_communicator_rank0(client)
+            owner._sync_vllm_server_full_weights(client)
+        except Exception as exc:
+            sync_failed = 1
+            sync_err_msg = f"{exc.__class__.__name__}: {exc}"
+
+    try:
+        try:
+            backend = str(dist.get_backend()).lower()
+        except Exception:
+            backend = ""
+
+        reduce_device = torch.device("cpu")
+        if backend == "nccl" and torch is not None and torch.cuda.is_available():
+            reduce_device = owner.model.device
+    except Exception:
+        reduce_device = torch.device("cpu")
+
+    flag = torch.tensor([int(sync_failed)], device=reduce_device, dtype=torch.int32)
+    dist.broadcast(flag, src=0)
+    sync_failed = int(flag.item())
+
+    msg_list = [sync_err_msg] if int(rank) == 0 else [""]
+    try:
+        dist.broadcast_object_list(msg_list, src=0, device=reduce_device)
+    except TypeError:
+        dist.broadcast_object_list(msg_list, src=0)
+    sync_err_msg = str(msg_list[0])
+
+    if int(sync_failed) != 0:
+        raise RuntimeError(
+            "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
+            f"Error: {sync_err_msg}"
+        )
+
+    owner._vllm_server_last_synced_step = step

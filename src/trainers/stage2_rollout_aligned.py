@@ -75,6 +75,7 @@ from .rollout_runtime.vllm_engine import (
 from .rollout_runtime.vllm_server import (
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
+    sync_vllm_server_rollout_model_if_needed,
     shutdown_vllm_server_client,
 )
 
@@ -4568,129 +4569,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         Async actor-learner should coordinate server sync at safe boundaries and
         avoid invoking DDP collectives from background prefetch threads.
         """
-        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-
-        rank = 0
-        world_size = 1
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            rank = int(dist.get_rank())
-            world_size = int(dist.get_world_size())
-
-        last = int(getattr(self, "_vllm_server_last_synced_step", -1))
-        need_sync = int(step != last)
-
-        # Under DDP, ensure all ranks take the same early-return decision.
-        if (
-            dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-            and int(world_size) > 1
-        ):
-            try:
-                backend = str(dist.get_backend()).lower()
-            except (TypeError, ValueError):
-                backend = ""
-
-            reduce_device = torch.device("cpu")
-            if backend == "nccl" and torch.cuda.is_available():
-                reduce_device = self.model.device
-
-            flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
-            dist.broadcast(flag, src=0)
-            need_sync = int(flag.item())
-
-        if need_sync == 0:
-            return
-
-        eff_mode = self._effective_vllm_server_sync_mode()
-        if eff_mode != "full":
-            raise ValueError(
-                "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-                "(adapter/auto sync modes are unsupported)."
-            )
-
-        # Single-process learner: full sync.
-        if (
-            dist is None
-            or (not dist.is_available())
-            or (not dist.is_initialized())
-            or int(world_size) == 1
-        ):
-            client = self._ensure_vllm_server_client()
-            if not bool(getattr(self, "_vllm_server_comm_inited", False)):
-                try:
-                    client.init_communicator(device=0)
-                    setattr(self, "_vllm_server_comm_inited", True)
-                except (TypeError, ValueError) as exc:
-                    raise RuntimeError(
-                        "Failed to initialize NCCL communicator with vLLM rollout server(s). "
-                        "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
-                    ) from exc
-
-            self._sync_vllm_server_full_weights(client)
-
-            # Keep local state consistent across ranks so the next call is stable.
-            self._vllm_server_last_synced_step = step
-            return
-
-        # Multi-process learner (DDP): rank0-only full sync with strict collective ordering.
-        assert dist is not None and dist.is_initialized()
-
-        # IMPORTANT: no early returns after this point without symmetric collectives.
-        # The broadcasts below synchronize all ranks while rank0 performs the sync.
-
-        sync_failed = 0
-        sync_err_msg = ""
-        if int(rank) == 0:
-            try:
-                client = self._ensure_vllm_server_client()
-                self._ensure_vllm_server_communicator_rank0(client)
-                self._sync_vllm_server_full_weights(client)
-            except Exception as exc:
-                # Do NOT raise here: we must broadcast the failure so all ranks
-                # take identical control-flow and terminate together.
-                sync_failed = 1
-                sync_err_msg = f"{exc.__class__.__name__}: {exc}"
-
-        # Propagate rank0 failure to all ranks (prevents confusing hangs where
-        # non-rank0 continues until the next collective).
-        try:
-            try:
-                backend = str(dist.get_backend()).lower()
-            except Exception:
-                backend = ""
-
-            reduce_device = torch.device("cpu")
-            if backend == "nccl" and torch.cuda.is_available():
-                reduce_device = self.model.device  # type: ignore[assignment]
-        except Exception:
-            reduce_device = torch.device("cpu")
-
-        flag = torch.tensor([int(sync_failed)], device=reduce_device, dtype=torch.int32)
-        dist.broadcast(flag, src=0)
-        sync_failed = int(flag.item())
-
-        msg_list = [sync_err_msg] if int(rank) == 0 else [""]
-        try:
-            dist.broadcast_object_list(msg_list, src=0, device=reduce_device)
-        except TypeError:
-            # Older torch may not accept the `device=` kwarg.
-            dist.broadcast_object_list(msg_list, src=0)
-        sync_err_msg = str(msg_list[0])
-
-        if int(sync_failed) != 0:
-            raise RuntimeError(
-                "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
-                f"Error: {sync_err_msg}"
-            )
-
-        # Keep local state consistent on all ranks.
-        self._vllm_server_last_synced_step = step
+        sync_vllm_server_rollout_model_if_needed(owner=self)
 
     def _sync_vllm_server_full_weights(self, client: Any) -> None:
         """Full merged-weight sync to vLLM server (robust default)."""
