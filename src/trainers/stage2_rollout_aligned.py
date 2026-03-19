@@ -70,8 +70,10 @@ from src.utils.metric_key_lookup import (
 from .rollout_runtime.vllm_config import resolve_vllm_engine_config
 from .rollout_runtime.vllm_engine import (
     instantiate_vllm_engine,
+    sync_vllm_full_weights_if_needed,
     shutdown_vllm_colocate_engine,
 )
+from .rollout_runtime.vllm_infer import vllm_infer_tp_group
 from .rollout_runtime.vllm_server import (
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
@@ -4132,98 +4134,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _sync_vllm_full_weights_if_needed(self) -> None:
         """Sync merged (LoRA-applied) weights into vLLM when vLLM LoRA is disabled."""
-        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        if step == self._vllm_last_loaded_step:
-            return
-
-        engine = self._ensure_vllm_engine()
-
-        from contextlib import nullcontext
-
-        unwrap_model = getattr(getattr(self, "accelerator", None), "unwrap_model", None)
-        train_model = unwrap_model(self.model) if callable(unwrap_model) else self.model
-
-        try:
-            from accelerate.utils import is_peft_model
-        except (TypeError, ValueError):
-            is_peft_model = None  # type: ignore[assignment]
-
-        is_peft = (
-            bool(is_peft_model(train_model)) if is_peft_model is not None else False
-        )
-
-        merge_cm = nullcontext()
-        unmerge_cm = nullcontext()
-        if is_peft:
-            try:
-                from swift.trainers.rlhf_trainer.utils import (
-                    patch_lora_merge,
-                    patch_lora_unmerge,
-                )
-
-                merge_cm = patch_lora_merge(train_model)
-                unmerge_cm = patch_lora_unmerge(train_model)
-            except (TypeError, ValueError):
-                merge_cm = nullcontext()
-                unmerge_cm = nullcontext()
-
-        params = [p for _, p in train_model.named_parameters()]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-
-        with gather_if_zero3(params), merge_cm, torch.no_grad():
-            merged = False
-            try:
-                if is_peft:
-                    try:
-                        # Merge adapter weights into base weights for extraction.
-                        train_model.merge_adapter()
-                        merged = True
-                    except (TypeError, ValueError) as exc:
-                        raise RuntimeError(
-                            "Failed to merge adapter weights from the training model for vLLM full sync. "
-                            "Mitigations: switch rollout backend to HF or ensure your PEFT stack supports "
-                            "merge_adapter/unmerge_adapter."
-                        ) from exc
-
-                state_dict = train_model.state_dict()
-                if is_peft:
-                    # Follow ms-swift GRPO key mapping conventions to match vLLM model names.
-                    prefix_removed = {
-                        k.removeprefix("base_model.model."): v
-                        for k, v in state_dict.items()
-                    }
-                    state_dict = {
-                        k.replace(".base_layer", ""): v
-                        for k, v in prefix_removed.items()
-                    }
-                    prefix = getattr(train_model, "prefix", None)
-                    if isinstance(prefix, str) and prefix:
-                        state_dict = {
-                            k: v for k, v in state_dict.items() if prefix not in k
-                        }
-                    state_dict = {
-                        k.replace("modules_to_save.default.", ""): v
-                        for k, v in state_dict.items()
-                        if "original_module" not in k
-                    }
-                    # vLLM LoRA is disabled: do not pass LoRA tensors (they're already merged).
-                    state_dict = {
-                        k: v for k, v in state_dict.items() if "lora_" not in k
-                    }
-
-                engine.inner_model.load_weights(state_dict.items())
-            finally:
-                # Never leave the training model in merged state, even if vLLM loading fails.
-                if is_peft and merged:
-                    with unmerge_cm:
-                        train_model.unmerge_adapter()
-
-        try:
-            engine.engine.reset_prefix_cache()
-        except (TypeError, ValueError):
-            raise
-
-        self._vllm_last_loaded_step = step
+        sync_vllm_full_weights_if_needed(owner=self)
 
     def _sync_vllm_lora_if_needed(self) -> None:
         raise RuntimeError(
@@ -4598,58 +4509,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, infer_requests: List[Dict[str, Any]], request_config: Any
     ) -> List[Any]:
         """TP-group gather/slice pattern for colocate vLLM rollouts (matches ms-swift behavior)."""
-        engine = self._ensure_vllm_engine()
-        tp = int(self._vllm_tp_size)
-        # Optional micro-batching to reduce peak vLLM (vision) memory usage in colocate mode.
-        vcfg = self._cfg("vllm", None)
-        infer_batch_size: Optional[int] = None
-        if isinstance(vcfg, Mapping):
-            raw = vcfg.get("infer_batch_size", None)
-            if raw is not None:
-                try:
-                    infer_batch_size = int(raw)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "rollout_matching.vllm.infer_batch_size must be an int"
-                    ) from exc
-                if infer_batch_size <= 0:
-                    infer_batch_size = None
-
-        def _infer_batched(reqs: List[Dict[str, Any]]) -> List[Any]:
-            if not reqs:
-                return []
-            if infer_batch_size is None or infer_batch_size >= len(reqs):
-                return engine.infer(reqs, request_config=request_config, use_tqdm=False)
-            outs: List[Any] = []
-            for i in range(0, len(reqs), infer_batch_size):
-                outs.extend(
-                    engine.infer(
-                        reqs[i : i + infer_batch_size],
-                        request_config=request_config,
-                        use_tqdm=False,
-                    )
-                )
-            return outs
-
-        if tp <= 1:
-            return _infer_batched(infer_requests)
-
-        import torch.distributed as dist
-
-        group = self._vllm_tp_group
-        local_rank = int(dist.get_rank(group=group))
-        local_len = int(len(infer_requests))
-        all_lens: List[int] = [0 for _ in range(tp)]
-        dist.all_gather_object(all_lens, local_len, group=group)
-        start_idx = sum(int(x) for x in all_lens[:local_rank])
-        end_idx = start_idx + local_len
-
-        gathered: List[List[Dict[str, Any]]] = [[] for _ in range(tp)]
-        dist.all_gather_object(gathered, infer_requests, group=group)
-        flat: List[Dict[str, Any]] = [x for sub in gathered for x in sub]
-
-        outs = _infer_batched(flat)
-        return outs[start_idx:end_idx]
+        return vllm_infer_tp_group(
+            owner=self,
+            infer_requests=infer_requests,
+            request_config=request_config,
+        )
 
     def _enforce_hf_rollout_max_position_embeddings(
         self, *, prompt_pad_len: int, max_new_tokens: int

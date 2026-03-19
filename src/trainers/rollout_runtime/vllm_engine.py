@@ -217,3 +217,89 @@ def shutdown_vllm_colocate_engine(
 
     owner._best_effort_cleanup_vllm_sleep_mode_pools()
     owner._cuda_memory_drain(synchronize=True)
+
+
+def sync_vllm_full_weights_if_needed(
+    *,
+    owner: Any,
+) -> None:
+    step = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
+    if step == owner._vllm_last_loaded_step:
+        return
+
+    engine = owner._ensure_vllm_engine()
+
+    from contextlib import nullcontext
+
+    unwrap_model = getattr(getattr(owner, "accelerator", None), "unwrap_model", None)
+    train_model = unwrap_model(owner.model) if callable(unwrap_model) else owner.model
+
+    try:
+        from accelerate.utils import is_peft_model
+    except (TypeError, ValueError):
+        is_peft_model = None  # type: ignore[assignment]
+
+    is_peft = bool(is_peft_model(train_model)) if is_peft_model is not None else False
+
+    merge_cm = nullcontext()
+    unmerge_cm = nullcontext()
+    if is_peft:
+        try:
+            from swift.trainers.rlhf_trainer.utils import (
+                patch_lora_merge,
+                patch_lora_unmerge,
+            )
+
+            merge_cm = patch_lora_merge(train_model)
+            unmerge_cm = patch_lora_unmerge(train_model)
+        except (TypeError, ValueError):
+            merge_cm = nullcontext()
+            unmerge_cm = nullcontext()
+
+    from swift.trainers.rlhf_trainer.utils import get_gather_if_zero3_context
+
+    params = [p for _, p in train_model.named_parameters()]
+    gather_if_zero3 = get_gather_if_zero3_context(owner)
+
+    with gather_if_zero3(params), merge_cm, torch.no_grad():
+        merged = False
+        try:
+            if is_peft:
+                try:
+                    train_model.merge_adapter()
+                    merged = True
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "Failed to merge adapter weights from the training model for vLLM full sync. "
+                        "Mitigations: switch rollout backend to HF or ensure your PEFT stack supports "
+                        "merge_adapter/unmerge_adapter."
+                    ) from exc
+
+            state_dict = train_model.state_dict()
+            if is_peft:
+                prefix_removed = {
+                    k.removeprefix("base_model.model."): v for k, v in state_dict.items()
+                }
+                state_dict = {
+                    k.replace(".base_layer", ""): v for k, v in prefix_removed.items()
+                }
+                prefix = getattr(train_model, "prefix", None)
+                if isinstance(prefix, str) and prefix:
+                    state_dict = {
+                        k: v for k, v in state_dict.items() if prefix not in k
+                    }
+                state_dict = {
+                    k.replace("modules_to_save.default.", ""): v
+                    for k, v in state_dict.items()
+                    if "original_module" not in k
+                }
+                state_dict = {k: v for k, v in state_dict.items() if "lora_" not in k}
+
+            engine.inner_model.load_weights(state_dict.items())
+        finally:
+            if is_peft and merged:
+                with unmerge_cm:
+                    train_model.unmerge_adapter()
+
+    engine.engine.reset_prefix_cache()
+    owner._vllm_last_loaded_step = step
