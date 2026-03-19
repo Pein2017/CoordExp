@@ -68,8 +68,15 @@ from src.utils.metric_key_lookup import (
     stage2_eval_metric_key,
 )
 from .rollout_runtime.vllm_config import resolve_vllm_engine_config
-from .rollout_runtime.vllm_engine import instantiate_vllm_engine
-from .rollout_runtime.vllm_server import ensure_vllm_server_client
+from .rollout_runtime.vllm_engine import (
+    instantiate_vllm_engine,
+    shutdown_vllm_colocate_engine,
+)
+from .rollout_runtime.vllm_server import (
+    ensure_vllm_server_client,
+    ensure_vllm_server_communicator_rank0,
+    shutdown_vllm_server_client,
+)
 
 from .rollout_matching.contracts import (
     GTObject,
@@ -4242,33 +4249,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _ensure_vllm_server_communicator_rank0(self, client: Any) -> None:
         """Initialize vLLM server NCCL communicator (rank0-only under DDP)."""
-        if bool(getattr(self, "_vllm_server_comm_inited", False)):
-            return
-
-        rank = 0
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            rank = int(dist.get_rank())
-
-        if int(rank) != 0:
-            raise RuntimeError(
-                "vLLM server communicator init must be rank0-only under DDP. "
-                f"Got rank={int(rank)}."
-            )
-
-        try:
-            client.init_communicator(device=0)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "Failed to initialize NCCL communicator with vLLM rollout server(s). "
-                "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
-            ) from exc
-
-        setattr(self, "_vllm_server_comm_inited", True)
+        ensure_vllm_server_communicator_rank0(owner=self, client=client)
 
     def _shutdown_vllm_server_client(
         self, *, close_communicator: bool = True, close_sessions: bool = True
@@ -4278,199 +4259,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         This is called during trainer shutdown to reduce teardown races between
         background rollout workers and process-exit cleanup.
         """
-        lock = getattr(self, "_vllm_server_client_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            setattr(self, "_vllm_server_client_lock", lock)
-
-        with lock:
-            client = getattr(self, "_vllm_server_client", None)
-            if client is None:
-                setattr(self, "_vllm_server_comm_inited", False)
-                return
-
-            rank = 0
-            world_size = 1
-            try:
-                import torch.distributed as dist
-            except (TypeError, ValueError):
-                dist = None  # type: ignore[assignment]
-
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                try:
-                    rank = int(dist.get_rank())
-                    world_size = int(dist.get_world_size())
-                except (TypeError, ValueError):
-                    rank = 0
-                    world_size = 1
-
-            if bool(close_communicator):
-                should_close_comm = int(world_size) <= 1 or int(rank) == 0
-                if should_close_comm:
-                    try:
-                        close_fn = getattr(client, "close_communicator", None)
-                        if callable(close_fn):
-                            close_fn()
-                    except (TypeError, ValueError) as exc:
-                        logger.warning(
-                            "Failed to close vLLM server communicator during shutdown: %r",
-                            exc,
-                        )
-
-            if bool(close_sessions):
-                try:
-                    sessions = getattr(client, "sessions", None)
-                    if isinstance(sessions, list):
-                        for sess in sessions:
-                            try:
-                                close_fn = getattr(sess, "close", None)
-                                if callable(close_fn):
-                                    close_fn()
-                            except (TypeError, ValueError):
-                                raise
-                except (TypeError, ValueError):
-                    raise
-
-            self._vllm_server_client = None
-            setattr(self, "_vllm_server_comm_inited", False)
+        shutdown_vllm_server_client(
+            owner=self,
+            logger=logger,
+            close_communicator=bool(close_communicator),
+            close_sessions=bool(close_sessions),
+        )
 
     def _shutdown_vllm_colocate_engine(
         self, *, wake_before_release: bool = True
     ) -> None:
         """Best-effort cleanup for colocate vLLM engine resources."""
-        engine = getattr(self, "_vllm_engine", None)
-        if engine is None:
-            return
-
-        raw_engine: Optional[Any] = None
-
-        if bool(wake_before_release):
-            try:
-                raw_engine = self._vllm_raw_engine_or_raise(engine)
-                is_sleeping_fn = getattr(raw_engine, "is_sleeping", None)
-                is_sleeping = (
-                    bool(is_sleeping_fn()) if callable(is_sleeping_fn) else False
-                )
-                if is_sleeping:
-                    self._wake_vllm_engine(engine)
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as exc:
-                logger.warning(
-                    "Failed to wake colocate vLLM engine during shutdown: %s", exc
-                )
-
-        if raw_engine is None:
-            try:
-                raw_engine = self._vllm_raw_engine_or_raise(engine)
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                raw_engine = None
-
-        # Ensure outstanding kernels are finished before tearing engine internals down.
-        self._cuda_memory_drain(synchronize=True)
-
-        def _maybe_invoke_shutdown(obj: Any) -> None:
-            if obj is None:
-                return
-            try:
-                shutdown_fn = getattr(obj, "shutdown", None)
-                if callable(shutdown_fn):
-                    shutdown_fn()
-                    return
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                pass
-
-            try:
-                close_fn = getattr(obj, "close", None)
-                if callable(close_fn):
-                    close_fn()
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                pass
-
-        if raw_engine is not None:
-            try:
-                _maybe_invoke_shutdown(raw_engine)
-                _maybe_invoke_shutdown(getattr(raw_engine, "engine_core", None))
-                _maybe_invoke_shutdown(getattr(raw_engine, "model_executor", None))
-                _maybe_invoke_shutdown(getattr(raw_engine, "executor", None))
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as exc:
-                logger.warning(
-                    "Failed to shutdown colocate vLLM engine cleanly: %s", exc
-                )
-
-        # Best-effort: drop strong references on both wrapper and raw-engine objects.
-        for obj in (engine, raw_engine):
-            if obj is None:
-                continue
-            for attr in (
-                "engine",
-                "engine_core",
-                "model_executor",
-                "executor",
-                "model",
-                "llm_engine",
-            ):
-                try:
-                    if hasattr(obj, attr):
-                        setattr(obj, attr, None)
-                except (
-                    AttributeError,
-                    OSError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ):
-                    pass
-
-        self._vllm_engine = None
-        self._vllm_last_loaded_step = -1
-        self._vllm_tp_group = None
-        self._vllm_tp_size = 1
-        self._eval_vllm_window_active = False
-
-        try:
-            del engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
-            pass
-        try:
-            del raw_engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
-            pass
-
-        # Sleep-mode globals can retain mempools even when sleep mode is disabled.
-        self._best_effort_cleanup_vllm_sleep_mode_pools()
-
-        # Drain allocator state immediately after engine release so the next
-        # training/eval phase does not overlap with stale vLLM allocations.
-        self._cuda_memory_drain(synchronize=True)
+        shutdown_vllm_colocate_engine(
+            owner=self,
+            logger=logger,
+            wake_before_release=bool(wake_before_release),
+        )
 
     def _vllm_server_infer_guard(self):
         """Optional hook for staging safe vLLM server inference.

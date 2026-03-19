@@ -84,3 +84,136 @@ def instantiate_vllm_engine(
 
     owner._vllm_engine = engine
     return engine
+
+
+def shutdown_vllm_colocate_engine(
+    *,
+    owner: Any,
+    logger: Any,
+    wake_before_release: bool = True,
+) -> None:
+    engine = getattr(owner, "_vllm_engine", None)
+    if engine is None:
+        return
+
+    raw_engine: Any = None
+
+    if bool(wake_before_release):
+        try:
+            raw_engine = owner._vllm_raw_engine_or_raise(engine)
+            is_sleeping_fn = getattr(raw_engine, "is_sleeping", None)
+            is_sleeping = bool(is_sleeping_fn()) if callable(is_sleeping_fn) else False
+            if is_sleeping:
+                owner._wake_vllm_engine(engine)
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.warning(
+                "Failed to wake colocate vLLM engine during shutdown: %s", exc
+            )
+
+    if raw_engine is None:
+        try:
+            raw_engine = owner._vllm_raw_engine_or_raise(engine)
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
+            raw_engine = None
+
+    owner._cuda_memory_drain(synchronize=True)
+
+    def _maybe_invoke_shutdown(obj: Any) -> None:
+        if obj is None:
+            return
+        try:
+            shutdown_fn = getattr(obj, "shutdown", None)
+            if callable(shutdown_fn):
+                shutdown_fn()
+                return
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
+
+        try:
+            close_fn = getattr(obj, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
+
+    if raw_engine is not None:
+        try:
+            _maybe_invoke_shutdown(raw_engine)
+            _maybe_invoke_shutdown(getattr(raw_engine, "engine_core", None))
+            _maybe_invoke_shutdown(getattr(raw_engine, "model_executor", None))
+            _maybe_invoke_shutdown(getattr(raw_engine, "executor", None))
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.warning(
+                "Failed to shutdown colocate vLLM engine cleanly: %s", exc
+            )
+
+    for obj in (engine, raw_engine):
+        if obj is None:
+            continue
+        for attr in (
+            "engine",
+            "engine_core",
+            "model_executor",
+            "executor",
+            "model",
+            "llm_engine",
+        ):
+            try:
+                if hasattr(obj, attr):
+                    setattr(obj, attr, None)
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
+                pass
+
+    owner._vllm_engine = None
+    owner._vllm_last_loaded_step = -1
+    owner._vllm_tp_group = None
+    owner._vllm_tp_size = 1
+    owner._eval_vllm_window_active = False
+
+    try:
+        del engine
+    except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+        pass
+    try:
+        del raw_engine
+    except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
+        pass
+
+    owner._best_effort_cleanup_vllm_sleep_mode_pools()
+    owner._cuda_memory_drain(synchronize=True)
