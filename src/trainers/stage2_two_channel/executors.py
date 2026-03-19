@@ -21,6 +21,7 @@ import torch
 
 from .coordination import (
     accumulate_channel_b_producer_item,
+    accumulate_step_mode_microbatches,
     consume_channel_b_queue_item,
     finalize_channel_b_pipeline_step,
     prepare_channel_b_pipeline_pack_step,
@@ -871,29 +872,16 @@ class Stage2ABChannelExecutorsMixin:
         multiple samples per backward under global_max_length.
         """
         gs = int(global_step)
-        if self._stage2_a_step_gs is None or int(self._stage2_a_step_gs) != gs:
-            self._stage2_a_step_gs = int(gs)
-            self._stage2_a_step_micro = 0
-            self._stage2_a_step_raw = []
-
-        self._stage2_a_step_micro += 1
-        self._stage2_a_step_raw.extend(list(raw_micro_batch))
-
-        try:
-            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        except (TypeError, ValueError):
-            gas = 1
-        gas = max(1, int(gas))
-
-        # Execute only on the final micro-step so the outer Trainer performs exactly one
-        # optimizer.step() after we have accumulated gradients for all packs.
-        if int(self._stage2_a_step_micro) < int(gas):
+        ready, raw_all = accumulate_step_mode_microbatches(
+            owner=self,
+            gs_attr="_stage2_a_step_gs",
+            micro_attr="_stage2_a_step_micro",
+            raw_attr="_stage2_a_step_raw",
+            raw_micro_batch=raw_micro_batch,
+            global_step=int(gs),
+        )
+        if not bool(ready):
             return torch.tensor(0.0, device=self.model.device)
-
-        # Reset state eagerly so exceptions do not poison the next step.
-        raw_all = list(self._stage2_a_step_raw)
-        self._stage2_a_step_raw = []
-        self._stage2_a_step_micro = 0
 
         return self._stage2_a_step_budgeted_train(
             model, raw_samples=raw_all, global_step=gs
@@ -912,29 +900,16 @@ class Stage2ABChannelExecutorsMixin:
         on the final micro-step of the accumulation window.
         """
         gs = int(global_step)
-        if self._stage2_b_step_gs is None or int(self._stage2_b_step_gs) != gs:
-            self._stage2_b_step_gs = int(gs)
-            self._stage2_b_step_micro = 0
-            self._stage2_b_step_raw = []
-
-        self._stage2_b_step_micro += 1
-        self._stage2_b_step_raw.extend(list(raw_micro_batch))
-
-        try:
-            gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
-        except (TypeError, ValueError):
-            gas = 1
-        gas = max(1, int(gas))
-
-        # Execute only on the final micro-step so the outer Trainer performs exactly one
-        # optimizer.step() after we have accumulated gradients for all packs.
-        if int(self._stage2_b_step_micro) < int(gas):
+        ready, raw_all = accumulate_step_mode_microbatches(
+            owner=self,
+            gs_attr="_stage2_b_step_gs",
+            micro_attr="_stage2_b_step_micro",
+            raw_attr="_stage2_b_step_raw",
+            raw_micro_batch=raw_micro_batch,
+            global_step=int(gs),
+        )
+        if not bool(ready):
             return torch.tensor(0.0, device=self.model.device)
-
-        # Reset state eagerly so exceptions do not poison the next step.
-        raw_all = list(self._stage2_b_step_raw)
-        self._stage2_b_step_raw = []
-        self._stage2_b_step_micro = 0
 
         # Validate expected raw sample count (best-effort; may differ under drop_last/resume).
         try:

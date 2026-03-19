@@ -457,8 +457,42 @@ def run_channel_b_pipeline_producer(
                 continue
 
 
+def accumulate_step_mode_microbatches(
+    *,
+    owner: Any,
+    gs_attr: str,
+    micro_attr: str,
+    raw_attr: str,
+    raw_micro_batch: Sequence[Mapping[str, Any]],
+    global_step: int,
+) -> Tuple[bool, list[Mapping[str, Any]]]:
+    gs = int(global_step)
+    if getattr(owner, gs_attr) is None or int(getattr(owner, gs_attr)) != gs:
+        setattr(owner, gs_attr, int(gs))
+        setattr(owner, micro_attr, 0)
+        setattr(owner, raw_attr, [])
+
+    setattr(owner, micro_attr, int(getattr(owner, micro_attr)) + 1)
+    getattr(owner, raw_attr).extend(list(raw_micro_batch))
+
+    try:
+        gas = int(getattr(owner.args, "gradient_accumulation_steps", 1) or 1)
+    except (AttributeError, TypeError, ValueError):
+        gas = 1
+    gas = max(1, int(gas))
+
+    if int(getattr(owner, micro_attr)) < int(gas):
+        return False, []
+
+    raw_all = list(getattr(owner, raw_attr))
+    setattr(owner, raw_attr, [])
+    setattr(owner, micro_attr, 0)
+    return True, raw_all
+
+
 __all__ = [
     "accumulate_channel_b_producer_item",
+    "accumulate_step_mode_microbatches",
     "consume_channel_b_queue_item",
     "finalize_channel_b_pipeline_step",
     "prepare_channel_b_pipeline_pack_step",
