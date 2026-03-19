@@ -75,7 +75,9 @@ from .rollout_runtime.vllm_engine import (
 from .rollout_runtime.vllm_server import (
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
+    sync_vllm_server_full_weights,
     sync_vllm_server_rollout_model_if_needed,
+    vllm_server_update_state_dict,
     shutdown_vllm_server_client,
 )
 
@@ -4573,130 +4575,16 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _sync_vllm_server_full_weights(self, client: Any) -> None:
         """Full merged-weight sync to vLLM server (robust default)."""
-        from contextlib import nullcontext
-
-        try:
-            from accelerate.utils import is_peft_model
-        except (TypeError, ValueError):
-            is_peft_model = None  # type: ignore[assignment]
-
-        is_peft = (
-            bool(is_peft_model(self.model)) if is_peft_model is not None else False
-        )
-
-        merge_cm = nullcontext()
-        unmerge_cm = nullcontext()
-        if is_peft:
-            try:
-                from swift.trainers.rlhf_trainer.utils import (
-                    patch_lora_merge,
-                    patch_lora_unmerge,
-                )
-
-                merge_cm = patch_lora_merge(self.model)
-                unmerge_cm = patch_lora_unmerge(self.model)
-            except (TypeError, ValueError):
-                merge_cm = nullcontext()
-                unmerge_cm = nullcontext()
-
-        params = [p for _, p in self.model.named_parameters()]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-
-        with gather_if_zero3(params), merge_cm, torch.no_grad():
-            merged = False
-            try:
-                if is_peft:
-                    try:
-                        self.model.merge_adapter()
-                        merged = True
-                    except (TypeError, ValueError) as exc:
-                        raise RuntimeError(
-                            "vLLM server full sync requires merging adapter weights from the training model. "
-                            "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter (required for vLLM full sync in this stack), or switch rollout_matching.rollout_backend=hf."
-                        ) from exc
-
-                state_dict = self.model.state_dict()
-                if is_peft:
-                    prefix_removed = {
-                        k.removeprefix("base_model.model."): v
-                        for k, v in state_dict.items()
-                    }
-                    state_dict = {
-                        k.replace(".base_layer", ""): v
-                        for k, v in prefix_removed.items()
-                    }
-                    prefix = getattr(self.model, "prefix", None)
-                    if isinstance(prefix, str) and prefix:
-                        state_dict = {
-                            k: v for k, v in state_dict.items() if prefix not in k
-                        }
-                    state_dict = {
-                        k.replace("modules_to_save.default.", ""): v
-                        for k, v in state_dict.items()
-                        if "original_module" not in k
-                    }
-                    # LoRA already merged: do not send LoRA tensors.
-                    state_dict = {
-                        k: v for k, v in state_dict.items() if "lora_" not in k
-                    }
-
-                self._vllm_server_update_state_dict(client, state_dict)
-            finally:
-                if is_peft and merged:
-                    with unmerge_cm:
-                        self.model.unmerge_adapter()
-
-        # Reset server prefix cache to avoid stale cached states.
-        try:
-            client.reset_prefix_cache()
-        except (TypeError, ValueError) as exc:
-            logger.warning(
-                "Failed to reset vLLM server prefix cache after full sync: %s", exc
-            )
+        sync_vllm_server_full_weights(owner=self, client=client, logger=logger)
 
     def _vllm_server_update_state_dict(
         self, client: Any, state_dict: Mapping[str, Any]
     ) -> None:
         """Bucket + broadcast a state_dict into the vLLM server via NCCL."""
-        try:
-            from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "FlattenedTensorBucket is required for vLLM server sync"
-            ) from exc
-
-        bucket_size_mb = int(os.environ.get("SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE", 512))
-        bucket_size_bytes = int(bucket_size_mb) * 1024 * 1024
-
-        bucket: List[Tuple[str, torch.Tensor]] = []
-        bucket_bytes = 0
-
-        def _flush_bucket() -> None:
-            nonlocal bucket, bucket_bytes
-            if not bucket:
-                return
-            b = FlattenedTensorBucket(named_tensors=bucket)
-            client.update_flattened_params(b.get_metadata(), b.get_flattened_tensor())
-            bucket = []
-            bucket_bytes = 0
-
-        for name, t in state_dict.items():
-            if t is None or not isinstance(t, torch.Tensor):
-                continue
-            if t.numel() == 0:
-                continue
-            ten = t.detach()
-            nbytes = int(ten.numel() * ten.element_size())
-            if (
-                bucket
-                and bucket_size_bytes > 0
-                and bucket_bytes + nbytes > bucket_size_bytes
-            ):
-                _flush_bucket()
-            bucket.append((str(name), ten))
-            bucket_bytes += nbytes
-
-        _flush_bucket()
+        vllm_server_update_state_dict(
+            client=client,
+            state_dict=dict(state_dict),
+        )
 
     def _sync_vllm_server_adapter(self, client: Any) -> None:
         _ = client

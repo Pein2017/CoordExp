@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any
+
+import torch
 
 
 def ensure_vllm_server_client(
@@ -291,3 +294,130 @@ def sync_vllm_server_rollout_model_if_needed(
         )
 
     owner._vllm_server_last_synced_step = step
+
+
+def vllm_server_update_state_dict(
+    *,
+    client: Any,
+    state_dict: dict[str, Any],
+) -> None:
+    try:
+        from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "FlattenedTensorBucket is required for vLLM server sync"
+        ) from exc
+
+    bucket_size_mb = int(os.environ.get("SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE", 512))
+    bucket_size_bytes = int(bucket_size_mb) * 1024 * 1024
+
+    bucket: list[tuple[str, torch.Tensor]] = []
+    bucket_bytes = 0
+
+    def _flush_bucket() -> None:
+        nonlocal bucket, bucket_bytes
+        if not bucket:
+            return
+        b = FlattenedTensorBucket(named_tensors=bucket)
+        client.update_flattened_params(b.get_metadata(), b.get_flattened_tensor())
+        bucket = []
+        bucket_bytes = 0
+
+    for name, t in state_dict.items():
+        if t is None or not isinstance(t, torch.Tensor):
+            continue
+        if t.numel() == 0:
+            continue
+        ten = t.detach()
+        nbytes = int(ten.numel() * ten.element_size())
+        if bucket and bucket_size_bytes > 0 and bucket_bytes + nbytes > bucket_size_bytes:
+            _flush_bucket()
+        bucket.append((str(name), ten))
+        bucket_bytes += nbytes
+
+    _flush_bucket()
+
+
+def sync_vllm_server_full_weights(
+    *,
+    owner: Any,
+    client: Any,
+    logger: Any,
+) -> None:
+    from contextlib import nullcontext
+
+    try:
+        from accelerate.utils import is_peft_model
+    except (TypeError, ValueError):
+        is_peft_model = None  # type: ignore[assignment]
+
+    is_peft = bool(is_peft_model(owner.model)) if is_peft_model is not None else False
+
+    merge_cm = nullcontext()
+    unmerge_cm = nullcontext()
+    if is_peft:
+        try:
+            from swift.trainers.rlhf_trainer.utils import (
+                patch_lora_merge,
+                patch_lora_unmerge,
+            )
+
+            merge_cm = patch_lora_merge(owner.model)
+            unmerge_cm = patch_lora_unmerge(owner.model)
+        except (TypeError, ValueError):
+            merge_cm = nullcontext()
+            unmerge_cm = nullcontext()
+
+    from swift.trainers.rlhf_trainer.utils import get_gather_if_zero3_context
+
+    params = [p for _, p in owner.model.named_parameters()]
+    gather_if_zero3 = get_gather_if_zero3_context(owner)
+
+    with gather_if_zero3(params), merge_cm, torch.no_grad():
+        merged = False
+        try:
+            if is_peft:
+                try:
+                    owner.model.merge_adapter()
+                    merged = True
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "vLLM server full sync requires merging adapter weights from the training model. "
+                        "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter (required for vLLM full sync in this stack), or switch rollout_matching.rollout_backend=hf."
+                    ) from exc
+
+            state_dict = owner.model.state_dict()
+            if is_peft:
+                prefix_removed = {
+                    k.removeprefix("base_model.model."): v
+                    for k, v in state_dict.items()
+                }
+                state_dict = {
+                    k.replace(".base_layer", ""): v for k, v in prefix_removed.items()
+                }
+                prefix = getattr(owner.model, "prefix", None)
+                if isinstance(prefix, str) and prefix:
+                    state_dict = {
+                        k: v for k, v in state_dict.items() if prefix not in k
+                    }
+                state_dict = {
+                    k.replace("modules_to_save.default.", ""): v
+                    for k, v in state_dict.items()
+                    if "original_module" not in k
+                }
+                state_dict = {
+                    k: v for k, v in state_dict.items() if "lora_" not in k
+                }
+
+            owner._vllm_server_update_state_dict(client, state_dict)
+        finally:
+            if is_peft and merged:
+                with unmerge_cm:
+                    owner.model.unmerge_adapter()
+
+    try:
+        client.reset_prefix_cache()
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "Failed to reset vLLM server prefix cache after full sync: %s", exc
+        )
