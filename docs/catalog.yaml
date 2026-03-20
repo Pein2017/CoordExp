@@ -192,6 +192,10 @@ progress:
       title: Rollout Duplication Thresholds on `ul_res_1024` vs `ul_res_1024_v2`
       type: diagnostic-study
       status: completed-diagnostic
+    - path: progress/diagnostics/stage2_channel_a_self_context_iter_ablation_2026-03-20.md
+      title: Stage-2 Channel-A Self-Context Iteration Ablation (2026-03-20)
+      type: diagnostic-study
+      status: completed-diagnostic
     - path: progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md
       title: 'Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash'
       type: diagnosis
