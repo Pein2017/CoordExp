@@ -708,8 +708,18 @@ def wait_for_criteria(
 
 
 def interrupt_tmux_session(task: TaskSpec) -> None:
+    if not tmux_session_exists(task.session):
+        fail(f"tmux session {task.session!r} disappeared while stopping.")
+
+    initial_command = tmux_session_command(task.session)
+    log(
+        f"Sending initial Ctrl-C to tmux session {task.session!r} "
+        f"(current command: {initial_command or 'unknown'})."
+    )
+    run_subprocess(["tmux", "send-keys", "-t", task.session, "C-c"], capture_output=False)
+
     deadline = time.monotonic() + task.stop_timeout_s
-    next_signal_at = 0.0
+    next_signal_at = time.monotonic() + 10.0
     while time.monotonic() <= deadline:
         if not tmux_session_exists(task.session):
             fail(f"tmux session {task.session!r} disappeared while stopping.")
