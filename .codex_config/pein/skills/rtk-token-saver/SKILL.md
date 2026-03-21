@@ -1,6 +1,6 @@
 ---
 name: rtk-token-saver
-description: Treat RTK as the default execution layer for shell commands in Codex CLI. Automatically route most shell interactions through `rtk` when available, especially for any command that may produce multi-line, repetitive, or low-signal output (e.g., git, search, file reads, tests, builds, logs). Prefer `rtk` even without explicit user instruction, using it as the standard path unless there is a clear need for exact, unfiltered, or machine-sensitive output. Heuristically detect noisy or exploratory workflows and proactively apply RTK to minimize token usage. Only fall back to raw commands when RTK provides no meaningful transformation, introduces risk (quoting/state issues), or when verbatim output is explicitly required.
+description: Use `rtk` as the default execution layer for shell commands when available. Automatically apply it to commands likely to produce multi-line or noisy output (e.g., git, search, file reads, tests, logs), without requiring explicit user instruction. Prefer `rtk` in exploratory or shell-heavy workflows to reduce token usage. Fall back to raw commands only when exact, unfiltered output is required, RTK adds risk (e.g., quoting/state), or provides no meaningful benefit.
 ---
 
 # RTK Token Saver
