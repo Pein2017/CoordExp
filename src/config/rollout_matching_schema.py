@@ -316,7 +316,6 @@ class RolloutMatchingConfig:
     repetition_penalty: float = 1.0
 
     decoding: Optional[RolloutDecodingConfig] = None
-    coord_decode_mode: str = "exp"  # exp|st
     # Matching knobs.
     candidate_top_k: int = 10
     maskiou_gate: float = 0.3
@@ -409,12 +408,6 @@ class RolloutMatchingConfig:
             ) from exc
         if eval_decode_bs <= 0:
             raise ValueError("rollout_matching.eval_decode_batch_size must be > 0")
-
-        coord_decode_mode = str(self.coord_decode_mode or "exp").strip().lower()
-        if coord_decode_mode not in {"exp", "st"}:
-            raise ValueError(
-                "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
-            )
 
         if self.decoding is not None:
             dec = self.decoding
@@ -545,17 +538,39 @@ class RolloutMatchingConfig:
                         allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
                             name, set()
                         )
-                    if preset not in allowed_presets:
-                        raise ValueError(
-                            f"{path}[{idx}].application.preset for module {name!r} "
-                            f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
-                        )
+                        if preset not in allowed_presets:
+                            if preset in {
+                                "anchor_text_plus_final_struct",
+                                "anchor_if_single_iter_else_final",
+                                "final_only",
+                                "anchor_and_final",
+                            }:
+                                replacement = (
+                                    "anchor_text_only"
+                                    if name == "token_ce"
+                                    else "anchor_only"
+                                )
+                                raise ValueError(
+                                    f"{path}[{idx}].application.preset for module {name!r} "
+                                    f"uses deprecated self-context-era routing {preset!r}. "
+                                    f"Use {replacement!r} for the single-pass contract."
+                                )
+                            raise ValueError(
+                                f"{path}[{idx}].application.preset for module {name!r} "
+                                f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
+                            )
 
-                    if name == "token_ce" and "stop_signal_damping" in spec.config:
-                        normalize_token_ce_stop_signal_damping_config(
-                            spec.config.get("stop_signal_damping"),
-                            path=f"{path}[{idx}].config.stop_signal_damping",
-                        )
+                        if name == "token_ce" and "stop_signal_damping" in spec.config:
+                            normalize_token_ce_stop_signal_damping_config(
+                                spec.config.get("stop_signal_damping"),
+                                path=f"{path}[{idx}].config.stop_signal_damping",
+                            )
+                        if name == "token_ce" and "struct_ce_weight" in spec.config:
+                            raise ValueError(
+                                f"{path}[{idx}].config.struct_ce_weight is deprecated and unsupported. "
+                                "Remove the self-context struct/EOS stabilizer; active training uses "
+                                "only the single-pass anchor_text_only contract."
+                            )
                     allowed_cfg = config_allowlist_by_name.get(name, set())
                     unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)
                     if unknown_cfg:

@@ -1600,6 +1600,23 @@ class Stage2PipelineConfig:
                 str(spec.name), set()
             )
             if preset not in allowed_presets:
+                if preset in {
+                    "anchor_text_plus_final_struct",
+                    "anchor_if_single_iter_else_final",
+                    "final_only",
+                    "anchor_and_final",
+                }:
+                    replacement = (
+                        "anchor_text_only"
+                        if str(spec.name) == "token_ce"
+                        else "anchor_only"
+                    )
+                    raise ValueError(
+                        "stage2_ab.pipeline.objective"
+                        f"[{idx}].application.preset for module {spec.name!r} uses deprecated "
+                        f"self-context-era routing {preset!r}. Use {replacement!r} for the "
+                        "single-pass Channel-A contract."
+                    )
                 raise ValueError(
                     "stage2_ab.pipeline.objective"
                     f"[{idx}].application.preset for module {spec.name!r} must be one of "
@@ -1622,6 +1639,13 @@ class Stage2PipelineConfig:
                         "stage2_ab.pipeline.objective"
                         f"[{idx}].config.stop_signal_damping"
                     ),
+                )
+            if str(spec.name) == "token_ce" and "struct_ce_weight" in spec.config:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective"
+                    f"[{idx}].config.struct_ce_weight is deprecated and unsupported. "
+                    "Remove the self-context struct/EOS stabilizer; active Stage-2 Channel-A "
+                    "training uses only the single-pass anchor_text_only contract."
                 )
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
@@ -1667,15 +1691,9 @@ class Stage2PipelineConfig:
         bbox_size_aux = specs_by_name.get("bbox_size_aux")
         coord_reg = specs_by_name.get("coord_reg")
 
-        def _coord_targets_for_preset(preset: str) -> tuple[set[str], set[str]]:
-            if preset == "anchor_if_single_iter_else_final":
-                return {"A1_coord"}, {"A2_coord"}
+        def _coord_targets_for_preset(preset: str) -> set[str]:
             if preset == "anchor_only":
-                return {"A1_coord"}, {"A1_coord"}
-            if preset == "final_only":
-                return {"A2_coord"}, {"A2_coord"}
-            if preset == "anchor_and_final":
-                return {"A1_coord", "A2_coord"}, {"A1_coord", "A2_coord"}
+                return {"coord"}
             raise ValueError(f"Unsupported coord/bbox application preset: {preset!r}")
 
         if bbox_size_aux is not None and bool(bbox_size_aux.enabled):
@@ -1705,7 +1723,7 @@ class Stage2PipelineConfig:
 
         if bbox_geo is not None and bool(bbox_geo.enabled):
             bbox_geo_preset = str(bbox_geo.application.get("preset", "") or "").strip()
-            bbox_geo_single, bbox_geo_multi = _coord_targets_for_preset(bbox_geo_preset)
+            bbox_geo_targets = _coord_targets_for_preset(bbox_geo_preset)
             for dep_name, dep_spec in (
                 ("bbox_size_aux", bbox_size_aux),
                 ("coord_reg", coord_reg),
@@ -1713,18 +1731,12 @@ class Stage2PipelineConfig:
                 if dep_spec is None or not bool(dep_spec.enabled):
                     continue
                 dep_preset = str(dep_spec.application.get("preset", "") or "").strip()
-                dep_single, dep_multi = _coord_targets_for_preset(dep_preset)
-                if not dep_single.issubset(bbox_geo_single):
+                dep_targets = _coord_targets_for_preset(dep_preset)
+                if not dep_targets.issubset(bbox_geo_targets):
                     raise ValueError(
                         "stage2_ab.pipeline.objective "
-                        f"{dep_name} single-iter application must be a subset of bbox_geo; "
-                        f"bbox_geo={sorted(bbox_geo_single)} {dep_name}={sorted(dep_single)}"
-                    )
-                if not dep_multi.issubset(bbox_geo_multi):
-                    raise ValueError(
-                        "stage2_ab.pipeline.objective "
-                        f"{dep_name} multi-iter application must be a subset of bbox_geo; "
-                        f"bbox_geo={sorted(bbox_geo_multi)} {dep_name}={sorted(dep_multi)}"
+                        f"{dep_name} application must be a subset of bbox_geo; "
+                        f"bbox_geo={sorted(bbox_geo_targets)} {dep_name}={sorted(dep_targets)}"
                     )
 
         for dspec in diagnostics_specs:
@@ -1758,12 +1770,6 @@ class Stage2PipelineConfig:
 class Stage2ABConfig:
     schedule: Stage2ABScheduleConfig
     pipeline: Stage2PipelineConfig
-    n_softctx_iter: int = 2
-    softctx_grad_mode: Literal["unroll", "em_detach"] = "unroll"
-    softctx_temperature: float = 1.0
-
-    coord_ctx_embed_mode: Literal["soft", "st", "hard"] = "st"
-    coord_decode_mode: Literal["exp", "st"] = "exp"
     channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
 
     @classmethod
@@ -1816,44 +1822,24 @@ class Stage2ABConfig:
                 "using smoothl1_weight/ciou_weight."
             )
 
-        n_softctx_iter_raw = data.pop("n_softctx_iter", cls.n_softctx_iter)
-        try:
-            n_softctx_iter = int(n_softctx_iter_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.n_softctx_iter must be an int") from exc
-        if n_softctx_iter < 1:
-            raise ValueError("stage2_ab.n_softctx_iter must be >= 1")
-
-        grad_mode_raw = data.pop("softctx_grad_mode", cls.softctx_grad_mode)
-        softctx_grad_mode = str(grad_mode_raw).strip().lower()
-        if softctx_grad_mode not in {"unroll", "em_detach"}:
-            raise ValueError(
-                "stage2_ab.softctx_grad_mode must be one of {'unroll','em_detach'}"
+        deprecated_keys = [
+            f"stage2_ab.{key}"
+            for key in (
+                "n_softctx_iter",
+                "softctx_grad_mode",
+                "softctx_temperature",
+                "coord_ctx_embed_mode",
+                "coord_decode_mode",
             )
-
-        temp_raw = data.pop("softctx_temperature", cls.softctx_temperature)
-        try:
-            softctx_temperature = float(temp_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.softctx_temperature must be a float") from exc
-        if softctx_temperature <= 0:
-            raise ValueError("stage2_ab.softctx_temperature must be > 0")
-
-        coord_ctx_embed_mode_raw = data.pop(
-            "coord_ctx_embed_mode", cls.coord_ctx_embed_mode
-        )
-        coord_ctx_embed_mode = str(
-            coord_ctx_embed_mode_raw or cls.coord_ctx_embed_mode
-        ).strip().lower()
-        if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
+            if key in data
+        ]
+        if deprecated_keys:
             raise ValueError(
-                "stage2_ab.coord_ctx_embed_mode must be one of {'soft','st','hard'}"
+                "Deprecated Stage-2 self-context knobs are unsupported in active/training "
+                "configs. Remove them and use the single-pass Channel-A contract "
+                "(token_ce: anchor_text_only; bbox_geo/bbox_size_aux/coord_reg: anchor_only). "
+                f"Found: {sorted(deprecated_keys)}"
             )
-
-        coord_decode_mode_raw = data.pop("coord_decode_mode", cls.coord_decode_mode)
-        coord_decode_mode = str(coord_decode_mode_raw or "exp").strip().lower()
-        if coord_decode_mode not in {"exp", "st"}:
-            raise ValueError("stage2_ab.coord_decode_mode must be one of {'exp','st'}")
 
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
@@ -1868,13 +1854,6 @@ class Stage2ABConfig:
 
         return cls(
             schedule=schedule,
-            n_softctx_iter=n_softctx_iter,
-            softctx_grad_mode=cast(Literal["unroll", "em_detach"], softctx_grad_mode),
-            softctx_temperature=softctx_temperature,
-            coord_ctx_embed_mode=cast(
-                Literal["soft", "st", "hard"], coord_ctx_embed_mode
-            ),
-            coord_decode_mode=cast(Literal["exp", "st"], coord_decode_mode),
             pipeline=pipeline,
             channel_b=channel_b,
         )
@@ -2022,6 +2001,11 @@ class TrainingConfig:
         if rollout_matching_raw is not None:
             if not isinstance(rollout_matching_raw, Mapping):
                 raise TypeError("rollout_matching must be a mapping when provided")
+            if "coord_decode_mode" in rollout_matching_raw:
+                raise ValueError(
+                    "rollout_matching.coord_decode_mode is deprecated and unsupported in active/training "
+                    "configs. Remove it; Stage-2 geometry decode now uses the fixed expectation-decode baseline."
+                )
 
             # Preserve prior strictness: an explicitly empty mapping counts as "missing".
             if not rollout_matching_raw:

@@ -81,7 +81,7 @@ def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
 
     pending.add(
         {
-            "loss/A1_text/struct_ce": 1.0,
+            "loss/text/struct_ce": 1.0,
             "rollout/fp_total": 2.0,
             "rollout/fn_total": 1.0,
             "rollout/matched_maskiou_count": 3.0,
@@ -90,7 +90,7 @@ def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
     )
     pending.add(
         {
-            "loss/A1_text/struct_ce": 3.0,
+            "loss/text/struct_ce": 3.0,
             "rollout/fp_total": 5.0,
             "rollout/fn_total": 4.0,
             "rollout/matched_maskiou_count": 7.0,
@@ -101,7 +101,7 @@ def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
     out = pending.finalize()
 
     # Mean-like loss keys are weighted by stage2/_log_weight.
-    assert out["loss/A1_text/struct_ce"] == pytest.approx(
+    assert out["loss/text/struct_ce"] == pytest.approx(
         (1.0 * 1.0 + 3.0 * 3.0) / 4.0
     )
 
@@ -120,19 +120,19 @@ def test_stage2_pending_log_emits_canonical_loss_prefix_only() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
-            "loss/A1_text/struct_ce": 0.5,
-            "loss/A1_text/desc_ce": 0.25,
-            "loss/A2_coord/bbox_smoothl1": 0.25,
-            "loss/A2_coord/coord_soft_ce": 0.125,
+            "loss/text/struct_ce": 0.5,
+            "loss/text/desc_ce": 0.25,
+            "loss/coord/bbox_smoothl1": 0.25,
+            "loss/coord/coord_soft_ce": 0.125,
         }
     )
 
     out = pending.finalize()
 
-    assert "loss/A1_text/struct_ce" in out
-    assert "loss/A1_text/desc_ce" in out
-    assert "loss/A2_coord/bbox_smoothl1" in out
-    assert "loss/A2_coord/coord_soft_ce" in out
+    assert "loss/text/struct_ce" in out
+    assert "loss/text/desc_ce" in out
+    assert "loss/coord/bbox_smoothl1" in out
+    assert "loss/coord/coord_soft_ce" in out
     assert "loss/token_ce_obj" not in out
     assert "loss/bbox_geo_obj" not in out
     assert "loss/coord_reg_obj" not in out
@@ -175,16 +175,16 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
     first = _merge_stage2_metric_snapshots(
         snapshots,
         {
-            "loss/A1_text/struct_ce": 0.5,
-            "coord_diag/A1/acc_top5": 0.4,
+            "loss/text/struct_ce": 0.5,
+            "coord_diag/acc_top5": 0.4,
             "stage2/channel_a": 1.0,
             "time/channel_a_teacher_encode_s": 1.2,
             "time/forward_s": 12.0,
         },
     )
 
-    assert first["loss/A1_text/struct_ce"] == pytest.approx(0.5)
-    assert first["coord_diag/A1/acc_top5"] == pytest.approx(0.4)
+    assert first["loss/text/struct_ce"] == pytest.approx(0.5)
+    assert first["coord_diag/acc_top5"] == pytest.approx(0.4)
     assert first["stage2/channel_a"] == pytest.approx(1.0)
     assert first["time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
     assert "time/forward_s" not in first
@@ -199,7 +199,7 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
         },
     )
 
-    assert second["loss/A1_text/struct_ce"] == pytest.approx(0.5)
+    assert second["loss/text/struct_ce"] == pytest.approx(0.5)
     assert second["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert second["rollout/f1"] == pytest.approx(0.3)
     assert second["stage2/channel_b"] == pytest.approx(1.0)
@@ -220,8 +220,8 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
         }
     )
     trainer._stage2_metric_snapshots = {
-        "loss/A1_text/struct_ce": 0.5,
-        "coord_diag/A1/acc_top5": 0.4,
+        "loss/text/struct_ce": 0.5,
+        "coord_diag/acc_top5": 0.4,
     }
     trainer._ddp_assert_all_ranks_true_or_raise = (
         lambda **_kwargs: None
@@ -253,8 +253,8 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
     assert captured["loss"] == pytest.approx(1.0)
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
-    assert captured["loss/A1_text/struct_ce"] == pytest.approx(0.5)
-    assert captured["coord_diag/A1/acc_top5"] == pytest.approx(0.4)
+    assert captured["loss/text/struct_ce"] == pytest.approx(0.5)
+    assert captured["coord_diag/acc_top5"] == pytest.approx(0.4)
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
     assert captured["time/sft_total_time"] == pytest.approx(12.0)

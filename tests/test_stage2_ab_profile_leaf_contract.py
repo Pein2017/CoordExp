@@ -96,7 +96,6 @@ def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     assert "training.output_dir" in msg
     assert "training.logging_dir" in msg
     assert "training.learning_rate" in msg
-    assert "stage2_ab.n_softctx_iter" in msg
 
 
 def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
@@ -141,10 +140,9 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_plus_final_struct"},
+                        "application": {"preset": "anchor_text_only"},
                         "config": {
                             "desc_ce_weight": 1.0,
-                            "struct_ce_weight": 0.1,
                             "rollout_fn_desc_weight": 1.0,
                             "rollout_matched_prefix_struct_weight": 1.0,
                         },
@@ -162,7 +160,7 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "enabled": True,
                         "weight": 0.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_if_single_iter_else_final"},
+                        "application": {"preset": "anchor_only"},
                         "config": {
                             "smoothl1_weight": 0.0,
                             "ciou_weight": 0.0,
@@ -173,7 +171,7 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "enabled": True,
                         "weight": 0.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_if_single_iter_else_final"},
+                        "application": {"preset": "anchor_only"},
                         "config": {
                             "log_wh_weight": 0.0,
                             "oversize_penalty_weight": 0.0,
@@ -188,7 +186,7 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "enabled": True,
                         "weight": 0.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_if_single_iter_else_final"},
+                        "application": {"preset": "anchor_only"},
                         "config": {
                             "coord_ce_weight": 0.0,
                             "coord_el1_weight": 0.0,
@@ -207,7 +205,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                 ],
                 "diagnostics": [],
             },
-            "n_softctx_iter": 1,
         },
         "rollout_matching": {
             "rollout_backend": "hf",

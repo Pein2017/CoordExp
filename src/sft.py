@@ -1132,10 +1132,6 @@ def _build_pipeline_manifest(
             if name == "token_ce":
                 return {
                     "desc_ce_weight": desc_w,
-                    "struct_ce_weight": _finite_float(
-                        cfg.get("fmt_struct_ce_weight", 0.1),
-                        0.1,
-                    ),
                     "rollout_fn_desc_weight": desc_w,
                     "rollout_matched_prefix_struct_weight": 1.0,
                 }
@@ -1317,18 +1313,6 @@ def _build_pipeline_manifest(
     diagnostics = _resolve("diagnostics", default_diagnostics)
 
     extra: dict[str, Any] = {"variant": str(trainer_variant or "")}
-    variant = str(trainer_variant or "")
-    if variant == "stage2_two_channel":
-        extra["stage2_ab.coord_ctx_embed_mode"] = str(
-            cfg.get("coord_ctx_embed_mode", "st") or "st"
-        ).strip().lower()
-        extra["stage2_ab.coord_decode_mode"] = str(
-            cfg.get("coord_decode_mode", "exp") or "exp"
-        ).strip().lower()
-    elif variant == "stage2_rollout_aligned":
-        extra["rollout_matching.coord_decode_mode"] = str(
-            cfg.get("coord_decode_mode", "exp") or "exp"
-        ).strip().lower()
 
     payload = _normalize_json_value(
         {
@@ -2951,10 +2935,8 @@ def main():
         setattr(trainer, "stage2_pipeline_manifest", stage2_manifest)
 
         logger.info(
-            "Stage2-AB config injected: b_ratio=%s n_softctx_iter=%s softctx_grad_mode=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
+            "Stage2-AB config injected: b_ratio=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
             b_ratio,
-            stage2_ab_cfg.get("n_softctx_iter"),
-            stage2_ab_cfg.get("softctx_grad_mode"),
             stage2_manifest.get("checksum", ""),
             [m.get("name") for m in stage2_manifest.get("objective", [])],
             [m.get("name") for m in stage2_manifest.get("diagnostics", [])],

@@ -201,7 +201,6 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
         meta=meta,
         coord_token_ids=coord_token_ids,
         temperature=1.0,
-        decode_mode="exp",
     )
     objective_specs = [
         {
@@ -209,7 +208,7 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
             "enabled": True,
             "weight": 0.0,
             "channels": ["B"],
-            "application": {"preset": "anchor_if_single_iter_else_final"},
+            "application": {"preset": "anchor_only"},
             "config": {
                 "smoothl1_weight": 0.0,
                 "ciou_weight": 0.0,
@@ -220,7 +219,7 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
             "enabled": True,
             "weight": 1.0,
             "channels": ["B"],
-            "application": {"preset": "anchor_if_single_iter_else_final"},
+            "application": {"preset": "anchor_only"},
             "config": {
                 "log_wh_weight": 0.05,
                 "oversize_penalty_weight": 0.0,

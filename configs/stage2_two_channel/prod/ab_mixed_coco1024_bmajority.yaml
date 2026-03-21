@@ -5,7 +5,7 @@ model:
 
 training:
   num_train_epochs: 1
-  run_name: eff_size_96-b_ratio_0.75-n_softctx_iter_2-epoch_1
+  run_name: eff_size_96-b_ratio_0.75-epoch_1
   output_dir: output/stage2_ab/prod/ul-res_1024-continued-from-ckpt-300
   logging_dir: tb/stage2_ab/prod/ul-res_1024-continued-from-ckpt-300
 

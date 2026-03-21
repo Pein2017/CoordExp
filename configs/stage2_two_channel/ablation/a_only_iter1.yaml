@@ -1,26 +1,17 @@
 extends: ../prod/a_only.yaml
 
-# Ablation: disable Channel-A iterative self-context by setting n_softctx_iter=1.
-# Notes:
-# - For n_softctx_iter<=1, Channel-A self-context struct-CE stabilizer is disabled in code.
-# - softctx_grad_mode / coord_ctx_embed_mode become effectively irrelevant because the
-#   iterative loop does not run when n_softctx_iter=1.
-#
-# Loss-composition guardrails (explicit, to avoid accidental drift via inheritance):
-# - bbox_geo: SmoothL1 (+ CIoU)
-# - coord_reg: hardCE (coord_token_ce) + softCE + W1 + coord/text gating
+# Single-pass Channel-A baseline with explicit anchor-only objective routing.
 model:
   model: output/stage1_2b/hardce_softce-ckpt_1344-merged
 
 training:
-  run_name: epoch_2-eff_size_64-n_softctx_iter_1-a_only
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only_iter1
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_iter1
+  run_name: epoch_2-eff_size_64-a_only_single_pass
+  output_dir: output/stage2_ab/coco_bbox_max60/a_only_single_pass
+  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_single_pass
 
 stage2_ab:
   schedule:
     b_ratio: 0.0
-  n_softctx_iter: 1
   pipeline:
     objective:
       - name: token_ce
@@ -28,10 +19,9 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_text_plus_final_struct
+          preset: anchor_text_only
         config:
           desc_ce_weight: 1.0
-          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
@@ -46,7 +36,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           # Required: SmoothL1 on decoded bbox geometry.
           smoothl1_weight: 1.0
@@ -56,7 +46,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
@@ -69,7 +59,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           # Required: hard CE on coord-token bins (coord tokens are NOT covered by text/struct CE).
           coord_ce_weight: 0.04

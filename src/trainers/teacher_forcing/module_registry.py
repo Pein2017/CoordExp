@@ -20,7 +20,6 @@ ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = {"coord_diag"}
 OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "token_ce": {
         "desc_ce_weight",
-        "struct_ce_weight",
         "rollout_fn_desc_weight",
         "rollout_matched_prefix_struct_weight",
     },
@@ -57,28 +56,18 @@ OBJECTIVE_OPTIONAL_CONFIG_KEYS: Final[dict[str, set[str]]] = {}
 
 OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
     "token_ce": {
-        "anchor_text_plus_final_struct",
         "anchor_text_only",
         "rollout_text_only",
     },
     "loss_dead_anchor_suppression": {"rollout_only"},
     "bbox_geo": {
-        "anchor_if_single_iter_else_final",
         "anchor_only",
-        "final_only",
-        "anchor_and_final",
     },
     "bbox_size_aux": {
-        "anchor_if_single_iter_else_final",
         "anchor_only",
-        "final_only",
-        "anchor_and_final",
     },
     "coord_reg": {
-        "anchor_if_single_iter_else_final",
         "anchor_only",
-        "final_only",
-        "anchor_and_final",
     },
 }
 

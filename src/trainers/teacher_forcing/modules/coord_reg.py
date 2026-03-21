@@ -53,21 +53,6 @@ def run_coord_reg_module(
     spec: PipelineModuleSpec,
     state: Mapping[str, Any],
 ) -> ModuleResult:
-    if str(context.registry_context) == "gt":
-        z = context.logits.new_tensor(0.0)
-        metrics = {
-            "loss/coord_reg": 0.0,
-            "loss/coord_token_ce": 0.0,
-            "loss/coord_soft_ce": 0.0,
-            "loss/coord_w1": 0.0,
-            "loss/coord_el1": 0.0,
-            "loss/coord_ehuber": 0.0,
-            "loss/coord_entropy": 0.0,
-            "loss/coord_gate": 0.0,
-            "loss/text_gate": 0.0,
-        }
-        return ModuleResult(loss=z, metrics=metrics, state={"coord_reg": z})
-
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
 
     coord_logits = state.get("coord_logits")
@@ -271,9 +256,8 @@ def run_coord_reg_module(
             and mask_struct.shape[:2] == context.logits.shape[:2]
         ):
             mask_text = mask_struct.to(dtype=torch.bool)
-            if str(context.registry_context) != "self_context":
-                if isinstance(mask_desc, torch.Tensor) and mask_desc.shape == mask_text.shape:
-                    mask_text = mask_text | mask_desc.to(dtype=torch.bool)
+            if isinstance(mask_desc, torch.Tensor) and mask_desc.shape == mask_text.shape:
+                mask_text = mask_text | mask_desc.to(dtype=torch.bool)
 
         if isinstance(mask_text, torch.Tensor):
             if isinstance(mask_coord, torch.Tensor) and mask_coord.shape == mask_text.shape:

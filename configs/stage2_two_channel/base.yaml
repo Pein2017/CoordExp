@@ -84,7 +84,6 @@ data:
 stage2_ab:
   schedule:
     b_ratio: 0.05
-  n_softctx_iter: 2
   pipeline:
     objective:
       - name: token_ce
@@ -92,11 +91,9 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_text_plus_final_struct
+          preset: anchor_text_only
         config:
           desc_ce_weight: 1.0
-          # Self-context struct/EOS CE stabilizer weight (explicit to avoid hidden defaults).
-          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
@@ -111,7 +108,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.5
@@ -120,7 +117,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
@@ -133,7 +130,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           coord_ce_weight: 0.0
           coord_el1_weight: 0.0

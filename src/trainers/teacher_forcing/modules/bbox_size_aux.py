@@ -25,9 +25,7 @@ def _coerce_optional_float(value: Any) -> float | None:
         raise ValueError("bbox_size_aux threshold values must be numeric when provided") from None
 
 
-def _term_weight(cfg: Mapping[str, Any], *, key: str, registry_context: str) -> float:
-    if registry_context == "a1":
-        return max(0.0, _coerce_float(cfg.get(f"a1_{key}", cfg.get(key, 0.0)), 0.0))
+def _term_weight(cfg: Mapping[str, Any], *, key: str) -> float:
     return max(0.0, _coerce_float(cfg.get(key, 0.0), 0.0))
 
 
@@ -37,20 +35,7 @@ def run_bbox_size_aux_module(
     spec: PipelineModuleSpec,
     state: Mapping[str, Any],
 ) -> ModuleResult:
-    if str(context.registry_context) == "gt":
-        z = context.logits.new_tensor(0.0)
-        metrics = {
-            "loss/bbox_log_wh": 0.0,
-            "loss/bbox_oversize": 0.0,
-            "bbox_size_aux/groups_total": 0.0,
-            "bbox_size_aux/mean_width": 0.0,
-            "bbox_size_aux/mean_height": 0.0,
-            "bbox_size_aux/mean_log_area": 0.0,
-        }
-        return ModuleResult(loss=z, metrics=metrics, state={})
-
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
-    registry_context = str(context.registry_context or "").strip().lower()
 
     pred_boxes = state.get("bbox_pred_boxes_xyxy")
     target_boxes = state.get("bbox_target_boxes_xyxy")
@@ -71,12 +56,8 @@ def run_bbox_size_aux_module(
         pred_boxes_xyxy=pred_boxes,
         target_boxes_xyxy=target_boxes if isinstance(target_boxes, torch.Tensor) else None,
         box_weights=box_weights if isinstance(box_weights, torch.Tensor) else None,
-        log_wh_weight=_term_weight(cfg, key="log_wh_weight", registry_context=registry_context),
-        oversize_penalty_weight=_term_weight(
-            cfg,
-            key="oversize_penalty_weight",
-            registry_context=registry_context,
-        ),
+        log_wh_weight=_term_weight(cfg, key="log_wh_weight"),
+        oversize_penalty_weight=_term_weight(cfg, key="oversize_penalty_weight"),
         oversize_area_frac_threshold=_coerce_optional_float(cfg.get("oversize_area_frac_threshold")),
         oversize_log_w_threshold=_coerce_optional_float(cfg.get("oversize_log_w_threshold")),
         oversize_log_h_threshold=_coerce_optional_float(cfg.get("oversize_log_h_threshold")),

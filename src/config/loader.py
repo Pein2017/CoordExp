@@ -129,7 +129,6 @@ class ConfigLoader:
             "training.save_strategy",
             "training.save_steps",
             "stage2_ab.schedule.b_ratio",
-            "stage2_ab.n_softctx_iter",
         ]
 
         missing = [

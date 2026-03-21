@@ -74,7 +74,7 @@ checkpoints:
     path: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
     artifact_kind: executable_checkpoint
     provenance_sidecars:
-      config_source: output/stage2_ab/2b_1024/a_only_iter1/epoch_2-eff_size_64-n_softctx_iter_1-a_only/v0-20260309-102351/config_source.yaml
+      config_source: configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml
 
 splits:
   train:

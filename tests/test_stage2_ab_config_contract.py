@@ -59,7 +59,6 @@ def _canonical_stage2_pipeline(
     if token_ce_cfg is None:
         token_ce_cfg = {
             "desc_ce_weight": 1.0,
-            "struct_ce_weight": 0.1,
             "rollout_fn_desc_weight": 1.0,
             "rollout_matched_prefix_struct_weight": 1.0,
         }
@@ -103,7 +102,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 1.0,
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_text_plus_final_struct"},
+                "application": {"preset": "anchor_text_only"},
                 "config": dict(token_ce_cfg),
             },
             {
@@ -119,7 +118,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": dict(bbox_geo_cfg),
             },
             {
@@ -127,7 +126,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": dict(bbox_size_aux_cfg),
             },
             {
@@ -135,7 +134,7 @@ def _canonical_stage2_pipeline(
                 "enabled": True,
                 "weight": 0.0,
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": dict(coord_reg_cfg),
             },
         ],
@@ -405,7 +404,6 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
             "pipeline": _canonical_stage2_pipeline(
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
-                    "struct_ce_weight": 0.1,
                     "rollout_fn_desc_weight": 1.0,
                     "rollout_matched_prefix_struct_weight": 1.0,
                     "rollout_drop_invalid_struct_ce_multiplier": 1.0,
@@ -557,7 +555,6 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
 def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
-        "struct_ce_weight": 0.0,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
     }
@@ -584,7 +581,7 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_plus_final_struct"},
+                        "application": {"preset": "anchor_text_only"},
                         "config": dict(token_ce_cfg),
                     }
                 ],
@@ -668,7 +665,6 @@ def test_stage2_pipeline_rejects_deprecated_stop_signal_damping() -> None:
             "pipeline": _canonical_stage2_pipeline(
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
-                    "struct_ce_weight": 0.1,
                     "rollout_fn_desc_weight": 1.0,
                     "rollout_matched_prefix_struct_weight": 1.0,
                     "stop_signal_damping": {"enabled": False},
@@ -685,6 +681,123 @@ def test_stage2_pipeline_rejects_deprecated_stop_signal_damping() -> None:
             r"stage2_ab\.pipeline\.objective\[0\]\.config\.stop_signal_damping "
             r"is deprecated and unsupported"
         ),
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_rejects_deprecated_struct_ce_weight() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                token_ce_cfg={
+                    "desc_ce_weight": 1.0,
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "struct_ce_weight": 0.1,
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[0\]\.config\.struct_ce_weight is deprecated and unsupported",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_ab_rejects_deprecated_decode_toggle() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "coord_decode_mode": "st",
+            "pipeline": _canonical_stage2_pipeline(),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"Deprecated Stage-2 self-context knobs are unsupported.*stage2_ab\.coord_decode_mode",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_rollout_aligned",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+            "coord_decode_mode": "st",
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "token_ce",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "application": {"preset": "anchor_text_only"},
+                        "config": {
+                            "desc_ce_weight": 1.0,
+                            "rollout_fn_desc_weight": 1.0,
+                            "rollout_matched_prefix_struct_weight": 1.0,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matching\.coord_decode_mode is deprecated and unsupported",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -726,7 +839,7 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
                         "enabled": True,
                         "weight": 0.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_if_single_iter_else_final"},
+                        "application": {"preset": "anchor_only"},
                         "config": {
                             "smoothl1_weight": 0.0,
                             "ciou_weight": 0.0,
@@ -737,7 +850,7 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_if_single_iter_else_final"},
+                        "application": {"preset": "anchor_only"},
                         "config": {
                             **coord_reg_cfg,
                             "unknown_weight": 1.0,
@@ -780,10 +893,9 @@ def test_rollout_pipeline_rejects_deprecated_stop_signal_damping() -> None:
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_plus_final_struct"},
+                        "application": {"preset": "anchor_text_only"},
                         "config": {
                             "desc_ce_weight": 1.0,
-                            "struct_ce_weight": 0.1,
                             "rollout_fn_desc_weight": 1.0,
                             "rollout_matched_prefix_struct_weight": 1.0,
                             "stop_signal_damping": {"enabled": True},
@@ -802,6 +914,51 @@ def test_rollout_pipeline_rejects_deprecated_stop_signal_damping() -> None:
             r"rollout_matching\.pipeline\.objective\[0\]\.config\.stop_signal_damping "
             r"is deprecated and unsupported"
         ),
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_rollout_pipeline_rejects_deprecated_struct_ce_weight() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_rollout_aligned",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "token_ce",
+                        "enabled": True,
+                        "weight": 1.0,
+                        "channels": ["A", "B"],
+                        "application": {"preset": "anchor_text_only"},
+                        "config": {
+                            "desc_ce_weight": 1.0,
+                            "rollout_fn_desc_weight": 1.0,
+                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "struct_ce_weight": 0.1,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matching\.pipeline\.objective\[0\]\.config\.struct_ce_weight is deprecated and unsupported",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 

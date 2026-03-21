@@ -250,8 +250,8 @@ def _stage2_snapshot_key(metric_key: str) -> str | None:
     key = str(metric_key)
 
     if (
-        key.startswith(("loss/A1_", "loss/A2_"))
-        or key.startswith(("coord_diag/A1/", "coord_diag/A2/"))
+        key.startswith(("loss/text/", "loss/coord/"))
+        or (key.startswith("coord_diag/") and not key.startswith("coord_diag/B/"))
         or key.startswith("time/channel_a_")
         or key == "stage2/channel_a"
     ):
@@ -3538,37 +3538,11 @@ class Stage2ABTrainingTrainer(
 
         coord_token_ids = self._get_coord_token_ids()
         coord_id_set = set(int(i) for i in coord_token_ids if int(i) >= 0)
-        coord_ids_t = torch.tensor(
-            coord_token_ids, device=input_ids.device, dtype=torch.long
-        )
 
-        # Config.
-        n_softctx_iter = int(self._ab_get("n_softctx_iter", 2) or 2)
-        n_softctx_iter = max(1, n_softctx_iter)
-
-        softctx_grad_mode = str(
-            self._ab_get("softctx_grad_mode", "unroll") or "unroll"
-        ).strip().lower()
-        if softctx_grad_mode not in {"unroll", "em_detach"}:
-            raise ValueError(
-                "stage2_ab.softctx_grad_mode must be one of {'unroll','em_detach'}"
-            )
-
-        coord_ctx_embed_mode = str(
-            self._ab_get("coord_ctx_embed_mode", "st") or "st"
-        ).strip().lower()
-        if coord_ctx_embed_mode not in {"soft", "st", "hard"}:
-            raise ValueError(
-                "stage2_ab.coord_ctx_embed_mode must be one of {'soft','st','hard'}"
-            )
-
-        coord_decode_mode = str(
-            self._ab_get("coord_decode_mode", "exp") or "exp"
-        ).strip().lower()
-        if coord_decode_mode not in {"exp", "st"}:
-            raise ValueError(
-                "stage2_ab.coord_decode_mode must be one of {'exp','st'}"
-            )
+        # Channel-A now shares the same single-pass decode surface as the rest of
+        # the teacher-forcing pipeline. The deprecated self-context loop no
+        # longer provides a user-configurable temperature/decode-mode override.
+        temperature = 1.0
 
         pipeline_manifest = getattr(self, "stage2_pipeline_manifest", None)
         objective_specs = (
@@ -3715,28 +3689,20 @@ class Stage2ABTrainingTrainer(
         ).strip()
         coord_reg_preset = str(coord_module_app.get("preset", "") or "").strip()
 
-        def _token_ce_targets(preset: str) -> tuple[bool, bool]:
+        def _token_ce_targets(preset: str) -> bool:
             if str(channel).upper() != "A":
-                return False, False
-            if preset == "anchor_text_plus_final_struct":
-                return True, int(n_softctx_iter) > 1
+                return False
             if preset == "anchor_text_only":
-                return True, False
+                return True
             if preset == "rollout_text_only":
-                return False, False
+                return False
             raise ValueError(f"Unsupported token_ce application preset: {preset!r}")
 
-        def _coord_targets(preset: str) -> tuple[bool, bool]:
+        def _coord_targets(preset: str) -> bool:
             if str(channel).upper() != "A":
-                return False, False
-            if preset == "anchor_if_single_iter_else_final":
-                return int(n_softctx_iter) <= 1, int(n_softctx_iter) > 1
+                return False
             if preset == "anchor_only":
-                return True, False
-            if preset == "final_only":
-                return False, True
-            if preset == "anchor_and_final":
-                return True, True
+                return True
             raise ValueError(f"Unsupported coord/bbox application preset: {preset!r}")
 
         def _cfg_float(
@@ -3765,12 +3731,6 @@ class Stage2ABTrainingTrainer(
             min_value=0.0,
         )
 
-        self_context_struct_ce_weight = _cfg_float(
-            token_cfg,
-            keys=("struct_ce_weight",),
-            default=0.1,
-            min_value=0.0,
-        )
         fn_desc_ce_weight = _cfg_float(
             token_cfg,
             keys=("rollout_fn_desc_weight",),
@@ -3844,10 +3804,6 @@ class Stage2ABTrainingTrainer(
             min_value=0.0,
         )
 
-        temperature = float(self._ab_get("softctx_temperature", 1.0) or 1.0)
-        if temperature <= 0:
-            raise ValueError(f"softctx_temperature must be > 0; got {temperature}")
-
         coord_soft_ce_w = _cfg_float(
             coord_cfg,
             keys=("soft_ce_weight",),
@@ -3860,12 +3816,10 @@ class Stage2ABTrainingTrainer(
             default=0.0,
             min_value=0.0,
         )
-        run_a1_text, run_a2_text = _token_ce_targets(token_preset)
-        run_a1_bbox_geo, run_a2_bbox_geo = _coord_targets(bbox_geo_preset)
-        run_a1_bbox_size_aux, run_a2_bbox_size_aux = _coord_targets(
-            bbox_size_aux_preset
-        )
-        run_a1_coord_reg, run_a2_coord_reg = _coord_targets(coord_reg_preset)
+        run_a_text = _token_ce_targets(token_preset)
+        run_a_bbox_geo = _coord_targets(bbox_geo_preset)
+        run_a_bbox_size_aux = _coord_targets(bbox_size_aux_preset)
+        run_a_coord_reg = _coord_targets(coord_reg_preset)
 
         # Always compute logits; do not rely on model.loss.
         ignored_keys = {
@@ -3877,7 +3831,7 @@ class Stage2ABTrainingTrainer(
             "logits_to_keep",
         }
         packing_enabled = bool(self._packing_enabled())
-        core_model, inputs_for_model, model_type = prepare_forward_inputs(
+        _, inputs_for_model, _ = prepare_forward_inputs(
             model=model,
             inputs=inputs,
             ignored_keys=tuple(ignored_keys),
@@ -3921,115 +3875,7 @@ class Stage2ABTrainingTrainer(
                     )
 
         t_fwd0 = time.perf_counter()
-        outputs = None
-        logits_a1: Optional[torch.Tensor] = None
-
-        if channel == "A":
-            embed = core_model.get_input_embeddings()
-            if embed is None:
-                raise ValueError("core_model.get_input_embeddings() returned None")
-
-            # Build coord-slot update indices (segment-aware for packing).
-            def _collect_coord_slots() -> Tuple[torch.Tensor, torch.Tensor]:
-                bsz, seqlen = input_ids.shape
-                b_list: List[int] = []
-                p_list: List[int] = []
-                if len(meta) == bsz:
-                    for b in range(bsz):
-                        m = meta[b]
-                        prompt_len = int(m.get("prompt_len", 0))
-                        train_len = int(m.get("train_len", 0))
-                        start = max(1, prompt_len)
-                        end = min(seqlen, prompt_len + train_len)
-                        for p in range(start, end):
-                            if int(input_ids[b, p].item()) in coord_id_set:
-                                b_list.append(int(b))
-                                p_list.append(int(p))
-                    return (
-                        torch.tensor(b_list, device=input_ids.device, dtype=torch.long),
-                        torch.tensor(p_list, device=input_ids.device, dtype=torch.long),
-                    )
-
-                if bsz != 1:
-                    raise ValueError("packed-mode meta requires bsz==1")
-                offset = 0
-                for seg in meta:
-                    encoded_len = int(seg.get("encoded_len") or 0)
-                    if encoded_len <= 0:
-                        raise ValueError("packed-mode segment missing encoded_len")
-                    prompt_len = int(seg.get("prompt_len", 0))
-                    train_len = int(seg.get("train_len", 0))
-                    seg_start = offset
-                    seg_end = offset + encoded_len
-                    start = max(seg_start + 1, seg_start + prompt_len)
-                    end = min(seg_end, seg_start + prompt_len + train_len)
-                    for p in range(start, end):
-                        if int(input_ids[0, p].item()) in coord_id_set:
-                            b_list.append(0)
-                            p_list.append(int(p))
-                    offset += encoded_len
-                return (
-                    torch.tensor(b_list, device=input_ids.device, dtype=torch.long),
-                    torch.tensor(p_list, device=input_ids.device, dtype=torch.long),
-                )
-
-            b_slots, p_slots = _collect_coord_slots()
-            coord_table = embed(coord_ids_t)
-            coord_table_f = coord_table.float()
-
-            logits_prev: Optional[torch.Tensor] = None
-            for it in range(int(n_softctx_iter)):
-                detach_exp_emb = bool(softctx_grad_mode == "em_detach")
-                if softctx_grad_mode == "unroll":
-                    ctx = torch.enable_grad()
-                else:
-                    last_it = int(n_softctx_iter) - 1
-                    # Channel-A anchors CE to the A1 (it==0) logits. If we run A1 under
-                    # torch.no_grad(), CE has no gradient and the model quickly drifts in
-                    # structure/format tokens (e.g., emitting bbox_3d/bbox_d keys).
-                    grad_on = bool(it == 0 or it == last_it)
-                    ctx = torch.enable_grad() if grad_on else torch.no_grad()
-
-                with ctx:
-                    base_embeds = embed(input_ids)
-                    embeds = base_embeds
-                    if it > 0 and logits_prev is not None and p_slots.numel() > 0:
-                        logit_pos = (p_slots - 1).clamp(min=0)
-                        logits_next = logits_prev[b_slots, logit_pos]
-                        coord_logits = logits_next.index_select(dim=-1, index=coord_ids_t)
-                        probs = torch.softmax(coord_logits.float() / temperature, dim=-1)
-                        soft_emb = probs @ coord_table_f
-                        hard_ids = coord_logits.argmax(dim=-1)
-                        hard_emb = coord_table_f.index_select(0, hard_ids)
-                        if coord_ctx_embed_mode == "soft":
-                            exp_emb = soft_emb
-                        elif coord_ctx_embed_mode == "hard":
-                            exp_emb = hard_emb
-                        else:
-                            exp_emb = hard_emb + (soft_emb - soft_emb.detach())
-                        exp_emb = exp_emb.to(base_embeds.dtype)
-                        if detach_exp_emb:
-                            exp_emb = exp_emb.detach()
-                        embeds = base_embeds.clone()
-                        embeds[b_slots, p_slots] = exp_emb
-
-                    fwd_inputs = dict(inputs_for_model)
-                    fwd_inputs.pop("input_ids", None)
-                    fwd_inputs["inputs_embeds"] = embeds
-                    out = run_no_cache_forward(model=model, inputs_for_model=fwd_inputs)
-                    if not hasattr(out, "logits") or out.logits is None:
-                        raise ValueError("model did not return logits")
-                    if getattr(out, "past_key_values", None) is not None:
-                        raise ValueError("past_key_values must be None for Channel-A")
-
-                    logits_prev = out.logits
-                    outputs = out
-                    if it == 0:
-                        logits_a1 = out.logits
-
-        else:
-            outputs = run_no_cache_forward(model=model, inputs_for_model=inputs_for_model)
-            logits_a1 = getattr(outputs, "logits", None) if outputs is not None else None
+        outputs = run_no_cache_forward(model=model, inputs_for_model=inputs_for_model)
 
         t_fwd_s = time.perf_counter() - t_fwd0
 
@@ -4042,23 +3888,13 @@ class Stage2ABTrainingTrainer(
             where="stage2-ab training",
         )
 
-        if channel == "A":
-            if logits_a1 is None:
-                raise ValueError("Channel-A did not capture A1 logits for CE anchoring")
-            if logits_a1.shape != logits.shape:
-                raise ValueError("Channel-A A1 logits shape mismatch vs final logits")
-            logits_ce = logits_a1
-        else:
-            logits_ce = logits
-
-        bsz, seq_len, vocab = logits.shape
+        logits_ce = logits
 
         # ------------------------------------------------------------------
         # Teacher-forcing objective via the unified module pipeline.
         #
-        # Channel-A runs two contexts:
-        #   - A1: registry_context=gt (token_ce anchor only; geo/coord_reg are disabled)
-        #   - A2: registry_context=self_context (token_ce struct-only stabilizer + geo + coord_reg)
+        # Channel-A runs one GT-context teacher-forced pass for token CE, bbox
+        # geometry, and coord regularization.
         #
         # Channel-B runs one context:
         #   - B: registry_context=rollout (rollout-context token_ce + geo + coord_reg; FP-neutral)
@@ -4078,14 +3914,13 @@ class Stage2ABTrainingTrainer(
 
         tf_context = TeacherForcingContext(
             channel=str(channel),
-            registry_context=("self_context" if channel == "A" else "rollout"),
+            registry_context=("gt" if channel == "A" else "rollout"),
             input_ids=input_ids,
             logits=logits,
             logits_ce=logits,
             meta=meta,
             coord_token_ids=coord_token_ids,
             temperature=float(temperature),
-            decode_mode=str(coord_decode_mode),
             token_type_masks=token_type_masks,
             rollout_subset_masks=rollout_subset_masks,
             extra={},
@@ -4096,68 +3931,7 @@ class Stage2ABTrainingTrainer(
             warn_once = set()
             setattr(self, "_tf_diag_warn_once", warn_once)
 
-        def _spec_name(spec: Mapping[str, Any]) -> str:
-            return str(spec.get("name", "") or "").strip()
-
-        def _filter_channel_a_gt_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            if not run_a1_text:
-                return []
-            return [
-                spec
-                for spec in list(specs or [])
-                if isinstance(spec, Mapping) and _spec_name(spec) == "token_ce"
-            ]
-
-        def _filter_channel_a_ctx_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            out: list[Mapping[str, Any]] = []
-            for spec in list(specs or []):
-                if not isinstance(spec, Mapping):
-                    continue
-                name = _spec_name(spec)
-                if name == "token_ce":
-                    if run_a2_text:
-                        out.append(spec)
-                    continue
-                if name == "bbox_geo" and run_a2_bbox_geo:
-                    out.append(spec)
-                    continue
-                if name == "bbox_size_aux" and run_a2_bbox_size_aux:
-                    out.append(spec)
-                    continue
-                if name == "coord_reg" and run_a2_coord_reg:
-                    out.append(spec)
-                    continue
-                if name == "loss_dead_anchor_suppression":
-                    out.append(spec)
-            return out
-
-        def _filter_channel_a_a1_coord_specs(
-            specs: Sequence[Mapping[str, Any]],
-        ) -> list[Mapping[str, Any]]:
-            out: list[Mapping[str, Any]] = []
-            for spec in list(specs or []):
-                if not isinstance(spec, Mapping):
-                    continue
-                name = _spec_name(spec)
-                if name == "bbox_geo" and run_a1_bbox_geo:
-                    out.append(spec)
-                    continue
-                if name == "bbox_size_aux" and run_a1_bbox_size_aux:
-                    out.append(spec)
-                    continue
-                if name == "coord_reg" and run_a1_coord_reg:
-                    out.append(spec)
-            return out
-
-        objective_specs_ctx = (
-            _filter_channel_a_ctx_specs(objective_specs)
-            if channel == "A"
-            else list(objective_specs or [])
-        )
+        objective_specs_ctx = list(objective_specs or [])
 
         pipeline_ctx_result = run_teacher_forcing_pipeline(
             context=tf_context,
@@ -4168,71 +3942,7 @@ class Stage2ABTrainingTrainer(
         )
         pipeline_metrics_ctx = dict(pipeline_ctx_result.metrics)
         pipeline_ctx_total_loss = pipeline_ctx_result.total_loss
-
-        pipeline_metrics_gt: Dict[str, float] = {}
-        a1_bbox_state: Optional[Mapping[str, Any]] = None
-        a1_coord_state: Optional[Mapping[str, Any]] = None
-        pipeline_metrics_a1: Dict[str, float] = {}
-        pipeline_a1_total_loss = logits_ce.new_tensor(0.0)
-        pipeline_gt_total_loss = logits_ce.new_tensor(0.0)
-        if channel == "A":
-            objective_specs_gt = _filter_channel_a_gt_specs(objective_specs)
-            token_ctx_gt = TeacherForcingContext(
-                channel="A",
-                registry_context="gt",
-                input_ids=input_ids,
-                logits=logits_ce,
-                logits_ce=logits_ce,
-                meta=meta,
-                coord_token_ids=coord_token_ids,
-                temperature=float(temperature),
-                decode_mode=str(coord_decode_mode),
-                extra={},
-            )
-            if objective_specs_gt:
-                pipeline_gt = run_teacher_forcing_pipeline(
-                    context=token_ctx_gt,
-                    objective_specs=objective_specs_gt,
-                    diagnostics_specs=diagnostic_specs,
-                    initial_state=None,
-                    warn_once_cache=warn_once,
-                )
-                pipeline_metrics_gt = dict(pipeline_gt.metrics)
-                pipeline_gt_total_loss = pipeline_gt.total_loss
-                del pipeline_gt
-
-            objective_specs_a1 = _filter_channel_a_a1_coord_specs(objective_specs)
-            if objective_specs_a1:
-                ctx_a1_obj = TeacherForcingContext(
-                    channel="A",
-                    registry_context="a1",
-                    input_ids=input_ids,
-                    logits=logits_ce,
-                    logits_ce=logits_ce,
-                    meta=meta,
-                    coord_token_ids=coord_token_ids,
-                    temperature=float(temperature),
-                    decode_mode=str(coord_decode_mode),
-                    token_type_masks=token_type_masks,
-                    rollout_subset_masks=rollout_subset_masks,
-                    extra={},
-                )
-                pipeline_a1 = run_teacher_forcing_pipeline(
-                    context=ctx_a1_obj,
-                    objective_specs=objective_specs_a1,
-                    diagnostics_specs=[],
-                    initial_state=None,
-                    warn_once_cache=warn_once,
-                )
-                pipeline_metrics_a1 = dict(pipeline_a1.metrics)
-                pipeline_a1_total_loss = pipeline_a1.total_loss
-                a1_bbox_state = dict(pipeline_a1.state or {})
-                a1_coord_state = dict(pipeline_a1.state or {})
-                del pipeline_a1
-
-            total = pipeline_gt_total_loss + pipeline_ctx_total_loss + pipeline_a1_total_loss
-        else:
-            total = pipeline_ctx_total_loss
+        total = pipeline_ctx_total_loss
 
         from src.metrics.reporter import best_effort_value
 
@@ -4251,8 +3961,6 @@ class Stage2ABTrainingTrainer(
                         bbox_module_weight=float(bbox_geo_module_w),
                         bbox_size_aux_module_weight=float(bbox_size_aux_module_w),
                         coord_module_weight=float(coord_reg_module_w),
-                        a1_bbox_state=a1_bbox_state,
-                        a1_coord_state=a1_coord_state,
                     ),
                 ),
                 default={},
@@ -4271,97 +3979,23 @@ class Stage2ABTrainingTrainer(
             stage2_logs: Dict[str, float] = {}
 
             if channel == "A":
-                if float(token_ce_module_w) != 0.0 and run_a1_text:
+                if float(token_ce_module_w) != 0.0 and run_a_text:
                     token_struct = float(
-                        pipeline_metrics_gt.get("loss/token_ce_struct", 0.0) or 0.0
+                        pipeline_metrics_ctx.get("loss/token_ce_struct", 0.0) or 0.0
                     )
                     token_desc = float(
-                        pipeline_metrics_gt.get("loss/token_ce_desc", 0.0) or 0.0
+                        pipeline_metrics_ctx.get("loss/token_ce_desc", 0.0) or 0.0
                     )
 
-                    stage2_logs["loss/A1_text/struct_ce"] = float(
+                    stage2_logs["loss/text/struct_ce"] = float(
                         float(token_ce_module_w) * float(token_struct)
                     )
                     if float(token_desc_ce_weight) != 0.0:
-                        stage2_logs["loss/A1_text/desc_ce"] = float(
+                        stage2_logs["loss/text/desc_ce"] = float(
                             float(token_ce_module_w) * float(token_desc)
                         )
 
-                    fmt_weight = (
-                        float(self_context_struct_ce_weight)
-                        if int(n_softctx_iter) > 1 and run_a2_text
-                        else 0.0
-                    )
-                    if float(fmt_weight) != 0.0:
-                        token_self_struct = float(
-                            pipeline_metrics_ctx.get("loss/token_ce_struct", 0.0) or 0.0
-                        )
-                        stage2_logs["loss/A2_text/struct_ce"] = float(
-                            float(token_ce_module_w)
-                            * float(fmt_weight)
-                            * float(token_self_struct)
-                        )
-
-                if pipeline_metrics_a1:
-                    if float(bbox_geo_module_w) != 0.0 and run_a1_bbox_geo:
-                        smoothl1_a1 = float(
-                            pipeline_metrics_a1.get("loss/bbox_smoothl1", 0.0) or 0.0
-                        )
-                        ciou_a1 = float(
-                            pipeline_metrics_a1.get("loss/bbox_ciou", 0.0) or 0.0
-                        )
-                        if float(bbox_smoothl1_w) != 0.0:
-                            stage2_logs["loss/A1_coord/bbox_smoothl1"] = float(
-                                float(bbox_geo_module_w)
-                                * float(bbox_smoothl1_w)
-                                * float(smoothl1_a1)
-                            )
-                        if float(bbox_ciou_w) != 0.0:
-                            stage2_logs["loss/A1_coord/bbox_ciou"] = float(
-                                float(bbox_geo_module_w)
-                                * float(bbox_ciou_w)
-                                * float(ciou_a1)
-                            )
-
-                    if float(bbox_size_aux_module_w) != 0.0 and run_a1_bbox_size_aux:
-                        def _emit_a1_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                            if float(weight) == 0.0:
-                                return
-                            value = float(pipeline_metrics_a1.get(raw_key, 0.0) or 0.0)
-                            stage2_logs[f"loss/A1_coord/{term}"] = float(
-                                float(bbox_size_aux_module_w)
-                                * float(weight)
-                                * float(value)
-                            )
-
-                        _emit_a1_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                        _emit_a1_bbox_size(
-                            "bbox_oversize", bbox_oversize_w, "loss/bbox_oversize"
-                        )
-
-                    if float(coord_reg_module_w) != 0.0 and run_a1_coord_reg:
-                        def _emit_a1(term: str, weight: float, raw_key: str) -> None:
-                            if float(weight) == 0.0:
-                                return
-                            value = float(pipeline_metrics_a1.get(raw_key, 0.0) or 0.0)
-                            stage2_logs[f"loss/A1_coord/{term}"] = float(
-                                float(coord_reg_module_w) * float(weight) * float(value)
-                            )
-
-                        _emit_a1("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-                        _emit_a1("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-                        _emit_a1("coord_w1", coord_w1_w, "loss/coord_w1")
-                        _emit_a1("coord_el1", coord_el1_w, "loss/coord_el1")
-                        _emit_a1("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
-                        _emit_a1("coord_entropy", coord_entropy_w, "loss/coord_entropy")
-                        _emit_a1("coord_gate", coord_gate_w, "loss/coord_gate")
-                        _emit_a1("text_gate", text_gate_w, "loss/text_gate")
-
-                    stage2_logs["loss/A1_coord/total"] = float(
-                        pipeline_a1_total_loss.detach().cpu().item()
-                    )
-
-                if float(bbox_geo_module_w) != 0.0 and run_a2_bbox_geo:
+                if float(bbox_geo_module_w) != 0.0 and run_a_bbox_geo:
                     smoothl1 = float(
                         pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
                     )
@@ -4369,47 +4003,47 @@ class Stage2ABTrainingTrainer(
                         pipeline_metrics_ctx.get("loss/bbox_ciou", 0.0) or 0.0
                     )
                     if float(bbox_smoothl1_w) != 0.0:
-                        stage2_logs["loss/A2_coord/bbox_smoothl1"] = float(
+                        stage2_logs["loss/coord/bbox_smoothl1"] = float(
                             float(bbox_geo_module_w)
                             * float(bbox_smoothl1_w)
                             * float(smoothl1)
                         )
                     if float(bbox_ciou_w) != 0.0:
-                        stage2_logs["loss/A2_coord/bbox_ciou"] = float(
+                        stage2_logs["loss/coord/bbox_ciou"] = float(
                             float(bbox_geo_module_w)
                             * float(bbox_ciou_w)
                             * float(ciou)
                         )
 
-                if float(bbox_size_aux_module_w) != 0.0 and run_a2_bbox_size_aux:
-                    def _emit_a2_bbox_size(term: str, weight: float, raw_key: str) -> None:
+                if float(bbox_size_aux_module_w) != 0.0 and run_a_bbox_size_aux:
+                    def _emit_a_bbox_size(term: str, weight: float, raw_key: str) -> None:
                         if float(weight) == 0.0:
                             return
                         value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/A2_coord/{term}"] = float(
+                        stage2_logs[f"loss/coord/{term}"] = float(
                             float(bbox_size_aux_module_w) * float(weight) * float(value)
                         )
 
-                    _emit_a2_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-                    _emit_a2_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
+                    _emit_a_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
+                    _emit_a_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
 
-                if float(coord_reg_module_w) != 0.0 and run_a2_coord_reg:
-                    def _emit_a2(term: str, weight: float, raw_key: str) -> None:
+                if float(coord_reg_module_w) != 0.0 and run_a_coord_reg:
+                    def _emit_a(term: str, weight: float, raw_key: str) -> None:
                         if float(weight) == 0.0:
                             return
                         value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                        stage2_logs[f"loss/A2_coord/{term}"] = float(
+                        stage2_logs[f"loss/coord/{term}"] = float(
                             float(coord_reg_module_w) * float(weight) * float(value)
                         )
 
-                    _emit_a2("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-                    _emit_a2("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-                    _emit_a2("coord_w1", coord_w1_w, "loss/coord_w1")
-                    _emit_a2("coord_el1", coord_el1_w, "loss/coord_el1")
-                    _emit_a2("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
-                    _emit_a2("coord_entropy", coord_entropy_w, "loss/coord_entropy")
-                    _emit_a2("coord_gate", coord_gate_w, "loss/coord_gate")
-                    _emit_a2("text_gate", text_gate_w, "loss/text_gate")
+                    _emit_a("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
+                    _emit_a("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
+                    _emit_a("coord_w1", coord_w1_w, "loss/coord_w1")
+                    _emit_a("coord_el1", coord_el1_w, "loss/coord_el1")
+                    _emit_a("coord_ehuber", coord_ehuber_w, "loss/coord_ehuber")
+                    _emit_a("coord_entropy", coord_entropy_w, "loss/coord_entropy")
+                    _emit_a("coord_gate", coord_gate_w, "loss/coord_gate")
+                    _emit_a("text_gate", text_gate_w, "loss/text_gate")
             else:
                 if float(token_ce_module_w) != 0.0:
                     token_struct = float(
@@ -4537,65 +4171,11 @@ class Stage2ABTrainingTrainer(
                         stage2_logs[f"coord_diag/{prefix}/{suffix}"] = float(v)
 
                 if channel == "A":
-                    # A1: diagnostics from the GT-anchor logits (it==0).
-                    try:
-                        with torch.no_grad():
-                            from .teacher_forcing.modules import (
-                                run_bbox_geo_module,
-                                run_coord_diag_module,
-                            )
-
-                            ctx_a1 = TeacherForcingContext(
-                                channel="A",
-                                registry_context="self_context",
-                                input_ids=input_ids,
-                                logits=logits_ce,
-                                logits_ce=logits_ce,
-                                meta=meta,
-                                coord_token_ids=coord_token_ids,
-                                temperature=float(temperature),
-                                decode_mode=str(coord_decode_mode),
-                                token_type_masks=token_type_masks,
-                                rollout_subset_masks=rollout_subset_masks,
-                                extra={},
-                            )
-                            bbox_spec = PipelineModuleSpec(
-                                name="bbox_geo",
-                                enabled=True,
-                                weight=0.0,
-                                channels=("A",),
-                                config=dict(bbox_cfg),
-                            )
-                            diag_spec = PipelineModuleSpec(
-                                name="coord_diag",
-                                enabled=True,
-                                weight=0.0,
-                                channels=("A",),
-                                config={},
-                            )
-
-                            bbox_out = run_bbox_geo_module(
-                                context=ctx_a1,
-                                spec=bbox_spec,
-                            )
-                            diag_out = run_coord_diag_module(
-                                context=ctx_a1,
-                                spec=diag_spec,
-                                state=bbox_out.state,
-                            )
-                            _emit_coord_diag("A1", diag_out.metrics)
-                    except Exception:
-                        key = "coord_diag/A1_failed"
-                        if isinstance(warn_once, set) and key not in warn_once:
-                            logger.warning(
-                                "Skipping Channel-A A1 coord diagnostics after helper failure.",
-                                exc_info=True,
-                            )
-                            warn_once.add(key)
-
-                    # A2: diagnostics from final self-context logits (only meaningful if we ran >1 iter).
-                    if int(n_softctx_iter) > 1:
-                        _emit_coord_diag("A2", pipeline_metrics_ctx)
+                    for k, v in pipeline_metrics_ctx.items():
+                        ks = str(k)
+                        if not ks.startswith("coord_diag/"):
+                            continue
+                        stage2_logs[ks] = float(v)
                 else:
                     _emit_coord_diag("B", pipeline_metrics_ctx)
 

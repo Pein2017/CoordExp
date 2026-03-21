@@ -2,12 +2,12 @@ extends: a_only_iter1.yaml
 
 # Override to use the 32x32x1024 COCO path and explicit budget.
 model:
-  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-n_softctx_iter_2-merged
+  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-add_coord_ce-merged
   # model: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
   
 training:
   seed: 17
-  run_name: epoch-1-iter_1-eff_bs_128-random_order
+  run_name: epoch-1-single_pass-eff_bs_128-random_order
   output_dir: output/a_only/random_order
   logging_dir: tb/a_only/random_order
   num_train_epochs: 1
@@ -32,10 +32,9 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_text_plus_final_struct
+          preset: anchor_text_only
         config:
           desc_ce_weight: 1.0
-          struct_ce_weight: 1.0
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
@@ -50,7 +49,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           smoothl1_weight: 1.0
           ciou_weight: 0.5
@@ -59,7 +58,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
@@ -72,7 +71,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           coord_ce_weight: 0.04
           coord_el1_weight: 0.0

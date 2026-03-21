@@ -43,7 +43,6 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
         meta=meta,
         coord_token_ids=[],
         temperature=1.0,
-        decode_mode="greedy",
     )
     spec = PipelineModuleSpec(
         name="token_ce",
@@ -106,7 +105,6 @@ def test_token_ce_rejects_deprecated_stop_signal_damping_config() -> None:
         ],
         coord_token_ids=[],
         temperature=1.0,
-        decode_mode="greedy",
     )
     spec = PipelineModuleSpec(
         name="token_ce",

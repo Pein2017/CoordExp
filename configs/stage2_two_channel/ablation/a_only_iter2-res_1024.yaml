@@ -1,19 +1,14 @@
 extends: a_only_iter1-res_1024.yaml
 
-# 1024-res random-order ablation with 4 soft-context iterations.
-#
-# NOTE: the current Stage-2 trainer still routes bbox/coord supervision through the
-# existing A1/final-A2 contract when n_softctx_iter > 1. This config sets n_softctx_iter
-# to 4 and keeps the conservative weights we discussed; a true A1/A2/A3/A4 per-iteration
-# routing scheme would require a trainer/schema change.
+# 1024-res random-order ablation with the conservative single-pass anchor-only mix.
 model:
-  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-n_softctx_iter_2-merged
+  model: output/stage2_ab/coco_bbox_max60/a_only/epoch_2-eff_size_64-add_coord_ce-merged
 
 training:
   seed: 17
-  run_name: epoch-1-eff_bs_128
-  output_dir: output/a_only/random_order-iter_2-decode_st
-  logging_dir: tb/a_only/random_order-iter_2-decode_st
+  run_name: epoch-1-eff_bs_128-random_order_conservative
+  output_dir: output/a_only/random_order_conservative
+  logging_dir: tb/a_only/random_order_conservative
   num_train_epochs: 1
   effective_batch_size: 128
   encoded_sample_cache:
@@ -29,8 +24,6 @@ custom:
   object_ordering: random
 
 stage2_ab:
-  n_softctx_iter: 2
-  coord_decode_mode: st
   pipeline:
     objective:
       - name: token_ce
@@ -38,10 +31,9 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_text_plus_final_struct
+          preset: anchor_text_only
         config:
           desc_ce_weight: 1.0
-          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
@@ -56,7 +48,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
@@ -65,7 +57,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
@@ -78,7 +70,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           coord_ce_weight: 0.02
           coord_el1_weight: 0.0

@@ -468,7 +468,6 @@ def _make_stage2_pipeline_manifest(
     dead_anchor_suppression_enabled: bool = False,
     dead_anchor_suppression_weight: float = 1.0,
     desc_ce_weight: float = 1.0,
-    self_context_struct_ce_weight: float = 0.1,
     rollout_fn_desc_weight: float | None = None,
     rollout_matched_prefix_struct_weight: float = 1.0,
     bbox_geo_enabled: bool = True,
@@ -492,7 +491,6 @@ def _make_stage2_pipeline_manifest(
 ) -> dict:
     token_cfg: dict[str, object] = {
         "desc_ce_weight": float(desc_ce_weight),
-        "struct_ce_weight": float(self_context_struct_ce_weight),
         "rollout_matched_prefix_struct_weight": float(rollout_matched_prefix_struct_weight),
     }
     if rollout_fn_desc_weight is not None:
@@ -505,7 +503,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(token_ce_enabled),
                 "weight": float(token_ce_weight),
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_text_plus_final_struct"},
+                "application": {"preset": "anchor_text_only"},
                 "config": token_cfg,
             },
             {
@@ -521,7 +519,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(bbox_geo_enabled),
                 "weight": float(bbox_geo_weight),
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": {
                     "smoothl1_weight": float(bbox_smoothl1_weight),
                     "ciou_weight": float(bbox_ciou_weight),
@@ -532,7 +530,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(bbox_size_aux_enabled),
                 "weight": float(bbox_size_aux_weight),
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": {
                     "log_wh_weight": float(bbox_log_wh_weight),
                     "oversize_penalty_weight": float(bbox_oversize_weight),
@@ -547,7 +545,7 @@ def _make_stage2_pipeline_manifest(
                 "enabled": bool(coord_reg_enabled),
                 "weight": float(coord_reg_weight),
                 "channels": ["A", "B"],
-                "application": {"preset": "anchor_if_single_iter_else_final"},
+                "application": {"preset": "anchor_only"},
                 "config": {
                     "coord_ce_weight": float(coord_ce_weight),
                     "soft_ce_weight": float(coord_soft_ce_weight),
@@ -564,12 +562,10 @@ def _make_stage2_pipeline_manifest(
     }
 
 
-def _make_min_trainer(*, n_softctx_iter: int):
+def _make_min_trainer():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 0.0},
-        "n_softctx_iter": int(n_softctx_iter),
-        "softctx_temperature": 1.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
         "desc_ce_weight": 1.0,
@@ -586,8 +582,8 @@ def _make_min_trainer(*, n_softctx_iter: int):
     return t
 
 
-def test_channel_a_softctx_runs_n_forwards_and_enforces_cache_and_qwen_posids():
-    trainer = _make_min_trainer(n_softctx_iter=2)
+def test_channel_a_runs_single_forward_and_enforces_qwen_posids():
+    trainer = _make_min_trainer()
     model = _DummyModel()
 
     # Prompt (2 tokens) + assistant (5 tokens, includes 4 coord slots)
@@ -620,11 +616,11 @@ def test_channel_a_softctx_runs_n_forwards_and_enforces_cache_and_qwen_posids():
         },
     )
     assert isinstance(loss, torch.Tensor)
-    assert len(model.calls) == 2
+    assert len(model.calls) == 1
 
 
-def test_channel_a_softctx_n1_runs_single_forward():
-    trainer = _make_min_trainer(n_softctx_iter=1)
+def test_channel_a_does_not_use_inputs_embeds_iteration_path():
+    trainer = _make_min_trainer()
     model = _DummyModel()
 
     input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
@@ -658,8 +654,8 @@ def test_channel_a_softctx_n1_runs_single_forward():
     assert len(model.calls) == 1
 
 
-def test_channel_a_placeholder_embedding_invariance_bitwise():
-    trainer = _make_min_trainer(n_softctx_iter=2)
+def test_channel_a_multimodal_path_uses_single_inputs_embeds_forward():
+    trainer = _make_min_trainer()
     model = _DummyConstantCoord999Model()
 
     input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
@@ -693,23 +689,13 @@ def test_channel_a_placeholder_embedding_invariance_bitwise():
         },
     )
 
-    assert len(model.inputs_embeds_calls) == 2
-    e0, e1 = model.inputs_embeds_calls
-
-    # Prompt tokens should be bitwise unchanged across iterations.
-    assert torch.equal(e0[0, 0], e1[0, 0])
-    assert torch.equal(e0[0, 1], e1[0, 1])
-    # Non-coord tail tokens should also be unchanged.
-    assert torch.equal(e0[0, 6], e1[0, 6])
-    # Coord-slot rows may differ (softctx scatter-update).
-    assert not torch.equal(e0[0, 2], e1[0, 2])
+    assert len(model.inputs_embeds_calls) == 1
 
 
-def test_channel_a_ce_uses_a1_logits_not_final_logits():
-    trainer = _make_min_trainer(n_softctx_iter=2)
-    # Isolate anchor CE: disable self-context CE stabilizer and non-text objectives.
+def test_channel_a_ce_uses_single_forward_logits():
+    trainer = _make_min_trainer()
+    # Isolate anchor CE and non-text objectives.
     trainer.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        self_context_struct_ce_weight=0.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -745,7 +731,7 @@ def test_channel_a_ce_uses_a1_logits_not_final_logits():
         },
     )
 
-    # If CE incorrectly used the final logits, this would be low; with CE@A1 it should be high.
+    # If CE incorrectly ignored the first forward logits, this comparison would collapse.
     model_bad_a1 = _DummyCallIndexedTokenModel(pred_ids=[1103, 1102])
     loss_bad = trainer.compute_loss(
         model_bad_a1,
@@ -2877,8 +2863,6 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -2941,8 +2925,6 @@ def test_channel_b_bbox_group_weights_scale_geo_loss() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
@@ -3012,8 +2994,6 @@ def test_channel_b_coord_slot_weights_scale_coord_reg_loss() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
@@ -3135,7 +3115,7 @@ def test_hf_sampling_seeding_restores_python_rng_state():
 
 
 def test_packing_enabled_requires_qwen_packing_metadata():
-    trainer = _make_min_trainer(n_softctx_iter=1)
+    trainer = _make_min_trainer()
     trainer.rollout_matching_cfg = {"packing_enabled": True}
     model = _DummyModel()
 
@@ -3337,7 +3317,7 @@ def test_stage2_channel_b_fragment_supports_geometry_first_order():
 
 
 def test_compute_loss_raises_on_sliced_logits():
-    trainer = _make_min_trainer(n_softctx_iter=1)
+    trainer = _make_min_trainer()
     model = _DummySlicedModel()
 
     input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
@@ -3376,8 +3356,6 @@ def test_channel_b_includes_fn_geometry_loss():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         # Turn off CE so we isolate geometry contribution.
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 1.0,
@@ -3432,8 +3410,6 @@ def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -3501,8 +3477,6 @@ def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -3564,8 +3538,8 @@ def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
     assert "loss/coord_reg" not in finalized
 
 
-def test_channel_a_a1_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
-    t = _make_min_trainer(n_softctx_iter=1)
+def test_channel_a_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
+    t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
@@ -3614,16 +3588,77 @@ def test_channel_a_a1_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
     pending = t._stage2_pending_train_logs.get(1)
     assert pending is not None
     finalized = pending.finalize()
-    assert float(finalized["loss/A1_coord/bbox_log_wh"]) > 0.0
-    assert "loss/A2_coord/bbox_log_wh" not in finalized
+    assert float(finalized["loss/coord/bbox_log_wh"]) > 0.0
+
+
+def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_names() -> None:
+    t = _make_min_trainer()
+    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+        token_ce_enabled=False,
+        token_ce_weight=0.0,
+        bbox_geo_enabled=True,
+        bbox_geo_weight=1.0,
+        bbox_smoothl1_weight=1.0,
+        bbox_ciou_weight=1.0,
+        bbox_size_aux_enabled=True,
+        bbox_size_aux_weight=1.0,
+        bbox_log_wh_weight=0.05,
+        coord_reg_enabled=True,
+        coord_reg_weight=1.0,
+        coord_ce_weight=0.25,
+        coord_soft_ce_weight=0.25,
+        coord_w1_weight=0.25,
+    )
+
+    model = _DummyConstantCoord999Model()
+    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
+    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
+    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
+    meta = [
+        {
+            "prompt_len": 2,
+            "prefix_len": 0,
+            "train_len": 5,
+            "encoded_len": int(input_ids.shape[1]),
+            "tail_desc_pos": [],
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [
+                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
+            ],
+        }
+    ]
+
+    loss = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "A",
+            "_rollout_matching_meta": meta,
+            "input_ids": input_ids,
+            "position_ids": position_ids,
+            "text_position_ids": text_position_ids,
+        },
+    )
+
+    assert float(loss.detach().cpu().item()) > 0.0
+    assert len(model.calls) == 1
+
+    pending = t._stage2_pending_train_logs.get(1)
+    assert pending is not None
+    finalized = pending.finalize()
+
+    assert float(finalized["loss/coord/bbox_smoothl1"]) > 0.0
+    assert float(finalized["loss/coord/bbox_ciou"]) > 0.0
+    assert float(finalized["loss/coord/bbox_log_wh"]) > 0.0
+    assert float(finalized["loss/coord/coord_token_ce"]) > 0.0
+    assert float(finalized["loss/coord/coord_soft_ce"]) > 0.0
+    assert float(finalized["loss/coord/coord_w1"]) > 0.0
+    assert not any(key.startswith("loss/A1_") for key in finalized)
 
 
 def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
@@ -3679,8 +3714,6 @@ def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -3819,8 +3852,6 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -3893,8 +3924,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -3993,8 +4022,6 @@ def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": 0.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
@@ -4073,8 +4100,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": float(desc_w),
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -4148,8 +4173,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
-        "n_softctx_iter": 1,
-        "softctx_temperature": 1.0,
         "desc_ce_weight": float(desc_w),
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
@@ -4458,7 +4481,7 @@ def test_dead_anchor_suppression_targets_resolve_boundary_crossing_tokenization(
 
 
 def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom() -> None:
-    t = _make_min_trainer(n_softctx_iter=1)
+    t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
@@ -4507,7 +4530,7 @@ def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom()
 
 
 def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> None:
-    t = _make_min_trainer(n_softctx_iter=1)
+    t = _make_min_trainer()
     manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=True,
         token_ce_weight=2.0,
@@ -4560,7 +4583,7 @@ def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> Non
 
 
 def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> None:
-    t = _make_min_trainer(n_softctx_iter=1)
+    t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
@@ -4696,14 +4719,14 @@ def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
     pending.add(
         {
             "stage2/channel_a": 1.0,
-            "loss/A2_coord/bbox_smoothl1": 0.25,
+            "loss/coord/bbox_smoothl1": 0.25,
         }
     )
 
     out = pending.finalize()
 
     assert out["stage2/channel_a"] == pytest.approx(1.0)
-    assert out["loss/A2_coord/bbox_smoothl1"] == pytest.approx(0.25)
+    assert out["loss/coord/bbox_smoothl1"] == pytest.approx(0.25)
     assert "stage2/channel_b" not in out
     assert "stage2_ab/channel_b/invalid_rollout" not in out
     assert "stage2_ab/channel_b/strict_drop/N_valid_pred" not in out
@@ -4781,11 +4804,11 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
     out = trainer._reduce_stage2_pending_metrics_global(
         {
             "stage2/_log_weight_total": 1.0,
-            "loss/A2_coord/bbox_smoothl1": 10.0,
+            "loss/coord/bbox_smoothl1": 10.0,
         }
     )
 
-    assert out["loss/A2_coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["loss/coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert "stage2/_log_weight_total" not in out
 
 
@@ -4800,7 +4823,7 @@ def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() 
             "rollout/_parse_truncated_den": 4.0,
             "rollout/parse_truncated": 1.0,
             "stage2/raw_rollouts": 4.0,
-            "loss/A2_coord/bbox_smoothl1": 1.0,
+            "loss/coord/bbox_smoothl1": 1.0,
         }
     )
 
@@ -4858,7 +4881,7 @@ def test_b_ratio_realized_tracks_optimizer_steps_once():
 
 
 def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
-    t = _make_min_trainer(n_softctx_iter=1)
+    t = _make_min_trainer()
     batch = {"_rollout_matching_batch_metrics": {"rollout/backend_vllm": 1.0}}
     t._merge_rollout_matching_batch_metrics(
         batch,

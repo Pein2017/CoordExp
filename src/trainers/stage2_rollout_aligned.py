@@ -1730,12 +1730,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
             )
 
-        coord_decode_mode = str(cfg.get("coord_decode_mode", "exp") or "exp").strip().lower()
-        if coord_decode_mode not in {"exp", "st"}:
-            raise ValueError(
-                "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
-            )
-
         train_backend = self._effective_rollout_backend(context="train")
         eval_backend = self._effective_rollout_backend(context="eval")
         vllm_cfg = cfg.get("vllm", {})
@@ -8764,12 +8758,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         coord_token_ids = self._get_coord_token_ids()
         coord_id_set = {int(i) for i in coord_token_ids if int(i) >= 0}
 
-        coord_decode_mode = str(self._cfg("coord_decode_mode", "exp") or "exp").strip().lower()
-        if coord_decode_mode not in {"exp", "st"}:
-            raise ValueError(
-                "rollout_matching.coord_decode_mode must be one of {'exp', 'st'}"
-            )
-
         coord_cfg_for_temp: Mapping[str, Any] = {}
         for spec in list(objective_specs or []):
             if not isinstance(spec, Mapping):
@@ -8808,7 +8796,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             meta=meta,
             coord_token_ids=coord_token_ids,
             temperature=float(temperature_coord),
-            decode_mode=str(coord_decode_mode),
             token_type_masks=token_type_masks,
             rollout_subset_masks=rollout_subset_masks,
             extra={},

@@ -582,7 +582,6 @@ def _base_stage2_rollout_aligned_payload() -> dict:
 def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict | None = None) -> dict:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
-        "struct_ce_weight": 0.1,
         "rollout_fn_desc_weight": 1.0,
         "rollout_matched_prefix_struct_weight": 1.0,
     }
@@ -593,7 +592,7 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
         "enabled": True,
         "weight": 1.0,
         "channels": list(channels) if channels is not None else ["A", "B"],
-        "application": {"preset": "anchor_text_plus_final_struct"},
+        "application": {"preset": "anchor_text_only"},
         "config": token_ce_cfg,
     }
 
@@ -623,7 +622,7 @@ def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
-        "application": {"preset": "anchor_if_single_iter_else_final"},
+        "application": {"preset": "anchor_only"},
         "config": bbox_geo_cfg,
     }
 
@@ -644,7 +643,7 @@ def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
-        "application": {"preset": "anchor_if_single_iter_else_final"},
+        "application": {"preset": "anchor_only"},
         "config": bbox_size_aux_cfg,
     }
 
@@ -671,7 +670,7 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
         "enabled": True,
         "weight": 0.0,
         "channels": ["A", "B"],
-        "application": {"preset": "anchor_if_single_iter_else_final"},
+        "application": {"preset": "anchor_only"},
         "config": coord_reg_cfg,
     }
 

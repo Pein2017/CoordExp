@@ -138,7 +138,7 @@ def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() ->
     assert "B_coord/text_gate" not in terms
 
 
-def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None:
+def test_build_stage2_two_channel_coord_monitor_terms_uses_single_pass_coord_group_for_channel_a() -> None:
     pipeline_result = PipelineResult(
         total_loss=_t(0.0),
         state={
@@ -154,16 +154,6 @@ def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None
         {"name": "bbox_size_aux", "weight": 3.0},
         {"name": "coord_reg", "weight": 5.0},
     ]
-    a1_bbox_state = {
-        "bbox_smoothl1_contrib": _t(0.7),
-        "bbox_ciou_contrib": _t(0.8),
-        "bbox_log_wh_contrib": _t(0.5),
-    }
-    a1_coord_state = {
-        "coord_soft_ce_contrib": _t(0.9),
-        "coord_w1_contrib": _t(1.0),
-        "text_gate_contrib": _t(4.0),
-    }
 
     terms = build_stage2_two_channel_coord_monitor_terms(
         channel="A",
@@ -172,25 +162,18 @@ def test_build_stage2_two_channel_coord_monitor_terms_splits_a1_and_a2() -> None
         bbox_module_weight=2.0,
         bbox_size_aux_module_weight=3.0,
         coord_module_weight=5.0,
-        a1_bbox_state=a1_bbox_state,
-        a1_coord_state=a1_coord_state,
     )
 
     assert set(terms.keys()) == {
-        "A1_coord/bbox_smoothl1",
-        "A1_coord/bbox_ciou",
-        "A1_coord/bbox_log_wh",
-        "A1_coord/coord_soft_ce",
-        "A1_coord/coord_w1",
-        "A2_coord/bbox_smoothl1",
-        "A2_coord/bbox_ciou",
-        "A2_coord/bbox_log_wh",
-        "A2_coord/coord_soft_ce",
-        "A2_coord/coord_w1",
+        "coord/bbox_smoothl1",
+        "coord/bbox_ciou",
+        "coord/bbox_log_wh",
+        "coord/coord_soft_ce",
+        "coord/coord_w1",
     }
-    assert float(terms["A1_coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(1.4)
-    assert float(terms["A1_coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(1.5)
-    assert float(terms["A2_coord/coord_w1"].detach().cpu().item()) == pytest.approx(1.5)
+    assert float(terms["coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(0.8)
+    assert float(terms["coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(0.6)
+    assert float(terms["coord/coord_w1"].detach().cpu().item()) == pytest.approx(1.5)
     assert all("text_gate" not in key for key in terms)
 
 

@@ -161,7 +161,7 @@ def _decode_groups(
     pred = expectation_decode_coords(
         coord_logits=coord_logits,
         temperature=float(context.temperature),
-        mode=str(context.decode_mode or "exp"),
+        mode="exp",
     )
     gt = bin_t.float() / 999.0
 
@@ -200,17 +200,6 @@ def run_bbox_geo_module(
     context: TeacherForcingContext,
     spec: PipelineModuleSpec,
 ) -> ModuleResult:
-    if str(context.registry_context) == "gt":
-        z = context.logits.new_tensor(0.0)
-        metrics = {
-            "loss/geo": 0.0,
-            "loss/bbox_smoothl1": 0.0,
-            "loss/bbox_ciou": 0.0,
-            "bbox/groups_total": 0.0,
-            "bbox/slots_total": 0.0,
-        }
-        return ModuleResult(loss=z, metrics=metrics, state={})
-
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
 
     bbox_smoothl1_w = max(

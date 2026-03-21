@@ -201,32 +201,14 @@ def build_stage2_two_channel_coord_monitor_terms(
     bbox_module_weight: float,
     bbox_size_aux_module_weight: float,
     coord_module_weight: float,
-    a1_bbox_state: Optional[Mapping[str, Any]] = None,
-    a1_coord_state: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, torch.Tensor]:
     s = str(channel).strip().upper()
     if s == "A":
-        terms = build_stage2_coord_monitor_terms_from_pipeline(
+        return build_stage2_coord_monitor_terms_from_pipeline(
             pipeline_result=pipeline_result,
             objective_specs=objective_specs,
-            coord_provenance="A2_coord",
+            coord_provenance="coord",
         )
-        a1_state: Dict[str, Any] = {}
-        if isinstance(a1_bbox_state, Mapping):
-            a1_state.update(dict(a1_bbox_state))
-        if isinstance(a1_coord_state, Mapping):
-            a1_state.update(dict(a1_coord_state))
-        if a1_state:
-            terms.update(
-                _collect_weighted_coord_terms_from_state(
-                    state=a1_state,
-                    coord_provenance="A1_coord",
-                    bbox_module_weight=float(bbox_module_weight),
-                    bbox_size_aux_module_weight=float(bbox_size_aux_module_weight),
-                    coord_module_weight=float(coord_module_weight),
-                )
-            )
-        return terms
 
     return build_stage2_coord_monitor_terms_from_pipeline(
         pipeline_result=pipeline_result,

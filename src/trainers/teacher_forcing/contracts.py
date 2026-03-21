@@ -5,7 +5,7 @@ from typing import Any, Literal, Mapping, Sequence
 
 import torch
 
-RegistryContext = Literal["gt", "self_context", "rollout"]
+RegistryContext = Literal["gt", "rollout"]
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,6 @@ class TeacherForcingContext:
     meta: Sequence[Mapping[str, Any]]
     coord_token_ids: Sequence[int]
     temperature: float = 1.0
-    decode_mode: str = "exp"
     token_type_masks: Mapping[str, torch.Tensor] = field(default_factory=dict)
     rollout_subset_masks: Mapping[str, torch.Tensor] = field(default_factory=dict)
     extra: Mapping[str, Any] = field(default_factory=dict)

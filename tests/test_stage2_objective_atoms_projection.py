@@ -199,15 +199,15 @@ def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> Non
     atoms = project_stage2_objective_atoms(
         pipeline_result=pipeline_result,
         objective_specs=objective_specs,
-        text_provenance="A1_text",
+        text_provenance="text",
         coord_provenance=None,
         emit_text=True,
         emit_coord=False,
         require_additive=True,
     )
 
-    assert set(atoms.keys()) == {"loss/A1_text/struct_ce"}
-    assert atoms["loss/A1_text/struct_ce"] == pytest.approx(0.25)
+    assert set(atoms.keys()) == {"loss/text/struct_ce"}
+    assert atoms["loss/text/struct_ce"] == pytest.approx(0.25)
 
 
 def test_project_stage2_objective_atoms_raises_on_mismatch() -> None:

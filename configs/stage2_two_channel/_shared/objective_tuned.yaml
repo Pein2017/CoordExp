@@ -1,6 +1,4 @@
 stage2_ab:
-  n_softctx_iter: 2
-  softctx_grad_mode: unroll
   channel_b:
     duplicate_iou_threshold: 0.90
     ddp_phase_timeout_s: 120.0
@@ -11,10 +9,9 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_text_plus_final_struct
+          preset: anchor_text_only
         config:
           desc_ce_weight: 1.0
-          struct_ce_weight: 0.1
           rollout_fn_desc_weight: 1.0
           rollout_matched_prefix_struct_weight: 1.0
       - name: loss_dead_anchor_suppression
@@ -29,7 +26,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           smoothl1_weight: 2.0
           ciou_weight: 0.2
@@ -38,7 +35,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           log_wh_weight: 0.05
           oversize_penalty_weight: 0.0
@@ -51,7 +48,7 @@ stage2_ab:
         weight: 1.0
         channels: [A, B]
         application:
-          preset: anchor_if_single_iter_else_final
+          preset: anchor_only
         config:
           coord_ce_weight: 0.02
           coord_el1_weight: 0.0
