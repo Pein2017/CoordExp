@@ -174,9 +174,11 @@ Alternative considered:
 
 The refactor should move toward:
 
-- typed config as the authority for Stage-2 pipeline shape,
+- typed config as the normative authored source for Stage-2 pipeline shape,
 - dedicated bootstrap helpers for packing, trainer setup, and provenance,
 - and `sft.py` as a composition/orchestration root rather than a policy duplication point.
+
+For the completion pass in this change, that means centralizing runtime manifest projection behind one helper layer while acknowledging that some variant-default interpretation still lives in bootstrap code.
 
 Why:
 
@@ -196,7 +198,10 @@ Planned later seams:
 
 - `src/infer/backends/{hf,vllm_local,vllm_server}.py`
 - `src/infer/artifacts.py`
-- `src/eval/detection/{ingest,coco,f1ish,artifacts,vis}.py`
+- `src/eval/artifacts.py`
+- `src/eval/orchestration.py`
+
+A deeper `src/eval/detection/{ingest,coco,f1ish,vis}.py` split remains a valid follow-on direction, but is not required for the completion bar of this change.
 
 Protected public API boundaries during this work include:
 

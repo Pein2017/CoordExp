@@ -44,7 +44,7 @@ The program should preserve these guardrails throughout:
   - pipeline-manifest serialization,
   - provenance/run-metadata writing.
 - Split `src/infer/engine.py` later into backend adapters plus artifact-writing orchestration, while preserving JSONL, summary, and token-trace contracts.
-- Split `src/eval/detection.py` later into ingest, COCO, F1-ish, artifact, and visualization submodules, while preserving output parity.
+- Split `src/eval/detection.py` later by first extracting artifact/report writing and top-level orchestration, while preserving output parity; deeper ingest, COCO, F1-ish, and visualization helpers can remain in the public module until a follow-on slice justifies a fuller split.
 - Treat the current public infer/eval module boundaries as compatibility surfaces while internals move:
   - `src.infer.engine` as consumed by `src/infer/pipeline.py`
   - `src.eval.detection` as consumed by `src/infer/pipeline.py`, `src/callbacks/detection_eval.py`, and `scripts/evaluate_detection.py`
@@ -83,9 +83,9 @@ The program should preserve these guardrails throughout:
 - Expected new internal module families:
   - `src/trainers/stage2_two_channel/`
   - `src/trainers/rollout_runtime/`
-  - `src/training/bootstrap/`
-  - `src/infer/backends/`
-  - `src/eval/detection/`
+- `src/bootstrap/`
+- `src/infer/backends/`
+- `src/eval/{artifacts,orchestration}.py`
 - Expected planning artifacts for execution:
   - `.planning/PROJECT.md`
   - `.planning/REQUIREMENTS.md`
