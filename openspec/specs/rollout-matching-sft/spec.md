@@ -27,20 +27,26 @@ Normative behavior:
 - `application` MUST be an explicitly authored mapping with exactly one key:
   - `preset`
 - `application.preset` MUST be valid for the referenced module:
-  - `token_ce`: `anchor_text_plus_final_struct`, `anchor_text_only`, `rollout_text_only`
+  - `token_ce`: `anchor_text_only`, `rollout_text_only`
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`:
-    - `anchor_if_single_iter_else_final`
     - `anchor_only`
-    - `final_only`
-    - `anchor_and_final`
+- Repo-owned rollout-aligned configs MUST reject self-context-era/final-pass
+  preset names so the shared preset surface no longer advertises invalidated
+  behavior:
+  - `anchor_text_plus_final_struct`
+  - `anchor_if_single_iter_else_final`
+  - `final_only`
+  - `anchor_and_final`
 - `config` MUST include exactly the allowlisted keys for the referenced module:
   - missing required keys MUST fail fast (no implicit defaults),
   - unknown keys MUST fail fast (no escape-hatch aliases).
 
-#### Scenario: Incomplete rollout module specification fails fast
-- **WHEN** a rollout pipeline entry omits one of the required fields (`name`, `enabled`, `weight`, `channels`, `application`, `config`)
+#### Scenario: Rollout-aligned final-pass preset fails fast
+- **WHEN** a rollout-aligned config authors
+  `rollout_matching.pipeline.objective[*].application.preset: final_only`
 - **THEN** configuration parsing fails fast before trainer initialization
-- **AND** diagnostics identify the missing field path.
+- **AND** the error explains that repo-wide self-context-era final-pass presets
+  are deprecated and unsupported.
 
 ### Requirement: Rollout pipeline module configs are strict and canonical (no aliases)
 Rollout pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
@@ -1102,7 +1108,7 @@ Normative default module configs (effective values):
 - `bbox_geo`:
   - `smoothl1_weight = 1.0`
   - `ciou_weight = 1.0`
-  - decode mode is controlled by `rollout_matching.coord_decode_mode` (default `exp`)
+  - geometry decode follows the fixed expectation path
 - `coord_reg`:
   - is configured explicitly through `rollout_matching.pipeline`
   - MUST NOT source values from removed legacy aux-loss keys
@@ -1257,29 +1263,24 @@ Recommended expression (module config on `token_ce`, strict + typed):
 - **THEN** FN-injected `desc` tokens do not contribute to token CE
 - **AND** FP-neutral and EOS-enforced semantics remain intact.
 
-### Requirement: Rollout-matching SFT exposes ST geometry decode mode as typed YAML config
-Rollout-matching SFT SHALL expose a typed config knob to select geometry coord decode mode when geometry losses are
-enabled (either directly in trainer code or via the pipeline).
+### Requirement: Rollout-matching SFT uses the fixed expectation geometry decode path
+Rollout-matching SFT SHALL use the shared expectation geometry decode path and
+MUST NOT expose a rollout-authored decode toggle.
 
 Normative behavior:
-- Config MUST be expressed under the typed rollout-matching namespace (`rollout_matching.*`) and MUST be strict
-  (unknown keys fail fast).
-- When the key is omitted, defaults MUST preserve current behavior.
-- When enabled, ST decode MUST follow the ST semantics defined by `teacher-forcing-unified-loss-registry`.
+- Config MUST be expressed under the typed rollout-matching namespace
+  (`rollout_matching.*`) and MUST be strict (unknown keys fail fast).
+- `rollout_matching.coord_decode_mode` is deprecated and MUST fail fast if
+  authored.
+- Geometry decode follows the fixed expectation path defined by
+  `teacher-forcing-unified-loss-registry`.
 
-Normative key name:
-- `rollout_matching.coord_decode_mode: exp|st`
-
-Normative mapping / identity:
-- The resolved value MUST feed the same internal decode enum used by the two-channel Stage-2 engine
-  (`stage2_ab.coord_decode_mode`).
-- The resolved value MUST be included in the pipeline identity checksum so ST-vs-exp differences are auditable even when
-  the module list is unchanged.
-
-#### Scenario: Rollout decode mode contributes to pipeline identity
-- **WHEN** two runs are identical except `rollout_matching.coord_decode_mode` (`exp` vs `st`)
-- **THEN** both runs initialize successfully
-- **AND** their resolved pipeline identity payloads/checksums differ.
+#### Scenario: Rollout-authored coord decode toggle fails fast
+- **WHEN** a rollout-matching SFT config sets
+  `rollout_matching.coord_decode_mode: st`
+- **THEN** configuration parsing fails fast
+- **AND** the error explains that rollout geometry now uses the fixed
+  expectation-decode baseline.
 
 ### Requirement: Eval-step supports COCO mAP when enabled
 Rollout-aligned Stage-2 SHALL support computing COCO-style bbox mAP during `eval_step` (config-driven) and MUST log the
@@ -1513,4 +1514,3 @@ Normative behavior:
 - **THEN** the matched log-width/log-height auxiliary contributes through the
   shared `bbox_size_aux` implementation
 - **AND** no trainer-specific duplicate geometry path is required.
-

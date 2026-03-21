@@ -62,11 +62,14 @@ Execution semantics:
 - When `bbox_size_aux` is enabled, canonical Stage-2 objective order MUST place it after `bbox_geo` because
   `bbox_size_aux` depends on the decoded canonicalized box state produced on the same matched supervision path.
 - Canonical Stage-2 routing presets MUST be:
-  - `token_ce.application.preset: anchor_text_plus_final_struct`
+  - `token_ce.application.preset: anchor_text_only`
   - `loss_dead_anchor_suppression.application.preset: rollout_only`
-  - `bbox_geo.application.preset: anchor_if_single_iter_else_final`
-  - `bbox_size_aux.application.preset: anchor_if_single_iter_else_final`
-  - `coord_reg.application.preset: anchor_if_single_iter_else_final`
+  - `bbox_geo.application.preset: anchor_only`
+  - `bbox_size_aux.application.preset: anchor_only`
+  - `coord_reg.application.preset: anchor_only`
+- Stage-2 AB configs MUST reject self-context-era presets that imply a final
+  Channel-A pass, including `anchor_text_plus_final_struct`,
+  `anchor_if_single_iter_else_final`, `final_only`, and `anchor_and_final`.
 - `bbox_size_aux.config` MUST accept the canonical decoded-box size-aux keys:
   - `log_wh_weight`
   - `oversize_penalty_weight`
@@ -100,6 +103,12 @@ Execution semantics:
 - **AND** the config contains only canonical bbox-size-aux keys
 - **THEN** pipeline validation succeeds for that module config shape
 - **AND** the decoded-box size auxiliary remains controlled entirely by authored YAML.
+
+#### Scenario: Canonical Stage-2 objective presets no longer use final-pass routing
+- **WHEN** a canonical Stage-2 AB objective pipeline is authored after this
+  deprecation
+- **THEN** Channel-A uses `anchor_text_only` and `anchor_only`
+- **AND** the pipeline does not rely on self-context-era final-pass presets.
 
 ### Requirement: Module registry is strict and validated before training starts
 The strict teacher-forcing module registry SHALL include `loss_dead_anchor_suppression` as an objective module and fail fast when its prerequisites are unavailable.
@@ -172,10 +181,12 @@ Normative checksum definition (this repo; required for implementers):
     ST bridge modes). If `extra` is used, it MUST be included in the checksum input.
 - The `extra` mapping MUST use stable, fully-qualified key names (avoid ambiguous short keys).
   For this repo, implementers MUST use the following reserved keys when applicable:
-  - `variant` (string; trainer variant name, e.g. `stage2_two_channel`),
-  - `stage2_ab.coord_ctx_embed_mode` (string; `soft|st|hard`),
-  - `stage2_ab.coord_decode_mode` (string; `exp|st`),
-  - `rollout_matching.coord_decode_mode` (string; `exp|st`).
+  - `variant` (string; trainer variant name, e.g. `stage2_two_channel`).
+- `stage2_ab.coord_ctx_embed_mode` MUST NOT appear in active pipeline identity
+  payloads because it is part of the deprecated self-context loop surface.
+- `stage2_ab.coord_decode_mode` and `rollout_matching.coord_decode_mode` MUST
+  NOT appear in active pipeline identity payloads because those authored decode
+  toggles are deprecated and unsupported.
 - Each resolved module identity entry MUST be normalized before checksum:
   - `name: str`
   - `enabled: bool`
@@ -189,10 +200,12 @@ Normative checksum definition (this repo; required for implementers):
   - serialization MUST be whitespace-free (`separators=(",", ":")`),
   - floats MUST be finite (fail fast on NaN/Inf) and MUST normalize `-0.0` to `0.0` before serialization.
 
-#### Scenario: Pipeline checksum is logged
-- **WHEN** training starts with a resolved module pipeline
-- **THEN** logs include a stable pipeline checksum
-- **AND** the checksum is identical across runs when the pipeline config and code version are identical.
+#### Scenario: Deprecated self-context identity fields are absent from the checksum payload
+- **WHEN** a Stage-2 two-channel run initializes its pipeline identity payload
+- **THEN** `stage2_ab.coord_ctx_embed_mode`,
+  `stage2_ab.coord_decode_mode`, and
+  `rollout_matching.coord_decode_mode` do not appear in the active checksum
+  payload.
 
 ### Requirement: loss_dead_anchor_suppression remains the canonical B-only suppression module
 The teacher-forcing objective pipeline SHALL continue to use `loss_dead_anchor_suppression` as the canonical Channel-B local suppression module for the v3 contract.

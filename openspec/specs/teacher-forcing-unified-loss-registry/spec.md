@@ -7,8 +7,7 @@ Define the canonical teacher-forcing contexts, token types, and registry-level l
 The system SHALL define canonical teacher-forcing contexts and token types that are used consistently across Stage-2 two-channel and rollout-aligned training.
 
 Normative contexts:
-- `gt`: pure GT teacher forcing (CE anchor).
-- `self_context`: Channel-A final-iteration logits under coord-slot self-context.
+- `gt`: pure GT teacher forcing.
 - `rollout`: Channel-B clean-prefix teacher-forced logits under clean accepted prefix + FN injection.
 
 Normative token types (mutually exclusive):
@@ -28,10 +27,10 @@ NOTE (logging contract):
 - These are canonical registry component names (often surfaced as `loss/<component>` keys inside pipeline-internal metrics).
 - Trainers MAY choose to omit raw component keys from the training log to reduce redundancy and instead emit only objective-weighted provenance keys under `loss/<provenance>/<atom>` (see `trainer-metrics-components`).
 
-#### Scenario: EOS token is assigned exactly once
-- **WHEN** token-type masks are built for a sequence containing `<|im_end|>`
-- **THEN** the EOS token receives `type=eos`
-- **AND** it does not receive any other token type.
+#### Scenario: Stage-2 two-channel no longer defines self_context as a registry context
+- **WHEN** registry contexts are enumerated for active Stage-2 training
+- **THEN** the supported contexts include `gt` and `rollout`
+- **AND** `self_context` is not part of the active context contract.
 
 #### Scenario: loss_dead_anchor_suppression is a canonical registry loss component name
 - **WHEN** the clean-prefix Channel-B objective is reported through the unified registry
@@ -63,14 +62,16 @@ Normative behavior:
 - In `context=rollout`:
   - FP spans MUST NOT contribute to `coord_gate` or `text_gate`.
   - Desc-disabled behavior MUST be respected (if `desc` supervision is masked/disabled, `text_gate` MUST NOT apply to those spans).
-- In `context=self_context`:
-  - `text_gate` MUST apply only to supervised non-coord text positions (struct/EOS by default).
-  - Gate terms MAY ignore `type=eos`.
+- In `context=gt`:
+  - Gate terms MUST follow the supervised GT token positions for the current
+    objective configuration.
+  - Implementations MAY ignore `type=eos` when the corresponding gate term is
+    not defined on EOS positions.
 
-#### Scenario: FP objects do not contribute to text gate
-- **WHEN** a rollout-context teacher-forced target contains FP spans
-- **THEN** `text_gate` is computed with FP spans excluded
-- **AND** changing only FP spans cannot change the computed `text_gate` scalar.
+#### Scenario: GT-context text gating follows ordinary supervised positions
+- **WHEN** Stage-2 Channel-A computes gate terms under `context=gt`
+- **THEN** gate masking follows the supervised GT token positions
+- **AND** no struct-only self-context masking rule is applied.
 
 ### Requirement: Canonical loss scalars are mean-like and scale-invariant
 All canonical component scalars (registry metrics `loss/<component>` when emitted) MUST be mean-like values that do not scale with packing length or token counts.
@@ -91,8 +92,8 @@ The system SHALL define canonical loss component names and context types that ar
 Stage-2 code paths.
 
 Normative contexts:
-- `gt`: pure GT teacher forcing logits/targets (Stage-1; also the CE anchor for Stage-2 Channel-A).
-- `self_context`: Channel-A final-iteration logits under soft/ST coord-slot self-context.
+- `gt`: pure GT teacher forcing logits and targets (Stage-1; also the Channel-A
+  supervision surface for Stage-2 two-channel).
 - `rollout`: Channel-B clean-prefix teacher-forced logits under clean accepted prefix + FN injection.
 
 Normative loss component names (minimum set; can be extended):
@@ -112,11 +113,13 @@ Normative behavior:
   `trainer-metrics-components` (for example `loss/<provenance>/<atom>` objective atoms), rather than inventing trainer-specific aliases.
 - This change MUST update `docs/training/METRICS.md` and `docs/training/STAGE2_RUNBOOK.md` to reflect the
   canonical metric key contract introduced by the unified registry/pipeline.
+- Stage-2 two-channel MUST NOT introduce a separate `self_context` registry
+  context for Channel-A.
 
-#### Scenario: Shared naming prevents silent drift
-- **GIVEN** Stage-1 and Stage-2 both report bbox geometry loss
-- **WHEN** metrics are logged
-- **THEN** both code paths emit the same canonical key prefix for that component (e.g., `loss/geo/*`).
+#### Scenario: Shared naming excludes self_context aliases
+- **WHEN** Stage-2 training logs or registry payloads name contexts
+- **THEN** Channel-A uses `gt`
+- **AND** the naming contract does not rely on `self_context` aliases.
 
 ### Requirement: Canonical loss scalars are mean-like (scale-invariant)
 To make runs comparable across packing, batch sizing, and grad-accum settings, the system SHALL treat all canonical
@@ -213,70 +216,37 @@ Normative behavior:
 - **THEN** duplicate-ul does not contribute a loss term for that continuation
 - **AND** the skipped continuation is counted in the corresponding duplicate-ul diagnostics counter.
 
-### Requirement: Channel-A CE anchoring and self-context geometry are separate contexts
-For Stage-2 Channel-A, the system SHALL treat:
-- CE anchor logits as `context=gt` (A1 logits), and
-- self-context logits as `context=self_context` (final iteration).
+### Requirement: Stage-2 Channel-A uses GT context only
+The unified registry SHALL treat Stage-2 two-channel Channel-A as a single
+GT-context supervision surface.
 
 Normative behavior:
-- Channel-A **desc CE** MUST be computed from `context=gt` logits (to prevent format drift under self-conditioning).
-- Channel-A **struct CE** MUST be computed from `context=gt` logits as the primary CE anchor.
-- Channel-A MAY additionally compute a small-weight **self-context format/closure CE stabilizer** from
-  `context=self_context` logits restricted to token types `struct` and `eos` only:
-  - `type=desc` tokens MUST have CE weight `0` in `context=self_context`,
-  - `type=coord` tokens MUST have CE weight `0` in `context=self_context`,
-  - `type=struct|eos` tokens remain supervised.
-  This stabilizer MUST be controlled by an explicit typed weight in the objective pipeline (e.g.,
-  `token_ce.config.struct_ce_weight`) together with `token_ce.application.preset`, and MUST be recorded in pipeline identity so runs are auditable.
-- Channel-A bbox/coord provenance MUST be controlled by the objective `application.preset` rather than duplicated
-  `a1_*` or `self_context_*` weight families:
-  - under the canonical `anchor_if_single_iter_else_final` preset,
-    - `n_softctx_iter = 1` routes Channel-A bbox/coord supervision through the anchor logits,
-    - `n_softctx_iter > 1` routes the same supervision through the final self-context logits.
+- Channel-A token CE, bbox geometry, and coord regularizer supervision MUST use
+  `context=gt`.
+- Final-pass/self_context-only Channel-A stabilizers are unsupported.
+- Channel-A routing MUST NOT depend on `n_softctx_iter` or any equivalent final
+  self-context pass count.
 
-#### Scenario: Channel-A CE uses A1 logits
-- **WHEN** Stage-2 Channel-A executes with `n_softctx_iter >= 2`
-- **THEN** the CE anchor loss uses A1 logits (context `gt`)
-- **AND** geometry uses final-iteration logits (context `self_context`).
+#### Scenario: Channel-A geometry uses GT context
+- **WHEN** Stage-2 two-channel computes Channel-A bbox or coord supervision
+- **THEN** the registry context is `gt`
+- **AND** no `self_context` context is constructed.
 
-#### Scenario: Single-iteration Channel-A routes bbox/coord supervision through anchor logits
-- **WHEN** Stage-2 Channel-A executes with `n_softctx_iter = 1`
-- **AND** bbox/coord objectives use `application.preset=anchor_if_single_iter_else_final`
-- **THEN** the CE anchor loss uses A1 logits (context `gt`)
-- **AND** bbox/coord supervision also uses the anchor logits for that single-iteration run.
+### Requirement: Geometry decode follows the fixed expectation path
+The system SHALL use the fixed expectation-decode path for Stage-2 geometry in
+active training.
 
-### Requirement: Straight-Through (ST) bridge modes are configurable
-The system SHALL support ST modes for:
-1) coord-slot self-context embeddings (Channel-A), and
-2) geometry coord decode (Channel-A and Channel-B).
+Normative behavior:
+- Stage-2 two-channel MUST NOT expose `stage2_ab.coord_decode_mode`.
+- Stage-2 rollout-aligned MUST NOT expose `rollout_matching.coord_decode_mode`.
+- Active Stage-2 geometry decode uses the expectation path for coord-subspace
+  logits.
 
-Normative config knobs (YAML-driven and typed):
-- `coord_ctx_embed_mode`: `soft|st|hard`
-- `coord_decode_mode`: `exp|st`
-
-Normative key paths (this repo; required for implementers):
-- Stage-2 two-channel (`custom.trainer_variant: stage2_two_channel`):
-  - `stage2_ab.coord_ctx_embed_mode`
-  - `stage2_ab.coord_decode_mode`
-- Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_aligned`):
-  - `rollout_matching.coord_decode_mode`
-
-Normative semantics:
-- `soft` uses expected embedding / expectation decode.
-- `st` uses hard forward values (argmax) and soft backward gradients (expectation path).
-- `hard` is debug/inference-only; it MAY be supported but MUST NOT be the default for training.
-
-Normative ST identity (informative but required semantics):
-- Let `stopgrad(·)` denote detach/stop-gradient.
-- ST outputs MUST be expressible as `y = y_hard + (y_soft - stopgrad(y_soft))` so:
-  - forward evaluates the hard path, and
-  - backward follows the soft path gradients.
-
-#### Scenario: ST/exp defaults are explicit and override-able
-- **GIVEN** current defaults (e.g., `stage2_ab.coord_ctx_embed_mode=st`, `stage2_ab.coord_decode_mode=exp`)
-- **WHEN** training starts without explicit ST keys
-- **THEN** behavior matches the current implementation
-- **AND** users can override embedding/decode modes by setting the ST keys in YAML.
+#### Scenario: Deprecated coord decode toggles are absent
+- **WHEN** active Stage-2 geometry config surfaces are enumerated
+- **THEN** `stage2_ab.coord_decode_mode` and
+  `rollout_matching.coord_decode_mode` are not supported authored keys
+- **AND** geometry decode follows the fixed expectation path.
 
 ### Requirement: Geometry loss (`geo`) uses canonicalized boxes and a stable decomposition
 The system SHALL define geometry loss (`geo`) on decoded continuous boxes in a way that is:
@@ -285,9 +255,8 @@ The system SHALL define geometry loss (`geo`) on decoded continuous boxes in a w
 - compatible with Channel-B FP-neutral masking.
 
 Normative behavior:
-- The system MUST decode 4 coords per box from coord-subspace logits using `coord_decode_mode`:
-  - `exp`: expectation decode (CoordExp / soft expectation),
-  - `st`: ST decode (hard argmax forward + expectation grad).
+- The system MUST decode 4 coords per box from coord-subspace logits using the
+  fixed expectation decode path.
 - The system MUST canonicalize decoded boxes before applying IoU-based losses:
   - `x_lo = min(x1, x2)`, `x_hi = max(x1, x2)`
   - `y_lo = min(y1, y2)`, `y_hi = max(y1, y2)`
@@ -296,13 +265,13 @@ Normative behavior:
   - SmoothL1 (Huber) on `(x_lo,y_lo,x_hi,y_hi)`,
   - CIoU on the same canonicalized box representation.
 - The system MUST aggregate `geo` as a mean over the supervised object set for the current context:
-  - Stage-2 Channel-A `self_context`: identity-aligned GT objects,
+  - Stage-2 Channel-A `gt`: identity-aligned GT objects,
   - Stage-2 Channel-B `rollout`: `matched_clean` + `fn` objects (`duplicate` and `unmatched_clean` excluded).
 
-#### Scenario: Duplicate and unmatched clean extras do not contribute to geometry loss
-- **WHEN** Stage-2 Channel-B runs with duplicate-certified continuations and unmatched clean extras present
-- **THEN** those objects contribute `0` to `geo`
-- **AND** only `matched_clean` and `fn` objects contribute to `geo`.
+#### Scenario: Channel-A geometry loss aggregates over GT objects only
+- **WHEN** Stage-2 two-channel computes Channel-A geometry loss
+- **THEN** `geo` aggregates over identity-aligned GT objects
+- **AND** no final-pass self-context object set is consulted.
 
 ### Requirement: Coord regularizer loss (`coord_reg`) is explicit and strictly configured
 The system SHALL treat coord regularization (`coord_reg`) as an optional component computed directly from logits and/or
