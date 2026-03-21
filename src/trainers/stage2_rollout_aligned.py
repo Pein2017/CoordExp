@@ -19,7 +19,6 @@ import tempfile
 import threading
 import time
 from contextlib import contextmanager, nullcontext
-from copy import copy as shallow_copy
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -67,6 +66,26 @@ from src.utils.metric_key_lookup import (
     metric_name_matches_key,
     resolve_metric_value,
     stage2_eval_metric_key,
+)
+from .rollout_runtime.vllm_config import resolve_vllm_engine_config
+from .rollout_runtime.vllm_engine import (
+    instantiate_vllm_engine,
+    sync_vllm_full_weights_if_needed,
+    shutdown_vllm_colocate_engine,
+)
+from .rollout_runtime.vllm_infer import (
+    rollout_many_vllm_colocate,
+    vllm_infer_tp_group,
+)
+from .rollout_runtime.vllm_server import (
+    build_vllm_server_seed_plan,
+    dispatch_vllm_server_rounds,
+    ensure_vllm_server_client,
+    ensure_vllm_server_communicator_rank0,
+    sync_vllm_server_full_weights,
+    sync_vllm_server_rollout_model_if_needed,
+    vllm_server_update_state_dict,
+    shutdown_vllm_server_client,
 )
 
 from .rollout_matching.contracts import (
@@ -4042,213 +4061,26 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if engine is not None:
             return engine
 
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        vcfg = dict(vcfg_raw)
-
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        world_size = 1
-        rank = 0
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            world_size = int(dist.get_world_size())
-            rank = int(dist.get_rank())
-
-        # Defaults: TP=4 on 4-GPU runs; otherwise TP=1 unless explicitly set.
-        default_tp = 4 if world_size == 4 else 1
-        tp_size = int(vcfg.get("tensor_parallel_size", default_tp))
-        if tp_size <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.tensor_parallel_size must be > 0"
-            )
-        if world_size % tp_size != 0:
-            raise ValueError(
-                f"vLLM colocate requires world_size % tp == 0; world_size={world_size} tp={tp_size}"
-            )
-
-        max_model_len_raw = vcfg.get("max_model_len", None)
-        if max_model_len_raw is None:
-            raise ValueError(
-                "rollout_matching.vllm.max_model_len is required when rollout_backend=vllm "
-                "(it must cover prompt_len + max_new_tokens)."
-            )
-        max_model_len = int(max_model_len_raw)
-        if max_model_len <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.max_model_len must be > 0"
-            )
-
-        enable_lora = bool(vcfg.get("enable_lora", False))
-        if enable_lora:
-            raise RuntimeError(
-                "vLLM rollouts require full merged-weight sync in this stack: "
-                "set rollout_matching.vllm.enable_lora=false."
-            )
-
-        load_format = vcfg.get("load_format", None)
-        if load_format is None:
-            # When we sync weights from the training model, loading real weights
-            # from disk is unnecessary; dummy init reduces overhead.
-            load_format = "dummy"
-        if not isinstance(load_format, str):
-            raise ValueError(
-                "rollout_matching.vllm.load_format must be a string"
-            )
-        load_format = load_format.strip()
-
-        gpu_mem = float(vcfg.get("gpu_memory_utilization", 0.45))
-        enable_prefix_caching = bool(vcfg.get("enable_prefix_caching", True))
-        # Legacy sleep-mode lifecycle is removed from Stage-2.
-        enable_sleep_mode = False
-        sleep_level = 0
-        enforce_eager = bool(vcfg.get("enforce_eager", False))
-        disable_custom_all_reduce = bool(vcfg.get("disable_custom_all_reduce", True))
-
-        decode_bs_per_rank = max(
-            1,
-            int(
-                self._rollout_decode_batch_size_per_rank(
-                    rollout_backend="vllm",
-                    rollout_context="eval",
-                )
-            ),
-        )
-        # Avoid vLLM's very large default (256), which can reserve excessive KV cache
-        # memory in colocate eval-only runs and starve full-sync merge/unmerge steps.
-        # Keep enough headroom for scheduler jitter while tying capacity to request load.
-        default_max_num_seqs = max(8, int(decode_bs_per_rank) * 4)
-
-        max_num_seqs_raw = vcfg.get("max_num_seqs", default_max_num_seqs)
-        max_num_seqs: Optional[int] = None
-        if max_num_seqs_raw is not None:
-            try:
-                max_num_seqs = int(max_num_seqs_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.max_num_seqs must be an int"
-                ) from exc
-            if max_num_seqs <= 0:
-                raise ValueError(
-                    "rollout_matching.vllm.max_num_seqs must be > 0"
-                )
-
-        # Extra vLLM engine kwargs (passed through to vLLM EngineArgs by ms-swift VllmEngine).
-        # This is useful to avoid hard-coded vLLM defaults that can break long-context multimodal rollouts.
-        vllm_engine_kwargs: Dict[str, Any] = {}
-        limit_mm_per_prompt: Optional[Dict[str, int]] = None
-        max_num_batched_tokens_raw = vcfg.get("max_num_batched_tokens", None)
-        if max_num_batched_tokens_raw is not None:
-            try:
-                max_num_batched_tokens = int(max_num_batched_tokens_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.max_num_batched_tokens must be an int"
-                ) from exc
-            if max_num_batched_tokens <= 0:
-                raise ValueError(
-                    "rollout_matching.vllm.max_num_batched_tokens must be > 0"
-                )
-            vllm_engine_kwargs["max_num_batched_tokens"] = max_num_batched_tokens
-
-        # Optional vLLM EngineArgs knobs (allow-list).
-        #
-        # NOTE: These are passed to vLLM via ms-swift's VllmEngine(engine_kwargs=...),
-        # which forwards them into vLLM EngineArgs. Keep this list small and validated
-        # to avoid silent typos.
-        if "enable_chunked_prefill" in vcfg:
-            vllm_engine_kwargs["enable_chunked_prefill"] = bool(
-                vcfg.get("enable_chunked_prefill")
-            )
-        if "disable_chunked_mm_input" in vcfg:
-            vllm_engine_kwargs["disable_chunked_mm_input"] = bool(
-                vcfg.get("disable_chunked_mm_input")
-            )
-        if "kv_cache_dtype" in vcfg and vcfg.get("kv_cache_dtype") is not None:
-            kv_cache_dtype = vcfg.get("kv_cache_dtype")
-            if not isinstance(kv_cache_dtype, str):
-                raise ValueError(
-                    "rollout_matching.vllm.kv_cache_dtype must be a string"
-                )
-            vllm_engine_kwargs["kv_cache_dtype"] = kv_cache_dtype
-        if "cpu_offload_gb" in vcfg and vcfg.get("cpu_offload_gb") is not None:
-            try:
-                cpu_offload_gb = float(vcfg.get("cpu_offload_gb"))
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.cpu_offload_gb must be a float"
-                ) from exc
-            if cpu_offload_gb < 0:
-                raise ValueError(
-                    "rollout_matching.vllm.cpu_offload_gb must be >= 0"
-                )
-            vllm_engine_kwargs["cpu_offload_gb"] = cpu_offload_gb
-        if "swap_space" in vcfg and vcfg.get("swap_space") is not None:
-            try:
-                swap_space = float(vcfg.get("swap_space"))
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.swap_space must be a float"
-                ) from exc
-            if swap_space < 0:
-                raise ValueError(
-                    "rollout_matching.vllm.swap_space must be >= 0"
-                )
-            vllm_engine_kwargs["swap_space"] = swap_space
-        if (
-            "limit_mm_per_prompt" in vcfg
-            and vcfg.get("limit_mm_per_prompt") is not None
-        ):
-            limit_raw = vcfg.get("limit_mm_per_prompt")
-            if not isinstance(limit_raw, Mapping):
-                raise ValueError(
-                    "rollout_matching.vllm.limit_mm_per_prompt must be a mapping"
-                )
-            limit_parsed: Dict[str, int] = {}
-            for k, v in limit_raw.items():
-                if not isinstance(k, str):
-                    raise ValueError(
-                        "rollout_matching.vllm.limit_mm_per_prompt keys must be strings"
-                    )
-                try:
-                    limit_parsed[k] = int(v)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "rollout_matching.vllm.limit_mm_per_prompt values must be ints"
-                    ) from exc
-            # NOTE: ms-swift's `VllmEngine` already exposes `limit_mm_per_prompt` as a
-            # top-level kwarg, and forwards it to `_prepare_engine_kwargs`. Passing it
-            # again via `engine_kwargs` would cause a `got multiple values` TypeError.
-            limit_mm_per_prompt = limit_parsed
-
-        if "mm_encoder_tp_mode" in vcfg and vcfg.get("mm_encoder_tp_mode") is not None:
-            mm_encoder_tp_mode = vcfg.get("mm_encoder_tp_mode")
-            if not isinstance(mm_encoder_tp_mode, str):
-                raise ValueError(
-                    "rollout_matching.vllm.mm_encoder_tp_mode must be a string"
-                )
-            mm_encoder_tp_mode = mm_encoder_tp_mode.strip().lower()
-            if mm_encoder_tp_mode not in {"weights", "data"}:
-                raise ValueError(
-                    "rollout_matching.vllm.mm_encoder_tp_mode must be 'weights' or 'data'"
-                )
-            vllm_engine_kwargs["mm_encoder_tp_mode"] = mm_encoder_tp_mode
-
-        # Multimodal encoder cache profiling can create extremely large dummy
-        # multimodal batches (e.g., video) during vLLM initialization, which is
-        # unnecessary for our image-only rollouts and can interact badly with
-        # vLLM LoRA kernels. Allow skipping it via EngineArgs.skip_mm_profiling.
-        if "skip_mm_profiling" in vcfg:
-            vllm_engine_kwargs["skip_mm_profiling"] = bool(
-                vcfg.get("skip_mm_profiling")
-            )
-
-        # Optional eval-scoped wake/sleep lifecycle management.
-        # Pass via VllmEngine(enable_sleep_mode=...) when supported; otherwise
-        # fall back to engine_kwargs to avoid duplicate-kwarg failures.
+        engine_cfg = resolve_vllm_engine_config(self)
+        vcfg = dict(engine_cfg.vcfg)
+        dist = engine_cfg.dist
+        world_size = int(engine_cfg.world_size)
+        rank = int(engine_cfg.rank)
+        tp_size = int(engine_cfg.tp_size)
+        max_model_len = int(engine_cfg.max_model_len)
+        enable_lora = bool(engine_cfg.enable_lora)
+        load_format = str(engine_cfg.load_format)
+        gpu_mem = float(engine_cfg.gpu_mem)
+        enable_prefix_caching = bool(engine_cfg.enable_prefix_caching)
+        enable_sleep_mode = bool(engine_cfg.enable_sleep_mode)
+        sleep_level = int(engine_cfg.sleep_level)
+        enforce_eager = bool(engine_cfg.enforce_eager)
+        disable_custom_all_reduce = bool(engine_cfg.disable_custom_all_reduce)
+        decode_bs_per_rank = int(engine_cfg.decode_bs_per_rank)
+        max_num_seqs = engine_cfg.max_num_seqs
+        limit_mm_per_prompt = engine_cfg.limit_mm_per_prompt
+        vllm_engine_kwargs = dict(engine_cfg.vllm_engine_kwargs)
+        dist_backend = str(engine_cfg.dist_backend)
 
         model_dir = getattr(self.model, "model_dir", None) or getattr(
             getattr(self.model, "model", None), "model_dir", None
@@ -4262,31 +4094,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         torch_dtype = (
             getattr(model_info, "torch_dtype", None) if model_info is not None else None
         )
-
-        max_lora_rank = 16
-
-        # Build TP subgroup (colocate only; server mode unsupported here).
-        if tp_size > 1:
-            if dist is None or not dist.is_initialized():
-                raise RuntimeError(
-                    "vLLM tensor parallel requires torch.distributed to be initialized"
-                )
-            self._vllm_tp_group, _ = dist.new_subgroups_by_enumeration(
-                [
-                    list(range(i * tp_size, (i + 1) * tp_size))
-                    for i in range(world_size // tp_size)
-                ]
-            )
-        self._vllm_tp_size = int(tp_size)
-
-        # Use a shallow-copied template; vLLM expects template.mode='vllm'.
-        vllm_template = shallow_copy(self.template)
-        try:
-            vllm_template.packing = False
-            vllm_template.padding_free = False
-            vllm_template.set_mode("vllm")
-        except (TypeError, ValueError):
-            raise
 
         logger.info(
             "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
@@ -4302,61 +4109,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             vllm_engine_kwargs or {},
         )
 
-        dist_backend_raw = vcfg.get("distributed_executor_backend")
-        if dist_backend_raw is None:
-            dist_backend = (
-                "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
-            )
-        else:
-            dist_backend = str(dist_backend_raw).strip() or (
-                "mp" if world_size == 1 and tp_size == 1 else "external_launcher"
-            )
-
-        # Snapshot CUDA allocator before vLLM init. vLLM sleep mode can switch
-        # the active allocator; if left active until interpreter finalization,
-        # PyTorch can attempt to free pointers via the wrong allocator and abort.
-        self._vllm_saved_cuda_allocator = None
-        try:
-            if torch.cuda.is_available():
-                import torch.cuda.memory as cuda_mem
-
-                self._vllm_saved_cuda_allocator = cuda_mem._get_current_allocator()
-        except Exception:
-            self._vllm_saved_cuda_allocator = None
-
-        try:
-            from swift.llm import VllmEngine
-
-            engine = VllmEngine(
-                model_dir,
-                torch_dtype=torch_dtype,
-                template=vllm_template,
-                tensor_parallel_size=tp_size,
-                gpu_memory_utilization=gpu_mem,
-                max_model_len=max_model_len,
-                max_num_seqs=max_num_seqs,
-                enforce_eager=enforce_eager,
-                disable_custom_all_reduce=disable_custom_all_reduce,
-                limit_mm_per_prompt=limit_mm_per_prompt,
-                load_format=load_format,
-                enable_lora=enable_lora,
-                max_loras=1,
-                max_lora_rank=max_lora_rank,
-                enable_prefix_caching=enable_prefix_caching,
-                engine_kwargs=vllm_engine_kwargs or None,
-                distributed_executor_backend=dist_backend,
-            )
-        except (TypeError, ValueError) as exc:
-            logger.exception(
-                "vLLM engine init failed (backend=%s): %s", dist_backend, exc
-            )
-            raise RuntimeError(
-                "Failed to initialize vLLM engine for rollout generation. "
-                "Set rollout_backend: hf to bypass vLLM."
-            ) from exc
-
-        self._vllm_engine = engine
-        return engine
+        return instantiate_vllm_engine(
+            owner=self,
+            engine_cfg=engine_cfg,
+            model_dir=str(model_dir),
+            torch_dtype=torch_dtype,
+            logger=logger,
+        )
 
     def _sync_vllm_rollout_model_if_needed(self) -> None:
         """Sync merged rollout weights into the colocated vLLM engine.
@@ -4374,98 +4133,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
     def _sync_vllm_full_weights_if_needed(self) -> None:
         """Sync merged (LoRA-applied) weights into vLLM when vLLM LoRA is disabled."""
-        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        if step == self._vllm_last_loaded_step:
-            return
-
-        engine = self._ensure_vllm_engine()
-
-        from contextlib import nullcontext
-
-        unwrap_model = getattr(getattr(self, "accelerator", None), "unwrap_model", None)
-        train_model = unwrap_model(self.model) if callable(unwrap_model) else self.model
-
-        try:
-            from accelerate.utils import is_peft_model
-        except (TypeError, ValueError):
-            is_peft_model = None  # type: ignore[assignment]
-
-        is_peft = (
-            bool(is_peft_model(train_model)) if is_peft_model is not None else False
-        )
-
-        merge_cm = nullcontext()
-        unmerge_cm = nullcontext()
-        if is_peft:
-            try:
-                from swift.trainers.rlhf_trainer.utils import (
-                    patch_lora_merge,
-                    patch_lora_unmerge,
-                )
-
-                merge_cm = patch_lora_merge(train_model)
-                unmerge_cm = patch_lora_unmerge(train_model)
-            except (TypeError, ValueError):
-                merge_cm = nullcontext()
-                unmerge_cm = nullcontext()
-
-        params = [p for _, p in train_model.named_parameters()]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-
-        with gather_if_zero3(params), merge_cm, torch.no_grad():
-            merged = False
-            try:
-                if is_peft:
-                    try:
-                        # Merge adapter weights into base weights for extraction.
-                        train_model.merge_adapter()
-                        merged = True
-                    except (TypeError, ValueError) as exc:
-                        raise RuntimeError(
-                            "Failed to merge adapter weights from the training model for vLLM full sync. "
-                            "Mitigations: switch rollout backend to HF or ensure your PEFT stack supports "
-                            "merge_adapter/unmerge_adapter."
-                        ) from exc
-
-                state_dict = train_model.state_dict()
-                if is_peft:
-                    # Follow ms-swift GRPO key mapping conventions to match vLLM model names.
-                    prefix_removed = {
-                        k.removeprefix("base_model.model."): v
-                        for k, v in state_dict.items()
-                    }
-                    state_dict = {
-                        k.replace(".base_layer", ""): v
-                        for k, v in prefix_removed.items()
-                    }
-                    prefix = getattr(train_model, "prefix", None)
-                    if isinstance(prefix, str) and prefix:
-                        state_dict = {
-                            k: v for k, v in state_dict.items() if prefix not in k
-                        }
-                    state_dict = {
-                        k.replace("modules_to_save.default.", ""): v
-                        for k, v in state_dict.items()
-                        if "original_module" not in k
-                    }
-                    # vLLM LoRA is disabled: do not pass LoRA tensors (they're already merged).
-                    state_dict = {
-                        k: v for k, v in state_dict.items() if "lora_" not in k
-                    }
-
-                engine.inner_model.load_weights(state_dict.items())
-            finally:
-                # Never leave the training model in merged state, even if vLLM loading fails.
-                if is_peft and merged:
-                    with unmerge_cm:
-                        train_model.unmerge_adapter()
-
-        try:
-            engine.engine.reset_prefix_cache()
-        except (TypeError, ValueError):
-            raise
-
-        self._vllm_last_loaded_step = step
+        sync_vllm_full_weights_if_needed(owner=self)
 
     def _sync_vllm_lora_if_needed(self) -> None:
         raise RuntimeError(
@@ -4490,106 +4158,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         - Stage2-AB async actor-learner may call this from a background prefetch thread.
           Guard creation so we never build multiple clients / init communicator twice.
         """
-        if self._vllm_server_client is not None:
-            return self._vllm_server_client
-
-        lock = getattr(self, "_vllm_server_client_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            setattr(self, "_vllm_server_client_lock", lock)
-
-        with lock:
-            if self._vllm_server_client is not None:
-                return self._vllm_server_client
-
-            # Dist metadata is used only for communicator-init behavior.
-            rank = 0
-            world_size = 1
-            try:
-                import torch.distributed as dist
-            except (TypeError, ValueError):
-                dist = None  # type: ignore[assignment]
-
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                try:
-                    rank = int(dist.get_rank())
-                    world_size = int(dist.get_world_size())
-                except (TypeError, ValueError):
-                    rank = 0
-                    world_size = 1
-
-            servers = self._vllm_server_specs()
-            timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
-
-            try:
-                from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
-            except (ImportError, TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
-                    "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
-                ) from exc
-
-            base_urls = [str(s["base_url"]) for s in servers]
-            group_ports = [int(s["group_port"]) for s in servers]
-
-            try:
-                client = VLLMClient(
-                    base_urls=base_urls,
-                    group_ports=group_ports,
-                    connection_timeout=float(timeout_s),
-                )
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    "Failed to connect to vLLM rollout server(s). "
-                    "Check rollout_matching.vllm.server (base_url/group_port) and ensure /health/ is reachable."
-                ) from exc
-
-            # Communicator init is deferred until first weight sync.
-            if int(world_size) > 1 and int(rank) == 0:
-                logger.info(
-                    "vLLM server client created for multi-process learner; communicator init deferred (rank0-only). world_size=%s",
-                    int(world_size),
-                )
-
-            # Best-effort: log server runtime type (enable_lora, async engine, etc.).
-            try:
-                info = client.get_engine_type()
-                logger.info("vLLM rollout server engine_type: %s", info)
-            except (TypeError, ValueError):
-                raise
-
-            self._vllm_server_client = client
-            return client
+        return ensure_vllm_server_client(owner=self, logger=logger)
 
     def _ensure_vllm_server_communicator_rank0(self, client: Any) -> None:
         """Initialize vLLM server NCCL communicator (rank0-only under DDP)."""
-        if bool(getattr(self, "_vllm_server_comm_inited", False)):
-            return
-
-        rank = 0
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            rank = int(dist.get_rank())
-
-        if int(rank) != 0:
-            raise RuntimeError(
-                "vLLM server communicator init must be rank0-only under DDP. "
-                f"Got rank={int(rank)}."
-            )
-
-        try:
-            client.init_communicator(device=0)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "Failed to initialize NCCL communicator with vLLM rollout server(s). "
-                "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
-            ) from exc
-
-        setattr(self, "_vllm_server_comm_inited", True)
+        ensure_vllm_server_communicator_rank0(owner=self, client=client)
 
     def _shutdown_vllm_server_client(
         self, *, close_communicator: bool = True, close_sessions: bool = True
@@ -4599,199 +4172,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         This is called during trainer shutdown to reduce teardown races between
         background rollout workers and process-exit cleanup.
         """
-        lock = getattr(self, "_vllm_server_client_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            setattr(self, "_vllm_server_client_lock", lock)
-
-        with lock:
-            client = getattr(self, "_vllm_server_client", None)
-            if client is None:
-                setattr(self, "_vllm_server_comm_inited", False)
-                return
-
-            rank = 0
-            world_size = 1
-            try:
-                import torch.distributed as dist
-            except (TypeError, ValueError):
-                dist = None  # type: ignore[assignment]
-
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                try:
-                    rank = int(dist.get_rank())
-                    world_size = int(dist.get_world_size())
-                except (TypeError, ValueError):
-                    rank = 0
-                    world_size = 1
-
-            if bool(close_communicator):
-                should_close_comm = int(world_size) <= 1 or int(rank) == 0
-                if should_close_comm:
-                    try:
-                        close_fn = getattr(client, "close_communicator", None)
-                        if callable(close_fn):
-                            close_fn()
-                    except (TypeError, ValueError) as exc:
-                        logger.warning(
-                            "Failed to close vLLM server communicator during shutdown: %r",
-                            exc,
-                        )
-
-            if bool(close_sessions):
-                try:
-                    sessions = getattr(client, "sessions", None)
-                    if isinstance(sessions, list):
-                        for sess in sessions:
-                            try:
-                                close_fn = getattr(sess, "close", None)
-                                if callable(close_fn):
-                                    close_fn()
-                            except (TypeError, ValueError):
-                                raise
-                except (TypeError, ValueError):
-                    raise
-
-            self._vllm_server_client = None
-            setattr(self, "_vllm_server_comm_inited", False)
+        shutdown_vllm_server_client(
+            owner=self,
+            logger=logger,
+            close_communicator=bool(close_communicator),
+            close_sessions=bool(close_sessions),
+        )
 
     def _shutdown_vllm_colocate_engine(
         self, *, wake_before_release: bool = True
     ) -> None:
         """Best-effort cleanup for colocate vLLM engine resources."""
-        engine = getattr(self, "_vllm_engine", None)
-        if engine is None:
-            return
-
-        raw_engine: Optional[Any] = None
-
-        if bool(wake_before_release):
-            try:
-                raw_engine = self._vllm_raw_engine_or_raise(engine)
-                is_sleeping_fn = getattr(raw_engine, "is_sleeping", None)
-                is_sleeping = (
-                    bool(is_sleeping_fn()) if callable(is_sleeping_fn) else False
-                )
-                if is_sleeping:
-                    self._wake_vllm_engine(engine)
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as exc:
-                logger.warning(
-                    "Failed to wake colocate vLLM engine during shutdown: %s", exc
-                )
-
-        if raw_engine is None:
-            try:
-                raw_engine = self._vllm_raw_engine_or_raise(engine)
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                raw_engine = None
-
-        # Ensure outstanding kernels are finished before tearing engine internals down.
-        self._cuda_memory_drain(synchronize=True)
-
-        def _maybe_invoke_shutdown(obj: Any) -> None:
-            if obj is None:
-                return
-            try:
-                shutdown_fn = getattr(obj, "shutdown", None)
-                if callable(shutdown_fn):
-                    shutdown_fn()
-                    return
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                pass
-
-            try:
-                close_fn = getattr(obj, "close", None)
-                if callable(close_fn):
-                    close_fn()
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                pass
-
-        if raw_engine is not None:
-            try:
-                _maybe_invoke_shutdown(raw_engine)
-                _maybe_invoke_shutdown(getattr(raw_engine, "engine_core", None))
-                _maybe_invoke_shutdown(getattr(raw_engine, "model_executor", None))
-                _maybe_invoke_shutdown(getattr(raw_engine, "executor", None))
-            except (
-                AttributeError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ) as exc:
-                logger.warning(
-                    "Failed to shutdown colocate vLLM engine cleanly: %s", exc
-                )
-
-        # Best-effort: drop strong references on both wrapper and raw-engine objects.
-        for obj in (engine, raw_engine):
-            if obj is None:
-                continue
-            for attr in (
-                "engine",
-                "engine_core",
-                "model_executor",
-                "executor",
-                "model",
-                "llm_engine",
-            ):
-                try:
-                    if hasattr(obj, attr):
-                        setattr(obj, attr, None)
-                except (
-                    AttributeError,
-                    OSError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ):
-                    pass
-
-        self._vllm_engine = None
-        self._vllm_last_loaded_step = -1
-        self._vllm_tp_group = None
-        self._vllm_tp_size = 1
-        self._eval_vllm_window_active = False
-
-        try:
-            del engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
-            pass
-        try:
-            del raw_engine
-        except (AttributeError, NameError, OSError, RuntimeError, TypeError, ValueError):
-            pass
-
-        # Sleep-mode globals can retain mempools even when sleep mode is disabled.
-        self._best_effort_cleanup_vllm_sleep_mode_pools()
-
-        # Drain allocator state immediately after engine release so the next
-        # training/eval phase does not overlap with stale vLLM allocations.
-        self._cuda_memory_drain(synchronize=True)
+        shutdown_vllm_colocate_engine(
+            owner=self,
+            logger=logger,
+            wake_before_release=bool(wake_before_release),
+        )
 
     def _vllm_server_infer_guard(self):
         """Optional hook for staging safe vLLM server inference.
@@ -5085,256 +4481,20 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         Async actor-learner should coordinate server sync at safe boundaries and
         avoid invoking DDP collectives from background prefetch threads.
         """
-        step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-
-        rank = 0
-        world_size = 1
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            rank = int(dist.get_rank())
-            world_size = int(dist.get_world_size())
-
-        last = int(getattr(self, "_vllm_server_last_synced_step", -1))
-        need_sync = int(step != last)
-
-        # Under DDP, ensure all ranks take the same early-return decision.
-        if (
-            dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-            and int(world_size) > 1
-        ):
-            try:
-                backend = str(dist.get_backend()).lower()
-            except (TypeError, ValueError):
-                backend = ""
-
-            reduce_device = torch.device("cpu")
-            if backend == "nccl" and torch.cuda.is_available():
-                reduce_device = self.model.device
-
-            flag = torch.tensor([need_sync], device=reduce_device, dtype=torch.int32)
-            dist.broadcast(flag, src=0)
-            need_sync = int(flag.item())
-
-        if need_sync == 0:
-            return
-
-        eff_mode = self._effective_vllm_server_sync_mode()
-        if eff_mode != "full":
-            raise ValueError(
-                "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-                "(adapter/auto sync modes are unsupported)."
-            )
-
-        # Single-process learner: full sync.
-        if (
-            dist is None
-            or (not dist.is_available())
-            or (not dist.is_initialized())
-            or int(world_size) == 1
-        ):
-            client = self._ensure_vllm_server_client()
-            if not bool(getattr(self, "_vllm_server_comm_inited", False)):
-                try:
-                    client.init_communicator(device=0)
-                    setattr(self, "_vllm_server_comm_inited", True)
-                except (TypeError, ValueError) as exc:
-                    raise RuntimeError(
-                        "Failed to initialize NCCL communicator with vLLM rollout server(s). "
-                        "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
-                    ) from exc
-
-            self._sync_vllm_server_full_weights(client)
-
-            # Keep local state consistent across ranks so the next call is stable.
-            self._vllm_server_last_synced_step = step
-            return
-
-        # Multi-process learner (DDP): rank0-only full sync with strict collective ordering.
-        assert dist is not None and dist.is_initialized()
-
-        # IMPORTANT: no early returns after this point without symmetric collectives.
-        # The broadcasts below synchronize all ranks while rank0 performs the sync.
-
-        sync_failed = 0
-        sync_err_msg = ""
-        if int(rank) == 0:
-            try:
-                client = self._ensure_vllm_server_client()
-                self._ensure_vllm_server_communicator_rank0(client)
-                self._sync_vllm_server_full_weights(client)
-            except Exception as exc:
-                # Do NOT raise here: we must broadcast the failure so all ranks
-                # take identical control-flow and terminate together.
-                sync_failed = 1
-                sync_err_msg = f"{exc.__class__.__name__}: {exc}"
-
-        # Propagate rank0 failure to all ranks (prevents confusing hangs where
-        # non-rank0 continues until the next collective).
-        try:
-            try:
-                backend = str(dist.get_backend()).lower()
-            except Exception:
-                backend = ""
-
-            reduce_device = torch.device("cpu")
-            if backend == "nccl" and torch.cuda.is_available():
-                reduce_device = self.model.device  # type: ignore[assignment]
-        except Exception:
-            reduce_device = torch.device("cpu")
-
-        flag = torch.tensor([int(sync_failed)], device=reduce_device, dtype=torch.int32)
-        dist.broadcast(flag, src=0)
-        sync_failed = int(flag.item())
-
-        msg_list = [sync_err_msg] if int(rank) == 0 else [""]
-        try:
-            dist.broadcast_object_list(msg_list, src=0, device=reduce_device)
-        except TypeError:
-            # Older torch may not accept the `device=` kwarg.
-            dist.broadcast_object_list(msg_list, src=0)
-        sync_err_msg = str(msg_list[0])
-
-        if int(sync_failed) != 0:
-            raise RuntimeError(
-                "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
-                f"Error: {sync_err_msg}"
-            )
-
-        # Keep local state consistent on all ranks.
-        self._vllm_server_last_synced_step = step
+        sync_vllm_server_rollout_model_if_needed(owner=self)
 
     def _sync_vllm_server_full_weights(self, client: Any) -> None:
         """Full merged-weight sync to vLLM server (robust default)."""
-        from contextlib import nullcontext
-
-        try:
-            from accelerate.utils import is_peft_model
-        except (TypeError, ValueError):
-            is_peft_model = None  # type: ignore[assignment]
-
-        is_peft = (
-            bool(is_peft_model(self.model)) if is_peft_model is not None else False
-        )
-
-        merge_cm = nullcontext()
-        unmerge_cm = nullcontext()
-        if is_peft:
-            try:
-                from swift.trainers.rlhf_trainer.utils import (
-                    patch_lora_merge,
-                    patch_lora_unmerge,
-                )
-
-                merge_cm = patch_lora_merge(self.model)
-                unmerge_cm = patch_lora_unmerge(self.model)
-            except (TypeError, ValueError):
-                merge_cm = nullcontext()
-                unmerge_cm = nullcontext()
-
-        params = [p for _, p in self.model.named_parameters()]
-        gather_if_zero3 = get_gather_if_zero3_context(self)
-
-        with gather_if_zero3(params), merge_cm, torch.no_grad():
-            merged = False
-            try:
-                if is_peft:
-                    try:
-                        self.model.merge_adapter()
-                        merged = True
-                    except (TypeError, ValueError) as exc:
-                        raise RuntimeError(
-                            "vLLM server full sync requires merging adapter weights from the training model. "
-                            "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter (required for vLLM full sync in this stack), or switch rollout_matching.rollout_backend=hf."
-                        ) from exc
-
-                state_dict = self.model.state_dict()
-                if is_peft:
-                    prefix_removed = {
-                        k.removeprefix("base_model.model."): v
-                        for k, v in state_dict.items()
-                    }
-                    state_dict = {
-                        k.replace(".base_layer", ""): v
-                        for k, v in prefix_removed.items()
-                    }
-                    prefix = getattr(self.model, "prefix", None)
-                    if isinstance(prefix, str) and prefix:
-                        state_dict = {
-                            k: v for k, v in state_dict.items() if prefix not in k
-                        }
-                    state_dict = {
-                        k.replace("modules_to_save.default.", ""): v
-                        for k, v in state_dict.items()
-                        if "original_module" not in k
-                    }
-                    # LoRA already merged: do not send LoRA tensors.
-                    state_dict = {
-                        k: v for k, v in state_dict.items() if "lora_" not in k
-                    }
-
-                self._vllm_server_update_state_dict(client, state_dict)
-            finally:
-                if is_peft and merged:
-                    with unmerge_cm:
-                        self.model.unmerge_adapter()
-
-        # Reset server prefix cache to avoid stale cached states.
-        try:
-            client.reset_prefix_cache()
-        except (TypeError, ValueError) as exc:
-            logger.warning(
-                "Failed to reset vLLM server prefix cache after full sync: %s", exc
-            )
+        sync_vllm_server_full_weights(owner=self, client=client, logger=logger)
 
     def _vllm_server_update_state_dict(
         self, client: Any, state_dict: Mapping[str, Any]
     ) -> None:
         """Bucket + broadcast a state_dict into the vLLM server via NCCL."""
-        try:
-            from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "FlattenedTensorBucket is required for vLLM server sync"
-            ) from exc
-
-        bucket_size_mb = int(os.environ.get("SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE", 512))
-        bucket_size_bytes = int(bucket_size_mb) * 1024 * 1024
-
-        bucket: List[Tuple[str, torch.Tensor]] = []
-        bucket_bytes = 0
-
-        def _flush_bucket() -> None:
-            nonlocal bucket, bucket_bytes
-            if not bucket:
-                return
-            b = FlattenedTensorBucket(named_tensors=bucket)
-            client.update_flattened_params(b.get_metadata(), b.get_flattened_tensor())
-            bucket = []
-            bucket_bytes = 0
-
-        for name, t in state_dict.items():
-            if t is None or not isinstance(t, torch.Tensor):
-                continue
-            if t.numel() == 0:
-                continue
-            ten = t.detach()
-            nbytes = int(ten.numel() * ten.element_size())
-            if (
-                bucket
-                and bucket_size_bytes > 0
-                and bucket_bytes + nbytes > bucket_size_bytes
-            ):
-                _flush_bucket()
-            bucket.append((str(name), ten))
-            bucket_bytes += nbytes
-
-        _flush_bucket()
+        vllm_server_update_state_dict(
+            client=client,
+            state_dict=dict(state_dict),
+        )
 
     def _sync_vllm_server_adapter(self, client: Any) -> None:
         _ = client
@@ -5348,58 +4508,11 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         self, infer_requests: List[Dict[str, Any]], request_config: Any
     ) -> List[Any]:
         """TP-group gather/slice pattern for colocate vLLM rollouts (matches ms-swift behavior)."""
-        engine = self._ensure_vllm_engine()
-        tp = int(self._vllm_tp_size)
-        # Optional micro-batching to reduce peak vLLM (vision) memory usage in colocate mode.
-        vcfg = self._cfg("vllm", None)
-        infer_batch_size: Optional[int] = None
-        if isinstance(vcfg, Mapping):
-            raw = vcfg.get("infer_batch_size", None)
-            if raw is not None:
-                try:
-                    infer_batch_size = int(raw)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "rollout_matching.vllm.infer_batch_size must be an int"
-                    ) from exc
-                if infer_batch_size <= 0:
-                    infer_batch_size = None
-
-        def _infer_batched(reqs: List[Dict[str, Any]]) -> List[Any]:
-            if not reqs:
-                return []
-            if infer_batch_size is None or infer_batch_size >= len(reqs):
-                return engine.infer(reqs, request_config=request_config, use_tqdm=False)
-            outs: List[Any] = []
-            for i in range(0, len(reqs), infer_batch_size):
-                outs.extend(
-                    engine.infer(
-                        reqs[i : i + infer_batch_size],
-                        request_config=request_config,
-                        use_tqdm=False,
-                    )
-                )
-            return outs
-
-        if tp <= 1:
-            return _infer_batched(infer_requests)
-
-        import torch.distributed as dist
-
-        group = self._vllm_tp_group
-        local_rank = int(dist.get_rank(group=group))
-        local_len = int(len(infer_requests))
-        all_lens: List[int] = [0 for _ in range(tp)]
-        dist.all_gather_object(all_lens, local_len, group=group)
-        start_idx = sum(int(x) for x in all_lens[:local_rank])
-        end_idx = start_idx + local_len
-
-        gathered: List[List[Dict[str, Any]]] = [[] for _ in range(tp)]
-        dist.all_gather_object(gathered, infer_requests, group=group)
-        flat: List[Dict[str, Any]] = [x for sub in gathered for x in sub]
-
-        outs = _infer_batched(flat)
-        return outs[start_idx:end_idx]
+        return vllm_infer_tp_group(
+            owner=self,
+            infer_requests=infer_requests,
+            request_config=request_config,
+        )
 
     def _enforce_hf_rollout_max_position_embeddings(
         self, *, prompt_pad_len: int, max_new_tokens: int
@@ -5963,181 +5076,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Any]:
         """vLLM colocate rollout backend (token ids, optional token logprobs)."""
-        decode_request = self._resolve_rollout_decode_request(
-            decode_override=decode_override
+        return rollout_many_vllm_colocate(
+            owner=self,
+            samples=samples,
+            logger=logger,
+            with_logprobs=bool(with_logprobs),
+            request_index_offset=int(request_index_offset),
+            decode_override=decode_override,
         )
-        decode_mode = str(decode_request.decode_mode)
-        if decode_mode == "beam":
-            raise ValueError(
-                "vLLM rollout backend does not support decode_mode=beam; "
-                "use greedy or sampling overrides instead"
-            )
-
-        max_new_tokens = int(decode_request.max_new_tokens)
-        temperature = float(decode_request.temperature)
-        top_p = float(decode_request.top_p)
-        top_k = int(decode_request.top_k)
-        repetition_penalty = float(decode_request.repetition_penalty)
-
-        if with_logprobs and float(temperature) > 0.0:
-            raise ValueError(
-                "eval-step confidence scoring requires decoding.temperature=0.0 "
-                f"(greedy), got {float(temperature)}"
-            )
-
-        try:
-            from swift.llm import RequestConfig
-        except (ImportError, TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "swift.llm.RequestConfig is required for vLLM rollouts"
-            ) from exc
-
-        request_kwargs = self._rollout_vllm_request_config_kwargs(
-            max_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-        )
-        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        seed_base = int(self._derive_rollout_seed_base(global_step=gs))
-        request_index_offset_i = max(0, int(request_index_offset))
-        request_kwargs["seed"] = int(
-            self._normalize_rollout_seed_int32(
-                int(seed_base + request_index_offset_i)
-            )
-        )
-        if with_logprobs:
-            request_kwargs["logprobs"] = True
-        request_config = RequestConfig(**request_kwargs)
-
-        # Build infer requests using swift.llm.InferRequest (ms-swift stable contract).
-        # NOTE: Do not pass dataset-level GT "objects" into vLLM infer; it may be interpreted as multimodal payload.
-        try:
-            from swift.llm import InferRequest
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "swift.llm.InferRequest is required for vLLM rollouts"
-            ) from exc
-
-        infer_requests: List[Any] = []
-        for s in samples:
-            msgs = s.get("messages")
-            if not isinstance(msgs, list):
-                raise ValueError(
-                    "rollout-matching samples must contain messages (list)"
-                )
-            infer_requests.append(InferRequest(messages=msgs))
-
-        # Ensure vLLM engine init + full sync + infer are covered by offload.
-        # During an eval-scoped colocate lifecycle window, offload is handled once
-        # by the outer evaluate() context to avoid repeated CPU<->GPU transfers.
-        offload_cm = (
-            nullcontext()
-            if bool(getattr(self, "_eval_vllm_window_active", False))
-            else self._maybe_rollout_offload_context(rollout_backend="vllm")
-        )
-        with offload_cm:
-            self._sync_vllm_rollout_model_if_needed()
-            outs: List[Any] = self._vllm_infer_tp_group(infer_requests, request_config)
-
-        if len(outs) != len(infer_requests):
-            raise RuntimeError("vLLM returned unexpected number of outputs")
-
-        results: List[Any] = []
-        for out_idx, out in enumerate(outs):
-            if isinstance(out, Exception):
-                raise RuntimeError(
-                    "vLLM decode failed for a rollout sample "
-                    f"(sample_idx={int(out_idx)}): {out!r}"
-                ) from out
-
-            text = ""
-            token_ids: List[int] = []
-            prompt_ids: List[int] = []
-            choice_logprobs = None
-            try:
-                text = str(out.choices[0].message.content or "")
-                token_ids = [int(t) for t in (out.choices[0].token_ids or [])]
-                prompt_ids = [
-                    int(t) for t in (getattr(out, "prompt_token_ids", None) or [])
-                ]
-                prompt_ids = RolloutMatchingSFTTrainer._strip_left_padding_token_ids(
-                    prompt_ids,
-                    pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
-                )
-                choice_logprobs = getattr(out.choices[0], "logprobs", None)
-            except (TypeError, ValueError):
-                text = ""
-                token_ids = []
-                prompt_ids = []
-                choice_logprobs = None
-
-            if with_logprobs:
-                token_logprobs, generated_token_text = (
-                    RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(
-                        choice_logprobs
-                    )
-                )
-                if len(token_logprobs) != len(generated_token_text):
-                    trace_pair_len = min(
-                        len(token_logprobs), len(generated_token_text)
-                    )
-                    logger.warning(
-                        "vLLM rollout trace payload length mismatch; clamping to common length. "
-                        "sample_idx=%s token_ids=%s logprobs=%s text=%s",
-                        int(out_idx),
-                        int(len(token_ids)),
-                        int(len(token_logprobs)),
-                        int(len(generated_token_text)),
-                    )
-                    token_logprobs = token_logprobs[:trace_pair_len]
-                    generated_token_text = generated_token_text[:trace_pair_len]
-                if len(token_logprobs) > len(token_ids):
-                    excess_trace = int(len(token_logprobs) - len(token_ids))
-                    logger.debug(
-                        "vLLM rollout trace longer than token_ids; dropping trailing trace entries. "
-                        "sample_idx=%s token_ids=%s logprobs=%s text=%s excess=%s",
-                        int(out_idx),
-                        int(len(token_ids)),
-                        int(len(token_logprobs)),
-                        int(len(generated_token_text)),
-                        int(excess_trace),
-                    )
-                    token_logprobs = token_logprobs[: len(token_ids)]
-                    generated_token_text = generated_token_text[: len(token_ids)]
-                elif len(token_logprobs) < len(token_ids):
-                    logger.warning(
-                        "vLLM rollout trace shorter than token_ids; keeping shorter trace for fallback scoring. "
-                        "sample_idx=%s token_ids=%s logprobs=%s text=%s",
-                        int(out_idx),
-                        int(len(token_ids)),
-                        int(len(token_logprobs)),
-                        int(len(generated_token_text)),
-                    )
-
-                trace_token_ids = token_ids[: len(token_logprobs)]
-                generated_token_text = [
-                    str(t)
-                    for t in _decode_pieces(
-                        tokenizer=self.tokenizer,
-                        token_ids=trace_token_ids,
-                    )
-                ]
-                results.append(
-                    (
-                        token_ids,
-                        text,
-                        decode_mode,
-                        prompt_ids,
-                        token_logprobs,
-                        generated_token_text,
-                    )
-                )
-            else:
-                results.append((token_ids, text, decode_mode, prompt_ids))
-
-        return results
 
     @torch.no_grad()
     def _rollout_many_vllm_server(
@@ -6273,42 +5219,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         # Log reproducibility metadata once per optimizer step (E-steps only).
         if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
-            seed_plan: List[Dict[str, Any]] = []
-            if int(len(infer_requests)) > 0 and round_cap_total > 0:
-                cursor = 0
-                round_idx = 0
-                while cursor < int(len(infer_requests)):
-                    remaining = int(len(infer_requests) - cursor)
-                    round_budget = int(min(remaining, round_cap_total))
-                    counts = _allocate_weighted_counts_with_caps(
-                        int(round_budget), per_server_rank_caps
-                    )
-                    offset = int(cursor)
-                    for i, cnt in enumerate(counts):
-                        if int(cnt) <= 0:
-                            continue
-                        start = int(offset)
-                        end = int(offset + int(cnt))
-                        seed_plan.append(
-                            {
-                                "round": int(round_idx),
-                                "server_idx": int(i),
-                                "base_url": str(servers[i].get("base_url", "")),
-                                "start": int(start),
-                                "end": int(end),
-                                "cap_for_rank": int(per_server_rank_caps[i]),
-                                # Effective per-server-call seed used for RequestConfig.seed:
-                                # seed = rollout_seed_base + chunk_start
-                                "seed": int(
-                                    self._normalize_rollout_seed_int32(
-                                        int(effective_seed_base + int(start))
-                                    )
-                                ),
-                            }
-                        )
-                        offset = int(end)
-                    cursor = int(cursor + round_budget)
-                    round_idx = int(round_idx + 1)
+            seed_plan = build_vllm_server_seed_plan(
+                owner=self,
+                servers=servers,
+                infer_requests=infer_requests,
+                effective_seed_base=int(effective_seed_base),
+                per_server_rank_caps=per_server_rank_caps,
+                round_cap_total=int(round_cap_total),
+                allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
+            )
 
             logger.info(
                 "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
@@ -6329,167 +5248,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             )
             self._vllm_server_last_logged_step = int(gs)
 
-        results: List[Any] = [None] * len(infer_requests)
-
-
-        def _infer_on_server(server_idx: int, start: int, end: int) -> None:
-            if start >= end:
-                return
-            base_url = str(servers[server_idx]["base_url"]).rstrip("/")
-
-            # Derive per-server-call seed so per-request seeds are stable.
-            req_cfg = dict(base_request_config_dict)
-            req_cfg["seed"] = int(
-                self._normalize_rollout_seed_int32(int(effective_seed_base + int(start)))
-            )
-
-            payload = {
-                "infer_requests": infer_requests[start:end],
-                "request_config": req_cfg,
-                "metrics": None,
-                "template": None,
-                "use_tqdm": None,
-                "adapter_request": None,
-            }
-
-            url = f"{base_url}/infer/"
-            session = client.sessions[server_idx]
-            req_timeout: Optional[Tuple[float, float]]
-            if infer_timeout_s is None:
-                req_timeout = None
-            else:
-                req_timeout_s = float(infer_timeout_s)
-                # Use a (connect, read) timeout tuple to prevent indefinite hangs on broken keep-alive sockets.
-                req_timeout = (min(10.0, req_timeout_s), req_timeout_s)
-
-            import requests
-
-            request_errors: Tuple[type[BaseException], ...] = (
-                requests.exceptions.RequestException,
-                TypeError,
-                ValueError,
-            )
-            try:
-                with self._vllm_server_infer_guard():
-                    resp = session.post(url, json=payload, timeout=req_timeout)
-            except request_errors as exc:
-                # Retry once with a fresh session. This helps when the server was idle for A steps
-                # (AAB schedules) and the underlying keep-alive connection was dropped.
-                try:
-                    client.sessions[server_idx] = requests.Session()
-                    session = client.sessions[server_idx]
-                    with self._vllm_server_infer_guard():
-                        resp = session.post(url, json=payload, timeout=req_timeout)
-                except request_errors as exc2:
-                    # If this was a batched request, fall back to smaller batches. This is a
-                    # common failure mode when a few samples hit max_new_tokens and the read
-                    # timeout is exceeded.
-                    if int(end - start) > 1:
-                        mid = int((start + end) // 2)
-                        logger.warning(
-                            "vLLM server infer request failed; splitting batch: url=%s start=%s end=%s mid=%s exc=%r",
-                            url,
-                            int(start),
-                            int(end),
-                            int(mid),
-                            exc2,
-                        )
-                        _infer_on_server(int(server_idx), int(start), int(mid))
-                        _infer_on_server(int(server_idx), int(mid), int(end))
-                        return
-
-                    raise RuntimeError(
-                        "vLLM server infer request failed after retry: "
-                        f"url={url} timeout={req_timeout!r} first_exc={exc!r} retry_exc={exc2!r}"
-                    ) from exc2
-
-            if int(getattr(resp, "status_code", 0) or 0) != 200:
-                raise RuntimeError(
-                    f"vLLM server infer failed: url={url} status={getattr(resp, 'status_code', None)} body={getattr(resp, 'text', '')}"
-                )
-
-            data = resp.json()
-            if not isinstance(data, list):
-                raise RuntimeError("vLLM server returned non-list JSON")
-            if len(data) != int(end - start):
-                raise RuntimeError(
-                    "vLLM server returned unexpected number of outputs: "
-                    f"expected={int(end - start)} got={len(data)}"
-                )
-
-            for j, raw_out in enumerate(data):
-                idx = int(start + j)
-                if with_logprobs:
-                    (
-                        token_ids,
-                        text,
-                        prompt_ids,
-                        token_logprobs,
-                        generated_token_text,
-                    ) = self._parse_vllm_server_output_traced(
-                        raw_out, tokenizer=self.tokenizer
-                    )
-                    results[idx] = (
-                        token_ids,
-                        text,
-                        decode_mode,
-                        prompt_ids,
-                        token_logprobs,
-                        generated_token_text,
-                    )
-                else:
-                    token_ids, text, prompt_ids = self._parse_vllm_server_output(raw_out)
-                    prompt_ids = self._strip_left_padding_token_ids(
-                        prompt_ids,
-                        pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
-                    )
-                    results[idx] = (token_ids, text, decode_mode, prompt_ids)
-
-        # Parallelize by server within each round.
-        # Each round enforces strict per-server caps for this learner rank.
-        from concurrent.futures import ThreadPoolExecutor
-
-        cursor = 0
-        while cursor < int(len(infer_requests)):
-            remaining = int(len(infer_requests) - cursor)
-            round_budget = int(min(remaining, max(1, int(round_cap_total))))
-            counts = _allocate_weighted_counts_with_caps(
-                int(round_budget), per_server_rank_caps
-            )
-
-            round_slices: List[Tuple[int, int, int]] = []
-            offset = int(cursor)
-            for i, cnt in enumerate(counts):
-                if int(cnt) <= 0:
-                    continue
-                start = int(offset)
-                end = int(offset + int(cnt))
-                round_slices.append((int(i), int(start), int(end)))
-                offset = int(end)
-
-            if not round_slices:
-                raise RuntimeError(
-                    "vLLM server rollout produced an empty dispatch round under non-empty workload: "
-                    f"cursor={int(cursor)} remaining={int(remaining)} per_server_rank_caps={per_server_rank_caps}"
-                )
-
-            with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
-                futs = [
-                    ex.submit(_infer_on_server, int(i), int(start), int(end))
-                    for i, start, end in round_slices
-                ]
-                for f in futs:
-                    f.result()
-
-            cursor = int(cursor + round_budget)
-
-        out: List[Any] = []
-        for r in results:
-            if r is None:
-                raise RuntimeError(
-                    "vLLM server failed to produce outputs for all requests"
-                )
-            out.append(r)
+        out = dispatch_vllm_server_rounds(
+            owner=self,
+            logger=logger,
+            client=client,
+            servers=servers,
+            infer_requests=infer_requests,
+            base_request_config_dict=base_request_config_dict,
+            effective_seed_base=int(effective_seed_base),
+            infer_timeout_s=infer_timeout_s,
+            with_logprobs=bool(with_logprobs),
+            decode_mode=str(decode_mode),
+            per_server_rank_caps=per_server_rank_caps,
+            round_cap_total=int(round_cap_total),
+            allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
+        )
 
         self._maybe_debug_dump_vllm_server_rollouts(
             global_step=gs,

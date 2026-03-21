@@ -87,6 +87,11 @@ Key v3 config handles:
 Open these code files first:
 - `src/sft.py`
 - `src/trainers/stage2_two_channel.py`
+- `src/trainers/stage2_two_channel/target_builder.py`
+- `src/trainers/stage2_two_channel/objective_runner.py`
+- `src/trainers/stage2_two_channel/coordination.py`
+- `src/trainers/stage2_two_channel/executors.py`
+- `src/trainers/rollout_runtime/`
 - `src/trainers/rollout_matching/parsing.py`
 - `src/trainers/rollout_matching/matching.py`
 - `src/trainers/teacher_forcing/module_registry.py`
@@ -99,10 +104,13 @@ Open these code files first:
 Run these tests first:
 - `tests/test_stage2_ab_config_contract.py`
 - `tests/test_stage2_ab_training.py`
+- `tests/test_stage2_two_channel_training.py`
 - `tests/test_stage2_objective_atoms_projection.py`
 - `tests/test_teacher_forcing_token_ce.py`
 - `tests/test_stage2_pending_metrics_aggregation.py`
 - `tests/test_stage2_ab_vllm_server_mode_smoke.py`
+- `tests/test_stage2_ab_ddp_phase_monitor_disable.py`
+- `tests/test_stage2_ab_disable_average_tokens_across_devices.py`
 
 ## 4. Inference, Confidence, And Offline Evaluation
 
