@@ -62,6 +62,14 @@ from PIL import Image
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
+from src.infer.artifacts import (
+    build_infer_resolved_meta,
+    build_infer_summary_payload,
+    ensure_infer_artifact_dirs,
+    resolve_infer_artifact_paths,
+    write_infer_summary,
+)
+from src.infer.backends import generate_batch, generate_hf_batch, generate_vllm_batch
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.common.object_field_order import (
@@ -613,166 +621,21 @@ class InferenceEngine:
         raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
 
     def _generate_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
-        """Generate texts for a micro-batch.
-
-        For HF we do a single batched `model.generate()` when possible.
-        For vLLM (OpenAI-compatible server) we issue concurrent requests.
-        """
-
-        if not images:
-            return []
-
-        backend = str(self.cfg.backend_type).strip().lower()
-        if backend == "hf":
-            return self._generate_hf_batch(images)
-        if backend == "vllm":
-            return self._generate_vllm_batch(images)
-        raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
+        return generate_batch(owner=self, images=images, result_factory=GenerationResult)
 
     def _generate_hf_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
-        assert self.model is not None and self.processor is not None
-        if not images:
-            return []
-
-        messages = [self._build_messages(img) for img in images]
-        prompt_texts = [
-            self.processor.apply_chat_template(
-                m, add_generation_prompt=True, tokenize=False
-            )
-            for m in messages
-        ]
-
-        model_inputs = self.processor(
-            text=prompt_texts,
+        return generate_hf_batch(
+            owner=self,
             images=images,
-            return_tensors="pt",
-            padding=True,
+            result_factory=GenerationResult,
         )
-        model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
-
-        gen_kwargs = dict(
-            max_new_tokens=self.gen_cfg.max_new_tokens,
-            do_sample=self.gen_cfg.temperature > 0,
-            temperature=max(1e-4, self.gen_cfg.temperature),
-            top_p=self.gen_cfg.top_p,
-            use_cache=True,
-        )
-        if self.gen_cfg.repetition_penalty is not None:
-            gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
-
-        with torch.inference_mode():
-            # Keep score traces for offline confidence post-op.
-            #
-            # Some remote-code checkpoints may reject trace kwargs. Fall back to
-            # plain generation (text-only) rather than aborting inference.
-            try:
-                gen_outputs = self.model.generate(
-                    **model_inputs,
-                    **gen_kwargs,
-                    return_dict_in_generate=True,
-                    output_scores=True,
-                )
-            except (TypeError, ValueError) as exc:
-                self.logger.warning(
-                    "HF trace capture unavailable; falling back to text-only generation: %s",
-                    exc,
-                )
-                gen_outputs = self.model.generate(**model_inputs, **gen_kwargs)
-
-        if isinstance(gen_outputs, torch.Tensor):
-            gen_ids = gen_outputs
-            scores = []
-        else:
-            gen_ids = gen_outputs.sequences
-            scores = list(getattr(gen_outputs, "scores", ()) or ())
-        prompt_padded_len = int(model_inputs["input_ids"].shape[1])
-        gen_token_ids = gen_ids[:, prompt_padded_len:]
-
-        trace_len = min(int(gen_token_ids.shape[1]), int(len(scores)))
-        token_logprobs_by_sample: List[List[float]] = [
-            [] for _ in range(int(len(images)))
-        ]
-        if trace_len > 0:
-            for step_idx in range(trace_len):
-                step_scores = scores[step_idx]
-                if not isinstance(step_scores, torch.Tensor):
-                    continue
-                step_token_ids = gen_token_ids[:, step_idx].long()
-                step_scores_f = step_scores.float()
-                step_selected_logits = step_scores_f.gather(
-                    dim=1, index=step_token_ids.unsqueeze(1)
-                ).squeeze(1)
-                step_log_norm = torch.logsumexp(step_scores_f, dim=-1)
-                step_selected = step_selected_logits - step_log_norm
-                selected_vals = step_selected.detach().cpu().tolist()
-                for sample_idx, val in enumerate(selected_vals):
-                    token_logprobs_by_sample[sample_idx].append(float(val))
-
-        out: List[GenerationResult] = []
-        for i in range(len(images)):
-            gen_only = gen_token_ids[i]
-            raw_text = self.processor.tokenizer.decode(
-                gen_only,
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
-
-            trace_token_ids = gen_token_ids[i, :trace_len].detach().cpu().tolist()
-            generated_token_text = (
-                self.processor.tokenizer.batch_decode(
-                    [[int(tok)] for tok in trace_token_ids],
-                    skip_special_tokens=False,
-                    clean_up_tokenization_spaces=False,
-                )
-                if trace_token_ids
-                else []
-            )
-            token_logprobs = token_logprobs_by_sample[i][: len(generated_token_text)]
-
-            out.append(
-                GenerationResult(
-                    text=raw_text,
-                    generated_token_text=generated_token_text,
-                    token_logprobs=token_logprobs,
-                    error=None,
-                )
-            )
-        return out
 
     def _generate_vllm_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
-        if not images:
-            return []
-
-        if self._vllm_mode() == "local":
-            # Local mode supports true batched chat() in-process.
-            return self._generate_vllm_local_batch(images)
-
-        # Server mode: limit concurrency to avoid overwhelming the server.
-        max_workers_raw = self.cfg.backend.get("client_concurrency")
-        try:
-            max_workers = (
-                int(max_workers_raw)
-                if max_workers_raw is not None
-                else int(len(images))
-            )
-        except (TypeError, ValueError):
-            max_workers = int(len(images))
-        max_workers = max(1, min(int(max_workers), int(len(images))))
-
-        texts: List[str | None] = [None for _ in images]
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            fut_to_idx = {
-                ex.submit(self._generate_vllm_server, img): i
-                for i, img in enumerate(images)
-            }
-            for fut in as_completed(fut_to_idx):
-                i = fut_to_idx[fut]
-                texts[i] = fut.result()
-
-        if any(t is None for t in texts):
-            raise RuntimeError("vLLM generation returned missing outputs")
-
-        return [GenerationResult(text=str(t), error=None) for t in texts]
+        return generate_vllm_batch(
+            owner=self,
+            images=images,
+            result_factory=GenerationResult,
+        )
 
     def _generate_hf(self, image: Image.Image) -> str:
         assert self.model is not None and self.processor is not None
@@ -1217,18 +1080,11 @@ class InferenceEngine:
 
     def infer(self) -> Tuple[Path, Path]:
         jsonl_path = Path(self.cfg.gt_jsonl)
-        out_path = Path(self.cfg.out_path)
-        summary_path = Path(self.cfg.summary_path or (out_path.parent / "summary.json"))
-
         backend = str(self.cfg.backend_type).strip().lower()
-        trace_path_raw = str(self.cfg.pred_token_trace_path or "").strip()
-        if trace_path_raw:
-            trace_path: Optional[Path] = Path(trace_path_raw)
-        elif backend == "hf":
-            # HF path defaults on so confidence post-op has deterministic inputs.
-            trace_path = out_path.parent / "pred_token_trace.jsonl"
-        else:
-            trace_path = None
+        out_path, summary_path, trace_path = resolve_infer_artifact_paths(
+            cfg=self.cfg,
+            backend=backend,
+        )
 
         determinism = "strict" if backend == "hf" else "best_effort"
 
@@ -1245,51 +1101,19 @@ class InferenceEngine:
         counters = RunCounters()
         self.load_model()
 
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        if trace_path is not None:
-            trace_path.parent.mkdir(parents=True, exist_ok=True)
-
-        resolved_meta = {
-            "mode": self.resolved_mode,
-            "mode_resolution_reason": self.mode_reason,
-            "backend": backend,
-            "model_checkpoint": self.cfg.model_checkpoint,
-            "gt_jsonl": self.cfg.gt_jsonl,
-            "pred_coord_mode": self.cfg.pred_coord_mode,
-            "prompt_variant": self.prompt_variant,
-            "object_field_order": self.object_field_order,
-            "object_ordering": self.object_ordering,
-            "device": self.cfg.device,
-            "limit": self.cfg.limit,
-            "generation": {
-                "temperature": self.gen_cfg.temperature,
-                "top_p": self.gen_cfg.top_p,
-                "max_new_tokens": self.gen_cfg.max_new_tokens,
-                "repetition_penalty": self.gen_cfg.repetition_penalty,
-                "batch_size": batch_size,
-                "seed": self.gen_cfg.seed,
-            },
-            "artifacts": {
-                "gt_vs_pred_jsonl": str(out_path),
-                "pred_token_trace_jsonl": str(trace_path) if trace_path is not None else None,
-                "summary_json": str(summary_path),
-            },
-        }
-        if backend == "vllm":
-            # Persist only non-sensitive backend fields.
-            public_fields = {
-                "mode",
-                "base_url",
-                "model",
-                "timeout_s",
-                "client_concurrency",
-            }
-            resolved_meta["backend_cfg"] = {
-                k: v
-                for k, v in (self.cfg.backend or {}).items()
-                if str(k) in public_fields
-            }
+        ensure_infer_artifact_dirs(
+            out_path=out_path,
+            summary_path=summary_path,
+            trace_path=trace_path,
+        )
+        resolved_meta = build_infer_resolved_meta(
+            owner=self,
+            backend=backend,
+            batch_size=batch_size,
+            out_path=out_path,
+            summary_path=summary_path,
+            trace_path=trace_path,
+        )
 
         self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
 
@@ -1500,47 +1324,14 @@ class InferenceEngine:
             # Flush any final partial batch.
             _flush_pending(pending)
 
-        summary_payload: Dict[str, Any] = {
-            "mode": self.resolved_mode,
-            "determinism": determinism,
-            **counters.to_summary(),
-            "backend": {
-                "type": backend,
-                "model_checkpoint": self.cfg.model_checkpoint,
-            },
-            "generation": {
-                "temperature": self.gen_cfg.temperature,
-                "top_p": self.gen_cfg.top_p,
-                "max_new_tokens": self.gen_cfg.max_new_tokens,
-                "repetition_penalty": self.gen_cfg.repetition_penalty,
-                "batch_size": batch_size,
-                "seed": self.gen_cfg.seed,
-            },
-            "infer": {
-                "gt_jsonl": self.cfg.gt_jsonl,
-                "pred_coord_mode": self.cfg.pred_coord_mode,
-                "prompt_variant": self.prompt_variant,
-                "object_field_order": self.object_field_order,
-                "object_ordering": self.object_ordering,
-                "device": self.cfg.device,
-                "limit": self.cfg.limit,
-            },
-        }
-        if self.requested_mode == "auto":
-            summary_payload["mode_resolution_reason"] = self.mode_reason
-
-        if backend == "hf":
-            summary_payload["backend"]["attn_implementation_requested"] = (
-                self.attn_implementation_requested
-            )
-            summary_payload["backend"]["attn_implementation_selected"] = (
-                self.attn_implementation_selected
-            )
-
-        summary_path.write_text(
-            json.dumps(summary_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        summary_payload = build_infer_summary_payload(
+            owner=self,
+            counters=counters,
+            backend=backend,
+            determinism=determinism,
+            batch_size=batch_size,
         )
+        write_infer_summary(summary_path=summary_path, summary_payload=summary_payload)
         self.logger.info(
             "Inference finished: %s samples emitted, summary=%s",
             counters.total_emitted,

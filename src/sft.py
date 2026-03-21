@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
-from typing import Any, Literal, Mapping, Sequence, cast
+from typing import Any, Literal, Mapping, cast
 
 import torch
 from swift.llm.train.rlhf import SwiftRLHF
@@ -29,19 +29,18 @@ from .coord_tokens.offset_adapter import (
     install_coord_offset_adapter,
     reattach_coord_offset_hooks,
 )
-from .config import ConfigLoader, SaveDelayConfig
+from .bootstrap.pipeline_manifest import build_pipeline_manifest
+from .bootstrap.trainer_setup import (
+    build_trainer_callbacks,
+    compose_trainer_class,
+    instantiate_trainer,
+)
+from .config import ConfigLoader
 from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import (
     BaseCaptionDataset,
     RandomSampleDataset,
     build_static_packed_dataset,
-)
-from .trainers.metrics.mixins import (
-    AggregateTokenTypeMetricsMixin,
-    BBoxSizeAuxLossMixin,
-    CoordSoftCEW1LossMixin,
-    GradAccumLossScaleMixin,
-    InstabilityMonitorMixin,
 )
 from .trainers import with_final_checkpoint
 from .utils import (
@@ -52,6 +51,12 @@ from .utils import (
     set_log_level,
 )
 from .optim import register_coord_offset_optimizer
+from .bootstrap.run_metadata import (
+    attach_encoded_sample_cache_run_metadata as _attach_encoded_sample_cache_run_metadata_impl,
+    collect_dependency_provenance as _collect_dependency_provenance_impl,
+    collect_launcher_metadata_from_env as _collect_launcher_metadata_from_env_impl,
+    write_run_metadata_file,
+)
 
 
 def resolve_trainer_cls(train_args):
@@ -688,13 +693,11 @@ def _attach_encoded_sample_cache_run_metadata(
     train_cache_info: Mapping[str, Any] | None,
     eval_cache_info: Mapping[str, Any] | None,
 ) -> None:
-    encoded_sample_cache: dict[str, Any] = {}
-    if train_cache_info is not None:
-        encoded_sample_cache["train"] = copy.deepcopy(dict(train_cache_info))
-    if eval_cache_info is not None:
-        encoded_sample_cache["eval"] = copy.deepcopy(dict(eval_cache_info))
-    if encoded_sample_cache:
-        meta["encoded_sample_cache"] = encoded_sample_cache
+    _attach_encoded_sample_cache_run_metadata_impl(
+        meta,
+        train_cache_info=train_cache_info,
+        eval_cache_info=eval_cache_info,
+    )
 
 
 def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
@@ -797,109 +800,12 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
     return seed
 
 
-def _safe_module_info(module_name: str) -> dict[str, Any]:
-    try:
-        module = importlib.import_module(module_name)
-    except ImportError as exc:
-        return {"error": f"{exc.__class__.__name__}: {exc}"}
-
-    version = getattr(module, "__version__", None)
-    module_file = getattr(module, "__file__", None)
-
-    info: dict[str, Any] = {}
-    if version is not None:
-        info["version"] = str(version)
-    if module_file:
-        info["file"] = str(module_file)
-    return info
-
-
-def _find_git_repo_root(start_dir: Path) -> Path | None:
-    for parent in [start_dir, *start_dir.parents]:
-        if (parent / ".git").exists():
-            return parent
-    return None
-
-
-def _safe_git_state(repo_root: Path) -> dict[str, Any]:
-    try:
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(repo_root),
-            stderr=subprocess.STDOUT,
-            text=True,
-        ).strip()
-        branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(repo_root),
-            stderr=subprocess.STDOUT,
-            text=True,
-        ).strip()
-        status = subprocess.check_output(
-            ["git", "status", "--porcelain"],
-            cwd=str(repo_root),
-            stderr=subprocess.STDOUT,
-            text=True,
-        ).strip()
-        dirty = bool(status.splitlines())
-        return {"sha": sha, "branch": branch, "dirty": dirty}
-    except (OSError, subprocess.CalledProcessError) as exc:
-        return {"error": f"{exc.__class__.__name__}: {exc}"}
-
-
 def _collect_dependency_provenance() -> dict[str, Any]:
-    """Collect upstream dependency provenance for paper-ready reproducibility."""
-
-    deps: dict[str, Any] = {
-        "python": sys.version,
-        "conda_env": os.environ.get("CONDA_DEFAULT_ENV")
-        or os.environ.get("CONDA_ENV")
-        or None,
-        "transformers": _safe_module_info("transformers"),
-        "torch": _safe_module_info("torch"),
-        "vllm": _safe_module_info("vllm"),
-        "swift": _safe_module_info("swift"),
-    }
-
-    swift_info = deps.get("swift")
-    swift_file = None
-    if isinstance(swift_info, Mapping):
-        swift_file = swift_info.get("file")
-    if isinstance(swift_file, str) and swift_file:
-        repo_root = _find_git_repo_root(Path(swift_file).resolve().parent)
-        if repo_root is not None:
-            deps["ms_swift"] = {
-                "repo_root": str(repo_root),
-                **_safe_git_state(repo_root),
-            }
-
-    return deps
-
-
-_STAGE2_LAUNCHER_METADATA_ENV_KEYS = [
-    "COORDEXP_STAGE2_LAUNCHER",
-    "COORDEXP_STAGE2_SERVER_BASE_URL",
-    "COORDEXP_STAGE2_SERVER_MODEL",
-    "COORDEXP_STAGE2_SERVER_TORCH_DTYPE",
-    "COORDEXP_STAGE2_SERVER_DP",
-    "COORDEXP_STAGE2_SERVER_TP",
-    "COORDEXP_STAGE2_SERVER_ENFORCE_EAGER",
-    "COORDEXP_STAGE2_SERVER_GPU_MEMORY_UTILIZATION",
-    "COORDEXP_STAGE2_SERVER_MAX_MODEL_LEN",
-    "COORDEXP_STAGE2_SERVER_ENABLE_LORA",
-    "COORDEXP_STAGE2_SERVER_GPUS",
-    "COORDEXP_STAGE2_LEARNER_GPUS",
-]
+    return _collect_dependency_provenance_impl()
 
 
 def _collect_launcher_metadata_from_env() -> dict[str, str]:
-    meta: dict[str, str] = {}
-    for key in _STAGE2_LAUNCHER_METADATA_ENV_KEYS:
-        value = os.environ.get(key)
-        if value is None:
-            continue
-        meta[key] = value
-    return meta
+    return _collect_launcher_metadata_from_env_impl()
 
 
 def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_config: Any) -> int:
@@ -1033,313 +939,16 @@ def _build_pipeline_manifest(
     seed: int,
     coord_soft_cfg: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not isinstance(cfg, Mapping):
-        cfg = {}
-    if not isinstance(coord_soft_cfg, Mapping):
-        coord_soft_cfg = {}
-
-    pipeline_raw = cfg.get("pipeline", None)
-    if not isinstance(pipeline_raw, Mapping):
-        variant = str(trainer_variant or "")
-        if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
-            raise ValueError(
-                f"{variant} requires an explicit pipeline config; missing {variant}.*.pipeline."
-            )
-        pipeline_raw = {}
-
-    def _coerce_float(value: Any, default: float) -> float:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return float(default)
-
-    def _finite_float(value: Any, default: float) -> float:
-        out = _coerce_float(value, default)
-        if not math.isfinite(out):
-            raise ValueError("pipeline manifest contains non-finite float (NaN/Inf)")
-        if out == 0.0:
-            return 0.0
-        return float(out)
-
-    def _normalize_channels(channels_raw: Any) -> list[str]:
-        found: set[str] = set()
-        if isinstance(channels_raw, Sequence) and not isinstance(channels_raw, (str, bytes)):
-            for ch in channels_raw:
-                ch_s = str(ch).strip().upper()
-                if ch_s in {"A", "B"}:
-                    found.add(ch_s)
-        if not found:
-            return ["A", "B"]
-        return [ch for ch in ("A", "B") if ch in found]
-
-    def _normalize_json_value(value: Any) -> Any:
-        if isinstance(value, Mapping):
-            out: dict[str, Any] = {}
-            for k in sorted(value.keys(), key=lambda x: str(x)):
-                out[str(k)] = _normalize_json_value(value[k])
-            return out
-        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-            return [_normalize_json_value(v) for v in value]
-        if isinstance(value, bool) or value is None or isinstance(value, str):
-            return value
-        if isinstance(value, int):
-            return int(value)
-        if isinstance(value, float):
-            return _finite_float(value, 0.0)
-        try:
-            f = float(value)
-        except (TypeError, ValueError):
-            return value
-        return _finite_float(f, 0.0)
-
-    def _coord_soft_defaults() -> dict[str, Any]:
-        enabled = bool(coord_soft_cfg.get("enabled", False))
-        soft_default = 1.0 if enabled else 0.0
-        w1_default = 1.0 if enabled else 0.0
-        gate_default = 1.0 if enabled else 0.0
-        return {
-            "coord_ce_weight": _finite_float(coord_soft_cfg.get("ce_weight", 0.0), 0.0),
-            "soft_ce_weight": _finite_float(
-                coord_soft_cfg.get("soft_ce_weight", soft_default),
-                soft_default,
-            ),
-            "w1_weight": _finite_float(
-                coord_soft_cfg.get("w1_weight", w1_default),
-                w1_default,
-            ),
-            "coord_gate_weight": _finite_float(
-                coord_soft_cfg.get("gate_weight", gate_default),
-                gate_default,
-            ),
-            "temperature": _finite_float(
-                coord_soft_cfg.get("temperature", 1.0),
-                1.0,
-            ),
-            "target_sigma": _finite_float(
-                coord_soft_cfg.get("target_sigma", 2.0),
-                2.0,
-            ),
-            "target_truncate": coord_soft_cfg.get("target_truncate", None),
-        }
-
-    def _default_module_config(name: str) -> dict[str, Any]:
-        variant = str(trainer_variant or "")
-        coord_soft_defaults = _coord_soft_defaults()
-
-        if variant == "stage2_two_channel":
-            desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
-
-            if name == "token_ce":
-                return {
-                    "desc_ce_weight": desc_w,
-                    "rollout_fn_desc_weight": desc_w,
-                    "rollout_matched_prefix_struct_weight": 1.0,
-                }
-
-            if name == "loss_dead_anchor_suppression":
-                return {}
-
-            if name == "bbox_geo":
-                return {
-                    "smoothl1_weight": _finite_float(
-                        cfg.get("bbox_smoothl1_weight", 1.0),
-                        1.0,
-                    ),
-                    "ciou_weight": _finite_float(
-                        cfg.get("bbox_ciou_weight", 1.0),
-                        1.0,
-                    ),
-                }
-
-            if name == "bbox_size_aux":
-                return {}
-
-            if name == "coord_reg":
-                return {
-                    "coord_ce_weight": _finite_float(
-                        cfg.get(
-                            "coord_ce_weight",
-                            coord_soft_defaults.get("coord_ce_weight", 0.0),
-                        ),
-                        0.0,
-                    ),
-                    "coord_el1_weight": _finite_float(
-                        cfg.get("coord_el1_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_ehuber_weight": _finite_float(
-                        cfg.get("coord_ehuber_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_huber_delta": _finite_float(
-                        cfg.get("coord_huber_delta", 0.001),
-                        0.001,
-                    ),
-                    "coord_entropy_weight": _finite_float(
-                        cfg.get("coord_entropy_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_gate_weight": _finite_float(
-                        cfg.get(
-                            "coord_gate_weight",
-                            coord_soft_defaults.get("coord_gate_weight", 0.0),
-                        ),
-                        0.0,
-                    ),
-                    "text_gate_weight": _finite_float(
-                        cfg.get("text_gate_weight", 0.0),
-                        0.0,
-                    ),
-                    "soft_ce_weight": _finite_float(
-                        coord_soft_defaults.get("soft_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "w1_weight": _finite_float(
-                        coord_soft_defaults.get("w1_weight", 0.0),
-                        0.0,
-                    ),
-                    "temperature": _finite_float(
-                        coord_soft_defaults.get("temperature", 1.0),
-                        1.0,
-                    ),
-                    "target_sigma": _finite_float(
-                        coord_soft_defaults.get("target_sigma", 2.0),
-                        2.0,
-                    ),
-                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
-                }
-
-        if variant == "stage2_rollout_aligned":
-            if name == "token_ce":
-                return {
-                    "rollout_fn_desc_weight": 1.0,
-                    "rollout_matched_prefix_struct_weight": 1.0,
-                }
-
-            if name == "bbox_geo":
-                return {
-                    "smoothl1_weight": _finite_float(
-                        cfg.get("bbox_smoothl1_weight", 1.0),
-                        1.0,
-                    ),
-                    "ciou_weight": _finite_float(
-                        cfg.get("bbox_ciou_weight", 1.0),
-                        1.0,
-                    ),
-                }
-
-            if name == "bbox_size_aux":
-                return {}
-
-            if name == "coord_reg":
-                return {
-                    "coord_ce_weight": _finite_float(
-                        coord_soft_defaults.get("coord_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "soft_ce_weight": _finite_float(
-                        coord_soft_defaults.get("soft_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "w1_weight": _finite_float(
-                        coord_soft_defaults.get("w1_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_gate_weight": _finite_float(
-                        coord_soft_defaults.get("coord_gate_weight", 0.0),
-                        0.0,
-                    ),
-                    "text_gate_weight": 0.0,
-                    "temperature": _finite_float(
-                        coord_soft_defaults.get("temperature", 1.0),
-                        1.0,
-                    ),
-                    "target_sigma": _finite_float(
-                        coord_soft_defaults.get("target_sigma", 2.0),
-                        2.0,
-                    ),
-                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
-                }
-
-        return {}
-
-    def _resolve(path: str, defaults: list[str]) -> list[dict[str, Any]]:
-        raw = pipeline_raw.get(path, None)
-        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-            variant = str(trainer_variant or "")
-            if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
-                raise TypeError(f"pipeline.{path} must be a list of module specs")
-            raw = None
-
-        if raw is None:
-            return []
-
-        out: list[dict[str, Any]] = []
-        for spec in raw:
-            if not isinstance(spec, Mapping):
-                continue
-            name = str(spec.get("name", "") or "").strip()
-            if not name:
-                continue
-            authored_cfg_raw = spec.get("config", {})
-            authored_cfg = (
-                dict(authored_cfg_raw)
-                if isinstance(authored_cfg_raw, Mapping)
-                else {}
-            )
-            authored_app_raw = spec.get("application", {})
-            authored_app = (
-                dict(authored_app_raw)
-                if isinstance(authored_app_raw, Mapping)
-                else {}
-            )
-            merged_cfg = dict(_default_module_config(name))
-            merged_cfg.update(authored_cfg)
-
-            out.append(
-                {
-                    "name": name,
-                    "enabled": bool(spec.get("enabled", True)),
-                    "weight": max(0.0, _finite_float(spec.get("weight", 1.0), 1.0)),
-                    "channels": _normalize_channels(spec.get("channels", ["A", "B"])),
-                    "application": authored_app,
-                    "config": merged_cfg,
-                }
-            )
-
-        return out
-
-    objective = _resolve("objective", default_objective)
-    diagnostics = _resolve("diagnostics", default_diagnostics)
-
-    extra: dict[str, Any] = {"variant": str(trainer_variant or "")}
-
-    payload = _normalize_json_value(
-        {
-            "objective": objective,
-            "diagnostics": diagnostics,
-            "extra": extra,
-        }
+    return build_pipeline_manifest(
+        cfg,
+        default_objective=default_objective,
+        default_diagnostics=default_diagnostics,
+        trainer_variant=trainer_variant,
+        config_path=config_path,
+        run_name=run_name,
+        seed=seed,
+        coord_soft_cfg=coord_soft_cfg,
     )
-
-    checksum = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-
-    run_context = {
-        "config": str(config_path),
-        "run_name": str(run_name or ""),
-        "seed": int(seed or 0),
-    }
-
-    return {
-        "payload": payload,
-        "objective": payload.get("objective", []),
-        "diagnostics": payload.get("diagnostics", []),
-        "extra": payload.get("extra", {}),
-        "checksum": checksum,
-        "run_context": run_context,
-    }
 
 
 def _scope_logging_dir_under_run_name(train_args: Any) -> str | None:
@@ -2640,91 +2249,43 @@ def main():
         heartbeat_callback = TrainHeartbeatCallback(heartbeat_writer)
         logger.info("Train heartbeat enabled: %s", str(heartbeat_path))
 
-    trainer_cls = resolve_trainer_cls(train_args)
-    mixins = []
-    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
-        # Fix transformers>=4.57 grad-accum scaling when model_accepts_loss_kwargs=True
-        # (ms-swift uses Seq2SeqTrainer for causal_lm). This keeps train `loss` comparable to eval_loss.
-        mixins.append(GradAccumLossScaleMixin)
-        if isinstance(instability_monitor_cfg, dict) and bool(
-            instability_monitor_cfg.get("enabled", False)
-        ):
-            mixins.append(InstabilityMonitorMixin)
-        if token_type_cfg and getattr(token_type_cfg, "enabled", False):
-            mixins.append(AggregateTokenTypeMetricsMixin)
-        if bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
-            mixins.append(BBoxSizeAuxLossMixin)
-        if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
-            mixins.append(CoordSoftCEW1LossMixin)
-    if mixins:
-        trainer_cls = type(
-            f"{trainer_cls.__name__}WithMetrics",
-            tuple(mixins + [trainer_cls]),
-            {},
-        )
+    trainer_cls = compose_trainer_class(
+        trainer_cls=resolve_trainer_cls(train_args),
+        trainer_variant=str(trainer_variant or ""),
+        instability_monitor_cfg=instability_monitor_cfg,
+        token_type_cfg=token_type_cfg,
+        bbox_size_aux_cfg=bbox_size_aux_cfg,
+        coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
+    )
 
-    # Add callbacks (including optional heartbeat instrumentation for debug/smokes).
-    callbacks = sft.callbacks.copy() if sft.callbacks else []
-    callbacks = _append_dataset_epoch_callback(callbacks, dataset)
-    if heartbeat_callback is not None:
-        callbacks.append(heartbeat_callback)
-    if curriculum_scheduler is not None and curriculum_state is not None:
-        from .callbacks.augmentation_curriculum import (
-            AugmentationCurriculumCallback,
-        )
-
-        callbacks.append(
-            AugmentationCurriculumCallback(
-                scheduler=curriculum_scheduler,
-                curriculum_state=curriculum_state,
-            )
-        )
-    save_delay_cfg = getattr(train_args, "save_delay_config", None)
-    from .callbacks import SaveDelayCallback
-
-    if isinstance(save_delay_cfg, SaveDelayConfig) and save_delay_cfg.active:
-        callbacks.append(SaveDelayCallback(config=save_delay_cfg))
-        delay_info = (
-            f"step {save_delay_cfg.steps}"
-            if save_delay_cfg.steps is not None
-            else f"epoch {save_delay_cfg.epochs}"
-        )
-        logger.info(
-            f"SaveDelayCallback enabled: checkpoint saves blocked until {delay_info}"
-        )
-    else:
-        save_delay_steps = getattr(train_args, "save_delay_steps", None)
-        save_delay_epochs = getattr(train_args, "save_delay_epochs", None)
-        if save_delay_steps is not None and save_delay_steps > 0:
-            callbacks.append(SaveDelayCallback(save_delay_steps=save_delay_steps))
-            logger.info(
-                f"SaveDelayCallback enabled: no checkpoints until step {save_delay_steps}"
-            )
-        elif save_delay_epochs is not None and float(save_delay_epochs) > 0:
-            callbacks.append(
-                SaveDelayCallback(save_delay_epochs=float(save_delay_epochs))
-            )
-            logger.info(
-                f"SaveDelayCallback enabled: no checkpoints until epoch {float(save_delay_epochs):.2f}"
-            )
+    callbacks = build_trainer_callbacks(
+        base_callbacks=sft.callbacks.copy() if sft.callbacks else [],
+        dataset=dataset,
+        append_dataset_epoch_callback_fn=_append_dataset_epoch_callback,
+        heartbeat_callback=heartbeat_callback,
+        curriculum_scheduler=curriculum_scheduler,
+        curriculum_state=curriculum_state,
+        save_delay_cfg=getattr(train_args, "save_delay_config", None),
+        save_delay_steps=getattr(train_args, "save_delay_steps", None),
+        save_delay_epochs=getattr(train_args, "save_delay_epochs", None),
+        logger=logger,
+    )
 
     trainer_kwargs = (
         sft._get_trainer_kwargs() if hasattr(sft, "_get_trainer_kwargs") else {}
     )
-    if heartbeat_writer is not None:
-        heartbeat_writer.emit("trainer_init_start")
-    trainer = trainer_cls(
-        model=sft.model,
-        args=train_args.training_args,
+    trainer = instantiate_trainer(
+        trainer_cls=trainer_cls,
+        sft_model=sft.model,
+        training_args=train_args.training_args,
         data_collator=data_collator,
-        train_dataset=dataset,
+        dataset=dataset,
         eval_dataset=eval_dataset,
         callbacks=callbacks,
         template=sft.template,
-        **trainer_kwargs,
+        trainer_kwargs=trainer_kwargs,
+        heartbeat_writer=heartbeat_writer,
     )
-    if heartbeat_writer is not None:
-        heartbeat_writer.emit("trainer_init_done")
     # Rollout-matching evaluators emit rollout/* metrics only.
     # Guard against inherited defaults like eval_token_acc, which would crash
     # best-checkpoint selection at evaluation time.
@@ -3027,63 +2588,18 @@ def main():
         if not out_dir:
             raise ValueError("train_args.output_dir is not set; cannot write run metadata")
 
-        repo_root = Path(__file__).resolve().parents[1]
-
-        def _git(*argv: str) -> str:
-            return subprocess.check_output(
-                ["git", *argv],
-                cwd=str(repo_root),
-                stderr=subprocess.STDOUT,
-                text=True,
-            ).strip()
-
-        git_sha = None
-        git_branch = None
-        git_dirty = None
-        status_lines = []
-        try:
-            git_sha = _git("rev-parse", "HEAD")
-            git_branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-            status = _git("status", "--porcelain")
-            status_lines = [line for line in status.splitlines() if line.strip()]
-            git_dirty = bool(status_lines)
-        except Exception:
-            git_sha = None
-            git_branch = None
-            git_dirty = None
-            status_lines = []
-
-        meta = {
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "config": str(getattr(args, "config", "") or ""),
-            "base_config": str(getattr(args, "base_config", "") or ""),
-            "run_name": str(getattr(train_args, "run_name", "") or ""),
-            "output_dir": str(out_dir),
-            "git_sha": git_sha,
-            "git_branch": git_branch,
-            "git_dirty": git_dirty,
-            "git_status_porcelain": status_lines[:200],
-            "dataset_seed": dataset_seed,
-            "upstream": _collect_dependency_provenance(),
-        }
-
-        if written is not None:
-            meta["run_manifest_files"] = dict(written)
-
-        launcher_meta = _collect_launcher_metadata_from_env()
-        if launcher_meta:
-            meta["launcher"] = launcher_meta
-        _attach_encoded_sample_cache_run_metadata(
-            meta,
+        out_path = write_run_metadata_file(
+            output_dir=Path(str(out_dir)),
+            config_path=str(getattr(args, "config", "") or ""),
+            base_config_path=str(getattr(args, "base_config", "") or "")
+            if getattr(args, "base_config", None)
+            else None,
+            run_name=str(getattr(train_args, "run_name", "") or ""),
+            dataset_seed=dataset_seed,
+            repo_root=Path(__file__).resolve().parents[1],
+            manifest_files=written,
             train_cache_info=train_encoded_sample_cache_info,
             eval_cache_info=eval_encoded_sample_cache_info,
-        )
-
-        out_path = Path(str(out_dir)) / "run_metadata.json"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         logger.info("Wrote run metadata: %s", str(out_path))
 

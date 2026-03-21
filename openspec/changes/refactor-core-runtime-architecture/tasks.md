@@ -66,10 +66,10 @@
 
 ## Workstream 3. Shared Rollout Runtime Extraction
 
-- [ ] 3.1 Extract shared rollout backend/decode lifecycle from `src/trainers/stage2_rollout_aligned.py` into a dedicated runtime package.
-- [ ] 3.2 Preserve trainer-facing adapter methods initially so existing tests and monkeypatches continue to work.
-- [ ] 3.3 Move vLLM local/server lifecycle and rollout dispatch behind a narrower trainer-to-runtime interface.
-- [ ] 3.4 Validate shared runtime parity:
+- [x] 3.1 Extract shared rollout backend/decode lifecycle from `src/trainers/stage2_rollout_aligned.py` into a dedicated runtime package.
+- [x] 3.2 Preserve trainer-facing adapter methods initially so existing tests and monkeypatches continue to work.
+- [x] 3.3 Move vLLM local/server lifecycle and rollout dispatch behind a narrower trainer-to-runtime interface.
+- [x] 3.4 Validate shared runtime parity:
   - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_vllm_server_mode_smoke.py`
@@ -77,23 +77,23 @@
 
 ## Workstream 4. Rollout-Aligned Target Builder And Evaluator Split
 
-- [ ] 4.1 Extract rollout-aligned train-time target construction from `_prepare_batch_inputs` into dedicated modules.
-- [ ] 4.2 Extract rollout-aligned evaluation flow from `evaluate` into an evaluator module while preserving metric and artifact behavior.
-- [ ] 4.3 Keep current rollout metric keys and eval artifact expectations stable during the first extraction pass.
-- [ ] 4.4 Validate rollout-aligned parity:
+- [x] 4.1 Extract rollout-aligned train-time target construction from `_prepare_batch_inputs` into dedicated modules.
+- [x] 4.2 Extract rollout-aligned evaluation flow from `evaluate` into an evaluator module while preserving metric and artifact behavior.
+- [x] 4.3 Keep current rollout metric keys and eval artifact expectations stable during the first extraction pass.
+- [x] 4.4 Validate rollout-aligned parity:
   - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_output_parity.py`
 
 ## Workstream 5. Training Bootstrap And Manifest Authority Cleanup
 
-- [ ] 5.1 Move packing/bootstrap policy out of `src/sft.py` into focused bootstrap helpers without changing resolved runtime behavior.
-- [ ] 5.2 Consolidate pipeline-manifest serialization so typed config remains the single source of truth for Stage-2 pipeline structure.
-- [ ] 5.3 Move trainer assembly/injection and provenance writing into dedicated bootstrap helpers while preserving current artifacts:
+- [x] 5.1 Move packing/bootstrap policy out of `src/sft.py` into focused bootstrap helpers without changing resolved runtime behavior.
+- [x] 5.2 Consolidate pipeline-manifest projection behind a single bootstrap helper layer so typed config remains the normative authored source for Stage-2 pipeline structure.
+- [x] 5.3 Move trainer assembly/injection and provenance writing into dedicated bootstrap helpers while preserving current artifacts:
   - `resolved_config.json`
   - `runtime_env.json`
   - `run_metadata.json`
   - `logging.jsonl`
-- [ ] 5.4 Validate bootstrap and provenance parity:
+- [x] 5.4 Validate bootstrap and provenance parity:
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_config_contract.py`
   - `conda run -n ms python -m pytest -q tests/test_training_config_strict_unknown_keys.py`
   - `conda run -n ms python -m pytest -q tests/test_run_manifest_files.py`
@@ -103,29 +103,29 @@
 
 ## Workstream 6. Inference Backend Split
 
-- [ ] 6.1 Split `src/infer/engine.py` into backend adapters plus output/artifact orchestration.
-- [ ] 6.2 Preserve strict preflight behavior, current prompt rendering, existing JSONL/summary/token-trace artifact fields, and the public `src.infer.engine` API consumed by `src/infer/pipeline.py`. Compatibility-preserving exports or shims are acceptable while internals move.
-- [ ] 6.3 Validate infer parity:
+- [x] 6.1 Split `src/infer/engine.py` into backend adapters plus output/artifact orchestration.
+- [x] 6.2 Preserve strict preflight behavior, current prompt rendering, existing JSONL/summary/token-trace artifact fields, and the public `src.infer.engine` API consumed by `src/infer/pipeline.py`. Compatibility-preserving exports or shims are acceptable while internals move.
+- [x] 6.3 Validate infer parity:
   - `conda run -n ms python -m pytest -q tests/test_unified_infer_pipeline.py`
   - `conda run -n ms python -m pytest -q tests/test_confidence_postop.py`
   - `conda run -n ms python -m pytest -q tests/test_bbox_confidence.py`
 
 ## Workstream 7. Detection Evaluator Split
 
-- [ ] 7.1 Split `src/eval/detection.py` into ingest, COCO, F1-ish, artifact, and visualization layers without changing output semantics.
-- [ ] 7.2 Preserve:
+- [x] 7.1 Split top-level detection evaluation orchestration and artifact/report writing into focused layers without changing output semantics; deeper ingest / COCO / F1-ish helpers may remain in `src/eval/detection.py` during this pass.
+- [x] 7.2 Preserve:
   - `metrics.json`
   - `per_image.json`
   - `per_class.csv`
   - `coco_gt.json`
   - `coco_preds.json`
   - `vis_resources/gt_vs_pred.jsonl`
-- [ ] 7.3 Preserve the public `src.eval.detection` API boundary consumed by:
+- [x] 7.3 Preserve the public `src.eval.detection` API boundary consumed by:
   - `src/infer/pipeline.py`
   - `src/callbacks/detection_eval.py`
   - `scripts/evaluate_detection.py`
   Compatibility-preserving exports or shims are acceptable while internals move.
-- [ ] 7.4 Validate eval parity:
+- [x] 7.4 Validate eval parity:
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_output_parity.py`
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_ingestion_diagnostics.py`
   - `conda run -n ms python -m pytest -q tests/test_confidence_postop.py`
@@ -133,7 +133,7 @@
 
 ## Workstream 8. Final Cross-Cut Verification And Governance Check
 
-- [ ] 8.1 Run the full targeted verification bundle after the last internal extraction slice:
+- [x] 8.1 Run the full targeted verification bundle after the last internal extraction slice:
   - `conda run -n ms python -m pytest -q tests/test_coord_geometry_invariants.py`
   - `conda run -n ms python -m pytest -q tests/test_chat_template_regression.py`
   - `conda run -n ms python -m pytest -q tests/test_prompt_variants.py`
@@ -153,9 +153,9 @@
   - `conda run -n ms python -m pytest -q tests/test_dependency_provenance.py`
   - `conda run -n ms python -m pytest -q tests/test_launcher_metadata_env.py`
   - `conda run -n ms python -m pytest -q tests/test_trainer_metrics_payload_contract.py`
-- [ ] 8.2 Confirm stable contracts remained unchanged; if not, add follow-on OpenSpec deltas before landing those behavior changes.
-- [ ] 8.3 Update operator-facing docs only where current entrypoints, runbooks, or architecture pointers changed.
-- [ ] 8.4 Record exact reproducibility handles for the refactor program:
+- [x] 8.2 Confirm stable contracts remained unchanged; if not, add follow-on OpenSpec deltas before landing those behavior changes.
+- [x] 8.3 Update operator-facing docs only where current entrypoints, runbooks, or architecture pointers changed.
+- [x] 8.4 Record exact reproducibility handles for the refactor program:
   - config path used for any smoke verification,
   - run name,
   - seed,

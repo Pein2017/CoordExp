@@ -1,10 +1,251 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+
+
+@dataclass(frozen=True)
+class PreparedVLLMServerRollout:
+    decode_mode: str
+    global_step: int
+    infer_requests: List[Dict[str, Any]]
+    servers: List[Dict[str, Any]]
+    client: Any
+    infer_timeout_s: Optional[float]
+    base_request_config_dict: Dict[str, Any]
+    effective_seed_base: int
+    rollout_seed_base: int
+    request_index_offset: int
+    decode_batch_size_cap: int
+    per_rank_chunk: int
+    learner_world_size: int
+    learner_rank: int
+    server_world_sizes: List[int]
+    per_server_rank_caps: List[int]
+    round_cap_total: int
+    seed_plan: List[Dict[str, Any]]
+
+
+def build_vllm_server_infer_requests(
+    *,
+    samples: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build JSON-serializable ms-swift RolloutInferRequest-compatible dicts."""
+
+    infer_requests: List[Dict[str, Any]] = []
+    for sample in samples:
+        msgs = sample.get("messages")
+        if not isinstance(msgs, list):
+            raise ValueError("rollout-matching samples must contain messages (list)")
+        try:
+            msgs_json = json.loads(json.dumps(msgs))
+        except Exception as exc:
+            raise ValueError(
+                "vLLM server mode requires JSON-serializable messages. "
+                "Ensure images are passed as strings (path/url/base64), not PIL objects."
+            ) from exc
+
+        req: Dict[str, Any] = {"messages": msgs_json}
+
+        images_raw = sample.get("images", None)
+        if images_raw is None:
+            image = sample.get("image", None)
+            if isinstance(image, str) and image:
+                images_raw = [image]
+        if images_raw is not None:
+            if isinstance(images_raw, str):
+                images = [images_raw]
+            elif isinstance(images_raw, (list, tuple)):
+                images = list(images_raw)
+            else:
+                raise ValueError(
+                    "vLLM server mode expects sample['images'] to be a string or list of strings"
+                )
+            if not all(isinstance(x, str) for x in images):
+                raise ValueError(
+                    "vLLM server mode expects all image entries to be strings (path/url/base64)"
+                )
+            req["images"] = images
+
+        infer_requests.append(req)
+
+    return infer_requests
+
+
+def prepare_vllm_server_rollout(
+    *,
+    owner: Any,
+    logger: Any,
+    samples: Sequence[Mapping[str, Any]],
+    request_index_offset: int,
+    with_logprobs: bool,
+    decode_override: Optional[Mapping[str, Any]],
+    per_server_rank_request_caps_fn: Any,
+    allocate_weighted_counts_with_caps_fn: Any,
+) -> PreparedVLLMServerRollout:
+    """Resolve server rollout config, capacity, and reproducibility metadata."""
+
+    decode_request = owner._resolve_rollout_decode_request(
+        decode_override=decode_override
+    )
+    decode_mode = str(decode_request.decode_mode)
+    if decode_mode == "beam":
+        raise ValueError(
+            "vLLM server rollout backend does not support decode_mode=beam; "
+            "use greedy or sampling overrides instead"
+        )
+
+    if not bool(getattr(owner, "_stage2_skip_vllm_server_sync", False)):
+        owner._sync_vllm_server_rollout_model_if_needed()
+
+    max_new_tokens = int(decode_request.max_new_tokens)
+    temperature = float(decode_request.temperature)
+    top_p = float(decode_request.top_p)
+    top_k = int(decode_request.top_k)
+    repetition_penalty = float(decode_request.repetition_penalty)
+
+    if with_logprobs and float(temperature) > 0.0:
+        raise ValueError(
+            "eval-step confidence scoring requires decoding.temperature=0.0 "
+            f"(greedy), got {float(temperature)}"
+        )
+
+    try:
+        from swift.llm import RequestConfig
+    except (ImportError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "swift.llm.RequestConfig is required for vLLM server rollouts"
+        ) from exc
+
+    base_request_kwargs = owner._rollout_vllm_request_config_kwargs(
+        max_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        repetition_penalty=repetition_penalty,
+    )
+    if with_logprobs:
+        base_request_kwargs["logprobs"] = True
+    base_request_config = RequestConfig(**base_request_kwargs)
+    base_request_config_dict = asdict(base_request_config)
+
+    global_step = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
+    rollout_seed_base = int(owner._derive_rollout_seed_base(global_step=global_step))
+    request_index_offset_i = max(0, int(request_index_offset))
+    effective_seed_base = int(rollout_seed_base + request_index_offset_i)
+
+    infer_requests = build_vllm_server_infer_requests(samples=samples)
+
+    servers = [dict(server) for server in owner._vllm_server_specs()]
+    if not servers:
+        raise ValueError("vLLM server mode requires a non-empty server list")
+
+    _timeout_s, infer_timeout_s = owner._vllm_server_timeouts()
+
+    client = owner._ensure_vllm_server_client()
+
+    server_world_sizes = [int(x) for x in owner._vllm_server_world_sizes()]
+    if len(server_world_sizes) != int(len(servers)):
+        raise RuntimeError(
+            "vLLM server world_size discovery returned unexpected length: "
+            f"servers={int(len(servers))} world_sizes={server_world_sizes}"
+        )
+
+    learner_world = 1
+    learner_rank = 0
+    try:
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            learner_world = int(dist.get_world_size())
+            learner_rank = int(dist.get_rank())
+    except (TypeError, ValueError):
+        learner_world = 1
+        learner_rank = 0
+    learner_world = max(1, int(learner_world))
+    learner_rank = max(0, int(learner_rank))
+
+    rollout_context = owner._current_rollout_context()
+    decode_batch_size_cap = int(owner._decode_batch_size(context=rollout_context))
+    per_rank_chunk = int(
+        owner._rollout_decode_batch_size_per_rank(
+            rollout_context=rollout_context,
+        )
+    )
+
+    per_server_rank_caps = [
+        int(x)
+        for x in per_server_rank_request_caps_fn(
+            per_rank_chunk_size=int(per_rank_chunk),
+            server_world_sizes=server_world_sizes,
+            learner_world_size=int(learner_world),
+            learner_rank=int(learner_rank),
+        )
+    ]
+    round_cap_total = int(sum(per_server_rank_caps))
+    if int(round_cap_total) != int(per_rank_chunk):
+        raise RuntimeError(
+            "internal per-rank rollout cap mismatch: "
+            f"per_rank_chunk={int(per_rank_chunk)} round_cap_total={int(round_cap_total)} "
+            f"learner_rank={int(learner_rank)} learner_world_size={int(learner_world)} "
+            f"server_world_sizes={server_world_sizes}"
+        )
+
+    seed_plan = build_vllm_server_seed_plan(
+        owner=owner,
+        servers=servers,
+        infer_requests=infer_requests,
+        effective_seed_base=int(effective_seed_base),
+        per_server_rank_caps=per_server_rank_caps,
+        round_cap_total=int(round_cap_total),
+        allocate_weighted_counts_with_caps_fn=allocate_weighted_counts_with_caps_fn,
+    )
+
+    if global_step != int(getattr(owner, "_vllm_server_last_logged_step", -1)):
+        logger.info(
+            "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
+            servers,
+            owner._effective_vllm_server_sync_mode(),
+            int(len(infer_requests)),
+            int(rollout_seed_base),
+            int(request_index_offset_i),
+            int(effective_seed_base),
+            int(decode_batch_size_cap),
+            int(per_rank_chunk),
+            int(learner_world),
+            int(learner_rank),
+            server_world_sizes,
+            per_server_rank_caps,
+            int(round_cap_total),
+            seed_plan,
+        )
+        owner._vllm_server_last_logged_step = int(global_step)
+
+    return PreparedVLLMServerRollout(
+        decode_mode=str(decode_mode),
+        global_step=int(global_step),
+        infer_requests=infer_requests,
+        servers=servers,
+        client=client,
+        infer_timeout_s=infer_timeout_s,
+        base_request_config_dict=base_request_config_dict,
+        effective_seed_base=int(effective_seed_base),
+        rollout_seed_base=int(rollout_seed_base),
+        request_index_offset=int(request_index_offset_i),
+        decode_batch_size_cap=int(decode_batch_size_cap),
+        per_rank_chunk=int(per_rank_chunk),
+        learner_world_size=int(learner_world),
+        learner_rank=int(learner_rank),
+        server_world_sizes=server_world_sizes,
+        per_server_rank_caps=per_server_rank_caps,
+        round_cap_total=int(round_cap_total),
+        seed_plan=seed_plan,
+    )
 
 
 def ensure_vllm_server_client(

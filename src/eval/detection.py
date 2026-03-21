@@ -35,6 +35,11 @@ from src.common.geometry.object_geometry import extract_single_geometry
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
+from src.eval.artifacts import build_per_image_report, write_outputs
+from src.eval.orchestration import (
+    evaluate_and_save_outputs,
+    evaluate_detection_summary,
+)
 from src.utils import get_logger
 from src.vis import materialize_gt_vs_pred_vis_resource, render_gt_vs_pred_review
 
@@ -1313,109 +1318,17 @@ def evaluate_detection(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
-    counters = EvalCounters()
-    want_coco = str(options.metrics).lower() in {"coco", "both"}
-    if pred_path is None:
-        pred_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
-        (
-            gt_samples,
-            pred_samples,
-            categories,
-            coco_gt_dict,
-            results,
-            run_segm,
-            _,
-        ) = _prepare_all(pred_records, options, counters, prepare_coco=want_coco)
-    else:
-        gt_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
-        pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
-        (
-            gt_samples,
-            pred_samples,
-            categories,
-            coco_gt_dict,
-            results,
-            run_segm,
-            _,
-        ) = _prepare_all_separate(
-            gt_records, pred_records, options, counters, prepare_coco=want_coco
-        )
-
-    metrics: Dict[str, float] = {}
-    per_class: Dict[str, float] = {}
-    if want_coco:
-        coco_gt = COCO()
-        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
-        coco_gt.createIndex()
-
-        metrics, per_class = _run_coco_eval(
-            coco_gt, results, options=options, run_segm=run_segm
-        )
-
-    summary = {
-        "metrics": metrics,
-        "per_class": per_class,
-        "counters": counters.to_dict(),
-        "categories": categories,
-    }
-    return summary
-
-
-def write_outputs(
-    out_dir: Path,
-    *,
-    coco_gt: Dict[str, Any] | None,
-    coco_preds: List[Dict[str, Any]] | None,
-    summary: Dict[str, Any],
-    per_image: List[Dict[str, Any]],
-) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if coco_gt is not None:
-        (out_dir / "coco_gt.json").write_text(
-            json.dumps(coco_gt, ensure_ascii=False), encoding="utf-8"
-        )
-    if coco_preds is not None:
-        (out_dir / "coco_preds.json").write_text(
-            json.dumps(coco_preds, ensure_ascii=False), encoding="utf-8"
-        )
-    metrics_payload = {
-        "metrics": summary.get("metrics", {}),
-        "counters": summary.get("counters", {}),
-    }
-    (out_dir / "metrics.json").write_text(
-        json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    return evaluate_detection_summary(
+        gt_path=gt_path,
+        pred_path=pred_path,
+        options=options,
+        counters_cls=EvalCounters,
+        load_jsonl_fn=load_jsonl,
+        prepare_all_fn=_prepare_all,
+        prepare_all_separate_fn=_prepare_all_separate,
+        run_coco_eval_fn=_run_coco_eval,
+        coco_cls=COCO,
     )
-    if coco_gt is not None and coco_preds is not None:
-        (out_dir / "per_class.csv").write_text(
-            "category,AP\n"
-            + "\n".join(f"{k},{v}" for k, v in summary.get("per_class", {}).items()),
-            encoding="utf-8",
-        )
-    (out_dir / "per_image.json").write_text(
-        json.dumps(per_image, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def build_per_image_report(
-    gt_samples: List[Sample],
-    pred_samples: List[Tuple[int, List[Dict[str, Any]]]],
-    invalid_preds: Dict[int, List[Dict[str, Any]]],
-) -> List[Dict[str, Any]]:
-    report: List[Dict[str, Any]] = []
-    pred_lookup = {img_id: preds for img_id, preds in pred_samples}
-    for sample in gt_samples:
-        preds = pred_lookup.get(sample.image_id, [])
-        report.append(
-            {
-                "image_id": sample.image_id,
-                "file_name": sample.file_name,
-                "gt_count": len(sample.objects),
-                "pred_count": len(preds),
-                "invalid_gt": sample.invalid,
-                "invalid_pred": invalid_preds.get(sample.image_id, []),
-            }
-        )
-    return report
 
 
 def evaluate_and_save(
@@ -1423,94 +1336,26 @@ def evaluate_and_save(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
-    counters = EvalCounters()
-    metrics_mode = str(options.metrics).lower()
-    want_coco = metrics_mode in {"coco", "both"}
-    want_f1ish = metrics_mode in {"f1ish", "both"}
-    pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
-    (
-        gt_samples,
-        pred_samples,
-        categories,
-        coco_gt_dict,
-        results,
-        run_segm,
-        per_image,
-    ) = _prepare_all(pred_records, options, counters, prepare_coco=want_coco)
+    from src.infer.pipeline import resolve_root_image_dir_for_jsonl
 
-    metrics: Dict[str, float] = {}
-    per_class: Dict[str, float] = {}
-
-    if want_coco:
-        coco_gt = COCO()
-        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
-        coco_gt.createIndex()
-
-        metrics, per_class = _run_coco_eval(
-            coco_gt, results, options=options, run_segm=run_segm
-        )
-
-    summary = {
-        "metrics": metrics,
-        "per_class": per_class,
-        "counters": counters.to_dict(),
-        "categories": categories,
-    }
-
-    if want_f1ish:
-        f1ish_summary = evaluate_f1ish(
-            gt_samples,
-            pred_samples,
-            per_image,
-            options=options,
-        )
-        summary["metrics"].update(f1ish_summary["metrics"])
-    else:
-        f1ish_summary = {"matches_by_thr": {}}
-
-    vis_matches: Dict[int, Dict[str, Any]] | None = None
-    if want_f1ish:
-        primary_thr = _select_primary_f1ish_iou_thr(options.f1ish_iou_thrs)
-        primary_key = _fmt_iou_thr(primary_thr)
-        vis_matches = _matches_by_record_idx(
-            f1ish_summary.get("matches_by_thr", {}).get(primary_key, [])
-        )
-
-    vis_resource_path = materialize_gt_vs_pred_vis_resource(
-        pred_path,
-        source_kind="detection_eval",
-        external_matches=vis_matches,
-        materialize_matching=True,
+    return evaluate_and_save_outputs(
+        pred_path=pred_path,
+        options=options,
+        counters_cls=EvalCounters,
+        load_jsonl_fn=load_jsonl,
+        prepare_all_fn=_prepare_all,
+        run_coco_eval_fn=_run_coco_eval,
+        evaluate_f1ish_fn=evaluate_f1ish,
+        select_primary_f1ish_iou_thr_fn=_select_primary_f1ish_iou_thr,
+        fmt_iou_thr_fn=_fmt_iou_thr,
+        matches_by_record_idx_fn=_matches_by_record_idx,
+        materialize_gt_vs_pred_vis_resource_fn=materialize_gt_vs_pred_vis_resource,
+        write_outputs_fn=write_outputs,
+        resolve_root_image_dir_for_jsonl_fn=resolve_root_image_dir_for_jsonl,
+        render_gt_vs_pred_review_fn=render_gt_vs_pred_review,
+        logger=logger,
+        coco_cls=COCO,
     )
-
-    write_outputs(
-        options.output_dir,
-        coco_gt=coco_gt_dict if want_coco else None,
-        coco_preds=results if want_coco else None,
-        summary=summary,
-        per_image=per_image,
-    )
-
-    if options.overlay:
-        from src.infer.pipeline import resolve_root_image_dir_for_jsonl
-
-        root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
-        if root_dir is not None:
-            logger.info(
-                "Overlay image root resolved (source=%s): %s", root_source, root_dir
-            )
-
-        overlay_dir = options.output_dir / "overlays"
-        render_gt_vs_pred_review(
-            vis_resource_path,
-            out_dir=overlay_dir,
-            limit=options.overlay_k,
-            root_image_dir=root_dir,
-            root_source=root_source,
-            record_order="error_first",
-        )
-
-    return summary
 
 
 def _f1ish_filter_gt_objects(sample: Sample) -> List[Dict[str, Any]]:

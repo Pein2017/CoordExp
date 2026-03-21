@@ -3772,6 +3772,78 @@ def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
         )
 
 
+def test_prepare_batch_inputs_uses_extracted_sample_target_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.trainers.stage2_rollout_aligned as stage2_rollout_aligned
+
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.state = types.SimpleNamespace(global_step=0)
+    trainer._get_coord_token_ids = lambda: [10]
+    trainer._coord_id_map = lambda: {10: 10}
+    trainer._cfg = lambda _key, default=None: default
+    trainer._packing_enabled = lambda: False
+    trainer._train_monitor_dump_cfg = lambda: {}
+    trainer._should_monitor_dump = lambda global_step: False
+    trainer._rollout_many = lambda inputs: [([10], "[]", "greedy", [1, 2]) for _ in inputs]
+    trainer._object_field_order = lambda: "field-order"
+    trainer._maybe_debug_dump_parse_failure = lambda **_kwargs: None
+    trainer._desc_monitor_cfg = lambda: {}
+    trainer._template_train_mode = lambda: nullcontext()
+    trainer._extract_encoded_len = lambda encoded: int(encoded.get("length", 0))
+
+    parse = types.SimpleNamespace(
+        response_token_ids=[10],
+        prefix_token_ids=[10],
+        prefix_text="[]",
+        response_text="[]",
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        valid_objects=[],
+    )
+    match = types.SimpleNamespace(
+        matched_pairs=[],
+        matched_maskiou_sum=0.0,
+        matched_maskiou_count=0,
+        fn_gt_indices=[],
+        fp_pred_indices=[],
+        gating_rejections=0,
+    )
+
+    monkeypatch.setattr(
+        stage2_rollout_aligned,
+        "parse_rollout_for_matching",
+        lambda **_kwargs: parse,
+    )
+    monkeypatch.setattr(
+        stage2_rollout_aligned,
+        "_extract_gt_objects",
+        lambda _sample: [],
+    )
+    monkeypatch.setattr(
+        stage2_rollout_aligned,
+        "hungarian_match_maskiou",
+        lambda **_kwargs: match,
+    )
+
+    def _raise_helper(**_kwargs):
+        raise RuntimeError("extracted target builder called")
+
+    monkeypatch.setattr(
+        stage2_rollout_aligned,
+        "build_rollout_aligned_sample_targets",
+        _raise_helper,
+    )
+
+    with pytest.raises(RuntimeError, match="extracted target builder called"):
+        trainer._prepare_batch_inputs(
+            [{"messages": [{"role": "user", "content": "x"}]}],
+            _segments_only=True,
+        )
+
+
 def test_adaptive_raw_microbatch_stacker_bumps_on_underfill() -> None:
     from src.trainers.stage2_rollout_aligned import _AdaptiveRawMicroBatchStacker
 

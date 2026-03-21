@@ -68,6 +68,11 @@ from src.utils.metric_key_lookup import (
     stage2_eval_metric_key,
 )
 from .rollout_runtime.vllm_config import resolve_vllm_engine_config
+from .rollout_runtime.dispatch import (
+    rollout_many,
+    rollout_many_vllm,
+    rollout_many_vllm_traced,
+)
 from .rollout_runtime.vllm_engine import (
     instantiate_vllm_engine,
     sync_vllm_full_weights_if_needed,
@@ -78,14 +83,21 @@ from .rollout_runtime.vllm_infer import (
     vllm_infer_tp_group,
 )
 from .rollout_runtime.vllm_server import (
-    build_vllm_server_seed_plan,
+    build_vllm_server_infer_requests,
     dispatch_vllm_server_rounds,
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
+    prepare_vllm_server_rollout,
     sync_vllm_server_full_weights,
     sync_vllm_server_rollout_model_if_needed,
     vllm_server_update_state_dict,
     shutdown_vllm_server_client,
+)
+from .rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
+from .rollout_aligned_targets import (
+    build_rollout_aligned_sample_targets,
+    build_labels_and_coord_targets_for_batch,
+    build_labels_and_coord_targets_for_sample,
 )
 
 from .rollout_matching.contracts import (
@@ -909,107 +921,20 @@ def _build_labels_and_coord_targets_for_sample(
     tail_desc_pos: Optional[Sequence[int]] = None,
     tail_closure_pos: Optional[Sequence[int]] = None,
 ) -> Tuple[torch.Tensor, List[int], List[int], List[bool]]:
-    """Create CE labels and coord supervision targets for a single sample.
-
-    Normative full-idea rollout semantics:
-    - matched prefix: struct-only CE (via `prefix_struct_pos`)
-    - FP prefix spans: masked out
-    - FN-injected tail: CE on struct + desc by default (unless explicitly ignored)
-    - closure/EOS: supervised (via `tail_closure_pos`)
-    - coord slots: never contribute to CE
-    """
-    seq_len = int(input_ids_1d.shape[0])
-    labels = torch.full((seq_len,), -100, dtype=torch.long, device=input_ids_1d.device)
-
-    coord_pos: List[int] = []
-    coord_bins: List[int] = []
-    coord_is_prefix: List[bool] = []
-
-    assistant_start = int(prompt_len)
-    assistant_end = int(prompt_len) + int(train_len)
-    if assistant_start < 0:
-        raise ValueError(f"invalid prompt_len={prompt_len}")
-    if assistant_end < assistant_start:
-        raise ValueError(f"invalid train_len={train_len} for prompt_len={prompt_len}")
-    assistant_end = min(assistant_end, seq_len)
-    if assistant_end <= assistant_start:
-        raise ValueError(
-            f"invalid assistant span [{assistant_start},{assistant_end}) for seq_len={seq_len}"
-        )
-
-    prefix_start = max(1, min(int(prompt_len), seq_len))
-    prefix_end = max(prefix_start, min(int(prompt_len + prefix_len), assistant_end))
-
-    tail_start = max(1, min(int(prompt_len + prefix_len), seq_len))
-    tail_end = max(tail_start, min(int(prompt_len + train_len), assistant_end))
-
-    ignore_set = set(int(i) for i in (tail_ignore_pos or []) if int(i) >= 0)
-    closure_set = set(int(i) for i in (tail_closure_pos or []) if int(i) >= 0)
-    _ = set(int(i) for i in (tail_desc_pos or []) if int(i) >= 0)
-
-    prefix_struct_set = set(int(i) for i in (prefix_struct_pos or []) if int(i) >= 0)
-    for local_idx in sorted(prefix_struct_set):
-        if local_idx < 0 or local_idx >= int(prefix_len):
-            continue
-        p = int(prompt_len + local_idx)
-        if p < int(prefix_start) or p >= int(prefix_end):
-            continue
-        if p < int(assistant_start) or p >= int(assistant_end):
-            raise ValueError(
-                f"prefix struct CE index out of assistant span: p={p} span=[{assistant_start},{assistant_end})"
-            )
-        tok_id = int(input_ids_1d[p].item())
-        if tok_id in coord_id_set:
-            continue
-        labels[p] = input_ids_1d[p]
-
-    for p in range(tail_start, tail_end):
-        if p < assistant_start or p >= assistant_end:
-            raise ValueError(
-                f"tail supervision index out of assistant span: p={p} span=[{assistant_start},{assistant_end})"
-            )
-        tok_id = int(input_ids_1d[p].item())
-        if tok_id in coord_id_set:
-            bin_idx = coord_id_to_bin.get(tok_id)
-            if bin_idx is not None:
-                coord_pos.append(int(p))
-                coord_bins.append(int(bin_idx))
-                coord_is_prefix.append(False)
-            continue
-        rel = int(p - tail_start)
-        if rel in ignore_set and rel not in closure_set:
-            continue
-        labels[p] = input_ids_1d[p]
-
-    for rel in sorted(closure_set):
-        p = int(tail_start + rel)
-        if p < int(tail_start) or p >= int(tail_end):
-            continue
-        tok_id = int(input_ids_1d[p].item())
-        if tok_id in coord_id_set:
-            continue
-        labels[p] = input_ids_1d[p]
-
-    if len(prefix_coord_pos) != len(prefix_coord_target_bins):
-        raise ValueError(
-            "prefix_coord_pos and prefix_coord_target_bins must have identical length"
-        )
-    for local_idx, tbin in zip(prefix_coord_pos, prefix_coord_target_bins):
-        li = int(local_idx)
-        if li < 0 or li >= int(prefix_len):
-            continue
-        p = int(prompt_len + li)
-        if p <= 0 or p >= int(seq_len):
-            continue
-        if p < int(assistant_start) or p >= int(assistant_end):
-            raise ValueError(
-                f"prefix supervision index out of assistant span: p={p} span=[{assistant_start},{assistant_end})"
-            )
-        coord_pos.append(int(p))
-        coord_bins.append(int(tbin))
-        coord_is_prefix.append(True)
-
-    return labels, coord_pos, coord_bins, coord_is_prefix
+    return build_labels_and_coord_targets_for_sample(
+        input_ids_1d=input_ids_1d,
+        prompt_len=prompt_len,
+        prefix_len=prefix_len,
+        train_len=train_len,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
+        prefix_coord_pos=prefix_coord_pos,
+        prefix_coord_target_bins=prefix_coord_target_bins,
+        tail_ignore_pos=tail_ignore_pos,
+        prefix_struct_pos=prefix_struct_pos,
+        tail_desc_pos=tail_desc_pos,
+        tail_closure_pos=tail_closure_pos,
+    )
 
 
 def _build_labels_and_coord_targets_for_batch(
@@ -1019,153 +944,11 @@ def _build_labels_and_coord_targets_for_batch(
     coord_id_set: set[int],
     coord_id_to_bin: Mapping[int, int],
 ) -> Tuple[torch.Tensor, List[int], List[int], List[int], List[bool]]:
-    """Build masked CE labels + coord supervision targets for a batch.
-
-    Supports two meta contracts:
-    - Un-packed: len(meta) == bsz and meta[b] describes one row.
-    - Packed: bsz == 1 and meta is a list of per-segment dicts (order matches concatenation),
-      each with an `encoded_len` key.
-    """
-    if input_ids.ndim != 2:
-        raise ValueError("input_ids must have shape [B, T]")
-    bsz, seq_len = input_ids.shape
-
-    labels_masked = torch.full_like(input_ids, -100)
-
-    supervised_batch: List[int] = []
-    supervised_pos: List[int] = []
-    supervised_bin: List[int] = []
-    supervised_is_prefix: List[bool] = []
-
-    if len(meta) == bsz:
-        # Un-packed path (existing behavior)
-        for b in range(bsz):
-            m = meta[b]
-            prompt_len = int(m["prompt_len"])
-            prefix_len = int(m["prefix_len"])
-            train_len = int(m["train_len"])
-            prompt_ids = m.get("prompt_ids")
-
-            # Sanity: prompt prefix matches (avoid silent misalignment).
-            if prompt_len <= 0 or prompt_len >= seq_len:
-                raise ValueError(
-                    f"invalid prompt_len={prompt_len} for seq_len={seq_len}"
-                )
-            if isinstance(prompt_ids, list):
-                teacher_prefix = input_ids[b, :prompt_len].detach().cpu().tolist()
-                if teacher_prefix != prompt_ids:
-                    raise ValueError(
-                        "prompt tokenization mismatch between generation and teacher-forced encoding"
-                    )
-
-            prefix_pos_local = m.get("prefix_coord_pos") or []
-            prefix_bins = m.get("prefix_coord_target_bins") or []
-            prefix_struct_pos = m.get("prefix_struct_pos") or []
-            tail_ignore_pos = m.get("tail_ignore_pos") or []
-            tail_desc_pos = m.get("tail_desc_pos") or []
-            tail_closure_pos = m.get("tail_closure_pos") or []
-            labels_1d, cpos, cbins, cis_prefix = (
-                _build_labels_and_coord_targets_for_sample(
-                    input_ids_1d=input_ids[b],
-                    prompt_len=prompt_len,
-                    prefix_len=prefix_len,
-                    train_len=train_len,
-                    coord_id_set=coord_id_set,
-                    coord_id_to_bin=coord_id_to_bin,
-                    prefix_coord_pos=prefix_pos_local,
-                    prefix_coord_target_bins=prefix_bins,
-                    tail_ignore_pos=tail_ignore_pos,
-                    prefix_struct_pos=prefix_struct_pos,
-                    tail_desc_pos=tail_desc_pos,
-                    tail_closure_pos=tail_closure_pos,
-                )
-            )
-            labels_masked[b] = labels_1d
-            for p, tbin, is_pref in zip(cpos, cbins, cis_prefix):
-                supervised_batch.append(int(b))
-                supervised_pos.append(int(p))
-                supervised_bin.append(int(tbin))
-                supervised_is_prefix.append(bool(is_pref))
-
-        return (
-            labels_masked,
-            supervised_batch,
-            supervised_pos,
-            supervised_bin,
-            supervised_is_prefix,
-        )
-
-    # Packed path (one row containing multiple segments).
-    if bsz != 1:
-        raise ValueError(
-            "packed-mode meta requires bsz==1; got len(meta)=%s bsz=%s"
-            % (len(meta), bsz)
-        )
-    if not meta:
-        raise ValueError("packed-mode meta must be a non-empty list")
-
-    offset = 0
-    for seg in meta:
-        if not isinstance(seg, Mapping):
-            raise ValueError("packed-mode meta must be a list of dict-like segments")
-        encoded_len = int(seg.get("encoded_len") or 0)
-        if encoded_len <= 0:
-            raise ValueError("packed-mode segment missing/invalid encoded_len")
-        if offset + encoded_len > seq_len:
-            raise ValueError("packed-mode segments exceed packed seq_len")
-
-        seg_input_ids = input_ids[0, offset : offset + encoded_len]
-        seg_prompt_len = int(seg["prompt_len"])
-        seg_prefix_len = int(seg["prefix_len"])
-        seg_train_len = int(seg["train_len"])
-        prompt_ids = seg.get("prompt_ids")
-
-        if seg_prompt_len <= 0 or seg_prompt_len >= encoded_len:
-            raise ValueError(
-                f"invalid prompt_len={seg_prompt_len} for encoded_len={encoded_len}"
-            )
-        if isinstance(prompt_ids, list):
-            teacher_prefix = seg_input_ids[:seg_prompt_len].detach().cpu().tolist()
-            if teacher_prefix != prompt_ids:
-                raise ValueError(
-                    "prompt tokenization mismatch between generation and teacher-forced encoding"
-                )
-
-        prefix_pos_local = seg.get("prefix_coord_pos") or []
-        prefix_bins = seg.get("prefix_coord_target_bins") or []
-        prefix_struct_pos = seg.get("prefix_struct_pos") or []
-        tail_ignore_pos = seg.get("tail_ignore_pos") or []
-        tail_desc_pos = seg.get("tail_desc_pos") or []
-        tail_closure_pos = seg.get("tail_closure_pos") or []
-        labels_1d, cpos, cbins, cis_prefix = _build_labels_and_coord_targets_for_sample(
-            input_ids_1d=seg_input_ids,
-            prompt_len=seg_prompt_len,
-            prefix_len=seg_prefix_len,
-            train_len=seg_train_len,
-            coord_id_set=coord_id_set,
-            coord_id_to_bin=coord_id_to_bin,
-            prefix_coord_pos=prefix_pos_local,
-            prefix_coord_target_bins=prefix_bins,
-            tail_ignore_pos=tail_ignore_pos,
-            prefix_struct_pos=prefix_struct_pos,
-            tail_desc_pos=tail_desc_pos,
-            tail_closure_pos=tail_closure_pos,
-        )
-        labels_masked[0, offset : offset + encoded_len] = labels_1d
-        for p, tbin, is_pref in zip(cpos, cbins, cis_prefix):
-            supervised_batch.append(0)
-            supervised_pos.append(int(offset + p))
-            supervised_bin.append(int(tbin))
-            supervised_is_prefix.append(bool(is_pref))
-
-        offset += encoded_len
-
-    return (
-        labels_masked,
-        supervised_batch,
-        supervised_pos,
-        supervised_bin,
-        supervised_is_prefix,
+    return build_labels_and_coord_targets_for_batch(
+        input_ids=input_ids,
+        meta=meta,
+        coord_id_set=coord_id_set,
+        coord_id_to_bin=coord_id_to_bin,
     )
 
 
@@ -2349,47 +2132,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     def _build_vllm_server_infer_requests(
         self, samples: Sequence[Mapping[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Build JSON-serializable ms-swift RolloutInferRequest-compatible dicts."""
-
-        infer_requests: List[Dict[str, Any]] = []
-        for s in samples:
-            msgs = s.get("messages")
-            if not isinstance(msgs, list):
-                raise ValueError("rollout-matching samples must contain messages (list)")
-            try:
-                msgs_json = json.loads(json.dumps(msgs))
-            except Exception as exc:
-                raise ValueError(
-                    "vLLM server mode requires JSON-serializable messages. "
-                    "Ensure images are passed as strings (path/url/base64), not PIL objects."
-                ) from exc
-
-            req: Dict[str, Any] = {"messages": msgs_json}
-
-            # Best-effort: include images list when present (common ms-swift multimodal contract).
-            images_raw = s.get("images", None)
-            if images_raw is None:
-                img = s.get("image", None)
-                if isinstance(img, str) and img:
-                    images_raw = [img]
-            if images_raw is not None:
-                if isinstance(images_raw, str):
-                    images = [images_raw]
-                elif isinstance(images_raw, (list, tuple)):
-                    images = list(images_raw)
-                else:
-                    raise ValueError(
-                        "vLLM server mode expects sample['images'] to be a string or list of strings"
-                    )
-                if not all(isinstance(x, str) for x in images):
-                    raise ValueError(
-                        "vLLM server mode expects all image entries to be strings (path/url/base64)"
-                    )
-                req["images"] = images
-
-            infer_requests.append(req)
-
-        return infer_requests
+        return build_vllm_server_infer_requests(samples=samples)
 
     def _monitor_dump_cfg(self) -> Mapping[str, Any]:
         return self._train_monitor_dump_cfg()
@@ -4983,28 +4726,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         request_index_offset: int = 0,
         decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
-        """vLLM rollout backend (colocate default, server optional)."""
-        mode = self._vllm_mode()
-        if mode == "server":
-            if decode_override is None:
-                return self._rollout_many_vllm_server(
-                    samples,
-                    debug_samples=debug_samples,
-                    request_index_offset=int(request_index_offset),
-                )
-            return self._rollout_many_vllm_server(
-                samples,
-                debug_samples=debug_samples,
-                request_index_offset=int(request_index_offset),
-                decode_override=decode_override,
-            )
-        if decode_override is None:
-            return self._rollout_many_vllm_colocate(
-                samples,
-                request_index_offset=int(request_index_offset),
-            )
-        return self._rollout_many_vllm_colocate(
-            samples,
+        return rollout_many_vllm(
+            owner=self,
+            samples=samples,
+            debug_samples=debug_samples,
             request_index_offset=int(request_index_offset),
             decode_override=decode_override,
         )
@@ -5019,52 +4744,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         request_index_offset: int = 0,
         decode_override: Optional[Mapping[str, Any]] = None,
     ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
-        """vLLM rollout backend that also captures per-token logprobs.
-
-        Used by eval-step confidence scoring.
-        """
-
-        mode = self._vllm_mode()
-        if mode == "server":
-            out = self._rollout_many_vllm_server(
-                samples,
-                debug_samples=debug_samples,
-                request_index_offset=int(request_index_offset),
-                with_logprobs=True,
-                decode_override=decode_override,
-            )
-        else:
-            if decode_override is None:
-                out = self._rollout_many_vllm_colocate(
-                    samples,
-                    with_logprobs=True,
-                    request_index_offset=int(request_index_offset),
-                )
-            else:
-                out = self._rollout_many_vllm_colocate(
-                    samples,
-                    with_logprobs=True,
-                    request_index_offset=int(request_index_offset),
-                    decode_override=decode_override,
-                )
-        return [
-            (
-                list(token_ids),
-                str(text),
-                str(decode_mode),
-                list(prompt_ids),
-                [float(lp) for lp in token_logprobs],
-                [str(t) for t in generated_token_text],
-            )
-            for (
-                token_ids,
-                text,
-                decode_mode,
-                prompt_ids,
-                token_logprobs,
-                generated_token_text,
-            ) in out
-        ]
+        return rollout_many_vllm_traced(
+            owner=self,
+            samples=samples,
+            debug_samples=debug_samples,
+            request_index_offset=int(request_index_offset),
+            decode_override=decode_override,
+        )
 
     @torch.no_grad()
     def _rollout_many_vllm_colocate(
@@ -5101,173 +4787,41 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         (RequestConfig(logprobs=True)). This is used by eval-step confidence
         scoring.
         """
-        decode_request = self._resolve_rollout_decode_request(
-            decode_override=decode_override
-        )
-        decode_mode = str(decode_request.decode_mode)
-        if decode_mode == "beam":
-            raise ValueError(
-                "vLLM server rollout backend does not support decode_mode=beam; "
-                "use greedy or sampling overrides instead"
-            )
-
         n = int(len(samples))
         if n == 0:
             return []
 
-        # Sync weights to server only when fresh rollouts are requested.
-        #
-        # IMPORTANT: vLLM server sync uses DDP collectives/barriers when learner world_size>1.
-        # If rollouts are issued from a background thread (Stage2-AB pipelined mode),
-        # set `_stage2_skip_vllm_server_sync=True` and perform sync on the main thread
-        # at a safe boundary.
-        if not bool(getattr(self, "_stage2_skip_vllm_server_sync", False)):
-            self._sync_vllm_server_rollout_model_if_needed()
-
-        max_new_tokens = int(decode_request.max_new_tokens)
-        temperature = float(decode_request.temperature)
-        top_p = float(decode_request.top_p)
-        top_k = int(decode_request.top_k)
-        repetition_penalty = float(decode_request.repetition_penalty)
-
-        if with_logprobs and float(temperature) > 0.0:
-            raise ValueError(
-                "eval-step confidence scoring requires decoding.temperature=0.0 "
-                f"(greedy), got {float(temperature)}"
-            )
-
-        try:
-            from swift.llm import RequestConfig
-        except (ImportError, TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "swift.llm.RequestConfig is required for vLLM server rollouts"
-            ) from exc
-
-        # Base request config (per-server seed is set deterministically below).
-        base_request_kwargs = self._rollout_vllm_request_config_kwargs(
-            max_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
+        prepared = prepare_vllm_server_rollout(
+            owner=self,
+            logger=logger,
+            samples=samples,
+            request_index_offset=int(request_index_offset),
+            with_logprobs=bool(with_logprobs),
+            decode_override=decode_override,
+            per_server_rank_request_caps_fn=_per_server_rank_request_caps,
+            allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
         )
-        if with_logprobs:
-            base_request_kwargs["logprobs"] = True
-        base_request_config = RequestConfig(**base_request_kwargs)
-        base_request_config_dict = asdict(base_request_config)
-
-        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        seed_base = int(self._derive_rollout_seed_base(global_step=gs))
-        request_index_offset_i = max(0, int(request_index_offset))
-        effective_seed_base = int(seed_base + request_index_offset_i)
-
-        infer_requests = self._build_vllm_server_infer_requests(samples)
-
-        servers = self._vllm_server_specs()
-        if not servers:
-            raise ValueError("vLLM server mode requires a non-empty server list")
-
-        _timeout_s, infer_timeout_s = self._vllm_server_timeouts()
-
-        client = self._ensure_vllm_server_client()
-
-        server_world_sizes = self._vllm_server_world_sizes()
-        if len(server_world_sizes) != int(len(servers)):
-            raise RuntimeError(
-                "vLLM server world_size discovery returned unexpected length: "
-                f"servers={int(len(servers))} world_sizes={server_world_sizes}"
-            )
-
-        learner_world = 1
-        learner_rank = 0
-        try:
-            import torch.distributed as dist
-
-            if dist.is_available() and dist.is_initialized():
-                learner_world = int(dist.get_world_size())
-                learner_rank = int(dist.get_rank())
-        except (TypeError, ValueError):
-            learner_world = 1
-            learner_rank = 0
-        learner_world = max(1, int(learner_world))
-        learner_rank = max(0, int(learner_rank))
-
-        rollout_context = self._current_rollout_context()
-        decode_cap = int(self._decode_batch_size(context=rollout_context))
-        # Use the canonical per-rank chunk contract (with feasibility check) so
-        # server mode behaves identically across all callers.
-        per_rank_chunk = int(
-            self._rollout_decode_batch_size_per_rank(
-                rollout_context=rollout_context,
-            )
-        )
-
-        per_server_rank_caps = _per_server_rank_request_caps(
-            per_rank_chunk_size=int(per_rank_chunk),
-            server_world_sizes=[int(x) for x in server_world_sizes],
-            learner_world_size=int(learner_world),
-            learner_rank=int(learner_rank),
-        )
-        round_cap_total = int(sum(int(x) for x in per_server_rank_caps))
-        if int(round_cap_total) != int(per_rank_chunk):
-            raise RuntimeError(
-                "internal per-rank rollout cap mismatch: "
-                f"per_rank_chunk={int(per_rank_chunk)} round_cap_total={int(round_cap_total)} "
-                f"learner_rank={int(learner_rank)} learner_world_size={int(learner_world)} "
-                f"server_world_sizes={list(int(x) for x in server_world_sizes)}"
-            )
-
-        # Log reproducibility metadata once per optimizer step (E-steps only).
-        if gs != int(getattr(self, "_vllm_server_last_logged_step", -1)):
-            seed_plan = build_vllm_server_seed_plan(
-                owner=self,
-                servers=servers,
-                infer_requests=infer_requests,
-                effective_seed_base=int(effective_seed_base),
-                per_server_rank_caps=per_server_rank_caps,
-                round_cap_total=int(round_cap_total),
-                allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
-            )
-
-            logger.info(
-                "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
-                servers,
-                self._effective_vllm_server_sync_mode(),
-                int(len(infer_requests)),
-                int(seed_base),
-                int(request_index_offset_i),
-                int(effective_seed_base),
-                int(decode_cap),
-                int(per_rank_chunk),
-                int(learner_world),
-                int(learner_rank),
-                [int(x) for x in server_world_sizes],
-                [int(x) for x in per_server_rank_caps],
-                int(round_cap_total),
-                seed_plan,
-            )
-            self._vllm_server_last_logged_step = int(gs)
 
         out = dispatch_vllm_server_rounds(
             owner=self,
             logger=logger,
-            client=client,
-            servers=servers,
-            infer_requests=infer_requests,
-            base_request_config_dict=base_request_config_dict,
-            effective_seed_base=int(effective_seed_base),
-            infer_timeout_s=infer_timeout_s,
+            client=prepared.client,
+            servers=prepared.servers,
+            infer_requests=prepared.infer_requests,
+            base_request_config_dict=prepared.base_request_config_dict,
+            effective_seed_base=int(prepared.effective_seed_base),
+            infer_timeout_s=prepared.infer_timeout_s,
             with_logprobs=bool(with_logprobs),
-            decode_mode=str(decode_mode),
-            per_server_rank_caps=per_server_rank_caps,
-            round_cap_total=int(round_cap_total),
+            decode_mode=str(prepared.decode_mode),
+            per_server_rank_caps=prepared.per_server_rank_caps,
+            round_cap_total=int(prepared.round_cap_total),
             allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
         )
 
         self._maybe_debug_dump_vllm_server_rollouts(
-            global_step=gs,
-            seed_base=effective_seed_base,
-            infer_requests=infer_requests,
+            global_step=prepared.global_step,
+            seed_base=prepared.effective_seed_base,
+            infer_requests=prepared.infer_requests,
             outputs=out,
             samples=debug_samples if debug_samples is not None else samples,
         )
@@ -5418,82 +4972,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         decode_override: Optional[Mapping[str, Any]] = None,
         request_index_offset: int = 0,
     ) -> List[Tuple[List[int], str, str, List[int]]]:
-        rollout_context = self._current_rollout_context()
-        backend = (
-            rollout_backend
-            if rollout_backend is not None
-            else self._effective_rollout_backend(context=rollout_context)
-        )
-        samples_for_rollout = self._prepare_samples_for_rollout(
-            samples,
+        return rollout_many(
+            owner=self,
+            samples=samples,
             prompt_variant_override=prompt_variant_override,
-            rollout_backend=backend,
+            rollout_backend=rollout_backend,
+            decode_override=decode_override,
+            request_index_offset=int(request_index_offset),
         )
-
-        if backend == "hf":
-            if decode_override is None:
-                return self._rollout_many_hf(samples_for_rollout)
-            return self._rollout_many_hf(
-                samples_for_rollout,
-                decode_override=decode_override,
-            )
-
-        if backend == "vllm":
-            mode = self._vllm_mode()
-            request_index_offset_base = max(0, int(request_index_offset))
-            if mode == "server":
-                # Enforce the per-rank rollout request cap centrally so all callers
-                # (Stage2-AB + evaluator) obey context-specific decode batch-size topology constraints.
-                chunk_size = max(
-                    1,
-                    int(
-                        self._rollout_decode_batch_size_per_rank(
-                            rollout_backend=backend,
-                            rollout_context=rollout_context,
-                        )
-                    ),
-                )
-                if int(len(samples_for_rollout)) > 0:
-                    chunk_size = min(chunk_size, int(len(samples_for_rollout)))
-
-                out: List[Tuple[List[int], str, str, List[int]]] = []
-
-                for off in range(0, int(len(samples_for_rollout)), int(chunk_size)):
-                    chunk_samples = samples_for_rollout[
-                        int(off) : int(off + chunk_size)
-                    ]
-                    chunk_debug_samples = samples[int(off) : int(off + chunk_size)]
-                    if decode_override is None:
-                        chunk_out = self._rollout_many_vllm(
-                            chunk_samples,
-                            debug_samples=chunk_debug_samples,
-                            request_index_offset=int(request_index_offset_base + off),
-                        )
-                    else:
-                        chunk_out = self._rollout_many_vllm(
-                            chunk_samples,
-                            debug_samples=chunk_debug_samples,
-                            request_index_offset=int(request_index_offset_base + off),
-                            decode_override=decode_override,
-                        )
-                    out.extend(chunk_out)
-            else:
-                if decode_override is None:
-                    out = self._rollout_many_vllm(
-                        samples_for_rollout,
-                        debug_samples=samples,
-                        request_index_offset=int(request_index_offset_base),
-                    )
-                else:
-                    out = self._rollout_many_vllm(
-                        samples_for_rollout,
-                        debug_samples=samples,
-                        request_index_offset=int(request_index_offset_base),
-                        decode_override=decode_override,
-                    )
-            return out
-
-        raise AssertionError("unreachable")
 
     def _append_post_rollout_segments(
         self, segments: Sequence[Tuple[Dict[str, Any], Dict[str, Any], int]]
@@ -6130,124 +5616,43 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                     desc_sem_sim_sum += float(sim)
                                     desc_sem_sim_count += 1
 
-            # 3.1) Build self-context supervision targets for matched pairs.
-            # If target construction fails, exclude that object from supervision and treat GT as FN.
-            prefix_pos: List[int] = []
-            prefix_target_bins: List[int] = []
-            prefix_bbox_groups: List[Dict[str, Any]] = []
-            excluded = 0
-
-            matched_gt_for_supervision: set[int] = set()
-            matched_pred_for_supervision: set[int] = set()
-            for pred_i, gt_i in match.matched_pairs:
-                if pred_i < 0 or pred_i >= len(preds) or pred_i >= len(pred_meta):
-                    continue
-                if gt_i < 0 or gt_i >= len(gts):
-                    continue
-                pobj = pred_meta[pred_i]
-                pred_obj = preds[pred_i]
-                gt_obj = gts[gt_i]
-                try:
-                    targets = self._build_prefix_targets(
-                        pred_obj=pred_obj,
-                        gt_obj=gt_obj,
-                        pred_coord_indices=pobj.coord_token_indices,
-                        ot_epsilon=ot_eps,
-                        ot_iters=ot_iters,
-                        ot_cost=ot_cost_kind,
-                    )
-                except (TypeError, ValueError):
-                    targets = None
-                if targets is None or len(targets) != len(pobj.coord_token_indices):
-                    excluded += 1
-                    continue
-                matched_gt_for_supervision.add(gt_i)
-                matched_pred_for_supervision.add(pred_i)
-                for local_idx, tbin in zip(pobj.coord_token_indices, targets):
-                    if local_idx < 0 or local_idx >= len(parse.prefix_token_ids):
-                        continue
-                    prefix_pos.append(int(local_idx))
-                    prefix_target_bins.append(int(tbin))
-
-                if (
-                    str(pred_obj.geom_type) == "bbox_2d"
-                    and str(gt_obj.geom_type) == "bbox_2d"
-                    and len(pobj.coord_token_indices) == 4
-                    and len(gt_obj.points_norm1000) == 4
-                ):
-                    prefix_bbox_groups.append(
-                        {
-                            "pos": [
-                                int(len(prompt_ids) + int(local_idx))
-                                for local_idx in pobj.coord_token_indices
-                            ],
-                            "gt_bins": [int(x) for x in gt_obj.points_norm1000],
-                        }
-                    )
-
-            matched_pred_objects = [
-                pred_meta[int(i)]
-                for i in sorted(matched_pred_for_supervision)
-                if 0 <= int(i) < len(pred_meta)
-            ]
-            prefix_struct_pos = _tf_matched_prefix_structure_positions(
+            sample_targets = build_rollout_aligned_sample_targets(
                 tokenizer=tok,
-                prefix_token_ids=parse.prefix_token_ids,
-                prefix_text=parse.prefix_text,
-                matched_pred_objects=matched_pred_objects,
-            )
-
-            fn_gt_indices_final = [
-                i for i in range(len(gts)) if i not in matched_gt_for_supervision
-            ]
-            fn_objs = [gts[i] for i in fn_gt_indices_final]
-
-            # 4) Serialize append fragment (mandatory FN append) and build Y_train ids
-            append_text = _serialize_append_fragment(
-                fn_objects=fn_objs,
-                prefix_text=parse.prefix_text,
+                parse=parse,
+                prompt_ids=prompt_ids,
+                pred_meta=pred_meta,
+                preds=preds,
+                gts=gts,
+                match=match,
+                coord_id_set=coord_id_set,
                 object_field_order=self._object_field_order(),
+                ot_epsilon=ot_eps,
+                ot_iters=ot_iters,
+                ot_cost=ot_cost_kind,
+                build_prefix_targets_fn=self._build_prefix_targets,
+                matched_prefix_structure_positions_fn=_tf_matched_prefix_structure_positions,
+                serialize_append_fragment_fn=_serialize_append_fragment,
+                tail_desc_positions_fn=_tf_tail_desc_positions,
+                bbox_groups_from_token_ids_fn=_tf_bbox_groups_from_token_ids,
+                tail_closure_positions_fn=_tf_tail_closure_positions,
+                semantic_stop_branch_metadata_fn=_tf_semantic_stop_branch_metadata,
             )
-            append_ids = tok.encode(append_text, add_special_tokens=False)
-            # Full-idea rollout semantics: FN-desc tokens are supervised by default.
-            tail_desc_pos = _tf_tail_desc_positions(tokenizer=tok, token_ids=append_ids)
-            tail_ignore_pos: list[int] = []
-
-            fn_bbox_groups: List[Dict[str, Any]] = []
-            bbox_fn_objs = [
-                obj
-                for obj in fn_objs
-                if str(getattr(obj, "geom_type", "")) == "bbox_2d"
-                and len(getattr(obj, "points_norm1000", []) or []) == 4
-            ]
-            if bbox_fn_objs and len(bbox_fn_objs) == len(fn_objs):
-                rel_groups = _tf_bbox_groups_from_token_ids(
-                    token_ids=append_ids,
-                    coord_id_set=coord_id_set,
-                    gt_objs=bbox_fn_objs,
-                )
-                for obj, rel_pos in zip(bbox_fn_objs, rel_groups):
-                    fn_bbox_groups.append(
-                        {
-                            "pos": [
-                                int(len(prompt_ids) + int(len(parse.prefix_token_ids)) + int(p))
-                                for p in rel_pos
-                            ],
-                            "gt_bins": [int(x) for x in obj.points_norm1000],
-                        }
-                    )
-
-            y_train_ids = list(parse.prefix_token_ids) + [int(t) for t in append_ids]
-            tail_closure_pos = _tf_tail_closure_positions(
-                tokenizer=tok,
-                assistant_span_ids=y_train_ids,
-                prefix_len=int(len(parse.prefix_token_ids)),
-            )
-            semantic_stop_meta = _tf_semantic_stop_branch_metadata(
-                tokenizer=tok,
-                assistant_span_ids=y_train_ids,
-                prefix_len=int(len(parse.prefix_token_ids)),
-            )
+            prefix_pos = list(sample_targets.prefix_coord_pos)
+            prefix_target_bins = list(sample_targets.prefix_coord_target_bins)
+            prefix_bbox_groups = list(sample_targets.bbox_groups_prefix)
+            excluded = int(sample_targets.excluded_from_supervision)
+            matched_gt_for_supervision = {
+                int(i) for i in sample_targets.matched_gt_indices
+            }
+            prefix_struct_pos = list(sample_targets.prefix_struct_pos)
+            fn_objs = list(sample_targets.fn_objs)
+            append_text = str(sample_targets.append_text)
+            y_train_ids = list(sample_targets.y_train_ids)
+            tail_desc_pos = list(sample_targets.tail_desc_pos)
+            tail_ignore_pos = list(sample_targets.tail_ignore_pos)
+            fn_bbox_groups = list(sample_targets.bbox_groups_fn)
+            tail_closure_pos = list(sample_targets.tail_closure_pos)
+            semantic_stop_meta = dict(sample_targets.semantic_stop_meta)
             t_parse_match_s += time.perf_counter() - t_pm0
 
             # 5) Teacher-forced encoding using the exact token ids (no re-tokenization)
@@ -8411,427 +7816,61 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                         desc_sem_sim_sum_total += float(sim)
                                         desc_sem_sim_count_total += 1.0
 
-        t_local = time.perf_counter() - t0
-
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        world_size = 1
-        rank = 0
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            world_size = int(dist.get_world_size())
-            rank = int(dist.get_rank())
-
-        # Reduce sums across ranks.
-        sums_t = torch.tensor(
-            [
-                n_samples,
-                gt_total,
-                pred_total,
-                matched_total,
-                fp_total,
-                fn_total,
-                gating_rejections_total,
-                dropped_invalid_total,
-                dropped_ambiguous_total,
-                trunc_samples,
-                matched_iou_sum,
-                matched_iou_count,
-                n_samples_valid_pred,
-                n_samples_any_match,
-                n_steps,
-                # desc monitor
-                desc_pairs_total,
-                desc_exact_ok_total,
-                desc_sem_ok_total,
-                desc_sem_sim_sum_total,
-                desc_sem_sim_count_total,
-                sem_loaded_local,
-                trace_fallback_count_local,
-                vllm_decode_error_count_local,
-                1.0 if trace_fallback_window_active else 0.0,
-            ],
-            device=self.model.device,
-            dtype=torch.float64,
+        return finalize_rollout_aligned_evaluation(
+            owner=self,
+            logger=logger,
+            metric_key_prefix=str(metric_key_prefix),
+            eval_prompt_variant=eval_prompt_variant,
+            eval_detection_enabled=eval_detection_enabled,
+            eval_detection_use_confidence_postop=eval_detection_use_confidence_postop,
+            eval_detection_score_mode=str(eval_detection_score_mode),
+            eval_detection_score_version=int(eval_detection_score_version),
+            eval_detection_score_source=str(eval_detection_score_source),
+            eval_detection_cfg=eval_detection_cfg,
+            desc_enabled=desc_enabled,
+            n_samples=float(n_samples),
+            gt_total=float(gt_total),
+            pred_total=float(pred_total),
+            matched_total=float(matched_total),
+            fp_total=float(fp_total),
+            fn_total=float(fn_total),
+            gating_rejections_total=float(gating_rejections_total),
+            dropped_invalid_total=float(dropped_invalid_total),
+            dropped_ambiguous_total=float(dropped_ambiguous_total),
+            trunc_samples=float(trunc_samples),
+            matched_iou_sum=float(matched_iou_sum),
+            matched_iou_count=float(matched_iou_count),
+            n_samples_valid_pred=float(n_samples_valid_pred),
+            n_samples_any_match=float(n_samples_any_match),
+            n_steps=float(n_steps),
+            desc_pairs_total=float(desc_pairs_total),
+            desc_exact_ok_total=float(desc_exact_ok_total),
+            desc_sem_ok_total=float(desc_sem_ok_total),
+            desc_sem_sim_sum_total=float(desc_sem_sim_sum_total),
+            desc_sem_sim_count_total=float(desc_sem_sim_count_total),
+            sem_loaded_local=float(sem_loaded_local),
+            trace_fallback_count_local=float(trace_fallback_count_local),
+            vllm_decode_error_count_local=float(vllm_decode_error_count_local),
+            trace_fallback_window_active=bool(trace_fallback_window_active),
+            runtime_local_s=float(time.perf_counter() - t0),
+            eval_detection_records_local=list(eval_detection_records_local),
+            do_dump=bool(do_dump),
+            dump_fail_samples=list(dump_fail_samples),
+            dump_other_samples=list(dump_other_samples),
+            dump_max_samples=int(dump_max_samples),
+            gs=int(gs),
+            eval_rollout_backend=str(eval_rollout_backend),
+            eval_vllm_mode=str(eval_vllm_mode),
+            top_k=int(top_k),
+            gate_thr=float(gate_thr),
+            mask_res=int(mask_res),
+            fp_cost=float(fp_cost),
+            fn_cost=float(fn_cost),
+            was_training=bool(was_training),
+            compute_eval_detection_coco_metrics_fn=_compute_eval_detection_coco_metrics,
+            metric_name_matches_key_fn=metric_name_matches_key,
+            stage2_eval_metric_key_fn=stage2_eval_metric_key,
         )
-        rt_t = torch.tensor(
-            [float(t_local)], device=self.model.device, dtype=torch.float64
-        )
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            dist.all_reduce(sums_t, op=dist.ReduceOp.SUM)
-            # Use max runtime as the global wall time.
-            dist.all_reduce(rt_t, op=dist.ReduceOp.MAX)
-
-        (
-            n_samples,
-            gt_total,
-            pred_total,
-            matched_total,
-            fp_total,
-            fn_total,
-            gating_rejections_total,
-            dropped_invalid_total,
-            dropped_ambiguous_total,
-            trunc_samples,
-            matched_iou_sum,
-            matched_iou_count,
-            n_samples_valid_pred,
-            n_samples_any_match,
-            n_steps,
-            desc_pairs_total,
-            desc_exact_ok_total,
-            desc_sem_ok_total,
-            desc_sem_sim_sum_total,
-            desc_sem_sim_count_total,
-            sem_loaded_sum,
-            trace_fallback_count_local,
-            vllm_decode_error_count_local,
-            trace_fallback_window_active_sum,
-        ) = [float(x.item()) for x in sums_t]
-        runtime = float(rt_t.item())
-        trace_fallback_window_active = bool(trace_fallback_window_active_sum > 0.0)
-
-        precision = (matched_total / pred_total) if pred_total > 0 else 0.0
-        recall = (matched_total / gt_total) if gt_total > 0 else 0.0
-        f1 = (
-            (2.0 * precision * recall / (precision + recall))
-            if (precision + recall) > 0.0
-            else 0.0
-        )
-
-        def _k(suffix: str) -> str:
-            return stage2_eval_metric_key(
-                metric_key_prefix=str(metric_key_prefix), suffix=str(suffix)
-            )
-
-        metrics: Dict[str, float] = {}
-        metrics[_k("time/runtime_s")] = float(runtime)
-        if runtime > 0:
-            metrics[_k("time/samples_per_s")] = float(n_samples / runtime)
-            metrics[_k("time/steps_per_s")] = float(n_steps / runtime)
-
-        metrics[_k("rollout/precision")] = float(precision)
-        metrics[_k("rollout/recall")] = float(recall)
-        metrics[_k("rollout/f1")] = float(f1)
-
-        metrics[_k("rollout/pred_objects")] = float(pred_total)
-        metrics[_k("rollout/gt_objects_total")] = float(gt_total)
-        metrics[_k("rollout/matched")] = float(matched_total)
-        metrics[_k("rollout/fp_total")] = float(fp_total)
-        metrics[_k("rollout/fn_total")] = float(fn_total)
-        metrics[_k("rollout/gating_rejections")] = float(gating_rejections_total)
-
-        metrics[_k("rollout/parse_dropped_invalid")] = float(dropped_invalid_total)
-        metrics[_k("rollout/parse_dropped_ambiguous")] = float(dropped_ambiguous_total)
-        metrics[_k("rollout/parse_truncated_rate")] = (
-            float(trunc_samples / n_samples) if n_samples > 0 else 0.0
-        )
-
-        metrics[_k("rollout/sample_valid_pred_rate")] = (
-            float(n_samples_valid_pred / n_samples) if n_samples > 0 else 0.0
-        )
-        metrics[_k("rollout/sample_any_match_rate")] = (
-            float(n_samples_any_match / n_samples) if n_samples > 0 else 0.0
-        )
-
-        metrics[_k("rollout/matched_maskiou_mean")] = (
-            float(matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
-        )
-        metrics[_k("rollout/trace_fallback_count")] = float(trace_fallback_count_local)
-        metrics[_k("rollout/vllm_decode_error_count")] = float(
-            vllm_decode_error_count_local
-        )
-
-        # Desc monitor outputs (matched pairs only).
-        if desc_enabled:
-            metrics[_k("rollout/desc_pairs_total")] = float(desc_pairs_total)
-            exact_acc = (
-                float(desc_exact_ok_total / desc_pairs_total)
-                if desc_pairs_total > 0
-                else 1.0
-            )
-            metrics[_k("rollout/desc_exact_acc_on_matched")] = float(exact_acc)
-
-            sem_enabled = bool(sem_loaded_sum >= float(world_size) - 0.5)
-            metrics[_k("rollout/desc_sem_enabled")] = float(1.0 if sem_enabled else 0.0)
-            if sem_enabled:
-                sem_acc = (
-                    float(desc_sem_ok_total / desc_pairs_total)
-                    if desc_pairs_total > 0
-                    else 1.0
-                )
-                metrics[_k("rollout/desc_sem_acc_on_matched")] = float(sem_acc)
-                if desc_sem_sim_count_total > 0:
-                    metrics[_k("rollout/desc_sem_sim_mean")] = float(
-                        desc_sem_sim_sum_total / desc_sem_sim_count_total
-                    )
-                    metrics[_k("rollout/desc_sem_sim_count")] = float(
-                        desc_sem_sim_count_total
-                    )
-
-        if eval_prompt_variant is not None:
-            metrics[_k("rollout/prompt_variant_is_coco_80")] = (
-                1.0 if str(eval_prompt_variant).strip().lower() == "coco_80" else 0.0
-            )
-
-        if eval_detection_enabled:
-            cfg_mode = str(eval_detection_score_mode or "constant").strip().lower()
-            metrics[_k("rollout/config_score_mode_is_constant")] = float(
-                1.0 if cfg_mode == "constant" else 0.0
-            )
-            metrics[_k("rollout/config_score_mode_is_confidence_postop")] = float(
-                1.0 if cfg_mode in {"confidence_postop", "confidence"} else 0.0
-            )
-
-            effective_confidence_postop = bool(
-                eval_detection_use_confidence_postop
-                and not trace_fallback_window_active
-            )
-            eff_mode = "confidence_postop" if effective_confidence_postop else "constant"
-            metrics[_k("rollout/effective_score_mode_is_constant")] = float(
-                1.0 if eff_mode == "constant" else 0.0
-            )
-            metrics[_k("rollout/effective_score_mode_is_confidence_postop")] = float(
-                1.0 if eff_mode == "confidence_postop" else 0.0
-            )
-
-            metrics[_k("rollout/config_pred_score_version")] = float(
-                int(eval_detection_score_version)
-            )
-            eff_version = 2 if effective_confidence_postop else int(
-                eval_detection_score_version
-            )
-            metrics[_k("rollout/effective_pred_score_version")] = float(int(eff_version))
-
-            cfg_source = str(eval_detection_score_source or "").strip()
-            eff_source = "confidence_postop" if effective_confidence_postop else cfg_source
-            metrics[_k("rollout/config_pred_score_source_is_eval_rollout_constant")] = float(
-                1.0 if cfg_source == "eval_rollout_constant" else 0.0
-            )
-            metrics[_k("rollout/config_pred_score_source_is_confidence_postop")] = float(
-                1.0 if cfg_source == "confidence_postop" else 0.0
-            )
-            metrics[_k("rollout/effective_pred_score_source_is_eval_rollout_constant")] = float(
-                1.0 if eff_source == "eval_rollout_constant" else 0.0
-            )
-            metrics[_k("rollout/effective_pred_score_source_is_confidence_postop")] = float(
-                1.0 if eff_source == "confidence_postop" else 0.0
-            )
-
-        if eval_detection_enabled:
-            eval_records_all: List[Dict[str, Any]] = [
-                dict(r) for r in eval_detection_records_local
-            ]
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                gathered_records: List[Any] = [None for _ in range(int(world_size))]
-                dist.all_gather_object(
-                    gathered_records, list(eval_detection_records_local)
-                )
-                eval_records_all = []
-                for src_rank, part in enumerate(gathered_records):
-                    if not isinstance(part, list):
-                        raise TypeError(
-                            "eval_detection all_gather_object returned non-list part: "
-                            f"src_rank={int(src_rank)} type={type(part).__name__}"
-                        )
-                    for rec in part:
-                        if isinstance(rec, Mapping):
-                            eval_records_all.append(dict(rec))
-
-            # Ensure unique per-line indices after cross-rank gather.
-            for ridx, rec in enumerate(eval_records_all):
-                rec["index"] = int(ridx)
-
-            eval_det_payload: Dict[str, Any] = {
-                "ok": 0.0,
-                "runtime_s": 0.0,
-                "metrics": {},
-                "counters": {},
-                "error": "",
-            }
-            eval_det_exc: Exception | None = None
-            if int(rank) == 0:
-                t_coco0 = time.perf_counter()
-                try:
-                    coco_metrics, coco_counters = _compute_eval_detection_coco_metrics(
-                        pred_records=eval_records_all,
-                        eval_cfg=eval_detection_cfg,
-                    )
-                    eval_det_payload["ok"] = 1.0
-                    eval_det_payload["metrics"] = {
-                        str(k): float(v) for k, v in coco_metrics.items()
-                    }
-                    eval_det_payload["counters"] = {
-                        str(k): int(v)
-                        for k, v in coco_counters.items()
-                        if isinstance(v, (int, float))
-                    }
-                except Exception as exc:
-                    eval_det_exc = exc
-                    eval_det_payload["error"] = repr(exc)
-                    logger.exception("Eval-step COCO/mAP failed")
-                finally:
-                    eval_det_payload["runtime_s"] = float(time.perf_counter() - t_coco0)
-
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                payload_list: List[Any] = [eval_det_payload]
-
-                backend = None
-                try:
-                    backend = str(dist.get_backend())
-                except Exception:
-                    backend = None
-
-                broadcast_device = torch.device("cpu")
-                if backend == "nccl":
-                    if not torch.cuda.is_available():
-                        raise RuntimeError(
-                            "torch.distributed backend is NCCL but CUDA is not available"
-                        )
-                    broadcast_device = torch.device(
-                        "cuda", int(torch.cuda.current_device())
-                    )
-
-                try:
-                    dist.broadcast_object_list(
-                        payload_list, src=0, device=broadcast_device
-                    )
-                except TypeError as exc:
-                    if backend == "nccl":
-                        raise RuntimeError(
-                            "broadcast_object_list(..., device=...) is required for NCCL; "
-                            "upgrade PyTorch to a version that supports the 'device' argument."
-                        ) from exc
-                    dist.broadcast_object_list(payload_list, src=0)
-
-                if not isinstance(payload_list[0], Mapping):
-                    raise TypeError(
-                        "eval_detection broadcast payload is not a Mapping: "
-                        f"type={type(payload_list[0]).__name__}"
-                    )
-                recv_payload = dict(payload_list[0])
-            else:
-                recv_payload = eval_det_payload
-
-            try:
-                metrics[_k("time/coco_eval_runtime_s")] = float(
-                    recv_payload.get("runtime_s", 0.0) or 0.0
-                )
-            except (AttributeError, TypeError, ValueError):
-                metrics[_k("time/coco_eval_runtime_s")] = 0.0
-            try:
-                metrics[_k("rollout/coco_eval_ok")] = float(
-                    recv_payload.get("ok", 0.0) or 0.0
-                )
-            except (AttributeError, TypeError, ValueError):
-                metrics[_k("rollout/coco_eval_ok")] = 0.0
-
-            metrics[_k("rollout/mAP")] = 0.0
-            coco_metrics_recv = recv_payload.get("metrics", {})
-            if isinstance(coco_metrics_recv, Mapping) and "bbox_AP" in coco_metrics_recv:
-                try:
-                    metrics[_k("rollout/mAP")] = float(coco_metrics_recv["bbox_AP"])
-                except (TypeError, ValueError):
-                    metrics[_k("rollout/mAP")] = 0.0
-
-            metric_for_best_model = str(
-                getattr(getattr(self, "args", None), "metric_for_best_model", "") or ""
-            ).strip()
-            coco_ok = float(metrics.get(_k("rollout/coco_eval_ok"), 0.0) or 0.0)
-            if coco_ok <= 0.0:
-                coco_err = str(recv_payload.get("error", "") or "").strip()
-                if metric_name_matches_key(
-                    metric_for_best_model,
-                    stage2_eval_metric_key("eval", "rollout/mAP"),
-                ):
-                    msg = (
-                        "Eval-step COCO/mAP failed while metric_for_best_model targets eval/detection/mAP; "
-                        "aborting to avoid invalid best-checkpoint selection. "
-                        f"error={coco_err or 'unknown'}"
-                    )
-                else:
-                    msg = (
-                        "Eval-step COCO/mAP failed; aborting (fail-fast) to avoid silent metric corruption. "
-                        f"error={coco_err or 'unknown'}"
-                    )
-                if int(rank) == 0 and eval_det_exc is not None:
-                    raise RuntimeError(msg) from eval_det_exc
-                raise RuntimeError(msg)
-
-            coco_counters_recv = recv_payload.get("counters", {})
-            if isinstance(coco_counters_recv, Mapping):
-                for name in (
-                    "empty_pred",
-                    "invalid_geometry",
-                    "invalid_coord",
-                    "missing_size",
-                    "size_mismatch",
-                    "degenerate",
-                    "unknown_dropped",
-                    "semantic_mapped",
-                    "semantic_unmapped",
-                ):
-                    if name not in coco_counters_recv:
-                        continue
-                    try:
-                        metrics[_k(f"rollout/coco_counter_{name}")] = float(
-                            coco_counters_recv[name]
-                        )
-                    except (TypeError, ValueError):
-                        continue
-
-        # Optional eval-time monitor dump (qualitative samples).
-        if do_dump:
-            try:
-                samples_out: List[Dict[str, Any]] = list(dump_fail_samples)
-                if len(samples_out) < dump_max_samples:
-                    need = int(dump_max_samples) - int(len(samples_out))
-                    samples_out.extend(list(dump_other_samples)[:need])
-
-                payload = {
-                    "kind": "eval_monitor_dump",
-                    "global_step": int(gs),
-                    "epoch": float(
-                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
-                    ),
-                    "time": float(time.time()),
-                    "meta": {
-                        "phase": "eval",
-                        "metric_key_prefix": str(metric_key_prefix),
-                        "rollout_backend": str(eval_rollout_backend),
-                        "vllm_mode": str(eval_vllm_mode),
-                        "decode_mode": str(self._cfg("decode_mode", "greedy")),
-                        "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
-                        "candidate_top_k": int(top_k),
-                        "maskiou_gate": float(gate_thr),
-                        "maskiou_resolution": int(mask_res),
-                        "fp_cost": float(fp_cost),
-                        "fn_cost": float(fn_cost),
-                    },
-                    "metrics": metrics,
-                    "samples": samples_out,
-                }
-                self._write_monitor_dump(global_step=int(gs), payload=payload)
-                self._eval_monitor_dump_count += 1
-            except Exception as exc:
-                logger.warning(
-                    "Failed to write eval monitor dump at global_step=%s: %r",
-                    int(gs),
-                    exc,
-                )
-
-        # Mirror HF Trainer.evaluate(): log metrics and trigger callbacks.
-        self.log(metrics)
-        self.control = self.callback_handler.on_evaluate(
-            self.args, self.state, self.control, metrics
-        )
-
-        if was_training:
-            self.model.train()
-
-        return metrics
 
     def prediction_step(
         self,
