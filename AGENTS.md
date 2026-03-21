@@ -32,7 +32,7 @@
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 
 ## Model
-- Subagents must use `gpt-5.4` (not mini) by default.
+- Subagents must use `gpt-5.4` (not mini) by default and use `xhigh` thinking efforts for important and challenging/brainstorming tasks.
 
 ## Environment
 - Repo root: `.`
