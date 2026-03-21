@@ -31,6 +31,9 @@
 - Use `coordexp-research-context` for broad background, read-order, and historical Stage-2 context.
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 
+## Model
+- Subagents must use `gpt-5.4` (not mini) by default.
+
 ## Environment
 - Repo root: `.`
 - Use `conda run -n ms python ...` for tests.
