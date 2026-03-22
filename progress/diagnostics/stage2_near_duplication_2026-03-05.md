@@ -279,7 +279,7 @@ Practical takeaway:
 
 ### 4.1 Where the flat direction comes from (FP-neutral Channel-B)
 
-Channel-B is designed to be **FP-neutral** (see `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2_longform.md`):
+Channel-B is designed to be **FP-neutral** (see `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`):
 - matched objects get geometry + (some) text supervision
 - FN-injected objects get text supervision
 - FP objects get *no* supervision inside their spans (to avoid punishing unlabeled true objects)

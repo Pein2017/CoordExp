@@ -6,20 +6,19 @@ status: canonical
 domain: eval
 summary: Router for inference and evaluation contracts, workflows, and artifacts.
 tags: [eval, infer, workflow]
-updated: 2026-03-10
+updated: 2026-03-22
 ---
 
 # Evaluation & Inference
 
-Use this folder for the current infer -> score -> evaluate workflow and the additive Oracle-K repeated-sampling analysis path.
+Use this folder for the current infer -> score -> evaluate workflow, official COCO export, and additive analysis studies.
 
 ## Read Order
 
 1. [CONTRACT.md](CONTRACT.md)
 2. [WORKFLOW.md](WORKFLOW.md)
-3. [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md) for official test-dev benchmarking
-4. [UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](UNMATCHED_PROPOSAL_VERIFIER_STUDY.md) for the offline unmatched-proposal verifier ablation
-5. [../ARTIFACTS.md](../ARTIFACTS.md)
+3. [../ARTIFACTS.md](../ARTIFACTS.md)
+4. [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md) for official test-dev benchmarking
 
 ## Page Roles
 
@@ -27,12 +26,24 @@ Use this folder for the current infer -> score -> evaluate workflow and the addi
   - evaluator inputs, outputs, invariants, and failure modes
 - [WORKFLOW.md](WORKFLOW.md)
   - YAML-first operational flow from inference to visualization, including Oracle-K analysis
+- [../ARTIFACTS.md](../ARTIFACTS.md)
+  - infer/eval outputs, provenance, and run-directory expectations
 - [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
   - end-to-end runbook for 1024-budget COCO test-dev inference and official submission export
 - [UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
-  - offline ablation workflow for commitment / counterfactual proposal verification
-- [../ARTIFACTS.md](../ARTIFACTS.md)
-  - run artifacts and provenance surfaces
+  - draft offline ablation workflow for commitment / counterfactual proposal verification
+
+## Normative Specs
+
+- [`inference-pipeline/spec.md`](../../openspec/specs/inference-pipeline/spec.md)
+- [`inference-engine/spec.md`](../../openspec/specs/inference-engine/spec.md)
+- [`detection-evaluator/spec.md`](../../openspec/specs/detection-evaluator/spec.md)
+- [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md)
+
+## Supplementary Studies
+
+- [UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
+  - draft study workflow; not part of the default infer -> score -> evaluate path
 
 ## Use This Router For
 

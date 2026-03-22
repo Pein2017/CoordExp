@@ -6,12 +6,17 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-03-18
+updated: 2026-03-22
 ---
 
 # Evaluation Workflow
 
 This page describes the current production path from inference to scored evaluation artifacts, plus the additive Oracle-K repeated-sampling analysis workflow.
+
+Implementation ownership note:
+- pipeline orchestration lives in `src/infer/pipeline.py`
+- generation/backend selection lives in `src/infer/engine.py` and `src/infer/backends.py`
+- infer/eval artifact writing lives in `src/infer/artifacts.py`, `src/eval/orchestration.py`, and `src/eval/artifacts.py`
 
 ## Default Flow
 
@@ -62,9 +67,13 @@ After inference:
 - `gt_vs_pred.jsonl`
 - `summary.json`
 - `resolved_config.json` when using the YAML pipeline
+- `resolved_config.path` next to `gt_vs_pred.jsonl` when the YAML pipeline is
+  responsible for artifact materialization
 - verify `infer.prompt_variant`, `infer.object_field_order`, and
   `infer.object_ordering` in both `summary.json` and `resolved_config.json`
   when comparing prompt/order ablations
+- use `resolved_config.path` when a downstream eval or visualization job is
+  consuming `gt_vs_pred.jsonl` from outside the original run directory
 - if the checkpoint was trained with non-default dense prompt controls, keep
   those infer-time values aligned with training so evaluation does not measure
   prompt drift instead of model behavior

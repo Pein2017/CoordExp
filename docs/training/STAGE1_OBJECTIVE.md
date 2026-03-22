@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-03-09
+updated: 2026-03-22
 ---
 
 # Coord Objective & Adapter
@@ -52,7 +52,8 @@ custom:
 - No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
 - Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`.
 - Stage-2 note:
-  - `stage2_two_channel` and `stage2_rollout_aligned` now use provenance-split objective atoms and diagnostics (`loss/A*`, `loss/B*`, `coord_diag/A*`, `coord_diag/B*`) rather than this older flat config/metric framing.
+  - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
+  - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
 ## Coord-offset adapter (tie-head / single shared table)
 

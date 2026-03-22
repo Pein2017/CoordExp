@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-21
+updated: 2026-03-22
 
 entrypoints:
   human:
@@ -77,17 +77,17 @@ docs:
       type: reference
       status: canonical
     - path: docs/training/STAGE2_DESIGN.md
-      title: Full Idea v2 (Deprecated)
-      type: design
-      status: deprecated
+      title: Stage-2 Design History
+      type: design-note
+      status: historical
     - path: docs/training/STAGE2_RUNBOOK.md
-      title: Stage-2 Training Runbook (Deprecated Legacy Notes Rewritten)
+      title: Stage-2 Training Runbook
       type: runbook
-      status: deprecated
+      status: canonical
     - path: docs/training/METRICS.md
-      title: Training Metrics and Losses (Current Baseline)
+      title: Training Metrics and Losses
       type: reference
-      status: deprecated
+      status: canonical
   eval:
     - path: docs/eval/README.md
       title: Evaluation & Inference
@@ -105,6 +105,10 @@ docs:
       title: COCO Test-Dev Submission
       type: runbook
       status: canonical
+    - path: docs/eval/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
+      title: Unmatched Proposal Verifier Study
+      type: runbook
+      status: draft
   standards:
     - path: docs/standards/README.md
       title: Standards
@@ -143,9 +147,9 @@ progress:
       title: Full Idea v2
       type: direction
       status: active-reference
-    - path: progress/directions/stage2_clean_prefix_v2_longform.md
-      title: 'CoordExp v2: Clean-Prefix Training + Duplicate Unlikelihood for V-LLM Detection'
-      type: longform
+    - path: progress/directions/full_idea_v3.md
+      title: Full Idea v3
+      type: direction
       status: active-reference
     - path: progress/directions/stage2_emish_set_supervision_v1.md
       title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)

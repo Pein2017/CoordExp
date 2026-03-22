@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-03-09
+updated: 2026-03-22
 ---
 
 # Agent Index
@@ -29,13 +29,18 @@ Human support entrypoints:
 3. [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 4. the relevant domain router
 5. relevant `openspec/specs/`
+   - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
+   - use [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md) for active Stage-2 behavior and config contracts
 6. `progress/` only when current docs do not answer the historical or empirical question
 
 ## Query Routing
 
-- Repo structure or doc precedence:
+- Repo structure, runtime seams, or doc precedence:
   - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)
+  - [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
+  - [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
   - [catalog.yaml](catalog.yaml)
+  - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - End-to-end system flow:
   - [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
 - Code and test entrypoints:
@@ -49,14 +54,21 @@ Human support entrypoints:
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md)
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE2_DESIGN.md](training/STAGE2_DESIGN.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md)
   - [docs/training/METRICS.md](training/METRICS.md)
+  - [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+  - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the supported `stage2_rollout_aligned` variant
+  - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
+  - [docs/training/STAGE2_DESIGN.md](training/STAGE2_DESIGN.md) only for historical context
 - Inference and evaluation:
   - [docs/eval/README.md](eval/README.md)
   - [docs/eval/CONTRACT.md](eval/CONTRACT.md)
   - [docs/eval/WORKFLOW.md](eval/WORKFLOW.md)
   - [ARTIFACTS.md](ARTIFACTS.md)
+  - [`inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
+  - [`inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
+  - [`detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
+  - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Standards and repo policy:
   - [docs/standards/README.md](standards/README.md)
 
@@ -74,7 +86,8 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2|rollout|loss_dead_anchor_suppression|clean-prefix" docs progress openspec configs
+rg -n "stage2_two_channel|stage2_rollout_aligned|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server|loss_dead_anchor_suppression" docs openspec src scripts configs
+rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets
-rg -n "eval|infer|confidence|metrics" docs/eval docs/training scripts src
+rg -n "infer|engine|backends|artifacts|orchestration|confidence|metrics" docs/eval docs/training src scripts
 ```

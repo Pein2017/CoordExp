@@ -1,32 +1,204 @@
-# Training Metrics and Losses (Current Baseline)
+---
+doc_id: docs.training.metrics
+layer: docs
+doc_type: reference
+status: canonical
+domain: training
+summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
+updated: 2026-03-22
+---
 
-This reference reflects the active single-pass Stage-2 contract after removal
-of Channel-A self-context iteration.
+# Training Metrics and Losses
 
-## Stage-2 Two-Channel Metrics
+This reference describes the canonical metric families for Stage-1 and the
+active single-pass Stage-2 contract.
 
-Channel-A emits only the normal single-pass groups:
+## Stage-1 Baseline Metric Families
 
-- `loss/text/{struct_ce,desc_ce}`
-- `loss/coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+Stage-1 remains aggregate-only. The documented keys below are the canonical
+Stage-1 training families that parity tests expect to stay user-visible.
+
+### Runtime And Accumulation
+
+- `accum/grad_steps`
+- `accum/current_grad_steps`
+- `pack/num_samples`
+
+### Base CE
+
+- `base_ce/loss`
+- `base_ce/loss_per_sample`
+- `base_ce/noncoord_tokens`
+- `base_ce/noncoord_tokens_per_sample`
+- `stage1/total_loss_per_sample_est`
+
+### Coord Objective And Diagnostics
+
+- coord objective atoms:
+  - `coord_softce_w1/loss`
+  - `coord_softce_w1/ce`
+  - `coord_softce_w1/soft_ce`
+  - `coord_softce_w1/w1`
+  - `coord_softce_w1/gate`
+- coord diagnostics:
+  - `coord_diag/enabled`
+  - `coord_diag/loss`
+  - `coord_diag/loss_per_sample`
+  - `coord_diag/ce`
+  - `coord_diag/soft_ce`
+  - `coord_diag/w1`
+  - `coord_diag/gate`
+  - `coord_diag/coord_tokens`
+  - `coord_diag/coord_tokens_per_sample`
+  - `coord_diag/coord_vocab_mass`
+  - `coord_diag/acc_top5`
+  - `coord_diag/p_gt_mean`
+  - `coord_diag/margin_mean`
+  - `coord_diag/expected_bin_mae`
+  - `coord_diag/expected_bin_abs_err_p90`
+  - `coord_diag/w1_to_delta`
+
+### BBox Size Aux
+
+- `loss/geo/bbox_size_aux`
+- `loss/geo/bbox_log_wh`
+- `loss/geo/bbox_oversize`
+- `bbox_size_aux/loss_per_sample`
+- `bbox_size_aux/groups_total`
+- `bbox_size_aux/groups_per_sample`
+- `bbox_size_aux/coord_slots_total`
+- `bbox_size_aux/mean_width`
+- `bbox_size_aux/mean_height`
+- `bbox_size_aux/mean_log_area`
+
+### Token-Type Aggregates And Coord Monitors
+
+- shared token aggregates:
+  - `token_acc_top5`
+  - `text_token_acc`
+- token-type-conditioned aggregates:
+  - `coord_token_acc`
+  - `coord_token_acc_top5`
+  - `coord_token_frac`
+  - `desc_token_acc`
+  - `desc_token_acc_top5`
+  - `desc_token_frac`
+  - `format_token_acc`
+  - `format_token_acc_top5`
+  - `format_token_frac`
+- coord-monitor probes:
+  - `coord_monitor/coord_vocab_mass_at_gt_text`
+  - `coord_monitor/coord_vocab_mass_at_gt_coord`
+  - `coord_monitor/coord_vocab_mass_at_gt_desc`
+  - `coord_monitor/coord_vocab_mass_at_gt_format`
+  - `coord_monitor/flip_text_to_coord`
+  - `coord_monitor/flip_coord_to_noncoord`
+  - `coord_monitor/flip_desc_to_coord`
+  - `coord_monitor/flip_format_to_coord`
+
+## Interpreting Key Stage-2 Families
+
+- `loss/<...>`:
+  - post-weighting objective atoms
+- `coord_diag/<...>`:
+  - coord-distribution diagnostics
+- `dup/<...>` and `stage2_ab/channel_b/dup/<...>`:
+  - duplicate-collapse diagnostics and counters
+- `rollout/<...>`:
+  - rollout parsing, matching, and coverage diagnostics
+- `eval/...` or `eval_det_*`:
+  - training-time evaluation outputs
+
+## Stage-2 Channel-A Objective Families
+
+Channel-A uses the normal single-pass GT-anchor groups only:
+
+- `loss/text/struct_ce`
+- `loss/text/desc_ce`
+- `loss/coord/bbox_smoothl1`
+- `loss/coord/bbox_ciou`
+- `loss/coord/bbox_log_wh`
+- `loss/coord/bbox_oversize`
+- `loss/coord/coord_token_ce`
+- `loss/coord/coord_soft_ce`
+- `loss/coord/coord_w1`
+- `loss/coord/coord_el1`
+- `loss/coord/coord_ehuber`
+- `loss/coord/coord_entropy`
+- `loss/coord/coord_gate`
+- `loss/coord/text_gate`
 - `coord_diag/*`
-- `gradmon/*/coord/*`
+- `gradmon/*/coord/*` when gradient monitoring is enabled
+
+## Stage-2 Channel-B Objective Families
 
 Channel-B keeps rollout-specific provenance:
 
-- `loss/B_rollout_text/{struct_ce,desc_ce}`
-- `train/optimization/loss_dead_anchor_suppression`
-- `loss/B_coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
-- `coord_diag/B/*`
-- `gradmon/*/B_coord/*`
+- rollout-text atoms:
+  - `loss/B_rollout_text/struct_ce`
+  - `loss/B_rollout_text/desc_ce`
+- duplicate suppression:
+  - `train/optimization/loss_dead_anchor_suppression`
+- rollout-context coord atoms:
+  - `loss/B_coord/bbox_smoothl1`
+  - `loss/B_coord/bbox_ciou`
+  - `loss/B_coord/bbox_log_wh`
+  - `loss/B_coord/bbox_oversize`
+  - `loss/B_coord/coord_token_ce`
+  - `loss/B_coord/coord_soft_ce`
+  - `loss/B_coord/coord_w1`
+  - `loss/B_coord/coord_el1`
+  - `loss/B_coord/coord_ehuber`
+  - `loss/B_coord/coord_entropy`
+  - `loss/B_coord/coord_gate`
+  - `loss/B_coord/text_gate`
+- coord diagnostics:
+  - `coord_diag/B/*`
+- gradient monitors:
+  - `gradmon/*/B_coord/*` when enabled
 
-## Removed Legacy Groups
+## Duplicate And Rollout Diagnostics
 
-Legacy iterative Channel-A provenance groups are no longer emitted by active
-training. If they appear in old logs, treat them as historical artifacts rather
-than current contract surfaces.
+Canonical duplicate/rollout families include:
 
-## Diagnostic Reference
+- `dup/*`
+- `stage2_ab/channel_b/dup/N_*`
+- `rollout/*`
+- `time/rollout_*`
+
+Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
+families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and
+run artifacts live.
+
+## Training-Time Evaluation Families
+
+Two distinct eval surfaces exist during training:
+
+- offline evaluator callback:
+  - `eval_det_*`
+- trainer-native Stage-2 rollout eval:
+  - shared by `stage2_two_channel` and `stage2_rollout_aligned`
+  - `eval/detection/*`
+  - `eval/parsing/*`
+  - `eval/description/*`
+  - `eval/config/*`
+  - `eval/runtime/*`
+
+## Removed Historical Families
+
+Legacy iterative Channel-A provenance groups are no longer part of the active
+contract:
+
+- `loss/A1_*`
+- `loss/A2_*`
+- `coord_diag/A1/*`
+- `coord_diag/A2/*`
+- `eval_rollout/*`
+
+If they appear in old logs, treat them as historical artifacts rather than
+current contract surfaces.
+
+## Historical Reference
 
 The deprecation rationale lives in:
 

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Packing policy, defaults, and efficiency tradeoffs.
-updated: 2026-03-18
+updated: 2026-03-22
 ---
 
 # Packing Mode Guide (Default: 12k, eff_bs=12)
@@ -13,7 +13,8 @@ updated: 2026-03-18
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage_2 trainers (`custom.trainer_variant: stage2_rollout_aligned` and `stage2_two_channel`) support
+- Stage-2 trainers (`custom.trainer_variant: stage2_rollout_aligned` for the legacy rollout-matching
+  compatibility path and `stage2_two_channel` for the active two-channel path) support
   **post-rollout packing inside the trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
@@ -23,7 +24,7 @@ Note:
   - `stage2_two_channel` (step-budgeted) uses a *pool-aware* selector that prioritizes minimizing the total number of packed
     sequences per optimizer step (fewer forward/backward calls) and secondarily avoids tiny remainder packs.
     - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
-- Stage_2 runbook: `../training/STAGE2_RUNBOOK.md`.
+- Stage-2 runbook: [`../training/STAGE2_RUNBOOK.md`](../training/STAGE2_RUNBOOK.md).
 
 Stage-1 packing guardrails (current implementation):
 - Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
@@ -51,7 +52,7 @@ packing_drop_last: true
 eval_packing: true
 ```
 - For logging/checkpoint cadence at ~852 opt steps/epoch: `eval_steps: 80`, `save_steps: 80`, `save_delay_steps: 200`.
-- Run name example: `epoch_4-dlora-lrs_2_1_4-sorted-text_only-packed-12k`.
+- Run name example: `epoch_4-stage1-coco80-sorted-text_only-packed-12k`.
 
 ## Equivalence vs padding
 - Padding baseline (per_device=2, eff_bs=128, world=4): grad_accum=16, ~777 opt steps/epoch.

@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Human-first router for the stable CoordExp documentation layer.
 tags: [entrypoint, docs]
-updated: 2026-03-09
+updated: 2026-03-22
 ---
 
 # Documentation Index
@@ -38,6 +38,7 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 - [ARTIFACTS.md](ARTIFACTS.md): runtime artifacts, provenance, and logging surfaces
 - [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
 - [catalog.yaml](catalog.yaml): machine-readable catalog for `docs/` and `progress/`
+- [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): normative runtime-structure and compatibility contract
 
 ## Research History
 

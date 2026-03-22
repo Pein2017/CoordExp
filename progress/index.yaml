@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-12
+updated: 2026-03-22
 
 entrypoints:
   human: progress/README.md
@@ -15,7 +15,7 @@ recommended_read_order:
 groups:
   directions:
     - progress/directions/stage2_clean_prefix_v2.md
-    - progress/directions/stage2_clean_prefix_v2_longform.md
+    - progress/directions/full_idea_v3.md
     - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
     - progress/diagnostics/README.md
@@ -64,11 +64,11 @@ notes:
     kind: direction
     status: active-reference
     summary: Concise current historical summary for the clean-prefix Stage-2 direction.
-  - path: progress/directions/stage2_clean_prefix_v2_longform.md
-    title: 'CoordExp v2: Clean-Prefix Training + Duplicate Unlikelihood for V-LLM Detection'
-    kind: longform
+  - path: progress/directions/full_idea_v3.md
+    title: Full Idea v3
+    kind: direction
     status: active-reference
-    summary: Extended derivation and design narrative behind the current Stage-2 direction.
+    summary: Current proposal for K=2 triage-posterior Channel-B training that extends the clean-prefix Stage-2 line.
   - path: progress/directions/stage2_emish_set_supervision_v1.md
     title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
     kind: historical-direction

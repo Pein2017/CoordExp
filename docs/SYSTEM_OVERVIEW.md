@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end flow from data intake to training, inference, evaluation, and artifacts.
-updated: 2026-03-09
+updated: 2026-03-22
 ---
 
 # System Overview
@@ -14,8 +14,8 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/trainers/stage2_two_channel.py`, `src/infer/pipeline.py`, `src/eval/detection.py`
-Verification: `rg -n "stage2|loss_dead_anchor_suppression|run_infer|DetectionEvalCallback|coord_soft_ce_w1" src scripts configs docs`
+Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/bootstrap/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Verification: `rg -n "stage2_two_channel|stage2_rollout_aligned|rollout_aligned_targets|rollout_aligned_evaluator|rollout_runtime|stage2_vllm_server|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -84,6 +84,10 @@ This is the layer to inspect when:
 - Typed config loading and validation:
   - `src/config/loader.py`
   - `src/config/schema.py`
+- Bootstrap and provenance helpers:
+  - `src/bootstrap/pipeline_manifest.py`
+  - `src/bootstrap/trainer_setup.py`
+  - `src/bootstrap/run_metadata.py`
 
 ### Stage-1 Baseline SFT
 
@@ -106,11 +110,23 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
 
 - Current config tree: `configs/stage2_two_channel/`
 - Main docs:
-  - [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
   - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
+  - [`docs/training/METRICS.md`](training/METRICS.md)
   - [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+  - [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md)
+  - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Main code handles:
   - `src/trainers/stage2_two_channel.py`
+  - `src/trainers/stage2_two_channel/scheduler.py`
+  - `src/trainers/stage2_two_channel/target_builder.py`
+  - `src/trainers/stage2_two_channel/objective_runner.py`
+  - `src/trainers/stage2_two_channel/coordination.py`
+  - `src/trainers/stage2_two_channel/executors.py`
+  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/rollout_aligned_targets.py`
+  - `src/trainers/rollout_aligned_evaluator.py`
+  - `src/trainers/rollout_runtime/`
+  - `src/launchers/stage2_vllm_server.py`
   - `src/trainers/rollout_matching/parsing.py`
   - `src/trainers/rollout_matching/matching.py`
   - `src/trainers/teacher_forcing/module_registry.py`
@@ -118,7 +134,9 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
 
 Compatibility note:
 - `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
-- The active implementation lives in `src/trainers/stage2_two_channel.py`.
+- `src/trainers/stage2_rollout_aligned.py` remains the rollout-matching compatibility trainer surface and now imports `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, and `src/trainers/rollout_runtime/`.
+- The active two-channel implementation lives in `src/trainers/stage2_two_channel.py`.
+- [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md) is historical context only; use the runbook and specs for current behavior.
 
 ## 4. Inference, Confidence, And Evaluation
 
@@ -128,6 +146,9 @@ Compatibility note:
   - `scripts/run_infer.py`
 - Main runtime code:
   - `src/infer/pipeline.py`
+  - `src/infer/engine.py`
+  - `src/infer/backends.py`
+  - `src/infer/artifacts.py`
 - Config surfaces:
   - `configs/infer/`
   - `configs/bench/`
@@ -151,6 +172,8 @@ Primary scored artifact:
   - `scripts/evaluate_detection.py`
 - Main runtime code:
   - `src/eval/detection.py`
+  - `src/eval/orchestration.py`
+  - `src/eval/artifacts.py`
 - Callback path for training-time offline eval:
   - `src/callbacks/detection_eval.py`
 
@@ -164,6 +187,8 @@ CoordExp writes paper-ready artifacts as part of normal execution.
 
 - Artifact guide:
   - [`docs/ARTIFACTS.md`](ARTIFACTS.md)
+- Current architecture contract:
+  - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Training outputs usually include:
   - `resolved_config.json`
   - `runtime_env.json`
@@ -171,6 +196,7 @@ CoordExp writes paper-ready artifacts as part of normal execution.
   - `logging.jsonl`
 - Inference/eval outputs usually include:
   - `summary.json`
+  - `resolved_config.path`
   - `metrics.json`
   - scored JSONLs and overlays when enabled
 
@@ -183,9 +209,15 @@ CoordExp writes paper-ready artifacts as part of normal execution.
   - [`docs/training/README.md`](training/README.md)
   - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - Change Stage-2 training behavior:
-  - [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
   - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
+  - [`docs/training/METRICS.md`](training/METRICS.md)
+  - [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+  - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
   - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
 - Change infer/eval artifacts:
   - [`docs/eval/README.md`](eval/README.md)
+  - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md)
+  - [`openspec/specs/inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
+  - [`openspec/specs/inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
+  - [`openspec/specs/detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
   - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)

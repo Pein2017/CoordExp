@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Defines documentation precedence, document roles, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-03-09
+updated: 2026-03-22
 ---
 
 # Project Context & Precedence
@@ -52,6 +52,7 @@ For most work:
 4. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 5. the relevant domain router under `docs/`
 6. relevant `openspec/specs/`
+   - use [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership, launchers, artifacts, or compatibility-preserving refactors
 7. `progress/` only if you need design history or empirical evidence
 
 ## Authoring Rules
@@ -62,7 +63,8 @@ For most work:
 - Remove obsolete paths instead of preserving compatibility stubs.
 - Prefer one canonical page per question:
   - data contract -> `docs/data/CONTRACT.md`
-  - stage-2 design -> `docs/training/STAGE2_DESIGN.md`
+  - stage-2 runbook -> `docs/training/STAGE2_RUNBOOK.md`
+  - stage-2 design history -> `docs/training/STAGE2_DESIGN.md`
   - evaluation contract -> `docs/eval/CONTRACT.md`
 
 ## Promotion Rule

@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Contract for CoordExp inference and detection-evaluation artifacts.
 tags: [eval, contract, jsonl]
-updated: 2026-03-13
+updated: 2026-03-22
 ---
 
 # Evaluation Contract
@@ -15,30 +15,57 @@ This page defines the current infer/eval artifact contract.
 
 ## Primary Input Artifacts
 
-- Base inference artifact:
+- pipeline artifact:
   - `gt_vs_pred.jsonl`
-- Score-aware COCO artifact:
+- score-aware COCO artifact:
   - `gt_vs_pred_scored.jsonl`
-- Canonical visualization sidecar:
+- canonical visualization sidecar:
   - `vis_resources/gt_vs_pred.jsonl`
 
-## Required Record Shape
+## Pipeline Record Shape
 
 - Each record is a JSON object.
-- Inline GT is required for evaluation-time consumption.
-- Geometry objects live under `gt` and `pred`.
-- Width and height come from inline GT metadata.
-- Geometry must already be pixel-ready for evaluator consumption.
+- Inline GT is required for evaluation-time consumption; evaluator-facing
+  workflows do not use a separate GT file.
+- Canonical required keys are:
+  - `image`
+  - `width`
+  - `height`
+  - `mode`
+  - `gt`
+  - `pred`
+  - `coord_mode`
+  - `raw_output_json`
+  - `raw_special_tokens`
+  - `raw_ends_with_im_end`
+  - `errors`
+  - `error_entries`
+- Geometry objects live under `gt` and `pred`; legacy top-level prediction
+  aliases are not canonical.
+
+## Coordinate Handling
+
+- `coord_mode: "pixel"` means evaluator consumers use `gt` and `pred` points as
+  pixel coordinates directly.
+- `coord_mode: "norm1000"` means evaluator consumers denormalize via per-record
+  `width` and `height`, then clamp and round.
+- Records missing `width` or `height` are skipped and counted because geometry
+  validation is undefined without image size.
 
 ## Scoring Rules
 
+- F1-ish-only evaluation may consume the base pipeline artifact.
+- COCO evaluation consumes the scored artifact `gt_vs_pred_scored.jsonl`.
 - COCO scoring uses `pred[*].score` from the scored artifact.
+- Scored COCO inputs must also include:
+  - `pred_score_source`
+  - `pred_score_version`
 - Missing or invalid scores are contract violations for COCO evaluation.
-- Unscored legacy artifacts are not supported.
+- Unscored legacy artifacts are not supported for COCO metrics.
 
 ## Failure Policy
 
-- Parsing strictness is configuration-controlled.
+- Parsing failures remain path-and-line explicit in evaluator diagnostics.
 - Invalid or degenerate geometries are counted and surfaced in diagnostics.
 - Unsupported geometry types fail or are rejected according to evaluator policy.
 
@@ -47,13 +74,15 @@ This page defines the current infer/eval artifact contract.
 - always:
   - `metrics.json`
   - `per_image.json`
+- when F1-ish matching is enabled:
+  - `matches.jsonl`
+  - optional threshold-specific `matches@<thr>.jsonl`
 - when COCO is enabled:
   - `per_class.csv`
   - `coco_gt.json`
   - `coco_preds.json`
-- when F1-ish matching is enabled:
-  - `matches.jsonl`
-  - optional threshold-specific `matches@<thr>.jsonl`
+- when shared-review overlays are materialized:
+  - `vis_resources/gt_vs_pred.jsonl`
 
 ## Shared Visualization Contract
 
