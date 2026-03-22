@@ -1,7 +1,7 @@
 # Requirements: CoordExp Stage-2 Pseudo-Positive Implementation
 
 **Defined:** 2026-03-22
-**Core Value:** Ship the exact OpenSpec-defined arbitrary-`K` pseudo-positive Channel-B implementation correctly, reproducibly, and with backward-compatible safety around the existing `K=2` trainer path.
+**Core Value:** Ship the exact OpenSpec-defined arbitrary-`K` pseudo-positive Channel-B implementation correctly, reproducibly, with `K=4` as the default pseudo-positive rollout profile and backward-compatible access to the legacy `K=2` trainer path.
 
 ## v1 Requirements
 
@@ -9,11 +9,11 @@
 
 - [ ] **CONF-01**: Operator can enable pseudo-positive Channel-B behavior through `stage2_ab.channel_b.pseudo_positive.enabled` in YAML without adding any new CLI flags.
 - [ ] **CONF-02**: Config loading rejects unknown nested pseudo-positive keys, rejects versioned `v*` knob aliases, and enforces `0.0 < coord_weight < 1.0`.
-- [ ] **CONF-03**: Disabled pseudo-positive configs preserve canonical existing `K=2` Stage-2 behavior without changing current prod or smoke config semantics.
+- [ ] **CONF-03**: Disabled pseudo-positive configs preserve legacy existing `K=2` Stage-2 behavior without changing current prod or smoke config semantics.
 
 ### Rollout Runtime
 
-- [ ] **ROLL-01**: When pseudo-positive mode is enabled, the trainer schedules exactly `1` deterministic anchor rollout plus `num_rollouts - 1` explorer rollouts for each Channel-B sample.
+- [ ] **ROLL-01**: When pseudo-positive mode is enabled, the default planned pseudo-positive path schedules exactly `1` deterministic anchor rollout plus `3` explorer rollouts for each Channel-B sample, and the implementation remains valid for arbitrary `num_rollouts >= 2`.
 - [ ] **ROLL-02**: Explorer rollouts reuse the same authored decode profile and differ only by deterministic explorer identity derived from the rollout seed base plus explorer ordinal.
 - [ ] **ROLL-03**: A malformed anchor-preparation sample is dropped from Channel-B training for that step rather than using the legacy empty-prefix fallback.
 - [ ] **ROLL-04**: A malformed or missing explorer-preparation result aborts the current optimizer step instead of silently shrinking the support-rate denominator.
@@ -47,7 +47,7 @@
 - [ ] **VAL-01**: Targeted config-contract tests prove the pseudo-positive schema, invariants, and compatibility guards work as authored.
 - [ ] **VAL-02**: Targeted Stage-2 trainer tests prove arbitrary-`K` rollout prep, support-rate triage, one-forward coord-only pseudo-positive losses, and duplicate-like dead suppression behavior.
 - [ ] **VAL-03**: An explicit pseudo-positive YAML profile can be loaded and exercised in a smoke-ready path with at least two enabled `num_rollouts` values for `best-K` comparison.
-- [ ] **VAL-04**: Enabled `K=2` runs behave as a no-promotion control under the `support_count >= 2` floor.
+- [ ] **VAL-04**: Enabled `K=2` runs remain available as a no-promotion control under the `support_count >= 2` floor even though the default pseudo-positive profile uses `K=4`.
 
 ## v2 Requirements
 

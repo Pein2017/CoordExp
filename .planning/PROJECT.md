@@ -2,11 +2,11 @@
 
 ## What This Is
 
-This project is the implementation planning slice for the OpenSpec change `study-channel-b-pseudopositive-promotion` inside the current CoordExp worktree. It exists to land the exact arbitrary-`K` Stage-2 Channel-B pseudo-positive contract, tests, observability, and smoke validation in the existing brownfield training stack without drifting from the authored OpenSpec or destabilizing the canonical `K=2` path.
+This project is the implementation planning slice for the OpenSpec change `study-channel-b-pseudopositive-promotion` inside the current CoordExp worktree. It exists to land the exact arbitrary-`K` Stage-2 Channel-B pseudo-positive contract, tests, observability, and smoke validation in the existing brownfield training stack, with `K=4` as the default pseudo-positive rollout profile and the legacy `K=2` path retained for compatibility and control comparisons.
 
 ## Core Value
 
-Ship the exact OpenSpec-defined arbitrary-`K` pseudo-positive Channel-B implementation correctly, reproducibly, and with backward-compatible safety around the existing `K=2` trainer path.
+Ship the exact OpenSpec-defined arbitrary-`K` pseudo-positive Channel-B implementation correctly, reproducibly, with `K=4` as the default pseudo-positive rollout profile and backward-compatible access to the legacy `K=2` trainer path.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ Ship the exact OpenSpec-defined arbitrary-`K` pseudo-positive Channel-B implemen
 
 ### Active
 
-- [ ] Implement versionless `stage2_ab.channel_b.pseudo_positive.*` config with strict schema validation and `K=2` default preservation.
+- [ ] Implement versionless `stage2_ab.channel_b.pseudo_positive.*` config with strict schema validation, a default pseudo-positive `K=4` profile, and legacy `K=2` compatibility.
 - [ ] Extend Channel-B rollout preparation from one explorer to arbitrary `K-1` explorers with deterministic aggregate observability and fixed-denominator failure semantics.
 - [ ] Implement support-count / support-rate pseudo-positive triage, overlap clustering, and anchor-owned coord targets exactly as specified by the OpenSpec change.
 - [ ] Wire pseudo-positive objects into coord-only loss application, preserve one-forward training, and keep dead-anchor suppression narrow and duplicate-like only.
@@ -48,7 +48,7 @@ This project should treat the authored OpenSpec as the source of truth, use the 
 ## Constraints
 
 - **Governance**: OpenSpec-first implementation only — the change must match the authored delta specs exactly.
-- **Compatibility**: Preserve canonical `K=2` behavior when `pseudo_positive.enabled=false` — existing configs and tests must remain valid.
+- **Compatibility**: Preserve legacy `K=2` behavior when `pseudo_positive.enabled=false`, and keep enabled `K=2` available as an explicit no-promotion control — existing configs and tests must remain valid.
 - **Architecture**: Keep one edited-anchor teacher-forced forward — no second teacher trajectory or union ordering.
 - **Observability**: Arbitrary-`K` metrics must stay deterministic and backward-compatible — `rollout/explorer/*`, `train/triage/unlabeled_consistent_count`, and recovered-GT rates need explicit semantics.
 - **Validation**: Use the repo’s existing Python test path via `conda run -n ms` — implementation is not complete until targeted tests and smoke validation are planned.
@@ -58,8 +58,8 @@ This project should treat the authored OpenSpec as the source of truth, use the 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Implement the exact `study-channel-b-pseudopositive-promotion` change, not a broader Stage-2 redesign | Keeps scope bounded and reviewable | — Pending |
-| Preserve `K=2` as the disabled-path default and treat arbitrary `K` as opt-in | Protects existing training behavior and configs | — Pending |
-| Use `support_count >= 2` plus `support_rate >= 2/3` for promotion | Prevents single-hit promotion and keeps `K=2` as a no-promotion control | — Pending |
+| Use `K=4` as the default pseudo-positive profile and retain legacy `K=2` as the compatibility / control setting | Keeps the implementation target concrete without losing backward compatibility or ablation controls | — Pending |
+| Use `support_count >= 2` plus `support_rate >= 2/3` for promotion | Prevents single-hit promotion and keeps enabled `K=2` as a no-promotion control | — Pending |
 | Keep pseudo-positive supervision coord-only with anchor-owned target geometry | Matches the finalized OpenSpec and minimizes risky text-side supervision | — Pending |
 | Preserve legacy explorer metrics as mean-over-valid-explorer-view summaries | Makes arbitrary-`K` observability interpretable without breaking current surfaces | — Pending |
 

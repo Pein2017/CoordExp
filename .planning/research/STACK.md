@@ -73,11 +73,12 @@ PYTHONPATH=. conda run -n ms python -m pytest -q tests/test_stage2_ab_training.p
 ## Stack Patterns By Variant
 
 **If `pseudo_positive.enabled=false`:**
-- Keep canonical `K=2` Stage-2 behavior
+- Keep legacy `K=2` Stage-2 behavior available unchanged
 - Because backward compatibility is a hard requirement and existing prod/smoke configs must remain valid
 
 **If `pseudo_positive.enabled=true` and `num_rollouts >= 2`:**
 - Use `1` anchor + `num_rollouts - 1` explorers with aggregate explorer observability
+- Default the authored pseudo-positive profile to `num_rollouts=4`
 - Because the spec turns repeated explorer evidence into support-rate-based triage while keeping the anchor-owned target
 
 ## Version Compatibility

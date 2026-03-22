@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap turns the validated OpenSpec change `study-channel-b-pseudopositive-promotion` into a bounded brownfield implementation inside the current CoordExp Stage-2 trainer. The work is sequenced to preserve the current `K=2` baseline, generalize rollout evidence safely to arbitrary `K`, project pseudo-positive supervision through the existing one-forward coord-side path, and finish with compatibility-safe observability and validation that enables the next `best-K` study.
+This roadmap turns the validated OpenSpec change `study-channel-b-pseudopositive-promotion` into a bounded brownfield implementation inside the current CoordExp Stage-2 trainer. The work is sequenced to establish `K=4` as the default pseudo-positive rollout profile, preserve the legacy `K=2` compatibility/control path, generalize rollout evidence safely to arbitrary `K`, project pseudo-positive supervision through the existing one-forward coord-side path, and finish with compatibility-safe observability and validation that enables the next `best-K` study.
 
 ## Phases
 
@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Requirements**: [CONF-01, CONF-02, CONF-03, ROLL-01, ROLL-02, ROLL-03, ROLL-04, ROLL-05]
 **Success Criteria** (what must be TRUE):
   1. Operator-authored YAML can enable pseudo-positive mode only through versionless `stage2_ab.channel_b.pseudo_positive.*` keys, and invalid keys/weights fail fast.
-  2. Enabled Channel-B runtime schedules `1` anchor plus `num_rollouts - 1` explorers with deterministic explorer identity and unchanged disabled-path behavior.
+  2. The enabled runtime supports the default planned `K=4` pseudo-positive path of `1` anchor plus `3` explorers with deterministic explorer identity, while arbitrary `num_rollouts >= 2` remains supported and disabled-path behavior stays unchanged.
   3. Malformed anchor-preparation samples are dropped, malformed explorer-preparation results abort the step, and zero-object explorers remain valid zero-support evidence.
 **Plans**: 3 plans
 
@@ -86,14 +86,14 @@ Plans:
 **Requirements**: [VAL-01, VAL-02, VAL-03, VAL-04]
 **Success Criteria** (what must be TRUE):
   1. Config-contract and Stage-2 trainer regression suites pass for the new pseudo-positive surface.
-  2. A smoke-ready YAML profile exercises the enabled path and can be compared across at least two enabled `num_rollouts` values.
-  3. Enabled `K=2` behaves as a no-promotion control and does not accidentally create pseudo-positive winners.
+  2. A smoke-ready YAML profile exercises the default enabled `K=4` path and can be compared across at least two enabled `num_rollouts` values.
+  3. Enabled `K=2` behaves as a no-promotion control and does not accidentally create pseudo-positive winners even though the default pseudo-positive profile uses `K=4`.
 **Plans**: 3 plans
 
 Plans:
 - [ ] 05-01: Add and pass targeted config-contract and trainer regression tests
 - [ ] 05-02: Run pseudo-positive smoke validation and confirm one-forward / coord-only behavior
-- [ ] 05-03: Verify `best-K`-ready observability and `K=2` no-promotion control semantics
+- [ ] 05-03: Verify `best-K`-ready observability, default `K=4` profile behavior, and `K=2` no-promotion control semantics
 
 ## Progress
 

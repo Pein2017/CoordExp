@@ -111,7 +111,7 @@ YAML profile + smoke validation
 
 | Feature | Current Repo Baseline | OpenSpec v1 Change | Our Approach |
 |---------|-----------------------|--------------------|--------------|
-| Rollout evidence | Canonical `K=2` anchor + one explorer | Arbitrary `K`, opt-in only | Preserve `K=2` default and generalize explorer evidence when enabled. |
+| Rollout evidence | Legacy `K=2` anchor + one explorer | Arbitrary `K`, opt-in with `K=4` default profile | Default the pseudo-positive implementation profile to `K=4` while preserving `K=2` compatibility and control behavior. |
 | Unmatched anchor handling | `shielded_anchor` is neutral context only | Some trusted unmatched anchors become coord-only pseudo-positives | Promote only anchors meeting support-count and support-rate gates. |
 | Dead-anchor negative signal | Duplicate-like first-divergence suppression exists | Keep it narrow and boundary-local | Reuse the current mechanism; only filter eligible dead anchors more explicitly. |
 | Metrics | Single-explorer-shaped observability | `best-K`-ready rates with compatibility preserved | Extend metrics without breaking legacy semantics. |

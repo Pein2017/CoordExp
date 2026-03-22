@@ -9,7 +9,7 @@
 
 This project is not a greenfield product build. It is a tightly scoped brownfield feature implementation inside the existing CoordExp Stage-2 trainer, governed by the OpenSpec change `study-channel-b-pseudopositive-promotion`. The research outcome is therefore intentionally implementation-centric: reuse the current `stage2_two_channel` trainer/runtime, keep the edited-anchor one-forward architecture, and extend only the exact authority seams needed for arbitrary-`K` explorer evidence, support-rate pseudo-positive selection, coord-only pseudo-positive losses, and compatibility-safe observability.
 
-The recommended approach is to stage the work in the same order that the runtime depends on it. First lock the config contract and arbitrary-`K` rollout scheduling. Then implement support-count / support-rate triage and overlap clustering in `target_builder.py`. After that, wire selected pseudo-positive anchors into the existing coord-side bbox-group path without leaking into text-side losses, and preserve dead-anchor suppression as a narrow duplicate-like first-divergence penalty. Finish with observability, YAML profiles, docs, and smoke validation so the feature is both implementable and ablation-ready.
+The recommended approach is to stage the work in the same order that the runtime depends on it. First lock the config contract and establish `K=4` as the default pseudo-positive rollout profile while preserving the legacy `K=2` path. Then implement support-count / support-rate triage and overlap clustering in `target_builder.py`. After that, wire selected pseudo-positive anchors into the existing coord-side bbox-group path without leaking into text-side losses, and preserve dead-anchor suppression as a narrow duplicate-like first-divergence penalty. Finish with observability, YAML profiles, docs, and smoke validation so the feature is both implementable and ablation-ready.
 
 The critical risks are not “can the repo support this?” but “can we add it without making the current trainer ambiguous?” The main pitfalls are denominator drift when explorers fail, accidental text-side pseudo-positive supervision, duplicate-like over-promotion, and silently redefining existing metrics. The roadmap should therefore group work around contract guardrails first, algorithmic triage second, loss realization third, and compatibility/validation last.
 
@@ -83,7 +83,7 @@ The architecture should stay anchor-owned and evidence-driven. `stage2_two_chann
 2. **Pseudo-positive leakage into text supervision** — restrict pseudo-positive to bbox-group-based coord modules only.
 3. **Over-promoting near-duplicate unmatched anchors** — cluster overlapping candidates and keep only one winner.
 4. **Breaking legacy metrics** — preserve `unlabeled_consistent_count` and define legacy explorer summaries explicitly.
-5. **Regressing disabled-path `K=2` behavior** — keep all new behavior behind `pseudo_positive.enabled` and treat enabled `K=2` as a no-promotion control.
+5. **Regressing legacy `K=2` behavior** — keep all new behavior behind `pseudo_positive.enabled`, use `K=4` as the default pseudo-positive profile, and retain enabled `K=2` as a no-promotion control.
 
 ## Implications for Roadmap
 

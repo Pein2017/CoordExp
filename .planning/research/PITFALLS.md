@@ -90,10 +90,10 @@ Phase 4
 
 ---
 
-### Pitfall 5: Regressing the disabled-path `K=2` baseline
+### Pitfall 5: Regressing the legacy `K=2` baseline
 
 **What goes wrong:**
-The opt-in feature subtly changes existing `K=2` runs or makes disabled-path configs fail.
+The opt-in feature subtly changes existing `K=2` runs or makes legacy disabled-path configs fail.
 
 **Why it happens:**
 Schema, rollout scheduling, and triage code are centralized, so it is easy for arbitrary-`K` assumptions to bleed into the default path.
