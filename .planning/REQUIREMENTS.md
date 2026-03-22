@@ -72,38 +72,38 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONF-01 | TBD | Pending |
-| CONF-02 | TBD | Pending |
-| CONF-03 | TBD | Pending |
-| ROLL-01 | TBD | Pending |
-| ROLL-02 | TBD | Pending |
-| ROLL-03 | TBD | Pending |
-| ROLL-04 | TBD | Pending |
-| ROLL-05 | TBD | Pending |
-| TRIA-01 | TBD | Pending |
-| TRIA-02 | TBD | Pending |
-| TRIA-03 | TBD | Pending |
-| TRIA-04 | TBD | Pending |
-| TRIA-05 | TBD | Pending |
-| LOSS-01 | TBD | Pending |
-| LOSS-02 | TBD | Pending |
-| LOSS-03 | TBD | Pending |
-| LOSS-04 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| OBS-03 | TBD | Pending |
-| OBS-04 | TBD | Pending |
-| OBS-05 | TBD | Pending |
-| VAL-01 | TBD | Pending |
-| VAL-02 | TBD | Pending |
-| VAL-03 | TBD | Pending |
-| VAL-04 | TBD | Pending |
+| CONF-01 | Phase 1 | Pending |
+| CONF-02 | Phase 1 | Pending |
+| CONF-03 | Phase 1 | Pending |
+| ROLL-01 | Phase 1 | Pending |
+| ROLL-02 | Phase 1 | Pending |
+| ROLL-03 | Phase 1 | Pending |
+| ROLL-04 | Phase 1 | Pending |
+| ROLL-05 | Phase 1 | Pending |
+| TRIA-01 | Phase 2 | Pending |
+| TRIA-02 | Phase 2 | Pending |
+| TRIA-03 | Phase 2 | Pending |
+| TRIA-04 | Phase 2 | Pending |
+| TRIA-05 | Phase 2 | Pending |
+| LOSS-01 | Phase 3 | Pending |
+| LOSS-02 | Phase 3 | Pending |
+| LOSS-03 | Phase 3 | Pending |
+| LOSS-04 | Phase 3 | Pending |
+| OBS-01 | Phase 4 | Pending |
+| OBS-02 | Phase 4 | Pending |
+| OBS-03 | Phase 4 | Pending |
+| OBS-04 | Phase 4 | Pending |
+| OBS-05 | Phase 4 | Pending |
+| VAL-01 | Phase 5 | Pending |
+| VAL-02 | Phase 5 | Pending |
+| VAL-03 | Phase 5 | Pending |
+| VAL-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26 ⚠️
+- Mapped to phases: 26
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 after brownfield research synthesis*
+*Last updated: 2026-03-22 after roadmap creation*
