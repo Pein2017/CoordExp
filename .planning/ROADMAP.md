@@ -12,7 +12,7 @@ This roadmap turns the validated OpenSpec change `study-channel-b-pseudopositive
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Config And Rollout Foundation** - Add the versionless pseudo-positive config contract and arbitrary-`K` runtime scaffolding without breaking the disabled path.
+- [x] **Phase 1: Config And Rollout Foundation** - Add the versionless pseudo-positive config contract and arbitrary-`K` runtime scaffolding without breaking the disabled path.
 - [ ] **Phase 2: Support-Rate Triage And Promotion** - Turn multi-explorer evidence into deterministic support-rate buckets, recovered-FN aggregation, and cluster-safe pseudo-positive selection.
 - [ ] **Phase 3: One-Forward Loss Projection** - Realize pseudo-positive coord-only supervision and duplicate-like dead-anchor suppression under the existing one-forward target contract.
 - [ ] **Phase 4: Observability And Operator Surface** - Add metrics, metadata, docs, and YAML authoring surfaces that keep arbitrary-`K` runs interpretable and backward-compatible.
@@ -31,9 +31,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Extend config schema, defaults, and guardrail tests for `pseudo_positive.*`
-- [ ] 01-02: Generalize Channel-B rollout scheduling from one explorer to arbitrary `K-1` explorers
-- [ ] 01-03: Implement fixed-denominator failure handling and disabled-path compatibility checks
+- [x] 01-01: Extend config schema, defaults, and guardrail tests for `pseudo_positive.*`
+- [x] 01-02: Generalize Channel-B rollout scheduling from one explorer to arbitrary `K-1` explorers
+- [x] 01-03: Implement fixed-denominator failure handling and disabled-path compatibility checks
 
 ### Phase 2: Support-Rate Triage And Promotion
 **Goal**: Implement the core pseudo-positive selection algorithm inside `target_builder.py`.
@@ -102,7 +102,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Config And Rollout Foundation | 0/3 | Not started | - |
+| 1. Config And Rollout Foundation | 3/3 | Completed | 2026-03-22 |
 | 2. Support-Rate Triage And Promotion | 0/3 | Not started | - |
 | 3. One-Forward Loss Projection | 0/3 | Not started | - |
 | 4. Observability And Operator Surface | 0/3 | Not started | - |

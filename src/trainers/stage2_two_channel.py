@@ -1751,6 +1751,17 @@ class Stage2ABTrainingTrainer(
         )
         explorer_top_p = float(self._ab_channel_b_get("triage_posterior.explorer_top_p", 1.0))
         explorer_top_k = int(self._ab_channel_b_get("triage_posterior.explorer_top_k", -1))
+        pseudo_positive_enabled = bool(
+            self._ab_channel_b_get("pseudo_positive.enabled", False)
+        )
+        num_rollouts_default = 4 if pseudo_positive_enabled else 2
+        num_rollouts = int(
+            self._ab_channel_b_get(
+                "triage_posterior.num_rollouts",
+                num_rollouts_default,
+            )
+        )
+        explorer_view_count = max(1, int(num_rollouts) - 1)
 
 
         packing_enabled = self._packing_enabled()
@@ -1851,7 +1862,9 @@ class Stage2ABTrainingTrainer(
                 )
 
             anchor_rollout_results = []
-            explorer_rollout_results = []
+            explorer_rollout_results_by_view = [
+                [] for _ in range(int(explorer_view_count))
+            ]
             for off in range(0, int(len(inputs_for_rollout)), int(rollout_infer_bs)):
                 chunk = inputs_for_rollout[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
@@ -1867,27 +1880,36 @@ class Stage2ABTrainingTrainer(
                     },
                     request_index_offset=int(off),
                 )
-                explorer_chunk_results = _rollout_many_with_decode_override(
-                    chunk,
-                    decode_override={
-                        "decode_mode": str(explorer_decode_request.decode_mode),
-                        "temperature": float(explorer_decode_request.temperature),
-                        "top_p": float(explorer_decode_request.top_p),
-                        "top_k": int(explorer_decode_request.top_k),
-                    },
-                    request_index_offset=int(off),
-                )
                 anchor_rollout_results.extend(anchor_chunk_results)
-                explorer_rollout_results.extend(explorer_chunk_results)
+                for explorer_ordinal in range(int(explorer_view_count)):
+                    explorer_chunk_results = _rollout_many_with_decode_override(
+                        chunk,
+                        decode_override={
+                            "decode_mode": str(explorer_decode_request.decode_mode),
+                            "temperature": float(explorer_decode_request.temperature),
+                            "top_p": float(explorer_decode_request.top_p),
+                            "top_k": int(explorer_decode_request.top_k),
+                        },
+                        request_index_offset=int(
+                            explorer_ordinal * len(inputs_for_rollout) + off
+                        ),
+                    )
+                    explorer_rollout_results_by_view[int(explorer_ordinal)].extend(
+                        explorer_chunk_results
+                    )
 
             if len(anchor_rollout_results) != len(inputs_for_rollout):
                 raise RuntimeError(
                     "anchor rollout backend returned unexpected number of results"
                 )
-            if len(explorer_rollout_results) != len(inputs_for_rollout):
-                raise RuntimeError(
-                    "explorer rollout backend returned unexpected number of results"
-                )
+            for explorer_ordinal, explorer_rollout_results in enumerate(
+                explorer_rollout_results_by_view
+            ):
+                if len(explorer_rollout_results) != len(inputs_for_rollout):
+                    raise RuntimeError(
+                        "explorer rollout backend returned unexpected number of results "
+                        f"for explorer ordinal {int(explorer_ordinal)}"
+                    )
             t_gen_s = time.perf_counter() - t_gen0
 
         encoded_batch: List[Dict[str, Any]] = []
@@ -1924,9 +1946,19 @@ class Stage2ABTrainingTrainer(
         triage_dead_anchor_total = 0
         triage_dead_explorer_total = 0
         triage_recovered_gt_total = 0
-        triage_recovered_gt_den_total = 0
+        triage_recovered_gt_rate_num_total = 0.0
+        triage_recovered_gt_rate_den_total = 0.0
         triage_dead_anchor_den_total = 0
         triage_dead_explorer_den_total = 0
+        triage_pseudo_positive_candidate_total = 0
+        triage_pseudo_positive_subthreshold_total = 0
+        triage_pseudo_positive_selected_total = 0
+        triage_pseudo_positive_cluster_demoted_total = 0
+        triage_pseudo_positive_support_rate_num_total = 0.0
+        triage_pseudo_positive_support_rate_den_total = 0.0
+        triage_pseudo_positive_selected_support_rate_num_total = 0.0
+        triage_pseudo_positive_selected_support_rate_den_total = 0.0
+        anchor_preparation_dropped_total = 0
         matched_for_supervision_total = 0
 
         anchor_pred_objects_total = 0
@@ -1942,11 +1974,10 @@ class Stage2ABTrainingTrainer(
         explorer_gen_new_token_lens: List[int] = []
         explorer_near_same_desc_pairs_total = 0
         explorer_near_any_desc_pairs_total = 0
+        explorer_view_count_total = 0
 
-        for sample, anchor_rollout, explorer_rollout in zip(
-            inputs_for_rollout,
-            anchor_rollout_results,
-            explorer_rollout_results,
+        for sample_index, (sample, anchor_rollout) in enumerate(
+            zip(inputs_for_rollout, anchor_rollout_results)
         ):
             if "messages" not in sample:
                 raise ValueError("stage2-ab requires 'messages' in dataset samples")
@@ -1972,29 +2003,60 @@ class Stage2ABTrainingTrainer(
                 duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
                 hungarian_match_maskiou_fn=hungarian_match_maskiou,
             )
-            explorer_view = build_channel_b_rollout_view(
-                tokenizer=tok,
-                object_field_order=object_field_order,
-                coord_id_to_bin=coord_id_to_bin,
-                duplicate_iou_threshold=duplicate_iou_threshold,
-                match_top_k=match_top_k,
-                gate_thr=gate_thr,
-                mask_res=mask_res,
-                fp_cost=fp_cost,
-                fn_cost=fn_cost,
-                max_new_tokens=max_new_tokens,
-                gts=gts,
-                rollout_result=explorer_rollout,
-                parse_rollout_for_matching_fn=parse_rollout_for_matching,
-                points_from_coord_tokens_fn=points_from_coord_tokens,
-                sequential_dedup_fn=_sequential_dedup_bbox_objects,
-                duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
-                hungarian_match_maskiou_fn=hungarian_match_maskiou,
+            explorer_rollouts = [
+                explorer_rollout_results[int(sample_index)]
+                for explorer_rollout_results in explorer_rollout_results_by_view
+            ]
+            explorer_views = [
+                build_channel_b_rollout_view(
+                    tokenizer=tok,
+                    object_field_order=object_field_order,
+                    coord_id_to_bin=coord_id_to_bin,
+                    duplicate_iou_threshold=duplicate_iou_threshold,
+                    match_top_k=match_top_k,
+                    gate_thr=gate_thr,
+                    mask_res=mask_res,
+                    fp_cost=fp_cost,
+                    fn_cost=fn_cost,
+                    max_new_tokens=max_new_tokens,
+                    gts=gts,
+                    rollout_result=explorer_rollout,
+                    parse_rollout_for_matching_fn=parse_rollout_for_matching,
+                    points_from_coord_tokens_fn=points_from_coord_tokens,
+                    sequential_dedup_fn=_sequential_dedup_bbox_objects,
+                    duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
+                    hungarian_match_maskiou_fn=hungarian_match_maskiou,
+                )
+                for explorer_rollout in explorer_rollouts
+            ]
+            explorer_view = explorer_views[0]
+            explorer_match = explorer_view["match"]
+            explorer_accepted_objects_clean = list(
+                explorer_view["accepted_objects_clean"]
             )
 
             parse = anchor_view["parse"]
             invalid_rollout = int(anchor_view["invalid_rollout"])
-            parse_truncated_total += int(1 if bool(parse.truncated) else 0)
+            parse_truncated_total += int(1 if bool(parse.truncated) else 0) + sum(
+                int(explorer_view_item["parse_truncated"])
+                for explorer_view_item in explorer_views
+            )
+            if pseudo_positive_enabled and int(invalid_rollout) != 0:
+                invalid_rollout_total += int(invalid_rollout)
+                anchor_preparation_dropped_total += 1
+                continue
+            if pseudo_positive_enabled:
+                invalid_explorer_ordinals = [
+                    int(explorer_ordinal)
+                    for explorer_ordinal, explorer_view_item in enumerate(explorer_views)
+                    if int(explorer_view_item["invalid_rollout"]) != 0
+                ]
+                if invalid_explorer_ordinals:
+                    raise ValueError(
+                        "stage2-ab pseudo-positive Channel-B requires every explorer "
+                        "view to complete accepted-clean preparation; invalid explorer "
+                        f"ordinals={invalid_explorer_ordinals}"
+                    )
 
             drop_reasons = dict(anchor_view["drop_reasons"])
             drop_poly = int(anchor_view["drop_poly"])
@@ -2065,20 +2127,22 @@ class Stage2ABTrainingTrainer(
                 if 0 <= int(pred_i) < len(accepted_objects_clean)
                 and 0 <= int(gt_i) < len(gts)
             }
-            explorer_match = explorer_view["match"]
-            explorer_accepted_objects_clean = list(
-                explorer_view["accepted_objects_clean"]
-            )
-            explorer_match_by_pred = {
-                int(pred_i): int(gt_i)
-                for pred_i, gt_i in explorer_match.matched_pairs
-                if 0 <= int(pred_i) < len(explorer_accepted_objects_clean)
-                and 0 <= int(gt_i) < len(gts)
-            }
-            anchor_gt_indices = set(int(gt_i) for gt_i in anchor_match_by_pred.values())
-            explorer_gt_indices = set(
-                int(gt_i) for gt_i in explorer_match_by_pred.values()
-            )
+            explorer_accepted_objects_clean_by_view = [
+                list(explorer_view_item["accepted_objects_clean"])
+                for explorer_view_item in explorer_views
+            ]
+            explorer_match_by_pred_by_view = [
+                {
+                    int(pred_i): int(gt_i)
+                    for pred_i, gt_i in explorer_view_item["match"].matched_pairs
+                    if 0 <= int(pred_i) < len(explorer_accepted_objects_clean)
+                    and 0 <= int(gt_i) < len(gts)
+                }
+                for explorer_view_item, explorer_accepted_objects_clean in zip(
+                    explorer_views,
+                    explorer_accepted_objects_clean_by_view,
+                )
+            ]
             anchor_pred_objects_total += int(anchor_view["pred_objects"])
             anchor_valid_pred_objects_total += int(anchor_view["n_valid_pred"])
             anchor_parse_truncated_total += int(anchor_view["parse_truncated"])
@@ -2096,47 +2160,125 @@ class Stage2ABTrainingTrainer(
                 or 0.0
             )
 
-            explorer_pred_objects_total += int(explorer_view["pred_objects"])
-            explorer_valid_pred_objects_total += int(explorer_view["n_valid_pred"])
-            explorer_parse_truncated_total += int(explorer_view["parse_truncated"])
-            explorer_gen_new_token_lens.append(int(explorer_view["gen_new_tokens"]))
-            explorer_near_same_desc_pairs_total += int(
-                explorer_view["duplicate_metrics"].get(
-                    "dup/near_iou90_pairs_same_desc_count", 0.0
-                )
-                or 0.0
+            explorer_view_count_total += int(len(explorer_views))
+            explorer_pred_objects_total += sum(
+                int(explorer_view_item["pred_objects"])
+                for explorer_view_item in explorer_views
             )
-            explorer_near_any_desc_pairs_total += int(
-                explorer_view["duplicate_metrics"].get(
-                    "dup/near_iou90_pairs_any_desc_count", 0.0
+            explorer_valid_pred_objects_total += sum(
+                int(explorer_view_item["n_valid_pred"])
+                for explorer_view_item in explorer_views
+            )
+            explorer_parse_truncated_total += sum(
+                int(explorer_view_item["parse_truncated"])
+                for explorer_view_item in explorer_views
+            )
+            explorer_gen_new_token_lens.extend(
+                int(explorer_view_item["gen_new_tokens"])
+                for explorer_view_item in explorer_views
+            )
+            explorer_near_same_desc_pairs_total += sum(
+                int(
+                    explorer_view_item["duplicate_metrics"].get(
+                        "dup/near_iou90_pairs_same_desc_count", 0.0
+                    )
+                    or 0.0
                 )
-                or 0.0
+                for explorer_view_item in explorer_views
+            )
+            explorer_near_any_desc_pairs_total += sum(
+                int(
+                    explorer_view_item["duplicate_metrics"].get(
+                        "dup/near_iou90_pairs_any_desc_count", 0.0
+                    )
+                    or 0.0
+                )
+                for explorer_view_item in explorer_views
             )
 
             triage = _build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
-                explorer_accepted_objects_clean=explorer_accepted_objects_clean,
+                explorer_accepted_objects_clean_by_view=explorer_accepted_objects_clean_by_view,
                 anchor_match_by_pred=anchor_match_by_pred,
-                explorer_match_by_pred=explorer_match_by_pred,
+                explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
                 unlabeled_consistent_iou_threshold=float(
                     unlabeled_consistent_iou_threshold
                 ),
+                duplicate_iou_threshold=float(duplicate_iou_threshold),
+                pseudo_positive_enabled=bool(pseudo_positive_enabled),
             )
-            association_pairs = list(triage.association_pairs)
+            association_pairs_by_view = [
+                list(pairs) for pairs in triage.association_pairs_by_view
+            ]
             anchor_gt_backed_indices = list(triage.anchor_gt_backed_indices)
+            anchor_support_counts = list(triage.anchor_support_counts)
+            anchor_support_rates = list(triage.anchor_support_rates)
             shielded_anchor_indices = set(triage.shielded_anchor_indices)
+            pseudo_positive_candidate_indices = list(
+                triage.pseudo_positive_candidate_indices
+            )
+            pseudo_positive_anchor_indices = list(triage.pseudo_positive_anchor_indices)
+            pseudo_positive_cluster_demoted_indices = list(
+                triage.pseudo_positive_cluster_demoted_indices
+            )
             dead_anchor_indices = set(triage.dead_anchor_indices)
             recovered_gt_indices = list(triage.recovered_gt_indices)
-            dead_explorer_indices = list(triage.dead_explorer_indices)
+            recovered_gt_support_counts = list(triage.recovered_gt_support_counts)
+            recovered_gt_support_rates = list(triage.recovered_gt_support_rates)
+            dead_explorer_indices_by_view = [
+                list(indices) for indices in triage.dead_explorer_indices_by_view
+            ]
+            valid_explorer_count = int(triage.valid_explorer_count)
 
             triage_anchor_gt_backed_total += int(len(anchor_gt_backed_indices))
             triage_shielded_anchor_total += int(len(shielded_anchor_indices))
+            triage_pseudo_positive_candidate_total += int(
+                len(pseudo_positive_candidate_indices)
+            )
+            triage_pseudo_positive_selected_total += int(
+                len(pseudo_positive_anchor_indices)
+            )
+            triage_pseudo_positive_cluster_demoted_total += int(
+                len(pseudo_positive_cluster_demoted_indices)
+            )
+            triage_pseudo_positive_subthreshold_total += int(
+                len(shielded_anchor_indices)
+            )
+            triage_pseudo_positive_support_rate_num_total += float(
+                sum(
+                    int(anchor_support_counts[int(idx)])
+                    for idx in pseudo_positive_candidate_indices
+                )
+            )
+            triage_pseudo_positive_support_rate_den_total += float(
+                int(valid_explorer_count) * int(len(pseudo_positive_candidate_indices))
+            )
+            triage_pseudo_positive_selected_support_rate_num_total += float(
+                sum(
+                    int(anchor_support_counts[int(idx)])
+                    for idx in pseudo_positive_anchor_indices
+                )
+            )
+            triage_pseudo_positive_selected_support_rate_den_total += float(
+                int(valid_explorer_count) * int(len(pseudo_positive_anchor_indices))
+            )
             triage_dead_anchor_total += int(len(dead_anchor_indices))
-            triage_dead_explorer_total += int(len(dead_explorer_indices))
+            triage_dead_explorer_total += int(
+                sum(len(indices) for indices in dead_explorer_indices_by_view)
+            )
             triage_recovered_gt_total += int(len(recovered_gt_indices))
+            triage_recovered_gt_rate_num_total += float(
+                sum(int(v) for v in recovered_gt_support_counts)
+            )
+            triage_recovered_gt_rate_den_total += float(
+                int(valid_explorer_count) * int(len(recovered_gt_indices))
+            )
             triage_dead_anchor_den_total += int(len(accepted_objects_clean))
             triage_dead_explorer_den_total += int(
-                len(explorer_accepted_objects_clean)
+                sum(
+                    len(explorer_accepted_objects_clean)
+                    for explorer_accepted_objects_clean in explorer_accepted_objects_clean_by_view
+                )
             )
 
             kept_anchor_objects = list(triage.kept_anchor_objects)
@@ -2152,6 +2294,11 @@ class Stage2ABTrainingTrainer(
                 recovered_ground_truth_weight_multiplier=float(
                     recovered_ground_truth_weight_multiplier
                 ),
+                pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                pseudo_positive_coord_weight=float(
+                    self._ab_channel_b_get("pseudo_positive.coord_weight", 0.5)
+                ),
+                duplicate_iou_threshold=float(duplicate_iou_threshold),
                 object_field_order=object_field_order,
                 bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
                 matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2171,7 +2318,6 @@ class Stage2ABTrainingTrainer(
             fn_objs = list(supervision_targets.fn_objs)
             fn_object_weights = list(supervision_targets.fn_object_weights)
             fn_count_for_meta = int(supervision_targets.fn_count_for_meta)
-            triage_recovered_gt_den_total += int(len(fn_gt_indices_final))
             append_text = str(supervision_targets.append_text)
             tail_desc_pos = list(supervision_targets.tail_desc_pos)
             tail_desc_weights = list(supervision_targets.tail_desc_weights)
@@ -2196,6 +2342,7 @@ class Stage2ABTrainingTrainer(
                 or dead_anchor_indices
                 or recovered_gt_indices
                 or shielded_anchor_indices
+                or pseudo_positive_anchor_indices
             ):
                 duplicate_bursts_dump = {
                     str(boundary): [
@@ -2324,12 +2471,22 @@ class Stage2ABTrainingTrainer(
                             ],
                         },
                         "triage": {
-                            "association_pairs": [
-                                [int(anchor_i), int(explorer_i)]
-                                for anchor_i, explorer_i in association_pairs
+                            "association_pairs_by_view": [
+                                [
+                                    [int(anchor_i), int(explorer_i)]
+                                    for anchor_i, explorer_i in association_pairs
+                                ]
+                                for association_pairs in association_pairs_by_view
                             ],
+                            "valid_explorer_count": int(valid_explorer_count),
                             "anchor_gt_backed_indices": [
                                 int(idx) for idx in anchor_gt_backed_indices
+                            ],
+                            "anchor_support_counts": [
+                                int(v) for v in anchor_support_counts
+                            ],
+                            "anchor_support_rates": [
+                                float(v) for v in anchor_support_rates
                             ],
                             "shielded_anchor_indices": [
                                 int(idx) for idx in sorted(shielded_anchor_indices)
@@ -2337,11 +2494,21 @@ class Stage2ABTrainingTrainer(
                             "dead_anchor_indices": [
                                 int(idx) for idx in sorted(dead_anchor_indices)
                             ],
-                            "dead_explorer_indices": [
-                                int(idx) for idx in dead_explorer_indices
+                            "pseudo_positive_anchor_indices": [
+                                int(idx) for idx in pseudo_positive_anchor_indices
+                            ],
+                            "dead_explorer_indices_by_view": [
+                                [int(idx) for idx in dead_explorer_indices]
+                                for dead_explorer_indices in dead_explorer_indices_by_view
                             ],
                             "recovered_gt_indices": [
                                 int(idx) for idx in recovered_gt_indices
+                            ],
+                            "recovered_gt_support_counts": [
+                                int(v) for v in recovered_gt_support_counts
+                            ],
+                            "recovered_gt_support_rates": [
+                                float(v) for v in recovered_gt_support_rates
                             ],
                             "fn_object_weights": [
                                 float(weight) for weight in fn_object_weights
@@ -2524,11 +2691,17 @@ class Stage2ABTrainingTrainer(
                 fn_object_weights=fn_object_weights,
                 anchor_decode_mode=str(anchor_view["decode_mode"]),
                 explorer_decode_mode=str(explorer_view["decode_mode"]),
+                valid_explorer_count=int(valid_explorer_count),
                 anchor_gt_backed_indices=anchor_gt_backed_indices,
+                anchor_support_counts=anchor_support_counts,
+                anchor_support_rates=anchor_support_rates,
                 shielded_anchor_indices=sorted(shielded_anchor_indices),
                 dead_anchor_indices=sorted(dead_anchor_indices),
-                dead_explorer_indices=dead_explorer_indices,
+                pseudo_positive_anchor_indices=pseudo_positive_anchor_indices,
+                dead_explorer_indices_by_view=dead_explorer_indices_by_view,
                 recovered_gt_indices=recovered_gt_indices,
+                recovered_gt_support_counts=recovered_gt_support_counts,
+                recovered_gt_support_rates=recovered_gt_support_rates,
                 dead_anchor_suppression_targets=dead_anchor_suppression_targets,
                 dead_anchor_suppression_boundary_count=int(
                     dead_anchor_suppression_boundary_count
@@ -2551,6 +2724,9 @@ class Stage2ABTrainingTrainer(
         batch_metrics: Stage2BatchMetrics = {
             "stage2/channel_a": float(0.0),
             "stage2/channel_b": float(1.0),
+            "stage2/raw_rollouts": float(
+                len(anchor_rollout_results) + explorer_view_count_total
+            ),
             "stage2/invalid_rollout": float(invalid_rollout_total),
             "stage2_ab/channel_b/invalid_rollout": float(invalid_rollout_total),
             "stage2_ab/channel_b/closure_supervision/N_drop": float(
@@ -2608,14 +2784,21 @@ class Stage2ABTrainingTrainer(
             ),
             "rollout/anchor/near_iou90_any": float(anchor_near_any_desc_pairs_total),
             "rollout/anchor/near_iou90_same": float(anchor_near_same_desc_pairs_total),
-            "rollout/explorer/pred_objects": float(explorer_pred_objects_total),
+            "rollout/explorer/pred_objects": float(
+                float(explorer_pred_objects_total) / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
             "rollout/explorer/valid_pred_objects": float(
-                explorer_valid_pred_objects_total
+                float(explorer_valid_pred_objects_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
             ),
             "rollout/explorer/parse_truncated_rate": float(
                 float(explorer_parse_truncated_total)
-                / float(len(explorer_rollout_results))
-                if len(explorer_rollout_results) > 0
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
                 else 0.0
             ),
             "rollout/explorer/gen_new_tokens_mean": float(
@@ -2627,10 +2810,16 @@ class Stage2ABTrainingTrainer(
                 _percentile(explorer_gen_new_token_lens, 90.0)
             ),
             "rollout/explorer/near_iou90_any": float(
-                explorer_near_any_desc_pairs_total
+                float(explorer_near_any_desc_pairs_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
             ),
             "rollout/explorer/near_iou90_same": float(
-                explorer_near_same_desc_pairs_total
+                float(explorer_near_same_desc_pairs_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
             ),
             "rollout/explorer/temperature": float(explorer_decode_request.temperature),
             "rollout/explorer/do_sample": float(1.0 if do_sample else 0.0),
@@ -2638,12 +2827,17 @@ class Stage2ABTrainingTrainer(
             "rollout/explorer/top_k": float(explorer_decode_request.top_k),
             "rollout/parse_truncated": float(parse_truncated_total),
             "rollout/parse_truncated_rate": float(
-                (float(parse_truncated_total) / float(len(anchor_rollout_results)))
-                if len(anchor_rollout_results) > 0
+                (
+                    float(parse_truncated_total)
+                    / float(len(anchor_rollout_results) + explorer_view_count_total)
+                )
+                if (len(anchor_rollout_results) + explorer_view_count_total) > 0
                 else 0.0
             ),
             "rollout/_parse_truncated_num": float(parse_truncated_total),
-            "rollout/_parse_truncated_den": float(len(anchor_rollout_results)),
+            "rollout/_parse_truncated_den": float(
+                len(anchor_rollout_results) + explorer_view_count_total
+            ),
             "dup/max_desc_count": float(
                 dup_max_desc_count_sum / float(dup_metric_samples)
                 if dup_metric_samples > 0
@@ -2686,19 +2880,46 @@ class Stage2ABTrainingTrainer(
             "train/triage/explorer_only_dead_count": float(
                 triage_dead_explorer_total
             ),
+            "train/triage/pseudo_positive_candidate_count": float(
+                triage_pseudo_positive_candidate_total
+            ),
+            "train/triage/pseudo_positive_subthreshold_count": float(
+                triage_pseudo_positive_subthreshold_total
+            ),
+            "train/triage/pseudo_positive_selected_count": float(
+                triage_pseudo_positive_selected_total
+            ),
+            "train/triage/pseudo_positive_cluster_demoted_count": float(
+                triage_pseudo_positive_cluster_demoted_total
+            ),
+            "train/triage/anchor_preparation_dropped_count": float(
+                anchor_preparation_dropped_total
+            ),
+            "train/triage/pseudo_positive_support_rate_num": float(
+                triage_pseudo_positive_support_rate_num_total
+            ),
+            "train/triage/pseudo_positive_support_rate_den": float(
+                triage_pseudo_positive_support_rate_den_total
+            ),
+            "train/triage/pseudo_positive_selected_support_rate_num": float(
+                triage_pseudo_positive_selected_support_rate_num_total
+            ),
+            "train/triage/pseudo_positive_selected_support_rate_den": float(
+                triage_pseudo_positive_selected_support_rate_den_total
+            ),
             "train/triage/recovered_ground_truth_count": float(
                 triage_recovered_gt_total
             ),
             "train/triage/recovered_ground_truth_rate_num": float(
-                triage_recovered_gt_total
+                triage_recovered_gt_rate_num_total
             ),
             "train/triage/recovered_ground_truth_rate_den": float(
-                triage_recovered_gt_den_total
+                triage_recovered_gt_rate_den_total
             ),
             "train/triage/recovered_ground_truth_rate": float(
-                float(triage_recovered_gt_total)
-                / float(triage_recovered_gt_den_total)
-                if triage_recovered_gt_den_total > 0
+                float(triage_recovered_gt_rate_num_total)
+                / float(triage_recovered_gt_rate_den_total)
+                if triage_recovered_gt_rate_den_total > 0
                 else 0.0
             ),
             "train/triage/dead_anchor_rate_num": float(

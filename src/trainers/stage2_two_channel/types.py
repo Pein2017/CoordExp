@@ -54,16 +54,22 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     stage2_invalid_rollout: int
     rollout_seed_base: int
     drop_invalid_total: int
+    valid_explorer_count: int
     prefix_struct_pos: List[int]
     tail_desc_weights: List[float]
     fn_object_weights: List[float]
     anchor_decode_mode: str
     explorer_decode_mode: str
     anchor_gt_backed_indices: List[int]
+    anchor_support_counts: List[int]
+    anchor_support_rates: List[float]
     shielded_anchor_indices: List[int]
     dead_anchor_indices: List[int]
-    dead_explorer_indices: List[int]
+    pseudo_positive_anchor_indices: List[int]
+    dead_explorer_indices_by_view: List[List[int]]
     recovered_gt_indices: List[int]
+    recovered_gt_support_counts: List[int]
+    recovered_gt_support_rates: List[float]
     dead_anchor_suppression_targets: List[Stage2DeadAnchorSuppressionTarget]
     dead_anchor_suppression_boundary_count: int
     dead_anchor_suppression_skipped_no_divergence: int
