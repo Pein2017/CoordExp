@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Support-Rate Triage And Promotion** - Turn multi-explorer evidence into deterministic support-rate buckets, recovered-FN aggregation, and cluster-safe pseudo-positive selection.
 - [x] **Phase 3: One-Forward Loss Projection** - Realize pseudo-positive coord-only supervision and duplicate-like dead-anchor suppression under the existing one-forward target contract.
 - [x] **Phase 4: Observability And Operator Surface** - Add metrics, metadata, docs, and YAML authoring surfaces that keep arbitrary-`K` runs interpretable and backward-compatible.
-- [ ] **Phase 5: Validation And Best-K Readiness** - Prove the contract with targeted tests, smoke validation, and first `best-K`-ready comparison support.
+- [x] **Phase 5: Validation And Best-K Readiness** - Prove the contract with targeted tests, smoke validation, and first `best-K`-ready comparison support.
 
 ## Phase Details
 
@@ -92,8 +92,8 @@ Plans:
 
 Plans:
 - [x] 05-01: Add and pass targeted config-contract and trainer regression tests
-- [ ] 05-02: Run pseudo-positive smoke validation and confirm one-forward / coord-only behavior
-- [ ] 05-03: Verify `best-K`-ready observability, default `K=4` profile behavior, and `K=2` no-promotion control semantics
+- [x] 05-02: Run pseudo-positive smoke validation and confirm one-forward / coord-only behavior
+- [x] 05-03: Verify `best-K`-ready observability, default `K=4` profile behavior, and `K=2` no-promotion control semantics
 
 ## Progress
 
@@ -106,4 +106,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Support-Rate Triage And Promotion | 3/3 | Completed | 2026-03-22 |
 | 3. One-Forward Loss Projection | 3/3 | Completed | 2026-03-22 |
 | 4. Observability And Operator Surface | 3/3 | Completed | 2026-03-22 |
-| 5. Validation And Best-K Readiness | 1/3 | In progress | - |
+| 5. Validation And Best-K Readiness | 3/3 | Completed | 2026-03-22 |
