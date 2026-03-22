@@ -84,6 +84,24 @@ def _validate_section_keys_strict(
         raise ValueError(f"Unknown {section} keys: {rendered}")
 
 
+def _is_versioned_alias_for(name: str, canonical: str) -> bool:
+    normalized = name.strip().lower()
+    canonical = canonical.strip().lower()
+    if normalized == canonical:
+        return False
+
+    suffix_prefix = f"{canonical}_v"
+    if normalized.startswith(suffix_prefix) and normalized[len(suffix_prefix) :].isdigit():
+        return True
+
+    prefix_suffix = f"_{canonical}"
+    if normalized.startswith("v") and normalized.endswith(prefix_suffix):
+        version = normalized[1 : -len(prefix_suffix)]
+        return version.isdigit()
+
+    return False
+
+
 @lru_cache(maxsize=1)
 def _train_arguments_allowed_keys() -> set[str]:
     # Schema-derived strict key acceptance for ms-swift TrainArguments-driven sections.
@@ -1159,9 +1177,14 @@ class Stage2ABChannelBTriagePosteriorConfig:
     recovered_ground_truth_weight_multiplier: float = 2.0
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBTriagePosteriorConfig":
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        default_num_rollouts: Optional[int] = None,
+    ) -> "Stage2ABChannelBTriagePosteriorConfig":
         if payload is None:
-            return cls()
+            return cls(num_rollouts=cls.num_rollouts if default_num_rollouts is None else default_num_rollouts)
         if not isinstance(payload, Mapping):
             raise TypeError(
                 "stage2_ab.channel_b.triage_posterior must be a mapping when provided"
@@ -1169,16 +1192,17 @@ class Stage2ABChannelBTriagePosteriorConfig:
 
         data: MutableMapping[str, Any] = dict(payload)
 
-        num_rollouts_raw = data.pop("num_rollouts", cls.num_rollouts)
+        default_rollouts = cls.num_rollouts if default_num_rollouts is None else default_num_rollouts
+        num_rollouts_raw = data.pop("num_rollouts", default_rollouts)
         try:
             num_rollouts = int(num_rollouts_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
                 "stage2_ab.channel_b.triage_posterior.num_rollouts must be an int"
             ) from exc
-        if num_rollouts != 2:
+        if num_rollouts < 2:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2"
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be >= 2"
             )
 
         explorer_temperature_raw = data.pop(
@@ -1288,10 +1312,98 @@ class Stage2ABChannelBTriagePosteriorConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBPseudoPositiveConfig:
+    enabled: bool = False
+    coord_weight: float = 0.5
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBPseudoPositiveConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stage2_ab.channel_b.pseudo_positive must be a mapping when provided"
+            )
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        versioned = [
+            f"stage2_ab.channel_b.pseudo_positive.{str(key)}"
+            for key in sorted(data.keys(), key=lambda x: str(x))
+            if isinstance(key, str)
+            and (
+                _is_versioned_alias_for(key, "enabled")
+                or _is_versioned_alias_for(key, "coord_weight")
+            )
+        ]
+        if versioned:
+            raise ValueError(
+                "Versioned pseudo-positive knob aliases are unsupported; "
+                f"use unversioned keys instead: {versioned}"
+            )
+
+        enabled_raw = data.pop("enabled", cls.enabled)
+        if isinstance(enabled_raw, bool):
+            enabled = enabled_raw
+        elif isinstance(enabled_raw, (int, float)):
+            if enabled_raw in (0, 1, 0.0, 1.0):
+                enabled = bool(enabled_raw)
+            else:
+                raise ValueError(
+                    "stage2_ab.channel_b.pseudo_positive.enabled must be boolean (0 or 1)"
+                )
+        elif isinstance(enabled_raw, str):
+            normalized = enabled_raw.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                enabled = True
+            elif normalized in {"false", "0", "no", "n", "off"}:
+                enabled = False
+            else:
+                raise ValueError(
+                    "stage2_ab.channel_b.pseudo_positive.enabled string value "
+                    f"'{enabled_raw}' is not a recognized boolean representation."
+                )
+        else:
+            raise TypeError(
+                "stage2_ab.channel_b.pseudo_positive.enabled must be a boolean value"
+            )
+
+        coord_weight_raw = data.pop("coord_weight", cls.coord_weight)
+        try:
+            coord_weight = float(coord_weight_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.pseudo_positive.coord_weight must be a float/int"
+            ) from exc
+        if not math.isfinite(coord_weight):
+            raise ValueError(
+                "stage2_ab.channel_b.pseudo_positive.coord_weight must be finite"
+            )
+        if not (0.0 < coord_weight < 1.0):
+            raise ValueError(
+                "stage2_ab.channel_b.pseudo_positive.coord_weight must be in (0, 1)"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.pseudo_positive.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.pseudo_positive keys: {unknown}"
+            )
+
+        return cls(enabled=enabled, coord_weight=coord_weight)
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
+        default_factory=Stage2ABChannelBPseudoPositiveConfig
+    )
     triage_posterior: Stage2ABChannelBTriagePosteriorConfig = field(
         default_factory=Stage2ABChannelBTriagePosteriorConfig
     )
@@ -1356,6 +1468,12 @@ class Stage2ABChannelBConfig:
                 "stage2_ab.channel_b.semantic_desc_gate has been removed. "
                 "Remove this key (training-time semantic gating is unsupported)."
             )
+        for key in sorted(data.keys(), key=lambda x: str(x)):
+            if isinstance(key, str) and _is_versioned_alias_for(key, "pseudo_positive"):
+                raise ValueError(
+                    "Versioned pseudo-positive knob aliases are unsupported; "
+                    "use stage2_ab.channel_b.pseudo_positive instead."
+                )
 
         duplicate_iou_threshold_raw = data.pop(
             "duplicate_iou_threshold",
@@ -1406,7 +1524,27 @@ class Stage2ABChannelBConfig:
                     "(bounded DDP phase barriers are required)"
                 )
 
-        triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(data.pop("triage_posterior", None))
+        pseudo_positive = Stage2ABChannelBPseudoPositiveConfig.from_mapping(
+            data.pop("pseudo_positive", None)
+        )
+        triage_default_rollouts = (
+            4
+            if pseudo_positive.enabled
+            else Stage2ABChannelBTriagePosteriorConfig.num_rollouts
+        )
+        triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(
+            data.pop("triage_posterior", None),
+            default_num_rollouts=triage_default_rollouts,
+        )
+        if (
+            not pseudo_positive.enabled
+            and triage_posterior.num_rollouts
+            != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
+        ):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2 when "
+                "stage2_ab.channel_b.pseudo_positive.enabled=false"
+            )
 
         if data:
             raise ValueError(
@@ -1417,6 +1555,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            pseudo_positive=pseudo_positive,
             triage_posterior=triage_posterior,
         )
 
