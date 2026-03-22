@@ -1,24 +1,24 @@
 # State: CoordExp Stage-2 Pseudo-Positive Implementation
 
-**Current Phase:** 2
-**Current Phase Name:** Support-Rate Triage And Promotion
+**Current Phase:** 5
+**Current Phase Name:** Validation And Best-K Readiness
 **Total Phases:** 5
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 3
-**Status:** Ready to implement Phase 2 Plan 01
-**Progress:** 35%
+**Status:** Ready to execute Phase 5 Plan 02
+**Progress:** 85%
 **Last Activity:** 2026-03-22
-**Last Activity Description:** Completed Phase 1 by adding pseudo-positive config guardrails, arbitrary-`K` rollout scheduling, enabled-path failure semantics, and passing Stage-2 config/training regression suites.
-**Paused At:** Starting Phase 2 plan 01
+**Last Activity Description:** Retroactively reconciled Phases 2-4 as complete from the landed implementation, marked Phase 5 Plan 01 complete via passing regressions and OpenSpec validation, and left only real smoke / best-K runtime validation open.
+**Paused At:** Starting Phase 5 plan 02
 
 ## Focus
 
-Implement the support-rate triage and promotion layer for the exact OpenSpec implementation slice:
+Execute the remaining live validation work for the exact OpenSpec implementation slice:
 
-- per-explorer anchor/explorer association
-- support-count and support-rate accounting
-- recovered-GT aggregation across explorers
-- deterministic pseudo-positive promotion
+- real pseudo-positive smoke execution through `src.sft`
+- runtime confirmation of one-forward and coord-only behavior
+- best-`K` comparison readiness across enabled rollout counts
+- enabled `K=2` no-promotion runtime confirmation
 
 ## Decisions Made
 
@@ -31,6 +31,8 @@ Implement the support-rate triage and promotion layer for the exact OpenSpec imp
 | Init | Dead-anchor negatives stay narrow and duplicate-like only | Preserves conservative supervision under incomplete GT |
 | Phase 1 | Legacy `rollout/explorer/*` metrics become mean-over-valid-explorer-view summaries under arbitrary `K` | Preserves operator continuity while extending runtime evidence width |
 | Phase 1 | Enabled malformed anchors are dropped, while malformed explorers abort the step | Keeps multi-explorer support denominators honest without broadening fallback semantics |
+| Phase 2-4 | These phases are already implemented and documented, so their GSD directories are recorded as retroactive summaries rather than forward plans | Keeps GSD aligned with the landed code instead of duplicating work |
+| Phase 5 | Remaining work should focus on live smoke / best-`K` evidence instead of more code churn | The code/spec/docs surface is already green; the main unknown is runtime behavior on real infra |
 
 ## Blockers
 
@@ -43,9 +45,13 @@ None
 | Phase 1 / Plan 01 | 20 min | 2 | 2 |
 | Phase 1 / Plan 02 | 30 min | 2 | 2 |
 | Phase 1 / Plan 03 | 25 min | 2 | 2 |
+| Phase 2 / Plans 01-03 | retroactive | reconciled | 3 summaries |
+| Phase 3 / Plans 01-03 | retroactive | reconciled | 3 summaries |
+| Phase 4 / Plans 01-03 | retroactive | reconciled | 3 summaries |
+| Phase 5 / Plan 01 | retroactive | validated | regression + OpenSpec |
 
 ## Session
 
 **Last Date:** 2026-03-22T00:00:00Z
-**Stopped At:** Ready to implement Phase 2 support-rate triage plans
-**Resume File:** .planning/ROADMAP.md
+**Stopped At:** Ready to execute `.planning/phases/05-validation-and-best-k-readiness/05-02-PLAN.md`
+**Resume File:** .planning/phases/05-validation-and-best-k-readiness/05-02-PLAN.md

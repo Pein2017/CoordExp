@@ -13,9 +13,9 @@ This roadmap turns the validated OpenSpec change `study-channel-b-pseudopositive
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Config And Rollout Foundation** - Add the versionless pseudo-positive config contract and arbitrary-`K` runtime scaffolding without breaking the disabled path.
-- [ ] **Phase 2: Support-Rate Triage And Promotion** - Turn multi-explorer evidence into deterministic support-rate buckets, recovered-FN aggregation, and cluster-safe pseudo-positive selection.
-- [ ] **Phase 3: One-Forward Loss Projection** - Realize pseudo-positive coord-only supervision and duplicate-like dead-anchor suppression under the existing one-forward target contract.
-- [ ] **Phase 4: Observability And Operator Surface** - Add metrics, metadata, docs, and YAML authoring surfaces that keep arbitrary-`K` runs interpretable and backward-compatible.
+- [x] **Phase 2: Support-Rate Triage And Promotion** - Turn multi-explorer evidence into deterministic support-rate buckets, recovered-FN aggregation, and cluster-safe pseudo-positive selection.
+- [x] **Phase 3: One-Forward Loss Projection** - Realize pseudo-positive coord-only supervision and duplicate-like dead-anchor suppression under the existing one-forward target contract.
+- [x] **Phase 4: Observability And Operator Surface** - Add metrics, metadata, docs, and YAML authoring surfaces that keep arbitrary-`K` runs interpretable and backward-compatible.
 - [ ] **Phase 5: Validation And Best-K Readiness** - Prove the contract with targeted tests, smoke validation, and first `best-K`-ready comparison support.
 
 ## Phase Details
@@ -46,9 +46,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Add per-explorer anchor association, support-count/rate accounting, and recovered-FN aggregation
-- [ ] 02-02: Implement support-rate bucket assignment for `dead_anchor`, `shielded_anchor`, and pseudo-positive candidates
-- [ ] 02-03: Add connected-component clustering with deterministic winner selection and demotion
+- [x] 02-01: Add per-explorer anchor association, support-count/rate accounting, and recovered-FN aggregation
+- [x] 02-02: Implement support-rate bucket assignment for `dead_anchor`, `shielded_anchor`, and pseudo-positive candidates
+- [x] 02-03: Add connected-component clustering with deterministic winner selection and demotion
 
 ### Phase 3: One-Forward Loss Projection
 **Goal**: Route pseudo-positive anchors into coord-only supervision and keep dead-anchor negatives narrow without breaking the one-forward contract.
@@ -61,9 +61,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Thread pseudo-positive winners into bbox-group creation with coord-only weighting
-- [ ] 03-02: Verify objective modules consume pseudo-positive groups only on coord-side paths
-- [ ] 03-03: Filter dead-anchor suppression targets to duplicate-like local branches only
+- [x] 03-01: Thread pseudo-positive winners into bbox-group creation with coord-only weighting
+- [x] 03-02: Verify objective modules consume pseudo-positive groups only on coord-side paths
+- [x] 03-03: Filter dead-anchor suppression targets to duplicate-like local branches only
 
 ### Phase 4: Observability And Operator Surface
 **Goal**: Make arbitrary-`K` pseudo-positive runs measurable, comparable, and operable without breaking existing metric meaning.
@@ -76,9 +76,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Add per-sample metadata carriers and aggregate pseudo-positive metrics
-- [ ] 04-02: Preserve compatibility semantics for legacy triage and explorer metrics
-- [ ] 04-03: Update operator docs and author an explicit pseudo-positive YAML profile
+- [x] 04-01: Add per-sample metadata carriers and aggregate pseudo-positive metrics
+- [x] 04-02: Preserve compatibility semantics for legacy triage and explorer metrics
+- [x] 04-03: Update operator docs and author an explicit pseudo-positive YAML profile
 
 ### Phase 5: Validation And Best-K Readiness
 **Goal**: Prove the implementation is correct, regression-safe, and ready for the first `best-K` ablation study.
@@ -91,7 +91,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Add and pass targeted config-contract and trainer regression tests
+- [x] 05-01: Add and pass targeted config-contract and trainer regression tests
 - [ ] 05-02: Run pseudo-positive smoke validation and confirm one-forward / coord-only behavior
 - [ ] 05-03: Verify `best-K`-ready observability, default `K=4` profile behavior, and `K=2` no-promotion control semantics
 
@@ -103,7 +103,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Config And Rollout Foundation | 3/3 | Completed | 2026-03-22 |
-| 2. Support-Rate Triage And Promotion | 0/3 | Not started | - |
-| 3. One-Forward Loss Projection | 0/3 | Not started | - |
-| 4. Observability And Operator Surface | 0/3 | Not started | - |
-| 5. Validation And Best-K Readiness | 0/3 | Not started | - |
+| 2. Support-Rate Triage And Promotion | 3/3 | Completed | 2026-03-22 |
+| 3. One-Forward Loss Projection | 3/3 | Completed | 2026-03-22 |
+| 4. Observability And Operator Surface | 3/3 | Completed | 2026-03-22 |
+| 5. Validation And Best-K Readiness | 1/3 | In progress | - |
