@@ -12,5 +12,7 @@ Pre-close sanity:
 
 Closure:
 - If user-facing defaults, artifact names, entrypoints, or recommended workflows changed, update `docs/`.
+- If routing or architecture entrypoints changed, also update `docs/catalog.yaml`, `docs/AGENT_INDEX.md`, and the CoordExp retrieval memories/skills.
+- If docs, memories, or skills changed, validate relative links and referenced paths before handoff.
 - If stable behavior, config contracts, or metric semantics changed, update OpenSpec too.
 - In the final handoff, state what was verified and what remains unverified.

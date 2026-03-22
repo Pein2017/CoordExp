@@ -13,6 +13,8 @@ Use this skill when the user needs broad background, design history, or empirica
 2. `docs/catalog.yaml`
 3. `progress/index.yaml`
 4. `docs/PROJECT_CONTEXT.md`
+5. `openspec/specs/runtime-architecture-refactor-program/spec.md` for current runtime decomposition questions
+6. `openspec/specs/rollout-matching-sft/spec.md` when the question is about the supported rollout-aligned Stage-2 variant
 
 ## Read Order
 
@@ -23,8 +25,9 @@ Start here:
 3. `docs/IMPLEMENTATION_MAP.md`
 4. the relevant domain router under `docs/`
 5. relevant `openspec/specs/*.md`
-6. `progress/index.yaml`
-7. the specific historical notes you need
+6. `openspec/specs/runtime-architecture-refactor-program/spec.md` when the question is about module ownership, launchers, artifacts, or runtime seams
+7. `progress/index.yaml`
+8. the specific historical notes you need
 
 ## Precedence
 
@@ -40,6 +43,7 @@ When two sources disagree, use:
 Build a short context pack with:
 
 - current authoritative docs/specs
+- current architecture/runtime seams (for example `src/bootstrap/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/{rollout_aligned_targets.py,rollout_aligned_evaluator.py}`, `src/trainers/rollout_runtime/`, `src/infer/{engine,artifacts,backends}.py`, `src/eval/{artifacts,orchestration}.py`)
 - relevant implementation files or configs
 - the exact historical notes that matter
 - a small set of grep seeds for narrowing
