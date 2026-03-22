@@ -18,8 +18,8 @@ training:
   do_eval: true
 
 custom:
-  train_sample_limit: 512
-  val_sample_limit: 16
+  train_sample_limit: 128
+  val_sample_limit: 4
 
 rollout_matching:
   channel_b_decode_batch_size: 4
