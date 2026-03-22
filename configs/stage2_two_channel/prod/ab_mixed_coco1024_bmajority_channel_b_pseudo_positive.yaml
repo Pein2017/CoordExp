@@ -1,0 +1,14 @@
+extends: ./ab_mixed_coco1024_bmajority_channel_b_triage_posterior.yaml
+
+training:
+  run_name: stage2_pseudo_positive_k4_ckpt-eff_size_96-b_ratio_0.75-epoch_1
+  output_dir: output/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive
+  logging_dir: tb/stage2_ab/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive
+
+stage2_ab:
+  channel_b:
+    pseudo_positive:
+      enabled: true
+      coord_weight: 0.5
+    triage_posterior:
+      num_rollouts: 4

@@ -1,0 +1,39 @@
+extends: ../prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+training:
+  run_name: smoke_b_majority_coco1024_pseudo_positive_4steps
+  output_dir: output/stage2_ab/smoke/b_majority_coco1024/pseudo_positive_4steps
+  logging_dir: tb/stage2_ab/smoke/b_majority_coco1024/pseudo_positive_4steps
+  effective_batch_size: 8
+  logging_steps: 1
+  max_steps: 4
+  do_eval: false
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8
+
+rollout_matching:
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  channel_b_decode_batch_size: 8
+  eval_decode_batch_size: 8
+  monitor_dump:
+    enabled: true
+    every_steps: 1
+    max_events: 50
+    max_samples: 1
+    max_text_chars: 4000
+    write_markdown: false
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.75
+    reinit_each_eval: false

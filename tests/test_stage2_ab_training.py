@@ -19,6 +19,8 @@ from src.trainers.stage2_two_channel import (
     _PendingStage2Log,
     _bbox_groups_from_token_ids,
     _build_canonical_prefix_text_data,
+    _build_channel_b_supervision_targets,
+    _build_channel_b_triage,
     _bbox_smoothl1_ciou_loss,
     _build_canonical_prefix_data,
     _build_dead_anchor_suppression_targets,
@@ -2471,6 +2473,353 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
             t._prepare_batch_inputs_b([sample], _segments_only=True)
 
 
+def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 10, 20, 20],
+            desc="obj",
+        )
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 10, 20, 20],
+                desc="obj",
+            )
+        ]
+    ]
+
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    assert triage.valid_explorer_count == 1
+    assert triage.anchor_support_counts == [1]
+    assert triage.anchor_support_rates == pytest.approx([1.0])
+    assert triage.pseudo_positive_candidate_indices == []
+    assert triage.pseudo_positive_anchor_indices == []
+    assert triage.shielded_anchor_indices == [0]
+    assert triage.dead_anchor_indices == []
+
+
+def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() -> None:
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[0, 0, 100, 100],
+            desc="obj-a",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[0, 0, 100, 90],
+            desc="obj-b",
+        ),
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 100],
+                desc="obj-a",
+            ),
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 90],
+                desc="obj-b",
+            ),
+        ],
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 100],
+                desc="obj-a",
+            ),
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 90],
+                desc="obj-b",
+            ),
+        ],
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 100],
+                desc="obj-a",
+            )
+        ],
+    ]
+
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    assert triage.valid_explorer_count == 3
+    assert triage.anchor_support_counts == [3, 2]
+    assert triage.anchor_support_rates == pytest.approx([1.0, 2.0 / 3.0])
+    assert triage.pseudo_positive_candidate_indices == [0, 1]
+    assert triage.pseudo_positive_anchor_indices == [0]
+    assert triage.pseudo_positive_cluster_demoted_indices == [1]
+    assert triage.shielded_anchor_indices == [1]
+    assert triage.dead_anchor_indices == []
+
+
+def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="obj",
+        )
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="obj",
+            )
+        ],
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="obj",
+            )
+        ],
+        [],
+    ]
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
+    assert triage.pseudo_positive_anchor_indices == [0]
+    assert targets.prefix_struct_pos == []
+    assert targets.tail_desc_pos == []
+    assert targets.fn_bbox_groups == []
+    assert len(targets.prefix_bbox_groups) == 1
+    assert targets.prefix_bbox_groups[0]["gt_bins"] == [10, 20, 30, 40]
+    assert targets.prefix_bbox_groups[0]["weight"] == pytest.approx(0.4)
+    assert targets.prefix_bins == [10, 20, 30, 40]
+
+
+def test_channel_b_supervision_targets_skip_non_duplicate_dead_anchor_suppression_when_enabled() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="kept",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 200, 300, 400],
+            desc="far-away",
+        ),
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="kept",
+            )
+        ],
+        [],
+        [],
+    ]
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
+    assert triage.dead_anchor_indices == [1]
+    assert targets.dead_anchor_suppression_targets == []
+    assert targets.dead_anchor_suppression_boundary_count == 0
+
+
+def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppression_when_enabled() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="dup",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="dup",
+        ),
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="dup",
+            )
+        ],
+        [],
+        [],
+    ]
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
+    assert triage.dead_anchor_indices == [1]
+    assert targets.dead_anchor_suppression_targets
+    assert targets.dead_anchor_suppression_boundary_count == 1
+
+
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,
 ) -> None:
@@ -3995,6 +4344,76 @@ def test_channel_a_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
     assert pending is not None
     finalized = pending.finalize()
     assert float(finalized["loss/coord/bbox_log_wh"]) > 0.0
+
+
+def test_channel_b_bbox_group_weights_scale_bbox_size_aux_loss() -> None:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "schedule": {"b_ratio": 1.0},
+        "desc_ce_weight": 0.0,
+        "bbox_smoothl1_weight": 1.0,
+        "bbox_ciou_weight": 1.0,
+        "channel_b": {},
+    }
+    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
+        token_ce_enabled=False,
+        token_ce_weight=0.0,
+        bbox_geo_enabled=True,
+        bbox_geo_weight=0.0,
+        bbox_smoothl1_weight=0.0,
+        bbox_ciou_weight=0.0,
+        bbox_size_aux_enabled=True,
+        bbox_size_aux_weight=1.0,
+        bbox_log_wh_weight=0.05,
+        coord_reg_enabled=False,
+        coord_reg_weight=0.0,
+    )
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t.state = types.SimpleNamespace(global_step=0)
+
+    model = _DummyConstantCoord999Model()
+    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 4, 5, 6, 7]], dtype=torch.long)
+    meta = {
+        "prompt_len": 2,
+        "prefix_len": 0,
+        "train_len": int(input_ids.shape[1]) - 2,
+        "encoded_len": int(input_ids.shape[1]),
+        "tail_desc_pos": [],
+        "bbox_groups_prefix": [],
+        "bbox_groups_fn": [
+            {"pos": [2, 3, 4, 5], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
+            {"pos": [6, 7, 8, 9], "gt_bins": [0, 1, 2, 3], "weight": 1.0},
+        ],
+    }
+
+    loss_default = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [dict(meta)],
+            "input_ids": input_ids,
+        },
+    )
+
+    meta_weighted = dict(meta)
+    meta_weighted["bbox_groups_fn"] = [
+        {"pos": [2, 3, 4, 5], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
+        {"pos": [6, 7, 8, 9], "gt_bins": [0, 1, 2, 3], "weight": 4.0},
+    ]
+    loss_weighted = t.compute_loss(
+        model,
+        {
+            "_stage2_ab_channel": "B",
+            "_rollout_matching_meta": [meta_weighted],
+            "input_ids": input_ids,
+        },
+    )
+
+    assert float(loss_weighted.detach().cpu().item()) > float(
+        loss_default.detach().cpu().item()
+    )
 
 
 def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_names() -> None:

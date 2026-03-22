@@ -70,6 +70,33 @@ def test_stage2_random_order_smoke_profile_overrides_runtime_only() -> None:
     assert "smoke" in cfg.training["run_name"]
 
 
+def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prod_cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml"
+        )
+    )
+    smoke_cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml"
+        )
+    )
+
+    for cfg in (prod_cfg, smoke_cfg):
+        stage2_ab = cfg.stage2_ab
+        assert stage2_ab is not None
+        assert stage2_ab.channel_b.pseudo_positive.enabled is True
+        assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.5)
+        assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+
+    assert smoke_cfg.training["max_steps"] == 4
+    assert smoke_cfg.custom.train_sample_limit == 128
+    assert smoke_cfg.custom.val_sample_limit == 8
+
+
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
