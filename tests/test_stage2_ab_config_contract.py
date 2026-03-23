@@ -9,6 +9,7 @@ import pytest
 from src.config.loader import ConfigLoader
 from src.config.schema import (
     Stage2ABChannelBConfig,
+    Stage2ABChannelBPseudoPositiveConfig,
     Stage2ABChannelBTriagePosteriorConfig,
     TrainingConfig,
 )
@@ -186,6 +187,20 @@ def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     assert cfg.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
 
 
+def test_stage2_ab_channel_b_pseudo_positive_keys_are_supported() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping(
+        {
+            "pseudo_positive": {
+                "enabled": True,
+                "coord_weight": 0.6,
+            }
+        }
+    )
+    assert cfg.pseudo_positive.enabled is True
+    assert cfg.pseudo_positive.coord_weight == pytest.approx(0.6)
+    assert cfg.triage_posterior.num_rollouts == 4
+
+
 def test_stage2_ab_channel_b_triage_posterior_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
         {
@@ -205,9 +220,43 @@ def test_stage2_ab_channel_b_triage_posterior_keys_are_supported() -> None:
     assert cfg.triage_posterior.recovered_ground_truth_weight_multiplier == pytest.approx(1.5)
 
 
+def test_stage2_ab_channel_b_num_rollouts_follow_pseudo_positive_mode() -> None:
+    disabled_cfg = Stage2ABChannelBConfig.from_mapping({})
+    assert disabled_cfg.pseudo_positive == Stage2ABChannelBPseudoPositiveConfig()
+    assert disabled_cfg.triage_posterior.num_rollouts == 2
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"stage2_ab\.channel_b\.triage_posterior\.num_rollouts must be 2 when "
+            r"stage2_ab\.channel_b\.pseudo_positive\.enabled=false"
+        ),
+    ):
+        Stage2ABChannelBConfig.from_mapping(
+            {"triage_posterior": {"num_rollouts": 4}}
+        )
+
+    enabled_cfg = Stage2ABChannelBConfig.from_mapping(
+        {"pseudo_positive": {"enabled": True}}
+    )
+    assert enabled_cfg.triage_posterior.num_rollouts == 4
+
+    enabled_k2_cfg = Stage2ABChannelBConfig.from_mapping(
+        {
+            "pseudo_positive": {"enabled": True},
+            "triage_posterior": {"num_rollouts": 2},
+        }
+    )
+    assert enabled_k2_cfg.triage_posterior.num_rollouts == 2
+
+
 @pytest.mark.parametrize(
     "payload, expected_msg",
     [
+        (
+            {"num_rollouts": 1},
+            r"stage2_ab\.channel_b\.triage_posterior\.num_rollouts must be >= 2",
+        ),
         (
             {"explorer_temperature": "oops"},
             r"stage2_ab\.channel_b\.triage_posterior\.explorer_temperature must be a float/int",
@@ -239,6 +288,49 @@ def test_stage2_ab_channel_b_triage_posterior_invalid_values_fail_fast(
 ) -> None:
     with pytest.raises((ValueError, TypeError), match=expected_msg):
         Stage2ABChannelBTriagePosteriorConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "payload, expected_msg",
+    [
+        (
+            {"enabled": "maybe"},
+            r"stage2_ab\.channel_b\.pseudo_positive\.enabled string value 'maybe' is not a recognized boolean representation",
+        ),
+        (
+            {"coord_weight": "oops"},
+            r"stage2_ab\.channel_b\.pseudo_positive\.coord_weight must be a float/int",
+        ),
+        (
+            {"coord_weight": 1.0},
+            r"stage2_ab\.channel_b\.pseudo_positive\.coord_weight must be in \(0, 1\)",
+        ),
+        (
+            {"coord_weight_v1": 0.5},
+            r"Versioned pseudo-positive knob aliases are unsupported",
+        ),
+        (
+            {"unknown_key": 1.0},
+            r"Unknown stage2_ab\.channel_b\.pseudo_positive keys",
+        ),
+    ],
+)
+def test_stage2_ab_channel_b_pseudo_positive_invalid_values_fail_fast(
+    payload: dict, expected_msg: str
+) -> None:
+    with pytest.raises((ValueError, TypeError), match=expected_msg):
+        Stage2ABChannelBPseudoPositiveConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize("key", ["pseudo_positive_v1", "v1_pseudo_positive"])
+def test_stage2_ab_channel_b_rejects_versioned_pseudo_positive_top_level_aliases(
+    key: str,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"Versioned pseudo-positive knob aliases are unsupported",
+    ):
+        Stage2ABChannelBConfig.from_mapping({key: {"enabled": True}})
 
 
 def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
@@ -298,6 +390,7 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert cfg.stage2_ab is not None
     assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s is None
     assert cfg.stage2_ab.channel_b.producer_wait_timeout_s is None
+    assert cfg.stage2_ab.channel_b.pseudo_positive == Stage2ABChannelBPseudoPositiveConfig()
     assert cfg.stage2_ab.channel_b.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
 
     raw = {
@@ -348,6 +441,43 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     assert parsed.stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier == pytest.approx(
         1.75
     )
+
+
+def test_stage2_ab_pseudo_positive_keys_parse_in_training_config() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "fusion_config": "toy/fusion.yaml",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(),
+            "channel_b": {
+                "pseudo_positive": {
+                    "enabled": True,
+                    "coord_weight": 0.55,
+                },
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    parsed = TrainingConfig.from_mapping(raw, prompts)
+    assert parsed.stage2_ab is not None
+    assert parsed.stage2_ab.channel_b.pseudo_positive.enabled is True
+    assert parsed.stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.55)
+    assert parsed.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
 
 
 def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> None:

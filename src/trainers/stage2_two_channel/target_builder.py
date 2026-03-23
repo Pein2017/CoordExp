@@ -27,12 +27,20 @@ class _CanonicalPrefixData:
 
 @dataclass(frozen=True)
 class _ChannelBTriageResult:
-    association_pairs: List[Tuple[int, int]]
+    association_pairs_by_view: List[List[Tuple[int, int]]]
     anchor_gt_backed_indices: List[int]
+    anchor_support_counts: List[int]
+    anchor_support_rates: List[float]
     shielded_anchor_indices: List[int]
+    pseudo_positive_candidate_indices: List[int]
+    pseudo_positive_anchor_indices: List[int]
+    pseudo_positive_cluster_demoted_indices: List[int]
     dead_anchor_indices: List[int]
-    dead_explorer_indices: List[int]
+    dead_explorer_indices_by_view: List[List[int]]
     recovered_gt_indices: List[int]
+    recovered_gt_support_counts: List[int]
+    recovered_gt_support_rates: List[float]
+    valid_explorer_count: int
     kept_anchor_objects: List[GTObject]
     kept_anchor_new_index_by_old: Dict[int, int]
     dead_anchor_bursts_by_boundary: Dict[int, List[GTObject]]
@@ -207,55 +215,178 @@ def _sequential_dedup_bbox_objects(
 def _build_channel_b_triage(
     *,
     accepted_objects_clean: Sequence[GTObject],
-    explorer_accepted_objects_clean: Sequence[GTObject],
+    explorer_accepted_objects_clean_by_view: Sequence[Sequence[GTObject]],
     anchor_match_by_pred: Mapping[int, int],
-    explorer_match_by_pred: Mapping[int, int],
+    explorer_match_by_pred_by_view: Sequence[Mapping[int, int]],
     unlabeled_consistent_iou_threshold: float,
+    duplicate_iou_threshold: float,
+    pseudo_positive_enabled: bool,
 ) -> _ChannelBTriageResult:
-    association_pairs = [
-        (int(anchor_i), int(explorer_i))
-        for anchor_i, explorer_i in associate_one_to_one_max_iou(
-            anchors=accepted_objects_clean,
-            explorers=explorer_accepted_objects_clean,
-            min_iou=float(unlabeled_consistent_iou_threshold),
-        )
-    ]
-    anchor_to_explorer = {
-        int(anchor_i): int(explorer_i)
-        for anchor_i, explorer_i in association_pairs
-    }
-
     anchor_gt_backed_indices = sorted(int(pred_i) for pred_i in anchor_match_by_pred.keys())
+    valid_explorer_count = int(len(explorer_accepted_objects_clean_by_view))
+    anchor_support_counts = [0 for _ in range(len(accepted_objects_clean))]
+    association_pairs_by_view: List[List[Tuple[int, int]]] = []
+    dead_explorer_indices_by_view: List[List[int]] = []
+
+    def _conflicts_gt_backed(anchor_obj: GTObject) -> bool:
+        return any(
+            _bbox_iou_norm1000_xyxy(
+                anchor_obj.points_norm1000,
+                accepted_objects_clean[int(gt_anchor_i)].points_norm1000,
+            )
+            >= float(unlabeled_consistent_iou_threshold)
+            for gt_anchor_i in anchor_gt_backed_indices
+        )
+
+    for explorer_accepted_objects_clean, explorer_match_by_pred in zip(
+        explorer_accepted_objects_clean_by_view,
+        explorer_match_by_pred_by_view,
+    ):
+        association_pairs = [
+            (int(anchor_i), int(explorer_i))
+            for anchor_i, explorer_i in associate_one_to_one_max_iou(
+                anchors=accepted_objects_clean,
+                explorers=explorer_accepted_objects_clean,
+                min_iou=float(unlabeled_consistent_iou_threshold),
+            )
+        ]
+        association_pairs_by_view.append(list(association_pairs))
+        anchor_to_explorer = {
+            int(anchor_i): int(explorer_i) for anchor_i, explorer_i in association_pairs
+        }
+        dead_explorer_indices_by_view.append(
+            [
+                int(explorer_i)
+                for explorer_i in range(len(explorer_accepted_objects_clean))
+                if int(explorer_i) not in explorer_match_by_pred
+            ]
+        )
+        for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
+            if int(anchor_i) in anchor_match_by_pred:
+                continue
+            explorer_i = anchor_to_explorer.get(int(anchor_i))
+            if explorer_i is None:
+                continue
+            if int(explorer_i) in explorer_match_by_pred:
+                continue
+            if _conflicts_gt_backed(anchor_obj):
+                continue
+            anchor_support_counts[int(anchor_i)] += 1
+
+    anchor_support_rates = [
+        (
+            float(int(support_count)) / float(valid_explorer_count)
+            if valid_explorer_count > 0
+            else 0.0
+        )
+        for support_count in anchor_support_counts
+    ]
+
     shielded_anchor_indices: set[int] = set()
+    pseudo_positive_candidate_indices: List[int] = []
     dead_anchor_indices: set[int] = set()
     for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
         if int(anchor_i) in anchor_match_by_pred:
             continue
-        explorer_i = anchor_to_explorer.get(int(anchor_i))
-        if explorer_i is not None and explorer_i not in explorer_match_by_pred:
-            conflicts_gt_backed = any(
-                _bbox_iou_norm1000_xyxy(
-                    anchor_obj.points_norm1000,
-                    accepted_objects_clean[int(gt_anchor_i)].points_norm1000,
-                )
-                >= float(unlabeled_consistent_iou_threshold)
-                for gt_anchor_i in anchor_gt_backed_indices
-            )
-            if not conflicts_gt_backed:
-                shielded_anchor_indices.add(int(anchor_i))
+        support_count = int(anchor_support_counts[int(anchor_i)])
+        support_rate = float(anchor_support_rates[int(anchor_i)])
+        if support_count <= 0:
+            dead_anchor_indices.add(int(anchor_i))
+            continue
+        shielded_anchor_indices.add(int(anchor_i))
+        if (
+            pseudo_positive_enabled
+            and support_count >= 2
+            and support_rate >= (2.0 / 3.0)
+        ):
+            pseudo_positive_candidate_indices.append(int(anchor_i))
+        continue
+    dead_anchor_indices = {
+        int(anchor_i)
+        for anchor_i in dead_anchor_indices
+        if int(anchor_i) not in shielded_anchor_indices
+    }
+
+    pseudo_positive_anchor_indices: List[int] = []
+    pseudo_positive_cluster_demoted_indices: List[int] = []
+    if pseudo_positive_candidate_indices:
+        candidate_set = set(int(idx) for idx in pseudo_positive_candidate_indices)
+        adjacency: Dict[int, set[int]] = {
+            int(idx): set() for idx in pseudo_positive_candidate_indices
+        }
+        candidate_list = [int(idx) for idx in pseudo_positive_candidate_indices]
+        for left_pos, left_idx in enumerate(candidate_list):
+            for right_idx in candidate_list[left_pos + 1 :]:
+                if (
+                    _bbox_iou_norm1000_xyxy(
+                        accepted_objects_clean[int(left_idx)].points_norm1000,
+                        accepted_objects_clean[int(right_idx)].points_norm1000,
+                    )
+                    >= float(duplicate_iou_threshold)
+                ):
+                    adjacency[int(left_idx)].add(int(right_idx))
+                    adjacency[int(right_idx)].add(int(left_idx))
+
+        visited: set[int] = set()
+        for candidate_idx in candidate_list:
+            if int(candidate_idx) in visited:
                 continue
-        dead_anchor_indices.add(int(anchor_i))
+            stack = [int(candidate_idx)]
+            component: List[int] = []
+            while stack:
+                current = int(stack.pop())
+                if current in visited:
+                    continue
+                visited.add(current)
+                component.append(current)
+                for neighbor in sorted(adjacency.get(current, set())):
+                    if int(neighbor) not in visited:
+                        stack.append(int(neighbor))
+            winner = min(
+                component,
+                key=lambda idx: (-float(anchor_support_rates[int(idx)]), int(idx)),
+            )
+            pseudo_positive_anchor_indices.append(int(winner))
+            for idx in component:
+                if int(idx) == int(winner):
+                    continue
+                shielded_anchor_indices.add(int(idx))
+                pseudo_positive_cluster_demoted_indices.append(int(idx))
+            candidate_set.difference_update(component)
+        pseudo_positive_anchor_indices = sorted(
+            int(idx) for idx in pseudo_positive_anchor_indices
+        )
+        pseudo_positive_cluster_demoted_indices = sorted(
+            int(idx) for idx in pseudo_positive_cluster_demoted_indices
+        )
+    shielded_anchor_indices = {
+        int(idx)
+        for idx in shielded_anchor_indices
+        if int(idx) not in set(pseudo_positive_anchor_indices)
+    }
 
     anchor_gt_indices = set(int(gt_i) for gt_i in anchor_match_by_pred.values())
-    explorer_gt_indices = set(int(gt_i) for gt_i in explorer_match_by_pred.values())
-    recovered_gt_indices = sorted(
-        int(gt_i) for gt_i in (explorer_gt_indices - anchor_gt_indices)
-    )
-    dead_explorer_indices = sorted(
-        int(explorer_i)
-        for explorer_i in range(len(explorer_accepted_objects_clean))
-        if int(explorer_i) not in explorer_match_by_pred
-    )
+    explorer_gt_support_counts: Dict[int, int] = {}
+    for explorer_match_by_pred in explorer_match_by_pred_by_view:
+        explorer_gt_indices = set(int(gt_i) for gt_i in explorer_match_by_pred.values())
+        for gt_i in explorer_gt_indices:
+            if int(gt_i) in anchor_gt_indices:
+                continue
+            explorer_gt_support_counts[int(gt_i)] = int(
+                explorer_gt_support_counts.get(int(gt_i), 0)
+            ) + 1
+    recovered_gt_indices = sorted(int(gt_i) for gt_i in explorer_gt_support_counts.keys())
+    recovered_gt_support_counts = [
+        int(explorer_gt_support_counts[int(gt_i)]) for gt_i in recovered_gt_indices
+    ]
+    recovered_gt_support_rates = [
+        (
+            float(int(support_count)) / float(valid_explorer_count)
+            if valid_explorer_count > 0
+            else 0.0
+        )
+        for support_count in recovered_gt_support_counts
+    ]
 
     kept_anchor_objects: List[GTObject] = []
     kept_anchor_new_index_by_old: Dict[int, int] = {}
@@ -272,12 +403,31 @@ def _build_channel_b_triage(
         kept_anchor_count += 1
 
     return _ChannelBTriageResult(
-        association_pairs=association_pairs,
+        association_pairs_by_view=association_pairs_by_view,
         anchor_gt_backed_indices=[int(idx) for idx in anchor_gt_backed_indices],
+        anchor_support_counts=[int(v) for v in anchor_support_counts],
+        anchor_support_rates=[float(v) for v in anchor_support_rates],
         shielded_anchor_indices=[int(idx) for idx in sorted(shielded_anchor_indices)],
+        pseudo_positive_candidate_indices=[
+            int(idx) for idx in sorted(pseudo_positive_candidate_indices)
+        ],
+        pseudo_positive_anchor_indices=[
+            int(idx) for idx in pseudo_positive_anchor_indices
+        ],
+        pseudo_positive_cluster_demoted_indices=[
+            int(idx) for idx in pseudo_positive_cluster_demoted_indices
+        ],
         dead_anchor_indices=[int(idx) for idx in sorted(dead_anchor_indices)],
-        dead_explorer_indices=[int(idx) for idx in dead_explorer_indices],
+        dead_explorer_indices_by_view=[
+            [int(idx) for idx in dead_explorer_indices]
+            for dead_explorer_indices in dead_explorer_indices_by_view
+        ],
         recovered_gt_indices=[int(idx) for idx in recovered_gt_indices],
+        recovered_gt_support_counts=[
+            int(v) for v in recovered_gt_support_counts
+        ],
+        recovered_gt_support_rates=[float(v) for v in recovered_gt_support_rates],
+        valid_explorer_count=int(valid_explorer_count),
         kept_anchor_objects=kept_anchor_objects,
         kept_anchor_new_index_by_old=kept_anchor_new_index_by_old,
         dead_anchor_bursts_by_boundary=dead_anchor_bursts_by_boundary,
@@ -293,6 +443,9 @@ def _build_channel_b_supervision_targets(
     match: MatchResult,
     triage: _ChannelBTriageResult,
     recovered_ground_truth_weight_multiplier: float,
+    pseudo_positive_enabled: bool,
+    pseudo_positive_coord_weight: float,
+    duplicate_iou_threshold: float,
     object_field_order: str,
     bbox_groups_from_token_ids_fn: Any,
     matched_prefix_structure_positions_fn: Any,
@@ -356,6 +509,29 @@ def _build_channel_b_supervision_targets(
             prefix_pos.append(int(local_idx))
             prefix_bins.append(int(tbin))
 
+    for pred_i in triage.pseudo_positive_anchor_indices:
+        if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+            continue
+        kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+        coord_group = prefix_coord_positions_all[
+            int(kept_pred_i) * 4 : int(kept_pred_i + 1) * 4
+        ]
+        if len(coord_group) != 4:
+            raise ValueError(
+                "clean-prefix Channel-B expected exactly four coord slots per bbox object"
+            )
+        gt_bins = list(triage.kept_anchor_objects[int(kept_pred_i)].points_norm1000)
+        prefix_bbox_groups.append(
+            {
+                "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                "gt_bins": gt_bins,
+                "weight": float(pseudo_positive_coord_weight),
+            }
+        )
+        for local_idx, tbin in zip(coord_group, gt_bins):
+            prefix_pos.append(int(local_idx))
+            prefix_bins.append(int(tbin))
+
     matched_prefix_objects = [
         _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
         for i in matched_clean_indices
@@ -407,7 +583,29 @@ def _build_channel_b_supervision_targets(
         clean_target_text=clean_target_text,
         accepted_objects_clean=triage.kept_anchor_objects,
         fn_objects=fn_objs,
-        duplicate_bursts_by_boundary=triage.dead_anchor_bursts_by_boundary,
+        duplicate_bursts_by_boundary={
+            int(boundary): [
+                obj
+                for obj in duplicates
+                if (
+                    not pseudo_positive_enabled
+                    or (
+                        int(boundary) > 0
+                        and int(boundary) <= len(triage.kept_anchor_objects)
+                        and normalize_desc(str(obj.desc))
+                        == normalize_desc(
+                            str(triage.kept_anchor_objects[int(boundary) - 1].desc)
+                        )
+                        and _bbox_iou_norm1000_xyxy(
+                            obj.points_norm1000,
+                            triage.kept_anchor_objects[int(boundary) - 1].points_norm1000,
+                        )
+                        >= float(duplicate_iou_threshold)
+                    )
+                )
+            ]
+            for boundary, duplicates in triage.dead_anchor_bursts_by_boundary.items()
+        },
         boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
         object_field_order=object_field_order,
     )
@@ -485,11 +683,17 @@ def _build_channel_b_meta_entry(
     fn_object_weights: Sequence[float],
     anchor_decode_mode: str,
     explorer_decode_mode: str,
+    valid_explorer_count: int,
     anchor_gt_backed_indices: Sequence[int],
+    anchor_support_counts: Sequence[int],
+    anchor_support_rates: Sequence[float],
     shielded_anchor_indices: Sequence[int],
     dead_anchor_indices: Sequence[int],
-    dead_explorer_indices: Sequence[int],
+    pseudo_positive_anchor_indices: Sequence[int],
+    dead_explorer_indices_by_view: Sequence[Sequence[int]],
     recovered_gt_indices: Sequence[int],
+    recovered_gt_support_counts: Sequence[int],
+    recovered_gt_support_rates: Sequence[float],
     dead_anchor_suppression_targets: Sequence[Stage2DeadAnchorSuppressionTarget],
     dead_anchor_suppression_boundary_count: int,
     dead_anchor_suppression_skipped_no_divergence: int,
@@ -599,11 +803,26 @@ def _build_channel_b_meta_entry(
         "bbox_groups_fn": bbox_groups_fn,
         "anchor_decode_mode": str(anchor_decode_mode),
         "explorer_decode_mode": str(explorer_decode_mode),
+        "valid_explorer_count": int(valid_explorer_count),
         "anchor_gt_backed_indices": [int(idx) for idx in anchor_gt_backed_indices],
+        "anchor_support_counts": [int(v) for v in anchor_support_counts],
+        "anchor_support_rates": [float(v) for v in anchor_support_rates],
         "shielded_anchor_indices": [int(idx) for idx in shielded_anchor_indices],
         "dead_anchor_indices": [int(idx) for idx in dead_anchor_indices],
-        "dead_explorer_indices": [int(idx) for idx in dead_explorer_indices],
+        "pseudo_positive_anchor_indices": [
+            int(idx) for idx in pseudo_positive_anchor_indices
+        ],
+        "dead_explorer_indices_by_view": [
+            [int(idx) for idx in dead_explorer_indices]
+            for dead_explorer_indices in dead_explorer_indices_by_view
+        ],
         "recovered_gt_indices": [int(idx) for idx in recovered_gt_indices],
+        "recovered_gt_support_counts": [
+            int(v) for v in recovered_gt_support_counts
+        ],
+        "recovered_gt_support_rates": [
+            float(v) for v in recovered_gt_support_rates
+        ],
         "dead_anchor_suppression_targets": [
             {
                 "boundary": int(item["boundary"]),
