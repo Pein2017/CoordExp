@@ -103,8 +103,6 @@ Current internal ownership seams:
 
 - A-only baseline: `configs/stage2_two_channel/prod/a_only.yaml`
 - Mixed A/B baseline: `configs/stage2_two_channel/prod/ab_mixed.yaml`
-- COCO1024 B-majority continuation: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority.yaml`
-- COCO1024 B-majority + triage-posterior continuation: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_triage_posterior.yaml`
 - Pseudo-positive `K=4` production profile: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml`
 - A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
 - Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`

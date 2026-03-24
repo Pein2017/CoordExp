@@ -93,8 +93,8 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
         assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
 
     assert smoke_cfg.training["max_steps"] == 4
-    assert smoke_cfg.custom.train_sample_limit == 128
-    assert smoke_cfg.custom.val_sample_limit == 8
+    assert smoke_cfg.custom.train_sample_limit == 32
+    assert smoke_cfg.custom.val_sample_limit == 4
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
@@ -216,10 +216,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "application": {"preset": "anchor_only"},
                         "config": {
                             "coord_ce_weight": 0.0,
-                            "coord_el1_weight": 0.0,
-                            "coord_ehuber_weight": 0.0,
-                            "coord_huber_delta": 0.001,
-                            "coord_entropy_weight": 0.0,
                             "coord_gate_weight": 0.0,
                             "text_gate_weight": 0.0,
                             "soft_ce_weight": 0.0,
