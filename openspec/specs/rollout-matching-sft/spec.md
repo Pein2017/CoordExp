@@ -1104,7 +1104,7 @@ Normative default module weights (all objective modules):
 Normative default module configs (effective values):
 - `token_ce` (rollout context):
   - `rollout_fn_desc_weight = 1.0`
-  - `rollout_matched_prefix_struct_weight = 1.0`
+  - `rollout_global_prefix_struct_ce_weight = 1.0`
 - `bbox_geo`:
   - `smoothl1_weight = 1.0`
   - `ciou_weight = 1.0`
@@ -1181,7 +1181,7 @@ Normative behavior:
 Normative config schemas (minimum set; may be extended):
 - `token_ce.config`:
   - `rollout_fn_desc_weight: float` (default: `1.0`)
-  - `rollout_matched_prefix_struct_weight: float` (default: `1.0`)
+  - `rollout_global_prefix_struct_ce_weight: float` (default: `1.0`)
 - `bbox_geo.config`:
   - `smoothl1_weight: float` (default: `1.0`)
   - `ciou_weight: float` (default: `1.0`)
@@ -1214,7 +1214,7 @@ Normative behavior:
 - Teacher-forced forward passes constructed from rollout prefix + mandatory FN append MUST be treated as
   `context=rollout` for the purpose of token-type partitioning and masking.
 - The unified registry MUST be able to represent the rollout-matching supervision surface as a registry
-  instantiation (including ablation variants such as “FN desc unsupervised” or “matched-prefix struct CE disabled”).
+  instantiation (including ablation variants such as “FN desc unsupervised” or “global rollout-prefix struct CE disabled”).
 - When the module pipeline is enabled, objective/diagnostics modules MUST emit metric keys consistent with the
   registry’s canonical component names.
 
@@ -1243,20 +1243,20 @@ Rollout-aligned Stage-2 SHALL apply the same rollout-context masking semantics a
 
 Normative behavior:
 - Rollout-context token supervision MUST enforce:
-  - matched prefix: `CE_struct=1`, `CE_desc=0`, `CE_coord=0`,
+  - retained rollout prefix: `CE_struct=1`, `CE_desc=0`, `CE_coord=0`,
   - FP spans: fully masked (`0`) for CE and excluded from geometry/coord-dist losses,
   - FN injected: `CE_struct=1`, `CE_desc=1` by default (configurable weight), `CE_coord=0`,
   - closure/EOS: supervised (EOS-enforced).
 - The system MUST expose typed configuration to ablate (at minimum):
   - FN `desc` supervision weight, and
-  - matched-prefix struct CE weight,
+  - global rollout-prefix struct CE weight,
   via YAML diffs (no trainer code edits).
 - When these weights differ from defaults, the resolved effective values MUST be logged as part of pipeline identity so
   runs are auditable.
 
 Recommended expression (module config on `token_ce`, strict + typed):
 - `rollout_matching.pipeline.objective[].config.rollout_fn_desc_weight: float`
-- `rollout_matching.pipeline.objective[].config.rollout_matched_prefix_struct_weight: float`
+- `rollout_matching.pipeline.objective[].config.rollout_global_prefix_struct_ce_weight: float`
 
 #### Scenario: FN `desc` supervision can be disabled via YAML (ablation)
 - **WHEN** a rollout-matching SFT config sets `rollout_fn_desc_weight: 0`

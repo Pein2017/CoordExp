@@ -726,18 +726,20 @@ Normative behavior:
 - **THEN** duplicate bursts are still indexed against boundary `0`
 - **AND** duplicate-ul target construction remains well-defined.
 
-### Requirement: Generic unmatched clean extras remain neutral context
-Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain neutral with respect to supervision.
+### Requirement: Generic unmatched clean extras remain prefix-visible while staying outside desc and coord supervision
+Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain outside desc, bbox, coord, and duplicate-ul supervision.
 
 Normative behavior:
-- Unmatched clean extras MUST NOT populate matched-prefix struct masks.
+- Unmatched clean extras MAY populate global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`.
 - Unmatched clean extras MUST NOT populate coord/bbox supervision groups.
+- Unmatched clean extras MUST NOT create extra positive desc targets.
 - Unmatched clean extras MUST NOT create duplicate-ul positives.
 
-#### Scenario: Unmatched clean extra stays in context but produces no positive supervision
+#### Scenario: Unmatched clean extra stays in context with shared prefix structure CE only
 - **WHEN** Channel-B retains an unmatched clean accepted object in the clean prefix
 - **THEN** that object remains visible in the canonical teacher-forced prefix
-- **AND** it contributes zero matched-prefix CE, zero bbox loss, zero coord loss, and zero duplicate-ul positives.
+- **AND** it contributes zero desc CE, zero bbox loss, zero coord loss, and zero duplicate-ul positives
+- **AND** it may still participate in the global rollout-prefix structure CE surface.
 
 ### Requirement: Channel-B rollout seeding is deterministic and logged
 Channel-B rollouts MUST be fully deterministic under greedy decoding given the same model weights, the same training seed, and the same `global_step`.
@@ -1421,20 +1423,21 @@ Normative behavior:
 - **THEN** all loss terms are derived from a single teacher-forced forward over the edited anchor target
 - **AND** no second teacher-forced explore payload is required.
 
-### Requirement: Shielded anchor objects remain neutral context
-Anchor objects triaged as shielded MAY remain in the clean prefix, but they MUST remain neutral with respect to positive supervision.
+### Requirement: Shielded anchor objects remain prefix-visible while staying outside desc and coord supervision
+Anchor objects triaged as shielded MAY remain in the clean prefix, but they MUST remain outside desc, bbox, and coord-positive supervision.
 
 Normative behavior:
 
-- shielded anchor objects MUST stay outside matched-prefix struct masks,
+- shielded anchor objects MAY participate in global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
 - shielded anchor objects MUST stay outside bbox/coord supervision groups,
 - shielded anchor objects MUST NOT create extra positive desc targets,
 - shielded anchor objects MAY remain visible in the final clean prefix as context.
 
-#### Scenario: Shielded anchor object stays in prefix but produces no positive supervision
+#### Scenario: Shielded anchor object stays in prefix with shared prefix structure CE only
 - **WHEN** an anchor object is classified as shielded
 - **THEN** it may remain in the edited clean prefix
-- **AND** it contributes no positive CE, bbox, or coord supervision.
+- **AND** it contributes no positive desc CE, bbox, or coord supervision
+- **AND** it may still participate in the global rollout-prefix structure CE surface.
 
 ### Requirement: Stage-2 AB can add matched decoded-box size auxiliaries through `bbox_size_aux`
 Stage-2 AB SHALL support optional decoded-box size auxiliaries on the existing

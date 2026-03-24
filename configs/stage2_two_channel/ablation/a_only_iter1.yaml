@@ -23,7 +23,7 @@ stage2_ab:
         config:
           desc_ce_weight: 1.0
           rollout_fn_desc_weight: 1.0
-          rollout_matched_prefix_struct_weight: 1.0
+          rollout_global_prefix_struct_ce_weight: 1.0
       - name: loss_dead_anchor_suppression
         enabled: true
         weight: 1.0

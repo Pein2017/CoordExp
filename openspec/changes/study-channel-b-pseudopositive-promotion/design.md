@@ -48,11 +48,11 @@ The main implementation authority remains:
 - Preserve the single edited-anchor target and single teacher-forced forward contract.
 - Promote only a conservative subset of unmatched anchor objects to pseudo-positive status.
 - Express pseudo-positive voting in support-rate terms so the contract scales cleanly across future `best-K` ablations, while still requiring a minimum absolute evidence floor.
-- Keep pseudo-positive supervision coord-only:
+- Keep pseudo-positive supervision coord-positive and desc-neutral through:
   - `bbox_geo`
   - `coord_reg`
   - optional `bbox_size_aux`
-- Preserve matched-prefix structure CE as matched-only and FN desc CE as FN-only.
+- Use one global rollout-prefix structure CE knob for retained prefix tokens and keep FN desc CE as FN-only.
 - Keep dead-anchor suppression narrow and boundary-local.
 - Make the experiment auditable through per-sample triage metadata and aggregate rate-ready metrics.
 
@@ -60,7 +60,7 @@ The main implementation authority remains:
 
 - No semantic-desc gating for v1 pseudo-positive selection.
 - No pseudo-positive desc CE.
-- No pseudo-positive matched-prefix structure CE.
+- No pseudo-positive-only structure CE branch.
 - No full-object negative CE for dead anchors.
 - No explorer-only pseudo-positive path in v1.
 - No removal of the legacy `K=2` compatibility / control contract.
@@ -201,7 +201,7 @@ Selected pseudo-positive anchors:
 They do not create:
 
 - desc CE,
-- matched-prefix structure CE,
+- pseudo-positive-only text supervision branches,
 - new flat objective-module weights.
 
 Why:
@@ -328,14 +328,16 @@ Why:
 
 - `matched_clean`
   - positive coord supervision
-  - matched-prefix structure CE
+  - global rollout-prefix structure CE
 - `fn_injection`
   - positive coord supervision
   - FN desc CE
 - `pseudo_positive`
-  - positive coord supervision only
+  - positive coord supervision
+  - global rollout-prefix structure CE
 - `shielded_anchor`
-  - context only
+  - context only for coord/desc
+  - global rollout-prefix structure CE
 - `dead_anchor`
   - removed from target
   - duplicate-like subset may create dead-branch suppression targets
@@ -396,7 +398,7 @@ Why:
 - Training-path verification:
   - one clean teacher-forced forward only
   - pseudo-positive weights reach only bbox/coord losses
-  - no pseudo-positive desc CE or matched-prefix structure CE
+  - no pseudo-positive desc CE and no pseudo-positive-only text branch beyond the shared global rollout-prefix structure CE surface
   - legacy `rollout/explorer/*` metrics remain mean-over-valid-explorer-view explorer summaries under arbitrary `K`
 - Smoke/eval verification after implementation:
   - dense-scene qualitative recall

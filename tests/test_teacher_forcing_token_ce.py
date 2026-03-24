@@ -119,3 +119,52 @@ def test_token_ce_rejects_deprecated_stop_signal_damping_config() -> None:
         match=r"token_ce\.config\.stop_signal_damping is deprecated and unsupported",
     ):
         run_token_ce_module(context=context, spec=spec)
+
+
+def test_token_ce_global_prefix_struct_ce_supervises_channel_b_prefix_tokens() -> None:
+    vocab = 32
+    input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)
+    logits = torch.zeros(1, input_ids.shape[1], vocab, dtype=torch.float32)
+    logits[:, :, 0] = 5.0
+
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=[
+            {
+                "prompt_len": 1,
+                "prefix_len": 3,
+                "train_len": 4,
+                "tail_ignore_pos": [],
+                "tail_desc_pos": [],
+                "tail_closure_pos": [],
+                "prefix_struct_pos": [],
+                "drop_invalid_total": 0,
+            }
+        ],
+        coord_token_ids=[],
+        temperature=1.0,
+    )
+    spec = PipelineModuleSpec(
+        name="token_ce",
+        enabled=True,
+        weight=1.0,
+        channels=("A", "B"),
+        config={"rollout_global_prefix_struct_ce_weight": 1.0},
+    )
+
+    out = run_token_ce_module(context=context, spec=spec)
+
+    labels_masked = out.state["labels_masked"]
+    weights_masked = out.state["weights_masked"]
+    assert int(labels_masked[0, 1].item()) == 11
+    assert int(labels_masked[0, 2].item()) == 12
+    assert int(labels_masked[0, 3].item()) == 13
+    assert float(weights_masked[0, 1].item()) == pytest.approx(1.0)
+    assert float(weights_masked[0, 2].item()) == pytest.approx(1.0)
+    assert float(weights_masked[0, 3].item()) == pytest.approx(1.0)
+    assert out.metrics["loss/struct_ce"] > 0.0
+    assert float(out.loss.detach().cpu().item()) > 0.0

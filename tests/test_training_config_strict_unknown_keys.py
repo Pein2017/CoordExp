@@ -583,7 +583,7 @@ def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict |
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
         "rollout_fn_desc_weight": 1.0,
-        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_global_prefix_struct_ce_weight": 1.0,
     }
     if isinstance(config, dict):
         token_ce_cfg.update(dict(config))
@@ -760,6 +760,27 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     }
 
     with pytest.raises(ValueError, match=r"Unknown stage2_ab\.pipeline\.objective"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_stage2_pipeline_legacy_matched_prefix_struct_knob_fails_fast():
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": [
+            _pipeline_token_ce_spec(
+                config={"rollout_matched_prefix_struct_weight": 1.0}
+            ),
+            _pipeline_loss_dead_anchor_suppression_spec(),
+            _pipeline_bbox_geo_spec(),
+            _pipeline_bbox_size_aux_spec(),
+            _pipeline_coord_reg_spec(),
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matched_prefix_struct_weight",
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 

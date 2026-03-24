@@ -113,7 +113,7 @@ def build_pipeline_manifest(
                 return {
                     "desc_ce_weight": desc_w,
                     "rollout_fn_desc_weight": desc_w,
-                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
                 }
 
             if name == "loss_dead_anchor_suppression":
@@ -174,7 +174,7 @@ def build_pipeline_manifest(
             if name == "token_ce":
                 return {
                     "rollout_fn_desc_weight": 1.0,
-                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
                 }
 
             if name == "bbox_geo":

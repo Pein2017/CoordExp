@@ -172,8 +172,9 @@ Normative rollout object subsets:
 
 Normative behavior:
 - `duplicate` objects MUST NOT appear in the positive teacher-forced prefix.
-- `matched_clean` objects receive matched-prefix structure supervision and positive geometry/coord supervision as defined by the Channel-B contract.
-- `unmatched_clean` objects MAY remain in the clean prefix as context but MUST remain neutral.
+- retained clean-prefix objects MAY receive global rollout-prefix structure supervision as defined by the Channel-B contract.
+- `matched_clean` objects receive positive geometry/coord supervision as defined by the Channel-B contract.
+- `unmatched_clean` objects MAY remain in the clean prefix as context but MUST remain outside coord supervision and duplicate-ul positives.
 - `fn` objects remain positively supervised.
 - Closure / EOS remain supervised.
 
@@ -187,13 +188,14 @@ The unified loss registry SHALL treat clean-prefix rollout semantics as the cano
 
 Normative behavior:
 - Channel-B positive masks are built from the clean teacher-forced target, not the raw rollout prefix.
-- Neutral unmatched clean extras MUST stay outside matched-prefix struct masks, coord supervision groups, and duplicate-ul positives.
+- Neutral unmatched clean extras MAY participate in the global rollout-prefix struct masks when that token-ce weight is enabled, but MUST stay outside coord supervision groups and duplicate-ul positives.
 - Duplicate-ul supervision MUST be boundary-local and explicit rather than encoded through hidden token-ce behavior.
 
-#### Scenario: Neutral unmatched clean extras remain context-only
+#### Scenario: Neutral unmatched clean extras remain coord-neutral while keeping shared prefix structure supervision
 - **WHEN** a clean accepted object is unmatched after Hungarian
 - **THEN** it may remain in the clean prefix as context
-- **AND** it contributes no positive CE/geo/coord or duplicate-ul target.
+- **AND** it contributes no positive geo/coord or duplicate-ul target
+- **AND** it may still participate in global rollout-prefix structure CE.
 
 ### Requirement: Duplicate UL is boundary-local and LCP-defined
 The unified loss registry SHALL define duplicate unlikelihood as a boundary-local objective over canonical clean vs duplicate continuations.

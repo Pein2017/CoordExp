@@ -471,7 +471,7 @@ def _make_stage2_pipeline_manifest(
     dead_anchor_suppression_weight: float = 1.0,
     desc_ce_weight: float = 1.0,
     rollout_fn_desc_weight: float | None = None,
-    rollout_matched_prefix_struct_weight: float = 1.0,
+    rollout_global_prefix_struct_ce_weight: float = 1.0,
     bbox_geo_enabled: bool = True,
     bbox_geo_weight: float = 1.0,
     bbox_smoothl1_weight: float = 1.0,
@@ -490,7 +490,9 @@ def _make_stage2_pipeline_manifest(
 ) -> dict:
     token_cfg: dict[str, object] = {
         "desc_ce_weight": float(desc_ce_weight),
-        "rollout_matched_prefix_struct_weight": float(rollout_matched_prefix_struct_weight),
+        "rollout_global_prefix_struct_ce_weight": float(
+            rollout_global_prefix_struct_ce_weight
+        ),
     }
     if rollout_fn_desc_weight is not None:
         token_cfg["rollout_fn_desc_weight"] = float(rollout_fn_desc_weight)
@@ -4813,7 +4815,7 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
     assert desc_tok_idx not in rel
 
 
-def test_channel_b_prefix_structure_supervision_is_matched_only():
+def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
@@ -4836,11 +4838,8 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
 
     model = _DummyAlwaysTokenModel(pred_id=1100)
 
-    # Prefix (len=4):
-    # - rel=1 -> matched structure token (should be supervised)
-    # - rel=2 -> matched desc token (should stay masked)
-    # - rel=3 -> FP token (should stay masked)
-    # Tail (len=4): FN structure/desc tokens are supervised by default.
+    # With the global prefix knob enabled, all non-coordinate prefix tokens
+    # contribute structure CE regardless of prefix_struct_pos sparsity.
     input_ids = torch.tensor(
         [[1100, 1101, 1101, 1101, 1100, 1101, 1100, 1101]], dtype=torch.long
     )
@@ -4880,8 +4879,10 @@ def test_channel_b_prefix_structure_supervision_is_matched_only():
         },
     )
 
-    assert float(loss_matched_only.detach().cpu().item()) < float(
-        loss_oversupervised.detach().cpu().item()
+    assert float(loss_matched_only.detach().cpu().item()) == pytest.approx(
+        float(loss_oversupervised.detach().cpu().item()),
+        rel=1e-6,
+        abs=1e-6,
     )
 
 

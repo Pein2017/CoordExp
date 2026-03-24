@@ -123,8 +123,8 @@ Normative behavior:
 - **THEN** only one of them is selected as pseudo-positive
 - **AND** the non-winning object falls back to `shielded_anchor`.
 
-### Requirement: Selected pseudo-positive anchors stay in the edited anchor prefix and receive coord-only positive supervision
-When lightweight pseudo-positive v1 is enabled, selected pseudo-positive anchor objects SHALL remain in the final edited anchor sequence and SHALL receive only weighted coord-side positive supervision.
+### Requirement: Selected pseudo-positive anchors stay in the edited anchor prefix and share the global rollout-prefix structure CE surface
+When lightweight pseudo-positive v1 is enabled, selected pseudo-positive anchor objects SHALL remain in the final edited anchor sequence, SHALL receive weighted coord-side positive supervision, and SHALL share the same global rollout-prefix structure CE surface as other retained prefix objects when that token-ce knob is enabled.
 
 Normative behavior:
 
@@ -134,27 +134,29 @@ Normative behavior:
 - selected pseudo-positive anchor objects MUST use their own retained anchor coordinate bins as the bbox/coord target source,
 - `coord_weight` MUST scale pseudo-positive contributions only for `bbox_geo`, `coord_reg`, and `bbox_size_aux`,
 - selected pseudo-positive anchor objects MUST NOT create new desc CE targets,
-- selected pseudo-positive anchor objects MUST NOT create new matched-prefix structure CE targets,
+- selected pseudo-positive anchor objects MAY participate in the same global rollout-prefix structure CE surface as other retained prefix objects when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
 - if `bbox_size_aux` is enabled for Channel-B, selected pseudo-positive anchor objects MUST reuse the same decoded-box auxiliary path as other coord-supervised groups,
 - ordinary matched-clean and FN-injection supervision behavior MUST remain unchanged.
 
-#### Scenario: Pseudo-positive object receives coord supervision but no text supervision
+#### Scenario: Pseudo-positive object receives coord supervision and shared prefix structure CE but no desc CE
 - **WHEN** an anchor object is selected as pseudo-positive in lightweight pseudo-positive v1
 - **THEN** it remains in the final edited anchor prefix
 - **AND** it contributes weighted bbox/coord supervision
-- **BUT** it creates no desc CE and no matched-prefix structure CE supervision.
+- **AND** it may participate in the shared global rollout-prefix structure CE surface
+- **BUT** it creates no desc CE.
 
 ### Requirement: Channel-B loss application remains bucketed under one teacher-forced forward
 When lightweight pseudo-positive v1 is enabled, the system SHALL preserve the one-forward training contract while applying different loss surfaces to matched-clean, FN-injection, pseudo-positive, shield-only, and dead-anchor buckets.
 
 Normative behavior:
 
-- matched-clean objects MUST remain eligible for matched-prefix coord supervision and matched-prefix structure CE,
+- matched-clean objects MUST remain eligible for matched-prefix coord supervision,
+- retained prefix objects MAY participate in global rollout-prefix structure CE when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
 - FN-injection objects MUST remain eligible for tail coord supervision and FN desc CE,
-- pseudo-positive objects MUST remain eligible only for positive coord-supervised losses in v1,
-- shield-only objects MUST remain outside positive CE, bbox, and coord supervision,
+- pseudo-positive objects MUST remain eligible for positive coord-supervised losses and the shared global rollout-prefix structure CE surface in v1,
+- shield-only objects MUST remain outside positive desc, bbox, and coord supervision and MAY participate only in the shared global rollout-prefix structure CE surface,
 - dead-anchor objects MUST remain outside positive CE, bbox, and coord supervision,
-- structure CE MUST NOT become global across all prefix objects,
+- global rollout-prefix structure CE MUST be controlled by a single typed token-ce config knob rather than per-bucket prefix knobs,
 - all enabled loss terms for all buckets MUST be derived from the same clean edited-target teacher-forced forward.
 
 #### Scenario: Bucketed loss computation still uses one clean forward

@@ -61,7 +61,7 @@ def _canonical_stage2_pipeline(
         token_ce_cfg = {
             "desc_ce_weight": 1.0,
             "rollout_fn_desc_weight": 1.0,
-            "rollout_matched_prefix_struct_weight": 1.0,
+            "rollout_global_prefix_struct_ce_weight": 1.0,
         }
     if dead_anchor_suppression_cfg is None:
         dead_anchor_suppression_cfg = {}
@@ -531,7 +531,7 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
                     "rollout_fn_desc_weight": 1.0,
-                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
                     "rollout_drop_invalid_struct_ce_multiplier": 1.0,
                 }
             ),
@@ -682,7 +682,7 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
         "rollout_fn_desc_weight": 1.0,
-        "rollout_matched_prefix_struct_weight": 1.0,
+        "rollout_global_prefix_struct_ce_weight": 1.0,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -824,7 +824,7 @@ def test_stage2_pipeline_rejects_deprecated_stop_signal_damping() -> None:
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
                     "rollout_fn_desc_weight": 1.0,
-                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
                     "stop_signal_damping": {"enabled": False},
                 }
             ),
@@ -866,7 +866,7 @@ def test_stage2_pipeline_rejects_deprecated_struct_ce_weight() -> None:
                 token_ce_cfg={
                     "desc_ce_weight": 1.0,
                     "rollout_fn_desc_weight": 1.0,
-                    "rollout_matched_prefix_struct_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
                     "struct_ce_weight": 0.1,
                 }
             ),
@@ -943,7 +943,7 @@ def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
                         "config": {
                             "desc_ce_weight": 1.0,
                             "rollout_fn_desc_weight": 1.0,
-                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "rollout_global_prefix_struct_ce_weight": 1.0,
                         },
                     }
                 ],
@@ -1106,7 +1106,7 @@ def test_rollout_pipeline_rejects_deprecated_stop_signal_damping() -> None:
                         "config": {
                             "desc_ce_weight": 1.0,
                             "rollout_fn_desc_weight": 1.0,
-                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "rollout_global_prefix_struct_ce_weight": 1.0,
                             "stop_signal_damping": {"enabled": True},
                         },
                     }
@@ -1154,7 +1154,7 @@ def test_rollout_pipeline_rejects_deprecated_struct_ce_weight() -> None:
                         "config": {
                             "desc_ce_weight": 1.0,
                             "rollout_fn_desc_weight": 1.0,
-                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "rollout_global_prefix_struct_ce_weight": 1.0,
                             "struct_ce_weight": 0.1,
                         },
                     }

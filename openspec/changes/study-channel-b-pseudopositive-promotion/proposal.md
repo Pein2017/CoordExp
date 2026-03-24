@@ -58,10 +58,10 @@ The first implementation-ready goal is still simple:
   - `coord_reg`
   - optional light `bbox_size_aux`
 - Pin pseudo-positive target geometry to the selected anchor object's own canonical coordinates.
-- Keep `token_ce` narrow in v1:
-  - matched-prefix structure CE remains matched-only,
+- Keep `token_ce` simple in v1:
+  - one global rollout-prefix structure CE knob governs retained prefix tokens,
   - FN-injection desc CE remains FN-only,
-  - pseudo-positive objects do not create new desc CE or matched-prefix structure CE targets.
+  - pseudo-positive objects do not create new desc CE targets or a pseudo-positive-only text branch.
 - Add explicit observability for auditability:
   - per-sample Channel-B triage metadata with `valid_explorer_count`,
   - per-anchor explorer support counts and support rates,
@@ -116,9 +116,11 @@ The recommended v1 selection rule is:
 
 The recommended v1 supervision rule is:
 
-- `matched_clean` -> existing positive coord supervision + matched-prefix structure CE
+- retained prefix objects share one global rollout-prefix structure CE surface when `rollout_global_prefix_struct_ce_weight > 0`
+- `matched_clean` -> existing positive coord supervision + global prefix structure CE
 - `fn_injection` -> existing positive coord supervision + desc CE
-- `pseudo_positive` -> positive coord supervision only, at `coord_weight=0.5`
+- `pseudo_positive` -> positive coord supervision + global prefix structure CE, at `coord_weight=0.5`
+- `shielded_anchor` -> global prefix structure CE only
 - `coord_weight` operates in the existing per-bbox-group weight space and scales only `bbox_geo`, `coord_reg`, and `bbox_size_aux` contributions for pseudo-positive objects
 - pseudo-positive bbox/coord supervision targets come from the selected anchor object's own canonical coordinates
 - `dead_anchor` -> excluded from the final target; only duplicate-like dead branches get explicit branch-entry suppression
@@ -195,6 +197,6 @@ The recommended dead-anchor rule is:
 - This first version intentionally avoids:
   - semantic-desc gating for pseudo-positive selection
   - pseudo-positive desc CE
-  - pseudo-positive matched-prefix structure CE
+  - pseudo-positive-only structure CE branches
   - full-object negative CE for dead anchors
   - blanket promotion of all unmatched objects

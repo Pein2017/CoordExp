@@ -77,10 +77,11 @@ Current internal ownership seams:
   - `bbox_size_aux.application.preset: anchor_only`
   - `coord_reg.application.preset: anchor_only`
 - Pseudo-positive mode keeps the one-forward contract:
-  - `matched_clean` -> coord + matched-prefix structure CE
+  - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
+  - `matched_clean` -> coord + global prefix structure CE
   - `fn_injection` -> coord + FN desc CE
-  - `pseudo_positive` -> coord only
-  - `shielded_anchor` -> no positive supervision
+  - `pseudo_positive` -> coord + global prefix structure CE
+  - `shielded_anchor` -> global prefix structure CE only
   - `dead_anchor` -> no positive supervision, with duplicate-like branch suppression only
 - Default authored pseudo-positive profile:
   - `triage_posterior.num_rollouts: 4`

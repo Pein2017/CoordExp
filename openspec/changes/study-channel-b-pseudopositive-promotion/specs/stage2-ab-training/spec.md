@@ -39,13 +39,15 @@ Normative behavior:
   - Channel-A uses `context=gt` for CE and bbox/coord supervision.
   - Channel-B uses `context=rollout` with EOS-enforced semantics.
 - when `stage2_ab.channel_b.pseudo_positive.enabled=false`, Channel-B rollout context remains FP-neutral outside matched-clean and FN-injection supervision,
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, only the selected `pseudo_positive` anchor subset is exempt from blanket FP-neutral handling, and that subset remains limited to coord-side supervision,
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, only the selected `pseudo_positive` anchor subset is exempt from blanket FP-neutral handling on the coord side,
+- global rollout-prefix structure CE, when enabled through `token_ce.config.rollout_global_prefix_struct_ce_weight`, applies across retained prefix objects in the edited anchor target rather than through a matched-only prefix knob,
 - when the module pipeline is enabled, objective/diagnostics modules MUST emit metric keys consistent with the registry’s canonical component names.
 
-#### Scenario: Enabled pseudo-positive does not broaden text-side rollout supervision
+#### Scenario: Enabled pseudo-positive does not add desc-side rollout supervision
 - **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
 - **THEN** only the selected pseudo-positive anchor subset is removed from blanket FP-neutral coord masking
-- **AND** the same step does not add pseudo-positive desc CE or matched-prefix structure CE.
+- **AND** the same step does not add pseudo-positive desc CE
+- **AND** retained prefix objects may still share the global rollout-prefix structure CE surface.
 
 ### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with legacy K=2 compatibility and default K=4 pseudo-positive evidence
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from rollout evidence rooted in the anchor clean sequence.

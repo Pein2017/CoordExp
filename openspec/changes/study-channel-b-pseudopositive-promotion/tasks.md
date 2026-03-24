@@ -4,7 +4,7 @@
   - opt-in arbitrary-`K` support when enabled
   - legacy `K=2` compatibility unchanged when disabled
   - default pseudo-positive profile uses `K=4`
-  - pseudo-positive coord-only
+  - pseudo-positive remains coord-positive, desc-neutral, and shares the global rollout-prefix structure CE surface
   - duplicate-like dead suppression only
   - support-rate semantics rather than fixed support-count buckets
   - minimum promotion evidence of `support_count >= 2`
@@ -101,10 +101,11 @@
 
 - [x] 6.1 Preserve one clean edited-target teacher-forced forward for the entire Channel-B sample.
 - [x] 6.2 Keep bucketed loss application explicit:
-  - `matched_clean` -> coord + matched-prefix structure CE
+  - retained prefix objects share one global rollout-prefix structure CE surface
+  - `matched_clean` -> coord + global rollout-prefix structure CE
   - `fn_injection` -> coord + FN desc CE
-  - `pseudo_positive` -> coord only
-  - `shielded_anchor` -> no positive supervision
+  - `pseudo_positive` -> coord + global rollout-prefix structure CE
+  - `shielded_anchor` -> global rollout-prefix structure CE only
   - `dead_anchor` -> no positive supervision
 - [x] 6.3 Ensure `coord_weight` scales only:
   - `bbox_geo`
@@ -112,13 +113,13 @@
   - `bbox_size_aux`
 - [x] 6.4 Ensure pseudo-positive objects do not create:
   - desc CE
-  - matched-prefix structure CE
+  - pseudo-positive-only text supervision branches
 - [x] 6.5 Keep ordinary matched-clean and FN-injection behavior unchanged apart from the new pseudo-positive groups.
 - [x] 6.6 Add objective-path tests proving:
   - one-forward realization only
   - pseudo-positive groups use anchor-owned target geometry
   - pseudo-positive weights hit only coord-side modules
-  - pseudo-positive text-side supervision remains absent
+  - pseudo-positive text-side supervision uses only the shared global rollout-prefix structure CE surface
 
 ## 7. Dead-Anchor Filtering And Suppression
 

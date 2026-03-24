@@ -48,10 +48,10 @@ def run_token_ce_module(
             desc_ce_weight,
         ),
     )
-    matched_prefix_struct_ce_weight = max(
+    global_prefix_struct_ce_weight = max(
         0.0,
         _coerce_float(
-            cfg.get("rollout_matched_prefix_struct_weight", 1.0),
+            cfg.get("rollout_global_prefix_struct_ce_weight", 1.0),
             1.0,
         ),
     )
@@ -67,7 +67,6 @@ def run_token_ce_module(
         prefix_len = int(seg.get("prefix_len", 0) or 0)
         train_len = int(seg.get("train_len", 0) or 0)
 
-        prefix_struct_pos = [int(p) for p in (seg.get("prefix_struct_pos") or [])]
         tail_ignore_pos = [int(p) for p in (seg.get("tail_ignore_pos") or [])]
         tail_desc_pos = [int(p) for p in (seg.get("tail_desc_pos") or [])]
         tail_desc_weights = list(seg.get("tail_desc_weights") or [])
@@ -90,16 +89,19 @@ def run_token_ce_module(
             min(seg_end_i, seg_start_i + prompt_len + train_len),
         )
 
-        if channel == "B" and prefix_struct_pos:
-            for rel in prefix_struct_pos:
-                p = int(prefix_start + rel)
-                if p < int(prefix_start) or p >= int(prefix_end):
-                    continue
+        if channel == "B" and global_prefix_struct_ce_weight > 0.0:
+            for p in range(int(prefix_start), int(prefix_end)):
                 if int(input_ids[b, p].item()) in coord_id_set:
                     continue
                 labels_masked[b, p] = input_ids[b, p]
-                base_weights[b, p] = float(matched_prefix_struct_ce_weight)
-                struct_weights[b, p] = float(matched_prefix_struct_ce_weight)
+                base_weights[b, p] = max(
+                    float(base_weights[b, p].item()),
+                    float(global_prefix_struct_ce_weight),
+                )
+                struct_weights[b, p] = max(
+                    float(struct_weights[b, p].item()),
+                    float(global_prefix_struct_ce_weight),
+                )
 
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
         tail_desc = {int(x) for x in tail_desc_pos if int(x) >= 0}

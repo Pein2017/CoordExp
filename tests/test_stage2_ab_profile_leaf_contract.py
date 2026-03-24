@@ -91,7 +91,7 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
         assert stage2_ab.channel_b.pseudo_positive.enabled is True
         assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.5)
         assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
-        assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.9)
+        assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.95)
 
     assert smoke_cfg.training["max_steps"] == 4
     assert smoke_cfg.custom.train_sample_limit == 32
@@ -176,7 +176,7 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         "config": {
                             "desc_ce_weight": 1.0,
                             "rollout_fn_desc_weight": 1.0,
-                            "rollout_matched_prefix_struct_weight": 1.0,
+                            "rollout_global_prefix_struct_ce_weight": 1.0,
                         },
                     },
                     {

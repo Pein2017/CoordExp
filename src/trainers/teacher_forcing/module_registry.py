@@ -21,7 +21,7 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     "token_ce": {
         "desc_ce_weight",
         "rollout_fn_desc_weight",
-        "rollout_matched_prefix_struct_weight",
+        "rollout_global_prefix_struct_ce_weight",
     },
     "loss_dead_anchor_suppression": set(),
     "bbox_geo": {
@@ -48,7 +48,11 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     },
 }
 
-OBJECTIVE_OPTIONAL_CONFIG_KEYS: Final[dict[str, set[str]]] = {}
+OBJECTIVE_OPTIONAL_CONFIG_KEYS: Final[dict[str, set[str]]] = {
+    "token_ce": {
+        "rollout_global_prefix_struct_ce_weight",
+    }
+}
 
 OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
     "token_ce": {
