@@ -81,6 +81,74 @@ from .teacher_forcing.token_types import build_token_type_masks
 logger = logging.getLogger(__name__)
 
 
+def _clip_stage2_debug_text(text: Any, limit: int = 240) -> str:
+    value = str(text or "").replace("\n", "\\n")
+    if len(value) <= int(limit):
+        return value
+    return value[: int(limit)] + "...<truncated>"
+
+
+def _build_channel_b_invalid_explorer_detail(
+    *,
+    explorer_ordinal: int,
+    explorer_view: Mapping[str, Any],
+) -> Dict[str, Any]:
+    parse = explorer_view.get("parse")
+    valid_objects = getattr(parse, "valid_objects", None)
+    return {
+        "explorer_ordinal": int(explorer_ordinal),
+        "decode_mode": str(explorer_view.get("decode_mode", "") or ""),
+        "invalid_rollout": bool(int(explorer_view.get("invalid_rollout", 0) or 0)),
+        "invalid_rollout_reason": getattr(parse, "invalid_rollout_reason", None),
+        "truncated": bool(getattr(parse, "truncated", False)),
+        "dropped_invalid": int(getattr(parse, "dropped_invalid", 0) or 0),
+        "dropped_ambiguous": int(getattr(parse, "dropped_ambiguous", 0) or 0),
+        "dropped_invalid_by_reason": dict(
+            getattr(parse, "dropped_invalid_by_reason", {}) or {}
+        ),
+        "pred_objects": int(explorer_view.get("pred_objects", 0) or 0),
+        "valid_pred_objects": int(explorer_view.get("n_valid_pred", 0) or 0),
+        "gen_new_tokens": int(explorer_view.get("gen_new_tokens", 0) or 0),
+        "valid_object_count": int(len(valid_objects or [])),
+        "response_text_preview": _clip_stage2_debug_text(
+            getattr(parse, "response_text", "")
+        ),
+        "prefix_text_preview": _clip_stage2_debug_text(
+            getattr(parse, "prefix_text", "")
+        ),
+    }
+
+
+def _write_channel_b_prepare_failure_dump(
+    *,
+    owner: Any,
+    global_step: int,
+    rank: int,
+    sample_index: int,
+    invalid_ordinals: Sequence[int],
+    payload: Mapping[str, Any],
+) -> Optional[str]:
+    output_dir = str(getattr(getattr(owner, "args", None), "output_dir", ".") or ".")
+    out_dir = os.path.join(output_dir, "monitor_dumps", "prepare_failures")
+    ordinal_suffix = "-".join(str(int(v)) for v in invalid_ordinals) or "none"
+    path = os.path.join(
+        out_dir,
+        f"step_{int(global_step):06d}_rank_{int(rank):02d}_sample_{int(sample_index):03d}_explorers_{ordinal_suffix}.json",
+    )
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=True, indent=2)
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning(
+            "Failed to write Channel-B prepare failure dump %s: %r",
+            path,
+            exc,
+        )
+        return None
+    return path
+
+
 @dataclass
 class _PendingStage2Log:
     """Accumulate Stage-2 AB logs across micro-batches for one optimizer step.
@@ -2052,10 +2120,88 @@ class Stage2ABTrainingTrainer(
                     if int(explorer_view_item["invalid_rollout"]) != 0
                 ]
                 if invalid_explorer_ordinals:
+                    rank, world_size, _ = self._dist_info()
+                    invalid_explorer_details = [
+                        _build_channel_b_invalid_explorer_detail(
+                            explorer_ordinal=int(explorer_ordinal),
+                            explorer_view=explorer_views[int(explorer_ordinal)],
+                        )
+                        for explorer_ordinal in invalid_explorer_ordinals
+                    ]
+                    for explorer_ordinal in invalid_explorer_ordinals:
+                        parse_for_dump = explorer_views[int(explorer_ordinal)].get("parse")
+                        self._maybe_debug_dump_parse_failure(
+                            sample=sample,
+                            response_text=str(
+                                getattr(parse_for_dump, "response_text", "") or ""
+                            ),
+                            prefix_text=str(
+                                getattr(parse_for_dump, "prefix_text", "") or ""
+                            ),
+                            dropped_invalid=int(
+                                getattr(parse_for_dump, "dropped_invalid", 0) or 0
+                            ),
+                            dropped_ambiguous=int(
+                                getattr(parse_for_dump, "dropped_ambiguous", 0) or 0
+                            ),
+                            truncated=bool(getattr(parse_for_dump, "truncated", False)),
+                            decode_mode=str(
+                                explorer_views[int(explorer_ordinal)].get(
+                                    "decode_mode", ""
+                                )
+                                or ""
+                            ),
+                        )
+                    failure_payload = {
+                        "kind": "channel_b_prepare_failure",
+                        "global_step": int(monitor_step),
+                        "epoch": float(
+                            getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                        ),
+                        "time": float(time.time()),
+                        "meta": {
+                            "phase": "train",
+                            "stage2_channel": "B",
+                            "selection": "explorer_prepare_failure",
+                            "rank": int(rank),
+                            "world_size": int(world_size),
+                            "seed_base": int(seed_base),
+                        },
+                        "sample": {
+                            "sample_index": int(sample_index),
+                            "sample_id": sample.get("sample_id"),
+                            "base_idx": sample.get("base_idx"),
+                            "image_id": sample.get("image_id"),
+                            "image": sample.get("image"),
+                            "images": sample.get("images"),
+                        },
+                        "invalid_explorers": invalid_explorer_details,
+                    }
+                    dump_path = _write_channel_b_prepare_failure_dump(
+                        owner=self,
+                        global_step=int(monitor_step),
+                        rank=int(rank),
+                        sample_index=int(sample_index),
+                        invalid_ordinals=invalid_explorer_ordinals,
+                        payload=failure_payload,
+                    )
+                    invalid_reason_summary = ",".join(
+                        str(detail.get("invalid_rollout_reason") or "unknown")
+                        for detail in invalid_explorer_details
+                    )
                     raise ValueError(
                         "stage2-ab pseudo-positive Channel-B requires every explorer "
                         "view to complete accepted-clean preparation; invalid explorer "
-                        f"ordinals={invalid_explorer_ordinals}"
+                        f"ordinals={invalid_explorer_ordinals} "
+                        f"(rank={int(rank)}/{int(world_size)} global_step={int(monitor_step)} "
+                        f"sample_index={int(sample_index)} sample_id={sample.get('sample_id')} "
+                        f"image_id={sample.get('image_id')} reasons={invalid_reason_summary}"
+                        + (
+                            f" dump_path={dump_path}"
+                            if isinstance(dump_path, str) and dump_path
+                            else ""
+                        )
+                        + ")"
                     )
 
             drop_reasons = dict(anchor_view["drop_reasons"])

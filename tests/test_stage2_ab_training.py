@@ -2459,10 +2459,18 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
             ),
         )
 
-        sample = {"messages": [], "assistant_payload": {"objects": []}}
+        sample = {
+            "messages": [],
+            "assistant_payload": {"objects": []},
+            "sample_id": "sample-0",
+            "image_id": "image-0",
+        }
         with pytest.raises(
             ValueError,
-            match=r"invalid explorer ordinals=\[1\]",
+            match=(
+                r"invalid explorer ordinals=\[1\].*"
+                r"sample_id=sample-0.*image_id=image-0.*reasons=unknown"
+            ),
         ):
             t._prepare_batch_inputs_b([sample], _segments_only=True)
 

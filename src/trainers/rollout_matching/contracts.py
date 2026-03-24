@@ -39,6 +39,7 @@ class RolloutParseResult:
     invalid_rollout: bool
     valid_objects: List[ParsedPredObject]
     dropped_invalid: int
+    invalid_rollout_reason: Optional[str] = None
     dropped_invalid_by_reason: Dict[str, int] = field(default_factory=dict)
     dropped_ambiguous: int = 0
     truncated: bool = False

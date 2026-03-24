@@ -18,6 +18,14 @@ from multiprocessing import Manager
 from typing import Any, Literal, Mapping, cast
 
 import torch
+try:
+    from torch.distributed.elastic.multiprocessing.errors import (
+        record as _torch_elastic_record,
+    )
+except Exception:
+    def _torch_elastic_record(fn):
+        return fn
+
 from swift.llm.train.rlhf import SwiftRLHF
 from swift.llm.train.sft import SwiftSft
 from swift.trainers import TrainerFactory
@@ -1026,6 +1034,7 @@ def _strip_trailing_trainer_state_logging_row(logging_path: str | Path) -> bool:
     return True
 
 
+@_torch_elastic_record
 def main():
     """Main training entry point - pure config-driven."""
     args = parse_args()
