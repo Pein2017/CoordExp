@@ -38,10 +38,6 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
     },
     "coord_reg": {
         "coord_ce_weight",
-        "coord_el1_weight",
-        "coord_ehuber_weight",
-        "coord_huber_delta",
-        "coord_entropy_weight",
         "coord_gate_weight",
         "text_gate_weight",
         "soft_ce_weight",

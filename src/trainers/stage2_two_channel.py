@@ -3261,25 +3261,6 @@ class Stage2ABTrainingTrainer(
             default=0.0,
             min_value=0.0,
         )
-        coord_el1_w = _cfg_float(
-            coord_cfg,
-            keys=("coord_el1_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        coord_ehuber_w = _cfg_float(
-            coord_cfg,
-            keys=("coord_ehuber_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        # Entropy regularizer (sign controls direction): +w increases entropy, -w sharpens.
-        coord_entropy_w = _cfg_float(
-            coord_cfg,
-            keys=("coord_entropy_weight",),
-            default=0.0,
-        )
-
         # Coord-vocab gate: encourage coord slots to place probability mass on coord tokens
         # rather than arbitrary text/number tokens (prevents "wrong_arity" rollouts).
         coord_gate_w = _cfg_float(
@@ -3484,9 +3465,6 @@ class Stage2ABTrainingTrainer(
                 coord_ce_w=float(coord_ce_w),
                 coord_soft_ce_w=float(coord_soft_ce_w),
                 coord_w1_w=float(coord_w1_w),
-                coord_el1_w=float(coord_el1_w),
-                coord_ehuber_w=float(coord_ehuber_w),
-                coord_entropy_w=float(coord_entropy_w),
                 coord_gate_w=float(coord_gate_w),
                 text_gate_w=float(text_gate_w),
             )

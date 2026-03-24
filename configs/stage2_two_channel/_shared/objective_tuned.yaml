@@ -1,6 +1,6 @@
 stage2_ab:
   channel_b:
-    duplicate_iou_threshold: 0.90
+    duplicate_iou_threshold: 0.95
     ddp_phase_timeout_s: 120.0
   pipeline:
     objective:
@@ -28,8 +28,8 @@ stage2_ab:
         application:
           preset: anchor_only
         config:
-          smoothl1_weight: 2.0
-          ciou_weight: 0.2
+          smoothl1_weight: 1.0
+          ciou_weight: 0.5
       - name: bbox_size_aux
         enabled: true
         weight: 1.0
@@ -51,10 +51,6 @@ stage2_ab:
           preset: anchor_only
         config:
           coord_ce_weight: 0.02
-          coord_el1_weight: 0.0
-          coord_ehuber_weight: 0.0
-          coord_huber_delta: 0.001
-          coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
           text_gate_weight: 0.1
           soft_ce_weight: 0.1

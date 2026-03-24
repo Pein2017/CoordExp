@@ -122,9 +122,6 @@ Channel-A uses the normal single-pass GT-anchor groups only:
 - `loss/coord/coord_token_ce`
 - `loss/coord/coord_soft_ce`
 - `loss/coord/coord_w1`
-- `loss/coord/coord_el1`
-- `loss/coord/coord_ehuber`
-- `loss/coord/coord_entropy`
 - `loss/coord/coord_gate`
 - `loss/coord/text_gate`
 - `coord_diag/*`
@@ -147,9 +144,6 @@ Channel-B keeps rollout-specific provenance:
   - `loss/B_coord/coord_token_ce`
   - `loss/B_coord/coord_soft_ce`
   - `loss/B_coord/coord_w1`
-  - `loss/B_coord/coord_el1`
-  - `loss/B_coord/coord_ehuber`
-  - `loss/B_coord/coord_entropy`
   - `loss/B_coord/coord_gate`
   - `loss/B_coord/text_gate`
 - coord diagnostics:

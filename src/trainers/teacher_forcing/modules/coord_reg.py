@@ -67,9 +67,6 @@ def run_coord_reg_module(
             "loss/coord_token_ce": 0.0,
             "loss/coord_soft_ce": 0.0,
             "loss/coord_w1": 0.0,
-            "loss/coord_el1": 0.0,
-            "loss/coord_ehuber": 0.0,
-            "loss/coord_entropy": 0.0,
             "loss/coord_gate": 0.0,
             "loss/text_gate": 0.0,
         }
@@ -113,27 +110,6 @@ def run_coord_reg_module(
                 0.0,
             ),
         ),
-        "coord_el1_weight": max(
-            0.0,
-            _coerce_float(
-                cfg.get("coord_el1_weight", context.extra.get("coord_el1_weight", 0.0)),
-                0.0,
-            ),
-        ),
-        "coord_ehuber_weight": max(
-            0.0,
-            _coerce_float(
-                cfg.get(
-                    "coord_ehuber_weight",
-                    context.extra.get("coord_ehuber_weight", 0.0),
-                ),
-                0.0,
-            ),
-        ),
-        "coord_entropy_weight": _coerce_float(
-            cfg.get("coord_entropy_weight", context.extra.get("coord_entropy_weight", 0.0)),
-            0.0,
-        ),
         "coord_gate_weight": max(
             0.0,
             _coerce_float(
@@ -157,20 +133,10 @@ def run_coord_reg_module(
             float(context.temperature),
         ),
     )
-    huber_delta = max(
-        1e-6,
-        _coerce_float(
-            cfg.get("coord_huber_delta", context.extra.get("coord_huber_delta", 0.001)),
-            0.001,
-        ),
-    )
 
     coord_ce = context.logits.new_tensor(0.0)
     coord_soft_ce = context.logits.new_tensor(0.0)
     coord_w1 = context.logits.new_tensor(0.0)
-    coord_el1 = context.logits.new_tensor(0.0)
-    coord_ehuber = context.logits.new_tensor(0.0)
-    coord_entropy = context.logits.new_tensor(0.0)
     coord_gate = context.logits.new_tensor(0.0)
     text_gate = context.logits.new_tensor(0.0)
 
@@ -292,39 +258,9 @@ def run_coord_reg_module(
                         )
                         text_gate = gate_per_token.mean().to(dtype=context.logits.dtype)
 
-    if (
-        weights["coord_el1_weight"] != 0.0
-        or weights["coord_ehuber_weight"] != 0.0
-        or weights["coord_entropy_weight"] != 0.0
-    ):
-        probs = torch.softmax(coord_logits.float() / float(temperature), dim=-1)
-
-        if weights["coord_entropy_weight"] != 0.0:
-            p = probs.clamp(min=1e-12)
-            coord_entropy = _weighted_mean((-(p * p.log()).sum(dim=-1)))
-
-        bins_f = torch.arange(0, probs.shape[-1], device=probs.device, dtype=torch.float32) / 999.0
-        gt = target_bins.float() / 999.0
-        diff = bins_f.unsqueeze(0) - gt.unsqueeze(1)
-
-        if weights["coord_el1_weight"] != 0.0:
-            coord_el1 = _weighted_mean((probs * diff.abs()).sum(dim=-1))
-
-        if weights["coord_ehuber_weight"] != 0.0:
-            absd = diff.abs()
-            huber = torch.where(
-                absd < float(huber_delta),
-                0.5 * (absd**2) / float(huber_delta),
-                absd - 0.5 * float(huber_delta),
-            )
-            coord_ehuber = _weighted_mean((probs * huber).sum(dim=-1))
-
     coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
     coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce
     coord_w1_contrib = weights["coord_w1_weight"] * coord_w1
-    coord_el1_contrib = weights["coord_el1_weight"] * coord_el1
-    coord_ehuber_contrib = weights["coord_ehuber_weight"] * coord_ehuber
-    coord_entropy_contrib = weights["coord_entropy_weight"] * coord_entropy
     coord_gate_contrib = weights["coord_gate_weight"] * coord_gate
     text_gate_contrib = weights["text_gate_weight"] * text_gate
 
@@ -332,9 +268,6 @@ def run_coord_reg_module(
         coord_token_ce_contrib
         + coord_soft_ce_contrib
         + coord_w1_contrib
-        + coord_el1_contrib
-        + coord_ehuber_contrib
-        + coord_entropy_contrib
         + coord_gate_contrib
         + text_gate_contrib
     )
@@ -344,9 +277,6 @@ def run_coord_reg_module(
         "loss/coord_token_ce": float(coord_ce.detach().cpu().item()),
         "loss/coord_soft_ce": float(coord_soft_ce.detach().cpu().item()),
         "loss/coord_w1": float(coord_w1.detach().cpu().item()),
-        "loss/coord_el1": float(coord_el1.detach().cpu().item()),
-        "loss/coord_ehuber": float(coord_ehuber.detach().cpu().item()),
-        "loss/coord_entropy": float(coord_entropy.detach().cpu().item()),
         "loss/coord_gate": float(coord_gate.detach().cpu().item()),
         "loss/text_gate": float(text_gate.detach().cpu().item()),
     }
@@ -356,9 +286,6 @@ def run_coord_reg_module(
         "coord_token_ce_contrib": coord_token_ce_contrib,
         "coord_soft_ce_contrib": coord_soft_ce_contrib,
         "coord_w1_contrib": coord_w1_contrib,
-        "coord_el1_contrib": coord_el1_contrib,
-        "coord_ehuber_contrib": coord_ehuber_contrib,
-        "coord_entropy_contrib": coord_entropy_contrib,
         "coord_gate_contrib": coord_gate_contrib,
         "text_gate_contrib": text_gate_contrib,
     }

@@ -124,14 +124,14 @@ Normative behavior:
   - Channel-A:
     - `loss/text/{struct_ce,desc_ce}` (GT-anchor forward; token CE objective
       atoms)
-    - `loss/coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}`
+    - `loss/coord/{bbox_smoothl1,bbox_ciou,bbox_log_wh,bbox_oversize,coord_token_ce,coord_soft_ce,coord_w1,coord_gate,text_gate}`
       when Channel-A bbox/coord supervision is active on the single-pass
       GT-anchor forward
   - Channel-B (rollout context):
     - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; rollout-context forward; geometry objective atoms)
     - `loss/B_coord/{bbox_log_wh,bbox_oversize}` (from `bbox_size_aux`; rollout-context forward; size-aux objective atoms)
-    - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_el1,coord_ehuber,coord_entropy,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
+    - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
 - `loss/A1_*` objective atoms MUST NOT be emitted by active Stage-2
   two-channel training.
 - `loss/A2_*` objective atoms MUST NOT be emitted by active Stage-2

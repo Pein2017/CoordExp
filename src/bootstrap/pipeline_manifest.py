@@ -143,19 +143,6 @@ def build_pipeline_manifest(
                         ),
                         0.0,
                     ),
-                    "coord_el1_weight": _finite_float(cfg.get("coord_el1_weight", 0.0), 0.0),
-                    "coord_ehuber_weight": _finite_float(
-                        cfg.get("coord_ehuber_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_huber_delta": _finite_float(
-                        cfg.get("coord_huber_delta", 0.001),
-                        0.001,
-                    ),
-                    "coord_entropy_weight": _finite_float(
-                        cfg.get("coord_entropy_weight", 0.0),
-                        0.0,
-                    ),
                     "coord_gate_weight": _finite_float(
                         cfg.get(
                             "coord_gate_weight",

@@ -651,10 +651,6 @@ def _pipeline_bbox_size_aux_spec(*, config: dict | None = None) -> dict:
 def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
     coord_reg_cfg = {
         "coord_ce_weight": 0.0,
-        "coord_el1_weight": 0.0,
-        "coord_ehuber_weight": 0.0,
-        "coord_huber_delta": 0.001,
-        "coord_entropy_weight": 0.0,
         "coord_gate_weight": 0.0,
         "text_gate_weight": 0.0,
         "soft_ce_weight": 0.0,

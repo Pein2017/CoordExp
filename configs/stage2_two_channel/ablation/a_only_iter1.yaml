@@ -63,10 +63,6 @@ stage2_ab:
         config:
           # Required: hard CE on coord-token bins (coord tokens are NOT covered by text/struct CE).
           coord_ce_weight: 0.04
-          coord_el1_weight: 0.0
-          coord_ehuber_weight: 0.0
-          coord_huber_delta: 0.001
-          coord_entropy_weight: 0.0
           # Required: gating at coord-token positions.
           coord_gate_weight: 1.0
           text_gate_weight: 0.1

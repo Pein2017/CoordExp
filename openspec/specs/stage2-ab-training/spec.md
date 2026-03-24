@@ -42,8 +42,7 @@ Normative behavior:
 - Flat objective knobs are removed and MUST fail fast when present (non-exhaustive):
   - `stage2_ab.desc_ce_weight`, `stage2_ab.fmt_struct_ce_weight`
   - `stage2_ab.bbox_smoothl1_weight`, `stage2_ab.bbox_ciou_weight`
-  - `stage2_ab.coord_ce_weight`, `stage2_ab.coord_el1_weight`, `stage2_ab.coord_ehuber_weight`
-  - `stage2_ab.coord_entropy_weight`, `stage2_ab.coord_gate_weight`, `stage2_ab.text_gate_weight`
+  - `stage2_ab.coord_ce_weight`, `stage2_ab.coord_gate_weight`, `stage2_ab.text_gate_weight`
 - Legacy aux-loss config surfaces MUST be rejected for Stage-2 AB, including `custom.coord_soft_ce_w1.*`.
 
 #### Scenario: Missing pipeline fails fast
@@ -111,10 +110,6 @@ Normative behavior:
   - `eps`
 - `coord_reg.config` MUST accept only:
   - `coord_ce_weight`
-  - `coord_el1_weight`
-  - `coord_ehuber_weight`
-  - `coord_huber_delta`
-  - `coord_entropy_weight`
   - `soft_ce_weight`
   - `w1_weight`
   - `coord_gate_weight`

@@ -1927,10 +1927,6 @@ class Stage2ABConfig:
                 "bbox_ciou_weight",
                 "text_gate_weight",
                 "coord_ce_weight",
-                "coord_el1_weight",
-                "coord_ehuber_weight",
-                "coord_huber_delta",
-                "coord_entropy_weight",
                 "coord_gate_weight",
             )
             if k in data

@@ -74,10 +74,6 @@ stage2_ab:
           preset: anchor_only
         config:
           coord_ce_weight: 0.04
-          coord_el1_weight: 0.0
-          coord_ehuber_weight: 0.0
-          coord_huber_delta: 0.001
-          coord_entropy_weight: 0.0
           coord_gate_weight: 1.0
           text_gate_weight: 0.1
           soft_ce_weight: 0.1
