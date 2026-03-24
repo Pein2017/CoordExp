@@ -141,7 +141,6 @@ def build_channel_b_rollout_view(
         "gen_new_tokens": int(len(parse.response_token_ids)),
         "parse": parse,
         "invalid_rollout": int(invalid_rollout),
-        "invalid_rollout_reason": getattr(parse, "invalid_rollout_reason", None),
         "drop_reasons": drop_reasons,
         "drop_poly": int(drop_poly),
         "drop_unknown": int(drop_unknown),

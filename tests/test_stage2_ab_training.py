@@ -2469,7 +2469,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
             ValueError,
             match=(
                 r"invalid explorer ordinals=\[1\].*"
-                r"sample_id=sample-0.*image_id=image-0.*reasons=unknown"
+                r"sample_id=sample-0.*image_id=image-0.*manual_analysis_required=true"
             ),
         ):
             t._prepare_batch_inputs_b([sample], _segments_only=True)
@@ -2670,6 +2670,82 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
+def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_shielded_anchor() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="obj",
+        )
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="obj",
+            )
+        ],
+        [],
+        [],
+    ]
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=anchor_objects,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.6,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
+    assert triage.pseudo_positive_anchor_indices == []
+    assert triage.shielded_anchor_indices == [0]
+    assert targets.prefix_struct_pos == []
+    assert targets.tail_desc_pos == []
+    assert targets.fn_bbox_groups == []
+    assert len(targets.prefix_bbox_groups) == 1
+    assert targets.prefix_bbox_groups[0]["gt_bins"] == [10, 20, 30, 40]
+    assert targets.prefix_bbox_groups[0]["weight"] == pytest.approx(0.6 * (1.0 / 3.0))
+    assert targets.prefix_bins == [10, 20, 30, 40]
+
+
 def test_channel_b_supervision_targets_skip_non_duplicate_dead_anchor_suppression_when_enabled() -> None:
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -2818,6 +2894,68 @@ def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppressi
     )
 
     assert triage.dead_anchor_indices == [1]
+    assert targets.dead_anchor_suppression_targets
+    assert targets.dead_anchor_suppression_boundary_count == 1
+
+
+def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppression_with_global_kept_match() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    kept_anchor = GTObject(
+        index=1,
+        geom_type="bbox_2d",
+        points_norm1000=[10, 20, 30, 40],
+        desc="dup",
+    )
+    dead_anchor = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[10, 20, 30, 39],
+        desc="dup",
+    )
+    triage = types.SimpleNamespace(
+        kept_anchor_objects=[kept_anchor],
+        kept_anchor_new_index_by_old={1: 0},
+        pseudo_positive_anchor_indices=[],
+        shielded_anchor_indices=[],
+        pseudo_positive_cluster_demoted_indices=[],
+        anchor_support_rates=[],
+        recovered_gt_indices=[],
+        dead_anchor_bursts_by_boundary={0: [dead_anchor]},
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
     assert targets.dead_anchor_suppression_targets
     assert targets.dead_anchor_suppression_boundary_count == 1
 

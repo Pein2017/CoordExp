@@ -91,10 +91,15 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
         assert stage2_ab.channel_b.pseudo_positive.enabled is True
         assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.5)
         assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+        assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.9)
 
     assert smoke_cfg.training["max_steps"] == 4
     assert smoke_cfg.custom.train_sample_limit == 32
     assert smoke_cfg.custom.val_sample_limit == 4
+    prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
+    smoke_objective = {m.name: m for m in smoke_cfg.stage2_ab.pipeline.objective}
+    assert prod_objective["loss_dead_anchor_suppression"].weight == pytest.approx(2.0)
+    assert smoke_objective["loss_dead_anchor_suppression"].weight == pytest.approx(2.0)
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(

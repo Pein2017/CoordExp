@@ -99,7 +99,6 @@ def _build_channel_b_invalid_explorer_detail(
         "explorer_ordinal": int(explorer_ordinal),
         "decode_mode": str(explorer_view.get("decode_mode", "") or ""),
         "invalid_rollout": bool(int(explorer_view.get("invalid_rollout", 0) or 0)),
-        "invalid_rollout_reason": getattr(parse, "invalid_rollout_reason", None),
         "truncated": bool(getattr(parse, "truncated", False)),
         "dropped_invalid": int(getattr(parse, "dropped_invalid", 0) or 0),
         "dropped_ambiguous": int(getattr(parse, "dropped_ambiguous", 0) or 0),
@@ -110,6 +109,12 @@ def _build_channel_b_invalid_explorer_detail(
         "valid_pred_objects": int(explorer_view.get("n_valid_pred", 0) or 0),
         "gen_new_tokens": int(explorer_view.get("gen_new_tokens", 0) or 0),
         "valid_object_count": int(len(valid_objects or [])),
+        "response_token_ids": [
+            int(t) for t in list(getattr(parse, "response_token_ids", []) or [])
+        ],
+        "prefix_token_ids": [
+            int(t) for t in list(getattr(parse, "prefix_token_ids", []) or [])
+        ],
         "response_text_preview": _clip_stage2_debug_text(
             getattr(parse, "response_text", "")
         ),
@@ -2166,6 +2171,7 @@ class Stage2ABTrainingTrainer(
                             "rank": int(rank),
                             "world_size": int(world_size),
                             "seed_base": int(seed_base),
+                            "manual_analysis_required": True,
                         },
                         "sample": {
                             "sample_index": int(sample_index),
@@ -2185,17 +2191,13 @@ class Stage2ABTrainingTrainer(
                         invalid_ordinals=invalid_explorer_ordinals,
                         payload=failure_payload,
                     )
-                    invalid_reason_summary = ",".join(
-                        str(detail.get("invalid_rollout_reason") or "unknown")
-                        for detail in invalid_explorer_details
-                    )
                     raise ValueError(
                         "stage2-ab pseudo-positive Channel-B requires every explorer "
                         "view to complete accepted-clean preparation; invalid explorer "
                         f"ordinals={invalid_explorer_ordinals} "
                         f"(rank={int(rank)}/{int(world_size)} global_step={int(monitor_step)} "
                         f"sample_index={int(sample_index)} sample_id={sample.get('sample_id')} "
-                        f"image_id={sample.get('image_id')} reasons={invalid_reason_summary}"
+                        f"image_id={sample.get('image_id')} manual_analysis_required=true"
                         + (
                             f" dump_path={dump_path}"
                             if isinstance(dump_path, str) and dump_path

@@ -8,7 +8,7 @@ implementation details.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Tuple
 
 
 GeomType = Literal["bbox_2d", "poly"]
@@ -39,7 +39,6 @@ class RolloutParseResult:
     invalid_rollout: bool
     valid_objects: List[ParsedPredObject]
     dropped_invalid: int
-    invalid_rollout_reason: Optional[str] = None
     dropped_invalid_by_reason: Dict[str, int] = field(default_factory=dict)
     dropped_ambiguous: int = 0
     truncated: bool = False

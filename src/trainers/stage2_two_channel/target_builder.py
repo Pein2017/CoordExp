@@ -456,6 +456,11 @@ def _build_channel_b_supervision_targets(
     prefix_pos: List[int] = []
     prefix_bins: List[int] = []
     matched_gt_for_supervision: set[int] = set()
+    partial_pseudo_anchor_indices = [
+        int(idx)
+        for idx in triage.shielded_anchor_indices
+        if int(idx) not in set(triage.pseudo_positive_cluster_demoted_indices)
+    ]
 
     clean_prefix = _build_canonical_prefix_data(
         tokenizer=tokenizer,
@@ -532,6 +537,35 @@ def _build_channel_b_supervision_targets(
             prefix_pos.append(int(local_idx))
             prefix_bins.append(int(tbin))
 
+    if pseudo_positive_enabled:
+        for pred_i in partial_pseudo_anchor_indices:
+            if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+                continue
+            kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+            coord_group = prefix_coord_positions_all[
+                int(kept_pred_i) * 4 : int(kept_pred_i + 1) * 4
+            ]
+            if len(coord_group) != 4:
+                raise ValueError(
+                    "clean-prefix Channel-B expected exactly four coord slots per bbox object"
+                )
+            partial_weight = float(pseudo_positive_coord_weight) * float(
+                triage.anchor_support_rates[int(pred_i)]
+            )
+            if partial_weight <= 0.0:
+                continue
+            gt_bins = list(triage.kept_anchor_objects[int(kept_pred_i)].points_norm1000)
+            prefix_bbox_groups.append(
+                {
+                    "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                    "gt_bins": gt_bins,
+                    "weight": float(partial_weight),
+                }
+            )
+            for local_idx, tbin in zip(coord_group, gt_bins):
+                prefix_pos.append(int(local_idx))
+                prefix_bins.append(int(tbin))
+
     matched_prefix_objects = [
         _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
         for i in matched_clean_indices
@@ -573,6 +607,32 @@ def _build_channel_b_supervision_targets(
 
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
     clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+    kept_anchor_norm_descs = [
+        normalize_desc(str(obj.desc)) for obj in triage.kept_anchor_objects
+    ]
+
+    def _is_duplicate_like_dead_anchor(_boundary: int, obj: GTObject) -> bool:
+        if not pseudo_positive_enabled:
+            return True
+        if not triage.kept_anchor_objects:
+            return False
+        obj_norm_desc = normalize_desc(str(obj.desc))
+        for kept_obj, kept_norm_desc in zip(
+            triage.kept_anchor_objects,
+            kept_anchor_norm_descs,
+        ):
+            if obj_norm_desc != kept_norm_desc:
+                continue
+            if (
+                _bbox_iou_norm1000_xyxy(
+                    obj.points_norm1000,
+                    kept_obj.points_norm1000,
+                )
+                >= float(duplicate_iou_threshold)
+            ):
+                return True
+        return False
+
     (
         dead_anchor_suppression_targets,
         dead_anchor_suppression_boundary_count,
@@ -587,22 +647,7 @@ def _build_channel_b_supervision_targets(
             int(boundary): [
                 obj
                 for obj in duplicates
-                if (
-                    not pseudo_positive_enabled
-                    or (
-                        int(boundary) > 0
-                        and int(boundary) <= len(triage.kept_anchor_objects)
-                        and normalize_desc(str(obj.desc))
-                        == normalize_desc(
-                            str(triage.kept_anchor_objects[int(boundary) - 1].desc)
-                        )
-                        and _bbox_iou_norm1000_xyxy(
-                            obj.points_norm1000,
-                            triage.kept_anchor_objects[int(boundary) - 1].points_norm1000,
-                        )
-                        >= float(duplicate_iou_threshold)
-                    )
-                )
+                if _is_duplicate_like_dead_anchor(int(boundary), obj)
             ]
             for boundary, duplicates in triage.dead_anchor_bursts_by_boundary.items()
         },
