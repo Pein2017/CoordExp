@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, threshold studies, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-03-17
+updated: 2026-03-24
 ---
 
 # Diagnostics Index
@@ -33,6 +33,7 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
   - [stage2_near_duplication_2026-03-05.md](stage2_near_duplication_2026-03-05.md)
   - [stage2_ul_capture_highres1024_2026-03-09.md](stage2_ul_capture_highres1024_2026-03-09.md)
   - [stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md](stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md)
+  - [stage2_pseudo_positive_k4_coord_only_findings_2026-03-24.md](stage2_pseudo_positive_k4_coord_only_findings_2026-03-24.md)
   - [gt_overlap_threshold_search_2026-03-11.md](gt_overlap_threshold_search_2026-03-11.md)
   - [rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md](rollout_duplication_thresholds_ul_vs_ulv2_2026-03-11.md)
 - Historical Stage-2 failure diagnoses
