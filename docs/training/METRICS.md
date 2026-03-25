@@ -196,8 +196,11 @@ Operational semantics:
 
 Failure telemetry:
 
-- malformed explorer preparation under enabled pseudo-positive mode aborts the
-  step instead of emitting an ordinary finalized `train/triage/*` counter
+- malformed rollouts that remain invalid after salvage parsing abort the step
+  by default instead of emitting an ordinary finalized `train/triage/*` counter
+- with `stage2_ab.channel_b.invalid_rollout_policy=dump_and_continue`, the
+  trainer logs `stage2_ab/channel_b/invalid_rollout_sample_dropped` and
+  `stage2_ab/channel_b/invalid_rollout_sample_dropped_rate`
 - treat those aborts as failure telemetry / run outcome, not as a step-level
   rolling metric
 

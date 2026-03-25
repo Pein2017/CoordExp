@@ -1401,6 +1401,7 @@ class Stage2ABChannelBConfig:
     duplicate_iou_threshold: float = 0.90
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    invalid_rollout_policy: str = "abort"
     pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
         default_factory=Stage2ABChannelBPseudoPositiveConfig
     )
@@ -1444,6 +1445,14 @@ class Stage2ABChannelBConfig:
                 "stage2_ab.channel_b.rollout_decode_batch_size has been removed. "
                 "Use rollout_matching.channel_b_decode_batch_size instead."
             )
+        for key in sorted(data.keys(), key=lambda x: str(x)):
+            if isinstance(key, str) and _is_versioned_alias_for(
+                key, "invalid_rollout_policy"
+            ):
+                raise ValueError(
+                    "Versioned invalid-rollout policy aliases are unsupported; "
+                    "use stage2_ab.channel_b.invalid_rollout_policy instead."
+                )
 
         if "drop_invalid_struct_ce_multiplier" in data:
             raise ValueError(
@@ -1492,6 +1501,17 @@ class Stage2ABChannelBConfig:
         if duplicate_iou_threshold < 0.0 or duplicate_iou_threshold > 1.0:
             raise ValueError(
                 "stage2_ab.channel_b.duplicate_iou_threshold must be in [0, 1]"
+            )
+
+        invalid_rollout_policy_raw = data.pop(
+            "invalid_rollout_policy",
+            cls.invalid_rollout_policy,
+        )
+        invalid_rollout_policy = str(invalid_rollout_policy_raw).strip().lower()
+        if invalid_rollout_policy not in {"abort", "dump_and_continue"}:
+            raise ValueError(
+                "stage2_ab.channel_b.invalid_rollout_policy must be one of "
+                "{'abort', 'dump_and_continue'}"
             )
 
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
@@ -1555,6 +1575,7 @@ class Stage2ABChannelBConfig:
             duplicate_iou_threshold=duplicate_iou_threshold,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            invalid_rollout_policy=invalid_rollout_policy,
             pseudo_positive=pseudo_positive,
             triage_posterior=triage_posterior,
         )

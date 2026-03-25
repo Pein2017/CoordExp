@@ -89,7 +89,8 @@ Current internal ownership seams:
   - enabled `K=2` remains the explicit no-promotion control
 - Enabled failure semantics:
   - malformed anchor preparation drops that sample from Channel-B training
-  - malformed explorer preparation aborts the step
+  - malformed rollouts that remain invalid after salvage parsing abort the step by default
+  - `stage2_ab.channel_b.invalid_rollout_policy: dump_and_continue` dumps and skips the offending sample instead
   - zero-object explorers remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
   - `custom.trainer_variant: rollout_matching_sft`

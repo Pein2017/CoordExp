@@ -73,6 +73,7 @@ stage2_ab:
           target_truncate: 8
   channel_b:
     duplicate_iou_threshold: 0.95
+    invalid_rollout_policy: dump_and_continue
     pseudo_positive:
       enabled: true
       coord_weight: 0.3

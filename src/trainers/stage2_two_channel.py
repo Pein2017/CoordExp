@@ -89,24 +89,25 @@ def _clip_stage2_debug_text(text: Any, limit: int = 240) -> str:
 
 def _build_channel_b_invalid_explorer_detail(
     *,
-    explorer_ordinal: int,
-    explorer_view: Mapping[str, Any],
+    view_label: str,
+    view: Mapping[str, Any],
+    explorer_ordinal: Optional[int] = None,
 ) -> Dict[str, Any]:
-    parse = explorer_view.get("parse")
+    parse = view.get("parse")
     valid_objects = getattr(parse, "valid_objects", None)
-    return {
-        "explorer_ordinal": int(explorer_ordinal),
-        "decode_mode": str(explorer_view.get("decode_mode", "") or ""),
-        "invalid_rollout": bool(int(explorer_view.get("invalid_rollout", 0) or 0)),
+    detail = {
+        "view_label": str(view_label),
+        "decode_mode": str(view.get("decode_mode", "") or ""),
+        "invalid_rollout": bool(int(view.get("invalid_rollout", 0) or 0)),
         "truncated": bool(getattr(parse, "truncated", False)),
         "dropped_invalid": int(getattr(parse, "dropped_invalid", 0) or 0),
         "dropped_ambiguous": int(getattr(parse, "dropped_ambiguous", 0) or 0),
         "dropped_invalid_by_reason": dict(
             getattr(parse, "dropped_invalid_by_reason", {}) or {}
         ),
-        "pred_objects": int(explorer_view.get("pred_objects", 0) or 0),
-        "valid_pred_objects": int(explorer_view.get("n_valid_pred", 0) or 0),
-        "gen_new_tokens": int(explorer_view.get("gen_new_tokens", 0) or 0),
+        "pred_objects": int(view.get("pred_objects", 0) or 0),
+        "valid_pred_objects": int(view.get("n_valid_pred", 0) or 0),
+        "gen_new_tokens": int(view.get("gen_new_tokens", 0) or 0),
         "valid_object_count": int(len(valid_objects or [])),
         "response_token_ids": [
             int(t) for t in list(getattr(parse, "response_token_ids", []) or [])
@@ -121,6 +122,9 @@ def _build_channel_b_invalid_explorer_detail(
             getattr(parse, "prefix_text", "")
         ),
     }
+    if explorer_ordinal is not None:
+        detail["explorer_ordinal"] = int(explorer_ordinal)
+    return detail
 
 
 def _write_channel_b_prepare_failure_dump(
@@ -129,15 +133,17 @@ def _write_channel_b_prepare_failure_dump(
     global_step: int,
     rank: int,
     sample_index: int,
-    invalid_ordinals: Sequence[int],
+    invalid_labels: Sequence[str],
     payload: Mapping[str, Any],
 ) -> Optional[str]:
     output_dir = str(getattr(getattr(owner, "args", None), "output_dir", ".") or ".")
     out_dir = os.path.join(output_dir, "monitor_dumps", "prepare_failures")
-    ordinal_suffix = "-".join(str(int(v)) for v in invalid_ordinals) or "none"
+    label_suffix = "-".join(
+        str(label).strip().replace(" ", "_") for label in invalid_labels if str(label).strip()
+    ) or "none"
     path = os.path.join(
         out_dir,
-        f"step_{int(global_step):06d}_rank_{int(rank):02d}_sample_{int(sample_index):03d}_explorers_{ordinal_suffix}.json",
+        f"step_{int(global_step):06d}_rank_{int(rank):02d}_sample_{int(sample_index):03d}_views_{label_suffix}.json",
     )
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -1892,6 +1898,18 @@ class Stage2ABTrainingTrainer(
         pseudo_positive_enabled = bool(
             self._ab_channel_b_get("pseudo_positive.enabled", False)
         )
+        invalid_rollout_policy = str(
+            self._ab_channel_b_get(
+                "invalid_rollout_policy",
+                "abort",
+            )
+            or "abort"
+        ).strip().lower()
+        if invalid_rollout_policy not in {"abort", "dump_and_continue"}:
+            raise ValueError(
+                "stage2_ab.channel_b.invalid_rollout_policy "
+                "must be one of {'abort', 'dump_and_continue'}"
+            )
         num_rollouts_default = 4 if pseudo_positive_enabled else 2
         num_rollouts = int(
             self._ab_channel_b_get(
@@ -2097,6 +2115,7 @@ class Stage2ABTrainingTrainer(
         triage_pseudo_positive_selected_support_rate_num_total = 0.0
         triage_pseudo_positive_selected_support_rate_den_total = 0.0
         anchor_preparation_dropped_total = 0
+        invalid_rollout_sample_dropped_total = 0
         matched_for_supervision_total = 0
 
         anchor_pred_objects_total = 0
@@ -2179,87 +2198,94 @@ class Stage2ABTrainingTrainer(
                 int(explorer_view_item["parse_truncated"])
                 for explorer_view_item in explorer_views
             )
-            if pseudo_positive_enabled and int(invalid_rollout) != 0:
-                invalid_rollout_total += int(invalid_rollout)
-                anchor_preparation_dropped_total += 1
-                continue
-            if pseudo_positive_enabled:
-                invalid_explorer_ordinals = [
-                    int(explorer_ordinal)
-                    for explorer_ordinal, explorer_view_item in enumerate(explorer_views)
-                    if int(explorer_view_item["invalid_rollout"]) != 0
-                ]
-                if invalid_explorer_ordinals:
-                    rank, world_size, _ = self._dist_info()
-                    invalid_explorer_details = [
-                        _build_channel_b_invalid_explorer_detail(
-                            explorer_ordinal=int(explorer_ordinal),
-                            explorer_view=explorer_views[int(explorer_ordinal)],
-                        )
-                        for explorer_ordinal in invalid_explorer_ordinals
-                    ]
-                    for explorer_ordinal in invalid_explorer_ordinals:
-                        parse_for_dump = explorer_views[int(explorer_ordinal)].get("parse")
-                        self._maybe_debug_dump_parse_failure(
-                            sample=sample,
-                            response_text=str(
-                                getattr(parse_for_dump, "response_text", "") or ""
-                            ),
-                            prefix_text=str(
-                                getattr(parse_for_dump, "prefix_text", "") or ""
-                            ),
-                            dropped_invalid=int(
-                                getattr(parse_for_dump, "dropped_invalid", 0) or 0
-                            ),
-                            dropped_ambiguous=int(
-                                getattr(parse_for_dump, "dropped_ambiguous", 0) or 0
-                            ),
-                            truncated=bool(getattr(parse_for_dump, "truncated", False)),
-                            decode_mode=str(
-                                explorer_views[int(explorer_ordinal)].get(
-                                    "decode_mode", ""
-                                )
-                                or ""
-                            ),
-                        )
-                    failure_payload = {
-                        "kind": "channel_b_prepare_failure",
-                        "global_step": int(monitor_step),
-                        "epoch": float(
-                            getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
-                        ),
-                        "time": float(time.time()),
-                        "meta": {
-                            "phase": "train",
-                            "stage2_channel": "B",
-                            "selection": "explorer_prepare_failure",
-                            "rank": int(rank),
-                            "world_size": int(world_size),
-                            "seed_base": int(seed_base),
-                            "manual_analysis_required": True,
-                        },
-                        "sample": {
-                            "sample_index": int(sample_index),
-                            "sample_id": sample.get("sample_id"),
-                            "base_idx": sample.get("base_idx"),
-                            "image_id": sample.get("image_id"),
-                            "image": sample.get("image"),
-                            "images": sample.get("images"),
-                        },
-                        "invalid_explorers": invalid_explorer_details,
-                    }
-                    dump_path = _write_channel_b_prepare_failure_dump(
-                        owner=self,
-                        global_step=int(monitor_step),
-                        rank=int(rank),
-                        sample_index=int(sample_index),
-                        invalid_ordinals=invalid_explorer_ordinals,
-                        payload=failure_payload,
+            invalid_rollout_views: List[tuple[str, Mapping[str, Any], Optional[int]]] = []
+            if int(invalid_rollout) != 0:
+                invalid_rollout_views.append(("anchor", anchor_view, None))
+            invalid_explorer_ordinals = [
+                int(explorer_ordinal)
+                for explorer_ordinal, explorer_view_item in enumerate(explorer_views)
+                if int(explorer_view_item["invalid_rollout"]) != 0
+            ]
+            invalid_rollout_views.extend(
+                (
+                    f"explorer_{int(explorer_ordinal)}",
+                    explorer_views[int(explorer_ordinal)],
+                    int(explorer_ordinal),
+                )
+                for explorer_ordinal in invalid_explorer_ordinals
+            )
+            if invalid_rollout_views:
+                rank, world_size, _ = self._dist_info()
+                invalid_rollout_details = [
+                    _build_channel_b_invalid_explorer_detail(
+                        view_label=str(view_label),
+                        view=view_item,
+                        explorer_ordinal=explorer_ordinal,
                     )
+                    for view_label, view_item, explorer_ordinal in invalid_rollout_views
+                ]
+                for _, view_item, _ in invalid_rollout_views:
+                    parse_for_dump = view_item.get("parse")
+                    self._maybe_debug_dump_parse_failure(
+                        sample=sample,
+                        response_text=str(
+                            getattr(parse_for_dump, "response_text", "") or ""
+                        ),
+                        prefix_text=str(
+                            getattr(parse_for_dump, "prefix_text", "") or ""
+                        ),
+                        dropped_invalid=int(
+                            getattr(parse_for_dump, "dropped_invalid", 0) or 0
+                        ),
+                        dropped_ambiguous=int(
+                            getattr(parse_for_dump, "dropped_ambiguous", 0) or 0
+                        ),
+                        truncated=bool(getattr(parse_for_dump, "truncated", False)),
+                        decode_mode=str(view_item.get("decode_mode", "") or ""),
+                    )
+                invalid_labels = [
+                    str(view_label) for view_label, _, _ in invalid_rollout_views
+                ]
+                failure_payload = {
+                    "kind": "channel_b_prepare_failure",
+                    "global_step": int(monitor_step),
+                    "epoch": float(
+                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+                    ),
+                    "time": float(time.time()),
+                    "meta": {
+                        "phase": "train",
+                        "stage2_channel": "B",
+                        "selection": "invalid_rollout_prepare_failure",
+                        "rank": int(rank),
+                        "world_size": int(world_size),
+                        "seed_base": int(seed_base),
+                        "manual_analysis_required": True,
+                        "policy": str(invalid_rollout_policy),
+                    },
+                    "sample": {
+                        "sample_index": int(sample_index),
+                        "sample_id": sample.get("sample_id"),
+                        "base_idx": sample.get("base_idx"),
+                        "image_id": sample.get("image_id"),
+                        "image": sample.get("image"),
+                        "images": sample.get("images"),
+                    },
+                    "invalid_rollouts": invalid_rollout_details,
+                }
+                dump_path = _write_channel_b_prepare_failure_dump(
+                    owner=self,
+                    global_step=int(monitor_step),
+                    rank=int(rank),
+                    sample_index=int(sample_index),
+                    invalid_labels=invalid_labels,
+                    payload=failure_payload,
+                )
+                if invalid_rollout_policy == "abort":
                     raise ValueError(
-                        "stage2-ab pseudo-positive Channel-B requires every explorer "
-                        "view to complete accepted-clean preparation; invalid explorer "
-                        f"ordinals={invalid_explorer_ordinals} "
+                        "stage2-ab Channel-B encountered invalid rollout(s) after "
+                        "salvage parsing; invalid_labels="
+                        f"{invalid_labels} "
                         f"(rank={int(rank)}/{int(world_size)} global_step={int(monitor_step)} "
                         f"sample_index={int(sample_index)} sample_id={sample.get('sample_id')} "
                         f"image_id={sample.get('image_id')} manual_analysis_required=true"
@@ -2270,6 +2296,25 @@ class Stage2ABTrainingTrainer(
                         )
                         + ")"
                     )
+                invalid_rollout_total += int(len(invalid_rollout_views))
+                invalid_rollout_sample_dropped_total += 1
+                if int(invalid_rollout) != 0:
+                    anchor_preparation_dropped_total += 1
+                logger.warning(
+                    "stage2-ab Channel-B dumping and skipping malformed rollout sample "
+                    "due to invalid_rollout_policy=dump_and_continue; invalid_labels=%s "
+                    "rank=%s/%s global_step=%s sample_index=%s sample_id=%s "
+                    "image_id=%s dump_path=%s",
+                    invalid_labels,
+                    int(rank),
+                    int(world_size),
+                    int(monitor_step),
+                    int(sample_index),
+                    sample.get("sample_id"),
+                    sample.get("image_id"),
+                    dump_path,
+                )
+                continue
 
             drop_reasons = dict(anchor_view["drop_reasons"])
             drop_poly = int(anchor_view["drop_poly"])
@@ -2953,6 +2998,15 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/prompt_tok_mismatch": float(prompt_tok_mismatch_total),
             "stage2_ab/channel_b/prompt_tok_mismatch_rate": float(
                 (float(prompt_tok_mismatch_total) / float(len(anchor_rollout_results)))
+                if len(anchor_rollout_results) > 0
+                else 0.0
+            ),
+            "stage2_ab/channel_b/invalid_rollout_sample_dropped": float(
+                invalid_rollout_sample_dropped_total
+            ),
+            "stage2_ab/channel_b/invalid_rollout_sample_dropped_rate": float(
+                float(invalid_rollout_sample_dropped_total)
+                / float(len(anchor_rollout_results))
                 if len(anchor_rollout_results) > 0
                 else 0.0
             ),
