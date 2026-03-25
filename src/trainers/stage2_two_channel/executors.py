@@ -716,6 +716,18 @@ class Stage2ABChannelExecutorsMixin:
                 segments, batch_metrics = self._prepare_batch_inputs_b(
                     list(raw_samples), _segments_only=True
                 )
+            trace_fn = getattr(self, "_stage2_record_ddp_phase_trace", None)
+            if callable(trace_fn):
+                trace_fn(
+                    global_step=int(target_log_step),
+                    phase="channel_b_prepare_return",
+                    rank=int(ddp_rank),
+                    world_size=int(ddp_world_size),
+                    payload={
+                        "segment_count": int(len(segments)) if isinstance(segments, list) else 0,
+                        "total_segments_target": int(total_segments_target),
+                    },
+                )
             return run_channel_b_nonpipeline_learning_loop(
                 owner=self,
                 model=model,

@@ -950,6 +950,72 @@ class Stage2ABTrainingTrainer(
         finally:
             self._stage2_reset_train_monitor_dump(global_step=global_step)
 
+    def _stage2_record_ddp_phase_trace(
+        self,
+        *,
+        global_step: int,
+        phase: str,
+        rank: int,
+        world_size: int,
+        payload: Mapping[str, Any] | None = None,
+    ) -> None:
+        args_obj = getattr(self, "args", None)
+        output_dir = str(getattr(args_obj, "output_dir", ".") or ".")
+        if not output_dir.strip():
+            output_dir = "."
+
+        safe_phase = "".join(
+            ch if (str(ch).isalnum() or ch in ("-", "_")) else "_"
+            for ch in str(phase)
+        ).strip("_")
+        if not safe_phase:
+            safe_phase = "unknown_phase"
+
+        out_dir = os.path.join(output_dir, "monitor_dumps", "ddp_phase_trace")
+        record = {
+            "kind": "ddp_phase_trace",
+            "global_step": int(global_step),
+            "epoch": float(
+                getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+            ),
+            "time": float(time.time()),
+            "meta": {
+                "phase": "train",
+                "stage2_channel": "B",
+                "ddp_phase": str(phase),
+                "rank": int(rank),
+                "world_size": int(world_size),
+            },
+            "payload": dict(payload) if isinstance(payload, Mapping) else {},
+        }
+
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            trace_path = os.path.join(
+                out_dir,
+                f"step_{int(global_step):06d}_rank{int(rank):02d}_{safe_phase}.json",
+            )
+            with open(trace_path, "w", encoding="utf-8") as f:
+                json.dump(record, f, ensure_ascii=True, indent=2)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Failed to write Channel-B DDP phase trace for global_step=%s phase=%s rank=%s/%s: %r",
+                int(global_step),
+                str(phase),
+                int(rank),
+                int(world_size),
+                exc,
+            )
+            return
+
+        self._stage2_last_ddp_phase_trace = {
+            "phase": str(phase),
+            "path": str(trace_path),
+            "global_step": int(global_step),
+            "rank": int(rank),
+            "world_size": int(world_size),
+        }
+
     def train(self, *args, **kwargs):
         """Run training and ensure rollout resources shut down cleanly."""
         try:

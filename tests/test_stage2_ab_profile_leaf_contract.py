@@ -89,15 +89,22 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
         stage2_ab = cfg.stage2_ab
         assert stage2_ab is not None
         assert stage2_ab.channel_b.pseudo_positive.enabled is True
-        assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.5)
+        assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.3)
         assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
         assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.95)
+        assert stage2_ab.schedule.b_ratio == pytest.approx(0.85)
+        assert (
+            stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier
+            == pytest.approx(3.0)
+        )
 
     assert smoke_cfg.training["max_steps"] == 4
     assert smoke_cfg.custom.train_sample_limit == 32
     assert smoke_cfg.custom.val_sample_limit == 4
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
     smoke_objective = {m.name: m for m in smoke_cfg.stage2_ab.pipeline.objective}
+    assert prod_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
+    assert smoke_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
     assert prod_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
     assert smoke_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
 

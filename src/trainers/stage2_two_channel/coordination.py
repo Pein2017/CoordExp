@@ -362,6 +362,29 @@ def run_channel_b_nonpipeline_learning_loop(
     ddp_rank: int,
     ddp_world_size: int,
 ) -> torch.Tensor:
+    trace_fn = getattr(owner, "_stage2_record_ddp_phase_trace", None)
+
+    def _trace(phase: str, *, extra: Mapping[str, Any] | None = None) -> None:
+        if not callable(trace_fn):
+            return
+        trace_payload = {
+            "segment_count": int(len(segments)) if isinstance(segments, list) else 0,
+            "total_segments_target": int(total_segments_target),
+            "channel_b_buffer_size": int(
+                len(owner._stage2_post_rollout_buffer(channel="B"))
+            ),
+        }
+        if isinstance(extra, Mapping):
+            trace_payload.update(dict(extra))
+        trace_fn(
+            global_step=int(target_log_step),
+            phase=str(phase),
+            rank=int(ddp_rank),
+            world_size=int(ddp_world_size),
+            payload=trace_payload,
+        )
+
+    _trace("channel_b_non_pipeline_before_flush")
     owner._stage2_flush_train_monitor_dump(global_step=target_log_step)
     if not isinstance(segments, list) or not segments:
         raise ValueError(
@@ -376,11 +399,22 @@ def run_channel_b_nonpipeline_learning_loop(
         == int(target_log_step)
         else 0.0
     )
+    _trace(
+        "channel_b_non_pipeline_after_flush",
+        extra={
+            "train_monitor_dump_written": float(
+                batch_metrics["stage2_ab/channel_b/train_monitor_dump_written"]
+            )
+        },
+    )
     rollout_static, step_totals = split_rollout_metrics(batch_metrics)
     step_totals["stage2/raw_rollouts"] = float(total_segments_target)
 
     owner._stage2_append_post_rollout_segments(channel="B", segments=segments)
+    _trace("channel_b_non_pipeline_after_append")
+    _trace("channel_b_non_pipeline_before_prepare_barrier")
     ddp_phase_barrier_fn("channel_b_non_pipeline_after_prepare")
+    _trace("channel_b_non_pipeline_after_prepare_barrier")
 
     loss_total = None
     first_pack = True
@@ -394,9 +428,27 @@ def run_channel_b_nonpipeline_learning_loop(
             step_totals_pack = step_totals if first_pack else {}
             sync_gradients = not bool(owner._stage2_post_rollout_buffer(channel="B"))
             if bool(sync_gradients):
+                _trace(
+                    "channel_b_non_pipeline_before_final_sync_backward_barrier",
+                    extra={
+                        "selected_pack_size": int(len(selected)),
+                        "remaining_buffer_size": int(
+                            len(owner._stage2_post_rollout_buffer(channel="B"))
+                        ),
+                    },
+                )
                 ddp_phase_barrier_fn(
                     "channel_b_non_pipeline_before_final_sync_backward",
                     timeout_s=float(ddp_phase_final_sync_timeout_s),
+                )
+                _trace(
+                    "channel_b_non_pipeline_after_final_sync_backward_barrier",
+                    extra={
+                        "selected_pack_size": int(len(selected)),
+                        "remaining_buffer_size": int(
+                            len(owner._stage2_post_rollout_buffer(channel="B"))
+                        ),
+                    },
                 )
             loss_pack = run_channel_b_train_one_pack(
                 owner=owner,
