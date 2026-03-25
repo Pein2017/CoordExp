@@ -20,13 +20,13 @@
 |---------------------|---------|---------|-------------|
 | `src/config/schema.py` | repo-managed | Typed config validation for `stage2_ab.channel_b.pseudo_positive.*` and arbitrary-`K` guards | Extend first, because the rest of the implementation depends on a stable config contract. |
 | `src/trainers/stage2_two_channel.py` | repo-managed | Rollout scheduling, per-step observability, and batch-level failure handling | Use to generalize from one explorer to `num_rollouts - 1` explorers while preserving one clean teacher-forced forward. |
-| `src/trainers/stage2_two_channel/target_builder.py` | repo-managed | Triage, support accounting, pseudo-positive selection, dead-anchor suppression target building | This is the main algorithmic implementation surface for support-rate voting, overlap clustering, and duplicate-like dead-anchor filtering. |
+| `src/trainers/stage2_two_channel/target_builder.py` | repo-managed | Triage, support accounting, pseudo-positive selection, duplicate-burst unlikelihood target building | This is the main algorithmic implementation surface for support-rate voting, overlap clustering, and pre-triage duplicate-burst filtering. |
 | `src/trainers/stage2_two_channel/rollout_views.py` | repo-managed | Accepted-clean object preparation per rollout view | Reuse unchanged semantics per view instead of inventing a second parsing pipeline. |
 | `src/trainers/rollout_matching/matching.py` | repo-managed | Deterministic one-to-one IoU matching | Reuse for anchor/explorer counterpart association and keep geometry-first gating aligned with the current contract. |
 | `src/trainers/teacher_forcing/modules/bbox_geo.py` | repo-managed | Primary bbox/coord geo loss | Pseudo-positive coord supervision must flow through the existing per-bbox-group weight carrier here. |
 | `src/trainers/teacher_forcing/modules/coord_reg.py` | repo-managed | Coord-side regularization | Keep pseudo-positive objects coord-only by reusing this existing coord-side module instead of introducing text-side atoms. |
 | `src/trainers/teacher_forcing/modules/bbox_size_aux.py` | repo-managed | Optional light oversize regularization on supervised coord groups | Reuse as a harness-level auxiliary for pseudo-positive groups instead of building a separate oversized-box subsystem. |
-| `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py` | repo-managed | First-divergence dead-branch suppression | Keep the existing branch-entry penalty mechanism and narrow it to duplicate-like dead anchors only. |
+| `src/trainers/teacher_forcing/modules/loss_duplicate_burst_unlikelihood.py` | repo-managed | First-divergence duplicate-burst unlikelihood | Keep the existing branch-entry penalty mechanism and narrow it to strict duplicate-burst continuations only. |
 | `tests/test_stage2_ab_config_contract.py` | repo-managed | Config contract regression coverage | Use for all pseudo-positive config schema and unknown-key guardrails. |
 | `tests/test_stage2_ab_training.py` | repo-managed | Stage-2 behavior regression coverage | Use for arbitrary-`K` rollout prep, triage, one-forward loss realization, and metrics compatibility checks. |
 

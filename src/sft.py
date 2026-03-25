@@ -2494,7 +2494,7 @@ def main():
             stage2_ab_cfg,
             default_objective=[
                 "token_ce",
-                "loss_dead_anchor_suppression",
+                "loss_duplicate_burst_unlikelihood",
                 "bbox_geo",
                 "bbox_size_aux",
                 "coord_reg",

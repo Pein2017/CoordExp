@@ -117,7 +117,7 @@ Open these code files first:
 - `src/trainers/teacher_forcing/module_registry.py`
 - `src/trainers/teacher_forcing/objective_atoms.py`
 - `src/trainers/teacher_forcing/modules/token_ce.py`
-- `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
+- `src/trainers/teacher_forcing/modules/loss_duplicate_burst_unlikelihood.py`
 - `src/trainers/teacher_forcing/modules/bbox_geo.py`
 - `src/trainers/teacher_forcing/modules/coord_reg.py`
 

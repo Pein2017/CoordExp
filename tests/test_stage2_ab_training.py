@@ -23,7 +23,7 @@ from src.trainers.stage2_two_channel import (
     _build_channel_b_triage,
     _bbox_smoothl1_ciou_loss,
     _build_canonical_prefix_data,
-    _build_dead_anchor_suppression_targets,
+    _build_duplicate_burst_unlikelihood_targets,
     _build_teacher_forced_payload,
     _compute_duplicate_diagnostics,
     _expectation_decode_coords,
@@ -467,8 +467,8 @@ def _make_stage2_pipeline_manifest(
     *,
     token_ce_enabled: bool = True,
     token_ce_weight: float = 1.0,
-    dead_anchor_suppression_enabled: bool = False,
-    dead_anchor_suppression_weight: float = 1.0,
+    duplicate_burst_unlikelihood_enabled: bool = False,
+    duplicate_burst_unlikelihood_weight: float = 1.0,
     desc_ce_weight: float = 1.0,
     rollout_fn_desc_weight: float | None = None,
     rollout_global_prefix_struct_ce_weight: float = 1.0,
@@ -508,9 +508,9 @@ def _make_stage2_pipeline_manifest(
                 "config": token_cfg,
             },
             {
-                "name": "loss_dead_anchor_suppression",
-                "enabled": bool(dead_anchor_suppression_enabled),
-                "weight": float(dead_anchor_suppression_weight),
+                "name": "loss_duplicate_burst_unlikelihood",
+                "enabled": bool(duplicate_burst_unlikelihood_enabled),
+                "weight": float(duplicate_burst_unlikelihood_weight),
                 "channels": ["B"],
                 "application": {"preset": "rollout_only"},
                 "config": {},
@@ -1968,7 +1968,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     assert meta["bbox_groups_fn"][0]["weight"] == pytest.approx(2.5)
     assert meta["tail_desc_weights"]
     assert set(float(x) for x in meta["tail_desc_weights"]) == {2.5}
-    assert meta["dead_anchor_suppression_targets"]
+    assert meta["duplicate_burst_unlikelihood_targets"] == []
 
     assert batch_metrics["train/triage/dead_anchor_count"] == pytest.approx(
         1.0
@@ -2497,8 +2497,13 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
         ]
     ]
 
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}],
@@ -2570,8 +2575,13 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
         ],
     ]
 
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
@@ -2635,8 +2645,13 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
         ],
         [],
     ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
@@ -2710,8 +2725,13 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
         [],
         [],
     ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
@@ -2748,7 +2768,7 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
-def test_channel_b_supervision_targets_skip_non_duplicate_dead_anchor_suppression_when_enabled() -> None:
+def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non_duplicate_dead_anchor() -> None:
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2792,8 +2812,13 @@ def test_channel_b_supervision_targets_skip_non_duplicate_dead_anchor_suppressio
         [],
         [],
     ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
@@ -2819,12 +2844,13 @@ def test_channel_b_supervision_targets_skip_non_duplicate_dead_anchor_suppressio
         serialize_append_fragment_fn=_serialize_append_fragment,
     )
 
+    assert [obj.index for obj in accepted_clean] == [0, 1]
     assert triage.dead_anchor_indices == [1]
-    assert targets.dead_anchor_suppression_targets == []
-    assert targets.dead_anchor_suppression_boundary_count == 0
+    assert targets.duplicate_burst_unlikelihood_targets == []
+    assert targets.duplicate_burst_unlikelihood_boundary_count == 0
 
 
-def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppression_when_enabled() -> None:
+def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_duplicate_survivor_is_kept() -> None:
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2868,8 +2894,13 @@ def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppressi
         [],
         [],
     ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
     triage = _build_channel_b_triage(
-        accepted_objects_clean=anchor_objects,
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
@@ -2895,12 +2926,13 @@ def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppressi
         serialize_append_fragment_fn=_serialize_append_fragment,
     )
 
-    assert triage.dead_anchor_indices == [1]
-    assert targets.dead_anchor_suppression_targets
-    assert targets.dead_anchor_suppression_boundary_count == 1
+    assert [obj.index for obj in accepted_clean] == [0]
+    assert triage.dead_anchor_indices == []
+    assert targets.duplicate_burst_unlikelihood_targets
+    assert targets.duplicate_burst_unlikelihood_boundary_count == 1
 
 
-def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppression_with_global_kept_match() -> None:
+def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_all_cluster_members_die() -> None:
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2918,27 +2950,33 @@ def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppressi
             return out
 
     tok = _CoordLiteralTokenizer()
-    kept_anchor = GTObject(
-        index=1,
-        geom_type="bbox_2d",
-        points_norm1000=[10, 20, 30, 40],
-        desc="dup",
+    raw_anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="dup",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="dup",
+        ),
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=raw_anchor_objects,
+        duplicate_iou_threshold=0.9,
     )
-    dead_anchor = GTObject(
-        index=0,
-        geom_type="bbox_2d",
-        points_norm1000=[10, 20, 30, 39],
-        desc="dup",
-    )
-    triage = types.SimpleNamespace(
-        kept_anchor_objects=[kept_anchor],
-        kept_anchor_new_index_by_old={1: 0},
-        pseudo_positive_anchor_indices=[],
-        shielded_anchor_indices=[],
-        pseudo_positive_cluster_demoted_indices=[],
-        anchor_support_rates=[],
-        recovered_gt_indices=[],
-        dead_anchor_bursts_by_boundary={0: [dead_anchor]},
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=[[], [], []],
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
     )
 
     targets = _build_channel_b_supervision_targets(
@@ -2958,9 +2996,12 @@ def test_channel_b_supervision_targets_keep_duplicate_like_dead_anchor_suppressi
         serialize_append_fragment_fn=_serialize_append_fragment,
     )
 
-    assert targets.dead_anchor_suppression_targets
-    assert targets.dead_anchor_suppression_boundary_count == 1
-
+    assert [obj.index for obj in accepted_clean] == [0]
+    assert triage.dead_anchor_indices == [0]
+    assert triage.kept_anchor_objects == []
+    assert sorted(triage.duplicate_bursts_by_boundary.keys()) == [0]
+    assert targets.duplicate_burst_unlikelihood_targets
+    assert targets.duplicate_burst_unlikelihood_boundary_count == 1
 
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,
@@ -3576,7 +3617,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     assert meta["dead_anchor_indices"] == []
     assert meta["bbox_groups_prefix"] == []
     assert meta["bbox_groups_fn"] == []
-    assert meta["dead_anchor_suppression_targets"] == []
+    assert meta["duplicate_burst_unlikelihood_targets"] == []
     assert batch_metrics["train/triage/explorer_only_dead_count"] == pytest.approx(
         1.0
     )
@@ -5316,7 +5357,7 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
     assert diag["dup/saturation_rate"] == pytest.approx(0.0)
 
 
-def test_dead_anchor_suppression_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
+def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
     tok = _DummyTokenizer()
     accepted_clean = [
         GTObject(index=0, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="cat"),
@@ -5335,7 +5376,7 @@ def test_dead_anchor_suppression_targets_use_lcp_divergence_and_collapse_same_bo
         object_field_order="desc_first",
     )
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
-    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
+    targets, ul_boundaries, skipped = _build_duplicate_burst_unlikelihood_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -5356,7 +5397,7 @@ def test_dead_anchor_suppression_targets_use_lcp_divergence_and_collapse_same_bo
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_dead_anchor_suppression_targets_skip_when_no_safe_divergence_exists() -> None:
+def test_duplicate_burst_unlikelihood_targets_skip_when_no_safe_divergence_exists() -> None:
     tok = _DummyTokenizer()
     accepted_clean = [
         GTObject(index=0, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
@@ -5373,7 +5414,7 @@ def test_dead_anchor_suppression_targets_skip_when_no_safe_divergence_exists() -
         object_field_order="desc_first",
     )
     y_train_ids = []
-    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
+    targets, ul_boundaries, skipped = _build_duplicate_burst_unlikelihood_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -5389,7 +5430,7 @@ def test_dead_anchor_suppression_targets_skip_when_no_safe_divergence_exists() -
     assert skipped == 1
 
 
-def test_dead_anchor_suppression_targets_resolve_boundary_crossing_tokenization() -> None:
+def test_duplicate_burst_unlikelihood_targets_resolve_boundary_crossing_tokenization() -> None:
     tok = _BoundaryMergingTokenizer()
     accepted_clean = [
         GTObject(
@@ -5416,7 +5457,7 @@ def test_dead_anchor_suppression_targets_resolve_boundary_crossing_tokenization(
         object_field_order="desc_first",
     )
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(tok.encode("]}"))
-    targets, ul_boundaries, skipped = _build_dead_anchor_suppression_targets(
+    targets, ul_boundaries, skipped = _build_duplicate_burst_unlikelihood_targets(
         tokenizer=tok,
         y_train_ids=y_train_ids,
         clean_target_text=clean_prefix.prefix_text + "]}",
@@ -5437,13 +5478,13 @@ def test_dead_anchor_suppression_targets_resolve_boundary_crossing_tokenization(
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom() -> None:
+def test_stage2_channel_b_duplicate_burst_unlikelihood_logs_weighted_objective_atom() -> None:
     t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
-        dead_anchor_suppression_enabled=True,
-        dead_anchor_suppression_weight=2.0,
+        duplicate_burst_unlikelihood_enabled=True,
+        duplicate_burst_unlikelihood_weight=2.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -5465,7 +5506,7 @@ def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom()
             "tail_closure_pos": [],
             "bbox_groups_prefix": [],
             "bbox_groups_fn": [],
-            "dead_anchor_suppression_targets": [
+            "duplicate_burst_unlikelihood_targets": [
                 {"boundary": 0, "rel_pos": 0, "token_id": 7},
             ],
         }
@@ -5482,8 +5523,8 @@ def test_stage2_channel_b_dead_anchor_suppression_logs_weighted_objective_atom()
 
     assert float(loss.detach().cpu().item()) > 0.0
     pending = t._stage2_pending_train_logs[1].finalize()
-    assert "train/optimization/loss_dead_anchor_suppression" in pending
-    assert pending["train/optimization/loss_dead_anchor_suppression"] > 0.0
+    assert "train/optimization/loss_duplicate_burst_unlikelihood" in pending
+    assert pending["train/optimization/loss_duplicate_burst_unlikelihood"] > 0.0
 
 
 def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> None:
@@ -5491,8 +5532,8 @@ def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> Non
     manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=True,
         token_ce_weight=2.0,
-        dead_anchor_suppression_enabled=False,
-        dead_anchor_suppression_weight=0.0,
+        duplicate_burst_unlikelihood_enabled=False,
+        duplicate_burst_unlikelihood_weight=0.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         bbox_size_aux_enabled=False,
@@ -5544,8 +5585,8 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
-        dead_anchor_suppression_enabled=True,
-        dead_anchor_suppression_weight=1.0,
+        duplicate_burst_unlikelihood_enabled=True,
+        duplicate_burst_unlikelihood_weight=1.0,
         bbox_geo_enabled=False,
         bbox_geo_weight=0.0,
         coord_reg_enabled=False,
@@ -5567,7 +5608,7 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
             "tail_closure_pos": [],
             "bbox_groups_prefix": [],
             "bbox_groups_fn": [],
-            "dead_anchor_suppression_targets": [
+            "duplicate_burst_unlikelihood_targets": [
                 {"boundary": 0, "rel_pos": 0, "token_id": 7},
             ],
         }
@@ -5606,10 +5647,10 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     assert pending["rollout/matched_for_supervision_over_valid_pred"] == pytest.approx(
         0.5
     )
-    assert pending["loss/B_rollout_text/dead_anchor_suppression"] > 0.0
-    assert pending["diag/dead_anchor/num_terms"] == pytest.approx(1.0)
-    assert pending["diag/dead_anchor/num_ul_boundaries"] == pytest.approx(1.0)
-    assert pending["diag/dead_anchor/loss_per_term"] > 0.0
+    assert pending["loss/B_rollout_text/duplicate_burst_unlikelihood"] > 0.0
+    assert pending["diag/duplicate_burst/num_terms"] == pytest.approx(1.0)
+    assert pending["diag/duplicate_burst/num_ul_boundaries"] == pytest.approx(1.0)
+    assert pending["diag/duplicate_burst/loss_per_term"] > 0.0
 
 
 def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> None:

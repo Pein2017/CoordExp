@@ -98,8 +98,8 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
     assert smoke_cfg.custom.val_sample_limit == 4
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
     smoke_objective = {m.name: m for m in smoke_cfg.stage2_ab.pipeline.objective}
-    assert prod_objective["loss_dead_anchor_suppression"].weight == pytest.approx(2.0)
-    assert smoke_objective["loss_dead_anchor_suppression"].weight == pytest.approx(2.0)
+    assert prod_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
+    assert smoke_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
@@ -180,7 +180,7 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         },
                     },
                     {
-                        "name": "loss_dead_anchor_suppression",
+                        "name": "loss_duplicate_burst_unlikelihood",
                         "enabled": True,
                         "weight": 1.0,
                         "channels": ["B"],

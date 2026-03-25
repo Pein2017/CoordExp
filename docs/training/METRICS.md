@@ -135,7 +135,7 @@ Channel-B keeps rollout-specific provenance:
   - `loss/B_rollout_text/struct_ce`
   - `loss/B_rollout_text/desc_ce`
 - duplicate suppression:
-  - `train/optimization/loss_dead_anchor_suppression`
+  - `train/optimization/loss_duplicate_burst_unlikelihood`
 - rollout-context coord atoms:
   - `loss/B_coord/bbox_smoothl1`
   - `loss/B_coord/bbox_ciou`

@@ -36,7 +36,7 @@
 │  objective_runner.py + teacher_forcing/modules/*                    │
 │  - token_ce                                                         │
 │  - bbox_geo / bbox_size_aux / coord_reg                             │
-│  - loss_dead_anchor_suppression                                     │
+│  - loss_duplicate_burst_unlikelihood                                     │
 └──────────────────────────────┬───────────────────────────────────────┘
                                │
 ┌──────────────────────────────▼───────────────────────────────────────┐
@@ -52,7 +52,7 @@
 | `src/config/schema.py` | Legal config surface, defaults, invariants, unknown-key rejection | Add `stage2_ab.channel_b.pseudo_positive` and arbitrary-`K` validation rules. |
 | `src/trainers/stage2_two_channel.py` | Per-step orchestration, rollout scheduling, batch-level metrics and failure policy | Generalize from one explorer to `K-1` explorers and define aggregate observability semantics. |
 | `src/trainers/stage2_two_channel/rollout_views.py` | Per-view accepted-clean preparation | Reuse unchanged logic independently for each explorer view. |
-| `src/trainers/stage2_two_channel/target_builder.py` | Triage, pseudo-positive promotion, bbox-group construction, dead-anchor suppression targets | Main algorithm surface for support-rate logic and one-forward target realization. |
+| `src/trainers/stage2_two_channel/target_builder.py` | Triage, pseudo-positive promotion, bbox-group construction, duplicate-burst unlikelihood targets | Main algorithm surface for support-rate logic and one-forward target realization. |
 | `src/trainers/teacher_forcing/modules/*` | Module-level losses and diagnostics | Keep text-side modules unchanged except where masks/groups now include pseudo-positive coord groups. |
 | `docs/training/METRICS.md` + `docs/training/STAGE2_RUNBOOK.md` | Stable operator-facing documentation | Update only after metrics and YAML profile semantics are concrete in code/tests. |
 
@@ -74,7 +74,7 @@ src/
 │           ├── bbox_geo.py               # weighted coord-side supervision
 │           ├── bbox_size_aux.py          # optional size auxiliary on pseudo-positive groups
 │           ├── coord_reg.py              # coord-side regularization
-│           └── loss_dead_anchor_suppression.py
+│           └── loss_duplicate_burst_unlikelihood.py
 configs/
 ├── stage2_two_channel/
 │   ├── base.yaml
@@ -139,12 +139,12 @@ target_builder:
   - recovered_fn collapse
   - overlap clustering
   - final edited target
-  - bbox groups / text masks / dead suppression targets
+  - bbox groups / text masks / duplicate-burst unlikelihood targets
     ↓
 objective pipeline:
   - token_ce sees matched-prefix + FN text targets only
   - bbox_geo / coord_reg / bbox_size_aux see matched + FN + pseudo-positive coord groups
-  - dead_anchor_suppression sees duplicate-like dead-branch targets only
+  - duplicate_burst_unlikelihood sees pre-triage duplicate-burst continuations projected onto the post-triage clean prefix only
     ↓
 aggregate metrics + per-sample metadata
 ```
@@ -153,7 +153,7 @@ aggregate metrics + per-sample metadata
 
 1. **Rollout evidence flow:** `num_rollouts` config -> `stage2_two_channel.py` scheduling -> per-view `rollout_views.py` prep -> `target_builder.py` support accounting.
 2. **Pseudo-positive supervision flow:** selected anchor indices -> bbox-group creation in `target_builder.py` -> weighted coord-side modules in the objective pipeline.
-3. **Dead suppression flow:** dead-anchor boundary groups -> duplicate-like filter -> first-divergence bad-token targets -> `loss_dead_anchor_suppression.py`.
+3. **duplicate-burst flow:** pre-triage duplicate bursts -> post-triage boundary remap -> first-divergence bad-token targets -> `loss_duplicate_burst_unlikelihood.py`.
 4. **Observability flow:** per-view prep + triage meta -> batch aggregation in `stage2_two_channel.py` -> `train/triage/*`, `rollout/explorer/*`, and optional monitoring payloads.
 
 ## Suggested Build Order
@@ -164,7 +164,7 @@ aggregate metrics + per-sample metadata
    Why: support-rate triage depends on stable explorer view materialization.
 3. **Support/rate triage + overlap clustering + recovered-GT aggregation**
    Why: this is the central algorithmic layer that defines every downstream bucket.
-4. **Coord-side loss wiring + dead-anchor filtering**
+4. **Coord-side loss wiring + duplicate-burst filtering**
    Why: once buckets exist, the objective pipeline can project them without redesigning the forward path.
 5. **Metrics/docs/YAML profile + smoke validation**
    Why: observability and operator docs should be derived from the final runtime behavior, not guessed early.

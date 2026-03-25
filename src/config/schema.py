@@ -1706,7 +1706,7 @@ class Stage2PipelineConfig:
 
         canonical_objective_order = [
             "token_ce",
-            "loss_dead_anchor_suppression",
+            "loss_duplicate_burst_unlikelihood",
             "bbox_geo",
             "bbox_size_aux",
             "coord_reg",
@@ -1814,16 +1814,20 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
-        loss_dead_anchor_suppression = specs_by_name.get("loss_dead_anchor_suppression")
-        if loss_dead_anchor_suppression is None:
+        loss_duplicate_burst_unlikelihood = specs_by_name.get(
+            "loss_duplicate_burst_unlikelihood"
+        )
+        if loss_duplicate_burst_unlikelihood is None:
             raise ValueError(
-                "stage2_ab.pipeline.objective requires loss_dead_anchor_suppression in the canonical "
+                "stage2_ab.pipeline.objective requires loss_duplicate_burst_unlikelihood in the canonical "
                 "clean-prefix Channel-B contract."
             )
-        if tuple(str(ch) for ch in loss_dead_anchor_suppression.channels) != ("B",):
+        if tuple(
+            str(ch) for ch in loss_duplicate_burst_unlikelihood.channels
+        ) != ("B",):
             raise ValueError(
-                "stage2_ab.pipeline.objective loss_dead_anchor_suppression must declare channels ['B'] "
-                f"for the canonical clean-prefix Channel-B contract; got {list(loss_dead_anchor_suppression.channels)!r}"
+                "stage2_ab.pipeline.objective loss_duplicate_burst_unlikelihood must declare channels ['B'] "
+                f"for the canonical clean-prefix Channel-B contract; got {list(loss_duplicate_burst_unlikelihood.channels)!r}"
             )
 
         bbox_geo = specs_by_name.get("bbox_geo")

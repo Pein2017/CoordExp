@@ -238,7 +238,7 @@ Stage-2 trainers also emit rollout-specific metrics directly
   diagnostics under:
   - `dup/*`
   - `stage2_ab/channel_b/dup/N_*`
-  - `train/optimization/loss_dead_anchor_suppression`
+  - `train/optimization/loss_duplicate_burst_unlikelihood`
   - `stage2_ab/channel_b/closure_supervision/N_drop` for the
     legacy-named closure-resolution fallback activation counter
 

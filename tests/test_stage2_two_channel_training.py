@@ -28,13 +28,13 @@ def test_stage2_two_channel_helper_import_surface_remains_available() -> None:
     from src.trainers.stage2_two_channel import (
         _build_canonical_prefix_data,
         _build_canonical_prefix_text_data,
-        _build_dead_anchor_suppression_targets,
+        _build_duplicate_burst_unlikelihood_targets,
         _compute_duplicate_diagnostics,
         _sequential_dedup_bbox_objects,
     )
 
     assert callable(_build_canonical_prefix_text_data)
     assert callable(_build_canonical_prefix_data)
-    assert callable(_build_dead_anchor_suppression_targets)
+    assert callable(_build_duplicate_burst_unlikelihood_targets)
     assert callable(_compute_duplicate_diagnostics)
     assert callable(_sequential_dedup_bbox_objects)

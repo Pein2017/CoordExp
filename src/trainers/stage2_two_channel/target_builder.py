@@ -9,7 +9,7 @@ from src.utils.assistant_json import dumps_coordjson
 from ..rollout_matching.contracts import GTObject, MatchResult
 from ..rollout_matching.matching import associate_one_to_one_max_iou
 from ..rollout_matching.parsing import decode_pieces, find_desc_value_char_spans
-from .types import Stage2ChannelBMeta, Stage2DeadAnchorSuppressionTarget
+from .types import Stage2ChannelBMeta, Stage2DuplicateBurstUnlikelihoodTarget
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class _ChannelBTriageResult:
     valid_explorer_count: int
     kept_anchor_objects: List[GTObject]
     kept_anchor_new_index_by_old: Dict[int, int]
-    dead_anchor_bursts_by_boundary: Dict[int, List[GTObject]]
+    duplicate_bursts_by_boundary: Dict[int, List[GTObject]]
 
 
 @dataclass(frozen=True)
@@ -66,9 +66,9 @@ class _ChannelBSupervisionTargets:
     tail_desc_weights: List[float]
     y_train_ids: List[int]
     clean_target_text: str
-    dead_anchor_suppression_targets: List[Stage2DeadAnchorSuppressionTarget]
-    dead_anchor_suppression_boundary_count: int
-    dead_anchor_suppression_skipped_no_divergence: int
+    duplicate_burst_unlikelihood_targets: List[Stage2DuplicateBurstUnlikelihoodTarget]
+    duplicate_burst_unlikelihood_boundary_count: int
+    duplicate_burst_unlikelihood_skipped_no_divergence: int
 
 
 def _shift_bbox_groups_with_weights(
@@ -215,6 +215,7 @@ def _sequential_dedup_bbox_objects(
 def _build_channel_b_triage(
     *,
     accepted_objects_clean: Sequence[GTObject],
+    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
     explorer_accepted_objects_clean_by_view: Sequence[Sequence[GTObject]],
     anchor_match_by_pred: Mapping[int, int],
     explorer_match_by_pred_by_view: Sequence[Mapping[int, int]],
@@ -390,17 +391,38 @@ def _build_channel_b_triage(
 
     kept_anchor_objects: List[GTObject] = []
     kept_anchor_new_index_by_old: Dict[int, int] = {}
-    dead_anchor_bursts_by_boundary: Dict[int, List[GTObject]] = {}
     kept_anchor_count = 0
     for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
         if int(anchor_i) in dead_anchor_indices:
-            dead_anchor_bursts_by_boundary.setdefault(int(kept_anchor_count), []).append(
-                anchor_obj
-            )
             continue
         kept_anchor_new_index_by_old[int(anchor_i)] = int(len(kept_anchor_objects))
         kept_anchor_objects.append(anchor_obj)
         kept_anchor_count += 1
+
+    # Duplicate bursts are discovered on the pre-triage accepted-anchor surface, but
+    # duplicate-burst UL is realized against the post-triage clean prefix. Remap each
+    # pre-triage boundary onto the number of kept anchors that survive before it so
+    # duplicate bursts still activate when earlier anchors or the whole duplicate
+    # cluster survivor die during triage.
+    kept_prefix_count_by_old_boundary: List[int] = [0]
+    kept_prefix_count = 0
+    for anchor_i in range(len(accepted_objects_clean)):
+        if int(anchor_i) not in dead_anchor_indices:
+            kept_prefix_count += 1
+        kept_prefix_count_by_old_boundary.append(int(kept_prefix_count))
+
+    remapped_duplicate_bursts_by_boundary: Dict[int, List[GTObject]] = {}
+    for boundary, duplicates in duplicate_bursts_by_boundary.items():
+        boundary_i = int(boundary)
+        if boundary_i < 0 or boundary_i > len(accepted_objects_clean):
+            raise ValueError(
+                "pre-triage duplicate burst boundary escaped accepted-anchor span: "
+                f"boundary={boundary_i} accepted={len(accepted_objects_clean)}"
+            )
+        kept_boundary = int(kept_prefix_count_by_old_boundary[boundary_i])
+        remapped_duplicate_bursts_by_boundary.setdefault(kept_boundary, []).extend(
+            [obj for obj in duplicates]
+        )
 
     return _ChannelBTriageResult(
         association_pairs_by_view=association_pairs_by_view,
@@ -430,7 +452,7 @@ def _build_channel_b_triage(
         valid_explorer_count=int(valid_explorer_count),
         kept_anchor_objects=kept_anchor_objects,
         kept_anchor_new_index_by_old=kept_anchor_new_index_by_old,
-        dead_anchor_bursts_by_boundary=dead_anchor_bursts_by_boundary,
+        duplicate_bursts_by_boundary=remapped_duplicate_bursts_by_boundary,
     )
 
 
@@ -607,50 +629,17 @@ def _build_channel_b_supervision_targets(
 
     y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
     clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
-    kept_anchor_norm_descs = [
-        normalize_desc(str(obj.desc)) for obj in triage.kept_anchor_objects
-    ]
-
-    def _is_duplicate_like_dead_anchor(_boundary: int, obj: GTObject) -> bool:
-        if not pseudo_positive_enabled:
-            return True
-        if not triage.kept_anchor_objects:
-            return False
-        obj_norm_desc = normalize_desc(str(obj.desc))
-        for kept_obj, kept_norm_desc in zip(
-            triage.kept_anchor_objects,
-            kept_anchor_norm_descs,
-        ):
-            if obj_norm_desc != kept_norm_desc:
-                continue
-            if (
-                _bbox_iou_norm1000_xyxy(
-                    obj.points_norm1000,
-                    kept_obj.points_norm1000,
-                )
-                >= float(duplicate_iou_threshold)
-            ):
-                return True
-        return False
-
     (
-        dead_anchor_suppression_targets,
-        dead_anchor_suppression_boundary_count,
-        dead_anchor_suppression_skipped_no_divergence,
-    ) = _build_dead_anchor_suppression_targets(
+        duplicate_burst_unlikelihood_targets,
+        duplicate_burst_unlikelihood_boundary_count,
+        duplicate_burst_unlikelihood_skipped_no_divergence,
+    ) = _build_duplicate_burst_unlikelihood_targets(
         tokenizer=tokenizer,
         y_train_ids=y_train_ids,
         clean_target_text=clean_target_text,
         accepted_objects_clean=triage.kept_anchor_objects,
         fn_objects=fn_objs,
-        duplicate_bursts_by_boundary={
-            int(boundary): [
-                obj
-                for obj in duplicates
-                if _is_duplicate_like_dead_anchor(int(boundary), obj)
-            ]
-            for boundary, duplicates in triage.dead_anchor_bursts_by_boundary.items()
-        },
+        duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
         boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
         object_field_order=object_field_order,
     )
@@ -689,12 +678,14 @@ def _build_channel_b_supervision_targets(
         tail_desc_weights=[float(w) for w in tail_desc_weights],
         y_train_ids=[int(t) for t in y_train_ids],
         clean_target_text=str(clean_target_text),
-        dead_anchor_suppression_targets=list(dead_anchor_suppression_targets),
-        dead_anchor_suppression_boundary_count=int(
-            dead_anchor_suppression_boundary_count
+        duplicate_burst_unlikelihood_targets=list(
+            duplicate_burst_unlikelihood_targets
         ),
-        dead_anchor_suppression_skipped_no_divergence=int(
-            dead_anchor_suppression_skipped_no_divergence
+        duplicate_burst_unlikelihood_boundary_count=int(
+            duplicate_burst_unlikelihood_boundary_count
+        ),
+        duplicate_burst_unlikelihood_skipped_no_divergence=int(
+            duplicate_burst_unlikelihood_skipped_no_divergence
         ),
     )
 
@@ -739,9 +730,9 @@ def _build_channel_b_meta_entry(
     recovered_gt_indices: Sequence[int],
     recovered_gt_support_counts: Sequence[int],
     recovered_gt_support_rates: Sequence[float],
-    dead_anchor_suppression_targets: Sequence[Stage2DeadAnchorSuppressionTarget],
-    dead_anchor_suppression_boundary_count: int,
-    dead_anchor_suppression_skipped_no_divergence: int,
+    duplicate_burst_unlikelihood_targets: Sequence[Stage2DuplicateBurstUnlikelihoodTarget],
+    duplicate_burst_unlikelihood_boundary_count: int,
+    duplicate_burst_unlikelihood_skipped_no_divergence: int,
     stage2_tail_closure_positions_fn: Any,
     stage2_semantic_stop_branch_metadata_fn: Any,
 ) -> Tuple[Stage2ChannelBMeta, int]:
@@ -868,19 +859,19 @@ def _build_channel_b_meta_entry(
         "recovered_gt_support_rates": [
             float(v) for v in recovered_gt_support_rates
         ],
-        "dead_anchor_suppression_targets": [
+        "duplicate_burst_unlikelihood_targets": [
             {
                 "boundary": int(item["boundary"]),
                 "rel_pos": int(item["rel_pos"]),
                 "token_id": int(item["token_id"]),
             }
-            for item in dead_anchor_suppression_targets
+            for item in duplicate_burst_unlikelihood_targets
         ],
-        "dead_anchor_suppression_boundary_count": int(
-            dead_anchor_suppression_boundary_count
+        "duplicate_burst_unlikelihood_boundary_count": int(
+            duplicate_burst_unlikelihood_boundary_count
         ),
-        "dead_anchor_suppression_skipped_no_divergence": int(
-            dead_anchor_suppression_skipped_no_divergence
+        "duplicate_burst_unlikelihood_skipped_no_divergence": int(
+            duplicate_burst_unlikelihood_skipped_no_divergence
         ),
     }
     return meta_entry, int(closure_supervision_drop_count)
@@ -1009,7 +1000,7 @@ def _first_safe_token_index_from_char_cut(
     return int(len(token_ids))
 
 
-def _build_dead_anchor_suppression_targets(
+def _build_duplicate_burst_unlikelihood_targets(
     *,
     tokenizer: Any,
     y_train_ids: Sequence[int],
@@ -1019,9 +1010,9 @@ def _build_dead_anchor_suppression_targets(
     duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
     boundary_prefix_texts: Sequence[str],
     object_field_order: str,
-) -> Tuple[List[Stage2DeadAnchorSuppressionTarget], int, int]:
+) -> Tuple[List[Stage2DuplicateBurstUnlikelihoodTarget], int, int]:
     targets_by_boundary_token: dict[
-        tuple[int, int], Stage2DeadAnchorSuppressionTarget
+        tuple[int, int], Stage2DuplicateBurstUnlikelihoodTarget
     ] = {}
     skipped_no_divergence = 0
 
@@ -1094,7 +1085,7 @@ def _build_dead_anchor_suppression_targets(
 
             rel_pos = int(clean_pos)
             bad_token_id = int(duplicate_target_ids[duplicate_pos])
-            candidate: Stage2DeadAnchorSuppressionTarget = {
+            candidate: Stage2DuplicateBurstUnlikelihoodTarget = {
                 "boundary": int(boundary_i),
                 "rel_pos": int(rel_pos),
                 "token_id": int(bad_token_id),
@@ -1112,10 +1103,10 @@ def _build_dead_anchor_suppression_targets(
             int(item["token_id"]),
         ),
     )
-    dead_anchor_suppression_boundary_count = len(
+    duplicate_burst_unlikelihood_boundary_count = len(
         {int(item["boundary"]) for item in targets}
     )
-    return targets, int(dead_anchor_suppression_boundary_count), int(
+    return targets, int(duplicate_burst_unlikelihood_boundary_count), int(
         skipped_no_divergence
     )
 
@@ -1164,7 +1155,7 @@ __all__ = [
     "_bbox_iou_norm1000_xyxy",
     "_compute_duplicate_diagnostics",
     "_build_canonical_prefix_data",
-    "_build_dead_anchor_suppression_targets",
+    "_build_duplicate_burst_unlikelihood_targets",
     "_desc_tail_positions_and_weights",
     "_sequential_dedup_bbox_objects",
 ]

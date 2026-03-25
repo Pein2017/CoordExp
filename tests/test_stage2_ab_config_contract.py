@@ -51,8 +51,8 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
 def _canonical_stage2_pipeline(
     *,
     token_ce_cfg: dict | None = None,
-    dead_anchor_suppression_cfg: dict | None = None,
-    dead_anchor_suppression_channels: list[str] | None = None,
+    duplicate_burst_unlikelihood_cfg: dict | None = None,
+    duplicate_burst_unlikelihood_channels: list[str] | None = None,
     bbox_geo_cfg: dict | None = None,
     bbox_size_aux_cfg: dict | None = None,
     coord_reg_cfg: dict | None = None,
@@ -63,10 +63,10 @@ def _canonical_stage2_pipeline(
             "rollout_fn_desc_weight": 1.0,
             "rollout_global_prefix_struct_ce_weight": 1.0,
         }
-    if dead_anchor_suppression_cfg is None:
-        dead_anchor_suppression_cfg = {}
-    if dead_anchor_suppression_channels is None:
-        dead_anchor_suppression_channels = ["B"]
+    if duplicate_burst_unlikelihood_cfg is None:
+        duplicate_burst_unlikelihood_cfg = {}
+    if duplicate_burst_unlikelihood_channels is None:
+        duplicate_burst_unlikelihood_channels = ["B"]
     if bbox_geo_cfg is None:
         bbox_geo_cfg = {
             "smoothl1_weight": 0.0,
@@ -103,12 +103,12 @@ def _canonical_stage2_pipeline(
                 "config": dict(token_ce_cfg),
             },
             {
-                "name": "loss_dead_anchor_suppression",
+                "name": "loss_duplicate_burst_unlikelihood",
                 "enabled": True,
                 "weight": 1.0,
-                "channels": list(dead_anchor_suppression_channels),
+                "channels": list(duplicate_burst_unlikelihood_channels),
                 "application": {"preset": "rollout_only"},
-                "config": dict(dead_anchor_suppression_cfg),
+                "config": dict(duplicate_burst_unlikelihood_cfg),
             },
             {
                 "name": "bbox_geo",
@@ -547,7 +547,7 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_loss_dead_anchor_suppression_in_canonical_order() -> None:
+def test_stage2_pipeline_requires_loss_duplicate_burst_unlikelihood_in_canonical_order() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -582,7 +582,7 @@ def test_stage2_pipeline_requires_loss_dead_anchor_suppression_in_canonical_orde
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_dead_anchor_suppression_channels_b_only() -> None:
+def test_stage2_pipeline_requires_duplicate_burst_unlikelihood_channels_b_only() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -601,7 +601,7 @@ def test_stage2_pipeline_requires_dead_anchor_suppression_channels_b_only() -> N
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(dead_anchor_suppression_channels=["A", "B"]),
+            "pipeline": _canonical_stage2_pipeline(duplicate_burst_unlikelihood_channels=["A", "B"]),
             "channel_b": {},
         },
     }
@@ -609,12 +609,12 @@ def test_stage2_pipeline_requires_dead_anchor_suppression_channels_b_only() -> N
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"loss_dead_anchor_suppression must declare channels \['B'\]",
+        match=r"loss_duplicate_burst_unlikelihood must declare channels \['B'\]",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_empty_loss_dead_anchor_suppression_config() -> None:
+def test_stage2_pipeline_requires_empty_loss_duplicate_burst_unlikelihood_config() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -634,7 +634,7 @@ def test_stage2_pipeline_requires_empty_loss_dead_anchor_suppression_config() ->
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
             "pipeline": _canonical_stage2_pipeline(
-                dead_anchor_suppression_cfg={"unknown_weight": 1.0}
+                duplicate_burst_unlikelihood_cfg={"unknown_weight": 1.0}
             ),
             "channel_b": {},
         },
@@ -1402,7 +1402,7 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
             cfg,
             default_objective=[
                 "token_ce",
-                "loss_dead_anchor_suppression",
+                "loss_duplicate_burst_unlikelihood",
                 "bbox_geo",
                 "bbox_size_aux",
                 "coord_reg",
@@ -1431,7 +1431,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
                     "config": {},
                 },
                 {
-                    "name": "loss_dead_anchor_suppression",
+                    "name": "loss_duplicate_burst_unlikelihood",
                     "enabled": True,
                     "weight": 1.0,
                     "channels": ("B",),
@@ -1446,7 +1446,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         cfg,
         default_objective=[
             "token_ce",
-            "loss_dead_anchor_suppression",
+            "loss_duplicate_burst_unlikelihood",
             "bbox_geo",
             "bbox_size_aux",
             "coord_reg",
@@ -1459,7 +1459,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         coord_soft_cfg=None,
     )
 
-    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "loss_dead_anchor_suppression"]
+    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "loss_duplicate_burst_unlikelihood"]
     assert manifest["diagnostics"] == []
 
 

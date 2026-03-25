@@ -103,3 +103,5 @@ __all__ = [
     "Stage2TwoChannelTrainer",
     "_PendingStage2Log",
 ]
+
+from .target_builder import _build_duplicate_burst_unlikelihood_targets

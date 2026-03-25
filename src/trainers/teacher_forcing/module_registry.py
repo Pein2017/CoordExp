@@ -10,7 +10,7 @@ from typing import Any, Final
 
 ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {
     "token_ce",
-    "loss_dead_anchor_suppression",
+    "loss_duplicate_burst_unlikelihood",
     "bbox_geo",
     "bbox_size_aux",
     "coord_reg",
@@ -23,7 +23,7 @@ OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
         "rollout_fn_desc_weight",
         "rollout_global_prefix_struct_ce_weight",
     },
-    "loss_dead_anchor_suppression": set(),
+    "loss_duplicate_burst_unlikelihood": set(),
     "bbox_geo": {
         "smoothl1_weight",
         "ciou_weight",
@@ -59,7 +59,7 @@ OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
         "anchor_text_only",
         "rollout_text_only",
     },
-    "loss_dead_anchor_suppression": {"rollout_only"},
+    "loss_duplicate_burst_unlikelihood": {"rollout_only"},
     "bbox_geo": {
         "anchor_only",
     },

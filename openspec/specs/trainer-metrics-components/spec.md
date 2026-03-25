@@ -128,7 +128,7 @@ Normative behavior:
       when Channel-A bbox/coord supervision is active on the single-pass
       GT-anchor forward
   - Channel-B (rollout context):
-    - `train/optimization/{loss_structure_ce,loss_description_ce,loss_dead_anchor_suppression}` (rollout-context forward; token/UL objective atoms)
+    - `train/optimization/{loss_structure_ce,loss_description_ce,loss_duplicate_burst_unlikelihood}` (rollout-context forward; token/UL objective atoms)
     - `loss/B_coord/{bbox_smoothl1,bbox_ciou}` (from `bbox_geo`; rollout-context forward; geometry objective atoms)
     - `loss/B_coord/{bbox_log_wh,bbox_oversize}` (from `bbox_size_aux`; rollout-context forward; size-aux objective atoms)
     - `loss/B_coord/{coord_token_ce,coord_soft_ce,coord_w1,coord_gate,text_gate}` (rollout-context forward; coord_reg objective atoms)
@@ -147,9 +147,9 @@ Normative behavior:
 - **AND** Channel-A bbox/coord metrics use `loss/coord/*`
 - **AND** the same run does not emit `loss/A1_*` or `loss/A2_*`.
 
-#### Scenario: Channel-B emits loss_dead_anchor_suppression as a canonical objective atom
+#### Scenario: Channel-B emits loss_duplicate_burst_unlikelihood as a canonical objective atom
 - **WHEN** a Channel-B training step applies duplicate unlikelihood
-- **THEN** the emitted objective key is `train/optimization/loss_dead_anchor_suppression`
+- **THEN** the emitted objective key is `train/optimization/loss_duplicate_burst_unlikelihood`
 - **AND** no raw alias key for duplicate-unlikelihood is emitted.
 
 ### Requirement: Channel-B duplicate-collapse metrics are explicit and aggregation-safe

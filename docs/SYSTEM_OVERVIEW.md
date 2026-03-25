@@ -130,7 +130,7 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
   - `src/trainers/rollout_matching/parsing.py`
   - `src/trainers/rollout_matching/matching.py`
   - `src/trainers/teacher_forcing/module_registry.py`
-  - `src/trainers/teacher_forcing/modules/loss_dead_anchor_suppression.py`
+  - `src/trainers/teacher_forcing/modules/loss_duplicate_burst_unlikelihood.py`
 
 Compatibility note:
 - `src/trainers/stage2_ab_training.py` is a compatibility wrapper.

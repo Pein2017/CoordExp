@@ -19,7 +19,7 @@ Normative token types (mutually exclusive):
 Normative minimum canonical loss component names (metrics use these names when emitted):
 - `struct_ce`
 - `desc_ce`
-- `loss_dead_anchor_suppression`
+- `loss_duplicate_burst_unlikelihood`
 - `geo`
 - `coord_reg`
 
@@ -32,9 +32,9 @@ NOTE (logging contract):
 - **THEN** the supported contexts include `gt` and `rollout`
 - **AND** `self_context` is not part of the active context contract.
 
-#### Scenario: loss_dead_anchor_suppression is a canonical registry loss component name
+#### Scenario: loss_duplicate_burst_unlikelihood is a canonical registry loss component name
 - **WHEN** the clean-prefix Channel-B objective is reported through the unified registry
-- **THEN** the duplicate-unlikelihood component is identified canonically as `loss_dead_anchor_suppression`
+- **THEN** the duplicate-unlikelihood component is identified canonically as `loss_duplicate_burst_unlikelihood`
 - **AND** it is not folded into `struct_ce` or `desc_ce`.
 
 ### Requirement: Gate terms are logit-derived and require no new heads
@@ -100,7 +100,7 @@ Normative loss component names (minimum set; can be extended):
 - `struct_ce`: token cross entropy on structure tokens, including EOS enforcement (EOS is a distinct token type but its
   CE contribution is accounted under `struct_ce`).
 - `desc_ce`: token cross entropy on description tokens.
-- `loss_dead_anchor_suppression`: duplicate-certified unlikelihood over clean-boundary divergence tokens in Channel-B rollout context.
+- `loss_duplicate_burst_unlikelihood`: duplicate-certified unlikelihood over clean-boundary divergence tokens in Channel-B rollout context.
 - `coord_token_ce`: token cross entropy on coord vocabulary tokens (optional; typically GT context only).
 - `coord_reg`: coord-subspace regularizers computed from logits/probabilities (optional; includes distribution/ordinal
   terms on coord positions and vocab-partition gate terms).

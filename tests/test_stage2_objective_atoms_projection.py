@@ -19,7 +19,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
             "config": {},
         },
         {
-            "name": "loss_dead_anchor_suppression",
+            "name": "loss_duplicate_burst_unlikelihood",
             "enabled": True,
             "weight": 0.25,
             "channels": ["B"],
@@ -51,7 +51,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     state = {
         "token_ce_struct_contrib": _t(0.3),
         "token_ce_desc_contrib": _t(0.2),
-        "loss_dead_anchor_suppression_contrib": _t(0.4),
+        "loss_duplicate_burst_unlikelihood_contrib": _t(0.4),
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
         "bbox_log_wh_contrib": _t(0.3),
@@ -67,21 +67,21 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     }
 
     token_loss = _t(0.3 + 0.2)
-    dead_anchor_suppression_loss = _t(0.4)
+    duplicate_burst_unlikelihood_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
     bbox_size_aux_loss = _t(0.3 + 0.0)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
         "token_ce": 1.0 * token_loss,
-        "loss_dead_anchor_suppression": 0.25 * dead_anchor_suppression_loss,
+        "loss_duplicate_burst_unlikelihood": 0.25 * duplicate_burst_unlikelihood_loss,
         "bbox_geo": 2.0 * bbox_loss,
         "bbox_size_aux": 0.25 * bbox_size_aux_loss,
         "coord_reg": 0.5 * coord_loss,
     }
     total_loss = (
         module_losses["token_ce"]
-        + module_losses["loss_dead_anchor_suppression"]
+        + module_losses["loss_duplicate_burst_unlikelihood"]
         + module_losses["bbox_geo"]
         + module_losses["bbox_size_aux"]
         + module_losses["coord_reg"]
@@ -106,7 +106,7 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
 
     assert atoms["loss/B_rollout_text/struct_ce"] == pytest.approx(0.3)
     assert atoms["loss/B_rollout_text/desc_ce"] == pytest.approx(0.2)
-    assert atoms["loss/B_rollout_text/loss_dead_anchor_suppression"] == pytest.approx(0.25 * 0.4)
+    assert atoms["loss/B_rollout_text/loss_duplicate_burst_unlikelihood"] == pytest.approx(0.25 * 0.4)
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
     assert atoms["loss/B_coord/bbox_log_wh"] == pytest.approx(0.25 * 0.3)
@@ -117,10 +117,10 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert sum(atoms.values()) == pytest.approx(float(total_loss.detach().cpu().item()))
 
 
-def test_project_stage2_objective_atoms_emits_dead_anchor_suppression_text_atom() -> None:
+def test_project_stage2_objective_atoms_emits_duplicate_burst_unlikelihood_text_atom() -> None:
     objective_specs = [
         {
-            "name": "loss_dead_anchor_suppression",
+            "name": "loss_duplicate_burst_unlikelihood",
             "enabled": True,
             "weight": 1.5,
             "channels": ["B"],
@@ -130,9 +130,9 @@ def test_project_stage2_objective_atoms_emits_dead_anchor_suppression_text_atom(
 
     pipeline_result = PipelineResult(
         total_loss=_t(0.3),
-        module_losses={"loss_dead_anchor_suppression": _t(0.3)},
+        module_losses={"loss_duplicate_burst_unlikelihood": _t(0.3)},
         metrics={},
-        state={"loss_dead_anchor_suppression_contrib": _t(0.2)},
+        state={"loss_duplicate_burst_unlikelihood_contrib": _t(0.2)},
     )
 
     atoms = project_stage2_objective_atoms(
@@ -145,8 +145,8 @@ def test_project_stage2_objective_atoms_emits_dead_anchor_suppression_text_atom(
         require_additive=False,
     )
 
-    assert set(atoms.keys()) == {"loss/B_rollout_text/loss_dead_anchor_suppression"}
-    assert atoms["loss/B_rollout_text/loss_dead_anchor_suppression"] == pytest.approx(0.3)
+    assert set(atoms.keys()) == {"loss/B_rollout_text/loss_duplicate_burst_unlikelihood"}
+    assert atoms["loss/B_rollout_text/loss_duplicate_burst_unlikelihood"] == pytest.approx(0.3)
 
 
 def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> None:

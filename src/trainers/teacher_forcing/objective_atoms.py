@@ -282,23 +282,25 @@ def project_stage2_objective_atoms(
                     atol=atol,
                 )
 
-    # loss_dead_anchor_suppression -> {loss_dead_anchor_suppression}
-    if "loss_dead_anchor_suppression" in module_losses:
-        duplicate_spec = _spec("loss_dead_anchor_suppression")
+    # loss_duplicate_burst_unlikelihood -> {loss_duplicate_burst_unlikelihood}
+    if "loss_duplicate_burst_unlikelihood" in module_losses:
+        duplicate_spec = _spec("loss_duplicate_burst_unlikelihood")
         duplicate_w = float(duplicate_spec.weight)
-        weighted_loss = module_losses.get("loss_dead_anchor_suppression")
+        weighted_loss = module_losses.get("loss_duplicate_burst_unlikelihood")
         if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing loss_dead_anchor_suppression")
+            raise ValueError(
+                "pipeline_result.module_losses missing loss_duplicate_burst_unlikelihood"
+            )
 
         if (not emit_text) or not text_provenance:
             if require_additive:
                 got = _as_scalar_tensor(weighted_loss)
                 if got is None:
                     raise ValueError(
-                        "pipeline_result.module_losses['loss_dead_anchor_suppression'] must be a scalar tensor"
+                        "pipeline_result.module_losses['loss_duplicate_burst_unlikelihood'] must be a scalar tensor"
                     )
                 _assert_allclose(
-                    where="loss_dead_anchor_suppression disabled emission",
+                    where="loss_duplicate_burst_unlikelihood disabled emission",
                     got=got,
                     expected=weighted_loss.new_tensor(0.0),
                     rtol=rtol,
@@ -306,22 +308,22 @@ def project_stage2_objective_atoms(
                 )
         elif duplicate_w != 0.0:
             duplicate_contrib = _as_scalar_tensor(
-                state.get("loss_dead_anchor_suppression_contrib")
+                state.get("loss_duplicate_burst_unlikelihood_contrib")
             )
             if duplicate_contrib is None:
                 if require_additive:
                     raise ValueError(
-                        "loss_dead_anchor_suppression module did not expose loss_dead_anchor_suppression_contrib tensor in pipeline state"
+                        "loss_duplicate_burst_unlikelihood module did not expose loss_duplicate_burst_unlikelihood_contrib tensor in pipeline state"
                     )
             else:
                 _maybe_add(
-                    f"loss/{str(text_provenance)}/loss_dead_anchor_suppression",
+                    f"loss/{str(text_provenance)}/loss_duplicate_burst_unlikelihood",
                     _weighted(duplicate_contrib, module_weight=duplicate_w),
                 )
 
                 if require_additive:
                     _assert_allclose(
-                        where="loss_dead_anchor_suppression",
+                        where="loss_duplicate_burst_unlikelihood",
                         got=_weighted(duplicate_contrib, module_weight=duplicate_w),
                         expected=weighted_loss,
                         rtol=rtol,

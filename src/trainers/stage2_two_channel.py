@@ -50,7 +50,6 @@ from .stage2_two_channel.target_builder import (
     _sequential_dedup_bbox_objects,
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
-    _build_dead_anchor_suppression_targets,
 )
 from .stage2_two_channel.types import (
     Stage2BatchMetrics,
@@ -353,7 +352,7 @@ def _stage2_snapshot_key(metric_key: str) -> str | None:
         or key.startswith("stage2_ab/channel_b/")
         or key.startswith("dup/")
         or key.startswith("train/triage/")
-        or key.startswith("diag/dead_anchor/")
+        or key.startswith("diag/duplicate_burst/")
         or key.startswith("rollout/")
         or key.startswith("time/rollout_")
         or key
@@ -2012,7 +2011,7 @@ class Stage2ABTrainingTrainer(
         dup_duplicates_total = 0
         dup_duplicate_bursts_total = 0
         dup_ul_boundaries_total = 0
-        dup_dead_anchor_suppression_skipped_no_divergence_total = 0
+        dup_duplicate_burst_unlikelihood_skipped_no_divergence_total = 0
         dup_metric_samples = 0
         triage_anchor_gt_backed_total = 0
         triage_shielded_anchor_total = 0
@@ -2346,6 +2345,7 @@ class Stage2ABTrainingTrainer(
 
             triage = _build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
+                duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
                 explorer_accepted_objects_clean_by_view=explorer_accepted_objects_clean_by_view,
                 anchor_match_by_pred=anchor_match_by_pred,
                 explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
@@ -2431,7 +2431,7 @@ class Stage2ABTrainingTrainer(
 
             kept_anchor_objects = list(triage.kept_anchor_objects)
             kept_anchor_new_index_by_old = dict(triage.kept_anchor_new_index_by_old)
-            dead_anchor_bursts_by_boundary = dict(triage.dead_anchor_bursts_by_boundary)
+            duplicate_bursts_by_boundary = dict(triage.duplicate_bursts_by_boundary)
             supervision_targets = _build_channel_b_supervision_targets(
                 tokenizer=tok,
                 prompt_ids=prompt_ids,
@@ -2471,17 +2471,19 @@ class Stage2ABTrainingTrainer(
             tail_desc_weights = list(supervision_targets.tail_desc_weights)
             y_train_ids = list(supervision_targets.y_train_ids)
             clean_target_text = str(supervision_targets.clean_target_text)
-            dead_anchor_suppression_targets = list(
-                supervision_targets.dead_anchor_suppression_targets
+            duplicate_burst_unlikelihood_targets = list(
+                supervision_targets.duplicate_burst_unlikelihood_targets
             )
-            dead_anchor_suppression_boundary_count = int(
-                supervision_targets.dead_anchor_suppression_boundary_count
+            duplicate_burst_unlikelihood_boundary_count = int(
+                supervision_targets.duplicate_burst_unlikelihood_boundary_count
             )
-            dead_anchor_suppression_skipped_no_divergence = int(
-                supervision_targets.dead_anchor_suppression_skipped_no_divergence
+            duplicate_burst_unlikelihood_skipped_no_divergence = int(
+                supervision_targets.duplicate_burst_unlikelihood_skipped_no_divergence
             )
-            dup_ul_boundaries_total += int(dead_anchor_suppression_boundary_count)
-            dup_dead_anchor_suppression_skipped_no_divergence_total += int(dead_anchor_suppression_skipped_no_divergence)
+            dup_ul_boundaries_total += int(duplicate_burst_unlikelihood_boundary_count)
+            dup_duplicate_burst_unlikelihood_skipped_no_divergence_total += int(
+                duplicate_burst_unlikelihood_skipped_no_divergence
+            )
 
             if track_monitor_candidates and (
                 duplicate_count > 0
@@ -2683,9 +2685,11 @@ class Stage2ABTrainingTrainer(
                             "precision": float(prec_local),
                             "recall": float(rec_local),
                             "f1": float(f1_local),
-                            "dead_anchor_suppression_boundary_count": int(dead_anchor_suppression_boundary_count),
-                            "dead_anchor_suppression_skipped_no_divergence": int(
-                                dead_anchor_suppression_skipped_no_divergence
+                            "duplicate_burst_unlikelihood_boundary_count": int(
+                                duplicate_burst_unlikelihood_boundary_count
+                            ),
+                            "duplicate_burst_unlikelihood_skipped_no_divergence": int(
+                                duplicate_burst_unlikelihood_skipped_no_divergence
                             ),
                         },
                     },
@@ -2850,12 +2854,12 @@ class Stage2ABTrainingTrainer(
                 recovered_gt_indices=recovered_gt_indices,
                 recovered_gt_support_counts=recovered_gt_support_counts,
                 recovered_gt_support_rates=recovered_gt_support_rates,
-                dead_anchor_suppression_targets=dead_anchor_suppression_targets,
-                dead_anchor_suppression_boundary_count=int(
-                    dead_anchor_suppression_boundary_count
+                duplicate_burst_unlikelihood_targets=duplicate_burst_unlikelihood_targets,
+                duplicate_burst_unlikelihood_boundary_count=int(
+                    duplicate_burst_unlikelihood_boundary_count
                 ),
-                dead_anchor_suppression_skipped_no_divergence=int(
-                    dead_anchor_suppression_skipped_no_divergence
+                duplicate_burst_unlikelihood_skipped_no_divergence=int(
+                    duplicate_burst_unlikelihood_skipped_no_divergence
                 ),
                 stage2_tail_closure_positions_fn=_stage2_ab_tail_closure_positions,
                 stage2_semantic_stop_branch_metadata_fn=_stage2_ab_semantic_stop_branch_metadata,
@@ -3013,8 +3017,8 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/dup/N_ul_boundaries": float(
                 dup_ul_boundaries_total
             ),
-            "stage2_ab/channel_b/dup/N_dead_anchor_suppression_skipped_no_divergence": float(
-                dup_dead_anchor_suppression_skipped_no_divergence_total
+            "stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence": float(
+                dup_duplicate_burst_unlikelihood_skipped_no_divergence_total
             ),
             "train/triage/gt_backed_count": float(
                 triage_anchor_gt_backed_total
@@ -3283,9 +3287,9 @@ class Stage2ABTrainingTrainer(
             channel_name=channel,
             default=0.0,
         )
-        dead_anchor_suppression_module_w = _module_weight(
+        duplicate_burst_unlikelihood_module_w = _module_weight(
             objective_specs,
-            name="loss_dead_anchor_suppression",
+            name="loss_duplicate_burst_unlikelihood",
             channel_name=channel,
             default=0.0,
         )
@@ -3599,7 +3603,9 @@ class Stage2ABTrainingTrainer(
                 bbox_geo_module_w=float(bbox_geo_module_w),
                 bbox_size_aux_module_w=float(bbox_size_aux_module_w),
                 coord_reg_module_w=float(coord_reg_module_w),
-                dead_anchor_suppression_module_w=float(dead_anchor_suppression_module_w),
+                duplicate_burst_unlikelihood_module_w=float(
+                    duplicate_burst_unlikelihood_module_w
+                ),
                 run_a_text=bool(run_a_text),
                 run_a_bbox_geo=bool(run_a_bbox_geo),
                 run_a_bbox_size_aux=bool(run_a_bbox_size_aux),
@@ -3692,7 +3698,7 @@ class Stage2ABTrainingTrainer(
                         key.startswith("stage2_ab/")
                         or key.startswith("dup/")
                         or key.startswith("train/triage/")
-                        or key.startswith("diag/dead_anchor/")
+                        or key.startswith("diag/duplicate_burst/")
                         or key.startswith("rollout/anchor/")
                         or key.startswith("rollout/explorer/")
                         or key

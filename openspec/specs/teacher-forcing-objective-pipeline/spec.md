@@ -30,7 +30,7 @@ Notes:
 - **AND** no module can supervise tokens across segment boundaries.
 
 ### Requirement: Teacher-forcing objective is declared as an ordered YAML pipeline
-The teacher-forcing pipeline SHALL support the explicit `loss_dead_anchor_suppression` objective module for the canonical clean-prefix Channel-B contract.
+The teacher-forcing pipeline SHALL support the explicit `loss_duplicate_burst_unlikelihood` objective module for the canonical clean-prefix Channel-B contract.
 
 Normative configuration shape (conceptual):
 - A pipeline definition contains two ordered lists:
@@ -54,16 +54,16 @@ Execution semantics:
 - Module `application` payloads MUST be validated strictly by the owning module family:
   - `application` MUST contain exactly one key, `preset`,
   - unknown or missing presets MUST fail fast with actionable diagnostics.
-- `loss_dead_anchor_suppression` is a valid objective module name.
+- `loss_duplicate_burst_unlikelihood` is a valid objective module name.
 - `bbox_size_aux` is a valid objective module name.
-- `loss_dead_anchor_suppression` MUST be declared with `channels: [B]`.
-- `loss_dead_anchor_suppression.config` MUST be validated strictly and MUST be `{}` in v1.
-- For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `loss_dead_anchor_suppression` after `token_ce` and before `bbox_geo`.
+- `loss_duplicate_burst_unlikelihood` MUST be declared with `channels: [B]`.
+- `loss_duplicate_burst_unlikelihood.config` MUST be validated strictly and MUST be `{}` in v1.
+- For canonical Stage-2 AB clean-prefix configs, the ordered objective list MUST place `loss_duplicate_burst_unlikelihood` after `token_ce` and before `bbox_geo`.
 - When `bbox_size_aux` is enabled, canonical Stage-2 objective order MUST place it after `bbox_geo` because
   `bbox_size_aux` depends on the decoded canonicalized box state produced on the same matched supervision path.
 - Canonical Stage-2 routing presets MUST be:
   - `token_ce.application.preset: anchor_text_only`
-  - `loss_dead_anchor_suppression.application.preset: rollout_only`
+  - `loss_duplicate_burst_unlikelihood.application.preset: rollout_only`
   - `bbox_geo.application.preset: anchor_only`
   - `bbox_size_aux.application.preset: anchor_only`
   - `coord_reg.application.preset: anchor_only`
@@ -111,20 +111,20 @@ Execution semantics:
 - **AND** the pipeline does not rely on self-context-era final-pass presets.
 
 ### Requirement: Module registry is strict and validated before training starts
-The strict teacher-forcing module registry SHALL include `loss_dead_anchor_suppression` as an objective module and fail fast when its prerequisites are unavailable.
+The strict teacher-forcing module registry SHALL include `loss_duplicate_burst_unlikelihood` as an objective module and fail fast when its prerequisites are unavailable.
 
 Normative behavior:
 - Unknown module names MUST fail fast before the first training step.
 - Registry resolution MUST be deterministic and MUST NOT depend on runtime reflection of unrelated modules.
-- `loss_dead_anchor_suppression` MUST fail fast if the runtime context does not provide the canonical duplicate-ul supervision metadata required by the clean-prefix Channel-B contract.
+- `loss_duplicate_burst_unlikelihood` MUST fail fast if the runtime context does not provide the canonical duplicate-ul supervision metadata required by the clean-prefix Channel-B contract.
 
 #### Scenario: Unknown module name fails fast
 - **WHEN** a pipeline references an unknown module `name`
 - **THEN** training initialization fails fast
 - **AND** the error message lists the unknown name and available module names.
 
-#### Scenario: loss_dead_anchor_suppression fails fast when duplicate-ul metadata is missing
-- **WHEN** a pipeline enables `loss_dead_anchor_suppression`
+#### Scenario: loss_duplicate_burst_unlikelihood fails fast when duplicate-ul metadata is missing
+- **WHEN** a pipeline enables `loss_duplicate_burst_unlikelihood`
 - **AND** the runtime context lacks canonical duplicate-ul supervision metadata
 - **THEN** the training step raises with actionable diagnostics
 - **AND** training does not proceed with a silently altered objective.
@@ -207,31 +207,31 @@ Normative checksum definition (this repo; required for implementers):
   `rollout_matching.coord_decode_mode` do not appear in the active checksum
   payload.
 
-### Requirement: loss_dead_anchor_suppression remains the canonical B-only suppression module
-The teacher-forcing objective pipeline SHALL continue to use `loss_dead_anchor_suppression` as the canonical Channel-B local suppression module for the v3 contract.
+### Requirement: loss_duplicate_burst_unlikelihood remains the canonical B-only suppression module
+The teacher-forcing objective pipeline SHALL continue to use `loss_duplicate_burst_unlikelihood` as the canonical Channel-B local suppression module for the v3 contract.
 
 Normative behavior:
 
-- `loss_dead_anchor_suppression` remains a valid objective module name,
-- `loss_dead_anchor_suppression` MUST continue to declare `channels: [B]`,
-- `loss_dead_anchor_suppression.config` MUST remain `{}` in v1,
-- the runtime metadata consumed by `loss_dead_anchor_suppression` MAY now encode any dead anchor-side continuation chosen by the v3 triage stage, not only same-desc duplicate bursts.
+- `loss_duplicate_burst_unlikelihood` remains a valid objective module name,
+- `loss_duplicate_burst_unlikelihood` MUST continue to declare `channels: [B]`,
+- `loss_duplicate_burst_unlikelihood.config` MUST remain `{}` in v1,
+- the runtime metadata consumed by `loss_duplicate_burst_unlikelihood` MUST encode canonical pre-triage duplicate-burst first-divergence continuations projected onto the post-triage clean prefix.
 
-#### Scenario: loss_dead_anchor_suppression accepts dead-anchor continuation metadata
-- **WHEN** Channel-B v3 provides canonical dead-anchor first-divergence targets
-- **THEN** the `loss_dead_anchor_suppression` module may consume them without requiring a new module name
-- **AND** pipeline validation still treats `loss_dead_anchor_suppression` as the canonical B-only suppression module.
+#### Scenario: loss_duplicate_burst_unlikelihood accepts duplicate-burst continuation metadata
+- **WHEN** Channel-B v3 provides canonical duplicate-burst first-divergence targets
+- **THEN** the `loss_duplicate_burst_unlikelihood` module may consume them without requiring a new module name
+- **AND** pipeline validation still treats `loss_duplicate_burst_unlikelihood` as the canonical B-only suppression module.
 
 ### Requirement: Objective-module prerequisites remain strict
 The strict objective pipeline SHALL fail fast if the runtime context does not provide the canonical metadata required by the configured suppression module.
 
 Normative behavior:
 
-- enabling `loss_dead_anchor_suppression` without the canonical per-segment target metadata MUST fail fast,
-- silent fallback from dead-anchor UL to “no suppression” is forbidden once `loss_dead_anchor_suppression` is configured.
+- enabling `loss_duplicate_burst_unlikelihood` without the canonical per-segment target metadata MUST fail fast,
+- silent fallback from duplicate-burst UL to “no suppression” is forbidden once `loss_duplicate_burst_unlikelihood` is configured.
 
-#### Scenario: Missing dead-anchor UL metadata fails fast
-- **WHEN** a Stage-2 AB v3 pipeline enables `loss_dead_anchor_suppression`
+#### Scenario: Missing duplicate-burst UL metadata fails fast
+- **WHEN** a Stage-2 AB v3 pipeline enables `loss_duplicate_burst_unlikelihood`
 - **AND** the runtime context omits the canonical suppression targets for a rollout segment
 - **THEN** the training step raises with actionable diagnostics
 - **AND** training does not proceed with a silently altered objective.

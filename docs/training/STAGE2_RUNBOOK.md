@@ -72,7 +72,7 @@ Current internal ownership seams:
   - exact behavior is specified in `openspec/specs/rollout-matching-sft/spec.md`
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
-  - `loss_dead_anchor_suppression.application.preset: rollout_only`
+  - `loss_duplicate_burst_unlikelihood.application.preset: rollout_only`
   - `bbox_geo.application.preset: anchor_only`
   - `bbox_size_aux.application.preset: anchor_only`
   - `coord_reg.application.preset: anchor_only`
@@ -131,7 +131,7 @@ For the first enabled runs, verify:
 - `train/triage/pseudo_positive_selected_count` is non-zero on at least some dense scenes
 - `train/triage/unlabeled_consistent_count` remains the total shielded-anchor count
 - `rollout/explorer/*` remains interpretable as mean-over-valid-explorer-view aggregates
-- duplicate-like dead-anchor suppression remains narrow; do not expect all dead anchors to emit suppression targets
+- duplicate-burst unlikelihood remains narrow; do not expect every dead anchor to emit unlikelihood targets
 
 ### Server-Mode Mixed A/B Run
 

@@ -62,7 +62,7 @@ Normative behavior:
   - `preset`
 - `application.preset` MUST be valid for the referenced module:
   - `token_ce`: `anchor_text_only`, `rollout_text_only`
-  - `loss_dead_anchor_suppression`: `rollout_only`
+  - `loss_duplicate_burst_unlikelihood`: `rollout_only`
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`:
     - `anchor_only`
 - Presets that imply a deprecated final Channel-A self-context pass MUST be
@@ -1178,12 +1178,12 @@ Normative behavior:
 - `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
 - Canonical Stage-2 AB objective ordering for this contract is:
   1. `token_ce`
-  2. `loss_dead_anchor_suppression`
+  2. `loss_duplicate_burst_unlikelihood`
   3. `bbox_geo`
   4. `coord_reg`
 - Canonical Stage-2 AB diagnostics MAY include `coord_diag`.
-- `loss_dead_anchor_suppression` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
-- `loss_dead_anchor_suppression` module `weight` is the only v1 scaling surface for duplicate UL.
+- `loss_duplicate_burst_unlikelihood` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
+- `loss_duplicate_burst_unlikelihood` module `weight` is the only v1 scaling surface for duplicate UL.
 - The old raw-prefix Channel-B contract is removed; there is no contract toggle or compatibility mode.
 
 #### Scenario: Missing stage2_ab.pipeline fails fast
@@ -1192,11 +1192,11 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `stage2_ab.pipeline` is required.
 
-#### Scenario: Missing loss_dead_anchor_suppression in the canonical Channel-B pipeline fails fast
+#### Scenario: Missing loss_duplicate_burst_unlikelihood in the canonical Channel-B pipeline fails fast
 - **WHEN** a Stage-2 AB config declares `stage2_ab.pipeline.objective`
-- **AND** the objective list omits `loss_dead_anchor_suppression`
+- **AND** the objective list omits `loss_duplicate_burst_unlikelihood`
 - **THEN** config validation fails fast
-- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `loss_dead_anchor_suppression`.
+- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `loss_duplicate_burst_unlikelihood`.
 
 #### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
 - **WHEN** `custom.trainer_variant=stage2_two_channel`
@@ -1227,7 +1227,7 @@ YAML-declared experiments remain auditable.
 
 Normative minimum objective module names for this contract:
 - `token_ce`
-- `loss_dead_anchor_suppression`
+- `loss_duplicate_burst_unlikelihood`
 - `bbox_geo`
 - `coord_reg`
 
@@ -1247,7 +1247,7 @@ Normative behavior:
 Stage-2 Two-Channel SHALL validate module `config` payloads and `stage2_ab.channel_b` payloads strictly so experiments are reproducible and fail fast on schema drift.
 
 Normative behavior:
-- `loss_dead_anchor_suppression.config` MUST be an empty mapping in v1.
+- `loss_duplicate_burst_unlikelihood.config` MUST be an empty mapping in v1.
 - `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
 - `stage2_ab.channel_b` MUST accept only:
   - `duplicate_iou_threshold`
@@ -1263,11 +1263,11 @@ Normative behavior:
   - `recovered_ground_truth_weight_multiplier`
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
-#### Scenario: Non-empty loss_dead_anchor_suppression.config fails fast
-- **WHEN** `stage2_ab.pipeline.objective[*].name=loss_dead_anchor_suppression`
+#### Scenario: Non-empty loss_duplicate_burst_unlikelihood.config fails fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name=loss_duplicate_burst_unlikelihood`
 - **AND** its `config` mapping contains any key
 - **THEN** configuration parsing fails fast
-- **AND** the error indicates `loss_dead_anchor_suppression.config` must be empty for v1.
+- **AND** the error indicates `loss_duplicate_burst_unlikelihood.config` must be empty for v1.
 
 #### Scenario: Legacy invalid-structure multiplier placement fails fast
 - **WHEN** a Stage-2 AB config sets `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`
