@@ -161,12 +161,13 @@ Normative behavior:
 - **THEN** the EOS token receives `type=eos`
 - **AND** it receives `type!=struct` (no double counting).
 
-### Requirement: Channel-B rollout context is FP-neutral and EOS-enforced
+### Requirement: Channel-B rollout context is explicit, triage-aware, and EOS-enforced
 For Stage-2 Channel-B (`context=rollout`), the rollout-context contract SHALL be defined over the clean accepted sequence rather than the raw rollout prefix.
 
 Normative rollout object subsets:
 - `matched_clean`: clean accepted objects matched to GT.
-- `unmatched_clean`: clean accepted objects not matched to GT.
+- `pseudo_positive_selected`: unmatched clean accepted anchor objects promoted by pseudo-positive triage.
+- `shielded_clean`: unmatched clean accepted anchor objects retained in the prefix as context.
 - `duplicate`: duplicate-certified objects removed from the positive clean prefix.
 - `fn`: GT objects injected into the same top-level `objects[]` container for supervision.
 
@@ -174,7 +175,9 @@ Normative behavior:
 - `duplicate` objects MUST NOT appear in the positive teacher-forced prefix.
 - retained clean-prefix objects MAY receive global rollout-prefix structure supervision as defined by the Channel-B contract.
 - `matched_clean` objects receive positive geometry/coord supervision as defined by the Channel-B contract.
-- `unmatched_clean` objects MAY remain in the clean prefix as context but MUST remain outside coord supervision and duplicate-ul positives.
+- `pseudo_positive_selected` objects receive positive geometry/coord supervision using their retained anchor coordinates and the configured pseudo-positive weight.
+- support-positive `shielded_clean` objects that are not cluster-demoted MAY receive support-rate-weighted geometry/coord supervision under pseudo-positive mode.
+- cluster-demoted or otherwise neutral `shielded_clean` objects MAY remain in the clean prefix as context but MUST remain outside positive geometry/coord supervision, duplicate-ul positives, and extra desc-positive supervision.
 - `fn` objects remain positively supervised.
 - Closure / EOS remain supervised.
 
@@ -188,11 +191,11 @@ The unified loss registry SHALL treat clean-prefix rollout semantics as the cano
 
 Normative behavior:
 - Channel-B positive masks are built from the clean teacher-forced target, not the raw rollout prefix.
-- Neutral unmatched clean extras MAY participate in the global rollout-prefix struct masks when that token-ce weight is enabled, but MUST stay outside coord supervision groups and duplicate-ul positives.
+- Neutral `shielded_clean` extras MAY participate in the global rollout-prefix struct masks when that token-ce weight is enabled, but MUST stay outside coord supervision groups and duplicate-ul positives.
 - Duplicate-ul supervision MUST be boundary-local and explicit rather than encoded through hidden token-ce behavior.
 
-#### Scenario: Neutral unmatched clean extras remain coord-neutral while keeping shared prefix structure supervision
-- **WHEN** a clean accepted object is unmatched after Hungarian
+#### Scenario: Cluster-demoted unmatched clean extras remain coord-neutral while keeping shared prefix structure supervision
+- **WHEN** a retained unmatched clean object is cluster-demoted or otherwise left neutral after pseudo-positive triage
 - **THEN** it may remain in the clean prefix as context
 - **AND** it contributes no positive geo/coord or duplicate-ul target
 - **AND** it may still participate in global rollout-prefix structure CE.

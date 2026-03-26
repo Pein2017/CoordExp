@@ -169,10 +169,13 @@ Operational semantics:
 - `train/triage/unlabeled_consistent_count`
   - total shielded-anchor count
   - includes support-positive-but-subthreshold anchors and cluster-demoted pseudo-positive candidates
+  - these are retained unmatched anchor objects that stay in the clean prefix as context
 - `train/triage/pseudo_positive_candidate_count`
   - unmatched anchors that meet the promotion floor before overlap clustering
 - `train/triage/pseudo_positive_subthreshold_count`
-  - unmatched anchors with non-zero support that stay below the promotion threshold
+  - current implementation logs the retained shielded-anchor total as a compatibility counter
+  - that means it includes both support-positive anchors that stay below the promotion threshold and cluster-demoted pseudo-positive candidates
+  - use `train/triage/pseudo_positive_cluster_demoted_count` to isolate the cluster-demoted slice
 - `train/triage/pseudo_positive_selected_count`
   - final pseudo-positive winners after clustering
 - `train/triage/pseudo_positive_cluster_demoted_count`
@@ -185,6 +188,10 @@ Operational semantics:
   - summed explorer-support numerators over selected pseudo-positive winners
 - `train/triage/pseudo_positive_selected_support_rate_den`
   - summed explorer-support denominators over selected pseudo-positive winners
+- supervision note for interpretation:
+  - selected pseudo-positive winners contribute fixed-weight prefix bbox/coord supervision
+  - support-positive retained shielded anchors that are not cluster-demoted contribute support-rate-weighted prefix bbox/coord supervision
+  - cluster-demoted pseudo-positive candidates remain structure-only prefix context
 - `train/triage/recovered_ground_truth_rate_num`
   - summed explorer-hit numerators for recovered GT objects missed by the anchor
 - `train/triage/recovered_ground_truth_rate_den`

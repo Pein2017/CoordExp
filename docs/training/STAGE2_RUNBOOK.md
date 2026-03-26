@@ -80,9 +80,11 @@ Current internal ownership seams:
   - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
   - `matched_clean` -> coord + global prefix structure CE
   - `fn_injection` -> coord + FN desc CE
-  - `pseudo_positive` -> coord + global prefix structure CE
-  - `shielded_anchor` -> global prefix structure CE only
+  - selected `pseudo_positive` anchors -> coord + global prefix structure CE
+  - support-positive retained `shielded_anchor` objects that stay below promotion threshold -> support-weighted coord + global prefix structure CE
+  - cluster-demoted pseudo-positive candidates -> global prefix structure CE only
   - `dead_anchor` -> no positive supervision, with duplicate-like branch suppression only
+  - pseudo-positive selection remains anchor-centric: candidates start from unmatched anchor clean objects with explorer support; explorer-only non-GT-backed objects are not promoted into prefix positives
 - Default authored pseudo-positive profile:
   - `triage_posterior.num_rollouts: 4`
   - `1` anchor + `3` explorers
@@ -131,6 +133,7 @@ For the first enabled runs, verify:
 - `stage2/raw_rollouts` reflects `1 + (K-1)` rollout execution
 - `train/triage/pseudo_positive_selected_count` is non-zero on at least some dense scenes
 - `train/triage/unlabeled_consistent_count` remains the total shielded-anchor count
+- `train/triage/pseudo_positive_subthreshold_count` currently mirrors that retained shielded-anchor total; use `train/triage/pseudo_positive_cluster_demoted_count` to separate cluster losers from plain below-threshold support-positive anchors
 - `rollout/explorer/*` remains interpretable as mean-over-valid-explorer-view aggregates
 - duplicate-burst unlikelihood remains narrow; do not expect every dead anchor to emit unlikelihood targets
 

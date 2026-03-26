@@ -1254,6 +1254,11 @@ Normative behavior:
   - `triage_posterior`
   - `producer_wait_timeout_s`
   - `ddp_phase_timeout_s`
+  - `invalid_rollout_policy`
+  - `pseudo_positive`
+- `stage2_ab.channel_b.pseudo_positive` MUST be a typed mapping and MUST accept only:
+  - `enabled`
+  - `coord_weight`
 - `stage2_ab.channel_b.triage_posterior` MUST accept only:
   - `num_rollouts`
   - `explorer_temperature`
@@ -1261,6 +1266,8 @@ Normative behavior:
   - `explorer_top_k`
   - `unlabeled_consistent_iou_threshold`
   - `recovered_ground_truth_weight_multiplier`
+- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `2`
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `>= 2`
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
 #### Scenario: Non-empty loss_duplicate_burst_unlikelihood.config fails fast
@@ -1281,7 +1288,7 @@ capability.
 Normative behavior:
 - Stage-2 Two-Channel MUST build token-type masks and object-subset masks according to the registry contexts:
   - Channel-A uses `context=gt` for CE and bbox/coord supervision.
-  - Channel-B uses `context=rollout` with FP-neutral + EOS-enforced semantics.
+  - Channel-B uses `context=rollout` with explicit triage-aware + EOS-enforced semantics.
 - When the module pipeline is enabled, objective/diagnostics modules MUST emit metric keys consistent with the
   registry’s canonical component names.
 
@@ -1334,18 +1341,21 @@ Normative behavior:
 - **WHEN** `eval_step` runs
 - **THEN** `eval/detection/mAP` is present in the eval metrics payload
 
-### Requirement: Stage-2 AB Channel-B uses the canonical K=2 anchor/explorer triage contract
-When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from two rollout views:
+### Requirement: Stage-2 AB Channel-B uses anchor/explorer triage with an optional pseudo-positive multi-view extension
+When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from one greedy anchor rollout plus one or more explorer rollouts:
 
 - one anchor rollout using greedy / deterministic decoding,
-- one explorer rollout using stochastic decoding configured under `stage2_ab.channel_b.triage_posterior`.
+- one or more explorer rollouts using stochastic decoding configured under `stage2_ab.channel_b.triage_posterior`.
 
 Normative behavior:
 
+- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, total rollout views MUST remain `2` (`1` anchor + `1` explorer),
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, total rollout views MUST equal `stage2_ab.channel_b.triage_posterior.num_rollouts`,
 - each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + Hungarian matching path,
 - GT-backed semantics MUST inherit the existing Channel-B accepted-clean Hungarian + gating contract,
 - the final positive target MUST be built by editing the **anchor** clean sequence rather than rebuilding a union order,
-- explorer-only non-GT-backed objects MUST be treated as dead by default in v1,
+- pseudo-positive candidate discovery MUST start from unmatched anchor clean objects and use explorer agreement only as support evidence,
+- explorer-only non-GT-backed objects MUST NOT be promoted into clean-prefix positives,
 - a GT hit found only on the explorer side MUST project to `recovered_fn`, not to anchor retention.
 
 #### Scenario: Channel-B builds the final target from the anchor clean sequence
@@ -1361,13 +1371,24 @@ Normative behavior:
 - **THEN** the outcome is `recovered_fn`
 - **AND** the bad anchor object is not kept as an anchor GT-backed positive.
 
-### Requirement: Stage-2 AB Channel-B v3-specific knobs are typed and grouped
-The Stage-2 AB config SHALL expose v3-specific K=2 rollout knobs under `stage2_ab.channel_b.triage_posterior`.
+#### Scenario: Explorer-only non-GT-backed object does not become a pseudo-positive prefix object
+- **GIVEN** an explorer object that does not correspond to any unmatched anchor clean object
+- **WHEN** Channel-B projects pseudo-positive evidence into the final clean prefix
+- **THEN** that explorer-only non-GT-backed object is not promoted into a new prefix positive
+- **AND** pseudo-positive selection remains anchored on unmatched anchor clean objects.
+
+### Requirement: Stage-2 AB Channel-B rollout and pseudo-positive knobs are typed and grouped
+The Stage-2 AB config SHALL expose rollout-view and pseudo-positive knobs under `stage2_ab.channel_b`.
 
 Normative behavior:
 
+- `stage2_ab.channel_b.pseudo_positive` MUST be a typed mapping,
+- the mapping MUST accept only:
+  - `enabled`
+  - `coord_weight`
 - `stage2_ab.channel_b.triage_posterior` MUST be a typed mapping,
 - the mapping MUST accept only:
+  - `num_rollouts`
   - `explorer_temperature`
   - `explorer_top_p`
   - `explorer_top_k`
@@ -1423,21 +1444,30 @@ Normative behavior:
 - **THEN** all loss terms are derived from a single teacher-forced forward over the edited anchor target
 - **AND** no second teacher-forced explore payload is required.
 
-### Requirement: Shielded anchor objects remain prefix-visible while staying outside desc and coord supervision
-Anchor objects triaged as shielded MAY remain in the clean prefix, but they MUST remain outside desc, bbox, and coord-positive supervision.
+### Requirement: Retained unmatched anchor objects remain prefix-visible with explicit pseudo-positive supervision subsets
+Retained unmatched anchor objects MAY remain in the clean prefix, but the Channel-B contract SHALL distinguish between selected pseudo-positive anchors, support-positive shielded anchors, and cluster-demoted shielded anchors.
 
 Normative behavior:
 
-- shielded anchor objects MAY participate in global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
-- shielded anchor objects MUST stay outside bbox/coord supervision groups,
-- shielded anchor objects MUST NOT create extra positive desc targets,
-- shielded anchor objects MAY remain visible in the final clean prefix as context.
+- retained unmatched anchor objects MAY participate in global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
+- selected pseudo-positive anchors MUST receive positive bbox/coord supervision using their retained anchor coordinates and the configured pseudo-positive weight,
+- support-positive retained shielded anchors that are not cluster-demoted MAY receive support-rate-weighted bbox/coord supervision,
+- cluster-demoted pseudo-positive candidates MUST stay outside bbox/coord supervision groups,
+- retained unmatched anchor objects MUST NOT create extra positive desc targets,
+- retained unmatched anchor objects MAY remain visible in the final clean prefix as context.
 
-#### Scenario: Shielded anchor object stays in prefix with shared prefix structure CE only
-- **WHEN** an anchor object is classified as shielded
+#### Scenario: Support-positive shielded anchor keeps context visibility and partial coord supervision
+- **WHEN** an unmatched anchor object is retained as shielded with non-zero explorer support and is not cluster-demoted
 - **THEN** it may remain in the edited clean prefix
-- **AND** it contributes no positive desc CE, bbox, or coord supervision
-- **AND** it may still participate in the global rollout-prefix structure CE surface.
+- **AND** it may still participate in the global rollout-prefix structure CE surface
+- **AND** it may receive support-rate-weighted bbox/coord supervision
+- **AND** it contributes no extra positive desc CE.
+
+#### Scenario: Cluster-demoted pseudo-positive candidate stays struct-only
+- **WHEN** a pseudo-positive candidate loses overlap clustering and is demoted back to shielded
+- **THEN** it may remain in the edited clean prefix
+- **AND** it may still participate in the global rollout-prefix structure CE surface
+- **AND** it contributes no positive bbox/coord or desc supervision.
 
 ### Requirement: Stage-2 AB can add matched decoded-box size auxiliaries through `bbox_size_aux`
 Stage-2 AB SHALL support optional decoded-box size auxiliaries on the existing
