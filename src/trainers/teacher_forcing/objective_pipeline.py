@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 import torch
 
 from .contracts import PipelineModuleSpec, PipelineResult, TeacherForcingContext
+from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
 from .modules import (
     run_bbox_size_aux_module,
     run_bbox_geo_module,
@@ -28,6 +29,21 @@ def _coerce_specs(specs: Sequence[Mapping[str, Any]] | None) -> list[PipelineMod
             continue
         out.append(parsed)
     return out
+
+
+def _validate_registry_coverage(
+    registry: Mapping[str, object],
+    *,
+    allowed: set[str],
+    kind: str,
+) -> None:
+    missing = allowed.difference(registry)
+    unexpected = set(registry).difference(allowed)
+    if missing or unexpected:
+        raise RuntimeError(
+            f"{kind} registry is out of sync with loss catalog: "
+            f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
+        )
 
 
 def run_teacher_forcing_pipeline(
@@ -59,10 +75,20 @@ def run_teacher_forcing_pipeline(
         ),
         "coord_reg": lambda spec: run_coord_reg_module(context=context, spec=spec, state=state),
     }
+    _validate_registry_coverage(
+        objective_registry,
+        allowed=set(OBJECTIVE_MODULE_CATALOG),
+        kind="objective",
+    )
 
     diag_registry = {
         "coord_diag": lambda spec: run_coord_diag_module(context=context, spec=spec, state=state),
     }
+    _validate_registry_coverage(
+        diag_registry,
+        allowed=set(DIAGNOSTIC_MODULE_CATALOG),
+        kind="diagnostic",
+    )
 
     for spec in obj_specs:
         if not spec.enabled_for_channel(context.channel):

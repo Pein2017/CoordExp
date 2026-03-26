@@ -1,15 +1,17 @@
-"""Stage-2 objective atom projection (strictly additive).
+"""Projection of teacher-forcing pipeline outputs into Stage-2 objective atoms.
 
-This module centralizes the mapping from teacher-forcing pipeline outputs into the
-Stage-2 logging contract (provenance-keyed post-weighting objective atoms).
+This helper converts the generic `PipelineResult` emitted by the shared teacher-forcing
+objective pipeline into the canonical Stage-2 atom keys that trainers log, such as:
 
-Key property (enforced when requested):
-- The projected atoms are *strictly additive* and sum to the pipeline total loss.
+- `loss/text/struct_ce`
+- `loss/B_rollout_text/desc_ce`
+- `loss/coord/bbox_smoothl1`
+- `loss/B_coord/coord_soft_ce`
 
-Implementation note:
-- To avoid duplicated config/weight interpretation in trainers, the teacher-forcing
-  objective modules expose per-atom loss contributions as tensors in
-  `PipelineResult.state`.
+The function is intentionally strict by default (`require_additive=True`): it verifies
+that projected atom sums reconstruct both per-module weighted losses and the overall
+pipeline total, which guards against drift between objective implementation and trainer
+logging semantics.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence
 import torch
 
 from .contracts import PipelineModuleSpec, PipelineResult
+from .module_registry import OBJECTIVE_MODULE_CATALOG, ObjectiveModuleDefinition
 
 
 def _isfinite_scalar(t: torch.Tensor) -> bool:
@@ -45,15 +48,15 @@ def _assert_allclose(
 ) -> None:
     if not _isfinite_scalar(got) or not _isfinite_scalar(expected):
         raise ValueError(
-            f"Non-finite scalar in stage2 atom projection check ({where}): "
-            f"got={got} expected={expected}"
+            f"Stage2 atom projection expected finite scalar tensors at {where}; "
+            f"got={type(got)} shape={getattr(got, 'shape', None)} "
+            f"expected={type(expected)} shape={getattr(expected, 'shape', None)}"
         )
-
-    got_f = got.detach().float().cpu()
-    exp_f = expected.detach().float().cpu()
-    if not torch.allclose(got_f, exp_f, rtol=float(rtol), atol=float(atol)):
-        diff = float((got_f - exp_f).abs().item())
-        exp_abs = float(exp_f.abs().item())
+    got_f = got.detach().float()
+    exp_f = expected.detach().float()
+    if not torch.allclose(got_f, exp_f, rtol=rtol, atol=atol):
+        diff = float((got_f - exp_f).abs().max().item())
+        exp_abs = float(exp_f.abs().max().item())
         raise ValueError(
             f"Stage2 atom projection mismatch ({where}): "
             f"diff={diff:.6g} expected_abs={exp_abs:.6g} got={float(got_f.item()):.6g} expected={float(exp_f.item()):.6g}"
@@ -72,6 +75,21 @@ def _parse_objective_specs(
             continue
         specs.setdefault(parsed.name, parsed)
     return specs
+
+
+def _resolve_emission_context(
+    definition: ObjectiveModuleDefinition,
+    *,
+    text_provenance: Optional[str],
+    coord_provenance: Optional[str],
+    emit_text: bool,
+    emit_coord: bool,
+) -> tuple[bool, Optional[str]]:
+    if definition.emission_group == "text":
+        return bool(emit_text and text_provenance), text_provenance
+    if definition.emission_group == "coord":
+        return bool(emit_coord and coord_provenance), coord_provenance
+    return True, None
 
 
 def project_stage2_objective_atoms(
@@ -128,273 +146,71 @@ def project_stage2_objective_atoms(
 
     module_losses = dict(pipeline_result.module_losses or {})
 
-    # token_ce -> {struct_ce, desc_ce}
-    if "token_ce" in module_losses:
-        token_spec = _spec("token_ce")
-        token_w = float(token_spec.weight)
-        weighted_loss = module_losses.get("token_ce")
-        if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing token_ce")
-
-        if (not emit_text) or not text_provenance:
-            if require_additive:
-                got = _as_scalar_tensor(weighted_loss)
-                if got is None:
-                    raise ValueError(
-                        "pipeline_result.module_losses['token_ce'] must be a scalar tensor"
-                    )
-                _assert_allclose(
-                    where="token_ce disabled emission",
-                    got=got,
-                    expected=weighted_loss.new_tensor(0.0),
-                    rtol=rtol,
-                    atol=atol,
-                )
-        elif token_w != 0.0:
-            struct = _as_scalar_tensor(state.get("token_ce_struct_contrib"))
-            desc = _as_scalar_tensor(state.get("token_ce_desc_contrib"))
-            if struct is None or desc is None:
-                if require_additive:
-                    raise ValueError(
-                        "token_ce module did not expose token_ce_*_contrib tensors in pipeline state"
-                    )
-            else:
-                _maybe_add(
-                    f"loss/{str(text_provenance)}/struct_ce",
-                    _weighted(struct, module_weight=token_w),
-                )
-                _maybe_add(
-                    f"loss/{str(text_provenance)}/desc_ce",
-                    _weighted(desc, module_weight=token_w),
-                )
-
-                if require_additive:
-                    _assert_allclose(
-                        where="token_ce",
-                        got=_weighted(struct + desc, module_weight=token_w),
-                        expected=weighted_loss,
-                        rtol=rtol,
-                        atol=atol,
-                    )
-
-    # bbox_geo -> {bbox_smoothl1, bbox_ciou}
-    if "bbox_geo" in module_losses:
-        bbox_spec = _spec("bbox_geo")
-        bbox_w = float(bbox_spec.weight)
-        weighted_loss = module_losses.get("bbox_geo")
-        if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing bbox_geo")
-
-        if (not emit_coord) or not coord_provenance:
-            if require_additive:
-                got = _as_scalar_tensor(weighted_loss)
-                if got is None:
-                    raise ValueError(
-                        "pipeline_result.module_losses['bbox_geo'] must be a scalar tensor"
-                    )
-                _assert_allclose(
-                    where="bbox_geo disabled emission",
-                    got=got,
-                    expected=weighted_loss.new_tensor(0.0),
-                    rtol=rtol,
-                    atol=atol,
-                )
-        elif bbox_w != 0.0:
-            smoothl1 = _as_scalar_tensor(state.get("bbox_smoothl1_contrib"))
-            ciou = _as_scalar_tensor(state.get("bbox_ciou_contrib"))
-            if smoothl1 is None or ciou is None:
-                if require_additive:
-                    raise ValueError(
-                        "bbox_geo module did not expose bbox_*_contrib tensors in pipeline state"
-                    )
-            else:
-                _maybe_add(
-                    f"loss/{str(coord_provenance)}/bbox_smoothl1",
-                    _weighted(smoothl1, module_weight=bbox_w),
-                )
-                _maybe_add(
-                    f"loss/{str(coord_provenance)}/bbox_ciou",
-                    _weighted(ciou, module_weight=bbox_w),
-                )
-
-                if require_additive:
-                    _assert_allclose(
-                        where="bbox_geo",
-                        got=_weighted(smoothl1 + ciou, module_weight=bbox_w),
-                        expected=weighted_loss,
-                        rtol=rtol,
-                        atol=atol,
-                    )
-
-    # bbox_size_aux -> {bbox_log_wh, bbox_oversize}
-    if "bbox_size_aux" in module_losses:
-        bbox_size_spec = _spec("bbox_size_aux")
-        bbox_size_w = float(bbox_size_spec.weight)
-        weighted_loss = module_losses.get("bbox_size_aux")
-        if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing bbox_size_aux")
-
-        if (not emit_coord) or not coord_provenance:
-            if require_additive:
-                got = _as_scalar_tensor(weighted_loss)
-                if got is None:
-                    raise ValueError(
-                        "pipeline_result.module_losses['bbox_size_aux'] must be a scalar tensor"
-                    )
-                _assert_allclose(
-                    where="bbox_size_aux disabled emission",
-                    got=got,
-                    expected=weighted_loss.new_tensor(0.0),
-                    rtol=rtol,
-                    atol=atol,
-                )
-        elif bbox_size_w != 0.0:
-            contrib_keys = {
-                "bbox_log_wh": "bbox_log_wh_contrib",
-                "bbox_oversize": "bbox_oversize_contrib",
-            }
-            terms: Dict[str, torch.Tensor] = {}
-            for atom_name, state_key in contrib_keys.items():
-                t = _as_scalar_tensor(state.get(state_key))
-                if t is None:
-                    if require_additive:
-                        raise ValueError(
-                            f"bbox_size_aux module did not expose '{state_key}' tensor in pipeline state"
-                        )
-                    continue
-                terms[atom_name] = t
-
-            for atom_name, t in terms.items():
-                _maybe_add(
-                    f"loss/{str(coord_provenance)}/{atom_name}",
-                    _weighted(t, module_weight=bbox_size_w),
-                )
-
-            if require_additive:
-                total = weighted_loss.new_tensor(0.0)
-                for t in terms.values():
-                    total = total + _weighted(t, module_weight=bbox_size_w)
-                _assert_allclose(
-                    where="bbox_size_aux",
-                    got=total,
-                    expected=weighted_loss,
-                    rtol=rtol,
-                    atol=atol,
-                )
-
-    # loss_duplicate_burst_unlikelihood -> {loss_duplicate_burst_unlikelihood}
-    if "loss_duplicate_burst_unlikelihood" in module_losses:
-        duplicate_spec = _spec("loss_duplicate_burst_unlikelihood")
-        duplicate_w = float(duplicate_spec.weight)
-        weighted_loss = module_losses.get("loss_duplicate_burst_unlikelihood")
-        if weighted_loss is None:
+    for module_name, weighted_loss in module_losses.items():
+        definition = OBJECTIVE_MODULE_CATALOG.get(module_name)
+        if definition is None:
             raise ValueError(
-                "pipeline_result.module_losses missing loss_duplicate_burst_unlikelihood"
+                f"stage2 atom projection does not know how to project module '{module_name}'"
             )
 
-        if (not emit_text) or not text_provenance:
+        spec = _spec(module_name)
+        module_weight = float(spec.weight)
+        scalar_weighted_loss = _as_scalar_tensor(weighted_loss)
+        if scalar_weighted_loss is None:
+            raise ValueError(
+                f"pipeline_result.module_losses['{module_name}'] must be a scalar tensor"
+            )
+
+        emission_enabled, provenance = _resolve_emission_context(
+            definition,
+            text_provenance=text_provenance,
+            coord_provenance=coord_provenance,
+            emit_text=emit_text,
+            emit_coord=emit_coord,
+        )
+
+        if not emission_enabled:
             if require_additive:
-                got = _as_scalar_tensor(weighted_loss)
-                if got is None:
-                    raise ValueError(
-                        "pipeline_result.module_losses['loss_duplicate_burst_unlikelihood'] must be a scalar tensor"
-                    )
                 _assert_allclose(
-                    where="loss_duplicate_burst_unlikelihood disabled emission",
-                    got=got,
-                    expected=weighted_loss.new_tensor(0.0),
+                    where=f"{module_name} disabled emission",
+                    got=scalar_weighted_loss,
+                    expected=scalar_weighted_loss.new_tensor(0.0),
                     rtol=rtol,
                     atol=atol,
                 )
-        elif duplicate_w != 0.0:
-            duplicate_contrib = _as_scalar_tensor(
-                state.get("loss_duplicate_burst_unlikelihood_contrib")
+            continue
+
+        if module_weight == 0.0 or provenance is None:
+            continue
+
+        terms: Dict[str, torch.Tensor] = {}
+        for atom in definition.projected_atoms:
+            t = _as_scalar_tensor(state.get(atom.state_key))
+            if t is None:
+                if require_additive and atom.required_state:
+                    raise ValueError(
+                        f"{module_name} module did not expose '{atom.state_key}' tensor in pipeline state"
+                    )
+                continue
+            terms[atom.atom_name] = t
+
+        for atom_name, t in terms.items():
+            _maybe_add(
+                f"loss/{str(provenance)}/{atom_name}",
+                _weighted(t, module_weight=module_weight),
             )
-            if duplicate_contrib is None:
-                if require_additive:
-                    raise ValueError(
-                        "loss_duplicate_burst_unlikelihood module did not expose loss_duplicate_burst_unlikelihood_contrib tensor in pipeline state"
-                    )
-            else:
-                _maybe_add(
-                    f"loss/{str(text_provenance)}/loss_duplicate_burst_unlikelihood",
-                    _weighted(duplicate_contrib, module_weight=duplicate_w),
-                )
 
-                if require_additive:
-                    _assert_allclose(
-                        where="loss_duplicate_burst_unlikelihood",
-                        got=_weighted(duplicate_contrib, module_weight=duplicate_w),
-                        expected=weighted_loss,
-                        rtol=rtol,
-                        atol=atol,
-                    )
-
-    # coord_reg -> {coord_*, *_gate}
-    if "coord_reg" in module_losses:
-        coord_spec = _spec("coord_reg")
-        coord_w = float(coord_spec.weight)
-        weighted_loss = module_losses.get("coord_reg")
-        if weighted_loss is None:
-            raise ValueError("pipeline_result.module_losses missing coord_reg")
-
-        if (not emit_coord) or not coord_provenance:
-            if require_additive:
-                got = _as_scalar_tensor(weighted_loss)
-                if got is None:
-                    raise ValueError(
-                        "pipeline_result.module_losses['coord_reg'] must be a scalar tensor"
-                    )
-                _assert_allclose(
-                    where="coord_reg disabled emission",
-                    got=got,
-                    expected=weighted_loss.new_tensor(0.0),
-                    rtol=rtol,
-                    atol=atol,
-                )
-        elif coord_w != 0.0:
-            contrib_keys = {
-                "coord_token_ce": "coord_token_ce_contrib",
-                "coord_soft_ce": "coord_soft_ce_contrib",
-                "coord_w1": "coord_w1_contrib",
-                "coord_el1": "coord_el1_contrib",
-                "coord_ehuber": "coord_ehuber_contrib",
-                "coord_entropy": "coord_entropy_contrib",
-                "coord_gate": "coord_gate_contrib",
-                "text_gate": "text_gate_contrib",
-            }
-
-            terms: Dict[str, torch.Tensor] = {}
-            for atom_name, state_key in contrib_keys.items():
-                t = _as_scalar_tensor(state.get(state_key))
-                if t is None:
-                    if require_additive:
-                        raise ValueError(
-                            f"coord_reg module did not expose '{state_key}' tensor in pipeline state"
-                        )
-                    continue
-                terms[atom_name] = t
-
-            if terms:
-                for atom_name, t in terms.items():
-                    _maybe_add(
-                        f"loss/{str(coord_provenance)}/{atom_name}",
-                        _weighted(t, module_weight=coord_w),
-                    )
-
-                if require_additive:
-                    total_terms = None
-                    for t in terms.values():
-                        total_terms = t if total_terms is None else (total_terms + t)
-                    if total_terms is None:
-                        total_terms = weighted_loss.new_tensor(0.0)
-                    _assert_allclose(
-                        where="coord_reg",
-                        got=_weighted(total_terms, module_weight=coord_w),
-                        expected=weighted_loss,
-                        rtol=rtol,
-                        atol=atol,
-                    )
+        if require_additive:
+            total = scalar_weighted_loss.new_tensor(0.0)
+            for t in terms.values():
+                total = total + _weighted(t, module_weight=module_weight)
+            _assert_allclose(
+                where=module_name,
+                got=total,
+                expected=scalar_weighted_loss,
+                rtol=rtol,
+                atol=atol,
+            )
 
     if require_additive:
         total_atoms = None

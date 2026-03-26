@@ -1,79 +1,215 @@
-"""Unified teacher-forcing module registry (names + config allowlists).
-
-This module is intentionally dependency-light so it can be imported from config
-schema validation without pulling in torch/trainer runtime code.
-"""
-
 from __future__ import annotations
 
-from typing import Any, Final
+from dataclasses import dataclass
+from typing import Any, Final, Literal
 
-ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = {
-    "token_ce",
-    "loss_duplicate_burst_unlikelihood",
-    "bbox_geo",
-    "bbox_size_aux",
-    "coord_reg",
+LossEmissionGroup = Literal["text", "coord"]
+
+
+@dataclass(frozen=True)
+class ObjectiveLossAtomDefinition:
+    atom_name: str
+    state_key: str
+    required_state: bool = True
+
+
+@dataclass(frozen=True)
+class ObjectiveModuleDefinition:
+    family: str
+    semantic_role: str
+    config_keys: frozenset[str]
+    application_presets: frozenset[str]
+    projected_atoms: tuple[ObjectiveLossAtomDefinition, ...]
+    optional_config_keys: frozenset[str] = frozenset()
+    emission_group: LossEmissionGroup | None = None
+
+
+@dataclass(frozen=True)
+class DiagnosticModuleDefinition:
+    family: str
+    semantic_role: str
+    config_keys: frozenset[str]
+
+
+OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
+    "token_ce": ObjectiveModuleDefinition(
+        family="text",
+        semantic_role="token_ce",
+        config_keys=frozenset(
+            {
+                "desc_ce_weight",
+                "rollout_fn_desc_weight",
+                "rollout_global_prefix_struct_ce_weight",
+            }
+        ),
+        optional_config_keys=frozenset({"rollout_global_prefix_struct_ce_weight"}),
+        application_presets=frozenset({"anchor_text_only", "rollout_text_only"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="struct_ce",
+                state_key="token_ce_struct_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="desc_ce",
+                state_key="token_ce_desc_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
+    "loss_duplicate_burst_unlikelihood": ObjectiveModuleDefinition(
+        family="rollout",
+        semantic_role="duplicate_burst_unlikelihood",
+        config_keys=frozenset(),
+        application_presets=frozenset({"rollout_only"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="loss_duplicate_burst_unlikelihood",
+                state_key="loss_duplicate_burst_unlikelihood_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
+    "bbox_geo": ObjectiveModuleDefinition(
+        family="bbox",
+        semantic_role="geometry",
+        config_keys=frozenset({"smoothl1_weight", "ciou_weight"}),
+        application_presets=frozenset({"anchor_only"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="bbox_smoothl1",
+                state_key="bbox_smoothl1_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="bbox_ciou",
+                state_key="bbox_ciou_contrib",
+            ),
+        ),
+        emission_group="coord",
+    ),
+    "bbox_size_aux": ObjectiveModuleDefinition(
+        family="bbox",
+        semantic_role="size_aux",
+        config_keys=frozenset(
+            {
+                "log_wh_weight",
+                "oversize_penalty_weight",
+                "oversize_area_frac_threshold",
+                "oversize_log_w_threshold",
+                "oversize_log_h_threshold",
+                "eps",
+            }
+        ),
+        application_presets=frozenset({"anchor_only"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="bbox_log_wh",
+                state_key="bbox_log_wh_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="bbox_oversize",
+                state_key="bbox_oversize_contrib",
+            ),
+        ),
+        emission_group="coord",
+    ),
+    "coord_reg": ObjectiveModuleDefinition(
+        family="coord",
+        semantic_role="regularizer",
+        config_keys=frozenset(
+            {
+                "coord_ce_weight",
+                "coord_gate_weight",
+                "text_gate_weight",
+                "soft_ce_weight",
+                "w1_weight",
+                "temperature",
+                "target_sigma",
+                "target_truncate",
+            }
+        ),
+        application_presets=frozenset({"anchor_only"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_token_ce",
+                state_key="coord_token_ce_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_soft_ce",
+                state_key="coord_soft_ce_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_w1",
+                state_key="coord_w1_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_el1",
+                state_key="coord_el1_contrib",
+                required_state=False,
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_ehuber",
+                state_key="coord_ehuber_contrib",
+                required_state=False,
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_entropy",
+                state_key="coord_entropy_contrib",
+                required_state=False,
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="coord_gate",
+                state_key="coord_gate_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="text_gate",
+                state_key="text_gate_contrib",
+            ),
+        ),
+        emission_group="coord",
+    ),
 }
-ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = {"coord_diag"}
+
+DIAGNOSTIC_MODULE_CATALOG: Final[dict[str, DiagnosticModuleDefinition]] = {
+    "coord_diag": DiagnosticModuleDefinition(
+        family="coord",
+        semantic_role="diagnostic",
+        config_keys=frozenset(),
+    ),
+}
+
+
+ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = set(OBJECTIVE_MODULE_CATALOG)
+ALLOWED_DIAGNOSTIC_MODULES: Final[set[str]] = set(DIAGNOSTIC_MODULE_CATALOG)
 
 OBJECTIVE_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
-    "token_ce": {
-        "desc_ce_weight",
-        "rollout_fn_desc_weight",
-        "rollout_global_prefix_struct_ce_weight",
-    },
-    "loss_duplicate_burst_unlikelihood": set(),
-    "bbox_geo": {
-        "smoothl1_weight",
-        "ciou_weight",
-    },
-    "bbox_size_aux": {
-        "log_wh_weight",
-        "oversize_penalty_weight",
-        "oversize_area_frac_threshold",
-        "oversize_log_w_threshold",
-        "oversize_log_h_threshold",
-        "eps",
-    },
-    "coord_reg": {
-        "coord_ce_weight",
-        "coord_gate_weight",
-        "text_gate_weight",
-        "soft_ce_weight",
-        "w1_weight",
-        "temperature",
-        "target_sigma",
-        "target_truncate",
-    },
+    name: set(definition.config_keys)
+    for name, definition in OBJECTIVE_MODULE_CATALOG.items()
 }
 
 OBJECTIVE_OPTIONAL_CONFIG_KEYS: Final[dict[str, set[str]]] = {
-    "token_ce": {
-        "rollout_global_prefix_struct_ce_weight",
-    }
+    name: set(definition.optional_config_keys)
+    for name, definition in OBJECTIVE_MODULE_CATALOG.items()
+    if definition.optional_config_keys
 }
 
 OBJECTIVE_APPLICATION_PRESET_ALLOWLIST: Final[dict[str, set[str]]] = {
-    "token_ce": {
-        "anchor_text_only",
-        "rollout_text_only",
-    },
-    "loss_duplicate_burst_unlikelihood": {"rollout_only"},
-    "bbox_geo": {
-        "anchor_only",
-    },
-    "bbox_size_aux": {
-        "anchor_only",
-    },
-    "coord_reg": {
-        "anchor_only",
-    },
+    name: set(definition.application_presets)
+    for name, definition in OBJECTIVE_MODULE_CATALOG.items()
 }
 
 DIAGNOSTIC_CONFIG_ALLOWLIST: Final[dict[str, set[str]]] = {
-    "coord_diag": set(),
+    name: set(definition.config_keys)
+    for name, definition in DIAGNOSTIC_MODULE_CATALOG.items()
 }
+
+
+def objective_modules_for_family(family: str) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name, definition in OBJECTIVE_MODULE_CATALOG.items()
+        if definition.family == family
+    )
+
 
 def normalize_token_ce_stop_signal_damping_config(
     value: Any,
