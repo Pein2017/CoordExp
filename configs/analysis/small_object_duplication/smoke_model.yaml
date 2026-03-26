@@ -1,0 +1,56 @@
+run:
+  name: small-object-duplication-smoke-model
+  output_dir: output/analysis
+  stages: [cohort, decode, prefix, score]
+
+monitor_dumps:
+  paths:
+    - output/stage2_ab/prod/pseudo_positive/k_4-eff_size_96-b_ratio_0.85-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000036.json
+  top_duplication_cases: 1
+  top_control_cases: 1
+  min_gt_objects: 4
+  min_pred_objects: 4
+  crowded_min_gt_objects: 8
+  small_area_max_ratio: 0.003
+  duplicate_iou_threshold: 0.7
+  center_radius_scale: 0.8
+  control_max_duplication_score: 0.0
+
+checkpoint:
+  alias: pseudo_positive_ckpt_300_merged
+  path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+  prompt_variant: null
+  object_field_order: null
+
+execution:
+  device: cuda:0
+  cuda_visible_devices: "0"
+  decode_batch_size: 1
+  score_batch_size: 1
+
+decode:
+  temperatures: [0.0]
+  top_p: 0.95
+  max_new_tokens: 768
+  repetition_penalty: 1.05
+  sample_seeds: [11]
+
+prefix:
+  max_cases: 1
+  focus_policy: earliest_matched_small_or_first_matched
+  sources: [pred]
+  jitter_offsets:
+    - [-2, 0]
+    - [2, 0]
+  match_iou_threshold: 0.5
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto
+  max_cases: 1
+  match_iou_threshold: 0.5
+  max_remaining_gt_candidates: 2
+  duplicate_jitter_offsets:
+    - [-2, 0]
+    - [2, 0]
+  include_close_candidate: true
