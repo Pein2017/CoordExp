@@ -1,0 +1,69 @@
+run:
+  name: ckpt300_crowded_cuda1_v2_bboxfix
+  output_dir: output/analysis
+  stages:
+    - subset
+    - decode
+    - prefix_probe
+    - counterfactual
+    - report
+
+subset:
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  monitor_dump_paths:
+    - /data/CoordExp/output/stage2_ab/prod/pseudo_positive/k_4-eff_size_96-b_ratio_0.85-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000002.json
+    - /data/CoordExp/output/stage2_ab/prod/pseudo_positive/k_4-eff_size_96-b_ratio_0.85-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000036.json
+  max_samples: 8
+  min_fp_count: 20
+  require_selection: suspicious_duplication
+  require_small_object: true
+  small_object_max_area_frac: 0.01
+
+checkpoint:
+  path: /data/CoordExp/output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+  alias: ckpt300_merged
+
+decode:
+  temperatures: [0.0, 0.1, 0.3, 0.7]
+  top_p: 0.95
+  max_new_tokens: 3084
+  repetition_penalty: 1.05
+  batch_size: 4
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 14000
+  max_num_seqs: 32
+  enforce_eager: true
+  seed: 42
+  local_radius_px: 24.0
+  local_radius_scale: 1.5
+
+prefix_probe:
+  max_samples: 4
+  prefix_lengths: [1, 2]
+  jitter_pixels: [8]
+  directions: [right, down]
+  device: cuda:0
+  temperature: 0.0
+  top_p: 1.0
+  max_new_tokens: 512
+  repetition_penalty: 1.0
+  seed: 13
+
+counterfactual:
+  max_samples: 4
+  jitter_pixels: [4, 8, 16]
+  directions: [left, right, up, down]
+  device: cuda:0
+  attn_implementation: auto
+  mask_fill: 127
+
+eval:
+  semantic_model: /data/CoordExp/model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+  num_workers: 8
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: all
+  use_segm: false
