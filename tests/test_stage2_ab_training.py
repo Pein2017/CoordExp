@@ -976,6 +976,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     ab_cfg = {
         "pseudo_positive.enabled": True,
         "triage_posterior.num_rollouts": 4,
+        "invalid_rollout_policy": "dump_and_continue",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
@@ -991,11 +992,18 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = (
-        lambda chunk, decode_override=None, request_index_offset=0: [
-            ([], "", "sampling", []) for _ in chunk
-        ]
-    )
+
+    rollout_calls = 0
+
+    def _fake_rollout_many(
+        chunk, decode_override=None, request_index_offset=0
+    ):
+        nonlocal rollout_calls
+        rollout_calls += 1
+        marker = 101 + rollout_calls
+        return [([marker], "", "sampling", []) for _ in chunk]
+
+    t._rollout_many = _fake_rollout_many
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
     t._stage2_train_monitor_step_allowed = lambda global_step: False
@@ -1010,21 +1018,22 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
 
-    fake_parse = types.SimpleNamespace(
-        prefix_token_ids=list(tok.encode('{"objects": [', add_special_tokens=False)),
-        prefix_text='{"objects": [',
-        response_token_ids=[],
-        response_text="",
-        valid_objects=[],
-        dropped_invalid_by_reason={},
-        dropped_invalid=0,
-        dropped_ambiguous=0,
-        truncated=False,
-        invalid_rollout=True,
-    )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
-        lambda **kwargs: fake_parse,
+        lambda **kwargs: types.SimpleNamespace(
+            prefix_token_ids=list(
+                tok.encode('{"objects": [', add_special_tokens=False)
+            ),
+            prefix_text='{"objects": [',
+            response_token_ids=list(kwargs["response_token_ids"]),
+            response_text="",
+            valid_objects=[],
+            dropped_invalid_by_reason={},
+            dropped_invalid=0,
+            dropped_ambiguous=0,
+            truncated=False,
+            invalid_rollout=int(kwargs["response_token_ids"][0]) == 102,
+        ),
     )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.hungarian_match_maskiou",
@@ -1047,6 +1056,9 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
     assert segments == []
     assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(1.0)
+    assert batch_metrics[
+        "stage2_ab/channel_b/invalid_rollout_sample_dropped"
+    ] == pytest.approx(1.0)
 
 
 def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):
@@ -2357,6 +2369,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.explorer_top_p": 0.95,
         "triage_posterior.explorer_top_k": -1,
+        "invalid_rollout_policy": "abort",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
@@ -2470,7 +2483,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         with pytest.raises(
             ValueError,
             match=(
-                r"invalid explorer ordinals=\[1\].*"
+                r"invalid_labels=\['explorer_1'\].*"
                 r"sample_id=sample-0.*image_id=image-0.*manual_analysis_required=true"
             ),
         ):

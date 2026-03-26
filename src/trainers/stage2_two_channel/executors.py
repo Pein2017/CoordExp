@@ -416,6 +416,10 @@ class Stage2ABChannelExecutorsMixin:
             ddp_world_size = 1
             if dist is not None and dist.is_available() and dist.is_initialized():
                 ddp_world_size = max(1, int(dist.get_world_size()))
+                try:
+                    ddp_rank = int(dist.get_rank())
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    ddp_rank = 0
 
             loss_total = None
             first_pack = True
@@ -439,7 +443,12 @@ class Stage2ABChannelExecutorsMixin:
                     # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
                     # when per-rank pack counts differ.
                     timeout_s = 120.0
-                    ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
+                    ab_channel_b_get = getattr(self, "_ab_channel_b_get", None)
+                    ddp_phase_timeout_raw = (
+                        ab_channel_b_get("ddp_phase_timeout_s", None)
+                        if callable(ab_channel_b_get)
+                        else None
+                    )
                     if ddp_phase_timeout_raw is not None:
                         try:
                             timeout_s = float(ddp_phase_timeout_raw)
@@ -456,7 +465,7 @@ class Stage2ABChannelExecutorsMixin:
                         self._stage2_ab_ddp_monitored_barrier(
                             dist=dist,
                             phase="stage2-ab Channel-A final-sync backward",
-                            rank=int(dist.get_rank()),
+                            rank=int(ddp_rank),
                             world_size=int(ddp_world_size),
                             timeout_s=float(timeout_s),
                             monitor_group_timeout_s=float(timeout_s),

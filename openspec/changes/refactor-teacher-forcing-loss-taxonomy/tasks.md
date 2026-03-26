@@ -9,16 +9,22 @@
 
 ## 2. Catalog-Driven Objective Module Taxonomy
 
-- [x] 2.1 Introduce one canonical internal catalog for objective modules.
-- [x] 2.2 Store per-module ownership in that catalog:
+- [x] 2.1 Introduce one canonical internal taxonomy layer for teacher-forcing modules.
+- [x] 2.2 Store per-objective-module ownership in that catalog:
   - family
   - semantic role
   - config allowlist
   - optional config keys
   - application presets
-  - projected Stage-2 atoms
-- [x] 2.3 Derive strict registry allowlists from the catalog instead of maintaining parallel handwritten tables.
-- [x] 2.4 Preserve all current public module names in the first refactor slice.
+  - module-level `emission_group`
+  - projected Stage-2 atom definitions
+- [x] 2.3 Store per-diagnostic-module ownership in the companion diagnostic catalog:
+  - family
+  - semantic role
+  - config allowlist
+- [x] 2.4 Derive strict registry allowlists from the catalogs instead of maintaining parallel handwritten tables.
+- [x] 2.5 Preserve all current public module names in the first refactor slice.
+- [x] 2.6 Define semantic-role naming as a stable lowercase snake_case internal vocabulary.
 
 ## 3. Explicit Bbox Family Separation
 
@@ -36,10 +42,13 @@
 ## 4. Runtime Registry And Projection Refactor
 
 - [x] 4.1 Keep objective and diagnostics registries explicit at runtime.
-- [x] 4.2 Add fail-fast coverage validation so runtime registries stay in sync with the shared catalog.
-- [x] 4.3 Refactor Stage-2 atom projection to consume module-owned atom definitions from the same catalog.
-- [x] 4.4 Preserve additive reconstruction checks for projected objective atoms.
-- [x] 4.5 Allow explicitly optional projection atoms to remain absent without breaking additivity.
+- [x] 4.2 Validate objective and diagnostics registries against companion catalogs rather than an implied single merged catalog.
+- [x] 4.3 Preserve authored YAML execution order and module-to-module state handoff as explicit pipeline invariants.
+- [x] 4.4 Refactor Stage-2 atom projection to consume module-owned atom definitions from the objective catalog.
+- [x] 4.5 Preserve additive reconstruction checks for projected objective atoms.
+- [x] 4.6 Define module-level `emission_group` routing and per-atom `required_state` ownership in the change artifacts.
+- [x] 4.7 Require projected atom-key uniqueness within an emission provenance group.
+- [x] 4.8 Allow explicitly optional projection atoms to remain absent without breaking additivity.
 
 ## 5. Regression Coverage
 
@@ -50,4 +59,8 @@
   - `tests/test_training_config_strict_unknown_keys.py`
   - `tests/test_stage2_objective_atoms_projection.py`
   - `tests/test_teacher_forcing_loss_catalog.py`
-- [x] 5.4 Record that a broader Stage-2 trainer suite was sampled and the observed failures were outside the touched teacher-forcing files.
+- [x] 5.4 Re-run a broader Stage-2 trainer suite and leave only the GPU-dependent smoke run deferred.
+- [x] 5.5 Add targeted tests for objective-registry drift fail-fast behavior.
+- [x] 5.6 Add targeted tests for diagnostics-registry drift fail-fast behavior.
+- [x] 5.7 Add additive projection coverage for absent optional projected atoms and missing required projected atoms.
+- [x] 5.8 Add coverage or a fail-fast guard for projected atom-key collisions.
