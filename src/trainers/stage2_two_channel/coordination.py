@@ -356,6 +356,7 @@ def run_channel_b_nonpipeline_learning_loop(
     batch_metrics: Mapping[str, Any],
     target_log_step: int,
     total_segments_target: int,
+    ddp_phase_prepare_timeout_s: float,
     ddp_phase_final_sync_timeout_s: float,
     ddp_phase_barrier_fn: Any,
     dist: Any,
@@ -413,7 +414,13 @@ def run_channel_b_nonpipeline_learning_loop(
     owner._stage2_append_post_rollout_segments(channel="B", segments=segments)
     _trace("channel_b_non_pipeline_after_append")
     _trace("channel_b_non_pipeline_before_prepare_barrier")
-    ddp_phase_barrier_fn("channel_b_non_pipeline_after_prepare")
+    # This barrier sits after the full rank-local rollout/parse/prepare path.
+    # Use the rollout wait budget rather than the shorter final-sync timeout so
+    # healthy but imbalanced ranks do not trip a false DDP deadlock.
+    ddp_phase_barrier_fn(
+        "channel_b_non_pipeline_after_prepare",
+        timeout_s=float(ddp_phase_prepare_timeout_s),
+    )
     _trace("channel_b_non_pipeline_after_prepare_barrier")
 
     loss_total = None

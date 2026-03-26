@@ -593,6 +593,21 @@ class Stage2ABChannelExecutorsMixin:
             owner=self,
             ddp_world_size=int(ddp_world_size),
         )
+        # The non-pipelined "after prepare" barrier covers full rank-local
+        # rollout/parse/prepare work, which can skew far more than the short
+        # final-sync backward barrier. Reuse the rollout wait budget there.
+        ddp_phase_prepare_timeout_s = float(
+            max(
+                float(ddp_phase_final_sync_timeout_s),
+                float(producer_wait_timeout_s),
+            )
+        )
+        ddp_monitor_group_timeout_s = float(
+            max(
+                float(ddp_monitor_group_timeout_s),
+                float(ddp_phase_prepare_timeout_s),
+            )
+        )
 
         # Eagerly initialize the optional gloo monitor group at a safe synchronized
         # boundary (start of Channel-B step) so later monitored barriers can time out
@@ -609,7 +624,9 @@ class Stage2ABChannelExecutorsMixin:
             group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
             if group is None:
                 try:
-                    init_timeout_s = float(max(30.0, min(120.0, ddp_phase_timeout_s)))
+                    init_timeout_s = float(
+                        max(30.0, min(3600.0, ddp_monitor_group_timeout_s))
+                    )
                     group = dist.new_group(
                         backend="gloo",
                         timeout=timedelta(seconds=float(init_timeout_s)),
@@ -735,6 +752,7 @@ class Stage2ABChannelExecutorsMixin:
                 batch_metrics=batch_metrics,
                 target_log_step=int(target_log_step),
                 total_segments_target=int(total_segments_target),
+                ddp_phase_prepare_timeout_s=float(ddp_phase_prepare_timeout_s),
                 ddp_phase_final_sync_timeout_s=float(ddp_phase_final_sync_timeout_s),
                 ddp_phase_barrier_fn=_ddp_phase_barrier,
                 dist=dist,
