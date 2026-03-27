@@ -1,3 +1,4 @@
+import json
 import math
 from dataclasses import asdict
 import types
@@ -960,6 +961,7 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
 
 def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     monkeypatch,
+    tmp_path,
 ):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
@@ -983,6 +985,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     tok = _DummyTokenizer()
     t.template = types.SimpleNamespace(tokenizer=tok)
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t._get_coord_token_ids = lambda: list(range(1000))
     t._coord_id_map = lambda: {i: i for i in range(1000)}
     t._packing_enabled = lambda: False
@@ -1026,7 +1029,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
             ),
             prefix_text='{"objects": [',
             response_token_ids=list(kwargs["response_token_ids"]),
-            response_text="",
+            response_text='{"objects": [{"desc": "broken", "bbox_2d": [1, 2',
             valid_objects=[],
             dropped_invalid_by_reason={},
             dropped_invalid=0,
@@ -1059,6 +1062,24 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     assert batch_metrics[
         "stage2_ab/channel_b/invalid_rollout_sample_dropped"
     ] == pytest.approx(1.0)
+    dump_dir = tmp_path / "monitor_dumps" / "prepare_failures"
+    dump_paths = sorted(dump_dir.glob("*.json"))
+    assert len(dump_paths) == 1
+    dump_payload = json.loads(dump_paths[0].read_text())
+    invalid_rollout = dump_payload["invalid_rollouts"][0]
+    assert invalid_rollout["response_text"] == '{"objects": [{"desc": "broken", "bbox_2d": [1, 2'
+    assert invalid_rollout["prefix_text"] == '{"objects": ['
+    assert invalid_rollout["response_text_char_len"] == len(
+        invalid_rollout["response_text"]
+    )
+    assert invalid_rollout["response_token_count"] == len(
+        invalid_rollout["response_token_ids"]
+    )
+    assert invalid_rollout["prefix_token_count"] == len(
+        invalid_rollout["prefix_token_ids"]
+    )
+    assert invalid_rollout["response_text_head"] == invalid_rollout["response_text"]
+    assert invalid_rollout["response_text_tail"] == invalid_rollout["response_text"]
 
 
 def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):

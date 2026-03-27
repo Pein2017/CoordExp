@@ -80,10 +80,28 @@ from .teacher_forcing.token_types import build_token_type_masks
 logger = logging.getLogger(__name__)
 
 
+def _stage2_debug_text_value(text: Any) -> str:
+    return str(text or "")
+
+
 def _clip_stage2_debug_text(text: Any, limit: int = 240) -> str:
-    value = str(text or "").replace("\n", "\\n")
+    value = _stage2_debug_text_value(text).replace("\n", "\\n")
     if len(value) <= int(limit):
         return value
+    return value[: int(limit)] + "...<truncated>"
+
+
+def _stage2_debug_text_window(
+    text: Any,
+    *,
+    limit: int = 512,
+    tail: bool = False,
+) -> str:
+    value = _stage2_debug_text_value(text)
+    if len(value) <= int(limit):
+        return value
+    if bool(tail):
+        return "...<truncated>" + value[-int(limit) :]
     return value[: int(limit)] + "...<truncated>"
 
 
@@ -95,6 +113,14 @@ def _build_channel_b_invalid_explorer_detail(
 ) -> Dict[str, Any]:
     parse = view.get("parse")
     valid_objects = getattr(parse, "valid_objects", None)
+    response_token_ids = [
+        int(t) for t in list(getattr(parse, "response_token_ids", []) or [])
+    ]
+    prefix_token_ids = [
+        int(t) for t in list(getattr(parse, "prefix_token_ids", []) or [])
+    ]
+    response_text = _stage2_debug_text_value(getattr(parse, "response_text", ""))
+    prefix_text = _stage2_debug_text_value(getattr(parse, "prefix_text", ""))
     detail = {
         "view_label": str(view_label),
         "decode_mode": str(view.get("decode_mode", "") or ""),
@@ -109,18 +135,24 @@ def _build_channel_b_invalid_explorer_detail(
         "valid_pred_objects": int(view.get("n_valid_pred", 0) or 0),
         "gen_new_tokens": int(view.get("gen_new_tokens", 0) or 0),
         "valid_object_count": int(len(valid_objects or [])),
-        "response_token_ids": [
-            int(t) for t in list(getattr(parse, "response_token_ids", []) or [])
-        ],
-        "prefix_token_ids": [
-            int(t) for t in list(getattr(parse, "prefix_token_ids", []) or [])
-        ],
-        "response_text_preview": _clip_stage2_debug_text(
-            getattr(parse, "response_text", "")
+        "response_token_ids": response_token_ids,
+        "prefix_token_ids": prefix_token_ids,
+        "response_token_count": int(len(response_token_ids)),
+        "prefix_token_count": int(len(prefix_token_ids)),
+        "response_text": response_text,
+        "prefix_text": prefix_text,
+        "response_text_char_len": int(len(response_text)),
+        "prefix_text_char_len": int(len(prefix_text)),
+        "response_text_head": _stage2_debug_text_window(response_text, limit=512),
+        "response_text_tail": _stage2_debug_text_window(
+            response_text, limit=512, tail=True
         ),
-        "prefix_text_preview": _clip_stage2_debug_text(
-            getattr(parse, "prefix_text", "")
+        "prefix_text_head": _stage2_debug_text_window(prefix_text, limit=256),
+        "prefix_text_tail": _stage2_debug_text_window(
+            prefix_text, limit=256, tail=True
         ),
+        "response_text_preview": _clip_stage2_debug_text(response_text),
+        "prefix_text_preview": _clip_stage2_debug_text(prefix_text),
     }
     if explorer_ordinal is not None:
         detail["explorer_ordinal"] = int(explorer_ordinal)
