@@ -45,3 +45,30 @@ class AugmentationCurriculumCallback(TrainerCallback):
         self.curriculum_state["bypass_prob"] = new_state["bypass_prob"]
         self.curriculum_state["ops"] = deepcopy(new_state["ops"])
         self._last_step = global_step
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "last_step": self._last_step,
+            "curriculum_state": {
+                "step": self.curriculum_state.get("step"),
+                "bypass_prob": self.curriculum_state.get("bypass_prob"),
+                "ops": deepcopy(self.curriculum_state.get("ops")),
+            },
+        }
+
+    def load_state_dict(self, state_dict: MutableMapping[str, Any]) -> None:
+        if not isinstance(state_dict, MutableMapping):
+            raise TypeError("AugmentationCurriculumCallback state_dict must be a Mapping")
+
+        last_step = state_dict.get("last_step")
+        self._last_step = None if last_step is None else int(last_step)
+
+        payload = state_dict.get("curriculum_state")
+        if not isinstance(payload, MutableMapping):
+            return
+        if "step" in payload:
+            self.curriculum_state["step"] = int(payload["step"])
+        if "bypass_prob" in payload:
+            self.curriculum_state["bypass_prob"] = payload["bypass_prob"]
+        if "ops" in payload:
+            self.curriculum_state["ops"] = deepcopy(payload["ops"])

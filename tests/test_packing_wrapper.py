@@ -42,6 +42,9 @@ class _FakeDataset:
     def set_epoch(self, epoch):
         self.epoch_set = epoch
 
+    def _static_packing_precompute_info(self) -> dict[str, object]:
+        return {"thread_safe": True}
+
 
 class _OrderSensitiveDataset:
     def __init__(self, size: int = 8):

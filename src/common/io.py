@@ -10,6 +10,27 @@ from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_relative_image_paths(
+    record: Dict[str, Any],
+    *,
+    base_dir: Path,
+) -> Dict[str, Any]:
+    images = record.get("images")
+    if not isinstance(images, list):
+        return record
+
+    resolved = []
+    for img in images:
+        img_path = Path(str(img))
+        resolved_path = (
+            img_path if img_path.is_absolute() else (base_dir / img_path).resolve()
+        )
+        resolved.append(str(resolved_path))
+    record["images"] = resolved
+    return record
+
+
 def load_jsonl(jsonl_path: str, *, resolve_relative: bool = False) -> List[Dict[str, Any]]:
     """Load records from a JSONL file.
 
@@ -30,16 +51,7 @@ def load_jsonl(jsonl_path: str, *, resolve_relative: bool = False) -> List[Dict[
                 continue
             record = json.loads(line)
             if resolve_relative:
-                images = record.get("images")
-                if isinstance(images, list):
-                    resolved = []
-                    for img in images:
-                        img_path = Path(str(img))
-                        resolved_path = (
-                            img_path if img_path.is_absolute() else (base_dir / img_path).resolve()
-                        )
-                        resolved.append(str(resolved_path))
-                    record["images"] = resolved
+                record = _resolve_relative_image_paths(record, base_dir=base_dir)
             records.append(record)
     return records
 
@@ -48,6 +60,7 @@ def load_jsonl_with_diagnostics(
     path: Path,
     *,
     strict: bool = False,
+    resolve_relative: bool = False,
     max_snippet_len: int = 200,
     warn_limit: int = 5,
 ) -> Tuple[List[Dict[str, Any]], int]:
@@ -114,7 +127,14 @@ def load_jsonl_with_diagnostics(
                     )
                 continue
 
-            records.append(parsed)
+            record = dict(parsed)
+            if resolve_relative:
+                record = _resolve_relative_image_paths(
+                    record,
+                    base_dir=path.resolve().parent,
+                )
+
+            records.append(record)
 
     return records, invalid_seen
 

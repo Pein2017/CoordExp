@@ -108,6 +108,10 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - rollout parsing, matching, and coverage diagnostics
 - `eval/...` or `eval_det_*`:
   - training-time evaluation outputs
+- `snapshot/<metric_key>`:
+  - carry-forward last-seen Stage-2 metrics surfaced for operator continuity
+  - emitted when the current step did not freshly observe that metric family
+  - live current-step namespaces such as `rollout/*` remain sparse and are not reused for stale values
 
 ## Stage-2 Channel-A Objective Families
 

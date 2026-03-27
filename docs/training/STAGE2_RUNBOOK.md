@@ -159,6 +159,10 @@ After a healthy launch, check the run directory for:
 
 - `resolved_config.json`
 - `runtime_env.json`
+- `effective_runtime.json`
+- `pipeline_manifest.json`
+- `train_data_provenance.json`
+- `eval_data_provenance.json` when eval data is configured
 - `run_metadata.json`
 - `logging.jsonl`
 
@@ -167,6 +171,14 @@ What to expect:
 - A-only runs finish without Channel-B rollout metric families such as `rollout/*`
 - mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`
+
+Checkpoint-mode note:
+
+- `training.checkpoint_mode: artifact_only` remains the default and preserves the
+  existing lightweight artifact posture.
+- `training.checkpoint_mode: restartable` is an explicit opt-in that requires
+  optimizer, scheduler, RNG, trainer-state, and repo-owned runtime-sidecar
+  artifacts so resume preflight can fail fast on incomplete checkpoints.
 
 Rollout-aligned note:
 

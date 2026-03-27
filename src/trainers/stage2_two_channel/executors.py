@@ -10,7 +10,6 @@ instance (some unit tests construct the trainer via `__new__`).
 from __future__ import annotations
 
 import contextlib
-from datetime import timedelta
 import logging
 import queue
 import threading
@@ -19,6 +18,12 @@ from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 
 import torch
 
+from ..stage2_coordination import (
+    Stage2DDPPhaseConfig,
+    prime_stage2_ddp_monitor_group,
+    resolve_stage2_ab_ddp_phase_config,
+    resolve_stage2_prepare_barrier_timeout,
+)
 from .coordination import (
     accumulate_channel_b_producer_item,
     accumulate_step_mode_microbatches,
@@ -415,7 +420,21 @@ class Stage2ABChannelExecutorsMixin:
             ddp_rank = 0
             ddp_world_size = 1
             if dist is not None and dist.is_available() and dist.is_initialized():
+                ddp_rank = int(dist.get_rank())
                 ddp_world_size = max(1, int(dist.get_world_size()))
+
+            phase_config = resolve_stage2_ab_ddp_phase_config(
+                self,
+                ddp_world_size=int(ddp_world_size),
+            )
+            prime_stage2_ddp_monitor_group(
+                self,
+                dist=dist,
+                rank=int(ddp_rank),
+                world_size=int(ddp_world_size),
+                config=phase_config,
+                logger=logger,
+            )
 
             loss_total = None
             first_pack = True
@@ -438,28 +457,16 @@ class Stage2ABChannelExecutorsMixin:
                 ):
                     # Align ranks on the final (sync) backward to avoid DDP no_sync skew deadlocks
                     # when per-rank pack counts differ.
-                    timeout_s = 120.0
-                    ddp_phase_timeout_raw = self._ab_channel_b_get("ddp_phase_timeout_s", None)
-                    if ddp_phase_timeout_raw is not None:
-                        try:
-                            timeout_s = float(ddp_phase_timeout_raw)
-                        except (TypeError, ValueError) as exc:
-                            raise ValueError(
-                                "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
-                            ) from exc
-
-                        if float(timeout_s) <= 0.0:
-                            timeout_s = 0.0
-
-                    if float(timeout_s) > 0.0:
-                        timeout_s = float(max(30.0, min(3600.0, float(timeout_s))))
+                    if float(phase_config.final_sync_timeout_s) > 0.0:
                         self._stage2_ab_ddp_monitored_barrier(
                             dist=dist,
                             phase="stage2-ab Channel-A final-sync backward",
                             rank=int(dist.get_rank()),
                             world_size=int(ddp_world_size),
-                            timeout_s=float(timeout_s),
-                            monitor_group_timeout_s=float(timeout_s),
+                            timeout_s=float(phase_config.final_sync_timeout_s),
+                            monitor_group_timeout_s=float(
+                                phase_config.monitor_group_timeout_s
+                            ),
                         )
                 loss_pack = _train_one_pack(
                     selected=selected,
@@ -596,54 +603,32 @@ class Stage2ABChannelExecutorsMixin:
         # The non-pipelined "after prepare" barrier covers full rank-local
         # rollout/parse/prepare work, which can skew far more than the short
         # final-sync backward barrier. Reuse the rollout wait budget there.
-        ddp_phase_prepare_timeout_s = float(
-            max(
-                float(ddp_phase_final_sync_timeout_s),
-                float(producer_wait_timeout_s),
-            )
+        ddp_phase_prepare_timeout_s = resolve_stage2_prepare_barrier_timeout(
+            final_sync_timeout_s=float(ddp_phase_final_sync_timeout_s),
+            producer_wait_timeout_s=float(producer_wait_timeout_s),
         )
-        ddp_monitor_group_timeout_s = float(
-            max(
-                float(ddp_monitor_group_timeout_s),
-                float(ddp_phase_prepare_timeout_s),
-            )
+        phase_config = Stage2DDPPhaseConfig(
+            monitor_enabled=bool(ddp_phase_monitor_enabled),
+            final_sync_timeout_s=float(ddp_phase_final_sync_timeout_s),
+            monitor_group_timeout_s=float(
+                max(
+                    float(ddp_monitor_group_timeout_s),
+                    float(ddp_phase_prepare_timeout_s),
+                )
+            ),
         )
 
         # Eagerly initialize the optional gloo monitor group at a safe synchronized
         # boundary (start of Channel-B step) so later monitored barriers can time out
-        # even if a rank stalls before reaching the first barrier. Lazy init inside
-        # `_ddp_phase_barrier` can itself hang waiting for the missing rank.
-        if (
-            dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-            and int(ddp_world_size) > 1
-            and bool(ddp_phase_monitor_enabled)
-            and hasattr(dist, "monitored_barrier")
-        ):
-            group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
-            if group is None:
-                try:
-                    init_timeout_s = float(
-                        max(30.0, min(3600.0, ddp_monitor_group_timeout_s))
-                    )
-                    group = dist.new_group(
-                        backend="gloo",
-                        timeout=timedelta(seconds=float(init_timeout_s)),
-                    )
-                except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-                    warned = bool(
-                        getattr(self, "_stage2_ab_ddp_monitor_group_warned", False)
-                    )
-                    if int(ddp_rank) == 0 and not warned:
-                        logger.warning(
-                            "stage2-ab DDP phase monitor disabled (gloo group init failed): %r",
-                            exc,
-                        )
-                        setattr(self, "_stage2_ab_ddp_monitor_group_warned", True)
-                    setattr(self, "_stage2_ab_ddp_monitor_group", False)
-                else:
-                    setattr(self, "_stage2_ab_ddp_monitor_group", group)
+        # even if a rank stalls before reaching the first barrier.
+        prime_stage2_ddp_monitor_group(
+            self,
+            dist=dist,
+            rank=int(ddp_rank),
+            world_size=int(ddp_world_size),
+            config=phase_config,
+            logger=logger,
+        )
 
         def _ddp_phase_barrier(phase: str, *, timeout_s: float | None = None) -> None:
             if (
@@ -654,67 +639,20 @@ class Stage2ABChannelExecutorsMixin:
             ):
                 return
 
-            if not bool(ddp_phase_monitor_enabled):
-                raise RuntimeError(
-                    "stage2-ab DDP phase monitor is disabled under DDP. "
-                    "Coordination barriers must be bounded to prevent deadlocks. "
-                    "Set stage2_ab.channel_b.ddp_phase_timeout_s to a positive value."
-                )
-
-            if not hasattr(dist, "monitored_barrier"):
-                raise RuntimeError(
-                    "torch.distributed.monitored_barrier is required for bounded stage2-ab DDP phase barriers "
-                    f"(phase={str(phase)} rank={int(ddp_rank)}/{int(ddp_world_size)})."
-                )
-
-            group = getattr(self, "_stage2_ab_ddp_monitor_group", None)
-            if group is None:
-                try:
-                    group = dist.new_group(
-                        backend="gloo",
-                        timeout=timedelta(seconds=float(ddp_monitor_group_timeout_s)),
-                    )
-                except Exception as exc:
-                    raise RuntimeError(
-                        "stage2-ab DDP phase monitored barrier requested but gloo group init failed; "
-                        f"rank={int(ddp_rank)}/{int(ddp_world_size)} "
-                        f"timeout_s={float(ddp_monitor_group_timeout_s):.1f}. "
-                        "This is unsafe because falling back to an unbounded barrier can deadlock."
-                    ) from exc
-                setattr(self, "_stage2_ab_ddp_monitor_group", group)
-
-            if group is False:
-                raise RuntimeError(
-                    "stage2-ab internal error: DDP monitor group is disabled under DDP; "
-                    "this is unsafe because unbounded barriers can deadlock"
-                )
-
             local_timeout_s = (
                 float(ddp_phase_final_sync_timeout_s)
                 if timeout_s is None
                 else float(timeout_s)
             )
-            local_timeout_s = float(max(30.0, min(3600.0, local_timeout_s)))
-
-            try:
-                try:
-                    dist.monitored_barrier(
-                        group=group,
-                        timeout=timedelta(seconds=float(local_timeout_s)),
-                        wait_all_ranks=True,
-                    )
-                except TypeError:
-                    dist.monitored_barrier(
-                        group=group,
-                        timeout=timedelta(seconds=float(local_timeout_s)),
-                    )
-            except Exception as exc:
-                raise RuntimeError(
-                    "stage2-ab Channel-B DDP phase barrier timed out; "
-                    f"phase={str(phase)} rank={int(ddp_rank)}/{int(ddp_world_size)} "
-                    f"timeout_s={float(local_timeout_s):.1f}. "
-                    "This indicates a cross-rank stage skew or deadlock after rollout."
-                ) from exc
+            run_stage2_ab_ddp_monitored_barrier(
+                owner=self,
+                dist=dist,
+                phase=phase,
+                rank=int(ddp_rank),
+                world_size=int(ddp_world_size),
+                timeout_s=float(local_timeout_s),
+                monitor_group_timeout_s=float(phase_config.monitor_group_timeout_s),
+            )
 
         # Step-budgeted mode: do NOT carry segments across optimizer steps.
         buf = self._stage2_post_rollout_buffer(channel="B")

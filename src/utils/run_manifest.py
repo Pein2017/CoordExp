@@ -118,6 +118,10 @@ def write_run_manifest_files(
     config_path: str,
     base_config_path: str | None,
     dataset_seed: int,
+    effective_runtime: Mapping[str, Any] | None = None,
+    pipeline_manifest: Mapping[str, Any] | None = None,
+    train_data_provenance: Mapping[str, Any] | None = None,
+    eval_data_provenance: Mapping[str, Any] | None = None,
     env_keys: list[str] | None = None,
 ) -> dict[str, str]:
     """Write required reproducibility artifacts under `output_dir`.
@@ -151,6 +155,57 @@ def write_run_manifest_files(
         },
     )
 
+    written = {
+        "resolved_config": str(resolved_path.name),
+        "runtime_env": str(env_path.name),
+    }
+
+    if effective_runtime is not None:
+        effective_runtime_path = out_dir / "effective_runtime.json"
+        _write_json(
+            effective_runtime_path,
+            {
+                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+                "runtime": dict(effective_runtime),
+            },
+        )
+        written["effective_runtime"] = str(effective_runtime_path.name)
+
+    if pipeline_manifest is not None:
+        pipeline_manifest_path = out_dir / "pipeline_manifest.json"
+        _write_json(
+            pipeline_manifest_path,
+            {
+                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+                "pipeline": dict(pipeline_manifest),
+            },
+        )
+        written["pipeline_manifest"] = str(pipeline_manifest_path.name)
+
+    if train_data_provenance is not None:
+        train_provenance_path = out_dir / "train_data_provenance.json"
+        _write_json(
+            train_provenance_path,
+            {
+                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+                "split": "train",
+                "provenance": dict(train_data_provenance),
+            },
+        )
+        written["train_data_provenance"] = str(train_provenance_path.name)
+
+    if eval_data_provenance is not None:
+        eval_provenance_path = out_dir / "eval_data_provenance.json"
+        _write_json(
+            eval_provenance_path,
+            {
+                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+                "split": "eval",
+                "provenance": dict(eval_data_provenance),
+            },
+        )
+        written["eval_data_provenance"] = str(eval_provenance_path.name)
+
     # Best-effort: keep a copy of the exact YAML sources used to build the resolved config.
     # If these copies fail, training can still proceed with the resolved snapshot above.
     try:
@@ -172,8 +227,4 @@ def write_run_manifest_files(
         except Exception as exc:
             logger.warning("Failed to persist base_config_source.yaml: %r", exc)
 
-    return {
-        "resolved_config": str(resolved_path.name),
-        "runtime_env": str(env_path.name),
-    }
-
+    return written

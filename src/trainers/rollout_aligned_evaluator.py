@@ -269,18 +269,48 @@ def finalize_rollout_aligned_evaluation(
             dict(record) for record in eval_detection_records_local
         ]
         if dist is not None and dist.is_available() and dist.is_initialized():
-            gathered_records: List[Any] = [None for _ in range(int(world_size))]
-            dist.all_gather_object(gathered_records, list(eval_detection_records_local))
             eval_records_all = []
-            for src_rank, part in enumerate(gathered_records):
-                if not isinstance(part, list):
-                    raise TypeError(
-                        "eval_detection all_gather_object returned non-list part: "
-                        f"src_rank={int(src_rank)} type={type(part).__name__}"
+            gather_object = getattr(dist, "gather_object", None)
+            if callable(gather_object):
+                gathered_records = (
+                    [None for _ in range(int(world_size))] if int(rank) == 0 else None
+                )
+                try:
+                    gather_object(
+                        list(eval_detection_records_local),
+                        object_gather_list=gathered_records,
+                        dst=0,
                     )
-                for rec in part:
-                    if isinstance(rec, Mapping):
-                        eval_records_all.append(dict(rec))
+                except TypeError:
+                    gather_object(
+                        list(eval_detection_records_local),
+                        gathered_records,
+                        0,
+                    )
+                if int(rank) == 0 and isinstance(gathered_records, list):
+                    for src_rank, part in enumerate(gathered_records):
+                        if not isinstance(part, list):
+                            raise TypeError(
+                                "eval_detection gather_object returned non-list part: "
+                                f"src_rank={int(src_rank)} type={type(part).__name__}"
+                            )
+                        for rec in part:
+                            if isinstance(rec, Mapping):
+                                eval_records_all.append(dict(rec))
+            else:
+                gathered_records = [None for _ in range(int(world_size))]
+                dist.all_gather_object(
+                    gathered_records, list(eval_detection_records_local)
+                )
+                for src_rank, part in enumerate(gathered_records):
+                    if not isinstance(part, list):
+                        raise TypeError(
+                            "eval_detection all_gather_object returned non-list part: "
+                            f"src_rank={int(src_rank)} type={type(part).__name__}"
+                        )
+                    for rec in part:
+                        if isinstance(rec, Mapping):
+                            eval_records_all.append(dict(rec))
 
         for record_idx, record in enumerate(eval_records_all):
             record["index"] = int(record_idx)

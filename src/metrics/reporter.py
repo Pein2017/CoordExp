@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 
 _WARNED_ONCE_ATTR = "_coordexp_warned_once"
 _DISABLED_DIAGNOSTICS_ATTR = "_coordexp_disabled_diagnostics"
+_DIAGNOSTIC_HEALTH_PREFIX = "health/diagnostic_disabled/"
 
 
 def warn_once(trainer: Any, *, key: str, message: str, exc_info: bool = False) -> None:
@@ -62,6 +63,16 @@ def _resolve_global_step(trainer: Any) -> int:
         return int(step)
 
     return 0
+
+
+def _diagnostic_health_updates(trainer: Any) -> dict[str, float]:
+    disabled = getattr(trainer, _DISABLED_DIAGNOSTICS_ATTR, None)
+    if not isinstance(disabled, set) or not disabled:
+        return {}
+    return {
+        f"{_DIAGNOSTIC_HEALTH_PREFIX}{str(name)}": 1.0
+        for name in sorted(disabled)
+    }
 
 
 def best_effort(
@@ -183,14 +194,18 @@ class SwiftMetricReporter:
         self.update_many({key: float(value)})
 
     def update_many(self, updates: Mapping[str, float]) -> None:
-        if not updates:
+        health_updates = _diagnostic_health_updates(self._trainer)
+        if not updates and not health_updates:
             return
+
+        merged_updates = {str(k): float(v) for k, v in dict(updates).items()}
+        merged_updates.update(health_updates)
 
         try:
             payload = build_trainer_metrics_payload(
                 mode=self.mode(),
                 global_step=_resolve_global_step(self._trainer),
-                metrics=updates,
+                metrics=merged_updates,
             )
         except (TypeError, ValueError):
             warn_once(

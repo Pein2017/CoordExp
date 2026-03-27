@@ -67,6 +67,11 @@ from src.utils.metric_key_lookup import (
     resolve_metric_value,
     stage2_eval_metric_key,
 )
+from .stage2_coordination import (
+    ddp_assert_all_ranks_true_or_raise,
+    reduce_metric_payload_global,
+    resolve_rollout_log_metric_spec,
+)
 from .rollout_runtime.vllm_config import resolve_vllm_engine_config
 from .rollout_runtime.dispatch import (
     rollout_many,
@@ -1158,6 +1163,53 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             "sft": 0.0,
             "rollout": 0.0,
         }
+
+    def _coordexp_checkpoint_runtime_state(self) -> Dict[str, Any]:
+        return {
+            "post_rollout_segments": list(self._post_rollout_segments),
+            "rm_pending_train_logs": {
+                int(step): asdict(pending)
+                for step, pending in self._rm_pending_train_logs.items()
+            },
+            "monitor_dump_last_step": self._monitor_dump_last_step,
+            "monitor_dump_count": int(self._monitor_dump_count),
+            "eval_monitor_dump_eval_index": int(self._eval_monitor_dump_eval_index),
+            "eval_monitor_dump_last_eval": self._eval_monitor_dump_last_eval,
+            "eval_monitor_dump_count": int(self._eval_monitor_dump_count),
+        }
+
+    def _coordexp_restore_checkpoint_runtime_state(
+        self, payload: Mapping[str, Any]
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "RolloutMatchingSFTTrainer checkpoint runtime state must be a Mapping"
+            )
+
+        post_rollout_segments = payload.get("post_rollout_segments")
+        if isinstance(post_rollout_segments, list):
+            self._post_rollout_segments = list(post_rollout_segments)
+
+        pending_logs_raw = payload.get("rm_pending_train_logs")
+        if isinstance(pending_logs_raw, Mapping):
+            restored_pending: Dict[int, _PendingTrainRolloutLog] = {}
+            for step_raw, pending_payload in pending_logs_raw.items():
+                if not isinstance(pending_payload, Mapping):
+                    continue
+                restored_pending[int(step_raw)] = _PendingTrainRolloutLog(
+                    **dict(pending_payload)
+                )
+            self._rm_pending_train_logs = restored_pending
+
+        self._monitor_dump_last_step = payload.get("monitor_dump_last_step")
+        self._monitor_dump_count = int(payload.get("monitor_dump_count", 0) or 0)
+        self._eval_monitor_dump_eval_index = int(
+            payload.get("eval_monitor_dump_eval_index", 0) or 0
+        )
+        self._eval_monitor_dump_last_eval = payload.get("eval_monitor_dump_last_eval")
+        self._eval_monitor_dump_count = int(
+            payload.get("eval_monitor_dump_count", 0) or 0
+        )
         self._stage_wallclock_lock = threading.Lock()
 
     def _ensure_stage_wallclock_state(self) -> None:
@@ -6045,182 +6097,13 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             reduced.pop(key, None)
 
         gradmon_weight_key = "gradmon/_log_weight_total"
-        gradmon_mean_keys = [
-            str(k)
-            for k in list(reduced.keys())
-            if str(k).startswith("gradmon/")
-            and str(k) != gradmon_weight_key
-            and not str(k).endswith("_total")
-            and not str(k).endswith("_sum")
-            and not str(k).endswith("_count")
-            and not str(k).endswith("_num")
-            and not str(k).endswith("_den")
-        ]
 
-        try:
-            import torch.distributed as dist
-        except (TypeError, ValueError):
-            dist = None  # type: ignore[assignment]
-
-        rank = 0
-        world_size = 1
-        if dist is not None and dist.is_available() and dist.is_initialized():
-            try:
-                world_size = int(dist.get_world_size())
-            except (TypeError, ValueError):
-                world_size = 1
-            try:
-                rank = int(dist.get_rank())
-            except (TypeError, ValueError):
-                rank = 0
-
-        metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
-        if (
-            dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-            and int(world_size) > 1
-        ):
-            gathered_keys: List[Any] = [None] * int(world_size)
-            dist.all_gather_object(gathered_keys, metric_keys)
-
-            merged_keys: Dict[str, None] = {}
-            for item in gathered_keys:
-                if not isinstance(item, (list, tuple)):
-                    raise RuntimeError(
-                        "rollout metric key sync produced non-list keys "
-                        f"(rank={int(rank)}/{int(world_size)} type={type(item).__name__})"
-                    )
-                for key_raw in item:
-                    key = str(key_raw)
-                    merged_keys[key] = None
-                    reduced.setdefault(key, 0.0)
-            metric_keys = sorted(merged_keys.keys())
-
-        sum_key_set: set[str] = set()
-        max_key_set: set[str] = set()
-        mean_key_set: set[str] = set()
-
-        sum_explicit = {
-            sample_total_key,
-            gradmon_weight_key,
-            "rollout/parse_truncated",
-            "rollout/parse_dropped_invalid",
-            "rollout/parse_dropped_ambiguous",
-            "rollout/valid_pred_objects_total",
-            "rollout/gt_objects_total",
-            "rollout/matched_for_supervision",
-            "rollout/excluded_from_supervision",
-            "rollout/fp_total",
-            "rollout/fn_total",
-            "rollout/gating_rejections",
-            "rollout/fn_appended_total",
-            "rollout/prefix_coord_targets_total",
-            "rollout/matched_maskiou_count",
-            "rollout/desc_pairs_total",
-            "rollout/desc_sem_sim_sum",
-            "rollout/desc_sem_sim_count",
-            "rollout/_matched_maskiou_sum",
-            "rollout/_sample_valid_pred_num",
-            "rollout/_sample_any_match_num",
-            "rollout/_desc_exact_ok",
-            "rollout/_desc_sem_ok",
-            "rollout/decode_non_beam_count",
-            "rollout/decode_beam_count",
-            "rollout/gen_new_tokens_total",
-            trunc_num_key,
-            trunc_den_key,
-        }
-        max_explicit = {
-            "rollout/backend_hf",
-            "rollout/backend_vllm",
-            "rollout/decode_mode_greedy",
-            "rollout/decode_mode_beam",
-            "rollout/hf_seeded_global",
-            "rollout/do_sample",
-            "rollout/desc_sem_enabled",
-            "rollout/gen_new_tokens_p90",
-            "rollout/gen_new_tokens_p99",
-        }
-
-        for key in metric_keys:
-            if key.startswith("time/"):
-                max_key_set.add(key)
-                continue
-            if key.startswith("gradmon/") and key != gradmon_weight_key:
-                continue
-            if key in max_explicit:
-                max_key_set.add(key)
-                continue
-            if key in sum_explicit or key.endswith("_total"):
-                sum_key_set.add(key)
-                continue
-            mean_key_set.add(key)
-
-        sum_keys = sorted(sum_key_set)
-        max_keys = sorted(max_key_set)
-        mean_keys = sorted(mean_key_set)
-        gradmon_keys = sorted(gradmon_mean_keys)
-
-        if (
-            dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-            and int(world_size) > 1
-        ):
-            try:
-                device = torch.device("cpu")
-                try:
-                    model = getattr(self, "model", None)
-                    if model is not None and hasattr(model, "device"):
-                        device = model.device
-                    elif model is not None:
-                        device = next(model.parameters()).device
-                except (TypeError, ValueError):
-                    device = torch.device("cpu")
-
-                def _all_reduce(keys: List[str], op: Any) -> None:
-                    if not keys:
-                        return
-                    values = torch.tensor(
-                        [float(reduced.get(k, 0.0)) for k in keys],
-                        dtype=torch.float64,
-                        device=device,
-                    )
-                    dist.all_reduce(values, op=op)
-                    for i, key_i in enumerate(keys):
-                        reduced[key_i] = float(values[i].item())
-
-                local_gradmon_weight = float(reduced.get(gradmon_weight_key, 0.0))
-                if local_gradmon_weight > 0.0 and gradmon_keys:
-                    for key in gradmon_keys:
-                        reduced[key] = float(reduced.get(key, 0.0)) * float(
-                            local_gradmon_weight
-                        )
-
-                _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
-                _all_reduce(gradmon_keys, dist.ReduceOp.SUM)
-                _all_reduce(max_keys, dist.ReduceOp.MAX)
-
-                scale = float(world_size)
-                if scale > 0.0:
-                    for key in mean_keys:
-                        reduced[key] = float(reduced.get(key, 0.0) / scale)
-                global_gradmon_weight = float(reduced.get(gradmon_weight_key, 0.0))
-                if gradmon_keys:
-                    if global_gradmon_weight > 0.0:
-                        for key in gradmon_keys:
-                            reduced[key] = float(
-                                reduced.get(key, 0.0) / global_gradmon_weight
-                            )
-                    else:
-                        for key in gradmon_keys:
-                            reduced[key] = 0.0
-            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    "rollout metric all-reduce failed (DDP is initialized); "
-                    f"rank={int(rank)}/{int(world_size)}"
-                ) from exc
+        reduced = reduce_metric_payload_global(
+            self,
+            reduced,
+            resolver=resolve_rollout_log_metric_spec,
+            error_prefix="rollout metric",
+        )
 
         sample_total = float(reduced.get(sample_total_key, 0.0))
 
@@ -6385,64 +6268,12 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         local_true: bool,
         global_step: int,
     ) -> None:
-        """Fail-fast guard: ensure every rank takes the same logging/reduction path.
-
-        If one rank enters distributed collectives while another skips them (e.g.
-        missing pending metrics for a step), the job will deadlock. We all-reduce
-        a 0/1 readiness flag to verify that *every* rank is ready.
-        """
-
-        try:
-            import torch.distributed as dist
-        except (ImportError, TypeError, ValueError):
-            return
-
-        if not (dist.is_available() and dist.is_initialized()):
-            return
-
-        try:
-            world_size = int(dist.get_world_size())
-        except (TypeError, ValueError, RuntimeError):
-            world_size = 1
-        if int(world_size) <= 1:
-            return
-
-        try:
-            rank = int(dist.get_rank())
-        except (TypeError, ValueError, RuntimeError):
-            rank = 0
-
-        backend = ""
-        try:
-            backend = str(dist.get_backend()).lower()
-        except Exception:
-            backend = ""
-
-        reduce_device = torch.device("cpu")
-        if backend == "nccl" and torch.cuda.is_available():
-            try:
-                model = getattr(self, "model", None)
-                if model is not None and hasattr(model, "device"):
-                    reduce_device = model.device
-                elif model is not None:
-                    reduce_device = next(model.parameters()).device
-            except Exception:
-                reduce_device = torch.device("cpu")
-
-        flag = torch.tensor(
-            [1 if bool(local_true) else 0],
-            device=reduce_device,
-            dtype=torch.int32,
+        ddp_assert_all_ranks_true_or_raise(
+            self,
+            where=where,
+            local_true=local_true,
+            global_step=global_step,
         )
-        dist.all_reduce(flag, op=dist.ReduceOp.SUM)
-        ready_sum = int(flag.item())
-
-        if int(ready_sum) != int(world_size):
-            raise RuntimeError(
-                f"{where}: pending-metrics readiness mismatch under DDP "
-                f"(global_step={int(global_step)} rank={int(rank)}/{int(world_size)}, "
-                f"local_ready={int(bool(local_true))} ready_sum={int(ready_sum)})."
-            )
 
     def log(self, logs: Dict[str, float]) -> None:
         """Merge buffered rollout-matching metrics into the main train log record.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 import random
 from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
@@ -20,11 +21,22 @@ from .encoded_sample_cache import setup_encoded_sample_cache_for_dataset
 from .preprocessors import AugmentationPreprocessor, SequentialPreprocessor
 from .utils import (
     find_first_unsorted_object_pair_by_topleft,
-    load_jsonl,
+    load_jsonl_with_diagnostics,
 )
 
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
+
+
+def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
+    length = sample.get("length")
+    if isinstance(length, int):
+        return int(length)
+    input_ids = sample.get("input_ids")
+    try:
+        return len(input_ids) if input_ids is not None else None
+    except TypeError:
+        return None
 
 
 class BaseCaptionDataset(Dataset):
@@ -169,7 +181,11 @@ class BaseCaptionDataset(Dataset):
         template: Any,
         **kwargs,
     ) -> "BaseCaptionDataset":
-        records = load_jsonl(jsonl_path, resolve_relative=True)
+        records, _invalid_count = load_jsonl_with_diagnostics(
+            Path(str(jsonl_path)),
+            strict=True,
+            resolve_relative=True,
+        )
         # Optional sample limiting for quick smoke tests
         sample_limit = kwargs.pop("sample_limit", None)
         if isinstance(sample_limit, int) and sample_limit > 0:
@@ -379,15 +395,43 @@ class BaseCaptionDataset(Dataset):
         builder: JSONLinesBuilder,
         system_prompt: Optional[str],
     ) -> Dict[str, Any]:
-        merged = builder.build_many([record])
+        rendered, conversation_messages = self._render_prepared_record(
+            record=record,
+            builder=builder,
+            system_prompt=system_prompt,
+        )
+        encoded = self._encode_rendered_record(
+            rendered=rendered,
+            system_prompt=system_prompt,
+        )
+        return self._finalize_encoded_example(
+            encoded=encoded,
+            rendered=rendered,
+            conversation_messages=conversation_messages,
+        )
 
-        conversation_messages = copy.deepcopy(merged.get("messages", []) or [])
+    def _render_prepared_record(
+        self,
+        *,
+        record: Dict[str, Any],
+        builder: JSONLinesBuilder,
+        system_prompt: Optional[str],
+    ) -> tuple[Dict[str, Any], list[dict[str, Any]]]:
+        rendered = builder.build_many([record])
+        conversation_messages = copy.deepcopy(rendered.get("messages", []) or [])
         if system_prompt is not None:
             conversation_messages = [
                 {"role": "system", "content": system_prompt},
                 *conversation_messages,
             ]
+        return rendered, conversation_messages
 
+    def _encode_rendered_record(
+        self,
+        *,
+        rendered: Mapping[str, Any],
+        system_prompt: Optional[str],
+    ) -> MutableMapping[str, Any]:
         had_system_attr = hasattr(self.template, "system")
         original_system = getattr(self.template, "system", None) if had_system_attr else None
         if system_prompt is not None:
@@ -399,7 +443,7 @@ class BaseCaptionDataset(Dataset):
                 ) from exc
 
         try:
-            encoded = self.template.encode(merged, return_length=True)
+            encoded = self.template.encode(dict(rendered), return_length=True)
         finally:
             if system_prompt is not None:
                 try:
@@ -417,13 +461,103 @@ class BaseCaptionDataset(Dataset):
                 "Template encode output must be a mutable mapping for conversation payload "
                 "and downstream metadata keys ('sample_id', 'dataset', 'base_idx')."
             )
-
-        encoded["messages"] = conversation_messages
-        for key in ("assistant_payload", "objects", "metadata"):
-            if key in merged:
-                encoded[key] = copy.deepcopy(merged[key])
-
         return encoded
+
+    def _finalize_encoded_example(
+        self,
+        *,
+        encoded: MutableMapping[str, Any],
+        rendered: Mapping[str, Any],
+        conversation_messages: Sequence[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        encoded["messages"] = [
+            dict(message) for message in list(conversation_messages or [])
+        ]
+        for key in ("assistant_payload", "objects", "metadata"):
+            if key in rendered:
+                encoded[key] = copy.deepcopy(rendered[key])
+        return dict(encoded)
+
+    def _seed_for_fetch(self, *, base_idx: int, index: int) -> int:
+        epoch_seed = self._seed_for_epoch(self._epoch)
+        return int(
+            (
+                int(epoch_seed)
+                ^ ((int(base_idx) + 1) * 0x9E3779B1)
+                ^ ((int(index) + 1) * 0xC2B2AE35)
+            )
+            & 0xFFFFFFFF
+        )
+
+    def _prepare_record_for_fetch(
+        self,
+        *,
+        base_idx: int,
+        index: int,
+    ) -> Dict[str, Any]:
+        record = copy.deepcopy(self.base_records[int(base_idx)])
+        rng_local = random.Random(self._seed_for_fetch(base_idx=int(base_idx), index=int(index)))
+
+        if self.preprocessor is not None:
+            if hasattr(self.preprocessor, "rng"):
+                self.preprocessor.rng = rng_local
+            processed = self.preprocessor(record)
+            if processed is None:
+                raise ValueError(
+                    "Preprocessor removed the record; dataset does not duplicate samples"
+                )
+            record = processed
+
+        self._enforce_max_pixels(record, base_idx=int(base_idx))
+        self._apply_object_ordering(record, rng_local)
+        self._maybe_annotate_coord_tokens(record)
+        return record
+
+    def _prepare_record_for_cache(self, *, base_idx: int) -> Dict[str, Any]:
+        if self.preprocessor is not None:
+            raise ValueError(
+                "Encoded sample cache requires datasets without fetch-time preprocessors."
+            )
+
+        record = copy.deepcopy(self.base_records[int(base_idx)])
+        self._enforce_max_pixels(record, base_idx=int(base_idx))
+
+        rng_local = random.Random(self.seed ^ ((int(base_idx) + 1) * 0x9E3779B1))
+        self._apply_object_ordering(record, rng_local)
+        self._maybe_annotate_coord_tokens(record)
+        return record
+
+    def _static_packing_length(self, base_idx: int) -> int | None:
+        if self._encoded_sample_cache is not None:
+            return _extract_sample_length(self._encoded_sample_cache.load_sample(int(base_idx)))
+
+        encoded = self._encode_base_record_for_cache(int(base_idx))
+        return _extract_sample_length(encoded)
+
+    def _static_packing_thread_safe(self) -> bool:
+        return bool(
+            self._encoded_sample_cache is not None
+            and bool(getattr(self._encoded_sample_cache, "thread_safe", False))
+        )
+
+    def _static_packing_precompute_info(self) -> dict[str, Any]:
+        return {
+            "thread_safe": bool(self._static_packing_thread_safe()),
+            "prepare_sidecar_eligible": bool(
+                self.preprocessor is None and self.object_ordering != "random"
+            ),
+            "fingerprint_surfaces": {
+                "dataset_name": self.dataset_name,
+                "mode": self.mode,
+                "object_ordering": self.object_ordering,
+                "object_field_order": self.object_field_order,
+                "coord_tokens_enabled": bool(self.coord_tokens.enabled),
+                "offline_max_pixels": self.offline_max_pixels,
+                "system_prompt": self._current_system_prompt(),
+                "epoch_sensitive": bool(self.object_ordering == "random"),
+                "has_fetch_preprocessor": bool(self.preprocessor is not None),
+            },
+        }
 
     def _current_system_prompt(self) -> Optional[str]:
         if self.mode == "summary" and self.system_prompt_summary:
@@ -477,18 +611,7 @@ class BaseCaptionDataset(Dataset):
         return info
 
     def _encode_base_record_for_cache(self, base_idx: int) -> Dict[str, Any]:
-        if self.preprocessor is not None:
-            raise ValueError(
-                "Encoded sample cache requires datasets without fetch-time preprocessors."
-            )
-
-        record = copy.deepcopy(self.base_records[int(base_idx)])
-        self._enforce_max_pixels(record, base_idx=int(base_idx))
-
-        rng_local = random.Random(self.seed ^ ((int(base_idx) + 1) * 0x9E3779B1))
-        self._apply_object_ordering(record, rng_local)
-        self._maybe_annotate_coord_tokens(record)
-
+        record = self._prepare_record_for_cache(base_idx=int(base_idx))
         encoded = self._encode_record(
             record=record,
             builder=self._create_builder(self.mode),
@@ -514,34 +637,10 @@ class BaseCaptionDataset(Dataset):
         if self._encoded_sample_cache is not None:
             encoded = copy.deepcopy(self._encoded_sample_cache.load_sample(base_idx))
         else:
-            record = copy.deepcopy(self.base_records[base_idx])
-
-            # Deterministic per-sample RNG:
-            # Avoid order-sensitive randomness under multi-worker prefetching by deriving the seed
-            # as a pure function of (epoch, dataset seed, base_idx, requested index).
-            epoch_seed = self._seed_for_epoch(self._epoch)
-            seed_local = (
-                int(epoch_seed)
-                ^ ((int(base_idx) + 1) * 0x9E3779B1)
-                ^ ((int(index) + 1) * 0xC2B2AE35)
-            ) & 0xFFFFFFFF
-            rng_local = random.Random(int(seed_local))
-
-            if self.preprocessor is not None:
-                if hasattr(self.preprocessor, "rng"):
-                    self.preprocessor.rng = rng_local
-                processed = self.preprocessor(record)
-                if processed is None:
-                    raise ValueError(
-                        "Preprocessor removed the record; dataset does not duplicate samples"
-                    )
-                record = processed
-
-            self._enforce_max_pixels(record, base_idx=base_idx)
-
-            self._apply_object_ordering(record, rng_local)
-            self._maybe_annotate_coord_tokens(record)
-
+            record = self._prepare_record_for_fetch(
+                base_idx=int(base_idx),
+                index=int(index),
+            )
             encoded = self._encode_record(
                 record=record,
                 builder=self._create_builder(self.mode),

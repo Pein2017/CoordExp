@@ -46,12 +46,24 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
         config_path="configs/unit.yaml",
         base_config_path="configs/base.yaml",
         dataset_seed=17,
+        effective_runtime={"checkpoint_mode": "restartable", "save_only_model": False},
+        pipeline_manifest={"checksum": "abc123", "objective": [{"name": "token_ce"}]},
+        train_data_provenance={"dataset_jsonl": "train.jsonl"},
+        eval_data_provenance={"dataset_jsonl": "val.jsonl"},
     )
 
     resolved_path = tmp_path / written["resolved_config"]
     env_path = tmp_path / written["runtime_env"]
+    effective_runtime_path = tmp_path / written["effective_runtime"]
+    pipeline_manifest_path = tmp_path / written["pipeline_manifest"]
+    train_provenance_path = tmp_path / written["train_data_provenance"]
+    eval_provenance_path = tmp_path / written["eval_data_provenance"]
     assert resolved_path.is_file()
     assert env_path.is_file()
+    assert effective_runtime_path.is_file()
+    assert pipeline_manifest_path.is_file()
+    assert train_provenance_path.is_file()
+    assert eval_provenance_path.is_file()
 
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     assert resolved["schema_version"] == RUN_MANIFEST_SCHEMA_VERSION
@@ -62,3 +74,17 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     assert env["schema_version"] == RUN_MANIFEST_SCHEMA_VERSION
     assert isinstance(env["env"], dict)
 
+    effective_runtime = json.loads(effective_runtime_path.read_text(encoding="utf-8"))
+    assert effective_runtime["runtime"]["checkpoint_mode"] == "restartable"
+    assert effective_runtime["runtime"]["save_only_model"] is False
+
+    pipeline_manifest = json.loads(pipeline_manifest_path.read_text(encoding="utf-8"))
+    assert pipeline_manifest["pipeline"]["checksum"] == "abc123"
+
+    train_provenance = json.loads(train_provenance_path.read_text(encoding="utf-8"))
+    assert train_provenance["split"] == "train"
+    assert train_provenance["provenance"]["dataset_jsonl"] == "train.jsonl"
+
+    eval_provenance = json.loads(eval_provenance_path.read_text(encoding="utf-8"))
+    assert eval_provenance["split"] == "eval"
+    assert eval_provenance["provenance"]["dataset_jsonl"] == "val.jsonl"

@@ -12,6 +12,7 @@ from src.sft import (
     PackingRuntimeConfig,
     _append_dataset_epoch_callback,
     _build_static_packing_fingerprint,
+    _parse_encoded_sample_cache_config,
     _parse_packing_config,
     _recompute_gas_for_packing,
     _validate_stage1_static_packing_policy,
@@ -30,6 +31,20 @@ class _EpochDataset:
 
     def set_epoch(self, epoch: int) -> None:
         self.epochs.append(int(epoch))
+
+
+class _UnsafeLengthDataset:
+    def __init__(self) -> None:
+        self.records = [{"length": 2}, {"length": 3}, {"length": 4}]
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, index: int):
+        return dict(self.records[int(index)])
+
+    def _static_packing_precompute_info(self) -> dict[str, object]:
+        return {"thread_safe": False, "reason": "template mutation"}
 
 
 def test_parse_packing_config_defaults_to_static_mode() -> None:
@@ -123,6 +138,28 @@ def test_parse_packing_config_rejects_nonpositive_length_precompute_workers() ->
             },
             template=_Template(max_length=128),
             train_args=SimpleNamespace(max_model_len=0),
+        )
+
+
+def test_parse_encoded_sample_cache_config_accepts_residency_bound() -> None:
+    cfg = _parse_encoded_sample_cache_config(
+        training_cfg={
+            "encoded_sample_cache": {"enabled": True, "max_resident_shards": 3}
+        },
+        train_args=SimpleNamespace(output_dir="output/run"),
+    )
+
+    assert cfg.enabled is True
+    assert cfg.max_resident_shards == 3
+
+
+def test_parse_encoded_sample_cache_config_rejects_nonpositive_residency_bound() -> None:
+    with pytest.raises(ValueError, match="max_resident_shards"):
+        _parse_encoded_sample_cache_config(
+            training_cfg={
+                "encoded_sample_cache": {"enabled": True, "max_resident_shards": 0}
+            },
+            train_args=SimpleNamespace(output_dir="output/run"),
         )
 
 
@@ -291,6 +328,68 @@ def test_static_packing_fingerprint_tracks_eval_split_inputs(
     assert fingerprint["dataset_split"] == "eval"
     assert fingerprint["eval_sample_limit"] == 99
     assert fingerprint["eval_sample_with_replacement"] is False
+
+
+def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    common_training = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    base_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        object_ordering="none",
+        object_field_order="geometry_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+    )
+
+    fingerprint_a = _build_static_packing_fingerprint(
+        training_config=common_training,
+        custom_config=SimpleNamespace(
+            **base_custom,
+            offline_max_pixels=1048576,
+            coord_tokens={"enabled": True, "skip_bbox_norm": True},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+        fusion_config_path=None,
+    )
+    fingerprint_b = _build_static_packing_fingerprint(
+        training_config=common_training,
+        custom_config=SimpleNamespace(
+            **base_custom,
+            offline_max_pixels=2097152,
+            coord_tokens={"enabled": False},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+        fusion_config_path=None,
+    )
+
+    assert fingerprint_a["custom_offline_max_pixels"] == 1048576
+    assert fingerprint_a["coord_tokens"] == {
+        "enabled": True,
+        "skip_bbox_norm": True,
+    }
+    assert fingerprint_b["custom_offline_max_pixels"] == 2097152
+    assert fingerprint_b["coord_tokens"] == {"enabled": False}
+    assert fingerprint_a != fingerprint_b
 
 
 @pytest.mark.parametrize(
@@ -506,3 +605,36 @@ def test_stage1_ablation_leaves_pin_ordering_cache_seed_and_paths(
     assert expected_ordering in str(training["logging_dir"])
     assert template["max_pixels"] == 1048576
     assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
+
+
+def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.datasets.wrappers import packed_caption as packed_mod
+
+    dataset = _UnsafeLengthDataset()
+
+    monkeypatch.setattr(packed_mod.torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(packed_mod.torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(packed_mod.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(packed_mod.torch.cuda, "is_initialized", lambda: False)
+
+    class _BoomPool:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("unsafe static precompute should not use thread pool")
+
+    monkeypatch.setattr(packed_mod.concurrent.futures, "ThreadPoolExecutor", _BoomPool)
+
+    packed = packed_mod.build_static_packed_dataset(
+        dataset,
+        template=_Template(max_length=16),
+        packing_length=8,
+        cache_dir=tmp_path / "static-packing",
+        fingerprint={"dataset": "unsafe"},
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=4,
+    )
+
+    assert len(packed) > 0

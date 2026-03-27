@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 import hashlib
 import json
 import math
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +19,7 @@ logger = get_logger(__name__)
 
 _ENCODED_SAMPLE_CACHE_VERSION = 1
 _DEFAULT_ENCODED_SAMPLE_SHARD_SIZE = 512
+_DEFAULT_MAX_RESIDENT_SHARDS = 4
 
 
 def _json_canonical_dumps(payload: Mapping[str, Any]) -> str:
@@ -203,13 +206,18 @@ class EncodedSampleCacheStore:
         self._manifest_path = self._cache_dir / "manifest.json"
         self._lock_path = self._cache_dir / "build.lock"
         self._wait_timeout_s = float(request.get("wait_timeout_s", 7200.0) or 0.0)
+        self._max_resident_shards = max(
+            int(request.get("max_resident_shards", _DEFAULT_MAX_RESIDENT_SHARDS) or 1),
+            1,
+        )
         self._policy = str(request.get("ineligible_policy") or "error")
         self._split = str(request.get("dataset_split") or "train")
         self._dataset_jsonl = request.get("dataset_jsonl")
         self._status = "disabled"
         self._manifest: dict[str, Any] | None = None
         self._shards_by_index: dict[int, dict[str, Any]] = {}
-        self._loaded_shards: dict[int, Any] = {}
+        self._loaded_shards: OrderedDict[int, Any] = OrderedDict()
+        self._loaded_shards_lock = threading.Lock()
         self._ensure_ready()
 
     @property
@@ -223,6 +231,7 @@ class EncodedSampleCacheStore:
             "status": self._status,
             "policy": self._policy,
             "wait_timeout_s": self._wait_timeout_s,
+            "max_resident_shards": self._max_resident_shards,
             "dataset_split": self._split,
             "dataset_jsonl": self._dataset_jsonl,
             "fingerprint": dict(self._fingerprint),
@@ -235,6 +244,10 @@ class EncodedSampleCacheStore:
             "payload_keys": list(manifest.get("payload_keys") or []),
             "artifact_version": manifest.get("version"),
         }
+
+    @property
+    def thread_safe(self) -> bool:
+        return True
 
     def load_sample(self, base_idx: int) -> dict[str, Any]:
         manifest = self._manifest or {}
@@ -250,10 +263,21 @@ class EncodedSampleCacheStore:
                 f"Encoded sample cache has no shard for base_idx={base_idx} "
                 f"(shard_idx={shard_idx})"
             )
-        shard_payload = self._loaded_shards.get(shard_idx)
+        with self._loaded_shards_lock:
+            shard_payload = self._loaded_shards.get(shard_idx)
+            if shard_payload is not None:
+                self._loaded_shards.move_to_end(shard_idx)
+
         if shard_payload is None:
-            shard_payload = _load_torch(self._cache_dir / str(shard_meta["file"]))
-            self._loaded_shards[shard_idx] = shard_payload
+            loaded_payload = _load_torch(self._cache_dir / str(shard_meta["file"]))
+            with self._loaded_shards_lock:
+                shard_payload = self._loaded_shards.get(shard_idx)
+                if shard_payload is None:
+                    shard_payload = loaded_payload
+                    self._loaded_shards[shard_idx] = shard_payload
+                self._loaded_shards.move_to_end(shard_idx)
+                while len(self._loaded_shards) > int(self._max_resident_shards):
+                    self._loaded_shards.popitem(last=False)
 
         samples = shard_payload.get("samples")
         if not isinstance(samples, list):

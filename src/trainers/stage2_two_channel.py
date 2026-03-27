@@ -32,6 +32,13 @@ from .monitoring.loss_gradient_monitor import (
     build_stage2_two_channel_coord_monitor_terms,
     get_loss_gradient_monitor,
 )
+from .stage2_coordination import (
+    build_stage2_snapshot_logs,
+    merge_stage2_metric_snapshots as _shared_merge_stage2_metric_snapshots,
+    reduce_metric_payload_global,
+    resolve_stage2_ab_metric_spec,
+    stage2_snapshot_metric_key,
+)
 from ..common.geometry.coord_utils import decode_coord
 
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
@@ -184,40 +191,14 @@ class _PendingStage2Log:
 
     @staticmethod
     def _is_counter_like_key(key: str) -> bool:
-        if key in {"dup/max_desc_count"}:
-            return False
-        if key in {
-            "stage2/raw_rollouts",
-            "stage2/invalid_rollout",
-            "stage2_ab/channel_b/invalid_rollout",
-            "stage2/drop_poly",
-            "stage2/drop_unknown",
-            "stage2/drop_bbox_invalid",
-            "rollout/parse_truncated",
-            "rollout/_parse_truncated_num",
-            "rollout/_parse_truncated_den",
-            "stage2_ab/channel_b/closure_supervision/N_drop",
-        }:
-            return True
-
-        if key.startswith("stage2_ab/channel_b/strict_drop/reason/"):
-            return True
-        if key.startswith("stage2_ab/") and "/N_" in key:
-            return True
-
-        return key.endswith(_PendingStage2Log._COUNTER_SUFFIXES)
+        return (
+            resolve_stage2_ab_metric_spec(str(key)).local_mode == "sum"
+        )
 
     @staticmethod
     def _is_mean_like_key(key: str) -> bool:
         return (
-            key.startswith("loss/")
-            or key.startswith("gradmon/")
-            or key in {"dup/max_desc_count", "dup/saturation_rate"}
-            or key.startswith("stage2/channel_")
-            or key.startswith("rollout/")
-            or key.startswith("coord_diag/")
-            or key == "stage2_ab/b_ratio_realized"
-            or (key.startswith("stage2_ab/") and "/is_" in key)
+            resolve_stage2_ab_metric_spec(str(key)).local_mode == "weighted_mean"
         )
 
     def add(self, metrics: Mapping[str, float]) -> None:
@@ -342,56 +323,14 @@ class _PendingStage2Log:
 
 
 def _stage2_snapshot_key(metric_key: str) -> str | None:
-    key = str(metric_key)
-
-    if (
-        key.startswith(("loss/text/", "loss/coord/"))
-        or (key.startswith("coord_diag/") and not key.startswith("coord_diag/B/"))
-        or key.startswith("time/channel_a_")
-        or key == "stage2/channel_a"
-    ):
-        return key
-
-    if (
-        key.startswith("loss/B_")
-        or key.startswith("coord_diag/B/")
-        or key.startswith("stage2_ab/channel_b/")
-        or key.startswith("dup/")
-        or key.startswith("train/triage/")
-        or key.startswith("diag/duplicate_burst/")
-        or key.startswith("rollout/")
-        or key.startswith("time/rollout_")
-        or key
-        in {
-            "stage2/channel_b",
-            "stage2/raw_rollouts",
-            "stage2/invalid_rollout",
-            "stage2/drop_poly",
-            "stage2/drop_unknown",
-            "stage2/drop_bbox_invalid",
-        }
-    ):
-        return key
-
-    return None
+    return stage2_snapshot_metric_key(metric_key)
 
 
 def _merge_stage2_metric_snapshots(
     snapshots: MutableMapping[str, float],
     metrics: Mapping[str, Any],
 ) -> Dict[str, float]:
-    for key_raw, value in metrics.items():
-        snapshot_key = _stage2_snapshot_key(str(key_raw))
-        if snapshot_key is None:
-            continue
-        try:
-            snapshots[snapshot_key] = float(value)
-        except (TypeError, ValueError):
-            continue
-    return {
-        str(key): float(value)
-        for key, value in sorted(snapshots.items(), key=lambda item: item[0])
-    }
+    return _shared_merge_stage2_metric_snapshots(snapshots, metrics)
 
 
 
@@ -779,6 +718,110 @@ class Stage2ABTrainingTrainer(
         self._stage2_train_monitor_dump_count: int = 0
         self._stage2_train_monitor_dump_written_step: Optional[int] = None
 
+    def _coordexp_checkpoint_runtime_state(self) -> Dict[str, Any]:
+        payload = dict(super()._coordexp_checkpoint_runtime_state())
+        payload.update(
+            {
+                "stage2_pending_train_logs": {
+                    int(step): asdict(pending)
+                    for step, pending in self._stage2_pending_train_logs.items()
+                },
+                "stage2_metric_snapshots": dict(self._stage2_metric_snapshots),
+                "stage2_post_rollout_segments": {
+                    str(channel): list(segments)
+                    for channel, segments in self._stage2_post_rollout_segments.items()
+                },
+                "stage2_b_step_gs": self._stage2_b_step_gs,
+                "stage2_b_step_micro": int(self._stage2_b_step_micro),
+                "stage2_b_step_raw": list(self._stage2_b_step_raw),
+                "stage2_a_step_gs": self._stage2_a_step_gs,
+                "stage2_a_step_micro": int(self._stage2_a_step_micro),
+                "stage2_a_step_raw": list(self._stage2_a_step_raw),
+                "stage2_ab_realized_last_gs": self._stage2_ab_realized_last_gs,
+                "stage2_ab_realized_recent": list(self._stage2_ab_realized_recent),
+                "stage2_train_monitor_pending_gs": self._stage2_train_monitor_pending_gs,
+                "stage2_train_monitor_candidates": list(
+                    self._stage2_train_monitor_candidates
+                ),
+                "stage2_train_monitor_b_step_count": int(
+                    self._stage2_train_monitor_b_step_count
+                ),
+                "stage2_train_monitor_dump_last_step": self._stage2_train_monitor_dump_last_step,
+                "stage2_train_monitor_dump_count": int(
+                    self._stage2_train_monitor_dump_count
+                ),
+                "stage2_train_monitor_dump_written_step": self._stage2_train_monitor_dump_written_step,
+            }
+        )
+        return payload
+
+    def _coordexp_restore_checkpoint_runtime_state(
+        self, payload: Mapping[str, Any]
+    ) -> None:
+        super()._coordexp_restore_checkpoint_runtime_state(payload)
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "Stage2ABTrainingTrainer checkpoint runtime state must be a Mapping"
+            )
+
+        pending_logs_raw = payload.get("stage2_pending_train_logs")
+        if isinstance(pending_logs_raw, Mapping):
+            restored_pending: Dict[int, _PendingStage2Log] = {}
+            for step_raw, pending_payload in pending_logs_raw.items():
+                if not isinstance(pending_payload, Mapping):
+                    continue
+                restored_pending[int(step_raw)] = _PendingStage2Log(
+                    **dict(pending_payload)
+                )
+            self._stage2_pending_train_logs = restored_pending
+
+        snapshots_raw = payload.get("stage2_metric_snapshots")
+        if isinstance(snapshots_raw, Mapping):
+            self._stage2_metric_snapshots = {
+                str(key): float(value)
+                for key, value in snapshots_raw.items()
+            }
+
+        segments_raw = payload.get("stage2_post_rollout_segments")
+        if isinstance(segments_raw, Mapping):
+            self._stage2_post_rollout_segments = {
+                str(channel): list(segments)
+                for channel, segments in segments_raw.items()
+                if isinstance(segments, list)
+            }
+            for channel in ("A", "B"):
+                self._stage2_post_rollout_segments.setdefault(channel, [])
+
+        self._stage2_b_step_gs = payload.get("stage2_b_step_gs")
+        self._stage2_b_step_micro = int(payload.get("stage2_b_step_micro", 0) or 0)
+        self._stage2_b_step_raw = list(payload.get("stage2_b_step_raw") or [])
+        self._stage2_a_step_gs = payload.get("stage2_a_step_gs")
+        self._stage2_a_step_micro = int(payload.get("stage2_a_step_micro", 0) or 0)
+        self._stage2_a_step_raw = list(payload.get("stage2_a_step_raw") or [])
+        self._stage2_ab_realized_last_gs = payload.get("stage2_ab_realized_last_gs")
+        self._stage2_ab_realized_recent = deque(
+            list(payload.get("stage2_ab_realized_recent") or []),
+            maxlen=200,
+        )
+        self._stage2_train_monitor_pending_gs = payload.get(
+            "stage2_train_monitor_pending_gs"
+        )
+        self._stage2_train_monitor_candidates = list(
+            payload.get("stage2_train_monitor_candidates") or []
+        )
+        self._stage2_train_monitor_b_step_count = int(
+            payload.get("stage2_train_monitor_b_step_count", 0) or 0
+        )
+        self._stage2_train_monitor_dump_last_step = payload.get(
+            "stage2_train_monitor_dump_last_step"
+        )
+        self._stage2_train_monitor_dump_count = int(
+            payload.get("stage2_train_monitor_dump_count", 0) or 0
+        )
+        self._stage2_train_monitor_dump_written_step = payload.get(
+            "stage2_train_monitor_dump_written_step"
+        )
+
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
     ) -> None:
@@ -1130,9 +1173,9 @@ class Stage2ABTrainingTrainer(
         self, metrics: Mapping[str, Any]
     ) -> Dict[str, float]:
         reduced: Dict[str, float] = {}
-        for k, v in metrics.items():
+        for key_raw, value in metrics.items():
             try:
-                reduced[str(k)] = float(v)
+                reduced[str(key_raw)] = float(value)
             except (TypeError, ValueError):
                 continue
 
@@ -1160,180 +1203,12 @@ class Stage2ABTrainingTrainer(
                 float(reduced.get("stage2/raw_rollouts", 0.0)),
             )
 
-        rank, world_size, dist = self._dist_info()
-        metric_keys: List[str] = sorted(str(k) for k in reduced.keys())
-
-        if dist is not None and int(world_size) > 1:
-            gathered_keys: List[Any] = [None] * int(world_size)
-            dist.all_gather_object(gathered_keys, metric_keys)
-
-            merged_keys: Dict[str, None] = {}
-            for item in gathered_keys:
-                if not isinstance(item, (list, tuple)):
-                    raise RuntimeError(
-                        "stage2-ab metric key sync produced non-list keys "
-                        f"(rank={int(rank)}/{int(world_size)} type={type(item).__name__})"
-                    )
-                for key_raw in item:
-                    key = str(key_raw)
-                    merged_keys[key] = None
-                    reduced.setdefault(key, 0.0)
-
-            metric_keys = sorted(merged_keys.keys())
-
-        sum_key_set: set[str] = set()
-        max_key_set: set[str] = set()
-        mean_key_set: set[str] = set()
-
-        for key in metric_keys:
-            if key.startswith("time/") or key in {
-                "rollout/backend_hf",
-                "rollout/backend_vllm",
-                "rollout/decode_mode_greedy",
-                "rollout/decode_mode_beam",
-                "rollout/hf_seeded_global",
-                "rollout/do_sample",
-            }:
-                max_key_set.add(key)
-                continue
-
-            if key == "stage2/_log_weight_total":
-                sum_key_set.add(key)
-                continue
-            if key == gradmon_weight_key:
-                sum_key_set.add(key)
-                continue
-
-            if key in {
-                "stage2/raw_rollouts",
-                "stage2/invalid_rollout",
-                "stage2_ab/channel_b/invalid_rollout",
-                "stage2/drop_poly",
-                "stage2/drop_unknown",
-                "stage2/drop_bbox_invalid",
-                "rollout/parse_truncated",
-                trunc_num_key,
-                trunc_den_key,
-            }:
-                sum_key_set.add(key)
-                continue
-
-            if key.startswith("stage2_ab/channel_b/strict_drop/reason/"):
-                sum_key_set.add(key)
-                continue
-
-            if key.startswith("stage2_ab/") and "/N_" in key:
-                sum_key_set.add(key)
-                continue
-
-            if key.endswith(("_total", "_count", "_sum", "_num", "_den")):
-                sum_key_set.add(key)
-                continue
-
-            mean_key_set.add(key)
-
-        # Stable key ordering for all-reduce tensors (important for reproducibility).
-        sum_priority = [
-            gradmon_weight_key,
-            trunc_num_key,
-            trunc_den_key,
-            "stage2/raw_rollouts",
-            "stage2_ab/channel_b/invalid_rollout",
-            "rollout/parse_truncated",
-        ]
-        sum_keys: List[str] = []
-        for k in sum_priority:
-            if k in sum_key_set:
-                sum_keys.append(k)
-                sum_key_set.remove(k)
-        sum_keys.extend(sorted(sum_key_set))
-
-        max_keys: List[str] = sorted(max_key_set)
-
-        mean_keys: List[str] = sorted(mean_key_set)
-        if dist is not None and int(world_size) > 1:
-            try:
-                device = torch.device("cpu")
-                try:
-                    model = getattr(self, "model", None)
-                    if model is not None and hasattr(model, "device"):
-                        device = model.device
-                    elif model is not None:
-                        device = next(model.parameters()).device
-                except (AttributeError, RuntimeError, StopIteration, TypeError):
-                    device = torch.device("cpu")
-
-                def _all_reduce(keys: List[str], op: Any) -> None:
-                    if not keys:
-                        return
-                    values = torch.tensor(
-                        [float(reduced[k]) for k in keys],
-                        dtype=torch.float64,
-                        device=device,
-                    )
-                    dist.all_reduce(values, op=op)
-                    for idx, key in enumerate(keys):
-                        reduced[key] = float(values[idx].item())
-
-                weight_key = "stage2/_log_weight_total"
-                local_weight_total = float(reduced.get(weight_key, 0.0))
-                local_gradmon_weight_total = float(reduced.get(gradmon_weight_key, 0.0))
-
-                if weight_key in reduced and mean_keys:
-                    # Convert local means into local numerators before reduction.
-                    for key in mean_keys:
-                        if key.startswith("gradmon/"):
-                            continue
-                        reduced[key] = float(reduced.get(key, 0.0)) * float(local_weight_total)
-                if gradmon_weight_key in reduced and mean_keys:
-                    for key in mean_keys:
-                        if not key.startswith("gradmon/"):
-                            continue
-                        reduced[key] = float(reduced.get(key, 0.0)) * float(
-                            local_gradmon_weight_total
-                        )
-
-                _all_reduce(sum_keys + mean_keys, dist.ReduceOp.SUM)
-                _all_reduce(max_keys, dist.ReduceOp.MAX)
-
-                if weight_key in reduced and mean_keys:
-                    global_weight_total = float(reduced.get(weight_key, 0.0))
-                    if global_weight_total > 0.0:
-                        for key in mean_keys:
-                            if key.startswith("gradmon/"):
-                                continue
-                            reduced[key] = float(reduced.get(key, 0.0) / global_weight_total)
-                    else:
-                        for key in mean_keys:
-                            if key.startswith("gradmon/"):
-                                continue
-                            reduced[key] = 0.0
-                if gradmon_weight_key in reduced and mean_keys:
-                    global_gradmon_weight_total = float(reduced.get(gradmon_weight_key, 0.0))
-                    if global_gradmon_weight_total > 0.0:
-                        for key in mean_keys:
-                            if not key.startswith("gradmon/"):
-                                continue
-                            reduced[key] = float(
-                                reduced.get(key, 0.0) / global_gradmon_weight_total
-                            )
-                    else:
-                        for key in mean_keys:
-                            if not key.startswith("gradmon/"):
-                                continue
-                            reduced[key] = 0.0
-                elif weight_key not in reduced:
-                    scale = float(world_size)
-                    if scale > 0.0:
-                        for key in mean_keys:
-                            if key.startswith("gradmon/"):
-                                continue
-                            reduced[key] = float(reduced[key] / scale)
-            except (AttributeError, RuntimeError) as exc:
-                raise RuntimeError(
-                    "stage2-ab metric all-reduce failed (DDP is initialized); "
-                    f"rank={int(rank)}/{int(world_size)}"
-                ) from exc
+        reduced = reduce_metric_payload_global(
+            self,
+            reduced,
+            resolver=resolve_stage2_ab_metric_spec,
+            error_prefix="stage2-ab metric",
+        )
 
         if has_rollout_parse_inputs:
             trunc_num = float(
@@ -1394,17 +1269,10 @@ class Stage2ABTrainingTrainer(
                 reduced.pop("rollout/_parse_truncated_num", None)
                 reduced.pop("rollout/_parse_truncated_den", None)
                 logs.update(reduced)
-                snapshot_logs = _merge_stage2_metric_snapshots(
-                    snapshot_state,
-                    reduced,
-                )
+                _merge_stage2_metric_snapshots(snapshot_state, reduced)
+                snapshot_logs = build_stage2_snapshot_logs(snapshot_state, reduced)
             elif snapshot_state:
-                snapshot_logs = {
-                    str(key): float(value)
-                    for key, value in sorted(
-                        snapshot_state.items(), key=lambda item: item[0]
-                    )
-                }
+                snapshot_logs = build_stage2_snapshot_logs(snapshot_state)
             if snapshot_logs:
                 logs.update(snapshot_logs)
             logs.update(

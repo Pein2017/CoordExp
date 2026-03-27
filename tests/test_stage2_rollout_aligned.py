@@ -13,6 +13,7 @@ import torch
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
+from src.trainers.rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
     RolloutMatchingSFTTrainer,
@@ -26,11 +27,167 @@ from src.trainers.stage2_rollout_aligned import (
     parse_rollout_for_matching,
 )
 from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.utils.metric_key_lookup import metric_name_matches_key, stage2_eval_metric_key
 
 
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
     assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
     assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
+
+
+def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    pending = _PendingTrainRolloutLog(
+        meta=[{"prompt_len": 3, "rollout_len": 2}],
+        n_micro=1,
+        time_forward_s=0.25,
+    )
+    trainer._post_rollout_segments = [({"input_ids": [1, 2]}, {"sample_id": 7}, 2)]
+    trainer._rm_pending_train_logs = {4: pending}
+    trainer._monitor_dump_last_step = 11
+    trainer._monitor_dump_count = 2
+    trainer._eval_monitor_dump_eval_index = 3
+    trainer._eval_monitor_dump_last_eval = 2
+    trainer._eval_monitor_dump_count = 1
+
+    payload = trainer._coordexp_checkpoint_runtime_state()
+
+    restored = object.__new__(RolloutMatchingSFTTrainer)
+    restored._post_rollout_segments = []
+    restored._rm_pending_train_logs = {}
+    restored._monitor_dump_last_step = None
+    restored._monitor_dump_count = 0
+    restored._eval_monitor_dump_eval_index = 0
+    restored._eval_monitor_dump_last_eval = None
+    restored._eval_monitor_dump_count = 0
+    restored._coordexp_restore_checkpoint_runtime_state(payload)
+
+    assert restored._post_rollout_segments == trainer._post_rollout_segments
+    assert 4 in restored._rm_pending_train_logs
+    assert restored._rm_pending_train_logs[4].meta == pending.meta
+    assert restored._monitor_dump_last_step == 11
+    assert restored._monitor_dump_count == 2
+    assert restored._eval_monitor_dump_eval_index == 3
+    assert restored._eval_monitor_dump_last_eval == 2
+    assert restored._eval_monitor_dump_count == 1
+
+
+def test_finalize_eval_uses_rank0_only_gather_path_for_detection_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = types.SimpleNamespace(
+        model=types.SimpleNamespace(
+            device=torch.device("cpu"),
+            train=lambda: None,
+        ),
+        args=types.SimpleNamespace(metric_for_best_model="eval/detection/mAP"),
+        state=types.SimpleNamespace(epoch=0.0),
+        control=types.SimpleNamespace(),
+        callback_handler=types.SimpleNamespace(
+            on_evaluate=lambda args, state, control, metrics: control
+        ),
+        log=lambda metrics: None,
+    )
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 1)
+    monkeypatch.setattr(dist, "get_backend", lambda: "gloo", raising=False)
+
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+    monkeypatch.setattr(dist, "all_reduce", lambda tensor, op: None, raising=False)
+
+    gather_calls: list[object] = []
+
+    def _gather_object(obj, object_gather_list=None, dst=0):
+        gather_calls.append(object_gather_list)
+        assert dst == 0
+        assert object_gather_list is None
+
+    def _broadcast_object_list(payload_list, src=0, device=None):
+        del src, device
+        payload_list[0] = {
+            "ok": 1.0,
+            "runtime_s": 0.5,
+            "metrics": {"bbox_AP": 0.25},
+            "counters": {"empty_pred": 0},
+            "error": "",
+        }
+
+    monkeypatch.setattr(dist, "gather_object", _gather_object, raising=False)
+    monkeypatch.setattr(
+        dist, "broadcast_object_list", _broadcast_object_list, raising=False
+    )
+
+    def _fail_if_called(**kwargs):
+        raise AssertionError("rank>0 should not run COCO aggregation locally")
+
+    metrics = finalize_rollout_aligned_evaluation(
+        owner=owner,
+        logger=types.SimpleNamespace(exception=lambda *args, **kwargs: None),
+        metric_key_prefix="eval",
+        eval_prompt_variant=None,
+        eval_detection_enabled=True,
+        eval_detection_use_confidence_postop=False,
+        eval_detection_score_mode="constant",
+        eval_detection_score_version=1,
+        eval_detection_score_source="eval_rollout_constant",
+        eval_detection_cfg={},
+        desc_enabled=False,
+        n_samples=1.0,
+        gt_total=1.0,
+        pred_total=1.0,
+        matched_total=1.0,
+        fp_total=0.0,
+        fn_total=0.0,
+        gating_rejections_total=0.0,
+        dropped_invalid_total=0.0,
+        dropped_ambiguous_total=0.0,
+        trunc_samples=0.0,
+        matched_iou_sum=1.0,
+        matched_iou_count=1.0,
+        n_samples_valid_pred=1.0,
+        n_samples_any_match=1.0,
+        n_steps=1.0,
+        desc_pairs_total=0.0,
+        desc_exact_ok_total=0.0,
+        desc_sem_ok_total=0.0,
+        desc_sem_sim_sum_total=0.0,
+        desc_sem_sim_count_total=0.0,
+        sem_loaded_local=0.0,
+        trace_fallback_count_local=0.0,
+        vllm_decode_error_count_local=0.0,
+        trace_fallback_window_active=False,
+        runtime_local_s=0.25,
+        eval_detection_records_local=[{"pred": [], "gt": []}],
+        do_dump=False,
+        dump_fail_samples=[],
+        dump_other_samples=[],
+        dump_max_samples=0,
+        gs=7,
+        eval_rollout_backend="hf",
+        eval_vllm_mode="off",
+        top_k=1,
+        gate_thr=0.5,
+        mask_res=14,
+        fp_cost=1.0,
+        fn_cost=1.0,
+        was_training=True,
+        compute_eval_detection_coco_metrics_fn=_fail_if_called,
+        metric_name_matches_key_fn=metric_name_matches_key,
+        stage2_eval_metric_key_fn=stage2_eval_metric_key,
+    )
+
+    assert gather_calls == [None]
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.25)
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
 
 
 class _DummyTokenizerRM:

@@ -63,6 +63,31 @@ def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
         return None
 
 
+def _dataset_static_packing_precompute_info(dataset: Any) -> dict[str, Any]:
+    helper = getattr(dataset, "_static_packing_precompute_info", None)
+    if callable(helper):
+        info = helper()
+        if isinstance(info, Mapping):
+            return dict(info)
+    return {}
+
+
+def _dataset_static_pack_length(dataset: Any, index: int) -> tuple[int, int | None]:
+    index_i = int(index)
+    helper = getattr(dataset, "_static_packing_length", None)
+    if callable(helper):
+        length = helper(index_i)
+        if length is None:
+            return index_i, None
+        return index_i, int(length)
+
+    sample = dataset[index_i]
+    length = _extract_sample_length(sample)
+    if length is None:
+        return index_i, None
+    return index_i, int(length)
+
+
 def _resolve_length_precompute_workers(
     *,
     requested_workers: int,
@@ -77,12 +102,7 @@ def _resolve_length_precompute_workers(
 def _precompute_length_from_dataset(
     dataset: Any, index: int
 ) -> tuple[int, int | None]:
-    index_i = int(index)
-    sample = dataset[index_i]
-    length = _extract_sample_length(sample)
-    if length is None:
-        return index_i, None
-    return index_i, int(length)
+    return _dataset_static_pack_length(dataset, int(index))
 
 def _precompute_length_worker(index: int) -> tuple[int, int | None]:
     dataset = _LENGTH_PRECOMPUTE_DATASET
@@ -214,8 +234,7 @@ def _probe_order_invariant_lengths(
     def _collect(order: Sequence[int]) -> dict[int, int]:
         lengths: dict[int, int] = {}
         for index in order:
-            sample = dataset[int(index)]
-            length = _extract_sample_length(sample)
+            _, length = _dataset_static_pack_length(dataset, int(index))
             if length is None:
                 raise ValueError(
                     "Static packing length probe failed: sample has no deterministic token length. "
@@ -409,6 +428,8 @@ def _compute_missing_lengths(
     missing_count = len(missing)
     completed = 0
     use_thread_pool = False
+    precompute_info = _dataset_static_packing_precompute_info(dataset)
+    thread_safe_precompute = bool(precompute_info.get("thread_safe", False))
 
     if worker_count > 1:
         dist_initialized = (
@@ -416,11 +437,18 @@ def _compute_missing_lengths(
         )
         cuda_initialized = torch.cuda.is_available() and torch.cuda.is_initialized()
         if dist_initialized or cuda_initialized:
-            use_thread_pool = True
-            logger.info(
-                "Static packing length precompute: using thread pool workers=%s in distributed/CUDA-initialized runtime to avoid fork deadlocks.",
-                worker_count,
-            )
+            if thread_safe_precompute:
+                use_thread_pool = True
+                logger.info(
+                    "Static packing length precompute: using thread pool workers=%s in distributed/CUDA-initialized runtime to avoid fork deadlocks.",
+                    worker_count,
+                )
+            else:
+                logger.info(
+                    "Static packing length precompute: falling back to serial mode in distributed/CUDA-initialized runtime because the dataset length helper is not thread-safe. info=%s",
+                    precompute_info,
+                )
+                worker_count = 1
 
     if worker_count > 1 and (not use_thread_pool):
         start_methods = set(multiprocessing.get_all_start_methods())
@@ -484,8 +512,7 @@ def _compute_missing_lengths(
             _LENGTH_PRECOMPUTE_DATASET = None
     else:
         for index in missing:
-            sample = dataset[int(index)]
-            length = _extract_sample_length(sample)
+            _, length = _dataset_static_pack_length(dataset, int(index))
             if length is None:
                 raise ValueError(
                     "Static packing length precompute failed: sample has no token length. "

@@ -124,6 +124,7 @@ class EncodedSampleCacheRuntimeConfig:
     root_dir: str | None = None
     ineligible_policy: Literal["error", "bypass"] = "error"
     wait_timeout_s: float = 7200.0
+    max_resident_shards: int = 4
 
 
 def _parse_packing_config(
@@ -273,11 +274,24 @@ def _parse_encoded_sample_cache_config(
             "(set 0 to wait indefinitely)"
         )
 
+    max_resident_raw = cfg.get("max_resident_shards", 4)
+    try:
+        max_resident_shards = int(max_resident_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "training.encoded_sample_cache.max_resident_shards must be an integer"
+        ) from exc
+    if max_resident_shards <= 0:
+        raise ValueError(
+            "training.encoded_sample_cache.max_resident_shards must be > 0"
+        )
+
     return EncodedSampleCacheRuntimeConfig(
         enabled=True,
         root_dir=root_dir,
         ineligible_policy=cast(Literal["error", "bypass"], policy),
         wait_timeout_s=wait_timeout_s,
+        max_resident_shards=max_resident_shards,
     )
 
 
@@ -286,6 +300,46 @@ def _set_train_arg(train_args: Any, field: str, value: Any) -> None:
     nested = getattr(train_args, "training_args", None)
     if nested is not None:
         setattr(nested, field, value)
+
+
+def _parse_checkpoint_mode(
+    training_cfg: Any,
+) -> Literal["artifact_only", "restartable"]:
+    cfg = training_cfg or {}
+    mode_raw = cfg.get("checkpoint_mode", "artifact_only")
+    mode = str(mode_raw or "artifact_only").strip().lower()
+    if mode not in {"artifact_only", "restartable"}:
+        raise ValueError(
+            "training.checkpoint_mode must be one of {'artifact_only', 'restartable'}"
+        )
+    return cast(Literal["artifact_only", "restartable"], mode)
+
+
+def _apply_checkpoint_mode(
+    train_args: Any,
+    *,
+    checkpoint_mode: Literal["artifact_only", "restartable"],
+) -> None:
+    _set_train_arg(train_args, "checkpoint_mode", str(checkpoint_mode))
+    if checkpoint_mode != "restartable":
+        return
+
+    if bool(getattr(train_args, "save_only_model", False)):
+        logger.info(
+            "checkpoint_mode=restartable: forcing save_only_model=false so optimizer, scheduler, RNG, and trainer state are persisted."
+        )
+    _set_train_arg(train_args, "save_only_model", False)
+
+
+def _resolve_resume_from_checkpoint(train_args: Any) -> str | None:
+    for candidate in (train_args, getattr(train_args, "training_args", None)):
+        value = getattr(candidate, "resume_from_checkpoint", None)
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if raw:
+            return raw
+    return None
 
 
 def _build_source_path_identity(path_hint: Any) -> dict[str, Any] | None:
@@ -318,7 +372,102 @@ def _build_source_path_identity(path_hint: Any) -> dict[str, Any] | None:
             int(stat_result.st_mtime * 1_000_000_000),
         )
     )
+    if resolved_path.is_file():
+        try:
+            if int(stat_result.st_size) <= 64 * 1024 * 1024:
+                sha256 = hashlib.sha256()
+                with resolved_path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        sha256.update(chunk)
+                identity["sha256"] = sha256.hexdigest()
+            else:
+                identity["sha256_skipped_reason"] = "file_too_large"
+        except OSError:
+            identity["sha256_skipped_reason"] = "unreadable"
     return identity
+
+
+def _build_data_source_provenance(
+    *,
+    split: str,
+    dataset_jsonl: str | None,
+    fusion_config_path: str | None,
+    dataset_seed: int,
+    sample_limit: int | None,
+    sample_with_replacement: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "split": str(split),
+        "dataset_seed": int(dataset_seed),
+        "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
+        "fusion_config": str(fusion_config_path) if fusion_config_path else None,
+        "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
+        "dataset_source_fusion_config": _build_source_path_identity(
+            fusion_config_path
+        ),
+        "sample_limit": int(sample_limit) if sample_limit is not None else None,
+        "sample_with_replacement": bool(sample_with_replacement)
+        if sample_with_replacement is not None
+        else None,
+    }
+
+
+def _build_effective_runtime_payload(
+    *,
+    training_config: Any,
+    train_args: Any,
+    trainer_variant: str | None,
+    dataset_seed: int,
+    checkpoint_mode: Literal["artifact_only", "restartable"],
+    packing_cfg: PackingRuntimeConfig,
+    encoded_sample_cache_cfg: EncodedSampleCacheRuntimeConfig,
+    train_jsonl: str | None,
+    val_jsonl: str | None,
+    fusion_config_path: str | None,
+    pipeline_manifest: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    template_cfg = getattr(training_config, "template", {}) or {}
+    return {
+        "trainer_variant": str(trainer_variant or ""),
+        "dataset_seed": int(dataset_seed),
+        "run_name": str(getattr(train_args, "run_name", "") or ""),
+        "output_dir": str(getattr(train_args, "output_dir", "") or ""),
+        "logging_dir": str(getattr(train_args, "logging_dir", "") or ""),
+        "checkpoint_mode": str(checkpoint_mode),
+        "resume_from_checkpoint": _resolve_resume_from_checkpoint(train_args),
+        "save_only_model": bool(getattr(train_args, "save_only_model", False)),
+        "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
+        "save_last_epoch": bool(getattr(train_args, "save_last_epoch", True)),
+        "seed": int(getattr(train_args, "seed", 0) or 0),
+        "per_device_train_batch_size": int(
+            getattr(train_args, "per_device_train_batch_size", 1) or 1
+        ),
+        "per_device_eval_batch_size": int(
+            getattr(train_args, "per_device_eval_batch_size", 1) or 1
+        ),
+        "gradient_accumulation_steps": int(
+            getattr(train_args, "gradient_accumulation_steps", 1) or 1
+        ),
+        "max_steps": int(getattr(train_args, "max_steps", -1) or -1),
+        "num_train_epochs": float(getattr(train_args, "num_train_epochs", 0.0) or 0.0),
+        "dataloader_drop_last": bool(
+            getattr(train_args, "dataloader_drop_last", False)
+        ),
+        "global_max_length": getattr(training_config, "global_max_length", None),
+        "template_max_length": getattr(train_args, "max_model_len", None),
+        "template_max_pixels": template_cfg.get("max_pixels")
+        if isinstance(template_cfg, Mapping)
+        else None,
+        "packing": dataclass_asdict_no_none(packing_cfg),
+        "encoded_sample_cache": dataclass_asdict_no_none(encoded_sample_cache_cfg),
+        "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
+        "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
+        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
+        "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
+        if isinstance(pipeline_manifest, Mapping)
+        else "",
+        "launcher": _collect_launcher_metadata_from_env(),
+    }
 
 
 def _recompute_gas_for_packing(
@@ -487,6 +636,7 @@ def _build_static_packing_fingerprint(
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
     training_cfg = getattr(training_config, "training", {}) or {}
+    coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
 
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
@@ -515,6 +665,10 @@ def _build_static_packing_fingerprint(
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
+        "custom_offline_max_pixels": getattr(
+            custom_config, "offline_max_pixels", None
+        ),
+        "coord_tokens": coord_tokens_payload,
         "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_fusion_config": str(fusion_config_path)
@@ -547,6 +701,17 @@ def _normalize_optional_sample_limit(sample_limit: Any) -> int | None:
     return None
 
 
+def _coord_tokens_fingerprint_payload(custom_config: Any) -> Any:
+    coord_tokens_cfg = getattr(custom_config, "coord_tokens", None)
+    if coord_tokens_cfg is None:
+        return None
+    if is_dataclass(coord_tokens_cfg):
+        return dataclass_asdict_no_none(coord_tokens_cfg)
+    if isinstance(coord_tokens_cfg, Mapping):
+        return dict(coord_tokens_cfg)
+    return None
+
+
 def _build_encoded_sample_cache_fingerprint(
     *,
     training_config: Any,
@@ -570,11 +735,7 @@ def _build_encoded_sample_cache_fingerprint(
             f"got {dataset_split!r}"
         )
 
-    coord_tokens_cfg = getattr(custom_config, "coord_tokens", None)
-    if coord_tokens_cfg is not None and is_dataclass(coord_tokens_cfg):
-        coord_tokens_payload = dataclass_asdict_no_none(coord_tokens_cfg)
-    else:
-        coord_tokens_payload = None
+    coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
 
     return {
         "cache_schema_version": 1,
@@ -657,6 +818,7 @@ def _build_encoded_sample_cache_request(
         "root_dir": str(runtime_cfg.root_dir),
         "ineligible_policy": runtime_cfg.ineligible_policy,
         "wait_timeout_s": float(runtime_cfg.wait_timeout_s),
+        "max_resident_shards": int(runtime_cfg.max_resident_shards),
         "dataset_split": str(dataset_split),
         "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
         "fingerprint": fingerprint,
@@ -1335,6 +1497,8 @@ def main():
         logger.info("Dense mode only (custom.use_summary=false)")
 
     dataset_seed = _resolve_dataset_seed(training_config=training_config, train_args=train_args)
+    checkpoint_mode = _parse_checkpoint_mode(training_config.training)
+    _apply_checkpoint_mode(train_args, checkpoint_mode=checkpoint_mode)
     encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
         training_config.training, train_args
     )
@@ -2544,6 +2708,64 @@ def main():
                 param_strategy,
             )
 
+    resume_from_checkpoint = _resolve_resume_from_checkpoint(train_args)
+    if checkpoint_mode == "restartable" and resume_from_checkpoint:
+        from .trainers.final_checkpoint import prepare_restartable_checkpoint_resume
+
+        restore_payload = prepare_restartable_checkpoint_resume(
+            trainer, resume_from_checkpoint
+        )
+        logger.info(
+            "Restartable resume preflight passed: checkpoint=%s global_step=%s",
+            resume_from_checkpoint,
+            restore_payload.get("global_step"),
+        )
+    elif checkpoint_mode == "artifact_only" and resume_from_checkpoint:
+        logger.warning(
+            "Resuming from %s with checkpoint_mode=artifact_only. Model-selection artifacts may not provide exact optimizer/RNG/runtime-state fidelity.",
+            resume_from_checkpoint,
+        )
+
+    selected_pipeline_manifest = getattr(trainer, "stage2_pipeline_manifest", None)
+    if not isinstance(selected_pipeline_manifest, Mapping):
+        selected_pipeline_manifest = getattr(trainer, "rollout_pipeline_manifest", None)
+    if not isinstance(selected_pipeline_manifest, Mapping):
+        selected_pipeline_manifest = None
+
+    train_sample_limit_i = _normalize_optional_sample_limit(train_sample_limit)
+    val_sample_limit_i = _normalize_optional_sample_limit(val_sample_limit)
+    train_data_provenance = _build_data_source_provenance(
+        split="train",
+        dataset_jsonl=str(train_jsonl) if train_jsonl else None,
+        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+        dataset_seed=dataset_seed,
+        sample_limit=train_sample_limit_i,
+    )
+    eval_data_provenance = (
+        _build_data_source_provenance(
+            split="eval",
+            dataset_jsonl=str(val_jsonl) if val_jsonl else None,
+            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            dataset_seed=dataset_seed,
+            sample_limit=val_sample_limit_i,
+            sample_with_replacement=bool(val_sample_with_replacement),
+        )
+        if eval_dataset is not None
+        else None
+    )
+    effective_runtime = _build_effective_runtime_payload(
+        training_config=training_config,
+        train_args=train_args,
+        trainer_variant=trainer_variant,
+        dataset_seed=dataset_seed,
+        checkpoint_mode=checkpoint_mode,
+        packing_cfg=packing_cfg,
+        encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+        train_jsonl=str(train_jsonl) if train_jsonl else None,
+        val_jsonl=str(val_jsonl) if val_jsonl else None,
+        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+        pipeline_manifest=selected_pipeline_manifest,
+    )
 
     # Start training
     logger.info("=" * 70)
@@ -2585,6 +2807,10 @@ def main():
                 if getattr(args, "base_config", None)
                 else None,
                 dataset_seed=dataset_seed,
+                effective_runtime=effective_runtime,
+                pipeline_manifest=selected_pipeline_manifest,
+                train_data_provenance=train_data_provenance,
+                eval_data_provenance=eval_data_provenance,
             )
             logger.info(
                 "Wrote run manifest files: %s",

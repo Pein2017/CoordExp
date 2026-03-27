@@ -104,3 +104,25 @@ def test_best_effort_warns_once_and_disables_failing_diagnostic(
     assert calls["n"] == 1
     assert len(warnings) == 1
     assert "Diagnostic 'coord_diag' failed" in warnings[0]
+
+
+def test_reporter_emits_persistent_health_signal_for_disabled_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trainer = _DummyTrainer(training=True)
+    reporter = SwiftMetricReporter(trainer)
+
+    def _warn(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("src.metrics.reporter.logger.warning", _warn)
+
+    def _fail() -> None:
+        raise RuntimeError("boom")
+
+    best_effort(trainer, name="coord_diag", fn=_fail)
+    reporter.update("loss", 1.0)
+
+    assert trainer.custom_metrics["train"]["loss"].values[-1] == pytest.approx(1.0)
+    health_key = "health/diagnostic_disabled/coord_diag"
+    assert trainer.custom_metrics["train"][health_key].values[-1] == pytest.approx(1.0)

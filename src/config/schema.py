@@ -129,6 +129,7 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_length_cache_persist_every",
     "packing_length_precompute_workers",
     "encoded_sample_cache",
+    "checkpoint_mode",
 }
 
 
@@ -598,6 +599,7 @@ class EncodedSampleCacheConfig:
     root_dir: Optional[str] = None
     ineligible_policy: Literal["error", "bypass"] = "error"
     wait_timeout_s: int = 7200
+    max_resident_shards: int = 4
 
     def __post_init__(self) -> None:
         if not isinstance(self.enabled, bool):
@@ -639,6 +641,23 @@ class EncodedSampleCacheConfig:
                 "(set 0 to wait indefinitely)"
             )
         object.__setattr__(self, "wait_timeout_s", wait_timeout)
+
+        max_resident_raw = self.max_resident_shards
+        if isinstance(max_resident_raw, bool):
+            raise TypeError(
+                "training.encoded_sample_cache.max_resident_shards must be an integer"
+            )
+        try:
+            max_resident = int(max_resident_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "training.encoded_sample_cache.max_resident_shards must be an integer"
+            ) from exc
+        if max_resident <= 0:
+            raise ValueError(
+                "training.encoded_sample_cache.max_resident_shards must be > 0"
+            )
+        object.__setattr__(self, "max_resident_shards", max_resident)
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "EncodedSampleCacheConfig":

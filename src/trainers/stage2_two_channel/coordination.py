@@ -1,11 +1,16 @@
 import contextlib
-from datetime import timedelta
 import queue
 import threading
 import time
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import torch
+
+from ..stage2_coordination import (
+    Stage2DDPPhaseConfig,
+    resolve_stage2_ab_ddp_phase_config,
+    run_stage2_ddp_monitored_barrier,
+)
 
 
 def run_stage2_ab_ddp_monitored_barrier(
@@ -18,57 +23,24 @@ def run_stage2_ab_ddp_monitored_barrier(
     timeout_s: float,
     monitor_group_timeout_s: float,
 ) -> None:
-    if int(world_size) <= 1:
-        return
-
-    if not hasattr(dist, "monitored_barrier"):
-        raise RuntimeError(
-            "torch.distributed.monitored_barrier is required for bounded stage2-ab DDP barriers "
-            f"(phase={str(phase)} rank={int(rank)}/{int(world_size)})."
-        )
-
-    group = getattr(owner, "_stage2_ab_ddp_monitor_group", None)
-    if group is None:
-        try:
-            group = dist.new_group(
-                backend="gloo",
-                timeout=timedelta(seconds=float(monitor_group_timeout_s)),
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                "stage2-ab monitored barrier requested but gloo group init failed; "
-                f"phase={str(phase)} rank={int(rank)}/{int(world_size)} "
-                f"timeout_s={float(monitor_group_timeout_s):.1f}."
-            ) from exc
-        setattr(owner, "_stage2_ab_ddp_monitor_group", group)
-
-    if group is False:
-        raise RuntimeError(
-            "stage2-ab internal error: DDP monitor group is disabled under DDP; "
-            "this is unsafe because unbounded barriers can deadlock"
-        )
-
-    local_timeout_s = float(max(30.0, min(3600.0, float(timeout_s))))
-
-    try:
-        try:
-            dist.monitored_barrier(
-                group=group,
-                timeout=timedelta(seconds=float(local_timeout_s)),
-                wait_all_ranks=True,
-            )
-        except TypeError:
-            dist.monitored_barrier(
-                group=group,
-                timeout=timedelta(seconds=float(local_timeout_s)),
-            )
-    except Exception as exc:
-        raise RuntimeError(
-            "stage2-ab DDP barrier timed out; "
-            f"phase={str(phase)} rank={int(rank)}/{int(world_size)} "
-            f"timeout_s={float(local_timeout_s):.1f}. "
-            "This indicates cross-rank stage skew or a deadlock."
-        ) from exc
+    run_stage2_ddp_monitored_barrier(
+        owner,
+        dist=dist,
+        phase=phase,
+        rank=rank,
+        world_size=world_size,
+        timeout_s=timeout_s,
+        config=Stage2DDPPhaseConfig(
+            monitor_enabled=True,
+            final_sync_timeout_s=float(timeout_s),
+            monitor_group_timeout_s=float(monitor_group_timeout_s),
+        ),
+        missing_barrier_label=(
+            "torch.distributed.monitored_barrier is required for bounded stage2-ab DDP barriers"
+        ),
+        timeout_error_label="stage2-ab DDP barrier timed out",
+        timeout_error_hint="This indicates cross-rank stage skew or a deadlock.",
+    )
 
 
 def resolve_channel_b_timeouts(
@@ -98,37 +70,15 @@ def resolve_channel_b_timeouts(
         except Exception:
             producer_wait_timeout_s = 300.0
 
-    ddp_phase_timeout_raw = owner._ab_channel_b_get("ddp_phase_timeout_s", None)
-    if ddp_phase_timeout_raw is None:
-        ddp_phase_monitor_enabled = True
-        ddp_phase_timeout_s = 120.0
-    else:
-        try:
-            ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
-            ) from exc
-
-        if float(ddp_phase_timeout_s) <= 0.0:
-            if int(ddp_world_size) > 1:
-                raise ValueError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 under DDP "
-                    "(coordination barriers must be bounded to prevent deadlocks)."
-                )
-            ddp_phase_monitor_enabled = False
-            ddp_phase_timeout_s = 0.0
-        else:
-            ddp_phase_monitor_enabled = True
-            ddp_phase_timeout_s = float(max(30.0, min(3600.0, ddp_phase_timeout_s)))
-
-    ddp_phase_final_sync_timeout_s = float(ddp_phase_timeout_s)
-    ddp_monitor_group_timeout_s = float(ddp_phase_timeout_s)
+    phase_config = resolve_stage2_ab_ddp_phase_config(
+        owner,
+        ddp_world_size=int(ddp_world_size),
+    )
     return (
         float(producer_wait_timeout_s),
-        bool(ddp_phase_monitor_enabled),
-        float(ddp_phase_final_sync_timeout_s),
-        float(ddp_monitor_group_timeout_s),
+        bool(phase_config.monitor_enabled),
+        float(phase_config.final_sync_timeout_s),
+        float(phase_config.monitor_group_timeout_s),
     )
 
 

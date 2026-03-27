@@ -183,10 +183,10 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
         },
     )
 
-    assert first["loss/text/struct_ce"] == pytest.approx(0.5)
-    assert first["coord_diag/acc_top5"] == pytest.approx(0.4)
-    assert first["stage2/channel_a"] == pytest.approx(1.0)
-    assert first["time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
+    assert first["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
+    assert first["snapshot/coord_diag/acc_top5"] == pytest.approx(0.4)
+    assert first["snapshot/stage2/channel_a"] == pytest.approx(1.0)
+    assert first["snapshot/time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
     assert "time/forward_s" not in first
 
     second = _merge_stage2_metric_snapshots(
@@ -199,11 +199,11 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
         },
     )
 
-    assert second["loss/text/struct_ce"] == pytest.approx(0.5)
-    assert second["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
-    assert second["rollout/f1"] == pytest.approx(0.3)
-    assert second["stage2/channel_b"] == pytest.approx(1.0)
-    assert second["time/rollout_generate_s"] == pytest.approx(9.0)
+    assert second["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
+    assert second["snapshot/loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert second["snapshot/rollout/f1"] == pytest.approx(0.3)
+    assert second["snapshot/stage2/channel_b"] == pytest.approx(1.0)
+    assert second["snapshot/time/rollout_generate_s"] == pytest.approx(9.0)
 
 
 def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
@@ -220,8 +220,8 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
         }
     )
     trainer._stage2_metric_snapshots = {
-        "loss/text/struct_ce": 0.5,
-        "coord_diag/acc_top5": 0.4,
+        "snapshot/loss/text/struct_ce": 0.5,
+        "snapshot/coord_diag/acc_top5": 0.4,
     }
     trainer._ddp_assert_all_ranks_true_or_raise = (
         lambda **_kwargs: None
@@ -253,12 +253,64 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
     assert captured["loss"] == pytest.approx(1.0)
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
-    assert captured["loss/text/struct_ce"] == pytest.approx(0.5)
-    assert captured["coord_diag/acc_top5"] == pytest.approx(0.4)
+    assert captured["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
+    assert captured["snapshot/coord_diag/acc_top5"] == pytest.approx(0.4)
+    assert "snapshot/rollout/f1" not in captured
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
     assert captured["time/sft_total_time"] == pytest.approx(12.0)
     assert captured["time/rollout_total_time"] == pytest.approx(5.0)
+
+
+def test_stage2_log_reduces_pending_metrics_once_per_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer.state = types.SimpleNamespace(global_step=1)
+    trainer._stage2_pending_train_logs = {1: _PendingStage2Log()}
+    trainer._stage2_pending_train_logs[1].add(
+        {
+            "loss/B_rollout_text/struct_ce": 0.8,
+            "stage2/channel_b": 1.0,
+        }
+    )
+    trainer._stage2_metric_snapshots = {}
+    trainer._ddp_assert_all_ranks_true_or_raise = (
+        lambda **_kwargs: None
+    )  # type: ignore[method-assign]
+
+    reduction_calls: list[dict[str, float]] = []
+
+    def _reduce_pending(metrics):
+        reduction_calls.append(dict(metrics))
+        return dict(metrics)
+
+    trainer._reduce_stage2_pending_metrics_global = (  # type: ignore[method-assign]
+        _reduce_pending
+    )
+    trainer._stage_wallclock_metrics_local = lambda: {}
+    trainer._reduce_stage_wallclock_metrics_global = (  # type: ignore[method-assign]
+        lambda metrics: dict(metrics)
+    )
+
+    captured: dict[str, float] = {}
+
+    def _capture_super_log(self, logs):
+        captured.update(dict(logs))
+        return None
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.RolloutMatchingSFTTrainer.log",
+        _capture_super_log,
+    )
+
+    Stage2ABTrainingTrainer.log(trainer, {"loss": 1.0})
+
+    assert len(reduction_calls) == 1
+    assert reduction_calls[0]["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert reduction_calls[0]["stage2/channel_b"] == pytest.approx(1.0)
+    assert trainer._stage2_pending_train_logs == {}
+    assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
 
 
 def test_stage2_pending_log_preserves_sparse_gradmon_weighting() -> None:

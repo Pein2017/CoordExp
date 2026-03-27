@@ -976,6 +976,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     ab_cfg = {
         "pseudo_positive.enabled": True,
         "triage_posterior.num_rollouts": 4,
+        "invalid_rollout_policy": "dump_and_continue",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
@@ -1046,7 +1047,10 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     }
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
     assert segments == []
-    assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(1.0)
+    assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(4.0)
+    assert batch_metrics[
+        "stage2_ab/channel_b/invalid_rollout_sample_dropped"
+    ] == pytest.approx(1.0)
 
 
 def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):
@@ -2470,7 +2474,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         with pytest.raises(
             ValueError,
             match=(
-                r"invalid explorer ordinals=\[1\].*"
+                r"invalid_labels=\['explorer_1'\].*"
                 r"sample_id=sample-0.*image_id=image-0.*manual_analysis_required=true"
             ),
         ):
@@ -5807,6 +5811,44 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
     )
 
     assert out["loss/coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert "stage2/_log_weight_total" not in out
+
+
+def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_as_weighted_means() -> None:
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    class _FakeDist:
+        ReduceOp = _FakeReduceOp
+
+        def all_gather_object(self, gathered: list[object], obj: object) -> None:
+            for i in range(len(gathered)):
+                gathered[i] = list(obj) if isinstance(obj, list) else obj
+
+        def all_reduce(self, tensor: torch.Tensor, op: str) -> None:
+            if op == self.ReduceOp.SUM:
+                tensor.add_(
+                    torch.tensor(
+                        [3.0, 60.0],
+                        dtype=tensor.dtype,
+                        device=tensor.device,
+                    )
+                )
+
+    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer._dist_info = lambda: (0, 2, _FakeDist())
+
+    out = trainer._reduce_stage2_pending_metrics_global(
+        {
+            "stage2/_log_weight_total": 1.0,
+            "train/optimization/loss_duplicate_burst_unlikelihood": 10.0,
+        }
+    )
+
+    assert out["train/optimization/loss_duplicate_burst_unlikelihood"] == pytest.approx(
+        (10.0 * 1.0 + 20.0 * 3.0) / 4.0
+    )
     assert "stage2/_log_weight_total" not in out
 
 

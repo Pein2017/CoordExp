@@ -56,3 +56,26 @@ def test_load_jsonl_with_diagnostics_strict_rejects_non_object_records(
 
     with pytest.raises(ValueError, match="Non-object JSONL record"):
         load_jsonl_with_diagnostics(path, strict=True)
+
+
+def test_load_jsonl_with_diagnostics_resolves_relative_image_paths(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "images.jsonl"
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    image_path = image_dir / "sample.png"
+    image_path.write_bytes(b"png")
+    path.write_text(
+        json.dumps({"images": ["images/sample.png"], "ok": 1}) + "\n",
+        encoding="utf-8",
+    )
+
+    records, invalid_count = load_jsonl_with_diagnostics(
+        path,
+        strict=True,
+        resolve_relative=True,
+    )
+
+    assert invalid_count == 0
+    assert records == [{"images": [str(image_path.resolve())], "ok": 1}]

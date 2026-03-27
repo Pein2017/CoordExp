@@ -150,6 +150,19 @@ artifacts into `training.output_dir` before training starts:
     `base_config_path`, and `dataset_seed`.
 - `runtime_env.json`
   - Runtime environment metadata snapshot (selected env vars + platform info).
+- `effective_runtime.json`
+  - Executed runtime payload after bootstrap / launcher mutation.
+  - Use this instead of only `resolved_config.json` when debugging the true
+    launched topology or runtime knobs.
+- `pipeline_manifest.json`
+  - First-class pipeline identity / manifest artifact assembled from
+    `src/bootstrap/pipeline_manifest.py`.
+- `train_data_provenance.json`
+  - Stable train-split source identity and optional digests for supported
+    local inputs.
+- `eval_data_provenance.json`
+  - Stable eval-split source identity and optional digests when eval data is
+    configured.
 - `run_metadata.json`
   - Best-effort provenance and run identity:
     - `git_sha`, `git_branch`, `git_dirty`, `git_status_porcelain` (truncated)
@@ -159,8 +172,6 @@ artifacts into `training.output_dir` before training starts:
   - emitted via `src/bootstrap/run_metadata.py`
 - `config_source.yaml` / `base_config_source.yaml`
   - Best-effort copies of the YAML sources used to build the run.
-  - pipeline identity / manifest projection is assembled via
-    `src/bootstrap/pipeline_manifest.py`
 - `monitor_dumps/` when either
   `rollout_matching.train_monitor_dump.enabled: true` or
   `rollout_matching.eval_monitor_dump.enabled: true`
@@ -184,6 +195,10 @@ Notes:
   bare `.` root entry.
 - If `training.output_dir` is not set, training fails fast because these
   artifacts are required for reproducibility.
+- `training.checkpoint_mode: restartable` is the explicit opt-in mode for
+  restart fidelity. It requires optimizer, scheduler, RNG, trainer state, and
+  repo-owned runtime-sidecar artifacts in each checkpoint; `artifact_only`
+  remains the compatibility-preserving default.
 
 ---
 

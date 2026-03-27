@@ -3,7 +3,7 @@
 from typing import Any, Dict, List, Sequence, Tuple
 
 from src.common.geometry.coord_utils import coerce_point_list
-from src.common.io import load_jsonl  # re-export for backward compatibility
+from src.common.io import load_jsonl, load_jsonl_with_diagnostics  # re-export
 
 
 def extract_object_points(obj: Dict[str, Any]) -> Tuple[str, List[Any]]:
@@ -118,6 +118,7 @@ def is_same_record(record_a: Dict[str, Any], record_b: Dict[str, Any]) -> bool:
 
 __all__ = [
     "load_jsonl",
+    "load_jsonl_with_diagnostics",
     "extract_object_points",
     "extract_geometry",
     "is_same_record",

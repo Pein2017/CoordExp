@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 from typing import Any, Dict
 
 import pytest
@@ -54,6 +55,7 @@ def _cache_request(tmp_path, *, policy: str = "error") -> dict[str, Any]:
         "root_dir": str(tmp_path / "encoded-cache"),
         "ineligible_policy": policy,
         "wait_timeout_s": 5.0,
+        "max_resident_shards": 4,
         "dataset_split": "train",
         "dataset_jsonl": "train.jsonl",
         "fingerprint": {"cache_schema_version": 1, "dataset": "toy", "split": "train"},
@@ -192,3 +194,118 @@ def test_static_packing_can_consume_cache_backed_dataset_without_reencoding(
     first_pack = packed[0]
     assert isinstance(first_pack, list)
     assert template.encode_calls == 2
+
+
+def test_static_packing_prefers_cache_backed_length_helper_over_dataset_getitem(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    template = _CountingTemplate()
+    ds = _dataset(template=template, tmp_path=tmp_path, dataset_name="train_a")
+    assert template.encode_calls == 2
+
+    def _boom(self, index: int):
+        raise AssertionError("static packing should not call dataset.__getitem__ for length planning")
+
+    monkeypatch.setattr(type(ds), "__getitem__", _boom)
+
+    packed = build_static_packed_dataset(
+        ds,
+        template=template,
+        packing_length=4,
+        cache_dir=tmp_path / "static-packing",
+        fingerprint={"dataset": "toy", "split": "train"},
+        world_size=1,
+        train_dataloader_shuffle=False,
+    )
+
+    assert len(packed) > 0
+
+
+def test_encoded_sample_cache_evicts_old_shards_when_residency_is_bounded(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.datasets import encoded_sample_cache as cache_mod
+
+    request = _cache_request(tmp_path)
+    request["max_resident_shards"] = 1
+
+    monkeypatch.setattr(cache_mod, "_DEFAULT_ENCODED_SAMPLE_SHARD_SIZE", 1)
+
+    ds = BaseCaptionDataset(
+        base_records=[
+            _record(image="a.png", desc="alpha"),
+            _record(image="b.png", desc="beta"),
+            _record(image="c.png", desc="gamma"),
+        ],
+        template=_CountingTemplate(),
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        dataset_name="train_a",
+        seed=123,
+        coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        encoded_sample_cache=request,
+    )
+
+    store = ds._encoded_sample_cache
+    assert store is not None
+    assert store.info()["max_resident_shards"] == 1
+
+    first = ds[0]
+    second = ds[1]
+    third = ds[2]
+    again_first = ds[0]
+
+    assert first["dataset"] == "train_a"
+    assert second["dataset"] == "train_a"
+    assert third["dataset"] == "train_a"
+    assert again_first["dataset"] == "train_a"
+    assert len(store._loaded_shards) <= 1
+
+
+def test_encoded_sample_cache_supports_concurrent_shard_loads(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.datasets import encoded_sample_cache as cache_mod
+
+    request = _cache_request(tmp_path)
+    request["max_resident_shards"] = 2
+
+    monkeypatch.setattr(cache_mod, "_DEFAULT_ENCODED_SAMPLE_SHARD_SIZE", 1)
+
+    ds = BaseCaptionDataset(
+        base_records=[
+            _record(image="a.png", desc="alpha"),
+            _record(image="b.png", desc="beta"),
+            _record(image="c.png", desc="gamma"),
+            _record(image="d.png", desc="delta"),
+        ],
+        template=_CountingTemplate(),
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        dataset_name="train_a",
+        seed=123,
+        coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        encoded_sample_cache=request,
+    )
+
+    store = ds._encoded_sample_cache
+    assert store is not None
+    assert store.thread_safe is True
+
+    def _load(index: int) -> str:
+        return str(ds[index]["dataset"])
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(_load, [0, 1, 2, 3, 0, 2, 1, 3]))
+
+    assert results == ["train_a"] * 8
+    assert len(store._loaded_shards) <= 2

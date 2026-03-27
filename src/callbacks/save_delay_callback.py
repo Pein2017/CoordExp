@@ -202,3 +202,41 @@ class SaveDelayCallback(TrainerCallback):
             state.best_global_step = 0
             self._pending_reset = False
             self._warned_missing_metric = False
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "delay_active": self._delay_active,
+            "block_logged": bool(self._block_logged),
+            "release_logged": bool(self._release_logged),
+            "pending_reset": bool(self._pending_reset),
+            "warned_missing_metric": bool(self._warned_missing_metric),
+            "metric_key_cache": list(self._metric_key_cache)
+            if self._metric_key_cache is not None
+            else None,
+        }
+
+    def load_state_dict(self, state_dict: Mapping[str, Any]) -> None:
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("SaveDelayCallback state_dict must be a Mapping")
+
+        delay_active = state_dict.get("delay_active")
+        if delay_active is None:
+            self._delay_active = None
+        else:
+            self._delay_active = bool(delay_active)
+        self._block_logged = bool(state_dict.get("block_logged", False))
+        self._release_logged = bool(state_dict.get("release_logged", False))
+        self._pending_reset = bool(state_dict.get("pending_reset", False))
+        self._warned_missing_metric = bool(
+            state_dict.get("warned_missing_metric", False)
+        )
+
+        metric_key_cache = state_dict.get("metric_key_cache")
+        if metric_key_cache is None:
+            self._metric_key_cache = None
+        elif isinstance(metric_key_cache, (list, tuple)):
+            self._metric_key_cache = tuple(str(key) for key in metric_key_cache)
+        else:
+            raise TypeError(
+                "SaveDelayCallback metric_key_cache must be a sequence or None"
+            )
