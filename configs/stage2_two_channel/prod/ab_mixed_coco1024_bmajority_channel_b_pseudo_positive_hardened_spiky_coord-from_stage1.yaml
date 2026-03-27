@@ -1,0 +1,68 @@
+extends: ./ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+model:
+  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+
+training:
+  num_train_epochs: 1
+  run_name: epoch_1-ciou1p0-coordce0p04-soft0p05-w10p01
+  output_dir: output/stage2_ab/prod/pseudo_positive_hardened_spiky_coord-from_stage1
+  logging_dir: tb/stage2_ab/prod/pseudo_positive_hardened_spiky_coord-from_stage1
+
+stage2_ab:
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_text_only
+        config:
+          desc_ce_weight: 1.0
+          rollout_fn_desc_weight: 1.5
+          rollout_global_prefix_struct_ce_weight: 1.0
+      - name: loss_duplicate_burst_unlikelihood
+        enabled: true
+        weight: 2.0
+        channels: [B]
+        application:
+          preset: rollout_only
+        config: {}
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          smoothl1_weight: 1.0
+          ciou_weight: 1.0
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          log_wh_weight: 0.05
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          coord_ce_weight: 0.04
+          coord_gate_weight: 1.0
+          text_gate_weight: 0.5
+          soft_ce_weight: 0.05
+          w1_weight: 0.01
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8

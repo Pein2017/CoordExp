@@ -142,6 +142,10 @@ def project_stage2_objective_atoms(
             raise TypeError(f"Expected tensor objective atom for {key}; got {type(t)}")
         if t.numel() != 1:
             raise ValueError(f"Expected scalar objective atom for {key}; got shape={tuple(t.shape)}")
+        if key in atoms_t:
+            raise ValueError(
+                f"Stage2 atom projection encountered duplicate projected atom key: {key}"
+            )
         atoms_t[key] = t
 
     module_losses = dict(pipeline_result.module_losses or {})

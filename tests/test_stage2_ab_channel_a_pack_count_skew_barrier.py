@@ -72,13 +72,18 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
     monkeypatch.setattr(dist, "is_available", lambda: True)
     monkeypatch.setattr(dist, "is_initialized", lambda: True)
     monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 0)
 
     barrier_calls = {"n": 0}
 
-    def _barrier(*_args, **_kwargs):
+    def _monitored_barrier(self, **_kwargs):
         barrier_calls["n"] += 1
 
-    monkeypatch.setattr(dist, "barrier", _barrier)
+    monkeypatch.setattr(
+        Stage2ABChannelExecutorsMixin,
+        "_stage2_ab_ddp_monitored_barrier",
+        _monitored_barrier,
+    )
 
     t = DummyTrainer()
     loss = t._stage2_a_step_budgeted_train(

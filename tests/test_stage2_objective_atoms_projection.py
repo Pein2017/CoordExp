@@ -5,6 +5,11 @@ from src.trainers.teacher_forcing.contracts import PipelineResult
 from src.trainers.teacher_forcing.objective_atoms import project_stage2_objective_atoms
 
 
+from dataclasses import replace
+
+from src.trainers.teacher_forcing import objective_atoms
+from src.trainers.teacher_forcing.module_registry import ObjectiveLossAtomDefinition
+
 def _t(x: float) -> torch.Tensor:
     return torch.tensor(float(x), dtype=torch.float32)
 
@@ -240,4 +245,152 @@ def test_project_stage2_objective_atoms_raises_on_mismatch() -> None:
             emit_text=True,
             emit_coord=True,
             require_additive=True,
+        )
+
+
+def test_project_stage2_objective_atoms_allows_absent_optional_coord_atoms() -> None:
+    objective_specs = [
+        {
+            "name": "coord_reg",
+            "enabled": True,
+            "weight": 2.0,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+    ]
+
+    pipeline_result = PipelineResult(
+        total_loss=_t(0.24),
+        module_losses={"coord_reg": _t(0.24)},
+        metrics={},
+        state={
+            "coord_token_ce_contrib": _t(0.05),
+            "coord_soft_ce_contrib": _t(0.02),
+            "coord_w1_contrib": _t(0.01),
+            "coord_gate_contrib": _t(0.03),
+            "text_gate_contrib": _t(0.01),
+        },
+    )
+
+    atoms = project_stage2_objective_atoms(
+        pipeline_result=pipeline_result,
+        objective_specs=objective_specs,
+        text_provenance=None,
+        coord_provenance="B_coord",
+        emit_text=False,
+        emit_coord=True,
+        require_additive=True,
+    )
+
+    assert atoms["loss/B_coord/coord_token_ce"] == pytest.approx(2.0 * 0.05)
+    assert atoms["loss/B_coord/coord_soft_ce"] == pytest.approx(2.0 * 0.02)
+    assert atoms["loss/B_coord/coord_w1"] == pytest.approx(2.0 * 0.01)
+    assert atoms["loss/B_coord/coord_gate"] == pytest.approx(2.0 * 0.03)
+    assert atoms["loss/B_coord/text_gate"] == pytest.approx(2.0 * 0.01)
+    assert "loss/B_coord/coord_el1" not in atoms
+    assert "loss/B_coord/coord_ehuber" not in atoms
+    assert "loss/B_coord/coord_entropy" not in atoms
+
+
+def test_project_stage2_objective_atoms_raises_when_required_atom_state_is_missing() -> None:
+    objective_specs = [
+        {
+            "name": "coord_reg",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+    ]
+
+    pipeline_result = PipelineResult(
+        total_loss=_t(0.08),
+        module_losses={"coord_reg": _t(0.08)},
+        metrics={},
+        state={
+            "coord_token_ce_contrib": _t(0.05),
+            "coord_soft_ce_contrib": _t(0.02),
+            "coord_gate_contrib": _t(0.01),
+            "text_gate_contrib": _t(0.0),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"coord_reg module did not expose 'coord_w1_contrib' tensor in pipeline state",
+    ):
+        _ = project_stage2_objective_atoms(
+            pipeline_result=pipeline_result,
+            objective_specs=objective_specs,
+            text_provenance=None,
+            coord_provenance="B_coord",
+            emit_text=False,
+            emit_coord=True,
+            require_additive=True,
+        )
+
+
+def test_project_stage2_objective_atoms_raises_on_duplicate_projected_atom_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = objective_atoms.OBJECTIVE_MODULE_CATALOG["bbox_size_aux"]
+    monkeypatch.setitem(
+        objective_atoms.OBJECTIVE_MODULE_CATALOG,
+        "bbox_size_aux",
+        replace(
+            original,
+            projected_atoms=(
+                ObjectiveLossAtomDefinition(
+                    atom_name="bbox_ciou",
+                    state_key="bbox_log_wh_contrib",
+                ),
+                original.projected_atoms[1],
+            ),
+        ),
+    )
+
+    objective_specs = [
+        {
+            "name": "bbox_geo",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+        {
+            "name": "bbox_size_aux",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "config": {},
+        },
+    ]
+
+    pipeline_result = PipelineResult(
+        total_loss=_t(0.7),
+        module_losses={
+            "bbox_geo": _t(0.5),
+            "bbox_size_aux": _t(0.2),
+        },
+        metrics={},
+        state={
+            "bbox_smoothl1_contrib": _t(0.4),
+            "bbox_ciou_contrib": _t(0.1),
+            "bbox_log_wh_contrib": _t(0.2),
+            "bbox_oversize_contrib": _t(0.0),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"duplicate projected atom key: loss/B_coord/bbox_ciou",
+    ):
+        _ = project_stage2_objective_atoms(
+            pipeline_result=pipeline_result,
+            objective_specs=objective_specs,
+            text_provenance=None,
+            coord_provenance="B_coord",
+            emit_text=False,
+            emit_coord=True,
+            require_additive=False,
         )

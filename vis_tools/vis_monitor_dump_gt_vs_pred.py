@@ -9,8 +9,12 @@ The output is a 2-column layout:
 - right: Pred boxes
 
 The header contains:
-- a top-right color legend (GT/FN/matched/FP)
-- a per-sample class distribution summary for FN and FP
+- a compact top-right color legend (GT/FN/matched/FP)
+- per-sample stats
+
+FN/FP object semantics are rendered as box-local labels (for example
+``FN: person`` or ``FP: chair``) so crowded scenes can be scanned without
+depending on a top-legend summary list.
 
 Usage (repo root, ms env):
   PYTHONPATH=. conda run -n ms python -P vis_tools/vis_monitor_dump_gt_vs_pred.py \
@@ -34,7 +38,7 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -188,11 +192,14 @@ def _draw_boxes(
     *,
     img: Image.Image,
     objs: list[Mapping[str, Any]],
-    color_for_obj: callable,
+    color_for_obj: Callable[[Mapping[str, Any]], str],
+    label_prefix_for_obj: Callable[[Mapping[str, Any]], str | None] | None,
     box_width: int,
 ) -> Image.Image:
     out = img.convert("RGB")
     draw = ImageDraw.Draw(out)
+    font = ImageFont.load_default()
+    occupied: list[tuple[int, int, int, int]] = []
 
     width, height = out.size
 
@@ -210,6 +217,28 @@ def _draw_boxes(
         outline = str(color_for_obj(obj))
         x1, y1, x2, y2 = rect
         draw.rectangle([x1, y1, x2, y2], outline=outline, width=int(box_width))
+
+        if label_prefix_for_obj is None:
+            continue
+        prefix = label_prefix_for_obj(obj)
+        if not prefix:
+            continue
+        desc = _safe_desc(obj)
+        label_text = prefix if desc == "<none>" else f"{prefix}: {desc}"
+        placed = _place_label(
+            draw=draw,
+            font=font,
+            panel_width=width,
+            panel_height=height,
+            bbox=rect,
+            text=label_text,
+            occupied=occupied,
+        )
+        if placed is None:
+            continue
+        text, (rx1, ry1, rx2, ry2) = placed
+        draw.rectangle([rx1, ry1, rx2, ry2], fill="white")
+        draw.text((rx1 + 1, ry1 + 1), text, fill=outline, font=font)
 
     return out
 
@@ -244,6 +273,64 @@ def _truncate_to_width(
         else:
             hi = mid - 1
     return best
+
+
+def _overlaps(
+    occupied: Sequence[tuple[int, int, int, int]],
+    rect: tuple[int, int, int, int],
+) -> bool:
+    rx1, ry1, rx2, ry2 = rect
+    for ox1, oy1, ox2, oy2 in occupied:
+        if rx2 < ox1 or ox2 < rx1 or ry2 < oy1 or oy2 < ry1:
+            continue
+        return True
+    return False
+
+
+def _place_label(
+    *,
+    draw: ImageDraw.ImageDraw,
+    font: ImageFont.ImageFont,
+    panel_width: int,
+    panel_height: int,
+    bbox: Sequence[int],
+    text: str,
+    occupied: list[tuple[int, int, int, int]],
+) -> tuple[str, tuple[int, int, int, int]] | None:
+    max_width = max(24, panel_width - 8)
+    label = _truncate_to_width(draw, font, text, max_width=max_width)
+    if not label:
+        return None
+    text_w, text_h = _text_wh(draw, font, label)
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    candidates = [
+        (x1, max(0, y1 - text_h - 4)),
+        (x1, min(max(0, panel_height - text_h - 2), y2 + 4)),
+        (max(0, x2 - text_w), max(0, y1 - text_h - 4)),
+        (max(0, x2 - text_w), min(max(0, panel_height - text_h - 2), y2 + 4)),
+    ]
+    for shift in range(4):
+        dy = shift * (text_h + 2)
+        candidates.extend(
+            [
+                (x1, max(0, y1 - text_h - 4 - dy)),
+                (x1, min(max(0, panel_height - text_h - 2), y2 + 4 + dy)),
+            ]
+        )
+
+    fallback: tuple[int, int, int, int] | None = None
+    for cand_x, cand_y in candidates:
+        cand_x = max(0, min(int(cand_x), max(0, panel_width - text_w - 2)))
+        cand_y = max(0, min(int(cand_y), max(0, panel_height - text_h - 2)))
+        rect = (cand_x, cand_y, cand_x + text_w + 2, cand_y + text_h + 2)
+        fallback = rect
+        if not _overlaps(occupied, rect):
+            occupied.append(rect)
+            return label, rect
+    if fallback is None:
+        return None
+    occupied.append(fallback)
+    return label, fallback
 
 
 def _draw_class_summary(
@@ -309,14 +396,17 @@ def _render_pair(
                 matched_pred.add(int(pair[0]))
                 matched_gt.add(int(pair[1]))
 
-    fn_counter = _desc_counter(gt_objs, fn_gt)
-    fp_counter = _desc_counter(pred_objs, fp_pred)
-
     def gt_color(obj: Mapping[str, Any]) -> str:
         idx = obj.get("index")
         if isinstance(idx, int) and idx in fn_gt:
             return "#ff9900"  # FN GT boxes
         return "#00ff00"  # GT boxes
+
+    def gt_label(obj: Mapping[str, Any]) -> str | None:
+        idx = obj.get("index")
+        if isinstance(idx, int) and idx in fn_gt:
+            return "FN"
+        return None
 
     def pred_color(obj: Mapping[str, Any]) -> str:
         idx = obj.get("index")
@@ -326,16 +416,24 @@ def _render_pair(
             return "#00ff00"  # matched
         return "#00aaff"  # fallback
 
+    def pred_label(obj: Mapping[str, Any]) -> str | None:
+        idx = obj.get("index")
+        if isinstance(idx, int) and idx in fp_pred:
+            return "FP"
+        return None
+
     left = _draw_boxes(
         img=img,
         objs=gt_objs,
         color_for_obj=gt_color,
+        label_prefix_for_obj=gt_label,
         box_width=box_width,
     )
     right = _draw_boxes(
         img=img,
         objs=pred_objs,
         color_for_obj=pred_color,
+        label_prefix_for_obj=pred_label,
         box_width=box_width,
     )
 
@@ -360,7 +458,6 @@ def _render_pair(
     item_gap = 10
     swatch_gap = 4
     row_gap = 4
-    section_gap = 6
     margin = 6
 
     row_ws: list[int] = []
@@ -381,35 +478,9 @@ def _render_pair(
     color_content_h = sum(row_hs) + row_gap * (len(row_hs) - 1)
     legend_min_w = max(row_ws) + 2 * pad
 
-    # Add class summaries (FN/FP) inside the same top-right legend panel.
-    fn_total = int(sum(fn_counter.values()))
-    fp_total = int(sum(fp_counter.values()))
-
-    fn_str = _format_topk(fn_counter, topk=int(class_topk))
-    fp_str = _format_topk(fp_counter, topk=int(class_topk))
-
-    fn_line = f"FN (GT) n={fn_total}: {fn_str}"
-    fp_line = f"FP (Pred) n={fp_total}: {fp_str}"
-
-    # Keep the legend width bounded so it stays on the right and doesn't
-    # cover the "Pred" title on smaller images.
     legend_max_w = int(round(canvas_w * 0.45))
     legend_w = min(max(legend_min_w, legend_max_w), max(10, int(canvas_w - 2 * margin)))
-    inner_w = max(10, int(legend_w - 2 * pad))
-
-    summary_max_w = max(10, int(inner_w - (swatch + swatch_gap)))
-    fn_line = _truncate_to_width(measure, font, fn_line, summary_max_w)
-    fp_line = _truncate_to_width(measure, font, fp_line, summary_max_w)
-
-    summary_rows = [("#ff9900", fn_line), ("#ff0000", fp_line)]
-    summary_row_hs: list[int] = []
-    for _c, text in summary_rows:
-        th = _text_wh(measure, font, str(text))[1]
-        summary_row_hs.append(int(max(swatch, th)))
-
-    summary_content_h = sum(summary_row_hs) + row_gap * (len(summary_row_hs) - 1)
-
-    legend_h = int(color_content_h + section_gap + summary_content_h + 2 * pad)
+    legend_h = int(color_content_h + 2 * pad)
 
     x0 = max(0, int(canvas_w - margin - legend_w))
     y0 = title_y
@@ -459,26 +530,6 @@ def _render_pair(
         y += row_h + row_gap
     if row_hs:
         y -= row_gap
-
-    # Summary rows (object descriptions), in the same legend panel.
-    y += section_gap
-    for (color, text), row_h in zip(summary_rows, summary_row_hs):
-        text_s = str(text)
-        tw, th = _text_wh(draw, font, text_s)
-        sw_y = int(y + (row_h - swatch) * 0.5)
-        tx_y = int(y + (row_h - th) * 0.5)
-        draw.rectangle(
-            [x0 + pad, sw_y, x0 + pad + swatch, sw_y + swatch],
-            fill=str(color),
-            outline=(0, 0, 0),
-        )
-        draw.text(
-            (x0 + pad + swatch + swatch_gap, tx_y),
-            text_s,
-            fill=(0, 0, 0),
-            font=font,
-        )
-        y += row_h + row_gap
 
     # Stats line (bottom of header).
     prec = stats.get("precision")

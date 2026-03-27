@@ -1,3 +1,4 @@
+import json
 import math
 from dataclasses import asdict
 import types
@@ -960,6 +961,7 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
 
 def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     monkeypatch,
+    tmp_path,
 ):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
@@ -983,6 +985,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     tok = _DummyTokenizer()
     t.template = types.SimpleNamespace(tokenizer=tok)
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t._get_coord_token_ids = lambda: list(range(1000))
     t._coord_id_map = lambda: {i: i for i in range(1000)}
     t._packing_enabled = lambda: False
@@ -992,11 +995,18 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = (
-        lambda chunk, decode_override=None, request_index_offset=0: [
-            ([], "", "sampling", []) for _ in chunk
-        ]
-    )
+
+    rollout_calls = 0
+
+    def _fake_rollout_many(
+        chunk, decode_override=None, request_index_offset=0
+    ):
+        nonlocal rollout_calls
+        rollout_calls += 1
+        marker = 101 + rollout_calls
+        return [([marker], "", "sampling", []) for _ in chunk]
+
+    t._rollout_many = _fake_rollout_many
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
     t._stage2_train_monitor_step_allowed = lambda global_step: False
@@ -1011,21 +1021,22 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
 
-    fake_parse = types.SimpleNamespace(
-        prefix_token_ids=list(tok.encode('{"objects": [', add_special_tokens=False)),
-        prefix_text='{"objects": [',
-        response_token_ids=[],
-        response_text="",
-        valid_objects=[],
-        dropped_invalid_by_reason={},
-        dropped_invalid=0,
-        dropped_ambiguous=0,
-        truncated=False,
-        invalid_rollout=True,
-    )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
-        lambda **kwargs: fake_parse,
+        lambda **kwargs: types.SimpleNamespace(
+            prefix_token_ids=list(
+                tok.encode('{"objects": [', add_special_tokens=False)
+            ),
+            prefix_text='{"objects": [',
+            response_token_ids=list(kwargs["response_token_ids"]),
+            response_text='{"objects": [{"desc": "broken", "bbox_2d": [1, 2',
+            valid_objects=[],
+            dropped_invalid_by_reason={},
+            dropped_invalid=0,
+            dropped_ambiguous=0,
+            truncated=False,
+            invalid_rollout=int(kwargs["response_token_ids"][0]) == 102,
+        ),
     )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.hungarian_match_maskiou",
@@ -1047,10 +1058,28 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     }
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
     assert segments == []
-    assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(4.0)
+    assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(1.0)
     assert batch_metrics[
         "stage2_ab/channel_b/invalid_rollout_sample_dropped"
     ] == pytest.approx(1.0)
+    dump_dir = tmp_path / "monitor_dumps" / "prepare_failures"
+    dump_paths = sorted(dump_dir.glob("*.json"))
+    assert len(dump_paths) == 1
+    dump_payload = json.loads(dump_paths[0].read_text())
+    invalid_rollout = dump_payload["invalid_rollouts"][0]
+    assert invalid_rollout["response_text"] == '{"objects": [{"desc": "broken", "bbox_2d": [1, 2'
+    assert invalid_rollout["prefix_text"] == '{"objects": ['
+    assert invalid_rollout["response_text_char_len"] == len(
+        invalid_rollout["response_text"]
+    )
+    assert invalid_rollout["response_token_count"] == len(
+        invalid_rollout["response_token_ids"]
+    )
+    assert invalid_rollout["prefix_token_count"] == len(
+        invalid_rollout["prefix_token_ids"]
+    )
+    assert invalid_rollout["response_text_head"] == invalid_rollout["response_text"]
+    assert invalid_rollout["response_text_tail"] == invalid_rollout["response_text"]
 
 
 def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):
@@ -2361,6 +2390,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.explorer_top_p": 0.95,
         "triage_posterior.explorer_top_k": -1,
+        "invalid_rollout_policy": "abort",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)

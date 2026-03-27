@@ -181,6 +181,9 @@ artifacts into `training.output_dir` before training starts:
     duplicate-heavy rollouts for the current optimizer step.
     `train_monitor_dump.every_channel_b_steps` counts realized Channel-B
     rollout steps when set; otherwise the trainer falls back to `every_steps`.
+  - Channel-B `prepare_failures/` dumps preserve both token IDs and decoded
+    rollout/prefix text so malformed JSON failure modes can be inspected without
+    manual retokenization.
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.

@@ -422,6 +422,10 @@ class Stage2ABChannelExecutorsMixin:
             if dist is not None and dist.is_available() and dist.is_initialized():
                 ddp_rank = int(dist.get_rank())
                 ddp_world_size = max(1, int(dist.get_world_size()))
+                try:
+                    ddp_rank = int(dist.get_rank())
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    ddp_rank = 0
 
             phase_config = resolve_stage2_ab_ddp_phase_config(
                 self,
@@ -461,7 +465,7 @@ class Stage2ABChannelExecutorsMixin:
                         self._stage2_ab_ddp_monitored_barrier(
                             dist=dist,
                             phase="stage2-ab Channel-A final-sync backward",
-                            rank=int(dist.get_rank()),
+                            rank=int(ddp_rank),
                             world_size=int(ddp_world_size),
                             timeout_s=float(phase_config.final_sync_timeout_s),
                             monitor_group_timeout_s=float(
