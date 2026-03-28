@@ -27,7 +27,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.common.paths import resolve_image_path_strict
-from src.vis import compose_comparison_scenes_from_jsonls
+from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH, compose_comparison_scenes_from_jsonls
 
 
 @dataclass
@@ -89,7 +89,7 @@ def _draw_objects(ax, objs: Sequence[Dict[str, Any]], *, color: str, linestyle: 
             (x1, y1),
             x2 - x1,
             y2 - y1,
-            linewidth=2,
+            linewidth=float(DEFAULT_BBOX_OUTLINE_WIDTH),
             edgecolor=color,
             facecolor="none",
             linestyle=linestyle,

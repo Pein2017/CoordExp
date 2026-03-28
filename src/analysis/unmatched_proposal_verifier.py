@@ -33,6 +33,7 @@ from src.common.object_field_order import (
     build_object_payload,
     normalize_object_field_order,
 )
+from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
 from src.common.prediction_parsing import extract_special_tokens
 from src.common.semantic_desc import normalize_desc
@@ -2788,7 +2789,11 @@ def _materialize_audit_rows(
         crop = loaded.image.crop(crop_box)
         overlay = loaded.image.copy()
         draw = ImageDraw.Draw(overlay)
-        draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=4)
+        draw.rectangle(
+            [x1, y1, x2, y2],
+            outline=(255, 0, 0),
+            width=DEFAULT_BBOX_OUTLINE_WIDTH,
+        )
 
         stem = (
             f"{stem_prefix}_{rank:03d}_img{image_idx:04d}"

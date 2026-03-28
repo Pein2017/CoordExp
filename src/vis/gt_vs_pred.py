@@ -37,6 +37,7 @@ _COLOR_MATCHED = "#2ca02c"
 _COLOR_FP = "#d62728"
 _COLOR_IGNORED = "#7f7f7f"
 _COLOR_UNMATCHED = "#1f77b4"
+DEFAULT_BBOX_OUTLINE_WIDTH = 1
 
 
 def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
@@ -980,7 +981,7 @@ def _draw_panel(
         obj_index = int(obj["index"])
         bbox = [int(v) for v in obj["bbox_2d"]]
         color = str(box_color_for_index.get(obj_index) or _COLOR_UNMATCHED)
-        draw.rectangle(bbox, outline=color, width=3)
+        draw.rectangle(bbox, outline=color, width=DEFAULT_BBOX_OUTLINE_WIDTH)
         prefix = label_prefix_for_index.get(obj_index)
         if not prefix:
             continue

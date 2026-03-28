@@ -1,6 +1,7 @@
 """Shared visualization helpers."""
 
 from .gt_vs_pred import (
+    DEFAULT_BBOX_OUTLINE_WIDTH,
     canonicalize_gt_vs_pred_record,
     default_vis_resource_path,
     ensure_gt_vs_pred_vis_resource,
@@ -11,6 +12,7 @@ from .gt_vs_pred import (
 from .comparison import compose_comparison_scenes_from_jsonls
 
 __all__ = [
+    "DEFAULT_BBOX_OUTLINE_WIDTH",
     "canonicalize_gt_vs_pred_record",
     "compose_comparison_scenes_from_jsonls",
     "default_vis_resource_path",
