@@ -672,16 +672,16 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
         )
 
     metrics_mode = str(eval_cfg.get("metrics", "both")).strip().lower()
-    want_coco = metrics_mode in {"coco", "both"}
+    want_official = metrics_mode in {"coco", "lvis", "both"}
 
     # Unified pipeline contract:
     # - COCO metrics require scored artifacts.
     # - f1ish-only runs can use the base artifact.
-    if want_coco:
+    if want_official:
         scored_path = artifacts.gt_vs_pred_scored_jsonl
         if scored_path is None:
             raise ValueError(
-                "COCO evaluation requires artifacts.gt_vs_pred_scored_jsonl. "
+                "Official detection evaluation requires artifacts.gt_vs_pred_scored_jsonl. "
                 "Run the confidence post-op first and configure this path."
             )
         pred_path = _load_or_raise_artifact(scored_path)
@@ -707,6 +707,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
         semantic_threshold=float(eval_cfg.get("semantic_threshold", 0.6)),
         semantic_device=str(eval_cfg.get("semantic_device", "auto")),
         semantic_batch_size=int(eval_cfg.get("semantic_batch_size", 64)),
+        lvis_max_dets=int(eval_cfg.get("lvis_max_dets", 300)),
     )
 
     # evaluate_and_save() owns eval/* outputs (including metrics.json with counters).

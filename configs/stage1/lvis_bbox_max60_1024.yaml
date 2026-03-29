@@ -1,0 +1,38 @@
+extends:
+  - profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml
+  - _shared/prompt_lvis_stage1_federated.yaml
+
+training:
+  output_dir: ./output/stage1/lvis_bbox_max60_1024
+  run_name: epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size
+  logging_dir: ./tb/stage1/lvis_bbox_max60_1024
+
+template:
+  max_pixels: 1048576
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
+  object_ordering: sorted
+  coord_soft_ce_w1:
+    enabled: true
+    ce_weight: 1.0
+    soft_ce_weight: 1.0
+    w1_weight: 1.0
+    gate_weight: 5.0
+    temperature: 0.9
+    target_sigma: 1.5
+    target_truncate: 8
+  bbox_geo:
+    enabled: true
+    smoothl1_weight: 0.0
+    ciou_weight: 1.0
+  bbox_size_aux:
+    enabled: true
+    log_wh_weight: 0.05
+    oversize_penalty_weight: 0.0
+    oversize_area_frac_threshold: null
+    oversize_log_w_threshold: null
+    oversize_log_h_threshold: null
+    eps: 1.0e-6

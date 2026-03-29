@@ -129,16 +129,17 @@ class RolloutEvalConfidencePostOpConfig:
 
 @dataclass(frozen=True)
 class RolloutEvalDetectionConfig:
-    # Enable COCO-style AP/mAP during trainer eval_step.
+    # Enable official detection AP during trainer eval_step.
     enabled: bool = True
     metrics: str = (
-        "coco"  # coco | both (both includes evaluator f1-ish in addition to COCO)
+        "coco"  # coco | lvis | both (both includes evaluator f1-ish in addition to official AP)
     )
 
-    # COCO evaluator knobs.
+    # Official evaluator knobs.
     use_segm: bool = False
     strict_parse: bool = True
     iou_thrs: Optional[list[float]] = None
+    lvis_max_dets: int = 300
 
     # Semantic mapping for open-vocab desc -> dataset categories.
     semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -657,9 +658,9 @@ class RolloutMatchingConfig:
             metrics = (
                 str(getattr(eval_det, "metrics", "coco") or "coco").strip().lower()
             )
-            if metrics not in {"coco", "both"}:
+            if metrics not in {"coco", "lvis", "both", "f1ish"}:
                 raise ValueError(
-                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
+                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'lvis', 'both', 'f1ish'}"
                 )
 
             score_mode = str(getattr(eval_det, "score_mode", "constant") or "constant")

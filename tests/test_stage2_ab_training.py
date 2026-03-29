@@ -2634,6 +2634,65 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
     assert triage.dead_anchor_indices == []
 
 
+def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambiguous() -> None:
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[0, 0, 20, 20],
+            desc="dog",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[30, 0, 50, 20],
+            desc="bicycle",
+        ),
+        GTObject(
+            index=2,
+            geom_type="bbox_2d",
+            points_norm1000=[0, 30, 20, 50],
+            desc="zebra",
+        ),
+        GTObject(
+            index=3,
+            geom_type="bbox_2d",
+            points_norm1000=[30, 30, 50, 50],
+            desc="cat",
+        ),
+    ]
+    explorer_objects_by_view = [list(anchor_objects)]
+
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}],
+        anchor_policy_statuses=[
+            "verified_negative",
+            "not_exhaustive",
+            None,
+            "verified_positive",
+        ],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+
+    assert triage.anchor_support_counts == [0, 1, 1, 0]
+    assert triage.lvis_verified_negative_dead_anchor_indices == [0]
+    assert triage.lvis_not_exhaustive_anchor_indices == [1]
+    assert triage.lvis_unevaluable_anchor_indices == [2]
+    assert triage.lvis_verified_positive_dead_anchor_indices == [3]
+    assert triage.shielded_anchor_indices == [1, 2]
+    assert triage.dead_anchor_indices == [0, 3]
+
+
 def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> None:
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):

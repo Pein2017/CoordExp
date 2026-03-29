@@ -10,10 +10,11 @@ pred_jsonl: path/to/gt_vs_pred_scored.jsonl
 out_dir: eval_out
 
 # Metrics
-metrics: f1ish                 # coco | f1ish | both
+metrics: f1ish                 # coco | lvis | f1ish | both
 # Fixed-score toggle is intentionally removed: do not add `use_pred_score`.
 use_segm: true                 # include segmentation metrics when polygons exist
 strict_parse: false            # warn+skip malformed rows (bounded diagnostics)
+lvis_max_dets: 300             # official LVIS per-image cap
 
 # Optional COCO IoU thresholds override (null -> COCO defaults)
 iou_thrs: null

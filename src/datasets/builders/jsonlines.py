@@ -146,6 +146,9 @@ class JSONLinesBuilder(BaseBuilder):
             merged["assistant_payload"] = objects_payload
         if objects_out["bbox"]:
             merged["objects"] = objects_out
+        metadata = record.get("metadata")
+        if isinstance(metadata, Mapping):
+            merged["metadata"] = dict(metadata)
         return merged
 
     def _build_group_entry(

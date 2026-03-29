@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-03-22
+updated: 2026-03-29
 ---
 
 # Coord Objective & Adapter
@@ -21,6 +21,10 @@ Scope note:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
 - Legacy `custom.coord_soft_ce_w1.*` authoring should not be used for pipeline-declared Stage-2 configs.
+- For standard Stage-1 SFT, the active non-pipeline teacher-forcing surface is:
+  - `custom.coord_soft_ce_w1.*`
+  - `custom.bbox_geo.*`
+  - `custom.bbox_size_aux.*`
 
 ## Coord distribution loss (coord tokens)
 
@@ -54,6 +58,64 @@ custom:
 - Stage-2 note:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
+
+## Stage-1 bbox geometry loss
+
+Stage-1 can also supervise decoded bbox geometry directly from the same
+teacher-forced coord logits, without switching to a Stage-2 trainer variant.
+
+```yaml
+custom:
+  bbox_geo:
+    enabled: true
+    smoothl1_weight: 0.0
+    ciou_weight: 1.0
+```
+
+Semantics:
+
+- the Stage-1 trainer keeps standard base CE on text + structure tokens
+- coord-token positions are still supervised from labels
+- decoded bbox coordinates are produced by the same expectation decode used by
+  the existing bbox-size auxiliary path
+- `smoothl1_weight` and `ciou_weight` gate the two decoded-box geometry atoms
+- this Stage-1 surface is intentionally config-first and narrow; Stage-2
+  pipeline-declared configs should continue to express geometry through the
+  `bbox_geo` objective module instead of `custom.bbox_geo`
+
+This is the intended way to run a pure-SFT Stage-1 recipe with
+hard CE + soft CE + W1 + CIoU + bbox-size aux enabled together.
+
+## Decoded BBox Geometry Loss (Stage-1)
+
+Standard Stage-1 SFT can optionally add decoded bbox geometry supervision from
+the same forward logits used for coord-token teacher forcing.
+
+```yaml
+custom:
+  bbox_geo:
+    enabled: true
+    smoothl1_weight: 0.0
+    ciou_weight: 1.0
+```
+
+Semantics:
+
+- the model still uses standard full-vocab CE on non-coord tokens
+- coord-token positions still use `custom.coord_soft_ce_w1.*`
+- decoded bbox losses are applied only to bbox-only Stage-1 samples where the
+  coord-token stream forms explicit `bbox_2d` quartets
+- expectation decoding is used for the Stage-1 geometry probe, matching the
+  active teacher-forcing geometry baseline elsewhere in the repo
+
+Metric handles:
+
+- `loss/geo/bbox_geo`
+- `loss/geo/bbox_smoothl1`
+- `loss/geo/bbox_ciou`
+- `bbox_geo/loss_per_sample`
+- `bbox_geo/groups_total`
+- `bbox_geo/coord_slots_total`
 
 ## Coord-offset adapter (tie-head / single shared table)
 

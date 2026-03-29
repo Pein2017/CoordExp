@@ -55,7 +55,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -1208,6 +1208,10 @@ class InferenceEngine:
                     # Structured per-sample errors (minimal contract).
                     "error_entries": error_entries,
                 }
+                if p.get("image_id") is not None:
+                    output["image_id"] = p.get("image_id")
+                if isinstance(p.get("metadata"), Mapping):
+                    output["metadata"] = dict(p["metadata"])
                 if (
                     ftrace is not None
                     and res.generated_token_text is not None
@@ -1308,6 +1312,12 @@ class InferenceEngine:
                         "height": height,
                         "gt": gt,
                         "image_obj": image_obj,
+                        "image_id": record.get("image_id"),
+                        "metadata": (
+                            dict(record["metadata"])
+                            if isinstance(record.get("metadata"), Mapping)
+                            else None
+                        ),
                     }
                 )
 

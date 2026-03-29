@@ -120,6 +120,32 @@ class LVISConverter(BaseConverter):
 
         return data
 
+    def _category_entry(self, cat_id: int) -> Optional[Dict[str, Any]]:
+        cat_meta = self.category_map.get(int(cat_id))
+        if cat_meta is None:
+            return None
+        return {
+            "id": int(cat_id),
+            "name": str(cat_meta["name"]),
+            "frequency": str(cat_meta.get("frequency", "unknown")),
+        }
+
+    def _category_entries_from_ids(self, cat_ids: List[int]) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        seen: set[int] = set()
+        for raw_cat_id in cat_ids:
+            try:
+                cat_id = int(raw_cat_id)
+            except (TypeError, ValueError):
+                continue
+            if cat_id in seen:
+                continue
+            seen.add(cat_id)
+            entry = self._category_entry(cat_id)
+            if entry is not None:
+                entries.append(entry)
+        return sorted(entries, key=lambda item: int(item["id"]))
+
     def _build_category_map(self, categories: List[Dict]) -> None:
         """Build category ID to name/frequency mapping."""
         for cat in categories:
@@ -168,6 +194,14 @@ class LVISConverter(BaseConverter):
                 "width": img["width"],
                 "height": img["height"],
                 "coco_url": img.get("coco_url", ""),
+                "neg_category_ids": [
+                    int(cat_id)
+                    for cat_id in list(img.get("neg_category_ids") or [])
+                ],
+                "not_exhaustive_category_ids": [
+                    int(cat_id)
+                    for cat_id in list(img.get("not_exhaustive_category_ids") or [])
+                ],
             }
 
     def _group_annotations_by_image(self, annotations: List[Dict]) -> None:
@@ -234,15 +268,72 @@ class LVISConverter(BaseConverter):
         if not objects:
             return None
 
+        gt_objects_meta: List[Dict[str, Any]] = []
+        objects_public: List[Dict[str, Any]] = []
+        for obj in objects:
+            cat_id = obj.get("_lvis_category_id")
+            try:
+                cat_id_int = int(cat_id)
+            except (TypeError, ValueError):
+                self.stats["skipped_objects"] += 1
+                continue
+            frequency = str(obj.get("_lvis_frequency", "unknown"))
+            desc = str(obj.get("desc", "") or "")
+            gt_objects_meta.append(
+                {
+                    "category_id": int(cat_id_int),
+                    "name": desc,
+                    "frequency": frequency,
+                }
+            )
+            objects_public.append(
+                {
+                    key: value
+                    for key, value in obj.items()
+                    if not str(key).startswith("_lvis_")
+                }
+            )
+        if not objects_public:
+            return None
+
+        positive_category_ids = [
+            int(item["category_id"]) for item in gt_objects_meta if "category_id" in item
+        ]
+        neg_category_ids = [
+            int(cat_id) for cat_id in list(image_info.get("neg_category_ids") or [])
+        ]
+        not_exhaustive_category_ids = [
+            int(cat_id)
+            for cat_id in list(image_info.get("not_exhaustive_category_ids") or [])
+        ]
+
         # Make path relative if configured
         if self.config.relative_image_paths:
             image_path = self._make_relative_path(image_path)
 
         return {
             "images": [image_path],
-            "objects": objects,
+            "objects": objects_public,
             "width": image_info["width"],
             "height": image_info["height"],
+            "metadata": {
+                "dataset": "lvis",
+                "dataset_policy": "lvis_federated",
+                "image_id": int(image_id),
+                "split": str(self.config.split),
+                "lvis": {
+                    "gt_objects": gt_objects_meta,
+                    "positive_categories": self._category_entries_from_ids(
+                        positive_category_ids
+                    ),
+                    "neg_categories": self._category_entries_from_ids(
+                        neg_category_ids
+                    ),
+                    "not_exhaustive_categories": self._category_entries_from_ids(
+                        not_exhaustive_category_ids
+                    ),
+                },
+            },
         }
 
     def _presort_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -354,7 +445,16 @@ class LVISConverter(BaseConverter):
             self.stats["skipped_objects"] += 1
             return None
 
-        return [{"bbox_2d": bbox_xyxy, "desc": category_name}]
+        return [
+            {
+                "bbox_2d": bbox_xyxy,
+                "desc": category_name,
+                "_lvis_category_id": int(cat_id),
+                "_lvis_frequency": str(
+                    self.category_map[int(cat_id)].get("frequency", "unknown")
+                ),
+            }
+        ]
 
     def _extract_polygons(
         self, ann: Dict[str, Any], category_name: str, image_info: Dict[str, Any]
@@ -459,6 +559,12 @@ class LVISConverter(BaseConverter):
 
                     # Add as bbox_2d
                     objects.append({"bbox_2d": bbox_xyxy, "desc": category_name})
+                    objects[-1]["_lvis_category_id"] = int(ann["category_id"])
+                    objects[-1]["_lvis_frequency"] = str(
+                        self.category_map[int(ann["category_id"])].get(
+                            "frequency", "unknown"
+                        )
+                    )
                     self.stats["poly_to_bbox_capped"] = (
                         self.stats.get("poly_to_bbox_capped", 0) + 1
                     )
@@ -469,6 +575,12 @@ class LVISConverter(BaseConverter):
                             "poly": coords,
                             "poly_points": num_points,  # Track number of points
                             "desc": category_name,
+                            "_lvis_category_id": int(ann["category_id"]),
+                            "_lvis_frequency": str(
+                                self.category_map[int(ann["category_id"])].get(
+                                    "frequency", "unknown"
+                                )
+                            ),
                         }
                     )
                     self.stats["poly_converted"] = (

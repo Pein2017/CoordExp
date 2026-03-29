@@ -58,6 +58,10 @@ def _one_record(*, image: str, gt_desc: str = "box", pred_desc: str = "box") -> 
     }
 
 
+def _lvis_cat(category_id: int, name: str, frequency: str) -> dict:
+    return {"id": int(category_id), "name": str(name), "frequency": str(frequency)}
+
+
 def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
     pred_path = tmp_path / "gt_vs_pred.jsonl"
     _write_jsonl(pred_path, [_one_record(image="img.png")])
@@ -185,6 +189,146 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(
     summary = evaluate_and_save(pred_path, options=options)
     assert summary["metrics"]["bbox_AP50"] > 0.9
     assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
+
+
+def test_evaluate_and_save_lvis_respects_federated_ignore_semantics(
+    tmp_path: Path,
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_lvis.jsonl"
+    records = [
+        {
+            "image": "img_lvis_a.png",
+            "image_id": 101,
+            "width": 64,
+            "height": 48,
+            "mode": "text",
+            "coord_mode": "pixel",
+            "metadata": {
+                "dataset": "lvis",
+                "dataset_policy": "lvis_federated",
+                "image_id": 101,
+                "lvis": {
+                    "gt_objects": [_lvis_cat(1, "cat", "rare")],
+                    "positive_categories": [_lvis_cat(1, "cat", "rare")],
+                    "neg_categories": [_lvis_cat(2, "dog", "common")],
+                    "not_exhaustive_categories": [_lvis_cat(3, "bicycle", "frequent")],
+                },
+            },
+            "gt": [
+                {
+                    "type": "bbox_2d",
+                    "points": [0, 0, 20, 20],
+                    "desc": "cat",
+                }
+            ],
+            "pred": [
+                {
+                    "type": "bbox_2d",
+                    "points": [0, 0, 20, 20],
+                    "desc": "cat",
+                    "score": 0.95,
+                },
+                {
+                    "type": "bbox_2d",
+                    "points": [22, 0, 40, 18],
+                    "desc": "dog",
+                    "score": 0.80,
+                },
+                {
+                    "type": "bbox_2d",
+                    "points": [0, 24, 20, 44],
+                    "desc": "bicycle",
+                    "score": 0.70,
+                },
+                {
+                    "type": "bbox_2d",
+                    "points": [24, 24, 44, 44],
+                    "desc": "zebra",
+                    "score": 0.60,
+                },
+            ],
+            "pred_score_source": "confidence_postop",
+            "pred_score_version": 1,
+            "raw_output_json": {},
+            "raw_special_tokens": [],
+            "raw_ends_with_im_end": True,
+            "errors": [],
+        },
+        {
+            "image": "img_lvis_b.png",
+            "image_id": 102,
+            "width": 64,
+            "height": 48,
+            "mode": "text",
+            "coord_mode": "pixel",
+            "metadata": {
+                "dataset": "lvis",
+                "dataset_policy": "lvis_federated",
+                "image_id": 102,
+                "lvis": {
+                    "gt_objects": [_lvis_cat(4, "zebra", "common")],
+                    "positive_categories": [_lvis_cat(4, "zebra", "common")],
+                    "neg_categories": [],
+                    "not_exhaustive_categories": [],
+                },
+            },
+            "gt": [
+                {
+                    "type": "bbox_2d",
+                    "points": [8, 8, 28, 28],
+                    "desc": "zebra",
+                }
+            ],
+            "pred": [
+                {
+                    "type": "bbox_2d",
+                    "points": [8, 8, 28, 28],
+                    "desc": "zebra",
+                    "score": 0.92,
+                }
+            ],
+            "pred_score_source": "confidence_postop",
+            "pred_score_version": 1,
+            "raw_output_json": {},
+            "raw_special_tokens": [],
+            "raw_ends_with_im_end": True,
+            "errors": [],
+        },
+    ]
+    _write_jsonl(pred_path, records)
+
+    out_dir = tmp_path / "eval_lvis"
+    options = EvalOptions(
+        metrics="lvis",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=out_dir,
+        overlay=False,
+        num_workers=0,
+    )
+
+    summary = evaluate_and_save(pred_path, options=options)
+
+    assert summary["metrics"]["bbox_AP50"] > 0.9
+    assert summary["metrics"]["bbox_APr"] > 0.9
+    assert summary["metrics"]["bbox_APc"] > 0.9
+    assert "bbox_AR300" in summary["metrics"]
+    assert summary["metrics"]["lvis_diag_matched_verified_positive"] == pytest.approx(
+        2.0
+    )
+    assert summary["metrics"][
+        "lvis_diag_verified_negative_unmatched"
+    ] == pytest.approx(1.0)
+    assert summary["metrics"]["lvis_diag_ignored_not_exhaustive"] == pytest.approx(
+        1.0
+    )
+    assert summary["metrics"]["lvis_diag_ignored_unevaluable"] == pytest.approx(1.0)
+
+    metrics_payload = json.loads((out_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics_payload["metrics"]["bbox_AR300"] == summary["metrics"]["bbox_AR300"]
+    assert metrics_payload["metrics"]["lvis_diag_ignored_unevaluable"] == pytest.approx(
+        1.0
+    )
 
 
 def test_prepare_all_and_prepare_all_separate_parity(tmp_path: Path) -> None:

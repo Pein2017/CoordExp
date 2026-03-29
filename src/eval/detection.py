@@ -32,14 +32,16 @@ from src.common.geometry import (
     is_degenerate_bbox,
 )
 from src.common.geometry.object_geometry import extract_single_geometry
+from src.common.lvis_semantics import (
+    LvisCategory,
+    LvisImagePolicy,
+    build_lvis_category_catalog,
+    extract_lvis_image_policy,
+)
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
 from src.eval.artifacts import build_per_image_report, write_outputs
-from src.eval.orchestration import (
-    evaluate_and_save_outputs,
-    evaluate_detection_summary,
-)
 from src.utils import get_logger
 from src.vis import materialize_gt_vs_pred_vis_resource, render_gt_vs_pred_review
 
@@ -644,6 +646,12 @@ def preds_to_gt_records(pred_records: List[Dict[str, Any]]) -> List[Dict[str, An
                 "width": width,
                 "height": height,
                 "objects": gt_objs,
+                "image_id": rec.get("image_id"),
+                "metadata": (
+                    dict(rec["metadata"])
+                    if isinstance(rec.get("metadata"), Mapping)
+                    else {}
+                ),
             }
         )
     return gt_records
@@ -664,6 +672,10 @@ class EvalCounters:
     semantic_mapped: int = 0
     semantic_unmapped: int = 0
     semantic_report_failed: int = 0
+    lvis_matched_verified_positive: int = 0
+    lvis_verified_negative_unmatched: int = 0
+    lvis_ignored_not_exhaustive: int = 0
+    lvis_ignored_unevaluable: int = 0
 
     def to_dict(self) -> Dict[str, int]:
         return self.__dict__.copy()
@@ -671,7 +683,7 @@ class EvalCounters:
 
 @dataclass
 class EvalOptions:
-    metrics: str = "f1ish"  # coco | f1ish | both
+    metrics: str = "f1ish"  # coco | lvis | f1ish | both
     strict_parse: bool = True
     use_segm: bool = True
     iou_types: Tuple[str, ...] = ("bbox", "segm")
@@ -692,6 +704,7 @@ class EvalOptions:
     semantic_threshold: float = 0.6
     semantic_device: str = "auto"
     semantic_batch_size: int = 64
+    lvis_max_dets: int = 300
 
     def __post_init__(self) -> None:
         semantic_model = str(self.semantic_model or "").strip()
@@ -711,6 +724,7 @@ class Sample:
     height: int
     objects: List[Dict[str, Any]] = field(default_factory=list)
     invalid: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 def _prepare_gt_record(
@@ -732,12 +746,14 @@ def _prepare_gt_record(
     width = int(record["width"])
     height = int(record["height"])
     file_name = images[0] if images else f"image_{idx}.jpg"
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), Mapping) else {}
+    lvis_policy = extract_lvis_image_policy(metadata)
     objects: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
 
     objs_in = record.get("gt") or record.get("objects") or []
     coord_mode_hint = record.get("coord_mode")
-    for obj in objs_in:
+    for obj_idx, obj in enumerate(objs_in):
         try:
             gtype, pts_raw = extract_single_geometry(
                 obj,
@@ -771,14 +787,17 @@ def _prepare_gt_record(
             counters.degenerate += 1
             invalid.append({"reason": "degenerate", "raw": obj})
             continue
-        objects.append(
-            {
-                "type": gtype,
-                "points": pts_px,
-                "desc": obj.get("desc", ""),
-                "bbox": [x1, y1, x2, y2],
-            }
-        )
+        prepared_obj = {
+            "type": gtype,
+            "points": pts_px,
+            "desc": obj.get("desc", ""),
+            "bbox": [x1, y1, x2, y2],
+        }
+        if lvis_policy is not None and int(obj_idx) < len(lvis_policy.gt_objects):
+            gt_cat = lvis_policy.gt_objects[int(obj_idx)]
+            prepared_obj["category_id"] = int(gt_cat.category_id)
+            prepared_obj["category_frequency"] = str(gt_cat.frequency)
+        objects.append(prepared_obj)
 
     return Sample(
         image_id=idx,
@@ -787,6 +806,7 @@ def _prepare_gt_record(
         height=height,
         objects=objects,
         invalid=invalid,
+        metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
     )
 
 
@@ -1108,6 +1128,434 @@ def _run_coco_eval(
     return metrics, per_class
 
 
+def _use_lvis_backend(
+    gt_samples: Sequence[Sample],
+    *,
+    options: EvalOptions,
+) -> bool:
+    metrics_mode = str(options.metrics or "f1ish").strip().lower()
+    if metrics_mode == "coco":
+        return False
+
+    saw_lvis = False
+    for sample in gt_samples:
+        if extract_lvis_image_policy(sample.metadata) is not None:
+            saw_lvis = True
+            break
+
+    if metrics_mode == "lvis" and not saw_lvis:
+        raise ValueError(
+            "LVIS evaluation requires federated LVIS metadata on the GT records, "
+            "but no records advertised `metadata.dataset_policy = lvis_federated`."
+        )
+    return bool(saw_lvis and metrics_mode in {"lvis", "both"})
+
+
+def _limit_dets_per_image(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    max_dets: int,
+) -> List[Dict[str, Any]]:
+    if int(max_dets) <= 0:
+        return [dict(item) for item in results]
+
+    grouped: Dict[int, List[Dict[str, Any]]] = {}
+    for item in results:
+        try:
+            image_id = int(item.get("image_id"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        grouped.setdefault(image_id, []).append(dict(item))
+
+    limited: List[Dict[str, Any]] = []
+    for image_id in sorted(grouped):
+        anns = grouped[image_id]
+        anns.sort(key=lambda ann: float(ann.get("score", 0.0)), reverse=True)
+        limited.extend(anns[: int(max_dets)])
+    return limited
+
+
+def _prepare_lvis_artifacts(
+    gt_samples: Sequence[Sample],
+    pred_samples: Sequence[Tuple[int, List[Dict[str, Any]]]],
+    *,
+    options: EvalOptions,
+    counters: EvalCounters,
+) -> Tuple[Dict[str, int], Dict[str, Any], List[Dict[str, Any]], bool]:
+    policies: List[LvisImagePolicy] = []
+    for sample in gt_samples:
+        policy = extract_lvis_image_policy(sample.metadata)
+        if policy is None:
+            raise ValueError(
+                "LVIS evaluation requires federated metadata on every GT sample; "
+                f"sample image_id={sample.image_id} is missing it."
+            )
+        policies.append(policy)
+
+    category_catalog = build_lvis_category_catalog(policies)
+    if not category_catalog:
+        raise ValueError(
+            "LVIS evaluation requires category metadata, but no LVIS categories "
+            "could be recovered from the GT records."
+        )
+
+    categories = {
+        str(item.name): int(item.category_id)
+        for item in sorted(category_catalog.values(), key=lambda cat: int(cat.category_id))
+    }
+    results = _to_coco_preds(
+        list(pred_samples),
+        categories,
+        options=options,
+        counters=counters,
+    )
+    results = _limit_dets_per_image(results, max_dets=int(options.lvis_max_dets))
+    coco_gt_dict = _to_lvis_gt(
+        gt_samples=list(gt_samples),
+        results=results,
+        category_catalog=category_catalog,
+        add_box_segmentation=bool(options.use_segm),
+    )
+    run_segm = bool(options.use_segm and any("segmentation" in row for row in results))
+    _accumulate_lvis_prediction_diagnostics(
+        gt_samples=list(gt_samples),
+        results=results,
+        counters=counters,
+    )
+    return categories, coco_gt_dict, results, run_segm
+
+
+def _to_lvis_gt(
+    *,
+    gt_samples: List[Sample],
+    results: Sequence[Mapping[str, Any]],
+    category_catalog: Mapping[int, LvisCategory],
+    add_box_segmentation: bool = False,
+) -> Dict[str, Any]:
+    pred_cat_ids_by_image: Dict[int, set[int]] = {}
+    for row in results:
+        try:
+            image_id = int(row.get("image_id"))
+            category_id = int(row.get("category_id"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        pred_cat_ids_by_image.setdefault(image_id, set()).add(category_id)
+
+    categories_by_norm_name = {
+        str(item.norm_name): item for item in category_catalog.values()
+    }
+
+    images: List[Dict[str, Any]] = []
+    annotations: List[Dict[str, Any]] = []
+    ann_id = 1
+    for sample in gt_samples:
+        policy = extract_lvis_image_policy(sample.metadata)
+        if policy is None:
+            raise ValueError(
+                "LVIS evaluation requires federated metadata on every GT sample; "
+                f"sample image_id={sample.image_id} is missing it."
+            )
+
+        images.append(
+            {
+                "id": int(sample.image_id),
+                "file_name": sample.file_name,
+                "width": int(sample.width),
+                "height": int(sample.height),
+            }
+        )
+
+        positive_ids = {
+            int(item.category_id) for item in list(policy.positive_categories)
+        }
+        negative_ids = {
+            int(item.category_id) for item in list(policy.neg_categories)
+        }
+        not_exhaustive_ids = {
+            int(item.category_id) for item in list(policy.not_exhaustive_categories)
+        }
+
+        for obj in sample.objects:
+            category_id_raw = obj.get("category_id")
+            if category_id_raw is None:
+                norm_desc = _normalize_desc(str(obj.get("desc", "")))
+                mapped = categories_by_norm_name.get(norm_desc)
+                if mapped is None:
+                    raise ValueError(
+                        "LVIS GT object is missing category_id and could not be "
+                        f"resolved by desc={obj.get('desc', '')!r} "
+                        f"(image_id={sample.image_id})."
+                    )
+                category_id = int(mapped.category_id)
+            else:
+                category_id = int(category_id_raw)
+
+            x1, y1, x2, y2 = obj["bbox"]
+            w = float(x2 - x1)
+            h = float(y2 - y1)
+            ann = {
+                "id": int(ann_id),
+                "image_id": int(sample.image_id),
+                "category_id": int(category_id),
+                "bbox": [float(x1), float(y1), float(w), float(h)],
+                "area": float(max(w, 0.0) * max(h, 0.0)),
+                "iscrowd": 0,
+            }
+            if obj.get("type") == "poly":
+                ann["segmentation"] = [obj["points"]]
+            elif add_box_segmentation:
+                ann["segmentation"] = [[x1, y1, x2, y1, x2, y2, x1, y2]]
+            annotations.append(ann)
+            ann_id += 1
+
+        ignore_ids: set[int] = set()
+        for category_id in pred_cat_ids_by_image.get(int(sample.image_id), set()):
+            if int(category_id) in negative_ids:
+                continue
+            if int(category_id) in not_exhaustive_ids:
+                ignore_ids.add(int(category_id))
+                continue
+            if int(category_id) not in positive_ids:
+                ignore_ids.add(int(category_id))
+
+        for category_id in sorted(ignore_ids):
+            ann = {
+                "id": int(ann_id),
+                "image_id": int(sample.image_id),
+                "category_id": int(category_id),
+                "bbox": [0.0, 0.0, float(sample.width), float(sample.height)],
+                "area": float(max(sample.width, 0) * max(sample.height, 0)),
+                "iscrowd": 1,
+                "ignore": 1,
+            }
+            if add_box_segmentation:
+                ann["segmentation"] = [
+                    [
+                        0.0,
+                        0.0,
+                        float(sample.width),
+                        0.0,
+                        float(sample.width),
+                        float(sample.height),
+                        0.0,
+                        float(sample.height),
+                    ]
+                ]
+            annotations.append(ann)
+            ann_id += 1
+
+    categories_list = [
+        {
+            "id": int(item.category_id),
+            "name": str(item.name),
+            "frequency": str(item.frequency),
+        }
+        for item in sorted(category_catalog.values(), key=lambda cat: int(cat.category_id))
+    ]
+    return {
+        "info": {"dataset_policy": "lvis_federated"},
+        "licenses": [],
+        "images": images,
+        "annotations": annotations,
+        "categories": categories_list,
+    }
+
+
+def _result_to_eval_object(result: Mapping[str, Any]) -> Dict[str, Any]:
+    bbox_raw = result.get("bbox")
+    if not isinstance(bbox_raw, Sequence) or len(bbox_raw) != 4:
+        raise ValueError(f"Malformed result bbox: {bbox_raw!r}")
+    x, y, w, h = [float(v) for v in bbox_raw]
+    obj = {
+        "bbox": [x, y, x + w, y + h],
+        "score": float(result.get("score", 0.0) or 0.0),
+    }
+    segmentation = result.get("segmentation")
+    if isinstance(segmentation, list) and segmentation:
+        obj["segmentation"] = segmentation
+    return obj
+
+
+def _accumulate_lvis_prediction_diagnostics(
+    *,
+    gt_samples: List[Sample],
+    results: Sequence[Mapping[str, Any]],
+    counters: EvalCounters,
+) -> None:
+    results_by_image_cat: Dict[int, Dict[int, List[Dict[str, Any]]]] = {}
+    for row in results:
+        try:
+            image_id = int(row.get("image_id"))
+            category_id = int(row.get("category_id"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        results_by_image_cat.setdefault(image_id, {}).setdefault(category_id, []).append(
+            _result_to_eval_object(row)
+        )
+
+    for sample in gt_samples:
+        policy = extract_lvis_image_policy(sample.metadata)
+        if policy is None:
+            continue
+
+        gt_by_cat: Dict[int, List[Dict[str, Any]]] = {}
+        for obj in sample.objects:
+            category_id_raw = obj.get("category_id")
+            if category_id_raw is None:
+                continue
+            gt_by_cat.setdefault(int(category_id_raw), []).append(dict(obj))
+
+        positive_ids = {
+            int(item.category_id) for item in list(policy.positive_categories)
+        }
+        negative_ids = {
+            int(item.category_id) for item in list(policy.neg_categories)
+        }
+        not_exhaustive_ids = {
+            int(item.category_id) for item in list(policy.not_exhaustive_categories)
+        }
+
+        for category_id, pred_rows in results_by_image_cat.get(int(sample.image_id), {}).items():
+            pred_rows_sorted = sorted(
+                list(pred_rows),
+                key=lambda row: float(row.get("score", 0.0)),
+                reverse=True,
+            )
+            gt_rows = list(gt_by_cat.get(int(category_id), []))
+            matches = _greedy_match_by_iou(
+                pred_rows_sorted,
+                gt_rows,
+                iou_thr=0.5,
+                width=int(sample.width),
+                height=int(sample.height),
+            )
+            matched_count = int(len(matches))
+            unmatched_count = max(0, int(len(pred_rows_sorted)) - matched_count)
+
+            if int(category_id) in negative_ids:
+                counters.lvis_verified_negative_unmatched += int(len(pred_rows_sorted))
+                continue
+
+            if int(category_id) in positive_ids:
+                counters.lvis_matched_verified_positive += int(matched_count)
+                if int(category_id) in not_exhaustive_ids:
+                    counters.lvis_ignored_not_exhaustive += int(unmatched_count)
+                continue
+
+            if int(category_id) in not_exhaustive_ids:
+                counters.lvis_ignored_not_exhaustive += int(unmatched_count)
+                continue
+
+            counters.lvis_ignored_unevaluable += int(len(pred_rows_sorted))
+
+
+def _run_lvis_eval(
+    coco_gt: COCO,
+    results: List[Dict[str, Any]],
+    *,
+    options: EvalOptions,
+    run_segm: bool,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    max_dets = int(options.lvis_max_dets)
+    metric_suffixes = (
+        "AP",
+        "AP50",
+        "AP75",
+        "APs",
+        "APm",
+        "APl",
+        "APr",
+        "APc",
+        "APf",
+        "AR1",
+        "AR10",
+        f"AR{max_dets}",
+        "ARs",
+        "ARm",
+        "ARl",
+        f"ARs{max_dets}",
+        f"ARm{max_dets}",
+        f"ARl{max_dets}",
+    )
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
+    iou_types = ["bbox"]
+    if run_segm:
+        iou_types.append("segm")
+
+    if not results:
+        for iou_type in iou_types:
+            for suffix in metric_suffixes:
+                metrics[f"{iou_type}_{suffix}"] = 0.0
+        return metrics, per_class
+
+    coco_dt = coco_gt.loadRes(copy.deepcopy(results))
+    cat_info = {
+        str(cat.get("name", "")): str(cat.get("frequency", "unknown")).strip().lower()
+        for cat in coco_gt.dataset.get("categories", [])
+        if isinstance(cat, dict)
+    }
+
+    for iou_type in iou_types:
+        coco_eval = COCOeval(coco_gt, coco_dt, iouType=iou_type)
+        if options.iou_thrs:
+            coco_eval.params.iouThrs = np.array(options.iou_thrs)
+        coco_eval.params.maxDets = [1, 10, int(max_dets)]
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        prefix = f"{iou_type}_"
+        metrics.update(
+            {
+                f"{prefix}AP": float(coco_eval.stats[0]),
+                f"{prefix}AP50": float(coco_eval.stats[1]),
+                f"{prefix}AP75": float(coco_eval.stats[2]),
+                f"{prefix}APs": float(coco_eval.stats[3]),
+                f"{prefix}APm": float(coco_eval.stats[4]),
+                f"{prefix}APl": float(coco_eval.stats[5]),
+                f"{prefix}AR1": float(coco_eval.stats[6]),
+                f"{prefix}AR10": float(coco_eval.stats[7]),
+                f"{prefix}ARs": float(coco_eval.stats[9]),
+                f"{prefix}ARm": float(coco_eval.stats[10]),
+                f"{prefix}ARl": float(coco_eval.stats[11]),
+                f"{prefix}AR{max_dets}": float(coco_eval.stats[8]),
+                f"{prefix}ARs{max_dets}": float(coco_eval.stats[9]),
+                f"{prefix}ARm{max_dets}": float(coco_eval.stats[10]),
+                f"{prefix}ARl{max_dets}": float(coco_eval.stats[11]),
+            }
+        )
+
+        per_class_iou: Dict[str, float] = {}
+        if coco_eval.eval is not None:
+            precisions = coco_eval.eval["precision"]
+            cat_ids = coco_gt.getCatIds()
+            for idx, cat_id in enumerate(cat_ids):
+                precision = precisions[:, :, idx, 0, -1]
+                precision = precision[precision > -1]
+                ap = float(np.mean(precision)) if precision.size else float("nan")
+                cat_name = coco_gt.loadCats(cat_id)[0]["name"]
+                per_class_iou[cat_name] = ap
+            if iou_type == "bbox":
+                per_class = dict(per_class_iou)
+
+        for metric_name, frequency in (
+            ("APr", "rare"),
+            ("APc", "common"),
+            ("APf", "frequent"),
+        ):
+            values = [
+                float(ap)
+                for cat_name, ap in per_class_iou.items()
+                if cat_info.get(str(cat_name)) == frequency and math.isfinite(float(ap))
+            ]
+            metrics[f"{prefix}{metric_name}"] = (
+                float(sum(values) / len(values)) if values else 0.0
+            )
+
+    return metrics, per_class
+
+
 def _prepare_all_from_records(
     gt_records: List[Dict[str, Any]],
     pred_records: List[Dict[str, Any]],
@@ -1202,14 +1650,22 @@ def _prepare_all_from_records(
             per_image,
         )
 
-    categories = _build_categories(gt_samples)
-    coco_gt_dict = _to_coco_gt(
-        gt_samples, categories, add_box_segmentation=options.use_segm
-    )
-    results = _to_coco_preds(
-        pred_samples, categories, options=options, counters=counters
-    )
-    run_segm = options.use_segm and any("segmentation" in r for r in results)
+    if _use_lvis_backend(gt_samples, options=options):
+        categories, coco_gt_dict, results, run_segm = _prepare_lvis_artifacts(
+            gt_samples,
+            pred_samples,
+            options=options,
+            counters=counters,
+        )
+    else:
+        categories = _build_categories(gt_samples)
+        coco_gt_dict = _to_coco_gt(
+            gt_samples, categories, add_box_segmentation=options.use_segm
+        )
+        results = _to_coco_preds(
+            pred_samples, categories, options=options, counters=counters
+        )
+        run_segm = options.use_segm and any("segmentation" in r for r in results)
     return (
         gt_samples,
         pred_samples,
@@ -1251,16 +1707,18 @@ def compute_coco_metrics_from_records(
     *,
     options: EvalOptions,
 ) -> Tuple[Dict[str, float], Dict[str, int]]:
-    """Compute COCO metrics from in-memory scored ``gt_vs_pred`` records.
+    """Compute official detection metrics from in-memory scored ``gt_vs_pred`` records.
 
     Returns ``(metrics, counters_dict)`` where ``metrics`` uses the same
-    ``bbox_*`` / ``segm_*`` keys as offline evaluation.
+    ``bbox_*`` / ``segm_*`` keys as offline evaluation. When ``options.metrics``
+    requests LVIS and the records carry federated LVIS metadata, this dispatches
+    to the LVIS-aware backend; otherwise it uses the COCO backend.
     """
 
     counters = EvalCounters()
     pred_records_list = [dict(r) for r in pred_records]
     (
-        _gt_samples,
+        gt_samples,
         _pred_samples,
         _categories,
         coco_gt_dict,
@@ -1278,12 +1736,20 @@ def compute_coco_metrics_from_records(
     coco_gt.dataset = copy.deepcopy(coco_gt_dict)
     coco_gt.createIndex()
 
-    metrics, _per_class = _run_coco_eval(
-        coco_gt,
-        results,
-        options=options,
-        run_segm=run_segm,
-    )
+    if _use_lvis_backend(gt_samples, options=options):
+        metrics, _per_class = _run_lvis_eval(
+            coco_gt,
+            results,
+            options=options,
+            run_segm=run_segm,
+        )
+    else:
+        metrics, _per_class = _run_coco_eval(
+            coco_gt,
+            results,
+            options=options,
+            run_segm=run_segm,
+        )
     return metrics, counters.to_dict()
 
 
@@ -1318,17 +1784,72 @@ def evaluate_detection(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
-    return evaluate_detection_summary(
-        gt_path=gt_path,
-        pred_path=pred_path,
-        options=options,
-        counters_cls=EvalCounters,
-        load_jsonl_fn=load_jsonl,
-        prepare_all_fn=_prepare_all,
-        prepare_all_separate_fn=_prepare_all_separate,
-        run_coco_eval_fn=_run_coco_eval,
-        coco_cls=COCO,
-    )
+    counters = EvalCounters()
+    metrics_mode = str(options.metrics).strip().lower()
+    want_official = metrics_mode in {"coco", "lvis", "both"}
+
+    if pred_path is None:
+        pred_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
+        (
+            gt_samples,
+            _pred_samples,
+            categories,
+            coco_gt_dict,
+            results,
+            run_segm,
+            _per_image,
+        ) = _prepare_all(
+            pred_records,
+            options,
+            counters,
+            prepare_coco=want_official,
+        )
+    else:
+        gt_records = load_jsonl(gt_path, counters, strict=options.strict_parse)
+        pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
+        (
+            gt_samples,
+            _pred_samples,
+            categories,
+            coco_gt_dict,
+            results,
+            run_segm,
+            _per_image,
+        ) = _prepare_all_separate(
+            gt_records,
+            pred_records,
+            options,
+            counters,
+            prepare_coco=want_official,
+        )
+
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
+    if want_official:
+        coco_gt = COCO()
+        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
+        if _use_lvis_backend(gt_samples, options=options):
+            metrics, per_class = _run_lvis_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+        else:
+            metrics, per_class = _run_coco_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+
+    return {
+        "metrics": metrics,
+        "per_class": per_class,
+        "counters": counters.to_dict(),
+        "categories": categories,
+    }
 
 
 def evaluate_and_save(
@@ -1338,24 +1859,127 @@ def evaluate_and_save(
 ) -> Dict[str, Any]:
     from src.infer.pipeline import resolve_root_image_dir_for_jsonl
 
-    return evaluate_and_save_outputs(
-        pred_path=pred_path,
-        options=options,
-        counters_cls=EvalCounters,
-        load_jsonl_fn=load_jsonl,
-        prepare_all_fn=_prepare_all,
-        run_coco_eval_fn=_run_coco_eval,
-        evaluate_f1ish_fn=evaluate_f1ish,
-        select_primary_f1ish_iou_thr_fn=_select_primary_f1ish_iou_thr,
-        fmt_iou_thr_fn=_fmt_iou_thr,
-        matches_by_record_idx_fn=_matches_by_record_idx,
-        materialize_gt_vs_pred_vis_resource_fn=materialize_gt_vs_pred_vis_resource,
-        write_outputs_fn=write_outputs,
-        resolve_root_image_dir_for_jsonl_fn=resolve_root_image_dir_for_jsonl,
-        render_gt_vs_pred_review_fn=render_gt_vs_pred_review,
-        logger=logger,
-        coco_cls=COCO,
+    counters = EvalCounters()
+    metrics_mode = str(options.metrics).strip().lower()
+    want_official = metrics_mode in {"coco", "lvis", "both"}
+    want_f1ish = metrics_mode in {"f1ish", "both"}
+
+    pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
+    (
+        gt_samples,
+        pred_samples,
+        categories,
+        coco_gt_dict,
+        results,
+        run_segm,
+        per_image,
+    ) = _prepare_all(
+        pred_records,
+        options,
+        counters,
+        prepare_coco=want_official,
     )
+
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
+    if want_official:
+        coco_gt = COCO()
+        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
+        if _use_lvis_backend(gt_samples, options=options):
+            metrics, per_class = _run_lvis_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+        else:
+            metrics, per_class = _run_coco_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+
+    if _use_lvis_backend(gt_samples, options=options):
+        metrics.update(
+            {
+                "lvis_diag_matched_verified_positive": float(
+                    counters.lvis_matched_verified_positive
+                ),
+                "lvis_diag_verified_negative_unmatched": float(
+                    counters.lvis_verified_negative_unmatched
+                ),
+                "lvis_diag_ignored_not_exhaustive": float(
+                    counters.lvis_ignored_not_exhaustive
+                ),
+                "lvis_diag_ignored_unevaluable": float(
+                    counters.lvis_ignored_unevaluable
+                ),
+            }
+        )
+
+    summary = {
+        "metrics": metrics,
+        "per_class": per_class,
+        "counters": counters.to_dict(),
+        "categories": categories,
+    }
+
+    if want_f1ish:
+        f1ish_summary = evaluate_f1ish(
+            gt_samples,
+            pred_samples,
+            per_image,
+            options=options,
+        )
+        summary["metrics"].update(f1ish_summary["metrics"])
+    else:
+        f1ish_summary = {"matches_by_thr": {}}
+
+    vis_matches: Dict[int, Dict[str, Any]] | None = None
+    if want_f1ish:
+        primary_thr = _select_primary_f1ish_iou_thr(options.f1ish_iou_thrs)
+        primary_key = _fmt_iou_thr(primary_thr)
+        vis_matches = _matches_by_record_idx(
+            f1ish_summary.get("matches_by_thr", {}).get(primary_key, [])
+        )
+
+    vis_resource_path = materialize_gt_vs_pred_vis_resource(
+        pred_path,
+        source_kind="detection_eval",
+        external_matches=vis_matches,
+        materialize_matching=True,
+    )
+
+    write_outputs(
+        options.output_dir,
+        coco_gt=coco_gt_dict if want_official else None,
+        coco_preds=results if want_official else None,
+        summary=summary,
+        per_image=per_image,
+    )
+
+    if options.overlay:
+        root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
+        if root_dir is not None:
+            logger.info(
+                "Overlay image root resolved (source=%s): %s",
+                root_source,
+                root_dir,
+            )
+
+        overlay_dir = options.output_dir / "overlays"
+        render_gt_vs_pred_review(
+            vis_resource_path,
+            out_dir=overlay_dir,
+            limit=options.overlay_k,
+            root_image_dir=root_dir,
+            root_source=root_source,
+            record_order="error_first",
+        )
+
+    return summary
 
 
 def _f1ish_filter_gt_objects(sample: Sample) -> List[Dict[str, Any]]:

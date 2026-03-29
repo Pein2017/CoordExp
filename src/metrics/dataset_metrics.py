@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from src.trainers.metrics.mixins import (  # noqa: F401
     AggregateTokenTypeMetricsMixin,
+    BBoxGeoLossMixin,
     BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
@@ -19,6 +20,7 @@ from src.trainers.metrics.mixins import (  # noqa: F401
 
 __all__ = [
     "AggregateTokenTypeMetricsMixin",
+    "BBoxGeoLossMixin",
     "BBoxSizeAuxLossMixin",
     "CoordSoftCEW1LossMixin",
     "GradAccumLossScaleMixin",

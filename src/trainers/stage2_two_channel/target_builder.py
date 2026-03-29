@@ -1,6 +1,6 @@
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.common.semantic_desc import normalize_desc
 from src.common.object_field_order import build_object_payload
@@ -36,6 +36,10 @@ class _ChannelBTriageResult:
     pseudo_positive_anchor_indices: List[int]
     pseudo_positive_cluster_demoted_indices: List[int]
     dead_anchor_indices: List[int]
+    lvis_verified_positive_dead_anchor_indices: List[int]
+    lvis_verified_negative_dead_anchor_indices: List[int]
+    lvis_not_exhaustive_anchor_indices: List[int]
+    lvis_unevaluable_anchor_indices: List[int]
     dead_explorer_indices_by_view: List[List[int]]
     recovered_gt_indices: List[int]
     recovered_gt_support_counts: List[int]
@@ -222,12 +226,28 @@ def _build_channel_b_triage(
     unlabeled_consistent_iou_threshold: float,
     duplicate_iou_threshold: float,
     pseudo_positive_enabled: bool,
+    anchor_policy_statuses: Sequence[Optional[str]] = (),
 ) -> _ChannelBTriageResult:
     anchor_gt_backed_indices = sorted(int(pred_i) for pred_i in anchor_match_by_pred.keys())
     valid_explorer_count = int(len(explorer_accepted_objects_clean_by_view))
     anchor_support_counts = [0 for _ in range(len(accepted_objects_clean))]
     association_pairs_by_view: List[List[Tuple[int, int]]] = []
     dead_explorer_indices_by_view: List[List[int]] = []
+
+    def _anchor_policy_status(anchor_i: int) -> Optional[str]:
+        if int(anchor_i) < 0 or int(anchor_i) >= len(anchor_policy_statuses):
+            return None
+        raw_value = anchor_policy_statuses[int(anchor_i)]
+        if raw_value is None:
+            return None
+        value = str(raw_value).strip().lower()
+        return value or None
+
+    def _policy_forced_dead(anchor_i: int) -> bool:
+        return _anchor_policy_status(int(anchor_i)) in {
+            "verified_positive",
+            "verified_negative",
+        }
 
     def _conflicts_gt_backed(anchor_obj: GTObject) -> bool:
         return any(
@@ -265,6 +285,8 @@ def _build_channel_b_triage(
         for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
             if int(anchor_i) in anchor_match_by_pred:
                 continue
+            if _policy_forced_dead(int(anchor_i)):
+                continue
             explorer_i = anchor_to_explorer.get(int(anchor_i))
             if explorer_i is None:
                 continue
@@ -286,9 +308,26 @@ def _build_channel_b_triage(
     shielded_anchor_indices: set[int] = set()
     pseudo_positive_candidate_indices: List[int] = []
     dead_anchor_indices: set[int] = set()
+    lvis_verified_positive_dead_anchor_indices: set[int] = set()
+    lvis_verified_negative_dead_anchor_indices: set[int] = set()
+    lvis_not_exhaustive_anchor_indices: set[int] = set()
+    lvis_unevaluable_anchor_indices: set[int] = set()
     for anchor_i, anchor_obj in enumerate(accepted_objects_clean):
         if int(anchor_i) in anchor_match_by_pred:
             continue
+        anchor_status = _anchor_policy_status(int(anchor_i))
+        if anchor_status == "verified_positive":
+            dead_anchor_indices.add(int(anchor_i))
+            lvis_verified_positive_dead_anchor_indices.add(int(anchor_i))
+            continue
+        if anchor_status == "verified_negative":
+            dead_anchor_indices.add(int(anchor_i))
+            lvis_verified_negative_dead_anchor_indices.add(int(anchor_i))
+            continue
+        if anchor_status == "not_exhaustive":
+            lvis_not_exhaustive_anchor_indices.add(int(anchor_i))
+        elif anchor_status is None:
+            lvis_unevaluable_anchor_indices.add(int(anchor_i))
         support_count = int(anchor_support_counts[int(anchor_i)])
         support_rate = float(anchor_support_rates[int(anchor_i)])
         if support_count <= 0:
@@ -440,6 +479,18 @@ def _build_channel_b_triage(
             int(idx) for idx in pseudo_positive_cluster_demoted_indices
         ],
         dead_anchor_indices=[int(idx) for idx in sorted(dead_anchor_indices)],
+        lvis_verified_positive_dead_anchor_indices=[
+            int(idx) for idx in sorted(lvis_verified_positive_dead_anchor_indices)
+        ],
+        lvis_verified_negative_dead_anchor_indices=[
+            int(idx) for idx in sorted(lvis_verified_negative_dead_anchor_indices)
+        ],
+        lvis_not_exhaustive_anchor_indices=[
+            int(idx) for idx in sorted(lvis_not_exhaustive_anchor_indices)
+        ],
+        lvis_unevaluable_anchor_indices=[
+            int(idx) for idx in sorted(lvis_unevaluable_anchor_indices)
+        ],
         dead_explorer_indices_by_view=[
             [int(idx) for idx in dead_explorer_indices]
             for dead_explorer_indices in dead_explorer_indices_by_view
@@ -725,6 +776,10 @@ def _build_channel_b_meta_entry(
     anchor_support_rates: Sequence[float],
     shielded_anchor_indices: Sequence[int],
     dead_anchor_indices: Sequence[int],
+    lvis_verified_positive_dead_anchor_indices: Sequence[int],
+    lvis_verified_negative_dead_anchor_indices: Sequence[int],
+    lvis_not_exhaustive_anchor_indices: Sequence[int],
+    lvis_unevaluable_anchor_indices: Sequence[int],
     pseudo_positive_anchor_indices: Sequence[int],
     dead_explorer_indices_by_view: Sequence[Sequence[int]],
     recovered_gt_indices: Sequence[int],
@@ -845,6 +900,18 @@ def _build_channel_b_meta_entry(
         "anchor_support_rates": [float(v) for v in anchor_support_rates],
         "shielded_anchor_indices": [int(idx) for idx in shielded_anchor_indices],
         "dead_anchor_indices": [int(idx) for idx in dead_anchor_indices],
+        "lvis_verified_positive_dead_anchor_indices": [
+            int(idx) for idx in lvis_verified_positive_dead_anchor_indices
+        ],
+        "lvis_verified_negative_dead_anchor_indices": [
+            int(idx) for idx in lvis_verified_negative_dead_anchor_indices
+        ],
+        "lvis_not_exhaustive_anchor_indices": [
+            int(idx) for idx in lvis_not_exhaustive_anchor_indices
+        ],
+        "lvis_unevaluable_anchor_indices": [
+            int(idx) for idx in lvis_unevaluable_anchor_indices
+        ],
         "pseudo_positive_anchor_indices": [
             int(idx) for idx in pseudo_positive_anchor_indices
         ],

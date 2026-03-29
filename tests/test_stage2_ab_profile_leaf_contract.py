@@ -109,6 +109,26 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
     assert smoke_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
 
 
+def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml")
+    )
+
+    assert (
+        cfg.model["model"]
+        == "output/stage1/lvis_bbox_max60_1024/epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+    )
+    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
+    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
+    assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
+    assert cfg.training["output_dir"] == "output/stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["logging_dir"] == "tb/stage2_ab/lvis_bbox_max60_1024"
+
+
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-03-22
+updated: 2026-03-29
 ---
 
 # Training Metrics and Losses
@@ -58,6 +58,16 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/expected_bin_abs_err_p90`
   - `coord_diag/w1_to_delta`
 
+### BBox Geo
+
+- `loss/geo/bbox_geo`
+- `loss/geo/bbox_smoothl1`
+- `loss/geo/bbox_ciou`
+- `bbox_geo/loss_per_sample`
+- `bbox_geo/groups_total`
+- `bbox_geo/groups_per_sample`
+- `bbox_geo/coord_slots_total`
+
 ### BBox Size Aux
 
 - `loss/geo/bbox_size_aux`
@@ -70,6 +80,16 @@ Stage-1 training families that parity tests expect to stay user-visible.
 - `bbox_size_aux/mean_width`
 - `bbox_size_aux/mean_height`
 - `bbox_size_aux/mean_log_area`
+
+### BBox Geometry Aux
+
+- `loss/geo/bbox_geo`
+- `loss/geo/bbox_smoothl1`
+- `loss/geo/bbox_ciou`
+- `bbox_geo/loss_per_sample`
+- `bbox_geo/groups_total`
+- `bbox_geo/groups_per_sample`
+- `bbox_geo/coord_slots_total`
 
 ### Token-Type Aggregates And Coord Monitors
 

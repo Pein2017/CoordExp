@@ -319,6 +319,64 @@ class CoordSoftCEW1Config:
 
 
 @dataclass(frozen=True)
+class BBoxGeoConfig:
+    enabled: bool = False
+    smoothl1_weight: float = 0.0
+    ciou_weight: float = 1.0
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "BBoxGeoConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("bbox_geo section must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+        required = {
+            "enabled",
+            "smoothl1_weight",
+            "ciou_weight",
+        }
+        unknown = sorted(str(k) for k in data.keys() if k not in required)
+        if unknown:
+            raise ValueError(
+                f"Unknown bbox_geo keys: {[f'bbox_geo.{k}' for k in unknown]}"
+            )
+        missing = sorted(str(k) for k in required if k not in data)
+        if missing:
+            raise ValueError(
+                f"bbox_geo requires explicit keys: {[f'bbox_geo.{k}' for k in missing]}"
+            )
+
+        enabled = bool(data.pop("enabled"))
+
+        def _parse_float(key: str, default: float) -> float:
+            raw = data.pop(key)
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"bbox_geo.{key} must be numeric") from exc
+
+        smoothl1_weight = _parse_float("smoothl1_weight", cls.smoothl1_weight)
+        ciou_weight = _parse_float("ciou_weight", cls.ciou_weight)
+
+        if smoothl1_weight < 0:
+            raise ValueError("bbox_geo.smoothl1_weight must be >= 0")
+        if ciou_weight < 0:
+            raise ValueError("bbox_geo.ciou_weight must be >= 0")
+        if enabled and smoothl1_weight == 0 and ciou_weight == 0:
+            raise ValueError(
+                "bbox_geo is enabled but smoothl1_weight and ciou_weight are both 0"
+            )
+
+        return cls(
+            enabled=enabled,
+            smoothl1_weight=smoothl1_weight,
+            ciou_weight=ciou_weight,
+        )
+
+
+@dataclass(frozen=True)
 class BBoxSizeAuxConfig:
     enabled: bool = False
     log_wh_weight: float = 0.05
@@ -806,6 +864,7 @@ class CustomConfig:
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
+    bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
     bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
@@ -1014,6 +1073,8 @@ class CustomConfig:
         data.pop("coord_loss", None)
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
+        bbox_geo_raw = data.pop("bbox_geo", None)
+        bbox_geo = BBoxGeoConfig.from_mapping(bbox_geo_raw)
         bbox_size_aux_raw = data.pop("bbox_size_aux", None)
         bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
 
@@ -1040,6 +1101,7 @@ class CustomConfig:
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             coord_soft_ce_w1=coord_soft_ce_w1,
+            bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
@@ -2129,6 +2191,9 @@ class TrainingConfig:
         custom_coord_soft_ce_w1_present = bool(
             isinstance(custom_raw, Mapping) and "coord_soft_ce_w1" in custom_raw
         )
+        custom_bbox_geo_present = bool(
+            isinstance(custom_raw, Mapping) and "bbox_geo" in custom_raw
+        )
         custom_bbox_size_aux_present = bool(
             isinstance(custom_raw, Mapping) and "bbox_size_aux" in custom_raw
         )
@@ -2234,6 +2299,11 @@ class TrainingConfig:
                 "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
                 "stage2_ab.pipeline.objective[*].config for the coord_reg module"
             )
+        if stage2_pipeline_present and custom_bbox_geo_present:
+            raise ValueError(
+                "stage2_ab.pipeline is provided; custom.bbox_geo.* is disallowed and must be moved into "
+                "stage2_ab.pipeline.objective[*].config for the bbox_geo module"
+            )
         if stage2_pipeline_present and custom_bbox_size_aux_present:
             raise ValueError(
                 "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
@@ -2243,6 +2313,11 @@ class TrainingConfig:
             raise ValueError(
                 "rollout_matching.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
                 "rollout_matching.pipeline.objective[*].config for the coord_reg module"
+            )
+        if rollout_pipeline_present and custom_bbox_geo_present:
+            raise ValueError(
+                "rollout_matching.pipeline is provided; custom.bbox_geo.* is disallowed and must be moved into "
+                "rollout_matching.pipeline.objective[*].config for the bbox_geo module"
             )
         if rollout_pipeline_present and custom_bbox_size_aux_present:
             raise ValueError(

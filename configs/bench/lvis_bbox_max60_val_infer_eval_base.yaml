@@ -22,8 +22,15 @@ stages:
   vis: false
 
 infer:
-  gt_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+  # This Stage-1-style 1024 export is the right default for bbox pretraining and
+  # quick inference checks, but it does not carry federated LVIS metadata yet.
+  # Keep eval.metrics at f1ish here unless you swap in a regenerated metadata-bearing
+  # LVIS JSONL from the updated converter path.
+  gt_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
   model_checkpoint: output/stage2_ab/REPLACE_ME
+  prompt_variant: lvis_stage2_federated
+  object_field_order: desc_first
+  object_ordering: sorted
 
   # coord | text | auto
   mode: auto
@@ -57,7 +64,8 @@ infer:
 
 eval:
   output_dir: null  # defaults to <run_dir>/eval
-  metrics: both
+  metrics: f1ish
+  lvis_max_dets: 300
   use_segm: false
   overlay: false
   overlay_k: 12

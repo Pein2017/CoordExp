@@ -55,7 +55,7 @@ def _get(cfg: Mapping[str, Any], key: str, default: Any) -> Any:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="CoordExp detection evaluator (COCO + F1-ish set matching)."
+        description="CoordExp detection evaluator (COCO/LVIS + F1-ish set matching)."
     )
     parser.add_argument("--config", type=Path, default=None, help="YAML config")
 
@@ -69,9 +69,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--metrics",
-        choices=["coco", "f1ish", "both"],
+        choices=["coco", "lvis", "f1ish", "both"],
         default=None,
         help="Which metric suite to run.",
+    )
+    parser.add_argument(
+        "--lvis-max-dets",
+        type=int,
+        default=None,
+        help="Per-image detection cap for LVIS-style evaluation (default: 300).",
     )
     parser.add_argument(
         "--unknown-policy",
@@ -216,6 +222,7 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         semantic_threshold=float(args.semantic_threshold or _get(ycfg, "semantic_threshold", 0.6)),
         semantic_device=str(args.semantic_device or _get(ycfg, "semantic_device", "auto")),
         semantic_batch_size=int(args.semantic_batch_size or _get(ycfg, "semantic_batch_size", 64)),
+        lvis_max_dets=int(args.lvis_max_dets or _get(ycfg, "lvis_max_dets", 300)),
     )
 
     return pred_jsonl, options
@@ -245,6 +252,7 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
         semantic_threshold=float(args.semantic_threshold or 0.6),
         semantic_device=str(args.semantic_device or "auto"),
         semantic_batch_size=int(args.semantic_batch_size or 64),
+        lvis_max_dets=int(args.lvis_max_dets or 300),
     )
 
     return args.pred_jsonl, options

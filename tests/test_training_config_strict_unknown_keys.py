@@ -94,6 +94,30 @@ def test_custom_bbox_size_aux_requires_explicit_keys() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_custom_bbox_geo_unknown_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "unknown_flag": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "bbox_geo.unknown_flag" in str(exc.value)
+
+
+def test_custom_bbox_geo_requires_explicit_keys() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "ciou_weight": 1.0,
+    }
+
+    with pytest.raises(ValueError, match=r"bbox_geo requires explicit keys"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
     payload = _base_training_payload()
     payload["training"] = {
@@ -175,6 +199,30 @@ def test_rollout_eval_detection_and_eval_prompt_variant_keys_are_accepted():
     assert cfg.rollout_matching.eval_prompt_variant == "coco_80"
     assert cfg.rollout_matching.eval_detection is not None
     assert cfg.rollout_matching.eval_detection.enabled is True
+
+
+def test_rollout_eval_detection_lvis_metrics_are_accepted():
+    payload = _base_training_payload()
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "channel_b_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "lvis",
+            "lvis_max_dets": 300,
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert cfg.rollout_matching is not None
+    assert cfg.rollout_matching.eval_detection is not None
+    assert cfg.rollout_matching.eval_detection.metrics == "lvis"
+    assert cfg.rollout_matching.eval_detection.lvis_max_dets == 300
 
 
 def test_rollout_server_base_url_rejects_0_0_0_0() -> None:
@@ -728,6 +776,19 @@ def test_stage2_pipeline_canonical_channels_scope_parses():
     assert cfg.stage2_ab.pipeline is not None
     assert cfg.stage2_ab.pipeline.objective[0].channels == ("A", "B")
     assert cfg.stage2_ab.pipeline.objective[1].channels == ("B",)
+
+
+def test_stage2_pipeline_disallows_custom_bbox_geo_knobs() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "smoothl1_weight": 0.0,
+        "ciou_weight": 1.0,
+    }
+    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+
+    with pytest.raises(ValueError, match=r"custom\.bbox_geo"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage2_pipeline_disallows_custom_bbox_size_aux_knobs() -> None:

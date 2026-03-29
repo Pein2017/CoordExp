@@ -198,6 +198,26 @@ def test_summary_prompts_are_unaffected_by_prompt_variant() -> None:
     assert prompts.user == USER_PROMPT_SUMMARY
 
 
+def test_lvis_federated_prompt_variants_encode_partial_label_semantics() -> None:
+    stage1_system, stage1_user = get_template_prompts(
+        prompt_variant="lvis_stage1_federated"
+    )
+    stage2_system, stage2_user = get_template_prompts(
+        prompt_variant="lvis_stage2_federated"
+    )
+
+    assert "verified annotation subset" in stage1_system
+    assert "omission as absence" in stage1_system
+    assert "verified subset rather than an exhaustive absence claim" in stage1_user
+
+    assert "do not assume an omitted category is absent" in stage2_system
+    assert "continue listing clearly visible" in stage2_system.lower()
+    assert "continue with additional visible instances" in stage2_user
+
+    assert "Detect every object in the image" not in stage1_system
+    assert "Detect every object in the image" not in stage2_system
+
+
 def test_unknown_prompt_variant_error_lists_unknown_and_available_keys() -> None:
     with pytest.raises(ValueError, match="Unknown prompt variant") as exc_info:
         get_template_prompts(prompt_variant="unknown_variant")

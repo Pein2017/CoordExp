@@ -420,6 +420,64 @@ def test_stage1_ablation_profiles_pin_cache_parity_and_ordering(
     assert expected_ordering in cfg.training["logging_dir"]
 
 
+def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml")
+    )
+
+    assert cfg.training["optimizer"] == "multimodal_coord_offset"
+    assert (
+        cfg.training["run_name"]
+        == "epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+    )
+    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
+    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.extra["prompt_variant"] == "lvis_stage1_federated"
+    assert cfg.custom.coord_soft_ce_w1.enabled is True
+    assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
+    assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
+    assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
+    assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
+    assert cfg.custom.bbox_geo.enabled is True
+    assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.0)
+    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_size_aux.enabled is True
+    assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
+    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024"
+    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024"
+
+
+def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml")
+    )
+
+    assert (
+        cfg.model["model"]
+        == "output/stage1/lvis_bbox_max60_1024/epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+    )
+    assert (
+        cfg.training["run_name"]
+        == "epoch_2-stage2-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+    )
+    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
+    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
+    assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
+    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
+    assert objective["bbox_geo"].config["smoothl1_weight"] == pytest.approx(0.0)
+    assert objective["bbox_geo"].config["ciou_weight"] == pytest.approx(1.0)
+    assert objective["coord_reg"].config["coord_ce_weight"] == pytest.approx(1.0)
+    assert objective["coord_reg"].config["soft_ce_weight"] == pytest.approx(1.0)
+    assert objective["coord_reg"].config["w1_weight"] == pytest.approx(1.0)
+
+
 def test_recompute_gas_for_packing_uses_effective_batch_size() -> None:
     nested = SimpleNamespace(gradient_accumulation_steps=2)
     args = SimpleNamespace(

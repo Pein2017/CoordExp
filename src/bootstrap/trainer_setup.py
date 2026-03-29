@@ -5,6 +5,7 @@ from typing import Any, Mapping, Sequence
 from src.config import SaveDelayConfig
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
+    BBoxGeoLossMixin,
     BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
@@ -18,6 +19,7 @@ def compose_trainer_class(
     trainer_variant: str,
     instability_monitor_cfg: Mapping[str, Any] | None,
     token_type_cfg: Any,
+    bbox_geo_cfg: Any,
     bbox_size_aux_cfg: Any,
     coord_soft_ce_w1_cfg: Any,
 ) -> type:
@@ -32,6 +34,8 @@ def compose_trainer_class(
             mixins.append(AggregateTokenTypeMetricsMixin)
         if bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
             mixins.append(BBoxSizeAuxLossMixin)
+        if bbox_geo_cfg and getattr(bbox_geo_cfg, "enabled", False):
+            mixins.append(BBoxGeoLossMixin)
         if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
             mixins.append(CoordSoftCEW1LossMixin)
     if not mixins:

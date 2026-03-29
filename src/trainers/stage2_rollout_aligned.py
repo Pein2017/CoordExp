@@ -707,6 +707,11 @@ def _build_eval_detection_record_confidence_postop_input(
         "raw_output_json": {"objects": raw_objects},
         "errors": [],
     }
+    if sample.get("image_id") is not None:
+        out["image_id"] = sample.get("image_id")
+    metadata = sample.get("metadata")
+    if isinstance(metadata, Mapping):
+        out["metadata"] = dict(metadata)
     return out
 
 
@@ -740,6 +745,8 @@ def _compute_eval_detection_coco_metrics(
     semantic_threshold = float(eval_cfg.get("semantic_threshold", 0.6) or 0.6)
     semantic_device = str(eval_cfg.get("semantic_device", "auto") or "auto").strip()
     semantic_batch_size = int(eval_cfg.get("semantic_batch_size", 64) or 64)
+    metrics_mode = str(eval_cfg.get("metrics", "coco") or "coco").strip().lower()
+    lvis_max_dets = int(eval_cfg.get("lvis_max_dets", 300) or 300)
     iou_thrs = _coerce_optional_float_list(
         eval_cfg.get("iou_thrs", None),
         path="rollout_matching.eval_detection.iou_thrs",
@@ -756,7 +763,7 @@ def _compute_eval_detection_coco_metrics(
 
     with tempfile.TemporaryDirectory(prefix="coordexp_evalstep_coco_") as tmp_dir:
         options = EvalOptions(
-            metrics="coco",
+            metrics=str(metrics_mode),
             strict_parse=bool(strict_parse),
             use_segm=bool(use_segm),
             iou_thrs=iou_thrs,
@@ -770,6 +777,7 @@ def _compute_eval_detection_coco_metrics(
             semantic_threshold=float(semantic_threshold),
             semantic_device=semantic_device,
             semantic_batch_size=int(semantic_batch_size),
+            lvis_max_dets=int(lvis_max_dets),
         )
 
         metrics, counters = compute_coco_metrics_from_records(
@@ -1745,9 +1753,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             metrics_mode = str(
                 eval_det_raw.get("metrics", "coco") or "coco"
             ).strip().lower()
-            if metrics_mode not in {"coco", "both"}:
+            if metrics_mode not in {"coco", "lvis", "f1ish", "both"}:
                 raise ValueError(
-                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'both'}"
+                    "rollout_matching.eval_detection.metrics must be one of {'coco', 'lvis', 'f1ish', 'both'}"
                 )
             score_mode = str(
                 eval_det_raw.get("score_mode", "constant") or "constant"

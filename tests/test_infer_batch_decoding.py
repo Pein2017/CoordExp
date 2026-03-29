@@ -437,6 +437,87 @@ def test_infer_summary_records_prompt_variant(tmp_path, monkeypatch):
     assert summary["infer"]["object_ordering"] == "random"
 
 
+def test_infer_preserves_image_id_and_metadata_in_gt_vs_pred(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    _write_img(tmp_path / "img_0.png")
+
+    gt_path = tmp_path / "gt.jsonl"
+    gt_path.write_text(
+        json.dumps(
+            {
+                "images": ["img_0.png"],
+                "image_id": 123,
+                "width": 32,
+                "height": 32,
+                "metadata": {
+                    "dataset": "lvis",
+                    "dataset_policy": "lvis_federated",
+                    "image_id": 123,
+                    "lvis": {
+                        "gt_objects": [
+                            {"id": 1, "name": "cat", "frequency": "rare"}
+                        ],
+                        "positive_categories": [
+                            {"id": 1, "name": "cat", "frequency": "rare"}
+                        ],
+                        "neg_categories": [
+                            {"id": 2, "name": "dog", "frequency": "common"}
+                        ],
+                        "not_exhaustive_categories": [],
+                    },
+                },
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "cat"}],
+            },
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint="dummy",
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    monkeypatch.setattr(engine, "load_model", lambda: None)
+
+    def _fake_generate_batch(images):
+        text = '{"objects": [{"desc": "cat", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
+        return [GenerationResult(text=text, error=None) for _ in images]
+
+    monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+    engine.infer()
+
+    rec = json.loads(out_path.read_text(encoding="utf-8").strip())
+    assert rec["image_id"] == 123
+    assert rec["metadata"]["dataset_policy"] == "lvis_federated"
+    assert rec["metadata"]["lvis"]["positive_categories"][0]["name"] == "cat"
+
+
 def test_infer_build_messages_respects_random_ordering() -> None:
     engine = InferenceEngine(
         InferenceConfig(

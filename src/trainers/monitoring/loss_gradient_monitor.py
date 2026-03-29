@@ -133,6 +133,26 @@ def build_stage1_bbox_size_monitor_terms(
     return terms
 
 
+def build_stage1_bbox_geo_monitor_terms(
+    *,
+    result: Any,
+    cfg: Any,
+) -> Dict[str, torch.Tensor]:
+    terms: Dict[str, torch.Tensor] = {}
+    candidates = (
+        ("S1/bbox_smoothl1", "smoothl1_contrib", "smoothl1_weight"),
+        ("S1/bbox_ciou", "ciou_contrib", "ciou_weight"),
+    )
+    for name, attr_name, weight_key in candidates:
+        if float(_cfg_float(cfg, weight_key, 0.0)) == 0.0:
+            continue
+        tensor = _as_scalar_tensor(getattr(result, attr_name, None))
+        if tensor is None:
+            continue
+        terms[name] = tensor
+    return terms
+
+
 def _collect_weighted_coord_terms_from_state(
     *,
     state: Mapping[str, Any],
@@ -649,6 +669,7 @@ def get_loss_gradient_monitor(trainer: Any) -> Optional[LossGradientMonitor]:
 
 __all__ = [
     "LossGradientMonitor",
+    "build_stage1_bbox_geo_monitor_terms",
     "build_stage1_coord_monitor_terms",
     "build_stage2_coord_monitor_terms_from_pipeline",
     "build_stage2_two_channel_coord_monitor_terms",

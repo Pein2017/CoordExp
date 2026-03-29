@@ -22,7 +22,7 @@ infer:
   model_checkpoint: output/1-24/stage_1/poly_prefer_semantic_max60/epoch_4-softce_w1-LRs-2e-4_1e-4_4e-4-from-base-4B/checkpoint-1520_merged
 
   # Prompt controls (keep train/infer parity)
-  prompt_variant: default            # default | coco_80
+  prompt_variant: default            # default | coco_80 | lvis_stage1_federated | lvis_stage2_federated
   object_field_order: desc_first     # desc_first | geometry_first
   object_ordering: sorted            # sorted | random
 
@@ -93,11 +93,12 @@ artifacts:
 # Evaluation stage (does not load the model)
 eval:
   output_dir: null  # defaults to <run_dir>/eval
-  metrics: f1ish    # coco | f1ish | both
-  # - coco|both: pipeline requires artifacts.gt_vs_pred_scored_jsonl and uses that artifact.
+  metrics: f1ish    # coco | lvis | f1ish | both
+  # - coco|lvis|both: pipeline requires artifacts.gt_vs_pred_scored_jsonl and uses that artifact.
   # - f1ish-only: pipeline can evaluate the base gt_vs_pred.jsonl.
   # Legacy toggle eval.use_pred_score is unsupported.
   use_segm: true
+  lvis_max_dets: 300
   overlay: false
   overlay_k: 12
   num_workers: 0

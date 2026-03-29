@@ -104,6 +104,8 @@ COCO_80_CLASS_LIST_COMPACT = ", ".join(COCO_80_CLASS_NAMES)
 @dataclass(frozen=True)
 class PromptVariant:
     key: str
+    dense_system_override: str | None = None
+    dense_user_override: str | None = None
     dense_system_suffix: str = ""
     dense_user_suffix: str = ""
 
@@ -128,6 +130,61 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             f"{COCO_80_CLASS_LIST_COMPACT}."
             " Locate each clearly visible object instance; output one record per instance."
             " Each record must correspond to exactly one object instance with an atomic bbox; do not use one box to cover multiple objects and do not repeat near-identical boxes."
+        ),
+    ),
+    "lvis_stage1_federated": PromptVariant(
+        key="lvis_stage1_federated",
+        dense_system_override=(
+            'You are a dense object annotation assistant for LVIS federated labels. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
+            '- The top-level object must contain exactly one key "objects".\n'
+            "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
+            '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
+            "- Geometry formatting rules:\n"
+            "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
+            "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
+            "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
+            "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
+            "    - Do NOT sort poly points by x/y; that can create self-intersections.\n"
+            "- Coordinates must be written as coord tokens `<|coord_N|>` only.\n"
+            "- LVIS federated policy: this target is the verified annotation subset for the image, not an exhaustive statement about all visible categories.\n"
+            "- Omitted visible categories may be intentionally unlabeled; do not interpret omission as absence.\n"
+            "- Emit one record per verified annotated instance, keep boxes/polygons atomic, avoid duplicates, and emit no extra commentary.\n"
+            "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
+        ),
+        dense_user_override=(
+            "Return the verified LVIS annotation subset for this image as a single CoordJSON object "
+            '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
+            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. "
+            "Important: omitted visible categories may be intentionally unlabeled under LVIS federated annotations, so the target is a verified subset rather than an exhaustive absence claim. "
+            'Use the exact per-object format: {"desc": "category", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}. '
+            "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
+        ),
+    ),
+    "lvis_stage2_federated": PromptVariant(
+        key="lvis_stage2_federated",
+        dense_system_override=(
+            'You are a dense object detection assistant for LVIS-style federated annotations. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
+            '- The top-level object must contain exactly one key "objects".\n'
+            "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
+            '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
+            "- Geometry formatting rules:\n"
+            "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
+            "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
+            "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
+            "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
+            "    - Do NOT sort poly points by x/y; that can create self-intersections.\n"
+            "- Coordinates must be written as coord tokens `<|coord_N|>` only.\n"
+            "- LVIS federated policy: some visible categories may be unlabeled in the verified subset, so do not assume an omitted category is absent.\n"
+            "- Continue listing clearly visible, well-localized instances when confident, but keep one record per atomic instance, avoid duplicates, and stay within canonical LVIS category names.\n"
+            "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
+        ),
+        dense_user_override=(
+            "List clearly visible LVIS objects in this image as a single CoordJSON object "
+            '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
+            "Do not assume unlisted categories are absent just because the verified subset may be partial; continue with additional visible instances when you can localize them confidently. "
+            "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. "
+            'Use the exact per-object format: {"desc": "category", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}. '
+            "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
         ),
     ),
 }

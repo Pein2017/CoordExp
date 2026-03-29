@@ -128,6 +128,8 @@ def build_dense_system_prompt(
         base_prompt = _apply_geometry_first_system_wording(base_prompt)
 
     variant = resolve_prompt_variant(prompt_variant)
+    if variant.dense_system_override is not None:
+        return str(variant.dense_system_override)
     return f"{base_prompt}{variant.dense_system_suffix}"
 
 
@@ -158,6 +160,8 @@ def build_dense_user_prompt(
         base_prompt = _apply_geometry_first_user_wording(base_prompt)
 
     variant = resolve_prompt_variant(prompt_variant)
+    if variant.dense_user_override is not None:
+        return str(variant.dense_user_override)
     return f"{base_prompt}{variant.dense_user_suffix}"
 
 

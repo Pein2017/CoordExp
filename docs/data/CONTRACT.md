@@ -78,6 +78,10 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 
 ## Current Sources (checked)
 - `public_data/*`: LVIS/COCO/Objects365-style exports; polygons include `poly_points`; descriptions are English classes/phrases.
+- The cached LVIS bbox Stage-1 exports under `public_data/lvis/rescale_32_1024_bbox_max60/{train,val}.coord.jsonl`
+  already satisfy the default sorted-order invariant above.
+  - verification status: full-row scan, `0` unsorted rows in train and `0` unsorted rows in val
+  - comparator used: `(minY, minX)` from bbox top-left, matching the runtime loader contract
 
 All future domains MUST emit this contract to remain compatible with the shared chat template pipeline.
 

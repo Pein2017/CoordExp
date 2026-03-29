@@ -13,6 +13,7 @@ import torch
 from swift.llm import MaxLengthError
 from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_ids
 
+from src.common.lvis_semantics import extract_lvis_image_policy
 from src.common.object_field_order import build_object_payload
 from src.utils.assistant_json import dumps_coordjson
 
@@ -522,6 +523,27 @@ def _sample_monitor_image_id(sample: Mapping[str, Any]) -> Any:
             continue
         return value
     return None
+
+
+def _extract_sample_lvis_policy(sample: Mapping[str, Any]) -> Any:
+    metadata = sample.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    return extract_lvis_image_policy(metadata)
+
+
+def _anchor_lvis_policy_statuses(
+    *,
+    sample: Mapping[str, Any],
+    accepted_objects_clean: Sequence[GTObject],
+) -> List[Optional[str]]:
+    policy = _extract_sample_lvis_policy(sample)
+    if policy is None:
+        return [None for _ in accepted_objects_clean]
+    return [
+        policy.category_status_for_desc(obj.desc)[0]
+        for obj in accepted_objects_clean
+    ]
 
 
 def _serialize_monitor_object(obj: GTObject) -> Dict[str, Any]:
@@ -2006,6 +2028,10 @@ class Stage2ABTrainingTrainer(
         triage_recovered_gt_rate_den_total = 0.0
         triage_dead_anchor_den_total = 0
         triage_dead_explorer_den_total = 0
+        triage_lvis_verified_positive_dead_total = 0
+        triage_lvis_verified_negative_dead_total = 0
+        triage_lvis_not_exhaustive_total = 0
+        triage_lvis_unevaluable_total = 0
         triage_pseudo_positive_candidate_total = 0
         triage_pseudo_positive_subthreshold_total = 0
         triage_pseudo_positive_selected_total = 0
@@ -2354,12 +2380,17 @@ class Stage2ABTrainingTrainer(
                 for explorer_view_item in explorer_views
             )
 
+            anchor_policy_statuses = _anchor_lvis_policy_statuses(
+                sample=sample,
+                accepted_objects_clean=accepted_objects_clean,
+            )
             triage = _build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
                 duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
                 explorer_accepted_objects_clean_by_view=explorer_accepted_objects_clean_by_view,
                 anchor_match_by_pred=anchor_match_by_pred,
                 explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
+                anchor_policy_statuses=anchor_policy_statuses,
                 unlabeled_consistent_iou_threshold=float(
                     unlabeled_consistent_iou_threshold
                 ),
@@ -2381,6 +2412,18 @@ class Stage2ABTrainingTrainer(
                 triage.pseudo_positive_cluster_demoted_indices
             )
             dead_anchor_indices = set(triage.dead_anchor_indices)
+            lvis_verified_positive_dead_anchor_indices = list(
+                triage.lvis_verified_positive_dead_anchor_indices
+            )
+            lvis_verified_negative_dead_anchor_indices = list(
+                triage.lvis_verified_negative_dead_anchor_indices
+            )
+            lvis_not_exhaustive_anchor_indices = list(
+                triage.lvis_not_exhaustive_anchor_indices
+            )
+            lvis_unevaluable_anchor_indices = list(
+                triage.lvis_unevaluable_anchor_indices
+            )
             recovered_gt_indices = list(triage.recovered_gt_indices)
             recovered_gt_support_counts = list(triage.recovered_gt_support_counts)
             recovered_gt_support_rates = list(triage.recovered_gt_support_rates)
@@ -2424,6 +2467,18 @@ class Stage2ABTrainingTrainer(
             triage_dead_anchor_total += int(len(dead_anchor_indices))
             triage_dead_explorer_total += int(
                 sum(len(indices) for indices in dead_explorer_indices_by_view)
+            )
+            triage_lvis_verified_positive_dead_total += int(
+                len(lvis_verified_positive_dead_anchor_indices)
+            )
+            triage_lvis_verified_negative_dead_total += int(
+                len(lvis_verified_negative_dead_anchor_indices)
+            )
+            triage_lvis_not_exhaustive_total += int(
+                len(lvis_not_exhaustive_anchor_indices)
+            )
+            triage_lvis_unevaluable_total += int(
+                len(lvis_unevaluable_anchor_indices)
             )
             triage_recovered_gt_total += int(len(recovered_gt_indices))
             triage_recovered_gt_rate_num_total += float(
@@ -2655,6 +2710,21 @@ class Stage2ABTrainingTrainer(
                             "dead_anchor_indices": [
                                 int(idx) for idx in sorted(dead_anchor_indices)
                             ],
+                            "lvis_verified_positive_dead_anchor_indices": [
+                                int(idx)
+                                for idx in lvis_verified_positive_dead_anchor_indices
+                            ],
+                            "lvis_verified_negative_dead_anchor_indices": [
+                                int(idx)
+                                for idx in lvis_verified_negative_dead_anchor_indices
+                            ],
+                            "lvis_not_exhaustive_anchor_indices": [
+                                int(idx)
+                                for idx in lvis_not_exhaustive_anchor_indices
+                            ],
+                            "lvis_unevaluable_anchor_indices": [
+                                int(idx) for idx in lvis_unevaluable_anchor_indices
+                            ],
                             "pseudo_positive_anchor_indices": [
                                 int(idx) for idx in pseudo_positive_anchor_indices
                             ],
@@ -2860,6 +2930,10 @@ class Stage2ABTrainingTrainer(
                 anchor_support_rates=anchor_support_rates,
                 shielded_anchor_indices=sorted(shielded_anchor_indices),
                 dead_anchor_indices=sorted(dead_anchor_indices),
+                lvis_verified_positive_dead_anchor_indices=lvis_verified_positive_dead_anchor_indices,
+                lvis_verified_negative_dead_anchor_indices=lvis_verified_negative_dead_anchor_indices,
+                lvis_not_exhaustive_anchor_indices=lvis_not_exhaustive_anchor_indices,
+                lvis_unevaluable_anchor_indices=lvis_unevaluable_anchor_indices,
                 pseudo_positive_anchor_indices=pseudo_positive_anchor_indices,
                 dead_explorer_indices_by_view=dead_explorer_indices_by_view,
                 recovered_gt_indices=recovered_gt_indices,
@@ -3048,6 +3122,18 @@ class Stage2ABTrainingTrainer(
             ),
             "train/triage/dead_anchor_count": float(
                 triage_dead_anchor_total
+            ),
+            "train/triage/lvis_verified_positive_dead_count": float(
+                triage_lvis_verified_positive_dead_total
+            ),
+            "train/triage/lvis_verified_negative_dead_count": float(
+                triage_lvis_verified_negative_dead_total
+            ),
+            "train/triage/lvis_not_exhaustive_count": float(
+                triage_lvis_not_exhaustive_total
+            ),
+            "train/triage/lvis_unevaluable_count": float(
+                triage_lvis_unevaluable_total
             ),
             "train/triage/explorer_only_dead_count": float(
                 triage_dead_explorer_total

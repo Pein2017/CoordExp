@@ -2382,6 +2382,7 @@ def main():
         base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
+    bbox_geo_cfg = getattr(custom_config, "bbox_geo", None)
     bbox_size_aux_cfg = getattr(custom_config, "bbox_size_aux", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
@@ -2427,6 +2428,7 @@ def main():
         trainer_variant=str(trainer_variant or ""),
         instability_monitor_cfg=instability_monitor_cfg,
         token_type_cfg=token_type_cfg,
+        bbox_geo_cfg=bbox_geo_cfg,
         bbox_size_aux_cfg=bbox_size_aux_cfg,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
     )
@@ -2680,6 +2682,8 @@ def main():
         )
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
+    if bbox_geo_cfg is not None:
+        setattr(trainer, "bbox_geo_cfg", bbox_geo_cfg)
     if bbox_size_aux_cfg is not None:
         setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
     if token_type_cfg is not None:

@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.config.schema import BBoxSizeAuxConfig
+from src.config.schema import BBoxGeoConfig, BBoxSizeAuxConfig
+from src.trainers.losses.bbox_geo import compute_stage1_bbox_geo_loss
 from src.trainers.losses.bbox_size_aux import compute_stage1_bbox_size_aux_loss
 from src.trainers.teacher_forcing.contracts import TeacherForcingContext
 from src.trainers.teacher_forcing.geometry import (
@@ -171,6 +172,79 @@ def test_stage1_bbox_size_aux_loss_rejects_non_bbox_four_n_coord_sequences() -> 
             cfg=cfg,
             decode_temperature=1.0,
         )
+
+
+def test_stage1_bbox_geo_loss_exact_match_is_near_zero() -> None:
+    vocab = 1200
+    labels = torch.tensor([[0, 5, 103, 104, 107, 108]], dtype=torch.long)
+    logits = torch.full((1, labels.shape[1], vocab), -20.0, dtype=torch.float32)
+    logits[0, 0, 5] = 20.0
+    logits[0, 1, 103] = 20.0
+    logits[0, 2, 104] = 20.0
+    logits[0, 3, 107] = 20.0
+    logits[0, 4, 108] = 20.0
+
+    coord_id_map = torch.full((vocab,), -1, dtype=torch.long)
+    for bin_id in range(1000):
+        coord_id_map[100 + bin_id] = bin_id
+
+    cfg = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": True,
+            "smoothl1_weight": 0.0,
+            "ciou_weight": 1.0,
+        }
+    )
+    result = compute_stage1_bbox_geo_loss(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=[100 + i for i in range(1000)],
+        coord_id_map=coord_id_map,
+        tokenizer=_DummyTokenizer(),
+        cfg=cfg,
+        decode_temperature=1.0,
+    )
+
+    assert result is not None
+    assert result.bbox_groups == 1
+    assert float(result.ciou_loss.detach().cpu().item()) < 1e-6
+    assert float(result.total_loss.detach().cpu().item()) < 1e-6
+
+
+def test_stage1_bbox_geo_loss_is_positive_when_predicted_box_misses_target() -> None:
+    vocab = 1200
+    labels = torch.tensor([[0, 5, 103, 104, 107, 108]], dtype=torch.long)
+    logits = torch.full((1, labels.shape[1], vocab), -20.0, dtype=torch.float32)
+    logits[0, 0, 5] = 20.0
+    logits[0, 1, 120] = 20.0
+    logits[0, 2, 120] = 20.0
+    logits[0, 3, 140] = 20.0
+    logits[0, 4, 140] = 20.0
+
+    coord_id_map = torch.full((vocab,), -1, dtype=torch.long)
+    for bin_id in range(1000):
+        coord_id_map[100 + bin_id] = bin_id
+
+    cfg = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": True,
+            "smoothl1_weight": 0.0,
+            "ciou_weight": 1.0,
+        }
+    )
+    result = compute_stage1_bbox_geo_loss(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=[100 + i for i in range(1000)],
+        coord_id_map=coord_id_map,
+        tokenizer=_DummyTokenizer(),
+        cfg=cfg,
+        decode_temperature=1.0,
+    )
+
+    assert result is not None
+    assert float(result.ciou_loss.detach().cpu().item()) > 0.0
+    assert float(result.total_loss.detach().cpu().item()) > 0.0
 
 
 def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:

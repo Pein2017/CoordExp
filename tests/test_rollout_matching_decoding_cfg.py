@@ -123,6 +123,23 @@ def test_validate_rollout_matching_cfg_accepts_eval_detection_confidence_postop(
     t._validate_rollout_matching_cfg()
 
 
+def test_validate_rollout_matching_cfg_accepts_lvis_eval_detection_block():
+    t = _mk_uninit_trainer(
+        {
+            "eval_detection": {
+                "enabled": True,
+                "metrics": "lvis",
+                "lvis_max_dets": 300,
+                "score_mode": "constant",
+                "constant_score": 1.0,
+                "pred_score_source": "eval_rollout_constant",
+                "pred_score_version": 2,
+            }
+        }
+    )
+    t._validate_rollout_matching_cfg()
+
+
 def test_validate_rollout_matching_cfg_rejects_eval_detection_bad_score_mode():
     t = _mk_uninit_trainer({"eval_detection": {"score_mode": "unsupported"}})
     with pytest.raises(

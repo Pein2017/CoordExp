@@ -9,10 +9,11 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from src.config.schema import BBoxSizeAuxConfig, CoordSoftCEW1Config
+from src.config.schema import BBoxGeoConfig, BBoxSizeAuxConfig, CoordSoftCEW1Config
 from src.data_collators.token_types import TokenType
 from src.metrics.dataset_metrics import (
     AggregateTokenTypeMetricsMixin,
+    BBoxGeoLossMixin,
     BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
@@ -104,11 +105,18 @@ class _DummyTrainer(
     GradAccumLossScaleMixin,
     AggregateTokenTypeMetricsMixin,
     BBoxSizeAuxLossMixin,
+    BBoxGeoLossMixin,
     CoordSoftCEW1LossMixin,
     _DummyBaseTrainer,
 ):
-    def __init__(self, cfg: CoordSoftCEW1Config, bbox_cfg: BBoxSizeAuxConfig):
+    def __init__(
+        self,
+        cfg: CoordSoftCEW1Config,
+        bbox_geo_cfg: BBoxGeoConfig,
+        bbox_cfg: BBoxSizeAuxConfig,
+    ):
         self.coord_soft_ce_w1_cfg = cfg
+        self.bbox_geo_cfg = bbox_geo_cfg
         self.bbox_size_aux_cfg = bbox_cfg
         self.template = _DummyTemplate()
         self.args = SimpleNamespace(
@@ -168,13 +176,26 @@ def _make_toy_batch(*, bsz: int, with_token_types: bool, pack_num_samples: torch
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize("with_token_types", [False, True])
 @pytest.mark.parametrize("coord_enabled", [False, True])
+@pytest.mark.parametrize("bbox_geo_enabled", [False, True])
 @pytest.mark.parametrize("bbox_enabled", [False, True])
 def test_stage1_metric_keys_are_documented_and_aggregate_only(
-    *, packed: bool, with_token_types: bool, coord_enabled: bool, bbox_enabled: bool
+    *,
+    packed: bool,
+    with_token_types: bool,
+    coord_enabled: bool,
+    bbox_geo_enabled: bool,
+    bbox_enabled: bool,
 ) -> None:
     doc_keys = _load_doc_keys()
 
     cfg = CoordSoftCEW1Config.from_mapping({"enabled": bool(coord_enabled)})
+    bbox_geo_cfg = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": bool(bbox_geo_enabled),
+            "smoothl1_weight": 0.0,
+            "ciou_weight": 1.0,
+        }
+    )
     bbox_cfg = BBoxSizeAuxConfig.from_mapping(
         {
             "enabled": bool(bbox_enabled),
@@ -186,7 +207,7 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
             "eps": 1e-6,
         }
     )
-    trainer = _DummyTrainer(cfg, bbox_cfg)
+    trainer = _DummyTrainer(cfg, bbox_geo_cfg, bbox_cfg)
 
     if packed:
         # One "packed unit" that represents multiple original samples.
@@ -215,11 +236,14 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     total_metric = train_metrics.get("stage1/total_loss_per_sample_est")
     base_metric = train_metrics.get("base_ce/loss_per_sample")
     coord_metric = train_metrics.get("coord_diag/loss_per_sample")
+    bbox_geo_metric = train_metrics.get("bbox_geo/loss_per_sample")
     bbox_metric = train_metrics.get("bbox_size_aux/loss_per_sample")
     if total_metric is not None and base_metric is not None and base_metric.values:
         expected_total = float(base_metric.values[-1])
         if coord_metric is not None and coord_metric.values:
             expected_total += float(coord_metric.values[-1])
+        if bbox_geo_metric is not None and bbox_geo_metric.values:
+            expected_total += float(bbox_geo_metric.values[-1])
         if bbox_metric is not None and bbox_metric.values:
             expected_total += float(bbox_metric.values[-1])
         assert total_metric.values[-1] == pytest.approx(expected_total)
