@@ -39,8 +39,9 @@ training:
 custom:
   train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
-  val_sample_limit: 1000
+  val_sample_limit: 512
   val_sample_with_replacement: false
+  dump_conversation_text: true
   token_type_metrics:
     enabled: true
   # Train only the 1000 newly added coord-token IDs via a lightweight offset adapter

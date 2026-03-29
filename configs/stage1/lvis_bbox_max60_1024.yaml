@@ -19,8 +19,6 @@ custom:
   offline_max_pixels: 1048576
   train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
-  val_sample_limit: 512
-  dump_conversation_text: true
   object_ordering: sorted
   coord_soft_ce_w1:
     enabled: true
