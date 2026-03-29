@@ -450,6 +450,34 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024"
 
 
+def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage1/smoke/lvis_bbox_max60_1024.yaml")
+    )
+
+    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
+    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.extra["prompt_variant"] == "lvis_stage1_federated"
+    assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
+    assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
+    assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.enabled is True
+    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_size_aux.enabled is True
+    assert cfg.training["max_steps"] == 2
+    assert cfg.custom.train_sample_limit == 32
+    assert cfg.custom.val_sample_limit == 8
+    assert (
+        cfg.training["run_name"]
+        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+    )
+    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024"
+    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024"
+
+
 def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(

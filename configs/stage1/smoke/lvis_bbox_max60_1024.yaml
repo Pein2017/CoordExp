@@ -1,0 +1,8 @@
+extends:
+  - ../lvis_bbox_max60_1024.yaml
+  - ./common_prodlike.yaml
+
+training:
+  run_name: smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size
+  output_dir: ./output/stage1/smoke/lvis_bbox_max60_1024
+  logging_dir: ./tb/stage1/smoke/lvis_bbox_max60_1024

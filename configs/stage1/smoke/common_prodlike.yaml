@@ -1,0 +1,6 @@
+training:
+  max_steps: 2
+
+custom:
+  train_sample_limit: 32
+  val_sample_limit: 8

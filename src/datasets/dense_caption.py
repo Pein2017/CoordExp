@@ -197,12 +197,10 @@ class BaseCaptionDataset(Dataset):
             raise TypeError(
                 "summary_ratio is no longer supported; use use_summary instead."
             )
-            kwargs.pop("use_detailed_caption", None)
-            kwargs.pop("output_variant", None)  # Backward compat
+        kwargs.pop("use_detailed_caption", None)
+        kwargs.pop("output_variant", None)  # Backward compat
         if kwargs.get("dataset_name") is None:
-            from pathlib import Path
-
-            path = Path(jsonl_path)
+            path = Path(str(jsonl_path))
             parts = {p.lower() for p in path.parts}
             for candidate in ("lvis", "coco", "refcoco", "refcoco+", "refcocog", "vg"):
                 if candidate in parts:

@@ -259,6 +259,15 @@ Example launch:
 config=configs/stage1/lvis_bbox_max60_1024.yaml gpus=0,1 conda run -n ms bash scripts/train.sh
 ```
 
+Smoke launch using the same LVIS Stage-1 recipe with only `max_steps` and
+sample limits reduced:
+
+- `configs/stage1/smoke/lvis_bbox_max60_1024.yaml`
+
+```bash
+config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bash scripts/train.sh
+```
+
 ### 3. Stage-2 Training
 
 Ready-to-run Stage-2 config:
