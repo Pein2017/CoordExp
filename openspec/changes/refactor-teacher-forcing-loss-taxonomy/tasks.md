@@ -60,6 +60,16 @@
   - `tests/test_stage2_objective_atoms_projection.py`
   - `tests/test_teacher_forcing_loss_catalog.py`
 - [x] 5.4 Re-run a broader Stage-2 trainer suite and leave only the GPU-dependent smoke run deferred.
+  - Follow-up downstream Stage-1 smoke-readiness evidence after the refactor landed:
+    - canonical LVIS Stage-1 config on `main`: `configs/stage1/lvis_bbox_max60_1024.yaml`
+    - smoke leaf on `main`: `configs/stage1/smoke/lvis_bbox_max60_1024.yaml`
+    - focused verification rerun on `main`:
+      - `conda run -n ms python -m pytest -q tests/test_stage1_static_packing_runtime_config.py::test_lvis_stage1_smoke_config_only_overrides_runtime_limits`
+      - `conda run -n ms python -m pytest -q tests/test_image_path_resolution_contract.py`
+    - loader follow-up fix validated on `main`: `src/datasets/dense_caption.py` no longer shadows `Path` inside `BaseCaptionDataset.from_jsonl(...)`
+    - launcher smoke command fired from `main`:
+      - `config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bash scripts/train.sh`
+  - Note: this is Stage-1 smoke-readiness / launchability evidence for the refactored teacher-forcing stack; it does not replace the separate Stage-2 GPU smoke that remained deferred in this task.
 - [x] 5.5 Add targeted tests for objective-registry drift fail-fast behavior.
 - [x] 5.6 Add targeted tests for diagnostics-registry drift fail-fast behavior.
 - [x] 5.7 Add additive projection coverage for absent optional projected atoms and missing required projected atoms.

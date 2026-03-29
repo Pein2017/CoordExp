@@ -429,10 +429,12 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["optimizer"] == "multimodal_coord_offset"
     assert (
         cfg.training["run_name"]
-        == "epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+        == "epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size"
     )
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
+    assert cfg.custom.val_sample_limit == 512
+    assert cfg.custom.dump_conversation_text is True
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.object_field_order == "desc_first"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage1_federated"
@@ -442,7 +444,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
     assert cfg.custom.bbox_geo.enabled is True
-    assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.0)
+    assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.01)
     assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_size_aux.enabled is True
     assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
