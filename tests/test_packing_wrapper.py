@@ -707,6 +707,35 @@ def test_static_packing_setup_index_rejects_legacy_mismatched_setup_without_inde
         )
 
 
+def test_static_packing_warns_before_first_time_build(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    warning_logs: list[str] = []
+
+    def _capture_warning(message: str, *args: object) -> None:
+        warning_logs.append(message % args if args else message)
+
+    monkeypatch.setattr(packed_caption_module.logger, "warning", _capture_warning)
+
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / "warning_cache",
+        fingerprint=_static_fingerprint("warning_first_build"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    assert any("Static packing build starting:" in msg for msg in warning_logs)
+
+
 def test_static_length_cache_default_persist_interval_reduces_flushes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

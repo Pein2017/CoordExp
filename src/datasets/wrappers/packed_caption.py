@@ -1248,6 +1248,17 @@ def build_static_packed_dataset(
             fingerprint=canonical_fingerprint,
             num_samples=num_samples,
         )
+        missing_lengths = sum(1 for value in lengths_state if value is None)
+        plan_cache_exists = plan_cache_path.exists()
+        if missing_lengths > 0 or not plan_cache_exists:
+            logger.warning(
+                "Static packing build starting: rank=%s cache_root=%s missing_lengths=%s plan_cache_exists=%s. "
+                "First-time sequence packing can take a while; cache artifacts will be written here.",
+                rank,
+                cache_root,
+                missing_lengths,
+                plan_cache_exists,
+            )
         lengths = _compute_missing_lengths(
             dataset=dataset,
             lengths=lengths_state,
