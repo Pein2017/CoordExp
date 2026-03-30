@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
+from .eval_monitor_dump_schema import EvalMonitorDumpConfig
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
@@ -85,19 +86,7 @@ class RolloutMonitorDumpConfig:
         )
 
 
-@dataclass(frozen=True)
-class RolloutEvalMonitorDumpConfig:
-    enabled: bool = False
-    every_evals: int = 1
-    only_world_process_zero: bool = True
-    max_events: int = 20
-    max_samples: int = 1
-    max_text_chars: int = 4000
-    async_write: bool = True
-    max_pending_writes: int = 2
-    min_free_gb: float = 2.0
-    out_dir: Optional[str] = None
-    write_markdown: bool = True
+RolloutEvalMonitorDumpConfig = EvalMonitorDumpConfig
 
 
 @dataclass(frozen=True)

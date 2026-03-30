@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -194,7 +193,9 @@ def detect_mode_from_gt(
                     f"Malformed JSONL at {path}:{line_no}: {snippet}"
                 ) from exc
             if not isinstance(rec, dict):
-                raise ValueError(f"Non-object JSONL record at {path}:{line_no}: {line[:200]}")
+                raise ValueError(
+                    f"Non-object JSONL record at {path}:{line_no}: {line[:200]}"
+                )
 
             if "width" not in rec or "height" not in rec:
                 raise ValueError(f"Missing width/height at {path}:{line_no}")
@@ -489,75 +490,73 @@ class InferenceEngine:
             self._validate_vllm_backend()
             return
 
-        if self.model is not None:
-            return
-
         self._seed()
-
-        attn_requested_raw = (self.cfg.backend or {}).get("attn_implementation")
-        attn_requested = str(attn_requested_raw or "").strip()
-        if not attn_requested or attn_requested.lower() == "auto":
-            device = str(self.cfg.device or "").lower()
-            if "cuda" in device and torch.cuda.is_available():
-                attn_requested = "flash_attention_2"
-            else:
-                attn_requested = "sdpa"
-
-        attn_requested = attn_requested.lower()
-        self.attn_implementation_requested = attn_requested
-
-        candidates: List[str] = []
-        for cand in [attn_requested, "flash_attention_2", "sdpa", "eager"]:
-            c = str(cand).strip().lower()
-            if c and c not in candidates:
-                candidates.append(c)
-
-        last_exc: Exception | None = None
-        errors: List[str] = []
-        for idx, cand in enumerate(candidates):
-            try:
-                model = Qwen3VLForConditionalGeneration.from_pretrained(
-                    self.cfg.model_checkpoint,
-                    torch_dtype=torch.bfloat16,
-                    attn_implementation=cand,
-                )
-                self.model = model.to(self.cfg.device)
-                self.model.eval()
-                self.attn_implementation_selected = cand
-                break
-            except (OSError, RuntimeError, ValueError, ImportError) as exc:
-                last_exc = exc
-                errors.append(f"{cand}: {type(exc).__name__}: {exc}")
-                if idx == 0 and len(candidates) > 1:
-                    self.logger.warning(
-                        "HF attention backend '%s' unavailable; falling back. Error: %s",
-                        cand,
-                        exc,
-                    )
-
-                # Best-effort cleanup between attempts.
-                import gc
-
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
         if self.model is None:
-            raise RuntimeError(
-                "Failed to load HF model with any attention backend. "
-                f"candidates={candidates} errors={errors[:3]}"
-            ) from last_exc
+            attn_requested_raw = (self.cfg.backend or {}).get("attn_implementation")
+            attn_requested = str(attn_requested_raw or "").strip()
+            if not attn_requested or attn_requested.lower() == "auto":
+                device = str(self.cfg.device or "").lower()
+                if "cuda" in device and torch.cuda.is_available():
+                    attn_requested = "flash_attention_2"
+                else:
+                    attn_requested = "sdpa"
 
-        if self.attn_implementation_selected != self.attn_implementation_requested:
-            self.logger.warning(
-                "HF attention backend fallback: requested=%s selected=%s",
-                self.attn_implementation_requested,
-                self.attn_implementation_selected,
+            attn_requested = attn_requested.lower()
+            self.attn_implementation_requested = attn_requested
+
+            candidates: List[str] = []
+            for cand in [attn_requested, "flash_attention_2", "sdpa", "eager"]:
+                c = str(cand).strip().lower()
+                if c and c not in candidates:
+                    candidates.append(c)
+
+            last_exc: Exception | None = None
+            errors: List[str] = []
+            for idx, cand in enumerate(candidates):
+                try:
+                    model = Qwen3VLForConditionalGeneration.from_pretrained(
+                        self.cfg.model_checkpoint,
+                        torch_dtype=torch.bfloat16,
+                        attn_implementation=cand,
+                    )
+                    self.model = model.to(self.cfg.device)
+                    self.model.eval()
+                    self.attn_implementation_selected = cand
+                    break
+                except (OSError, RuntimeError, ValueError, ImportError) as exc:
+                    last_exc = exc
+                    errors.append(f"{cand}: {type(exc).__name__}: {exc}")
+                    if idx == 0 and len(candidates) > 1:
+                        self.logger.warning(
+                            "HF attention backend '%s' unavailable; falling back. Error: %s",
+                            cand,
+                            exc,
+                        )
+
+                    # Best-effort cleanup between attempts.
+                    import gc
+
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+            if self.model is None:
+                raise RuntimeError(
+                    "Failed to load HF model with any attention backend. "
+                    f"candidates={candidates} errors={errors[:3]}"
+                ) from last_exc
+
+            if self.attn_implementation_selected != self.attn_implementation_requested:
+                self.logger.warning(
+                    "HF attention backend fallback: requested=%s selected=%s",
+                    self.attn_implementation_requested,
+                    self.attn_implementation_selected,
+                )
+
+        if self.processor is None:
+            self.processor = AutoProcessor.from_pretrained(
+                self.cfg.model_checkpoint, trust_remote_code=True
             )
-
-        self.processor = AutoProcessor.from_pretrained(
-            self.cfg.model_checkpoint, trust_remote_code=True
-        )
 
         # Decoder-only models require left padding for correct generation.
         tokenizer = getattr(self.processor, "tokenizer", None)
@@ -621,7 +620,9 @@ class InferenceEngine:
         raise ValueError(f"infer.backend.type must be hf|vllm, got {backend!r}")
 
     def _generate_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
-        return generate_batch(owner=self, images=images, result_factory=GenerationResult)
+        return generate_batch(
+            owner=self, images=images, result_factory=GenerationResult
+        )
 
     def _generate_hf_batch(self, images: List[Image.Image]) -> List[GenerationResult]:
         return generate_hf_batch(
@@ -945,7 +946,6 @@ class InferenceEngine:
             return img_path, None
         return img_path, image
 
-
     def _preflight_inputs(self, jsonl_path: Path) -> None:
         """Validate operator-controlled inputs before any generation/eval work.
 
@@ -1055,7 +1055,11 @@ class InferenceEngine:
                     if len(errors) >= max_errors:
                         break
                     continue
-                if objs_raw is None and gt_raw is not None and not isinstance(gt_raw, list):
+                if (
+                    objs_raw is None
+                    and gt_raw is not None
+                    and not isinstance(gt_raw, list)
+                ):
                     errors.append(
                         f"GT record 'gt' must be a list at {jsonl_path}:{line_no}; got {type(gt_raw).__name__}"
                     )
@@ -1064,7 +1068,9 @@ class InferenceEngine:
                     continue
 
                 gt_errors: List[str] = []
-                _ = self._process_gt(record, width=width, height=height, errors=gt_errors)
+                _ = self._process_gt(
+                    record, width=width, height=height, errors=gt_errors
+                )
                 if gt_errors:
                     errors.append(
                         f"Invalid GT geometry at {jsonl_path}:{line_no} (mode={self.resolved_mode}): {gt_errors}"
@@ -1073,8 +1079,9 @@ class InferenceEngine:
                         break
 
         if errors:
-            msg = "Inference preflight failed (operator-controlled input violations):\n" + "\n".join(
-                f"- {e}" for e in errors
+            msg = (
+                "Inference preflight failed (operator-controlled input violations):\n"
+                + "\n".join(f"- {e}" for e in errors)
             )
             raise ValueError(msg)
 
@@ -1266,7 +1273,9 @@ class InferenceEngine:
                     continue
 
                 if not isinstance(record, dict):
-                    raise ValueError(f"Non-object JSONL record at {jsonl_path}:{line_no}")
+                    raise ValueError(
+                        f"Non-object JSONL record at {jsonl_path}:{line_no}"
+                    )
 
                 width_raw = record.get("width")
                 height_raw = record.get("height")
@@ -1296,7 +1305,9 @@ class InferenceEngine:
                     )
 
                 gt_errors: List[str] = []
-                gt = self._process_gt(record, width=width, height=height, errors=gt_errors)
+                gt = self._process_gt(
+                    record, width=width, height=height, errors=gt_errors
+                )
                 if gt_errors:
                     raise ValueError(
                         f"Invalid GT geometry at {jsonl_path}:{line_no} (mode={self.resolved_mode}): {gt_errors}"

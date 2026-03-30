@@ -3,28 +3,27 @@
 import argparse
 import copy
 import hashlib
-import importlib
 import json
-import sys
 import logging
 import math
 import os
 import re
-import subprocess
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from multiprocessing import Manager
 from typing import Any, Literal, Mapping, cast
 
 import torch
+
 try:
     from torch.distributed.elastic.multiprocessing.errors import (
         record as _torch_elastic_record,
     )
 except Exception:
+
     def _torch_elastic_record(fn):
         return fn
+
 
 from swift.llm.train.rlhf import SwiftRLHF
 from swift.llm.train.sft import SwiftSft
@@ -402,9 +401,7 @@ def _build_data_source_provenance(
         "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
         "fusion_config": str(fusion_config_path) if fusion_config_path else None,
         "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(
-            fusion_config_path
-        ),
+        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "sample_limit": int(sample_limit) if sample_limit is not None else None,
         "sample_with_replacement": bool(sample_with_replacement)
         if sample_with_replacement is not None
@@ -641,8 +638,7 @@ def _build_static_packing_fingerprint(
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
         raise ValueError(
-            "dataset_split must be one of {'train', 'eval'}, "
-            f"got {dataset_split!r}"
+            f"dataset_split must be one of {{'train', 'eval'}}, got {dataset_split!r}"
         )
 
     return {
@@ -665,20 +661,14 @@ def _build_static_packing_fingerprint(
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
-        "custom_offline_max_pixels": getattr(
-            custom_config, "offline_max_pixels", None
-        ),
+        "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
         "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
-        "custom_fusion_config": str(fusion_config_path)
-        if fusion_config_path
-        else None,
+        "custom_fusion_config": str(fusion_config_path) if fusion_config_path else None,
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(
-            fusion_config_path
-        ),
+        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "eval_sample_limit": int(eval_sample_limit)
         if split == "eval" and eval_sample_limit is not None
         else None,
@@ -731,8 +721,7 @@ def _build_encoded_sample_cache_fingerprint(
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
         raise ValueError(
-            "dataset_split must be one of {'train', 'eval'}, "
-            f"got {dataset_split!r}"
+            f"dataset_split must be one of {{'train', 'eval'}}, got {dataset_split!r}"
         )
 
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
@@ -744,9 +733,7 @@ def _build_encoded_sample_cache_fingerprint(
         "dataset_mode": str(dataset_mode),
         "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
         "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(
-            fusion_config_path
-        ),
+        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "sample_limit": int(sample_limit) if sample_limit is not None else None,
         "global_max_length": getattr(training_config, "global_max_length", None),
         "template_max_length": getattr(template, "max_length", None),
@@ -761,13 +748,9 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
-        "custom_object_field_order": getattr(
-            custom_config, "object_field_order", None
-        ),
+        "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
-        "custom_offline_max_pixels": getattr(
-            custom_config, "offline_max_pixels", None
-        ),
+        "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
         "system_prompt_dense": system_prompt_dense,
         "system_prompt_summary": system_prompt_summary,
@@ -844,7 +827,9 @@ def _build_encoded_sample_cache_bypass_info(
         "fingerprint_sha256": request.get("fingerprint_sha256"),
         "root_dir": request.get("root_dir"),
         "cache_dir": request.get("cache_dir"),
-        "manifest_path": str(Path(str(request.get("cache_dir") or ".")) / "manifest.json"),
+        "manifest_path": str(
+            Path(str(request.get("cache_dir") or ".")) / "manifest.json"
+        ),
     }
 
 
@@ -871,7 +856,10 @@ def _attach_encoded_sample_cache_run_metadata(
 
 
 def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
-    return str(trainer_variant or "") in {"stage2_rollout_aligned", "stage2_two_channel"}
+    return str(trainer_variant or "") in {
+        "stage2_rollout_aligned",
+        "stage2_two_channel",
+    }
 
 
 def _validate_stage1_static_packing_policy(
@@ -978,7 +966,9 @@ def _collect_launcher_metadata_from_env() -> dict[str, str]:
     return _collect_launcher_metadata_from_env_impl()
 
 
-def _apply_rollout_decode_batch_size_override(*, train_args: Any, training_config: Any) -> int:
+def _apply_rollout_decode_batch_size_override(
+    *, train_args: Any, training_config: Any
+) -> int:
     """Override eval batching for rollout-aware trainer variants.
 
     Rollout-aware variants use `rollout_matching.eval_decode_batch_size` as the
@@ -1496,7 +1486,9 @@ def main():
     else:
         logger.info("Dense mode only (custom.use_summary=false)")
 
-    dataset_seed = _resolve_dataset_seed(training_config=training_config, train_args=train_args)
+    dataset_seed = _resolve_dataset_seed(
+        training_config=training_config, train_args=train_args
+    )
     checkpoint_mode = _parse_checkpoint_mode(training_config.training)
     _apply_checkpoint_mode(train_args, checkpoint_mode=checkpoint_mode)
     encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
@@ -1535,9 +1527,7 @@ def main():
         logger.info(f"Loading training datasets from fusion config: {fusion_path}")
         fusion_cfg = FusionConfig.from_file(fusion_path)
         if train_encoded_sample_cache_request is not None:
-            reason = (
-                "Encoded sample cache does not support custom.fusion_config in v1."
-            )
+            reason = "Encoded sample cache does not support custom.fusion_config in v1."
             if encoded_sample_cache_cfg.ineligible_policy == "bypass":
                 train_encoded_sample_cache_info = (
                     _build_encoded_sample_cache_bypass_info(
@@ -1691,7 +1681,9 @@ def main():
             packing_length=packing_cfg.packing_length,
             min_fill_ratio=packing_cfg.min_fill_ratio,
             packing_drop_last=packing_cfg.drop_last,
-            dataloader_drop_last=bool(getattr(train_args, "dataloader_drop_last", False)),
+            dataloader_drop_last=bool(
+                getattr(train_args, "dataloader_drop_last", False)
+            ),
             allow_single_long=packing_cfg.allow_single_long,
             cache_dir=static_cache_dir,
             fingerprint=static_fingerprint,
@@ -1875,7 +1867,6 @@ def main():
                 padded,
             )
 
-
     if base_len_i is not None and per_rank_batches_est_for_static is None:
         if drop_last_flag:
             per_rank_batches_est_for_static = int(base_len_i // per_device_train_bs)
@@ -1981,7 +1972,9 @@ def main():
                 else None
             )
             pv_shape_raw = getattr(pv, "shape", None)
-            pv_shape = tuple(pv_shape_raw) if isinstance(pv_shape_raw, (list, tuple)) else None
+            pv_shape = (
+                tuple(pv_shape_raw) if isinstance(pv_shape_raw, (list, tuple)) else None
+            )
             logger.debug(
                 f"image_grid_thw shape: {grid_shape}; pixel_values shape: {pv_shape}"
             )
@@ -2011,7 +2004,14 @@ def main():
                     logger.warning(
                         "Image token mismatch. Investigate chat_template and image processing."
                     )
-        except (AttributeError, IndexError, KeyError, RuntimeError, TypeError, ValueError) as e:
+        except (
+            AttributeError,
+            IndexError,
+            KeyError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as e:
             logger.warning(f"HealthCheck failed: {e}")
 
     # Optional: dump conversation text-only (no tokens, no images) and full tokens
@@ -2086,7 +2086,13 @@ def main():
                         if isinstance(item, dict) and item.get("type") == "text":
                             assistant_gt = item.get("text")
                             break
-            except (AttributeError, IndexError, KeyError, TypeError, ValueError) as inner_e:
+            except (
+                AttributeError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as inner_e:
                 logger.warning(f"Failed to extract assistant GT: {inner_e}")
 
             logger.debug("Conversation (raw):\n" + raw_text)
@@ -2114,7 +2120,14 @@ def main():
                     if not assistant_gt.endswith("\n"):
                         f.write("\n")
             logger.info(f"Conversation text saved to: {dump_path}")
-        except (AttributeError, IndexError, KeyError, OSError, TypeError, ValueError) as e:
+        except (
+            AttributeError,
+            IndexError,
+            KeyError,
+            OSError,
+            TypeError,
+            ValueError,
+        ) as e:
             logger.warning(f"Failed to dump conversation text: {e}")
 
     # Build validation dataset (single JSONL or fusion config).
@@ -2236,7 +2249,9 @@ def main():
         )
         base_eval_len = len(eval_dataset)
         if eval_encoded_sample_cache_request is not None:
-            eval_encoded_sample_cache_info = eval_dataset.get_encoded_sample_cache_info()
+            eval_encoded_sample_cache_info = (
+                eval_dataset.get_encoded_sample_cache_info()
+            )
         if val_sample_with_replacement:
             eval_dataset = RandomSampleDataset(
                 eval_dataset, sample_size=val_sample_size, seed=dataset_seed + 11
@@ -2415,13 +2430,106 @@ def main():
         )
 
         rank_s = str(os.environ.get("RANK", "0") or "0")
-        output_dir_for_heartbeat = Path(str(getattr(train_args, "output_dir", ".") or "."))
-        heartbeat_path = output_dir_for_heartbeat / f"train_heartbeat.rank{rank_s}.jsonl"
+        output_dir_for_heartbeat = Path(
+            str(getattr(train_args, "output_dir", ".") or ".")
+        )
+        heartbeat_path = (
+            output_dir_for_heartbeat / f"train_heartbeat.rank{rank_s}.jsonl"
+        )
         heartbeat_writer = TrainHeartbeatWriter(path=heartbeat_path, enabled=True)
         heartbeat_writer.emit("heartbeat_enabled", rank=rank_s)
         data_collator = HeartbeatDataCollator(data_collator, writer=heartbeat_writer)
         heartbeat_callback = TrainHeartbeatCallback(heartbeat_writer)
         logger.info("Train heartbeat enabled: %s", str(heartbeat_path))
+
+    stage1_eval_detection_callback = None
+    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
+        stage1_eval_cfg = getattr(custom_config, "eval_detection", None)
+        if stage1_eval_cfg is not None and bool(
+            getattr(stage1_eval_cfg, "enabled", False)
+        ):
+            if not val_jsonl:
+                raise ValueError(
+                    "custom.eval_detection.enabled=true requires custom.val_jsonl"
+                )
+            if val_sample_with_replacement:
+                raise ValueError(
+                    "custom.eval_detection does not support custom.val_sample_with_replacement=true"
+                )
+
+            custom_extra = getattr(custom_config, "extra", {}) or {}
+            prompt_variant = None
+            if isinstance(custom_extra, Mapping):
+                raw_prompt_variant = custom_extra.get("prompt_variant")
+                if isinstance(raw_prompt_variant, str) and raw_prompt_variant.strip():
+                    prompt_variant = str(raw_prompt_variant).strip()
+            if prompt_variant is None:
+                raise ValueError(
+                    "custom.eval_detection requires custom.extra.prompt_variant so eval generation "
+                    "matches the authored Stage-1 prompt contract"
+                )
+
+            model_checkpoint = getattr(
+                getattr(training_config, "model", None), "model", None
+            )
+            if not isinstance(model_checkpoint, str) or not model_checkpoint.strip():
+                raise ValueError(
+                    "custom.eval_detection requires a non-empty model.model checkpoint path"
+                )
+
+            resolved_eval_limit = _normalize_optional_sample_limit(val_sample_limit)
+            configured_eval_limit = _normalize_optional_sample_limit(
+                getattr(stage1_eval_cfg, "limit", None)
+            )
+            if resolved_eval_limit is None:
+                callback_eval_limit = configured_eval_limit
+            elif configured_eval_limit is None:
+                callback_eval_limit = resolved_eval_limit
+            else:
+                callback_eval_limit = min(
+                    int(resolved_eval_limit), int(configured_eval_limit)
+                )
+
+            from .callbacks.stage1_detection_eval import Stage1DetectionEvalCallback
+
+            stage1_eval_detection_callback = Stage1DetectionEvalCallback(
+                gt_jsonl=str(val_jsonl),
+                output_root=str(getattr(train_args, "output_dir", ".") or "."),
+                model_checkpoint=str(model_checkpoint),
+                prompt_variant=str(prompt_variant),
+                object_field_order=str(custom_config.object_field_order),
+                object_ordering=str(custom_config.object_ordering),
+                metrics=str(stage1_eval_cfg.metrics),
+                use_segm=bool(stage1_eval_cfg.use_segm),
+                strict_parse=bool(stage1_eval_cfg.strict_parse),
+                iou_thrs=getattr(stage1_eval_cfg, "iou_thrs", None),
+                f1ish_iou_thrs=list(stage1_eval_cfg.f1ish_iou_thrs),
+                f1ish_pred_scope=str(stage1_eval_cfg.f1ish_pred_scope),
+                semantic_model=str(stage1_eval_cfg.semantic_model),
+                semantic_threshold=float(stage1_eval_cfg.semantic_threshold),
+                semantic_device=str(stage1_eval_cfg.semantic_device),
+                semantic_batch_size=int(stage1_eval_cfg.semantic_batch_size),
+                lvis_max_dets=int(stage1_eval_cfg.lvis_max_dets),
+                pred_score_source=str(stage1_eval_cfg.pred_score_source),
+                pred_score_version=int(stage1_eval_cfg.pred_score_version),
+                constant_score=float(stage1_eval_cfg.constant_score),
+                batch_size=int(stage1_eval_cfg.batch_size),
+                max_new_tokens=int(stage1_eval_cfg.max_new_tokens),
+                temperature=float(stage1_eval_cfg.temperature),
+                top_p=float(stage1_eval_cfg.top_p),
+                repetition_penalty=float(stage1_eval_cfg.repetition_penalty),
+                limit=callback_eval_limit,
+                seed=dataset_seed,
+                lvis_annotations_json=getattr(
+                    stage1_eval_cfg, "lvis_annotations_json", None
+                ),
+            )
+            logger.info(
+                "Stage-1 detection eval enabled: metrics=%s limit=%s prompt_variant=%s",
+                str(stage1_eval_cfg.metrics),
+                callback_eval_limit,
+                prompt_variant,
+            )
 
     trainer_cls = compose_trainer_class(
         trainer_cls=resolve_trainer_cls(train_args),
@@ -2437,6 +2545,7 @@ def main():
         base_callbacks=sft.callbacks.copy() if sft.callbacks else [],
         dataset=dataset,
         append_dataset_epoch_callback_fn=_append_dataset_epoch_callback,
+        stage1_eval_detection_callback=stage1_eval_detection_callback,
         heartbeat_callback=heartbeat_callback,
         curriculum_scheduler=curriculum_scheduler,
         curriculum_state=curriculum_state,
@@ -2593,7 +2702,9 @@ def main():
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)
-            setattr(trainer, "object_field_order", str(custom_config.object_field_order))
+            setattr(
+                trainer, "object_field_order", str(custom_config.object_field_order)
+            )
 
             validate_hook = getattr(trainer, "_validate_rollout_matching_cfg", None)
             if callable(validate_hook):
@@ -2602,7 +2713,12 @@ def main():
             if trainer_variant == "stage2_rollout_aligned":
                 rollout_manifest = _resolve_pipeline_manifest(
                     rollout_cfg,
-                    default_objective=["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"],
+                    default_objective=[
+                        "token_ce",
+                        "bbox_geo",
+                        "bbox_size_aux",
+                        "coord_reg",
+                    ],
                     default_diagnostics=["coord_diag"],
                     coord_soft_cfg=coord_soft_cfg_for_manifest,
                 )
@@ -2696,9 +2812,10 @@ def main():
             setattr(trainer, "instability_val_jsonl", str(val_jsonl))
     if loss_gradient_monitor_cfg is not None:
         setattr(trainer, "loss_gradient_monitor_cfg", dict(loss_gradient_monitor_cfg))
-        if bool(loss_gradient_monitor_cfg.get("enabled", False)) and int(
-            os.environ.get("RANK", "0") or "0"
-        ) == 0:
+        if (
+            bool(loss_gradient_monitor_cfg.get("enabled", False))
+            and int(os.environ.get("RANK", "0") or "0") == 0
+        ):
             param_block = loss_gradient_monitor_cfg.get("param_block", {})
             param_strategy = (
                 str(param_block.get("strategy", "auto_last_lm_layernorm"))
@@ -2825,7 +2942,9 @@ def main():
         # Required run metadata (fail-fast): git + upstream provenance
         # ------------------------------------------------------------------
         if not out_dir:
-            raise ValueError("train_args.output_dir is not set; cannot write run metadata")
+            raise ValueError(
+                "train_args.output_dir is not set; cannot write run metadata"
+            )
 
         out_path = write_run_metadata_file(
             output_dir=Path(str(out_dir)),
@@ -2894,7 +3013,13 @@ def main():
                         if hasattr(model_wrapped, "destroy"):
                             model_wrapped.destroy()
                         logger.debug("DeepSpeed engine cleaned up successfully")
-                    except (AttributeError, IndexError, OSError, RuntimeError, TypeError) as cleanup_error:
+                    except (
+                        AttributeError,
+                        IndexError,
+                        OSError,
+                        RuntimeError,
+                        TypeError,
+                    ) as cleanup_error:
                         # Ignore cleanup errors - they're harmless at this point
                         # Training already completed successfully
                         logger.debug(

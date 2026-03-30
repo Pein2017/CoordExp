@@ -32,6 +32,7 @@ from src.trainers.teacher_forcing.module_registry import (
     normalize_token_ce_stop_signal_damping_config,
 )
 
+from .eval_monitor_dump_schema import EvalMonitorDumpConfig
 from .rollout_matching_schema import RolloutMatchingConfig
 from .strict_dataclass import dataclass_asdict_no_none, parse_dataclass_strict
 
@@ -80,7 +81,9 @@ def _validate_section_keys_strict(
             unknown.append(k)
 
     if unknown:
-        rendered = [f"{section}.{str(k)}" for k in sorted(unknown, key=lambda x: str(x))]
+        rendered = [
+            f"{section}.{str(k)}" for k in sorted(unknown, key=lambda x: str(x))
+        ]
         raise ValueError(f"Unknown {section} keys: {rendered}")
 
 
@@ -91,7 +94,10 @@ def _is_versioned_alias_for(name: str, canonical: str) -> bool:
         return False
 
     suffix_prefix = f"{canonical}_v"
-    if normalized.startswith(suffix_prefix) and normalized[len(suffix_prefix) :].isdigit():
+    if (
+        normalized.startswith(suffix_prefix)
+        and normalized[len(suffix_prefix) :].isdigit()
+    ):
         return True
 
     prefix_suffix = f"_{canonical}"
@@ -179,7 +185,9 @@ class TokenTypeMetricsConfig:
         include_raw = payload.get("include", cls.include)
         exclude_raw = payload.get("exclude", cls.exclude)
         log_top5 = bool(payload.get("log_top5", cls.log_top5))
-        coord_monitor_mass = bool(payload.get("coord_monitor_mass", cls.coord_monitor_mass))
+        coord_monitor_mass = bool(
+            payload.get("coord_monitor_mass", cls.coord_monitor_mass)
+        )
         coord_monitor_mass_max_tokens_raw = payload.get(
             "coord_monitor_mass_max_tokens", cls.coord_monitor_mass_max_tokens
         )
@@ -255,7 +263,9 @@ class CoordSoftCEW1Config:
     target_truncate: Optional[int] = None
 
     @classmethod
-    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordSoftCEW1Config":
+    def from_mapping(
+        cls, payload: Optional[Mapping[str, Any]]
+    ) -> "CoordSoftCEW1Config":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
@@ -285,7 +295,9 @@ class CoordSoftCEW1Config:
             try:
                 target_truncate = int(target_truncate_raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError("coord_soft_ce_w1.target_truncate must be an integer or null") from exc
+                raise ValueError(
+                    "coord_soft_ce_w1.target_truncate must be an integer or null"
+                ) from exc
 
         if ce_weight < 0:
             raise ValueError("coord_soft_ce_w1.ce_weight must be >= 0")
@@ -295,7 +307,13 @@ class CoordSoftCEW1Config:
             raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
         if gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
-        if enabled and ce_weight == 0 and soft_ce_weight == 0 and w1_weight == 0 and gate_weight == 0:
+        if (
+            enabled
+            and ce_weight == 0
+            and soft_ce_weight == 0
+            and w1_weight == 0
+            and gate_weight == 0
+        ):
             raise ValueError(
                 "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, and gate_weight are all 0"
             )
@@ -430,11 +448,17 @@ class BBoxSizeAuxConfig:
             try:
                 return float(raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"bbox_size_aux.{key} must be numeric or null") from exc
+                raise ValueError(
+                    f"bbox_size_aux.{key} must be numeric or null"
+                ) from exc
 
         log_wh_weight = _parse_float("log_wh_weight", cls.log_wh_weight)
-        oversize_penalty_weight = _parse_float("oversize_penalty_weight", cls.oversize_penalty_weight)
-        oversize_area_frac_threshold = _parse_optional_float("oversize_area_frac_threshold")
+        oversize_penalty_weight = _parse_float(
+            "oversize_penalty_weight", cls.oversize_penalty_weight
+        )
+        oversize_area_frac_threshold = _parse_optional_float(
+            "oversize_area_frac_threshold"
+        )
         oversize_log_w_threshold = _parse_optional_float("oversize_log_w_threshold")
         oversize_log_h_threshold = _parse_optional_float("oversize_log_h_threshold")
         eps = _parse_float("eps", cls.eps)
@@ -443,10 +467,7 @@ class BBoxSizeAuxConfig:
             raise ValueError("bbox_size_aux.log_wh_weight must be >= 0")
         if oversize_penalty_weight < 0:
             raise ValueError("bbox_size_aux.oversize_penalty_weight must be >= 0")
-        if enabled and (
-            log_wh_weight == 0
-            and oversize_penalty_weight == 0
-        ):
+        if enabled and (log_wh_weight == 0 and oversize_penalty_weight == 0):
             raise ValueError(
                 "bbox_size_aux is enabled but log_wh_weight and oversize_penalty_weight are both 0"
             )
@@ -456,7 +477,9 @@ class BBoxSizeAuxConfig:
             oversize_area_frac_threshold is not None
             and oversize_area_frac_threshold < 0
         ):
-            raise ValueError("bbox_size_aux.oversize_area_frac_threshold must be >= 0 or null")
+            raise ValueError(
+                "bbox_size_aux.oversize_area_frac_threshold must be >= 0 or null"
+            )
         return cls(
             enabled=enabled,
             log_wh_weight=log_wh_weight,
@@ -728,6 +751,7 @@ class EncodedSampleCacheConfig:
     def to_mapping(self) -> dict[str, Any]:
         return dataclass_asdict_no_none(self)
 
+
 # warnings: this is deprecated and not used
 @dataclass(frozen=True)
 class VisualKDTargetConfig:
@@ -741,10 +765,12 @@ class VisualKDTargetConfig:
         if self.distance not in {"mse", "cosine"}:
             raise ValueError("visual_kd.*.distance must be one of {mse, cosine}")
 
+
 # warnings: this is deprecated and not used
 
 _ALLOWED_VISUAL_KD_KEYS = {"enabled", "vit", "aligner", "deepstack"}
 _ALLOWED_VISUAL_KD_TARGET_KEYS = {"enabled", "weight", "distance"}
+
 
 @dataclass(frozen=True)
 class VisualKDConfig:
@@ -854,6 +880,88 @@ class VisualKDConfig:
 
 
 @dataclass(frozen=True)
+class Stage1EvalDetectionConfig:
+    enabled: bool = False
+    metrics: str = "f1ish"  # f1ish | coco | lvis | both
+    use_segm: bool = False
+    strict_parse: bool = True
+    iou_thrs: Optional[list[float]] = None
+    lvis_max_dets: int = 300
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    semantic_threshold: float = 0.6
+    semantic_device: str = "auto"
+    semantic_batch_size: int = 64
+    f1ish_iou_thrs: list[float] = field(default_factory=lambda: [0.3, 0.5])
+    f1ish_pred_scope: str = "annotated"  # annotated | all
+    pred_score_source: str = "stage1_eval_constant"
+    pred_score_version: int = 1
+    constant_score: float = 1.0
+    batch_size: int = 1
+    max_new_tokens: int = 1024
+    temperature: float = 0.0
+    top_p: float = 1.0
+    repetition_penalty: float = 1.0
+    limit: Optional[int] = None
+    lvis_annotations_json: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        metrics_mode = str(self.metrics or "").strip().lower()
+        if metrics_mode not in {"f1ish", "coco", "lvis", "both"}:
+            raise ValueError(
+                "custom.eval_detection.metrics must be one of {'f1ish', 'coco', 'lvis', 'both'}"
+            )
+        if self.iou_thrs is not None:
+            object.__setattr__(
+                self, "iou_thrs", [float(value) for value in list(self.iou_thrs)]
+            )
+        object.__setattr__(
+            self,
+            "f1ish_iou_thrs",
+            [float(value) for value in list(self.f1ish_iou_thrs)],
+        )
+        if str(self.f1ish_pred_scope or "").strip().lower() not in {
+            "annotated",
+            "all",
+        }:
+            raise ValueError(
+                "custom.eval_detection.f1ish_pred_scope must be one of {'annotated', 'all'}"
+            )
+        if int(self.lvis_max_dets) <= 0:
+            raise ValueError("custom.eval_detection.lvis_max_dets must be > 0")
+        if int(self.semantic_batch_size) <= 0:
+            raise ValueError("custom.eval_detection.semantic_batch_size must be > 0")
+        if int(self.batch_size) <= 0:
+            raise ValueError("custom.eval_detection.batch_size must be > 0")
+        if int(self.max_new_tokens) <= 0:
+            raise ValueError("custom.eval_detection.max_new_tokens must be > 0")
+        if not (0.0 <= float(self.constant_score) <= 1.0):
+            raise ValueError(
+                "custom.eval_detection.constant_score must satisfy 0.0 <= score <= 1.0"
+            )
+        if not str(self.pred_score_source or "").strip():
+            raise ValueError(
+                "custom.eval_detection.pred_score_source must be non-empty"
+            )
+        if int(self.pred_score_version) <= 0:
+            raise ValueError("custom.eval_detection.pred_score_version must be > 0")
+        if self.limit is not None and int(self.limit) <= 0:
+            raise ValueError("custom.eval_detection.limit must be > 0 when provided")
+        if (
+            self.lvis_annotations_json is not None
+            and not str(self.lvis_annotations_json).strip()
+        ):
+            raise ValueError(
+                "custom.eval_detection.lvis_annotations_json must be non-empty when provided"
+            )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage1EvalDetectionConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(cls, payload, path="custom.eval_detection")
+
+
+@dataclass(frozen=True)
 class CustomConfig:
     train_jsonl: str
     user_prompt: str
@@ -875,13 +983,21 @@ class CustomConfig:
     train_sample_limit: Optional[Any] = None
     val_sample_limit: Optional[Any] = None
     val_sample_with_replacement: bool = False
+    eval_monitor_dump: EvalMonitorDumpConfig = field(
+        default_factory=EvalMonitorDumpConfig
+    )
     dump_conversation_text: bool = False
     dump_conversation_path: Optional[str] = None
     val_jsonl: Optional[str] = None
     offline_max_pixels: Optional[int] = None
+    eval_detection: Stage1EvalDetectionConfig = field(
+        default_factory=Stage1EvalDetectionConfig
+    )
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
-    token_type_metrics: TokenTypeMetricsConfig = field(default_factory=TokenTypeMetricsConfig)
+    token_type_metrics: TokenTypeMetricsConfig = field(
+        default_factory=TokenTypeMetricsConfig
+    )
     extra: Mapping[str, Any] = field(default_factory=dict)
     # Optional path to a fusion config (YAML/JSON) describing multiple datasets.
     # When set, training/eval datasets are built from the fusion config and
@@ -907,7 +1023,9 @@ class CustomConfig:
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
         if not isinstance(self.val_sample_with_replacement, bool):
-            raise TypeError("custom.val_sample_with_replacement must be a boolean value")
+            raise TypeError(
+                "custom.val_sample_with_replacement must be a boolean value"
+            )
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
@@ -968,9 +1086,7 @@ class CustomConfig:
             )
 
         use_summary_raw = data.pop("use_summary", None)
-        val_sample_with_replacement_raw = data.pop(
-            "val_sample_with_replacement", False
-        )
+        val_sample_with_replacement_raw = data.pop("val_sample_with_replacement", False)
         use_summary = (
             False
             if use_summary_raw is None
@@ -991,6 +1107,7 @@ class CustomConfig:
         trainer_variant = data.pop("trainer_variant", None)
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
+        eval_monitor_dump_raw = data.pop("eval_monitor_dump", None)
         dump_conversation_text = bool(data.pop("dump_conversation_text", False))
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
@@ -1003,7 +1120,9 @@ class CustomConfig:
             offline_max_pixels = None
         else:
             if isinstance(offline_max_pixels_raw, bool):
-                raise TypeError("custom.offline_max_pixels must be an int when provided")
+                raise TypeError(
+                    "custom.offline_max_pixels must be an int when provided"
+                )
             try:
                 offline_max_pixels = int(offline_max_pixels_raw)
             except (TypeError, ValueError) as exc:
@@ -1020,6 +1139,14 @@ class CustomConfig:
             fusion_config = fusion_config_raw.strip() or None
         else:
             raise TypeError("custom.fusion_config must be a string path when provided")
+        if eval_monitor_dump_raw is None:
+            eval_monitor_dump = EvalMonitorDumpConfig()
+        else:
+            eval_monitor_dump = parse_dataclass_strict(
+                EvalMonitorDumpConfig,
+                eval_monitor_dump_raw,
+                path="custom.eval_monitor_dump",
+            )
         visual_kd_raw = data.pop("visual_kd", None)
         visual_kd = VisualKDConfig.from_mapping(visual_kd_raw)
         hsm_raw = data.pop("hard_sample_mining", None)
@@ -1077,6 +1204,8 @@ class CustomConfig:
         bbox_geo = BBoxGeoConfig.from_mapping(bbox_geo_raw)
         bbox_size_aux_raw = data.pop("bbox_size_aux", None)
         bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
+        eval_detection_raw = data.pop("eval_detection", None)
+        eval_detection = Stage1EvalDetectionConfig.from_mapping(eval_detection_raw)
 
         object_ordering = normalize_object_ordering(
             object_ordering_raw,
@@ -1118,12 +1247,14 @@ class CustomConfig:
             train_sample_limit=train_sample_limit,
             val_sample_limit=val_sample_limit,
             val_sample_with_replacement=val_sample_with_replacement,
+            eval_monitor_dump=eval_monitor_dump,
             dump_conversation_text=dump_conversation_text,
             dump_conversation_path=str(dump_conversation_path)
             if dump_conversation_path is not None
             else None,
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
             offline_max_pixels=offline_max_pixels,
+            eval_detection=eval_detection,
             fusion_config=fusion_config,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
@@ -1171,7 +1302,9 @@ class DebugConfig:
             if isinstance(value, (int, float)):
                 if value in (0, 1, 0.0, 1.0):
                     return bool(value)
-                raise ValueError(f"{field_name} must be boolean (0 or 1), got {value!r}.")
+                raise ValueError(
+                    f"{field_name} must be boolean (0 or 1), got {value!r}."
+                )
             if isinstance(value, str):
                 normalized = value.strip().lower()
                 if normalized in {"true", "1", "yes", "y", "on"}:
@@ -1181,13 +1314,17 @@ class DebugConfig:
                 raise ValueError(
                     f"{field_name} string value '{value}' is not a recognized boolean representation."
                 )
-            raise TypeError(f"{field_name} must be a boolean value, got {type(value)!r}.")
+            raise TypeError(
+                f"{field_name} must be a boolean value, got {type(value)!r}."
+            )
 
         enabled_raw = data.pop("enabled", False)
         enabled = _parse_bool(enabled_raw, "debug.enabled")
 
         output_dir_raw = data.pop("output_dir", None)
-        output_dir = None if output_dir_raw in (None, "", False) else str(output_dir_raw)
+        output_dir = (
+            None if output_dir_raw in (None, "", False) else str(output_dir_raw)
+        )
 
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
@@ -1233,7 +1370,9 @@ class Stage2ABScheduleConfig:
         try:
             b_ratio = float(b_ratio_raw)
         except (TypeError, ValueError) as exc:
-            raise TypeError("stage2_ab.schedule.b_ratio must be a float in [0,1]") from exc
+            raise TypeError(
+                "stage2_ab.schedule.b_ratio must be a float in [0,1]"
+            ) from exc
 
         if not (0.0 <= b_ratio <= 1.0):
             raise ValueError(
@@ -1265,7 +1404,11 @@ class Stage2ABChannelBTriagePosteriorConfig:
         default_num_rollouts: Optional[int] = None,
     ) -> "Stage2ABChannelBTriagePosteriorConfig":
         if payload is None:
-            return cls(num_rollouts=cls.num_rollouts if default_num_rollouts is None else default_num_rollouts)
+            return cls(
+                num_rollouts=cls.num_rollouts
+                if default_num_rollouts is None
+                else default_num_rollouts
+            )
         if not isinstance(payload, Mapping):
             raise TypeError(
                 "stage2_ab.channel_b.triage_posterior must be a mapping when provided"
@@ -1273,7 +1416,9 @@ class Stage2ABChannelBTriagePosteriorConfig:
 
         data: MutableMapping[str, Any] = dict(payload)
 
-        default_rollouts = cls.num_rollouts if default_num_rollouts is None else default_num_rollouts
+        default_rollouts = (
+            cls.num_rollouts if default_num_rollouts is None else default_num_rollouts
+        )
         num_rollouts_raw = data.pop("num_rollouts", default_rollouts)
         try:
             num_rollouts = int(num_rollouts_raw)
@@ -1308,9 +1453,7 @@ class Stage2ABChannelBTriagePosteriorConfig:
         explorer_top_p_raw = data.pop("explorer_top_p", cls.explorer_top_p)
         try:
             explorer_top_p = float(
-                cls.explorer_top_p
-                if explorer_top_p_raw is None
-                else explorer_top_p_raw
+                cls.explorer_top_p if explorer_top_p_raw is None else explorer_top_p_raw
             )
         except (TypeError, ValueError) as exc:
             raise TypeError(
@@ -1342,7 +1485,9 @@ class Stage2ABChannelBTriagePosteriorConfig:
             cls.unlabeled_consistent_iou_threshold,
         )
         try:
-            unlabeled_consistent_iou_threshold = float(unlabeled_consistent_iou_threshold_raw)
+            unlabeled_consistent_iou_threshold = float(
+                unlabeled_consistent_iou_threshold_raw
+            )
         except (TypeError, ValueError) as exc:
             raise TypeError(
                 "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be a float/int"
@@ -1351,7 +1496,10 @@ class Stage2ABChannelBTriagePosteriorConfig:
             raise ValueError(
                 "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be finite"
             )
-        if unlabeled_consistent_iou_threshold < 0.0 or unlabeled_consistent_iou_threshold > 1.0:
+        if (
+            unlabeled_consistent_iou_threshold < 0.0
+            or unlabeled_consistent_iou_threshold > 1.0
+        ):
             raise ValueError(
                 "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be in [0, 1]"
             )
@@ -1361,7 +1509,9 @@ class Stage2ABChannelBTriagePosteriorConfig:
             cls.recovered_ground_truth_weight_multiplier,
         )
         try:
-            recovered_ground_truth_weight_multiplier = float(recovered_ground_truth_weight_multiplier_raw)
+            recovered_ground_truth_weight_multiplier = float(
+                recovered_ground_truth_weight_multiplier_raw
+            )
         except (TypeError, ValueError) as exc:
             raise TypeError(
                 "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be a float/int"
@@ -1380,7 +1530,9 @@ class Stage2ABChannelBTriagePosteriorConfig:
                 f"stage2_ab.channel_b.triage_posterior.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
-            raise ValueError(f"Unknown stage2_ab.channel_b.triage_posterior keys: {unknown}")
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.triage_posterior keys: {unknown}"
+            )
 
         return cls(
             num_rollouts=num_rollouts,
@@ -1716,7 +1868,9 @@ class Stage2PipelineModuleSpec:
                 f"{path}.channels must be provided (explicit pipeline spec; no defaults)"
             )
         channels_raw = data.pop("channels")
-        if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
+        if not isinstance(channels_raw, Sequence) or isinstance(
+            channels_raw, (str, bytes)
+        ):
             raise TypeError(f"{path}.channels must be a sequence of 'A'/'B'")
         channels_list: list[str] = []
         for idx, ch in enumerate(channels_raw):
@@ -1745,7 +1899,9 @@ class Stage2PipelineModuleSpec:
         config = dict(cfg_raw)
 
         if data:
-            unknown = [f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            unknown = [
+                f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
             raise ValueError(f"Unknown pipeline module keys: {unknown}")
 
         return cls(
@@ -1772,9 +1928,13 @@ class Stage2PipelineConfig:
         objective_raw = data.pop("objective", [])
         diagnostics_raw = data.pop("diagnostics", [])
 
-        if not isinstance(objective_raw, Sequence) or isinstance(objective_raw, (str, bytes)):
+        if not isinstance(objective_raw, Sequence) or isinstance(
+            objective_raw, (str, bytes)
+        ):
             raise TypeError("stage2_ab.pipeline.objective must be a list")
-        if not isinstance(diagnostics_raw, Sequence) or isinstance(diagnostics_raw, (str, bytes)):
+        if not isinstance(diagnostics_raw, Sequence) or isinstance(
+            diagnostics_raw, (str, bytes)
+        ):
             raise TypeError("stage2_ab.pipeline.diagnostics must be a list")
 
         objective_specs = [
@@ -1796,7 +1956,9 @@ class Stage2PipelineConfig:
             for idx, item in enumerate(diagnostics_raw)
         ]
 
-        def _assert_no_duplicates(items: list[Stage2PipelineModuleSpec], *, path: str) -> None:
+        def _assert_no_duplicates(
+            items: list[Stage2PipelineModuleSpec], *, path: str
+        ) -> None:
             seen: set[str] = set()
             for spec in items:
                 if spec.name in seen:
@@ -1924,9 +2086,9 @@ class Stage2PipelineConfig:
                 "stage2_ab.pipeline.objective requires loss_duplicate_burst_unlikelihood in the canonical "
                 "clean-prefix Channel-B contract."
             )
-        if tuple(
-            str(ch) for ch in loss_duplicate_burst_unlikelihood.channels
-        ) != ("B",):
+        if tuple(str(ch) for ch in loss_duplicate_burst_unlikelihood.channels) != (
+            "B",
+        ):
             raise ValueError(
                 "stage2_ab.pipeline.objective loss_duplicate_burst_unlikelihood must declare channels ['B'] "
                 f"for the canonical clean-prefix Channel-B contract; got {list(loss_duplicate_burst_unlikelihood.channels)!r}"
@@ -2002,7 +2164,10 @@ class Stage2PipelineConfig:
                 )
 
         if data:
-            unknown = [f"stage2_ab.pipeline.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            unknown = [
+                f"stage2_ab.pipeline.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
             raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
 
         return cls(
@@ -2085,7 +2250,9 @@ class Stage2ABConfig:
         channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
 
         if data:
-            unknown = [f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            unknown = [
+                f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
             raise ValueError(
                 "Unknown stage2_ab keys: "
                 f"{unknown}. "
@@ -2340,17 +2507,21 @@ class TrainingConfig:
         # eval-step vLLM backend will truncate/error on long prompts, which is
         # objective-changing.
         if rollout_matching is not None:
-            backend = str(
-                getattr(rollout_matching, "rollout_backend", "") or ""
-            ).strip().lower()
+            backend = (
+                str(getattr(rollout_matching, "rollout_backend", "") or "")
+                .strip()
+                .lower()
+            )
             if backend not in {"hf", "vllm"}:
                 raise ValueError(
                     "rollout_matching.rollout_backend must be one of {'hf', 'vllm'}."
                 )
 
-            effective_eval_backend = str(
-                getattr(rollout_matching, "eval_rollout_backend", "") or ""
-            ).strip().lower()
+            effective_eval_backend = (
+                str(getattr(rollout_matching, "eval_rollout_backend", "") or "")
+                .strip()
+                .lower()
+            )
             if effective_eval_backend not in {"hf", "vllm"}:
                 raise ValueError(
                     "rollout_matching.eval_rollout_backend must be one of {'hf', 'vllm'}."

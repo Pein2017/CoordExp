@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-03-22
+updated: 2026-03-29
 ---
 
 # Artifacts & Provenance
@@ -187,6 +187,11 @@ artifacts into `training.output_dir` before training starts:
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.
+- `eval_detection/step_<global_step>/` when Stage-1 `custom.eval_detection.enabled: true`
+  - Generation-backed eval-step artifacts for standard Stage-1 SFT runs.
+  - Writes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
+    `metrics.json`, `per_image.json`, and standard evaluator sidecars for that
+    eval window.
 
 Notes:
 

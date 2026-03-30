@@ -70,6 +70,28 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_length_precompute_workers"] == 8
 
 
+def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["eval_detection"] = {
+        "enabled": True,
+        "metrics": "lvis",
+        "lvis_max_dets": 300,
+        "batch_size": 1,
+        "max_new_tokens": 512,
+        "lvis_annotations_json": "public_data/lvis/raw/annotations/lvis_v1_val.json",
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.custom.eval_detection.enabled is True
+    assert cfg.custom.eval_detection.metrics == "lvis"
+    assert cfg.custom.eval_detection.lvis_max_dets == 300
+    assert (
+        cfg.custom.eval_detection.lvis_annotations_json
+        == "public_data/lvis/raw/annotations/lvis_v1_val.json"
+    )
+
+
 def test_custom_bbox_size_aux_unknown_key_fails_fast() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_size_aux"] = {
@@ -609,7 +631,10 @@ def _base_stage2_two_channel_payload() -> dict:
     }
     payload["stage2_ab"] = {
         "schedule": {"b_ratio": 0.5},
-        "pipeline": {"objective": _canonical_stage2_two_channel_objective(), "diagnostics": []},
+        "pipeline": {
+            "objective": _canonical_stage2_two_channel_objective(),
+            "diagnostics": [],
+        },
         "channel_b": {},
     }
     return payload
@@ -627,7 +652,9 @@ def _base_stage2_rollout_aligned_payload() -> dict:
     return payload
 
 
-def _pipeline_token_ce_spec(*, channels: list[str] | None = None, config: dict | None = None) -> dict:
+def _pipeline_token_ce_spec(
+    *, channels: list[str] | None = None, config: dict | None = None
+) -> dict:
     token_ce_cfg = {
         "desc_ce_weight": 1.0,
         "rollout_fn_desc_weight": 1.0,
@@ -763,13 +790,17 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
         ],
     }
 
-    with pytest.raises(ValueError, match=r"Duplicate module name in stage2_ab\.pipeline\.objective"):
+    with pytest.raises(
+        ValueError, match=r"Duplicate module name in stage2_ab\.pipeline\.objective"
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage2_pipeline_canonical_channels_scope_parses():
     payload = _base_stage2_two_channel_payload()
-    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.stage2_ab is not None
@@ -785,7 +816,9 @@ def test_stage2_pipeline_disallows_custom_bbox_geo_knobs() -> None:
         "smoothl1_weight": 0.0,
         "ciou_weight": 1.0,
     }
-    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
 
     with pytest.raises(ValueError, match=r"custom\.bbox_geo"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
@@ -802,7 +835,9 @@ def test_stage2_pipeline_disallows_custom_bbox_size_aux_knobs() -> None:
         "oversize_log_h_threshold": None,
         "eps": 1e-6,
     }
-    payload["stage2_ab"]["pipeline"] = {"objective": _canonical_stage2_two_channel_objective()}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
 
     with pytest.raises(ValueError, match=r"custom\.bbox_size_aux"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
@@ -879,5 +914,7 @@ def test_stage2_pipeline_disallows_flat_objective_knobs():
         }
     )
 
-    with pytest.raises(ValueError, match=r"Flat stage2_ab objective knobs have been removed"):
+    with pytest.raises(
+        ValueError, match=r"Flat stage2_ab objective knobs have been removed"
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())

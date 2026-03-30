@@ -488,7 +488,7 @@ def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> Non
 
     assert (
         cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+        == "output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged"
     )
     assert (
         cfg.training["run_name"]

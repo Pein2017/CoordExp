@@ -52,6 +52,7 @@ def build_trainer_callbacks(
     base_callbacks: Sequence[Any] | None,
     dataset: Any,
     append_dataset_epoch_callback_fn: Any,
+    stage1_eval_detection_callback: Any,
     heartbeat_callback: Any,
     curriculum_scheduler: Any,
     curriculum_state: Any,
@@ -62,6 +63,8 @@ def build_trainer_callbacks(
 ) -> list[Any]:
     callbacks = list(base_callbacks or [])
     callbacks = append_dataset_epoch_callback_fn(callbacks, dataset)
+    if stage1_eval_detection_callback is not None:
+        callbacks.append(stage1_eval_detection_callback)
     if heartbeat_callback is not None:
         callbacks.append(heartbeat_callback)
     if curriculum_scheduler is not None and curriculum_state is not None:

@@ -202,6 +202,7 @@ Useful config handles:
 
 - `custom.train_jsonl`
 - `custom.val_jsonl`
+- `custom.eval_detection.*`
 - `custom.extra.prompt_variant`
 - `custom.bbox_geo`
 - `rollout_matching.eval_detection.metrics`
@@ -246,12 +247,25 @@ Key overrides in that config:
 - `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0 }`
 - `custom.bbox_geo: { enabled: true, smoothl1_weight: 0.0, ciou_weight: 1.0 }`
 - `custom.bbox_size_aux.enabled: true`
+- `custom.eval_detection: { enabled: true, metrics: lvis, lvis_annotations_json: public_data/lvis/raw/annotations/lvis_v1_val.json }`
 - `template.max_pixels: 1048576`
 - `custom.offline_max_pixels: 1048576`
 
 No extra presort step is needed for the current cached 1024 bbox exports. They
 already satisfy the loader's top-left ordering invariant for
 `custom.object_ordering: sorted`.
+
+Stage-1 eval-step note:
+
+- the cached `public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl` is
+  still metadata-light
+- the Stage-1 callback now backfills LVIS federated image policy from
+  `custom.eval_detection.lvis_annotations_json` so trainer-time `metrics: lvis`
+  can run without regenerating the JSONL first
+- trainer-time artifacts are written under
+  `training.output_dir/eval_detection/step_<global_step>/`
+  and include `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`,
+  and `per_image.json`
 
 Example launch:
 
@@ -263,6 +277,9 @@ Smoke launch using the same LVIS Stage-1 recipe with only `max_steps` and
 sample limits reduced:
 
 - `configs/stage1/smoke/lvis_bbox_max60_1024.yaml`
+
+The smoke config inherits the same LVIS eval path but caps callback generation
+to the smoke eval subset (`custom.eval_detection.limit: 8`).
 
 ```bash
 config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bash scripts/train.sh

@@ -52,9 +52,13 @@ training:
 
 data:
   dataset_num_proc: 8
-  dataloader_num_workers: 16
+  # Stage-1 packed 1024px samples can overflow container /dev/shm with the repo-wide
+  # generic loader defaults, especially under 8-rank runs. Keep a more conservative
+  # per-rank worker/prefetch profile here.
+  dataloader_num_workers: 4
   dataloader_pin_memory: true
-  dataloader_prefetch_factor: 4
+  dataloader_prefetch_factor: 2
+  dataloader_persistent_workers: false
 
 deepspeed:
   enabled: true
