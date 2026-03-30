@@ -15,6 +15,7 @@ from src.sft import (
     _parse_encoded_sample_cache_config,
     _parse_packing_config,
     _recompute_gas_for_packing,
+    _resolve_model_checkpoint_path,
     _validate_stage1_static_packing_policy,
     _validate_static_packing_accumulation_windows,
 )
@@ -438,6 +439,9 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.object_field_order == "desc_first"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage1_federated"
+    resolved_model_checkpoint = _resolve_model_checkpoint_path(cfg)
+    assert resolved_model_checkpoint == str(cfg.model["model"]).strip()
+    assert resolved_model_checkpoint
     assert cfg.custom.coord_soft_ce_w1.enabled is True
     assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)

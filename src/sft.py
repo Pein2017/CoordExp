@@ -97,6 +97,18 @@ def resolve_trainer_cls(train_args):
     return with_final_checkpoint(trainer_cls)
 
 
+def _resolve_model_checkpoint_path(training_config: Any) -> str | None:
+    model_section = getattr(training_config, "model", None)
+    if isinstance(model_section, Mapping):
+        model_checkpoint = model_section.get("model")
+    else:
+        model_checkpoint = getattr(model_section, "model", None)
+    if not isinstance(model_checkpoint, str):
+        return None
+    model_checkpoint = model_checkpoint.strip()
+    return model_checkpoint or None
+
+
 # Use the model's native chat_template (JSON/Jinja) shipped with the tokenizer
 
 logger = get_logger(__name__)
@@ -2469,10 +2481,8 @@ def main():
                     "matches the authored Stage-1 prompt contract"
                 )
 
-            model_checkpoint = getattr(
-                getattr(training_config, "model", None), "model", None
-            )
-            if not isinstance(model_checkpoint, str) or not model_checkpoint.strip():
+            model_checkpoint = _resolve_model_checkpoint_path(training_config)
+            if model_checkpoint is None:
                 raise ValueError(
                     "custom.eval_detection requires a non-empty model.model checkpoint path"
                 )
