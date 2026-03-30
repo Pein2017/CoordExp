@@ -42,6 +42,6 @@ custom:
     oversize_log_h_threshold: null
     eps: 1.0e-6
   eval_detection:
-    enabled: true
+    enabled: false
     metrics: lvis
     lvis_annotations_json: public_data/lvis/raw/annotations/lvis_v1_val.json
