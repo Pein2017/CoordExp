@@ -10,8 +10,11 @@ from src.config.loader import ConfigLoader
 import src.sft as sft_module
 from src.sft import (
     PackingRuntimeConfig,
+    StaticPackingCacheRuntimeConfig,
     _append_dataset_epoch_callback,
     _build_static_packing_fingerprint,
+    _parse_static_packing_cache_config,
+    _resolve_static_packing_cache_dir,
     _parse_encoded_sample_cache_config,
     _parse_packing_config,
     _recompute_gas_for_packing,
@@ -162,6 +165,22 @@ def test_parse_encoded_sample_cache_config_rejects_nonpositive_residency_bound()
             },
             train_args=SimpleNamespace(output_dir="output/run"),
         )
+
+
+def test_parse_static_packing_cache_config_defaults_to_auto_root() -> None:
+    cfg = _parse_static_packing_cache_config({})
+
+    assert cfg == StaticPackingCacheRuntimeConfig(root_dir=None)
+
+
+def test_parse_static_packing_cache_config_accepts_explicit_root_dir(
+    tmp_path: Path,
+) -> None:
+    cfg = _parse_static_packing_cache_config(
+        {"static_packing_cache": {"root_dir": str(tmp_path / "cache_root")}}
+    )
+
+    assert cfg.root_dir == str((tmp_path / "cache_root").resolve())
 
 
 def test_parse_packing_config_rejects_unknown_mode() -> None:
@@ -391,6 +410,38 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
     assert fingerprint_b["custom_offline_max_pixels"] == 2097152
     assert fingerprint_b["coord_tokens"] == {"enabled": False}
     assert fingerprint_a != fingerprint_b
+
+
+def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
+    tmp_path: Path,
+) -> None:
+    train_jsonl = tmp_path / "dataset" / "train.jsonl"
+    train_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    cache_dir = _resolve_static_packing_cache_dir(
+        runtime_cfg=StaticPackingCacheRuntimeConfig(),
+        training_config=SimpleNamespace(global_max_length=12000),
+        train_args=SimpleNamespace(output_dir=str(tmp_path / "out_v003")),
+        dataset_jsonl=str(train_jsonl),
+        fusion_config_path=None,
+        dataset_split="train",
+        packing_cfg=packing_cfg,
+    )
+
+    assert cache_dir == (
+        train_jsonl.parent
+        / "cache"
+        / "static_packing"
+        / "global_max_length_12000"
+        / "train"
+    ).resolve()
 
 
 @pytest.mark.parametrize(

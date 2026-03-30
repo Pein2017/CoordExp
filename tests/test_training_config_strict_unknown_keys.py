@@ -171,6 +171,33 @@ def test_training_encoded_sample_cache_unknown_nested_key_fails_fast() -> None:
     assert "training.encoded_sample_cache.unknown_flag" in str(exc.value)
 
 
+def test_training_static_packing_cache_keys_are_allowed_and_normalized() -> None:
+    payload = _base_training_payload()
+    payload["training"] = {
+        "static_packing_cache": {
+            "root_dir": "/tmp/static-packing-cache",
+        }
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    cache_cfg = cfg.training["static_packing_cache"]
+    assert cache_cfg["root_dir"] == "/tmp/static-packing-cache"
+
+
+def test_training_static_packing_cache_unknown_nested_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["training"] = {
+        "static_packing_cache": {
+            "unknown_flag": True,
+        }
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.static_packing_cache.unknown_flag" in str(exc.value)
+
+
 def test_training_removed_packing_exact_key_fails_fast():
     payload = _base_training_payload()
     payload["training"] = {

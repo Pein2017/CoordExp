@@ -389,6 +389,7 @@ class ConfigLoader:
             "packing_length_cache_persist_every",
             "packing_length_precompute_workers",
             "encoded_sample_cache",
+            "static_packing_cache",
         }
         for key in _packing_keys:
             training_section.pop(key, None)
