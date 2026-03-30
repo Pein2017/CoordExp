@@ -19,7 +19,7 @@ def resolve_dataset_label(row: Mapping[str, Any]) -> str:
 
     meta = row.get("metadata") if isinstance(row.get("metadata"), Mapping) else None
     if meta:
-        label = meta.get("_fusion_source") or meta.get("dataset")
+        label = meta.get("dataset")
         if label:
             return str(label)
     dataset_name = row.get("dataset") or row.get("dataset_name")

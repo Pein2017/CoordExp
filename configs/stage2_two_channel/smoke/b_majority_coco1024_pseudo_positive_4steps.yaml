@@ -1,0 +1,15 @@
+extends: ../prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+training:
+  run_name: smoke_4steps-k4-pseudo_positive
+  artifact_subdir: stage2_ab/smoke/b_majority_coco1024_pseudo_positive_4steps
+  max_steps: 4
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8

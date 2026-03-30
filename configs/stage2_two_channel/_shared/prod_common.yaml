@@ -12,7 +12,6 @@ training:
 
 custom:
   extra:
-    prompt_variant: coco_80
     loss_gradient_monitor:
       enabled: true
       interval_steps: 50

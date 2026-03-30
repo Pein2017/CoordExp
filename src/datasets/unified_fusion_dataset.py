@@ -1,12 +1,7 @@
-"""Unified fusion dataset for multi-JSONL dense-caption training.
+"""Dormant unified fusion dataset kept for future reactivation work.
 
-This dataset reads multiple JSONL pools (from a FusionConfig) and builds a
-per-epoch sampling schedule. CoordExp v1 semantics:
-- `targets` and `sources` are both accepted in configs, but are treated the same
-  at runtime (no target/source semantic split).
-- Each dataset contributes `round(len(pool) * ratio)` samples per epoch.
-- Evaluation uses any dataset entry with a non-null `val_jsonl`; missing/null
-  `val_jsonl` skips evaluation for that dataset.
+This module preserves the older multi-JSONL fusion dataset path, but the active
+training schema currently disables `custom.fusion_config`.
 """
 
 from __future__ import annotations

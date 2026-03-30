@@ -5,7 +5,7 @@ doc_type: workflow
 status: canonical
 domain: data
 summary: Offline preparation and intake workflow for dataset conversion and validation.
-updated: 2026-03-09
+updated: 2026-03-30
 ---
 
 # Data Preprocessing & Intake Pipeline
@@ -197,8 +197,8 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
   - Sequence-length control: apply a simple record-level `max_objects` cap (e.g., 60).
   - Optional: apply low-diversity filtering (`filter_low_diversity_images.py`) if you want to drop dense repetitive scenes.
 - Multi-dataset training:
-  - Preferred: merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`).
-  - Optional (supported; less common): set `custom.fusion_config` (see `docs/data/FUSION.md`).
+  - merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`)
+  - runtime fusion config authoring is temporarily disabled in the supported training surface
 
 ---
 

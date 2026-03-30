@@ -22,9 +22,7 @@ def test_inventory_gate_for_raw_coordjson_json_loads() -> None:
     pattern = re.compile(
         r"json\.loads\((text|response_text|raw_text|assistant_text|pred_text|prediction_text|rollout_text)\)"
     )
-    allowlist = {
-        "src/datasets/fusion.py",
-    }
+    allowlist: set[str] = set()
 
     hits: list[str] = []
     for base in ("src", "scripts", "tests"):

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from src.config.loader import ConfigLoader
 from src.config.schema import PromptOverrides, TrainingConfig
 
 
@@ -49,6 +52,9 @@ def test_unknown_key_fails_fast_with_dotted_path(section: str):
 def test_training_internal_packing_keys_are_allowed():
     payload = _base_training_payload()
     payload["training"] = {
+        "output_root": "./output",
+        "logging_root": "./tb",
+        "artifact_subdir": "stage1/example",
         "packing": True,
         "packing_mode": "static",
         "packing_buffer": 128,
@@ -68,6 +74,102 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["packing_wait_timeout_s"] == 7200
     assert cfg.training["packing_length_cache_persist_every"] == 2048
     assert cfg.training["packing_length_precompute_workers"] == 8
+    assert cfg.training["output_root"] == "./output"
+    assert cfg.training["logging_root"] == "./tb"
+    assert cfg.training["artifact_subdir"] == "stage1/example"
+
+
+@pytest.mark.parametrize(
+    ("key", "bad_value"),
+    [
+        ("output_root", 42),
+        ("logging_root", True),
+        ("artifact_subdir", ["stage1", "bad"]),
+    ],
+)
+def test_materialized_training_artifact_paths_reject_non_string_components(
+    key: str,
+    bad_value: object,
+) -> None:
+    config = {
+        "training": {
+            "output_root": "./output",
+            "logging_root": "./tb",
+            "artifact_subdir": "stage1/example",
+        }
+    }
+    config["training"][key] = bad_value
+
+    with pytest.raises(TypeError, match=rf"training\.{key} must be authored as a string"):
+        ConfigLoader._materialize_training_artifact_paths(config)
+
+
+def test_disabled_custom_fusion_config_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["fusion_config"] = "toy/fusion.yaml"
+
+    with pytest.raises(ValueError, match=r"custom\.fusion_config is temporarily disabled"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_global_and_stage_bases_no_longer_hide_dataset_or_prompt_identity() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    raw_base = ConfigLoader.load_yaml_with_extends(str(repo_root / "configs/base.yaml"))
+    raw_stage1 = ConfigLoader.load_yaml_with_extends(
+        str(repo_root / "configs/stage1/sft_base.yaml")
+    )
+    raw_stage2 = ConfigLoader.load_yaml_with_extends(
+        str(repo_root / "configs/stage2_two_channel/base.yaml")
+    )
+
+    for payload in (raw_base, raw_stage1, raw_stage2):
+        custom = payload.get("custom", {}) or {}
+        assert "train_jsonl" not in custom
+        assert "val_jsonl" not in custom
+        assert "object_field_order" not in custom
+        assert "object_ordering" not in custom
+        extra = custom.get("extra", {}) or {}
+        assert "prompt_variant" not in extra
+
+
+def test_loader_rejects_overlapping_list_owners_across_reusable_parents(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "base_a.yaml").write_text(
+        "training:\n  report_to: [tensorboard]\n", encoding="utf-8"
+    )
+    (tmp_path / "base_b.yaml").write_text(
+        "training:\n  report_to: [wandb]\n", encoding="utf-8"
+    )
+    leaf = tmp_path / "leaf.yaml"
+    leaf.write_text(
+        "extends:\n"
+        "  - ./base_a.yaml\n"
+        "  - ./base_b.yaml\n"
+        "training:\n"
+        "  run_name: overlap\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"training\.report_to"):
+        ConfigLoader.load_yaml_with_extends(str(leaf))
+
+
+def test_loader_allows_child_branch_to_replace_parent_list_bundle(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "base.yaml").write_text(
+        "training:\n  report_to: [tensorboard]\n", encoding="utf-8"
+    )
+    (tmp_path / "mid.yaml").write_text(
+        "extends: ./base.yaml\ntraining:\n  report_to: [wandb]\n",
+        encoding="utf-8",
+    )
+    leaf = tmp_path / "leaf.yaml"
+    leaf.write_text("extends: ./mid.yaml\n", encoding="utf-8")
+
+    merged = ConfigLoader.load_yaml_with_extends(str(leaf))
+    assert merged["training"]["report_to"] == ["wandb"]
 
 
 def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:

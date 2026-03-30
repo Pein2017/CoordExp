@@ -1,11 +1,8 @@
-# Example fusion config: LVIS + Visual Genome.
-#
-# This file is referenced by:
-# - docs/data/FUSION_DATASET.md
-# - configs/fusion/sft_lvis_vg.yaml
-#
-# Note: Stage-1 dataset-level packing is not supported for fusion datasets; see
-# docs/data/FUSION_DATASET.md for details.
+# DORMANT LEGACY EXAMPLE
+# ----------------------
+# This file is kept in-tree so runtime fusion can be reactivated later.
+# The current canonical training surface rejects `custom.fusion_config`, so this
+# example is not runnable as-is today.
 
 targets:
   - dataset: lvis
@@ -15,7 +12,7 @@ targets:
     template: poly_preferred
     ratio: 1.0
 
-sources:  # accepted for compatibility; treated the same as targets
+sources:
   - dataset: vg
     name: vg
     train_jsonl: public_data/vg/rescale_32_768_bbox/train.coord.jsonl

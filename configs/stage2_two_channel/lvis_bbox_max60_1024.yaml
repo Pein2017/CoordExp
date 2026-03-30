@@ -1,17 +1,14 @@
 extends:
   - ./base.yaml
-  - ./_shared/prompt_lvis_stage2_federated.yaml
+  - ../_shared/datasets/lvis_1024_bbox_max60.yaml
+  - ../_shared/prompts/lvis_stage2_federated.yaml
 
 model:
-  model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+  model: output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged
 
 training:
   run_name: epoch_2-stage2-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size
-  output_dir: output/stage2_ab/lvis_bbox_max60_1024
-  logging_dir: tb/stage2_ab/lvis_bbox_max60_1024
-
-template:
-  max_pixels: 1048576
+  artifact_subdir: stage2_ab/lvis_bbox_max60_1024
 
 stage2_ab:
   pipeline:
@@ -70,13 +67,6 @@ stage2_ab:
           temperature: 0.9
           target_sigma: 1.5
           target_truncate: 8
-
-custom:
-  object_field_order: desc_first
-  object_ordering: sorted
-  offline_max_pixels: 1048576
-  train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
 
 rollout_matching:
   eval_detection:

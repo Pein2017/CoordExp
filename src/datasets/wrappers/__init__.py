@@ -1,8 +1,8 @@
-"""Dataset wrapper registry for fusion configs.
+"""Dataset wrapper registry used by dormant fusion configs.
 
-Note: The `template` field in fusion configs is a lightweight typo-guard and a
-metadata hook. CoordExp v1 uses a single runtime template instance, but we keep
-template IDs to allow dataset-specific prompting policies.
+The active training surface currently disables runtime fusion authoring, but we
+keep these wrapper adapters in-tree so future reactivation work has a stable
+starting point.
 """
 
 from __future__ import annotations

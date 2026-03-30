@@ -21,8 +21,6 @@ tuner:
   lora_bias: none
 
 training:
-  output_dir: ./output/stage1/base
-  run_name: epoch_30-stage1-lrs_4_2_8-sft_base
   num_train_epochs: 4
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 4
@@ -47,7 +45,6 @@ training:
   save_total_limit: 2
   save_delay_steps: 1800
   logging_steps: 10
-  logging_dir: ./tb/stage1/base
   logging_first_step: true
 
 data:
@@ -66,10 +63,6 @@ deepspeed:
 
 custom:
   emit_norm: none
-  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
-  # Common defaults for child configs
-  object_ordering: sorted  # sorted | random (for ablation)
   augmentation_curriculum: null  # Disable curriculum when augmentation is off to avoid runtime error
   
   coord_tokens:

@@ -402,7 +402,6 @@ def _build_data_source_provenance(
     *,
     split: str,
     dataset_jsonl: str | None,
-    fusion_config_path: str | None,
     dataset_seed: int,
     sample_limit: int | None,
     sample_with_replacement: bool | None = None,
@@ -411,9 +410,7 @@ def _build_data_source_provenance(
         "split": str(split),
         "dataset_seed": int(dataset_seed),
         "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
-        "fusion_config": str(fusion_config_path) if fusion_config_path else None,
         "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "sample_limit": int(sample_limit) if sample_limit is not None else None,
         "sample_with_replacement": bool(sample_with_replacement)
         if sample_with_replacement is not None
@@ -432,7 +429,6 @@ def _build_effective_runtime_payload(
     encoded_sample_cache_cfg: EncodedSampleCacheRuntimeConfig,
     train_jsonl: str | None,
     val_jsonl: str | None,
-    fusion_config_path: str | None,
     pipeline_manifest: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
@@ -471,7 +467,6 @@ def _build_effective_runtime_payload(
         "encoded_sample_cache": dataclass_asdict_no_none(encoded_sample_cache_cfg),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
         if isinstance(pipeline_manifest, Mapping)
         else "",
@@ -638,7 +633,6 @@ def _build_static_packing_fingerprint(
     dataset_seed: int,
     packing_cfg: PackingRuntimeConfig,
     train_jsonl: str | None,
-    fusion_config_path: str | None,
     dataset_split: str = "train",
     eval_sample_limit: int | None = None,
     eval_sample_with_replacement: bool | None = None,
@@ -677,10 +671,8 @@ def _build_static_packing_fingerprint(
         "coord_tokens": coord_tokens_payload,
         "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
-        "custom_fusion_config": str(fusion_config_path) if fusion_config_path else None,
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "eval_sample_limit": int(eval_sample_limit)
         if split == "eval" and eval_sample_limit is not None
         else None,
@@ -722,7 +714,6 @@ def _build_encoded_sample_cache_fingerprint(
     train_args: Any,
     dataset_seed: int,
     dataset_jsonl: str | None,
-    fusion_config_path: str | None,
     dataset_split: str,
     dataset_mode: str,
     sample_limit: int | None = None,
@@ -745,7 +736,6 @@ def _build_encoded_sample_cache_fingerprint(
         "dataset_mode": str(dataset_mode),
         "dataset_jsonl": str(dataset_jsonl) if dataset_jsonl else None,
         "dataset_source_jsonl": _build_source_path_identity(dataset_jsonl),
-        "dataset_source_fusion_config": _build_source_path_identity(fusion_config_path),
         "sample_limit": int(sample_limit) if sample_limit is not None else None,
         "global_max_length": getattr(training_config, "global_max_length", None),
         "template_max_length": getattr(template, "max_length", None),
@@ -778,7 +768,6 @@ def _build_encoded_sample_cache_request(
     train_args: Any,
     dataset_seed: int,
     dataset_jsonl: str | None,
-    fusion_config_path: str | None,
     dataset_split: str,
     dataset_mode: str,
     sample_limit: int | None = None,
@@ -795,7 +784,6 @@ def _build_encoded_sample_cache_request(
         train_args=train_args,
         dataset_seed=dataset_seed,
         dataset_jsonl=dataset_jsonl,
-        fusion_config_path=fusion_config_path,
         dataset_split=dataset_split,
         dataset_mode=dataset_mode,
         sample_limit=sample_limit,
@@ -1295,29 +1283,17 @@ def main():
             logger.debug(f"  {key}: {value}")
         logger.debug("=" * 70)
 
-    # Auto-configure ROOT_IMAGE_DIR from a path hint (single JSONL or fusion config).
+    # Auto-configure ROOT_IMAGE_DIR from the training JSONL path.
     train_jsonl = custom_config.train_jsonl or custom_config.extra.get("jsonl")
-    fusion_config_path = getattr(custom_config, "fusion_config", None)
-    if not train_jsonl and not fusion_config_path:
+    if not train_jsonl:
         raise ValueError(
-            "Config must specify 'custom.train_jsonl'/'custom.jsonl' or 'custom.fusion_config'"
+            "Config must specify 'custom.train_jsonl'/'custom.jsonl'"
         )
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        if train_jsonl:
-            root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))
-            os.environ["ROOT_IMAGE_DIR"] = root_dir
-            logger.info(f"Set ROOT_IMAGE_DIR={root_dir} (from custom.train_jsonl)")
-        elif fusion_config_path:
-            # Fusion configs are legacy/experimental. Using the fusion-config file directory
-            # as a root is a heuristic; surface this explicitly to prevent silent path drift.
-            root_dir = os.path.abspath(os.path.dirname(str(fusion_config_path)))
-            os.environ["ROOT_IMAGE_DIR"] = root_dir
-            logger.warning(
-                "Set ROOT_IMAGE_DIR=%s (heuristic from custom.fusion_config path). "
-                "For fusion configs, set ROOT_IMAGE_DIR explicitly (preferred) or provide custom.train_jsonl.",
-                root_dir,
-            )
+        root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))
+        os.environ["ROOT_IMAGE_DIR"] = root_dir
+        logger.info(f"Set ROOT_IMAGE_DIR={root_dir} (from custom.train_jsonl)")
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")
@@ -1469,7 +1445,7 @@ def main():
     elif val_sample_with_replacement:
         logger.info(f"Val sample size per eval (with replacement): {val_sample_size}")
 
-    # Build training dataset (single JSONL or fusion config)
+    # Build training dataset from the resolved single-dataset JSONL contract.
     # Require minimal explicit keys; others have sane defaults
 
     # Extract mode control parameters
@@ -1516,7 +1492,6 @@ def main():
         train_args=train_args,
         dataset_seed=dataset_seed,
         dataset_jsonl=str(train_jsonl) if train_jsonl else None,
-        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
         dataset_split="train",
         dataset_mode="summary" if use_summary else "dense",
         sample_limit=_normalize_optional_sample_limit(train_sample_limit),
@@ -1524,93 +1499,34 @@ def main():
         system_prompt_summary=system_prompt_summary,
     )
     dataset: Any
-    fusion_cfg = None
     logger.info(
         "Serialization order config: object_ordering=%s object_field_order=%s",
         custom_config.object_ordering,
         custom_config.object_field_order,
     )
-
-    if custom_config.fusion_config:
-        from .datasets.fusion import FusionConfig
-        from .datasets.unified_fusion_dataset import FusionCaptionDataset
-
-        fusion_path = str(custom_config.fusion_config)
-        logger.info(f"Loading training datasets from fusion config: {fusion_path}")
-        fusion_cfg = FusionConfig.from_file(fusion_path)
-        if train_encoded_sample_cache_request is not None:
-            reason = "Encoded sample cache does not support custom.fusion_config in v1."
-            if encoded_sample_cache_cfg.ineligible_policy == "bypass":
-                train_encoded_sample_cache_info = (
-                    _build_encoded_sample_cache_bypass_info(
-                        train_encoded_sample_cache_request,
-                        reason=reason,
-                    )
-                )
-                logger.warning(
-                    "Encoded sample cache bypassed: split=%s reason=%s fingerprint_sha256=%s root=%s cache_dir=%s",
-                    train_encoded_sample_cache_info["dataset_split"],
-                    train_encoded_sample_cache_info["reason"],
-                    train_encoded_sample_cache_info["fingerprint_sha256"],
-                    train_encoded_sample_cache_info["root_dir"],
-                    train_encoded_sample_cache_info["cache_dir"],
-                )
-                train_encoded_sample_cache_request = None
-            else:
-                raise ValueError(reason)
-
-        # For fusion, interpret sample_limit as a per-dataset cap for debug/smoke runs.
-        fusion_train_limit: int | None = None
-        if isinstance(train_sample_limit, int) and train_sample_limit > 0:
-            fusion_train_limit = train_sample_limit
-        elif isinstance(train_sample_limit, str) and train_sample_limit.isdigit():
-            fusion_train_limit = int(train_sample_limit)
-
-        dataset = FusionCaptionDataset(
-            fusion_config=fusion_cfg,
-            base_template=sft.template,
-            user_prompt=custom_config.user_prompt,
-            emit_norm=custom_config.emit_norm,
-            json_format=custom_config.json_format,
-            augmenter=augmenter,
-            bypass_prob=bypass_prob,
-            curriculum_state=curriculum_state,
-            use_summary=use_summary,
-            system_prompt_dense=system_prompt_dense,
-            system_prompt_summary=system_prompt_summary,
-            coord_tokens=custom_config.coord_tokens,
-            offline_max_pixels=custom_config.offline_max_pixels,
-            seed=dataset_seed,
-            shuffle=True,
-            sample_limit=fusion_train_limit,
-            split="train",
-            object_ordering=custom_config.object_ordering,
-            object_field_order=custom_config.object_field_order,
-        )
-    else:
-        logger.info(f"Loading training dataset: {train_jsonl}")
-        dataset = BaseCaptionDataset.from_jsonl(
-            train_jsonl,
-            template=sft.template,
-            user_prompt=custom_config.user_prompt,
-            emit_norm=custom_config.emit_norm,
-            json_format=custom_config.json_format,
-            augmenter=augmenter,
-            bypass_prob=bypass_prob,
-            curriculum_state=curriculum_state,
-            sample_limit=train_sample_limit,
-            use_summary=use_summary,
-            system_prompt_dense=system_prompt_dense,
-            system_prompt_summary=system_prompt_summary,
-            coord_tokens=custom_config.coord_tokens,
-            offline_max_pixels=custom_config.offline_max_pixels,
-            seed=dataset_seed,
-            object_ordering=custom_config.object_ordering,
-            object_field_order=custom_config.object_field_order,
-            encoded_sample_cache=train_encoded_sample_cache_request,
-        )
-        if train_encoded_sample_cache_request is not None:
-            train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
+    logger.info(f"Loading training dataset: {train_jsonl}")
+    dataset = BaseCaptionDataset.from_jsonl(
+        train_jsonl,
+        template=sft.template,
+        user_prompt=custom_config.user_prompt,
+        emit_norm=custom_config.emit_norm,
+        json_format=custom_config.json_format,
+        augmenter=augmenter,
+        bypass_prob=bypass_prob,
+        curriculum_state=curriculum_state,
+        sample_limit=train_sample_limit,
+        use_summary=use_summary,
+        system_prompt_dense=system_prompt_dense,
+        system_prompt_summary=system_prompt_summary,
+        coord_tokens=custom_config.coord_tokens,
+        offline_max_pixels=custom_config.offline_max_pixels,
+        seed=dataset_seed,
+        object_ordering=custom_config.object_ordering,
+        object_field_order=custom_config.object_field_order,
+        encoded_sample_cache=train_encoded_sample_cache_request,
+    )
+    if train_encoded_sample_cache_request is not None:
+        train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
@@ -1683,7 +1599,6 @@ def main():
             dataset_seed=dataset_seed,
             packing_cfg=packing_cfg,
             train_jsonl=str(train_jsonl) if train_jsonl else None,
-            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
             dataset_split="train",
         )
 
@@ -2142,7 +2057,7 @@ def main():
         ) as e:
             logger.warning(f"Failed to dump conversation text: {e}")
 
-    # Build validation dataset (single JSONL or fusion config).
+    # Build validation dataset from a single JSONL.
     eval_dataset = None
     val_jsonl = custom_config.val_jsonl
     eval_encoded_sample_cache_request = _build_encoded_sample_cache_request(
@@ -2153,91 +2068,13 @@ def main():
         train_args=train_args,
         dataset_seed=dataset_seed,
         dataset_jsonl=str(val_jsonl) if val_jsonl else None,
-        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
         dataset_split="eval",
         dataset_mode="summary" if use_summary else "dense",
         sample_limit=_normalize_optional_sample_limit(val_sample_limit),
         system_prompt_dense=system_prompt_dense,
         system_prompt_summary=system_prompt_summary,
     )
-    if fusion_cfg is not None:
-        from .datasets.unified_fusion_dataset import FusionCaptionDataset
-
-        has_any_val = any(spec.val_jsonl is not None for spec in fusion_cfg.datasets)
-        if has_any_val:
-            logger.info(
-                "Loading validation datasets from fusion config (val_jsonl entries only)"
-            )
-            eval_sample_limit = (
-                None if val_sample_with_replacement else val_sample_limit
-            )
-            fusion_eval_limit: int | None = None
-            if isinstance(eval_sample_limit, int) and eval_sample_limit > 0:
-                fusion_eval_limit = eval_sample_limit
-            elif isinstance(eval_sample_limit, str) and eval_sample_limit.isdigit():
-                fusion_eval_limit = int(eval_sample_limit)
-            if eval_encoded_sample_cache_request is not None:
-                reason = (
-                    "Encoded sample cache does not support custom.fusion_config in v1."
-                )
-                if encoded_sample_cache_cfg.ineligible_policy == "bypass":
-                    eval_encoded_sample_cache_info = (
-                        _build_encoded_sample_cache_bypass_info(
-                            eval_encoded_sample_cache_request,
-                            reason=reason,
-                        )
-                    )
-                    logger.warning(
-                        "Encoded sample cache bypassed: split=%s reason=%s fingerprint_sha256=%s root=%s cache_dir=%s",
-                        eval_encoded_sample_cache_info["dataset_split"],
-                        eval_encoded_sample_cache_info["reason"],
-                        eval_encoded_sample_cache_info["fingerprint_sha256"],
-                        eval_encoded_sample_cache_info["root_dir"],
-                        eval_encoded_sample_cache_info["cache_dir"],
-                    )
-                    eval_encoded_sample_cache_request = None
-                else:
-                    raise ValueError(reason)
-
-            eval_dataset = FusionCaptionDataset(
-                fusion_config=fusion_cfg,
-                base_template=sft.template,
-                user_prompt=custom_config.user_prompt,
-                emit_norm=custom_config.emit_norm,
-                json_format=custom_config.json_format,
-                augmenter=None,  # No augmentation for validation
-                bypass_prob=0.0,  # Explicit: no bypass for validation
-                curriculum_state=None,
-                use_summary=use_summary,
-                system_prompt_dense=system_prompt_dense,
-                system_prompt_summary=system_prompt_summary,
-                coord_tokens=custom_config.coord_tokens,
-                offline_max_pixels=custom_config.offline_max_pixels,
-                seed=dataset_seed,
-                shuffle=False,  # eval ordering doesn't matter; keep stable by default
-                sample_limit=fusion_eval_limit,
-                split="eval",
-                object_ordering=custom_config.object_ordering,
-                object_field_order=custom_config.object_field_order,
-            )
-            base_eval_len = len(eval_dataset)
-            if val_sample_with_replacement:
-                eval_dataset = RandomSampleDataset(
-                    eval_dataset, sample_size=val_sample_size, seed=dataset_seed + 11
-                )
-                logger.info(
-                    "Validation dataset size: %s (sampled with replacement from %s)",
-                    len(eval_dataset),
-                    base_eval_len,
-                )
-            else:
-                logger.info(f"Validation dataset size: {base_eval_len}")
-        else:
-            logger.info(
-                "Fusion config has no val_jsonl entries; skipping evaluation dataset."
-            )
-            val_jsonl = None
-    elif val_jsonl:
+    if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
         eval_dataset = BaseCaptionDataset.from_jsonl(
@@ -2309,7 +2146,6 @@ def main():
             dataset_seed=dataset_seed,
             packing_cfg=packing_cfg,
             train_jsonl=str(val_jsonl) if val_jsonl else None,
-            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
             dataset_split="eval",
             eval_sample_limit=eval_sample_limit_i,
             eval_sample_with_replacement=bool(val_sample_with_replacement),
@@ -2868,7 +2704,6 @@ def main():
     train_data_provenance = _build_data_source_provenance(
         split="train",
         dataset_jsonl=str(train_jsonl) if train_jsonl else None,
-        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
         dataset_seed=dataset_seed,
         sample_limit=train_sample_limit_i,
     )
@@ -2876,7 +2711,6 @@ def main():
         _build_data_source_provenance(
             split="eval",
             dataset_jsonl=str(val_jsonl) if val_jsonl else None,
-            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
             dataset_seed=dataset_seed,
             sample_limit=val_sample_limit_i,
             sample_with_replacement=bool(val_sample_with_replacement),
@@ -2894,7 +2728,6 @@ def main():
         encoded_sample_cache_cfg=encoded_sample_cache_cfg,
         train_jsonl=str(train_jsonl) if train_jsonl else None,
         val_jsonl=str(val_jsonl) if val_jsonl else None,
-        fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
         pipeline_manifest=selected_pipeline_manifest,
     )
 

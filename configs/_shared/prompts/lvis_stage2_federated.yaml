@@ -1,3 +1,4 @@
 custom:
+  object_field_order: desc_first
   extra:
     prompt_variant: lvis_stage2_federated

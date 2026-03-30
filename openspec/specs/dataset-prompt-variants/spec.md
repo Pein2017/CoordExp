@@ -120,12 +120,17 @@ Prompt variant selection SHALL be configuration-driven and SHALL NOT require new
 - **WHEN** users configure inference prompt variant selection
 - **THEN** the supported key path MUST be `infer.prompt_variant`
 
-### Requirement: Fusion Prompt Override Precedence
-Existing fusion dataset-level prompt overrides SHALL preserve precedence over variant defaults.
+### Requirement: Legacy Fusion Prompt Overrides Are Unsupported
+Fusion dataset-level prompt overrides are no longer part of the supported
+training surface because fusion-config training is temporarily disabled.
 
-#### Scenario: Fusion override precedence retained
-- **WHEN** a fusion dataset entry provides explicit `user_prompt` and/or `system_prompt`
-- **THEN** those explicit overrides MUST take precedence over prompts derived from any selected variant
+#### Scenario: legacy fusion prompt override is rejected with the disabled surface
+- **WHEN** a legacy fusion config attempts to provide explicit `user_prompt`
+  and/or `system_prompt`
+- **THEN** the run SHALL fail on the temporarily disabled
+  `custom.fusion_config` surface
+- **AND** prompt-variant resolution SHALL NOT imply that fusion overrides remain
+  supported
 
 ### Requirement: Variant Metadata in Inference Artifacts
 Inference artifacts SHALL include the resolved prompt variant and resolved dense ordering policy for reproducibility auditing.
@@ -139,4 +144,3 @@ Inference artifacts SHALL include the resolved prompt variant and resolved dense
 - **WHEN** inference emits summary output
 - **THEN** the summary MUST include the resolved prompt variant value used to build generation messages
 - **AND** it MUST include the resolved dense ordering policy value
-

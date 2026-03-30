@@ -1,8 +1,11 @@
 extends:
   - ../../_shared/coord_soft_ce_gate_2b.yaml
-  - ../../_shared/prompt_coco80_desc_first.yaml
+  - ../../../_shared/datasets/coco_768_bbox_max60.yaml
+  - ../../../_shared/prompts/coco80_desc_first.yaml
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 
 training:
-  output_dir: ./output/stage1_2b/coco_bbox_max60-coco80-desc_first
+  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first
   run_name: epoch_4-softce_gate-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-2B
-  logging_dir: ./tb/stage1_2b/coco_bbox_max60-coco80-desc_first

@@ -88,6 +88,82 @@ class ConfigLoader:
         return None
 
     @staticmethod
+    def _list_valued_key_paths(
+        payload: Dict[str, Any], *, prefix: str = ""
+    ) -> Set[str]:
+        key_paths: Set[str] = set()
+        for key, value in payload.items():
+            if key in {"extends", "inherit"}:
+                continue
+            key_path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, list):
+                key_paths.add(key_path)
+            elif isinstance(value, dict):
+                key_paths.update(
+                    ConfigLoader._list_valued_key_paths(value, prefix=key_path)
+                )
+        return key_paths
+
+    @staticmethod
+    def _raise_list_ownership_overlap(
+        *,
+        config_path: str,
+        key_path: str,
+        owner_a: str,
+        owner_b: str,
+    ) -> None:
+        raise ValueError(
+            "Config inheritance overlaps list-valued key ownership across reusable "
+            f"parents in {config_path}: {key_path} is authored by both "
+            f"{owner_a} and {owner_b}. Keep one owner for each list-valued bundle."
+        )
+
+    @staticmethod
+    def _collect_base_tree_list_owners(
+        config_path: str, _visited: Optional[Set[str]] = None
+    ) -> Dict[str, str]:
+        abs_path = str(Path(config_path).resolve())
+        visited: Set[str] = set(_visited or set())
+        if abs_path in visited:
+            raise ValueError(f"Cyclic config inheritance detected at: {abs_path}")
+        visited.add(abs_path)
+
+        raw_cfg = ConfigLoader.load_yaml(abs_path) or {}
+        if not isinstance(raw_cfg, dict):
+            return {}
+
+        current_dir = Path(abs_path).parent
+        extends_value = raw_cfg.get("extends", raw_cfg.get("inherit"))
+        base_paths = ConfigLoader._normalize_to_list(extends_value)
+
+        owners: Dict[str, str] = {}
+        for base_ref in base_paths:
+            base_path = Path(base_ref)
+            if not base_path.is_absolute():
+                base_path = (current_dir / base_path).resolve()
+            base_owners = ConfigLoader._collect_base_tree_list_owners(
+                str(base_path), visited
+            )
+            for key_path, owner in base_owners.items():
+                existing_owner = owners.get(key_path)
+                if existing_owner is not None and existing_owner != owner:
+                    ConfigLoader._raise_list_ownership_overlap(
+                        config_path=abs_path,
+                        key_path=key_path,
+                        owner_a=existing_owner,
+                        owner_b=owner,
+                    )
+                owners[key_path] = owner
+
+        current_cfg = dict(raw_cfg)
+        current_cfg.pop("extends", None)
+        current_cfg.pop("inherit", None)
+        for key_path in sorted(ConfigLoader._list_valued_key_paths(current_cfg)):
+            owners[key_path] = abs_path
+
+        return owners
+
+    @staticmethod
     def _lookup_nested_key(payload: Dict[str, Any], key_path: str) -> bool:
         node: Any = payload
         for segment in key_path.split("."):
@@ -95,6 +171,68 @@ class ConfigLoader:
                 return False
             node = node[segment]
         return True
+
+    @staticmethod
+    def _require_authored_training_path_string(value: Any, key: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"{key} must be authored as a string")
+        value_clean = value.strip()
+        if not value_clean:
+            raise ValueError(f"{key} must be a non-empty string")
+        return value_clean
+
+    @staticmethod
+    def _join_authored_config_path(root: str, suffix: str) -> str:
+        return f"{root.rstrip('/')}/{suffix.strip('/')}"
+
+    @staticmethod
+    def _materialize_training_artifact_paths(config: Dict[str, Any]) -> Dict[str, Any]:
+        training_section = config.get("training")
+        if training_section is None:
+            return config
+        if not isinstance(training_section, dict):
+            raise TypeError("training section must be a mapping when materializing paths")
+
+        artifact_subdir = training_section.get("artifact_subdir")
+        if artifact_subdir in (None, "", False):
+            return config
+
+        output_root = training_section.get("output_root")
+        logging_root = training_section.get("logging_root")
+        if output_root in (None, "", False):
+            raise ValueError(
+                "training.output_root must be provided when training.artifact_subdir is set"
+            )
+        if logging_root in (None, "", False):
+            raise ValueError(
+                "training.logging_root must be provided when training.artifact_subdir is set"
+            )
+        if training_section.get("output_dir") not in (None, "", False):
+            raise ValueError(
+                "training.output_dir must not be authored together with training.artifact_subdir"
+            )
+        if training_section.get("logging_dir") not in (None, "", False):
+            raise ValueError(
+                "training.logging_dir must not be authored together with training.artifact_subdir"
+            )
+
+        output_root_clean = ConfigLoader._require_authored_training_path_string(
+            output_root, "training.output_root"
+        )
+        logging_root_clean = ConfigLoader._require_authored_training_path_string(
+            logging_root, "training.logging_root"
+        )
+        artifact_subdir_clean = ConfigLoader._require_authored_training_path_string(
+            artifact_subdir, "training.artifact_subdir"
+        )
+
+        training_section["output_dir"] = ConfigLoader._join_authored_config_path(
+            output_root_clean, artifact_subdir_clean
+        )
+        training_section["logging_dir"] = ConfigLoader._join_authored_config_path(
+            logging_root_clean, artifact_subdir_clean
+        )
+        return config
 
     @staticmethod
     def _validate_stage2_leaf_contract(config_path: str) -> None:
@@ -114,6 +252,7 @@ class ConfigLoader:
             )
 
         resolved_cfg = ConfigLoader.load_yaml_with_extends(config_path)
+        resolved_cfg = ConfigLoader._materialize_training_artifact_paths(resolved_cfg)
 
         required_resolved_keys = [
             "model.model",
@@ -177,10 +316,24 @@ class ConfigLoader:
 
         # Merge all bases in order
         merged_base: Dict[str, Any] = {}
+        base_list_owners: Dict[str, str] = {}
         for base_ref in base_paths:
             base_path = Path(base_ref)
             if not base_path.is_absolute():
                 base_path = (current_dir / base_path).resolve()
+            base_tree_owners = ConfigLoader._collect_base_tree_list_owners(
+                str(base_path)
+            )
+            for key_path, owner in base_tree_owners.items():
+                existing_owner = base_list_owners.get(key_path)
+                if existing_owner is not None and existing_owner != owner:
+                    ConfigLoader._raise_list_ownership_overlap(
+                        config_path=abs_path,
+                        key_path=key_path,
+                        owner_a=existing_owner,
+                        owner_b=owner,
+                    )
+                base_list_owners[key_path] = owner
             base_cfg = ConfigLoader.load_yaml_with_extends(str(base_path), visited)
             merged_base = ConfigLoader.merge_configs(merged_base, base_cfg)
 
@@ -389,6 +542,9 @@ class ConfigLoader:
             "packing_length_cache_persist_every",
             "packing_length_precompute_workers",
             "encoded_sample_cache",
+            "output_root",
+            "logging_root",
+            "artifact_subdir",
         }
         for key in _packing_keys:
             training_section.pop(key, None)
@@ -638,6 +794,7 @@ class ConfigLoader:
             base_config = ConfigLoader.load_yaml_with_extends(base_config_path)
             config = ConfigLoader.merge_configs(base_config, config)
 
+        config = ConfigLoader._materialize_training_artifact_paths(config)
         prompts = ConfigLoader.resolve_prompts(config)
         return ConfigLoader._materialize_training_config(config, prompts)
 
@@ -652,6 +809,7 @@ class ConfigLoader:
             base_config = ConfigLoader.load_yaml_with_extends(base_config_path)
             config = ConfigLoader.merge_configs(base_config, config)
 
+        config = ConfigLoader._materialize_training_artifact_paths(config)
         prompts = ConfigLoader.resolve_prompts(config)
         materialized = ConfigLoader._materialize_training_config(config, prompts)
         train_args = ConfigLoader.build_train_arguments(materialized)

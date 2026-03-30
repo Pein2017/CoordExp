@@ -1,16 +1,7 @@
-# LVIS 1:1 fusion for "two-mode" training:
-# - bbox-only supervision (bbox_2d only)
-# - poly-prefer supervision (prefer poly, fallback to bbox for semantic edge cases)
-#
-# Enable in training YAML:
-#   custom:
-#     fusion_config: configs/fusion/lvis_bbox_only_vs_poly_prefer_1to1.yaml
-#
-# Notes:
-# - Ratios are applied as: quota_i = round(len(pool_i) * ratio_i) per epoch.
-#   If both pools are the same size, ratio=1.0 + 1.0 gives an exact 1:1 mix.
-# - You can override `user_prompt` / `system_prompt` per dataset entry to enforce
-#   different output formats (bbox-only vs poly-prefer).
+# DORMANT LEGACY EXAMPLE
+# ----------------------
+# This fusion recipe is preserved for future reactivation work.
+# The canonical training schema currently rejects `custom.fusion_config`.
 
 targets:
   - dataset: lvis

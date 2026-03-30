@@ -44,14 +44,15 @@ The system SHALL preserve multimodal tensors/metadata (e.g., `pixel_values`, `im
 - WHEN the ms-swift template collator runs
 - THEN it receives all required multimodal fields, produces `position_ids`, and flattens the pack into a single batch element.
 
-### Requirement: Fusion integration
-The system SHALL apply packing after fusion scheduling so dataset mix ratios remain intact, and it SHALL forward `set_epoch` so packing rebuilds after each epoch’s fusion reshuffle.
+### Requirement: Legacy Fusion Scheduling Is Unsupported
+Packing no longer needs to coordinate with fusion scheduling because
+fusion-config training is temporarily disabled from the supported surface.
 
-#### Scenario: Fusion with packing enabled
-- GIVEN `FusionCaptionDataset` is used with ratios
-- WHEN `set_epoch` is called for a new epoch
-- THEN the fusion schedule is rebuilt first
-- AND the packing buffer/index state is reset to reflect the new order.
+#### Scenario: packing does not imply legacy fusion support
+- GIVEN packing is enabled during training
+- WHEN a legacy config also attempts to author `custom.fusion_config`
+- THEN the run fails on the temporarily disabled fusion surface before any
+  fusion-specific packing behavior is entered.
 
 ### Requirement: Metric and telemetry behavior
 The system SHALL record only aggregate training metrics (loss/token_acc) when packing is enabled and SHALL drop per-dataset telemetry; it SHALL log pack fill ratios and the percentage of single-long or skipped-overlength packs per epoch for observability.
@@ -227,7 +228,7 @@ Normative behavior:
 - The length used for planning MUST correspond to the encoded token length that will be consumed by the teacher-forced forward pass under the active template.
 - The system MUST support computing and storing lengths ahead of packing (e.g., via a cached length store) so the pack plan can be computed without repeatedly re-encoding the full dataset.
 - Length computation MUST be deterministic for a fixed dataset record, template, and configuration.
-- Any static length/plan cache fingerprint MUST include dataset source identity (for example, resolved `custom.train_jsonl` / `custom.fusion_config` identity) so stale cache reuse across different dataset sources fails fast.
+- Any static length/plan cache fingerprint MUST include dataset source identity (for example, resolved `custom.train_jsonl` or shared dataset-facet identity) so stale cache reuse across different dataset sources fails fast.
 - The run-scoped static cache directory under `training.output_dir` is the primary safety boundary; changing uncaptured length-affecting factors SHOULD use a fresh output directory.
 - Static pack-plan mode MUST allow epoch-varying serialized content only when the per-index planning length is invariant across epochs.
 - If epoch-varying content can change the planning length or invalidate `sum(length_i) <= packing_length` for an existing pack, the system MUST fail fast with actionable guidance.
@@ -281,4 +282,3 @@ Clarification (unit semantics):
 - **AND** per-rank packed batches in an epoch are smaller than `gradient_accumulation_steps` or leave a remainder
 - **WHEN** training validates dataloader/accumulation alignment
 - **THEN** the system logs a warning that boundary-step packs per `optimizer.step()` will be inexact for that epoch.
-

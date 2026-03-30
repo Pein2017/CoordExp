@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-29
+updated: 2026-03-30
 
 entrypoints:
   human:
@@ -60,9 +60,9 @@ docs:
       type: reference
       status: canonical
     - path: docs/data/FUSION.md
-      title: Fusion Dataset (Multi-JSONL Training)
+      title: Fusion Dataset (Dormant Legacy Surface)
       type: reference
-      status: canonical
+      status: historical
     - path: docs/data/VISUAL_GENOME.md
       title: Visual Genome (VG) -> CoordExp JSONL
       type: dataset-note

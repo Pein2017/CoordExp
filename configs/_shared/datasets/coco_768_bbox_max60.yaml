@@ -1,0 +1,8 @@
+template:
+  max_pixels: 786432
+
+custom:
+  offline_max_pixels: 786432
+  train_jsonl: public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl
+  object_ordering: sorted

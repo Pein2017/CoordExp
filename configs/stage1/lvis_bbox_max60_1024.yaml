@@ -1,25 +1,18 @@
 extends:
-  - profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml
-  - _shared/prompt_lvis_stage1_federated.yaml
+  - _shared/coord_soft_ce_gate_4b.yaml
+  - ../_shared/datasets/lvis_1024_bbox_max60.yaml
+  - ../_shared/prompts/lvis_stage1_federated.yaml
 
 model:
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  output_dir: ./output/stage1/lvis_bbox_max60_1024
+  artifact_subdir: stage1/lvis_bbox_max60_1024
   num_train_epochs: 2
   effective_batch_size: 128
   run_name: epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size
-  logging_dir: ./tb/stage1/lvis_bbox_max60_1024
-
-template:
-  max_pixels: 1048576
 
 custom:
-  offline_max_pixels: 1048576
-  train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
-  object_ordering: sorted
   coord_soft_ce_w1:
     enabled: true
     ce_weight: 1.0

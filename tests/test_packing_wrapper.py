@@ -164,25 +164,6 @@ class _EpochLengthVaryingDataset:
         self._epoch = int(epoch)
 
 
-class FusionCaptionDataset:
-    def __init__(self, lengths):
-        self.lengths = list(lengths)
-
-    def __len__(self):
-        return len(self.lengths)
-
-    def __getitem__(self, idx):
-        length = self.lengths[idx]
-        return {
-            "idx": idx,
-            "input_ids": [0] * length,
-            "labels": [0] * length,
-            "length": length,
-            "pixel_values": torch.zeros(1),
-            "image_grid_thw": torch.tensor([1, 1, 1]),
-        }
-
-
 def _collect_pack_lengths(packs):
     return [sum(item["length"] for item in pack) for pack in packs]
 
@@ -737,24 +718,6 @@ def test_static_packing_rejects_epoch_varying_lengths_for_random_order_dataset(
             allow_single_long=True,
             cache_dir=tmp_path / "epoch_varying_length",
             fingerprint=_static_fingerprint("epoch_varying_length"),
-            world_size=1,
-            train_dataloader_shuffle=False,
-            length_precompute_workers=1,
-        )
-
-
-def test_static_packing_rejects_fusion_dataset(tmp_path: Path):
-    with pytest.raises(ValueError, match="fusion/mixing"):
-        build_static_packed_dataset(
-            FusionCaptionDataset([10, 12, 14, 16]),
-            template=_FakeTemplate(max_length=32),
-            packing_length=32,
-            min_fill_ratio=0.5,
-            packing_drop_last=False,
-            dataloader_drop_last=False,
-            allow_single_long=True,
-            cache_dir=tmp_path / "fusion",
-            fingerprint=_static_fingerprint("fusion"),
             world_size=1,
             train_dataloader_shuffle=False,
             length_precompute_workers=1,

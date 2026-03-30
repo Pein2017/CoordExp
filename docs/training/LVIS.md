@@ -212,8 +212,8 @@ Useful config handles:
 
 Reusable prompt fragments:
 
-- `configs/stage1/_shared/prompt_lvis_stage1_federated.yaml`
-- `configs/stage2_two_channel/_shared/prompt_lvis_stage2_federated.yaml`
+- `configs/_shared/prompts/lvis_stage1_federated.yaml`
+- `configs/_shared/prompts/lvis_stage2_federated.yaml`
 
 ## Migration Guide
 
@@ -239,17 +239,15 @@ Ready-to-run Stage-1 config:
 Key overrides in that config:
 
 - extends the canonical 4B Stage-1 coord-token recipe (`profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml`)
-- `custom.train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl`
-- `custom.val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl`
-- `custom.extra.prompt_variant: lvis_stage1_federated`
-- `custom.object_field_order: desc_first`
-- `custom.object_ordering: sorted`
+- extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
+- extends the shared prompt facet `configs/_shared/prompts/lvis_stage1_federated.yaml`
+- authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024`
 - `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0 }`
-- `custom.bbox_geo: { enabled: true, smoothl1_weight: 0.0, ciou_weight: 1.0 }`
+- `custom.bbox_geo: { enabled: true, smoothl1_weight: 0.01, ciou_weight: 1.0 }`
 - `custom.bbox_size_aux.enabled: true`
 - `custom.eval_detection: { enabled: true, metrics: lvis, lvis_annotations_json: public_data/lvis/raw/annotations/lvis_v1_val.json }`
-- `template.max_pixels: 1048576`
-- `custom.offline_max_pixels: 1048576`
+- reuses `training.output_root: ./output` and `training.logging_root: ./tb` from `configs/base.yaml`
+- resolves to the same effective dataset paths, prompt variant, and `1024/max60` image budget as before
 
 No extra presort step is needed for the current cached 1024 bbox exports. They
 already satisfy the loader's top-left ordering invariant for
@@ -293,17 +291,14 @@ Ready-to-run Stage-2 config:
 
 Key overrides in that config:
 
-- `model.model: output/stage1/lvis_bbox_max60_1024/epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-merged`
-- `custom.train_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl`
-- `custom.val_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl`
-- `custom.extra.prompt_variant: lvis_stage2_federated`
-- `custom.object_field_order: desc_first`
-- `custom.object_ordering: sorted`
+- `model.model: output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged`
+- extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
+- extends the shared prompt facet `configs/_shared/prompts/lvis_stage2_federated.yaml`
+- authors `training.artifact_subdir: stage2_ab/lvis_bbox_max60_1024`
 - `stage2_ab.pipeline.bbox_geo: { smoothl1_weight: 0.0, ciou_weight: 1.0 }`
 - `stage2_ab.pipeline.coord_reg: { coord_ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, coord_gate_weight: 5.0 }`
-- `template.max_pixels: 1048576`
-- `custom.offline_max_pixels: 1048576`
 - `rollout_matching.eval_detection.metrics: f1ish`
+- reuses `training.output_root: ./output` and `training.logging_root: ./tb` from `configs/base.yaml`
 
 The conservative `f1ish` default is intentional for the current cached
 `1024/max60` LVIS export. Switch the config to `metrics: lvis` or `metrics: both`
@@ -358,7 +353,7 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config confi
 
 Reasonable follow-ups, ordered from lowest to highest complexity:
 
-- add dedicated LVIS smoke configs under `configs/stage1/` and `configs/stage2_two_channel/`
+- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_two_channel/`
 - add semantic-desc calibration specifically for long-tail LVIS categories
 - add stricter parity tests against the external `lvis-api` package when that
   dependency is available in the runtime env

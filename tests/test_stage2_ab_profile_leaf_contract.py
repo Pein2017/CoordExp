@@ -52,25 +52,7 @@ def test_stage2_ablation_profiles_pin_cache_parity_and_ordering(
     assert expected_ordering in cfg.training["output_dir"]
     assert expected_ordering in cfg.training["logging_dir"]
 
-
-def test_stage2_random_order_smoke_profile_overrides_runtime_only() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(
-            repo_root
-            / "configs/stage2_two_channel/smoke/a_only_iter1-res_1024_random_order.yaml"
-        )
-    )
-
-    assert cfg.custom.object_ordering == "random"
-    assert cfg.training["encoded_sample_cache"]["enabled"] is False
-    assert cfg.training["max_steps"] == 2
-    assert cfg.custom.train_sample_limit == 128
-    assert cfg.custom.val_sample_limit == 8
-    assert "smoke" in cfg.training["run_name"]
-
-
-def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> None:
+def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prod_cfg = ConfigLoader.load_materialized_training_config(
         str(
@@ -78,35 +60,22 @@ def test_stage2_pseudo_positive_profiles_materialize_default_k4_contract() -> No
             / "configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml"
         )
     )
-    smoke_cfg = ConfigLoader.load_materialized_training_config(
-        str(
-            repo_root
-            / "configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml"
-        )
+
+    stage2_ab = prod_cfg.stage2_ab
+    assert stage2_ab is not None
+    assert stage2_ab.channel_b.pseudo_positive.enabled is True
+    assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.3)
+    assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+    assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.95)
+    assert stage2_ab.schedule.b_ratio == pytest.approx(0.85)
+    assert (
+        stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier
+        == pytest.approx(3.0)
     )
 
-    for cfg in (prod_cfg, smoke_cfg):
-        stage2_ab = cfg.stage2_ab
-        assert stage2_ab is not None
-        assert stage2_ab.channel_b.pseudo_positive.enabled is True
-        assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.3)
-        assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
-        assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.95)
-        assert stage2_ab.schedule.b_ratio == pytest.approx(0.85)
-        assert (
-            stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier
-            == pytest.approx(3.0)
-        )
-
-    assert smoke_cfg.training["max_steps"] == 4
-    assert smoke_cfg.custom.train_sample_limit == 32
-    assert smoke_cfg.custom.val_sample_limit == 4
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
-    smoke_objective = {m.name: m for m in smoke_cfg.stage2_ab.pipeline.objective}
     assert prod_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
-    assert smoke_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
     assert prod_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
-    assert smoke_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
 
 
 def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_contract() -> None:
@@ -117,7 +86,7 @@ def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_co
 
     assert (
         cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/epoch_4-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+        == "output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
     )
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -125,8 +94,9 @@ def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_co
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
     assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
-    assert cfg.training["output_dir"] == "output/stage2_ab/lvis_bbox_max60_1024"
-    assert cfg.training["logging_dir"] == "tb/stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024"
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
@@ -179,8 +149,9 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
         },
         "training": {
             "run_name": "x",
-            "output_dir": "out",
-            "logging_dir": "tb",
+            "output_root": "./output",
+            "logging_root": "./tb",
+            "artifact_subdir": "stage2/test",
             "learning_rate": 1e-5,
             "vit_lr": 1e-5,
             "aligner_lr": 1e-5,

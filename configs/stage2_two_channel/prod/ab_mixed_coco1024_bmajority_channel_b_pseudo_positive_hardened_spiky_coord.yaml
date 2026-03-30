@@ -1,10 +1,12 @@
 extends: ./ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
 
+model:
+  model: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+
 training:
   num_train_epochs: 1
   run_name: epoch_1-ciou1p0-coordce0p04-soft0p05-w10p01-from_300_v1
-  output_dir: output/stage2_ab/prod/pseudo_positive_hardened_spiky_coord
-  logging_dir: tb/stage2_ab/prod/pseudo_positive_hardened_spiky_coord
+  artifact_subdir: stage2_ab/prod/pseudo_positive_hardened_spiky_coord
 
 stage2_ab:
   pipeline:

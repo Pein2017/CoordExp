@@ -5,8 +5,7 @@ model:
 
 training:
   run_name: epoch_2-eff_size_64-add_coord_ce
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only
+  artifact_subdir: stage2_ab/coco_bbox_max60/a_only
 
 custom:
   val_sample_limit: 512

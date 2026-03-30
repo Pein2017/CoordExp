@@ -1,9 +1,11 @@
 extends: ./2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml
 
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+
 training:
-  output_dir: ./output/stage1_2b/ablation/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
+  artifact_subdir: stage1_2b/ablation/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
   run_name: ablation_seed17_stage1_2b_hard_ce_soft_ce_w1_gate_coco80_desc_first_random_order
-  logging_dir: ./tb/stage1_2b/ablation/coco_bbox_max60-hard_ce_soft_ce_w1_gate-coco80-desc_first-random_order
 
 custom:
   object_ordering: random

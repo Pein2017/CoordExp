@@ -1,113 +1,17 @@
 # fusion-dataset Specification
 
 ## Purpose
-Define the fusion-config dataset contract (`custom.fusion_config`) for building train/eval datasets from multiple JSONL sources under a single experiment.
+Document that legacy fusion-config dataset authoring is temporarily disabled in
+the canonical training surface while dormant examples/modules remain in-tree
+for future reactivation.
 
 ## Requirements
-### Requirement: Fusion Config Overrides Standard JSONL Paths
-When `custom.fusion_config` is set, the system SHALL build train/eval datasets from the fusion config and SHALL ignore `custom.train_jsonl` and `custom.val_jsonl`.
+### Requirement: custom.fusion_config Is Rejected
+Fusion-config training is currently not an active authored path.
+Training configs MUST NOT use `custom.fusion_config`.
 
-#### Scenario: Fusion Config Takes Priority
-- **WHEN** a training YAML sets `custom.fusion_config: configs/fusion/variants/example.yaml`
-- **AND** the same YAML also sets `custom.train_jsonl` and/or `custom.val_jsonl`
-- **THEN** training and evaluation datasets SHALL be determined by the fusion config
-- **AND** `custom.train_jsonl` / `custom.val_jsonl` SHALL NOT change the fused datasets.
-
-### Requirement: Fusion Config File Schema (Qwen3-VL Compatible Containers)
-The fusion config file SHALL be a mapping (YAML/JSON) with:
-- `targets`: list of dataset entries
-- `sources`: optional list of dataset entries (**accepted for compatibility**; treated the same as `targets`)
-- `extends`: optional string or list of strings (inheritance)
-
-At least one dataset entry across `targets` and `sources` SHALL be provided.
-
-#### Scenario: Targets And Sources Are Both Accepted
-- **WHEN** a fusion config defines both `targets` and `sources`
-- **THEN** the system SHALL treat all listed datasets as training datasets (no target/source semantic differences).
-
-### Requirement: Dataset Entry Schema + Template Validation
-Each dataset entry SHALL include:
-- `dataset` (string; dataset wrapper key)
-- `train_jsonl` (string path)
-- `template` (string; MUST be a known template ID in CoordExp)
-
-Each dataset entry MAY include:
-- `name` (string; optional identifier; if omitted, the dataset ID defaults to `dataset`)
-- `val_jsonl` (string path or null; null/missing means "skip eval for this dataset")
-- `ratio` (float; defaults to `1.0`)
-
-Dataset IDs (defined as `name` if provided, otherwise `dataset`) SHALL be unique across all dataset entries in the effective fusion config. Duplicate dataset IDs SHALL raise an error.
-
-Unknown `template` values SHALL raise an error.
-
-#### Scenario: Unknown Template Errors
-- **WHEN** a dataset entry sets `template: some_unknown_template`
-- **THEN** fusion config loading SHALL fail with a clear error message.
-
-### Requirement: Extends Merge Semantics
-When using `extends`, dataset entries SHALL be merged by dataset ID (use `name` if provided, otherwise `dataset`).
-- If both base and override define the same dataset ID, the effective entry SHALL be deep-merged (override keys take precedence).
-- Dataset ordering SHALL be preserved (base order first, then new override-only entries appended).
-
-#### Scenario: Extends Merges Entries By Dataset ID
-- **WHEN** a fusion config uses `extends` and both base and override define the same dataset ID
-- **THEN** the effective dataset entry SHALL be the deep-merged mapping.
-
-### Requirement: Per-Dataset Ratio Quotas (No Target/Source Semantics)
-For every dataset entry in the fusion config, the system SHALL compute a per-epoch quota:
-`quota_i = round(len(pool_i) * ratio_i)` where `ratio_i` defaults to `1.0`.
-
-#### Scenario: Ratio Downsamples
-- **WHEN** a dataset entry has `ratio: 0.1`
-- **THEN** the dataset SHALL contribute approximately 10% of its pool per epoch (rounded).
-
-### Requirement: Eval Dataset Uses Any Non-Null val_jsonl
-The eval dataset built from a fusion config SHALL include all datasets whose `val_jsonl` is a non-null path.
-Datasets with `val_jsonl: null` (or missing `val_jsonl`) SHALL be excluded from eval.
-
-#### Scenario: val_jsonl Null Skips Eval For That Dataset
-- **WHEN** a dataset entry sets `val_jsonl: null`
-- **THEN** that dataset SHALL NOT contribute to the eval dataset.
-
-### Requirement: Dense-Caption Only (v1)
-Fusion datasets in CoordExp SHALL run in dense-caption mode. Other task types (e.g., referring/grounding-only datasets) are out of scope for this change.
-
-#### Scenario: Fusion Training Uses Dense Caption Encoding
-- **WHEN** fusion is enabled for training
-- **THEN** samples SHALL be encoded using the dense-caption data path.
-
-### Requirement: Encoded fusion samples include stable join metadata
-When the fusion dataset builds an encoded sample, it SHALL attach stable metadata keys to the encoded mapping:
-- `sample_id` (int)
-- `dataset` (string dataset ID)
-- `base_idx` (int index into the dataset's base record array)
-
-If the system cannot attach this metadata, it MUST fail fast with an actionable error message.
-
-#### Scenario: Encoded sample carries metadata
-- **WHEN** `FusionCaptionDataset` encodes a sample for training
-- **THEN** the returned encoded mapping includes `sample_id`, `dataset`, and `base_idx`.
-
-#### Scenario: Metadata attachment failure is fatal
-- **WHEN** encoded output is not a mutable mapping and metadata cannot be attached
-- **THEN** dataset iteration fails fast with an error describing which metadata keys could not be attached.
-
-### Requirement: Prompt injection is restored deterministically
-If dataset encoding temporarily overrides template prompts for a specific sample (for example, `template.system`), it MUST restore the original prompt value before encoding the next sample.
-
-Failure to apply the override or restore the original value MUST fail fast to prevent cross-sample prompt leakage.
-
-#### Scenario: No prompt leakage across samples
-- **WHEN** a sample is encoded with an injected system prompt
-- **THEN** subsequent samples use their configured system prompt, not the injected value
-- **AND** failure to restore stops the run with an explicit error.
-
-### Requirement: Compatibility With Coord-Token Mode And Packing
-Fusion datasets SHALL remain compatible with CoordExp defaults:
-- coord-token supervision (`custom.coord_tokens.enabled: true`)
-- dataset packing wrapper (`training.packing: true`)
-
-#### Scenario: Packed Fusion Dataset Iteration
-- **WHEN** `training.packing: true` and fusion is enabled
-- **THEN** the packed dataset iterator SHALL yield packed groups of encoded samples
-- **AND** no fusion-specific runtime error SHALL occur during dataset iteration.
+#### Scenario: legacy fusion config is rejected
+- **WHEN** a training config authors `custom.fusion_config`
+- **THEN** config loading SHALL fail fast
+- **AND** the error SHALL tell the operator that fusion-config training has
+  been temporarily disabled in favor of the single-dataset hierarchy for now.

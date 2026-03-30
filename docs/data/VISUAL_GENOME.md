@@ -5,7 +5,7 @@ doc_type: dataset-note
 status: canonical
 domain: data
 summary: Visual Genome-specific preparation notes for CoordExp JSONL.
-updated: 2026-03-09
+updated: 2026-03-30
 ---
 
 # Visual Genome (VG) -> CoordExp JSONL
@@ -131,7 +131,7 @@ Training config knobs (already set in the current Stage-1 baseline tree such as 
 
 ### 4) Merge VG + LVIS for single-dataset training
 
-Multi-dataset fusion is deprecated in CoordExp. To train on LVIS + VG together, merge JSONLs offline.
+Runtime multi-dataset fusion is temporarily disabled in CoordExp. To train on LVIS + VG together today, merge JSONLs offline.
 
 Important: merging requires rewriting relative image paths, because loaders resolve images relative to the merged JSONL directory.
 Use:

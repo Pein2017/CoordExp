@@ -6,8 +6,7 @@ model:
 training:
   num_train_epochs: 1
   run_name: epoch_1-ciou1p0-coordce0p04-soft0p05-w10p01
-  output_dir: output/stage2_ab/prod/pseudo_positive_hardened_spiky_coord-from_stage1
-  logging_dir: tb/stage2_ab/prod/pseudo_positive_hardened_spiky_coord-from_stage1
+  artifact_subdir: stage2_ab/prod/pseudo_positive_hardened_spiky_coord-from_stage1
 
 stage2_ab:
   pipeline:

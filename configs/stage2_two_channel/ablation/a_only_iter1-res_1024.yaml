@@ -1,4 +1,6 @@
-extends: a_only_iter1.yaml
+extends:
+  - a_only_iter1.yaml
+  - ../../_shared/datasets/coco_1024_bbox_max60.yaml
 
 # Override to use the 32x32x1024 COCO path and explicit budget.
 model:
@@ -8,20 +10,13 @@ model:
 training:
   seed: 17
   run_name: epoch-1-single_pass-eff_bs_128-random_order
-  output_dir: output/a_only/random_order
-  logging_dir: tb/a_only/random_order
+  artifact_subdir: a_only/random_order
   num_train_epochs: 1
   effective_batch_size: 128
   encoded_sample_cache:
     enabled: false
 
-template:
-  max_pixels: 1048576
-
 custom:
-  offline_max_pixels: 1048576
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
   object_ordering: random
 
 stage2_ab:

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Packing policy, defaults, and efficiency tradeoffs.
-updated: 2026-03-22
+updated: 2026-03-30
 ---
 
 # Packing Mode Guide (Default: 12k, eff_bs=12)
@@ -28,7 +28,7 @@ Note:
 
 Stage-1 packing guardrails (current implementation):
 - Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
-- Fusion datasets (`custom.fusion_config`) are not compatible with Stage-1 static packing (order-sensitive schedule). If you need multi-dataset mixing *and* packing, materialize an offline merged JSONL first; otherwise disable `training.packing` for fusion runs.
+- If you need multi-dataset mixing *and* Stage-1 static packing, materialize an offline merged JSONL first. Runtime fusion config authoring is temporarily disabled in the canonical training surface.
 - Static packing may forward `set_epoch` into the raw dataset only for length-invariant per-epoch changes such as `custom.object_ordering: random`; `raw_plan` and `aligned_plan` stay fixed across epochs for eligible datasets.
 - If epoch-varying content changes per-index planning length or sample schedule, static packing fails fast; use a length-invariant ordering configuration or disable `training.packing`.
 - For sorted-vs-random ordering ablations, pin `training.encoded_sample_cache.enabled` explicitly in YAML. Random-order runs remain cache-ineligible, and the sorted arm should not keep an implicit cache-only advantage.

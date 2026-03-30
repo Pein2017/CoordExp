@@ -1,0 +1,15 @@
+extends: ../prod/ab_mixed.yaml
+
+training:
+  run_name: smoke_20steps-eff_size_96-b_ratio_0.05-epoch_2
+  artifact_subdir: stage2_ab/smoke/ab_mixed_20steps
+  max_steps: 20
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8

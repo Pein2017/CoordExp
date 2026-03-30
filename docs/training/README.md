@@ -57,5 +57,7 @@ or metric interpretation.
 - `src/trainers/rollout_matching/`
 - `src/trainers/teacher_forcing/`
 - `src/launchers/stage2_vllm_server.py`
+- `configs/_shared/datasets/`
+- `configs/_shared/prompts/`
 - `configs/stage1/`
 - `configs/stage2_two_channel/`

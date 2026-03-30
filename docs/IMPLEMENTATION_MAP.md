@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-03-22
+updated: 2026-03-30
 ---
 
 # Implementation Map
@@ -47,11 +47,10 @@ Open these docs first:
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
+- `configs/_shared/datasets/`
+- `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
-
-Historical or experimental multi-dataset lineage:
-- `configs/fusion/`
 
 Open these code files first:
 - `src/sft.py`
@@ -82,6 +81,8 @@ Historical context only:
 
 Open these configs first:
 - `configs/stage2_two_channel/base.yaml`
+- `configs/_shared/datasets/`
+- `configs/_shared/prompts/`
 - `configs/stage2_two_channel/prod/`
 - `configs/stage2_two_channel/smoke/`
 

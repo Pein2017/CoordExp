@@ -1,0 +1,10 @@
+extends: ./b_majority_coco1024_pseudo_positive_4steps.yaml
+
+training:
+  run_name: smoke_4steps-k2-pseudo_positive
+  artifact_subdir: stage2_ab/smoke/b_majority_coco1024_pseudo_positive_k2_4steps
+
+stage2_ab:
+  channel_b:
+    triage_posterior:
+      num_rollouts: 2

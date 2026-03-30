@@ -1,0 +1,15 @@
+extends: ../prod/a_only.yaml
+
+training:
+  run_name: smoke_20steps-stage2-a_only
+  artifact_subdir: stage2_ab/smoke/a_only
+  max_steps: 20
+  eval_strategy: "no"
+  save_strategy: "no"
+
+data:
+  dataloader_num_workers: 0
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 8

@@ -32,7 +32,6 @@ class ImageRecord(TypedDict, total=False):
     metadata: Mapping[str, Any]
     dataset: str
     dataset_name: str
-    _fusion_source: str
 
 
 class MessageContent(TypedDict, total=False):

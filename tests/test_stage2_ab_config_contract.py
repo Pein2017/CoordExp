@@ -25,7 +25,8 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -392,7 +393,8 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -443,7 +445,8 @@ def test_stage2_ab_pseudo_positive_keys_parse_in_training_config() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -480,7 +483,8 @@ def test_stage2_pipeline_rejects_channel_b_drop_invalid_struct_multiplier() -> N
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -512,7 +516,8 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -551,7 +556,8 @@ def test_stage2_pipeline_requires_loss_duplicate_burst_unlikelihood_in_canonical
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -586,7 +592,8 @@ def test_stage2_pipeline_requires_duplicate_burst_unlikelihood_channels_b_only()
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -618,7 +625,8 @@ def test_stage2_pipeline_requires_empty_loss_duplicate_burst_unlikelihood_config
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -652,7 +660,8 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -687,7 +696,8 @@ def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -735,7 +745,8 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -773,7 +784,8 @@ def test_stage2_pipeline_rejects_removed_coord_reg_keys(removed_key: str) -> Non
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -805,7 +817,8 @@ def test_stage2_pipeline_rejects_deprecated_stop_signal_damping() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -847,7 +860,8 @@ def test_stage2_pipeline_rejects_deprecated_struct_ce_weight() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -886,7 +900,8 @@ def test_stage2_ab_rejects_deprecated_decode_toggle() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -919,7 +934,8 @@ def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -974,7 +990,8 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -1032,7 +1049,8 @@ def test_rollout_pipeline_rejects_removed_coord_reg_keys(removed_key: str) -> No
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -1083,7 +1101,8 @@ def test_rollout_pipeline_rejects_deprecated_stop_signal_damping() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -1131,7 +1150,8 @@ def test_rollout_pipeline_rejects_deprecated_struct_ce_weight() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
-            "fusion_config": "toy/fusion.yaml",
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
             "user_prompt": "{bbox}",
             "emit_norm": "none",
             "json_format": "standard",
@@ -1505,12 +1525,12 @@ def test_stage2_leaf_contract_accepts_live_prod_profile() -> None:
     )
 
 
-def test_stage2_leaf_contract_accepts_live_ablation_profile() -> None:
+def test_stage2_leaf_contract_accepts_live_smoke_profile() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     ConfigLoader._validate_stage2_leaf_contract(
         str(
             repo_root
-            / "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml"
+            / "configs/stage2_two_channel/smoke/a_only_iter1-res_1024_random_order.yaml"
         )
     )
 

@@ -1,9 +1,7 @@
-"""Fusion helpers for multi-dataset dense-caption training.
+"""Dormant fusion helpers for future multi-dataset dense-caption reactivation.
 
-CoordExp supports configuring multi-dataset training via a separate "fusion
-config" file (YAML/JSON). The schema is intentionally compatible with the
-upstream Qwen3-VL containers (`targets` + optional `sources`), but CoordExp v1
-**treats targets and sources identically** (no target/source semantic split).
+These utilities are intentionally kept in-tree as archival infrastructure, but
+the canonical training schema currently disables `custom.fusion_config`.
 """
 
 from __future__ import annotations

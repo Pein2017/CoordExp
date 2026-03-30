@@ -16,9 +16,6 @@ Main exports:
 - DenseCaptionDataset: Primary dataset class
 - Builders: JSONLinesBuilder
 - Preprocessors: DenseCaptionPreprocessor, AugmentationPreprocessor
-
-Note: Fusion (multi-JSONL) training is supported via `custom.fusion_config` and
-is implemented in `datasets/fusion.py` + `datasets/unified_fusion_dataset.py`.
 """
 
 from .contracts import (

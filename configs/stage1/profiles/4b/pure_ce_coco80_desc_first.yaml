@@ -2,8 +2,10 @@ extends:
   - ./coord_soft_ce_gate_coco80_desc_first.yaml
   - ../../_shared/loss_pure_ce.yaml
 
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+
 training:
-  output_dir: ./output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce
+  artifact_subdir: stage1/coco_bbox_max60-coco80-desc_first-pure_ce
   run_name: epoch_4-pure_ce-coco80-desc_first-LRs-2e-4_1e-4_4e-4-from-base-4B-tie_head
-  logging_dir: ./tb/stage1/coco_bbox_max60-coco80-desc_first-pure_ce
   num_train_epochs: 4

@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from src.callbacks import DatasetEpochCallback
 from src.config.loader import ConfigLoader
@@ -273,7 +274,6 @@ def test_static_packing_fingerprint_includes_dataset_source_identity(
         dataset_seed=7,
         packing_cfg=packing_cfg,
         train_jsonl=str(train_jsonl),
-        fusion_config_path=None,
     )
 
     assert fingerprint["dataset_split"] == "train"
@@ -320,7 +320,6 @@ def test_static_packing_fingerprint_tracks_eval_split_inputs(
         dataset_seed=7,
         packing_cfg=packing_cfg,
         train_jsonl=str(val_jsonl),
-        fusion_config_path=None,
         dataset_split="eval",
         eval_sample_limit=99,
         eval_sample_with_replacement=False,
@@ -366,7 +365,6 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
         dataset_seed=7,
         packing_cfg=packing_cfg,
         train_jsonl="train.jsonl",
-        fusion_config_path=None,
     )
     fingerprint_b = _build_static_packing_fingerprint(
         training_config=common_training,
@@ -380,7 +378,6 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
         dataset_seed=7,
         packing_cfg=packing_cfg,
         train_jsonl="train.jsonl",
-        fusion_config_path=None,
     )
 
     assert fingerprint_a["custom_offline_max_pixels"] == 1048576
@@ -452,6 +449,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_size_aux.enabled is True
     assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
+    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024"
     assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024"
     assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024"
 
@@ -480,6 +478,7 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
         cfg.training["run_name"]
         == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
     )
+    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024"
     assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024"
     assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024"
 
@@ -492,7 +491,7 @@ def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> Non
 
     assert (
         cfg.model["model"]
-        == "output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged"
+        == "output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
     )
     assert (
         cfg.training["run_name"]
@@ -504,12 +503,140 @@ def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> Non
     assert cfg.custom.object_field_order == "desc_first"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
     assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024"
     objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
     assert objective["bbox_geo"].config["smoothl1_weight"] == pytest.approx(0.0)
     assert objective["bbox_geo"].config["ciou_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["coord_ce_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["soft_ce_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["w1_weight"] == pytest.approx(1.0)
+
+
+def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    raw_paths = [
+        repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
+        repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml",
+    ]
+
+    for path in raw_paths:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert payload["model"]["model"]
+        assert payload["training"]["run_name"]
+        assert payload["training"]["artifact_subdir"]
+
+
+def test_shared_dataset_and_prompt_facets_materialize_through_minimal_stage1_leaf(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    leaf = tmp_path / "stage1_leaf.yaml"
+    leaf.write_text(
+        yaml.safe_dump(
+            {
+                "extends": [
+                    str(
+                        repo_root
+                        / "configs/stage1/_shared/coord_soft_ce_gate_4b.yaml"
+                    ),
+                    str(
+                        repo_root
+                        / "configs/_shared/datasets/coco_768_bbox_max60.yaml"
+                    ),
+                    str(
+                        repo_root
+                        / "configs/_shared/prompts/coco80_desc_first.yaml"
+                    ),
+                ],
+                "training": {
+                    "run_name": "toy-stage1-coco768",
+                    "artifact_subdir": "stage1/test/coco768",
+                },
+                "model": {
+                    "model": "model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp"
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(leaf))
+
+    assert (
+        cfg.custom.train_jsonl
+        == "public_data/coco/rescale_32_768_bbox_max60/train.coord.jsonl"
+    )
+    assert (
+        cfg.custom.val_jsonl
+        == "public_data/coco/rescale_32_768_bbox_max60/val.coord.jsonl"
+    )
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.extra["prompt_variant"] == "coco_80"
+    assert cfg.template["max_pixels"] == 786432
+    assert cfg.custom.offline_max_pixels == 786432
+    assert cfg.training["artifact_subdir"] == "stage1/test/coco768"
+    assert cfg.training["output_dir"] == "./output/stage1/test/coco768"
+    assert cfg.training["logging_dir"] == "./tb/stage1/test/coco768"
+
+
+def test_future_dataset_facet_can_use_existing_typed_keys_without_loader_changes(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    dataset_facet = tmp_path / "future_dataset.yaml"
+    dataset_facet.write_text(
+        yaml.safe_dump(
+            {
+                "template": {"max_pixels": 123456},
+                "custom": {
+                    "train_jsonl": "public_data/future/train.coord.jsonl",
+                    "val_jsonl": "public_data/future/val.coord.jsonl",
+                    "offline_max_pixels": 123456,
+                    "object_ordering": "sorted",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    leaf = tmp_path / "future_leaf.yaml"
+    leaf.write_text(
+        yaml.safe_dump(
+            {
+                "extends": [
+                    str(
+                        repo_root
+                        / "configs/stage1/_shared/coord_soft_ce_gate_4b.yaml"
+                    ),
+                    str(dataset_facet),
+                    str(
+                        repo_root
+                        / "configs/_shared/prompts/coco80_geometry_first.yaml"
+                    ),
+                ],
+                "training": {
+                    "run_name": "toy-stage1-future",
+                    "artifact_subdir": "stage1/test/future",
+                },
+                "model": {
+                    "model": "model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp"
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(leaf))
+
+    assert cfg.custom.train_jsonl == "public_data/future/train.coord.jsonl"
+    assert cfg.custom.val_jsonl == "public_data/future/val.coord.jsonl"
+    assert cfg.custom.offline_max_pixels == 123456
+    assert cfg.template["max_pixels"] == 123456
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "geometry_first"
+    assert cfg.custom.extra["prompt_variant"] == "coco_80"
 
 
 def test_recompute_gas_for_packing_uses_effective_batch_size() -> None:

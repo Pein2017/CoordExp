@@ -1,15 +1,19 @@
 extends:
   - ../../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../../_shared/datasets/coco_768_bbox_max60.yaml
 
 global_max_length: 16000
 
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
 training:
-  output_dir: ./output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_gate
+  artifact_subdir: stage1_2b/coco_bbox_max60-hard_ce_soft_ce_gate
   run_name: epoch_4-hard_ce_soft_ce_gate-from-base-2B
-  logging_dir: ./tb/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_gate
   effective_batch_size: 24
 
 custom:
+  object_field_order: desc_first
   # Mixed coord loss:
   #   - base CE: standard full-vocab CE on non-coord tokens (coord targets are masked)
   #   - coord loss: coord-only (CE + softCE + gate) on coord-token positions

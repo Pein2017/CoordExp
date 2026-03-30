@@ -6,8 +6,7 @@ model:
 
 training:
   run_name: epoch_2-eff_size_64-a_only_single_pass
-  output_dir: output/stage2_ab/coco_bbox_max60/a_only_single_pass
-  logging_dir: tb/stage2_ab/coco_bbox_max60/a_only_single_pass
+  artifact_subdir: stage2_ab/coco_bbox_max60/a_only_single_pass
 
 stage2_ab:
   schedule:

@@ -122,6 +122,9 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "save_delay_steps",
     "save_delay_epochs",
     "save_last_epoch",
+    "output_root",
+    "logging_root",
+    "artifact_subdir",
     # Packing-only knobs consumed by our runner (not ms-swift args).
     "packing",
     "packing_mode",
@@ -999,16 +1002,10 @@ class CustomConfig:
         default_factory=TokenTypeMetricsConfig
     )
     extra: Mapping[str, Any] = field(default_factory=dict)
-    # Optional path to a fusion config (YAML/JSON) describing multiple datasets.
-    # When set, training/eval datasets are built from the fusion config and
-    # `train_jsonl`/`val_jsonl` are ignored by the runner.
-    fusion_config: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if not self.fusion_config and not self.train_jsonl:
-            raise ValueError(
-                "custom.train_jsonl must be provided when custom.fusion_config is not set"
-            )
+        if not self.train_jsonl:
+            raise ValueError("custom.train_jsonl must be provided")
         if not self.user_prompt:
             raise ValueError("custom.user_prompt must be provided")
         if self.emit_norm != "none":
@@ -1131,14 +1128,13 @@ class CustomConfig:
                 ) from exc
             if offline_max_pixels <= 0:
                 raise ValueError("custom.offline_max_pixels must be > 0 when provided")
-        fusion_config_raw = data.pop("fusion_config", None)
-        fusion_config: Optional[str]
-        if fusion_config_raw in (None, "", False):
-            fusion_config = None
-        elif isinstance(fusion_config_raw, str):
-            fusion_config = fusion_config_raw.strip() or None
-        else:
-            raise TypeError("custom.fusion_config must be a string path when provided")
+        if "fusion_config" in data:
+            raise ValueError(
+                "custom.fusion_config is temporarily disabled. "
+                "CoordExp now supports only the canonical single-dataset training configs; "
+                "merge JSONLs offline if you need dataset mixing for now. "
+                "Legacy fusion examples remain in-tree for future reactivation."
+            )
         if eval_monitor_dump_raw is None:
             eval_monitor_dump = EvalMonitorDumpConfig()
         else:
@@ -1255,7 +1251,6 @@ class CustomConfig:
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
             offline_max_pixels=offline_max_pixels,
             eval_detection=eval_detection,
-            fusion_config=fusion_config,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
             token_type_metrics=token_type_metrics,

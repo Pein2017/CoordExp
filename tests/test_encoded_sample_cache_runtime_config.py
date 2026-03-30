@@ -70,7 +70,6 @@ def test_encoded_sample_cache_fingerprint_tracks_dataset_identity(tmp_path) -> N
         train_args=SimpleNamespace(max_model_len=512),
         dataset_seed=7,
         dataset_jsonl=str(train_jsonl),
-        fusion_config_path=None,
         dataset_split="train",
         dataset_mode="dense",
         sample_limit=64,

@@ -22,6 +22,8 @@ deepspeed:
   config: zero2
 
 training:
+  output_root: ./output
+  logging_root: ./tb
   # defaults, can be overridden per-environment
   gradient_checkpointing: true
   lr_scheduler_type: cosine_warmup_with_min_lr
@@ -69,11 +71,8 @@ data:
 
 custom:
   json_format: standard
-  object_field_order: desc_first
   # Coord space: pre-normalized JSONLs; no runtime normalization
   emit_norm: none
-  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
-  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
   dump_conversation_path: output/conversation_text.txt
 
 debug:

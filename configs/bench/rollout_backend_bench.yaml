@@ -25,6 +25,7 @@ template:
 custom:
   # The benchmark runner samples from custom.train_jsonl.
   train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+  object_field_order: desc_first
 
   extra:
     rollout_backend_bench:

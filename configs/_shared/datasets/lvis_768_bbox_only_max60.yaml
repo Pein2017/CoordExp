@@ -1,0 +1,8 @@
+template:
+  max_pixels: 786432
+
+custom:
+  offline_max_pixels: 786432
+  train_jsonl: public_data/lvis/rescale_32_768_bbox_max60/train.bbox_only.max60.coord.jsonl
+  val_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
+  object_ordering: sorted

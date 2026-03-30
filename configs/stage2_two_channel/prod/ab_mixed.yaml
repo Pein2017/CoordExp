@@ -5,8 +5,7 @@ model:
 
 training:
   run_name: eff_size_96-b_ratio_0.05-epoch_2
-  output_dir: output/stage2_ab/prod/ab_mixed
-  logging_dir: tb/stage2_ab/prod/ab_mixed
+  artifact_subdir: stage2_ab/prod/ab_mixed
 
 custom:
   val_sample_limit: 504

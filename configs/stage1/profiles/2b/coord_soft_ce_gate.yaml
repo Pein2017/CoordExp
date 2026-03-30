@@ -1,8 +1,14 @@
 extends:
   - ../../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../../_shared/datasets/coco_768_bbox_max60.yaml
   - ../../_shared/loss_coord_soft_ce_gate_strong.yaml
 
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
 training:
-  output_dir: ./output/stage1_2b/coco_bbox_max60-soft_ce_gate
+  artifact_subdir: stage1_2b/coco_bbox_max60-soft_ce_gate
   run_name: epoch_4-softce_gate-from-base-2B
-  logging_dir: ./tb/stage1_2b/coco_bbox_max60-soft_ce_gate
+
+custom:
+  object_field_order: desc_first
