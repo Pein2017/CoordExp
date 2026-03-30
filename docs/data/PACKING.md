@@ -33,6 +33,10 @@ Stage-1 packing guardrails (current implementation):
 - If epoch-varying content changes per-index planning length or sample schedule, static packing fails fast; use a length-invariant ordering configuration or disable `training.packing`.
 - For sorted-vs-random ordering ablations, pin `training.encoded_sample_cache.enabled` explicitly in YAML. Random-order runs remain cache-ineligible, and the sorted arm should not keep an implicit cache-only advantage.
 - Packed dataset wrappers expect the template to expose `packing` and `padding_free` attributes (ms-swift templates do; custom templates must implement them).
+- Stage-1 static packing now defaults to a dataset-local auto-cache root instead of a run-scoped `training.output_dir/static_packing` folder. When `training.static_packing_cache.root_dir` is omitted or `null`, the runner resolves the base cache under `<jsonl_dir>/cache/static_packing/global_max_length_<N>/{train,eval}/`.
+- Static packing artifacts are stored under a fingerprinted subdirectory beneath that base root. If a legacy direct cache already exists at the base root, the packer will adopt it on first reuse and migrate it into the fingerprinted layout automatically.
+- Each length bucket now also writes an `INDEX.json` setup guard at the base root. The first successful setup in that bucket becomes the recorded standard, and later runs in the same bucket fail fast if prompt/order/template or other packing-relevant fingerprint fields drift. This is intentional: it prevents an occasional non-standard run from silently creating a second "standard-looking" cache under the same length bucket.
+- `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).

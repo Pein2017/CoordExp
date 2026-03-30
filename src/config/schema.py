@@ -138,6 +138,7 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_length_cache_persist_every",
     "packing_length_precompute_workers",
     "encoded_sample_cache",
+    "static_packing_cache",
     "checkpoint_mode",
 }
 
@@ -749,6 +750,32 @@ class EncodedSampleCacheConfig:
             return cls()
         return parse_dataclass_strict(
             cls, payload, path="training.encoded_sample_cache"
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return dataclass_asdict_no_none(self)
+
+
+@dataclass(frozen=True)
+class StaticPackingCacheConfig:
+    root_dir: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        root_dir = self.root_dir
+        if root_dir is not None:
+            root_dir = str(root_dir).strip()
+            if not root_dir:
+                raise ValueError(
+                    "training.static_packing_cache.root_dir must be a non-empty string when provided"
+                )
+            object.__setattr__(self, "root_dir", root_dir)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "StaticPackingCacheConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(
+            cls, payload, path="training.static_packing_cache"
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -2341,6 +2368,11 @@ class TrainingConfig:
                 training.get("encoded_sample_cache")
             )
             training["encoded_sample_cache"] = encoded_sample_cache.to_mapping()
+        if "static_packing_cache" in training:
+            static_packing_cache = StaticPackingCacheConfig.from_mapping(
+                training.get("static_packing_cache")
+            )
+            training["static_packing_cache"] = static_packing_cache.to_mapping()
 
         stage2_ab_raw = data.pop("stage2_ab", None)
         rollout_matching_raw = data.pop("rollout_matching", None)

@@ -545,6 +545,7 @@ class ConfigLoader:
             "output_root",
             "logging_root",
             "artifact_subdir",
+            "static_packing_cache",
         }
         for key in _packing_keys:
             training_section.pop(key, None)

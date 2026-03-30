@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 
 _LENGTH_CACHE_VERSION = 1
 _PLAN_CACHE_VERSION = 1
+_SETUP_INDEX_VERSION = 1
 _DEFAULT_LENGTH_CACHE_PERSIST_EVERY = 4096
 _DEFAULT_LENGTH_CACHE_MAX_FLUSHES = 64
 _DEFAULT_LENGTH_PRECOMPUTE_WORKERS = 8
@@ -709,6 +710,150 @@ def _persist_plan_cache(
     _write_json_atomic(path, payload)
 
 
+def _fingerprint_diff_keys(
+    expected: Mapping[str, Any], observed: Mapping[str, Any]
+) -> list[str]:
+    differing = [
+        str(key)
+        for key in sorted(
+            set(expected.keys()) | set(observed.keys()),
+            key=lambda item: str(item),
+        )
+        if expected.get(key) != observed.get(key)
+    ]
+    return differing
+
+
+def _load_legacy_setup_fingerprint(legacy_cache_root: Path) -> dict[str, Any] | None:
+    legacy_lengths_cache_path = legacy_cache_root / "lengths.json"
+    if not legacy_lengths_cache_path.exists():
+        return None
+
+    payload = _read_json(legacy_lengths_cache_path)
+    version = payload.get("version")
+    if int(version or -1) != _LENGTH_CACHE_VERSION:
+        raise ValueError(
+            f"Unsupported static length cache version in {legacy_lengths_cache_path}: {version!r}"
+        )
+
+    fingerprint = payload.get("fingerprint")
+    if not isinstance(fingerprint, Mapping):
+        raise TypeError(
+            f"Static length cache fingerprint must be a mapping: {legacy_lengths_cache_path}"
+        )
+    return json.loads(_json_canonical_dumps(dict(fingerprint)))
+
+
+def _persist_setup_index(path: Path, fingerprint: Mapping[str, Any]) -> None:
+    canonical_fingerprint = json.loads(_json_canonical_dumps(dict(fingerprint)))
+    payload: dict[str, Any] = {
+        "version": _SETUP_INDEX_VERSION,
+        "guard_policy": "one_setup_per_base_root",
+        "setup_fingerprint": canonical_fingerprint,
+        "setup_fingerprint_sha256": _fingerprint_digest(canonical_fingerprint),
+        "cache_layout": "fingerprinted_v1",
+    }
+    _write_json_atomic(path, payload)
+
+
+def _validate_or_initialize_setup_index(
+    *,
+    cache_root_base: Path,
+    fingerprint: Mapping[str, Any],
+    create_if_missing: bool,
+) -> None:
+    index_path = cache_root_base / "INDEX.json"
+    canonical_fingerprint = json.loads(_json_canonical_dumps(dict(fingerprint)))
+
+    observed_fingerprint: dict[str, Any] | None = None
+    if index_path.exists():
+        payload = _read_json(index_path)
+        version = payload.get("version")
+        if int(version or -1) != _SETUP_INDEX_VERSION:
+            raise ValueError(
+                f"Unsupported static packing setup index version in {index_path}: {version!r}"
+            )
+        observed = payload.get("setup_fingerprint")
+        if not isinstance(observed, Mapping):
+            raise TypeError(
+                f"Static packing setup INDEX fingerprint must be a mapping: {index_path}"
+            )
+        observed_fingerprint = json.loads(_json_canonical_dumps(dict(observed)))
+    else:
+        observed_fingerprint = _load_legacy_setup_fingerprint(cache_root_base)
+        if observed_fingerprint is None:
+            if create_if_missing:
+                _persist_setup_index(index_path, canonical_fingerprint)
+            return
+        if create_if_missing:
+            _persist_setup_index(index_path, observed_fingerprint)
+
+    if observed_fingerprint != canonical_fingerprint:
+        differing_keys = _fingerprint_diff_keys(
+            canonical_fingerprint, observed_fingerprint
+        )
+        raise ValueError(
+            "Static packing setup guard violation at "
+            f"{index_path}. current_sha256={_fingerprint_digest(canonical_fingerprint)} "
+            f"indexed_sha256={_fingerprint_digest(observed_fingerprint)} "
+            f"differing_keys={differing_keys}. This cache base root is reserved for one "
+            "stable setup per length bucket. Use a different cache root or remove the "
+            "bucket INDEX.json only if you intentionally want to replace the standard setup."
+        )
+
+
+def _adopt_legacy_static_cache(
+    *,
+    legacy_cache_root: Path,
+    cache_root: Path,
+    fingerprint: Mapping[str, Any],
+    num_samples: int,
+    world_size: int,
+    dataloader_drop_last: bool,
+) -> bool:
+    legacy_lengths_cache_path = legacy_cache_root / "lengths.json"
+    legacy_plan_cache_path = legacy_cache_root / (
+        f"plan_ws{world_size}_drop{int(bool(dataloader_drop_last))}.json"
+    )
+    if not legacy_lengths_cache_path.exists() or not legacy_plan_cache_path.exists():
+        return False
+
+    try:
+        lengths_payload = _read_json(legacy_lengths_cache_path)
+        _load_length_cache(
+            path=legacy_lengths_cache_path,
+            fingerprint=fingerprint,
+            num_samples=num_samples,
+        )
+        plan_payload = _read_plan_cache(
+            path=legacy_plan_cache_path,
+            fingerprint=fingerprint,
+            world_size=world_size,
+            dataloader_drop_last=bool(dataloader_drop_last),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        logger.info(
+            "Static packing legacy cache ignored: root=%s reason=%s",
+            legacy_cache_root,
+            exc,
+        )
+        return False
+
+    cache_root.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(cache_root / "lengths.json", lengths_payload)
+    _write_json_atomic(
+        cache_root
+        / f"plan_ws{world_size}_drop{int(bool(dataloader_drop_last))}.json",
+        plan_payload,
+    )
+    logger.info(
+        "Static packing legacy cache adopted: legacy_root=%s cache_root=%s",
+        legacy_cache_root,
+        cache_root,
+    )
+    return True
+
+
 class PackedCaptionDataset(IterableDataset):
     """Iterable wrapper that packs encoded samples into a single sequence.
 
@@ -1006,7 +1151,7 @@ def build_static_packed_dataset(
     length_cache_persist_every: int | None = None,
     length_precompute_workers: int = _DEFAULT_LENGTH_PRECOMPUTE_WORKERS,
 ) -> StaticPackedCaptionDataset:
-    """Construct deterministic static packed dataset with run-scoped cache.
+    """Construct deterministic static packed dataset with fingerprinted cache reuse.
 
     Rank-0 computes/updates caches; other ranks wait and then load identical artifacts.
     """
@@ -1051,12 +1196,6 @@ def build_static_packed_dataset(
     rank, discovered_world_size = _resolve_rank_world(world_size_hint=world_size)
     world_size = max(int(world_size or discovered_world_size), 1)
 
-    cache_root = Path(cache_dir)
-    lengths_cache_path = cache_root / "lengths.json"
-    plan_cache_path = cache_root / (
-        f"plan_ws{world_size}_drop{int(bool(dataloader_drop_last))}.json"
-    )
-
     canonical_fingerprint: dict[str, Any] = dict(fingerprint)
     canonical_fingerprint["dataset_class"] = type(dataset).__name__
     canonical_fingerprint["dataset_module"] = type(dataset).__module__
@@ -1073,7 +1212,35 @@ def build_static_packed_dataset(
     )
     canonical_fingerprint = json.loads(_json_canonical_dumps(canonical_fingerprint))
 
+    cache_root_base = Path(cache_dir)
+    fingerprint_sha256 = _fingerprint_digest(canonical_fingerprint)
+    cache_root = cache_root_base / fingerprint_sha256
+    lengths_cache_path = cache_root / "lengths.json"
+    plan_cache_path = cache_root / (
+        f"plan_ws{world_size}_drop{int(bool(dataloader_drop_last))}.json"
+    )
+
+    logger.info(
+        "Static packing cache resolved: base_root=%s fingerprint_sha256=%s cache_root=%s",
+        cache_root_base,
+        fingerprint_sha256,
+        cache_root,
+    )
+    _validate_or_initialize_setup_index(
+        cache_root_base=cache_root_base,
+        fingerprint=canonical_fingerprint,
+        create_if_missing=(rank == 0),
+    )
+
     if rank == 0:
+        _adopt_legacy_static_cache(
+            legacy_cache_root=cache_root_base,
+            cache_root=cache_root,
+            fingerprint=canonical_fingerprint,
+            num_samples=num_samples,
+            world_size=world_size,
+            dataloader_drop_last=bool(dataloader_drop_last),
+        )
         cache_root.mkdir(parents=True, exist_ok=True)
         _probe_order_invariant_lengths(dataset, probe_size=order_probe_size)
         lengths_state = _load_length_cache(
@@ -1081,6 +1248,17 @@ def build_static_packed_dataset(
             fingerprint=canonical_fingerprint,
             num_samples=num_samples,
         )
+        missing_lengths = sum(1 for value in lengths_state if value is None)
+        plan_cache_exists = plan_cache_path.exists()
+        if missing_lengths > 0 or not plan_cache_exists:
+            logger.warning(
+                "Static packing build starting: rank=%s cache_root=%s missing_lengths=%s plan_cache_exists=%s. "
+                "First-time sequence packing can take a while; cache artifacts will be written here.",
+                rank,
+                cache_root,
+                missing_lengths,
+                plan_cache_exists,
+            )
         lengths = _compute_missing_lengths(
             dataset=dataset,
             lengths=lengths_state,

@@ -175,6 +175,15 @@ def _static_fingerprint(tag: str) -> dict:
     }
 
 
+def _resolved_static_cache_dir(base_cache_dir: Path) -> Path:
+    subdirs = sorted(
+        [path for path in base_cache_dir.iterdir() if path.is_dir()],
+        key=lambda path: path.name,
+    )
+    assert len(subdirs) == 1
+    return subdirs[0]
+
+
 def test_packing_respects_bounds_and_fill_ratio():
     dataset = _FakeDataset([30, 30, 20, 60, 50, 10])
     template = _FakeTemplate(max_length=80)
@@ -488,7 +497,7 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
         length_precompute_workers=1,
     )
 
-    length_cache_path = cache_dir / "lengths.json"
+    length_cache_path = _resolved_static_cache_dir(cache_dir) / "lengths.json"
     payload = json.loads(length_cache_path.read_text(encoding="utf-8"))
     payload["lengths"][2] = None
     length_cache_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -510,6 +519,202 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
 
     payload_after = json.loads(length_cache_path.read_text(encoding="utf-8"))
     assert all(v is not None for v in payload_after["lengths"])
+
+
+def test_static_packing_adopts_legacy_direct_cache_root(tmp_path: Path):
+    cache_dir = tmp_path / "legacy_cache"
+    lengths = [20, 24, 28, 32]
+
+    _ = build_static_packed_dataset(
+        _FakeDataset(lengths),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("legacy"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    fingerprinted_cache_dir = _resolved_static_cache_dir(cache_dir)
+    legacy_lengths = cache_dir / "lengths.json"
+    legacy_plan = cache_dir / "plan_ws1_drop0.json"
+    legacy_lengths.write_text(
+        (fingerprinted_cache_dir / "lengths.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    legacy_plan.write_text(
+        (fingerprinted_cache_dir / "plan_ws1_drop0.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (fingerprinted_cache_dir / "lengths.json").unlink()
+    (fingerprinted_cache_dir / "plan_ws1_drop0.json").unlink()
+    fingerprinted_cache_dir.rmdir()
+
+    _ = build_static_packed_dataset(
+        _FakeDataset(lengths),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("legacy"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    adopted_cache_dir = _resolved_static_cache_dir(cache_dir)
+    assert (adopted_cache_dir / "lengths.json").exists()
+    assert (adopted_cache_dir / "plan_ws1_drop0.json").exists()
+
+
+def test_static_packing_writes_setup_index(tmp_path: Path):
+    cache_dir = tmp_path / "indexed_cache"
+
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("indexed"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    index_path = cache_dir / "INDEX.json"
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    assert payload["guard_policy"] == "one_setup_per_base_root"
+    assert payload["cache_layout"] == "fingerprinted_v1"
+    assert payload["setup_fingerprint"]["test_case"] == "indexed"
+
+
+def test_static_packing_setup_index_rejects_mismatched_setup(tmp_path: Path):
+    cache_dir = tmp_path / "guarded_cache"
+
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("standard"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    with pytest.raises(ValueError, match="setup guard violation"):
+        _ = build_static_packed_dataset(
+            _FakeDataset([20, 24, 28, 32]),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=cache_dir,
+            fingerprint=_static_fingerprint("different_prompt_variant"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=1,
+        )
+
+
+def test_static_packing_setup_index_rejects_legacy_mismatched_setup_without_index(
+    tmp_path: Path,
+):
+    cache_dir = tmp_path / "legacy_guarded_cache"
+
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("legacy_standard"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    fingerprinted_cache_dir = _resolved_static_cache_dir(cache_dir)
+    legacy_lengths = cache_dir / "lengths.json"
+    legacy_plan = cache_dir / "plan_ws1_drop0.json"
+    legacy_lengths.write_text(
+        (fingerprinted_cache_dir / "lengths.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    legacy_plan.write_text(
+        (fingerprinted_cache_dir / "plan_ws1_drop0.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (cache_dir / "INDEX.json").unlink()
+    (fingerprinted_cache_dir / "lengths.json").unlink()
+    (fingerprinted_cache_dir / "plan_ws1_drop0.json").unlink()
+    fingerprinted_cache_dir.rmdir()
+
+    with pytest.raises(ValueError, match="setup guard violation"):
+        _ = build_static_packed_dataset(
+            _FakeDataset([20, 24, 28, 32]),
+            template=_FakeTemplate(max_length=64),
+            packing_length=64,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=cache_dir,
+            fingerprint=_static_fingerprint("legacy_different"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=1,
+        )
+
+
+def test_static_packing_warns_before_first_time_build(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    warning_logs: list[str] = []
+
+    def _capture_warning(message: str, *args: object) -> None:
+        warning_logs.append(message % args if args else message)
+
+    monkeypatch.setattr(packed_caption_module.logger, "warning", _capture_warning)
+
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / "warning_cache",
+        fingerprint=_static_fingerprint("warning_first_build"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    assert any("Static packing build starting:" in msg for msg in warning_logs)
 
 
 def test_static_length_cache_default_persist_interval_reduces_flushes(

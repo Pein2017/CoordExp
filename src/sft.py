@@ -138,6 +138,11 @@ class EncodedSampleCacheRuntimeConfig:
     max_resident_shards: int = 4
 
 
+@dataclass(frozen=True)
+class StaticPackingCacheRuntimeConfig:
+    root_dir: str | None = None
+
+
 def _parse_packing_config(
     training_cfg: Any, template: Any, train_args: Any
 ) -> PackingRuntimeConfig:
@@ -304,6 +309,22 @@ def _parse_encoded_sample_cache_config(
         wait_timeout_s=wait_timeout_s,
         max_resident_shards=max_resident_shards,
     )
+
+
+def _parse_static_packing_cache_config(
+    training_cfg: Any,
+) -> StaticPackingCacheRuntimeConfig:
+    cfg = dict((training_cfg or {}).get("static_packing_cache") or {})
+    root_dir_raw = cfg.get("root_dir")
+    if root_dir_raw is None:
+        return StaticPackingCacheRuntimeConfig(root_dir=None)
+
+    root_dir = str(Path(str(root_dir_raw)).resolve())
+    if not root_dir:
+        raise ValueError(
+            "training.static_packing_cache.root_dir must be a non-empty string when provided"
+        )
+    return StaticPackingCacheRuntimeConfig(root_dir=root_dir)
 
 
 def _set_train_arg(train_args: Any, field: str, value: Any) -> None:
@@ -808,6 +829,68 @@ def _build_encoded_sample_cache_request(
         "fingerprint_sha256": fingerprint_sha256,
         "cache_dir": str(cache_dir),
     }
+
+
+def _resolve_static_packing_cache_dir(
+    *,
+    runtime_cfg: StaticPackingCacheRuntimeConfig,
+    training_config: Any,
+    train_args: Any,
+    dataset_jsonl: str | None,
+    fusion_config_path: str | None,
+    dataset_split: str,
+    packing_cfg: PackingRuntimeConfig,
+) -> Path:
+    if runtime_cfg.root_dir is not None:
+        base_root = Path(str(runtime_cfg.root_dir))
+        source = "configured"
+    elif dataset_jsonl:
+        base_root = Path(str(dataset_jsonl)).expanduser().resolve(strict=False).parent
+        base_root = base_root / "cache" / "static_packing"
+        source = "dataset_jsonl"
+    elif fusion_config_path:
+        base_root = (
+            Path(str(fusion_config_path)).expanduser().resolve(strict=False).parent
+            / "cache"
+            / "static_packing"
+        )
+        source = "fusion_config"
+    else:
+        output_dir_raw = getattr(train_args, "output_dir", None)
+        if not output_dir_raw:
+            raise ValueError(
+                "training.output_dir must be set when training.packing_mode=static and no dataset/fusion path is available"
+            )
+        base_root = Path(str(output_dir_raw)).resolve() / "static_packing_auto"
+        source = "output_dir"
+
+    global_max_length_raw = getattr(training_config, "global_max_length", None)
+    try:
+        global_max_length = int(global_max_length_raw)
+    except (TypeError, ValueError):
+        global_max_length = int(packing_cfg.packing_length)
+    if global_max_length <= 0:
+        global_max_length = int(packing_cfg.packing_length)
+
+    split = str(dataset_split or "train").strip().lower()
+    if split not in {"train", "eval"}:
+        raise ValueError(
+            f"dataset_split must be one of {{'train', 'eval'}}, got {dataset_split!r}"
+        )
+
+    cache_dir = (
+        base_root
+        / f"global_max_length_{global_max_length}"
+        / ("train" if split == "train" else "eval")
+    )
+    logger.info(
+        "Static packing cache base resolved: split=%s source=%s base_root=%s cache_dir=%s",
+        split,
+        source,
+        base_root,
+        cache_dir,
+    )
+    return cache_dir
 
 
 def _build_encoded_sample_cache_bypass_info(
@@ -1482,6 +1565,9 @@ def main():
     encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
         training_config.training, train_args
     )
+    static_packing_cache_cfg = _parse_static_packing_cache_config(
+        training_config.training
+    )
     train_encoded_sample_cache_info: dict[str, Any] | None = None
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
     train_encoded_sample_cache_request = _build_encoded_sample_cache_request(
@@ -1581,16 +1667,9 @@ def main():
             "Packing unit semantics: one per-device dataloader item equals one packed sequence; effective_batch_size is interpreted in packed-sequence units."
         )
 
-        output_dir_raw = getattr(train_args, "output_dir", None)
-        if not output_dir_raw:
-            raise ValueError(
-                "training.output_dir must be set when training.packing_mode=static"
-            )
-
         train_dataloader_shuffle = bool(
             getattr(train_args, "train_dataloader_shuffle", True)
         )
-        static_cache_dir = Path(str(output_dir_raw)) / "static_packing"
         static_fingerprint = _build_static_packing_fingerprint(
             training_config=training_config,
             custom_config=custom_config,
@@ -1600,6 +1679,15 @@ def main():
             packing_cfg=packing_cfg,
             train_jsonl=str(train_jsonl) if train_jsonl else None,
             dataset_split="train",
+        )
+        static_cache_dir = _resolve_static_packing_cache_dir(
+            runtime_cfg=static_packing_cache_cfg,
+            training_config=training_config,
+            train_args=train_args,
+            dataset_jsonl=str(train_jsonl) if train_jsonl else None,
+            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            dataset_split="train",
+            packing_cfg=packing_cfg,
         )
 
         dataset = build_static_packed_dataset(
@@ -2125,19 +2213,12 @@ def main():
                 "Set custom.val_sample_with_replacement=false or disable training.eval_packing."
             )
 
-        eval_output_dir_raw = getattr(train_args, "output_dir", None)
-        if not eval_output_dir_raw:
-            raise ValueError(
-                "training.output_dir must be set when training.eval_packing=true"
-            )
-
         eval_sample_limit_i: int | None = None
         if isinstance(val_sample_limit, int):
             eval_sample_limit_i = int(val_sample_limit)
         elif isinstance(val_sample_limit, str) and val_sample_limit.isdigit():
             eval_sample_limit_i = int(val_sample_limit)
 
-        eval_cache_dir = Path(str(eval_output_dir_raw)) / "static_packing_eval"
         eval_fingerprint = _build_static_packing_fingerprint(
             training_config=training_config,
             custom_config=custom_config,
@@ -2149,6 +2230,15 @@ def main():
             dataset_split="eval",
             eval_sample_limit=eval_sample_limit_i,
             eval_sample_with_replacement=bool(val_sample_with_replacement),
+        )
+        eval_cache_dir = _resolve_static_packing_cache_dir(
+            runtime_cfg=static_packing_cache_cfg,
+            training_config=training_config,
+            train_args=train_args,
+            dataset_jsonl=str(val_jsonl) if val_jsonl else None,
+            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            dataset_split="eval",
+            packing_cfg=packing_cfg,
         )
 
         eval_dataset = build_static_packed_dataset(
