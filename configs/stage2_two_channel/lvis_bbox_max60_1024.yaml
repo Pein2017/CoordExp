@@ -7,8 +7,8 @@ model:
   model: output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged
 
 training:
-  run_name: epoch_2-stage2-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size
-  artifact_subdir: stage2_ab/lvis_bbox_max60_1024
+  run_name: continued_to_ckpt_232
+  artifact_subdir: stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232
 
 stage2_ab:
   pipeline:
@@ -20,7 +20,7 @@ stage2_ab:
         application:
           preset: anchor_text_only
         config:
-          desc_ce_weight: 1.0
+          desc_ce_weight: 1.5
           rollout_fn_desc_weight: 1.0
           rollout_global_prefix_struct_ce_weight: 1.0
       - name: loss_duplicate_burst_unlikelihood
