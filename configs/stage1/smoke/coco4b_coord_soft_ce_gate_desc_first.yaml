@@ -1,0 +1,9 @@
+extends:
+  - ../profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml
+  - ./common_prodlike.yaml
+
+training:
+  run_name: smoke_2steps-stage1-coco4b-softce_gate-desc_first
+  artifact_subdir: stage1/smoke/coco4b_coord_soft_ce_gate_desc_first
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_coco4b_softce_gate_desc_first

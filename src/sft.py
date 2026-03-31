@@ -1685,7 +1685,7 @@ def main():
             training_config=training_config,
             train_args=train_args,
             dataset_jsonl=str(train_jsonl) if train_jsonl else None,
-            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            fusion_config_path=None,
             dataset_split="train",
             packing_cfg=packing_cfg,
         )
@@ -2236,7 +2236,7 @@ def main():
             training_config=training_config,
             train_args=train_args,
             dataset_jsonl=str(val_jsonl) if val_jsonl else None,
-            fusion_config_path=str(fusion_config_path) if fusion_config_path else None,
+            fusion_config_path=None,
             dataset_split="eval",
             packing_cfg=packing_cfg,
         )

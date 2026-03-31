@@ -1,0 +1,9 @@
+extends:
+  - ../profiles/4b/pure_ce_coco80_desc_first.yaml
+  - ./common_prodlike.yaml
+
+training:
+  run_name: smoke_2steps-stage1-coco4b-pure_ce-desc_first
+  artifact_subdir: stage1/smoke/coco4b_pure_ce_desc_first
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_coco4b_pure_ce_desc_first

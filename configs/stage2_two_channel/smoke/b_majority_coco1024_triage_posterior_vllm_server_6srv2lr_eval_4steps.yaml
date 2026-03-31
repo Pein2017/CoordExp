@@ -10,6 +10,8 @@ training:
 
 data:
   dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
 
 custom:
   train_sample_limit: 128

@@ -1,0 +1,39 @@
+# LVIS offline inference preset for a 200-sample rollout.
+#
+# Usage:
+#   PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+#     --config configs/infer/lvis/val_200_ckpt232_merged.yaml
+#
+# This preset keeps eval disabled so it only writes the rollout artifacts:
+# - gt_vs_pred.jsonl
+# - pred_token_trace.jsonl
+# - summary.json
+
+run:
+  name: val_200_ckpt232_merged
+  output_dir: output/lvis_offline_200
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged
+  prompt_variant: lvis_stage2_federated
+  object_field_order: desc_first
+  object_ordering: sorted
+  mode: auto
+  pred_coord_mode: auto
+  backend:
+    type: hf
+  generation:
+    temperature: 0.1
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.05
+    batch_size: 4
+    seed: 42
+  device: cuda:0
+  limit: 200

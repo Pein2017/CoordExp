@@ -4,7 +4,7 @@ extends:
   - ../_shared/prompts/lvis_stage2_federated.yaml
 
 model:
-  model: output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged
+  model: output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged
 
 training:
   run_name: epoch_2-stage2-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size

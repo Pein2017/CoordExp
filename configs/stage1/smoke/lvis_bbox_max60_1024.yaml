@@ -5,6 +5,8 @@ extends:
 training:
   run_name: smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size
   artifact_subdir: stage1/smoke/lvis_bbox_max60_1024
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_lvis_bbox_max60_1024
 
 custom:
   eval_detection:

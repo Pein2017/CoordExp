@@ -15,8 +15,8 @@ import math
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
-from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, cast
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, cast
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -69,6 +69,241 @@ def _matches_by_record_idx(rows: Sequence[Mapping[str, Any]]) -> Dict[int, Dict[
         except (TypeError, ValueError):
             record_idx = int(fallback_idx)
         out[int(record_idx)] = dict(row)
+    return out
+
+
+def _image_key_variants(image_value: str) -> List[str]:
+    pure = PurePosixPath(str(image_value).replace("\\", "/"))
+    parts = [part for part in pure.parts if part not in {"", "."}]
+    variants: List[str] = []
+    if len(parts) >= 2:
+        variants.append("/".join(parts[-2:]))
+    if parts:
+        variants.append(parts[-1])
+    if not variants:
+        variants.append(str(image_value))
+    out: List[str] = []
+    for item in variants:
+        text = str(item).strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _infer_lvis_split(gt_jsonl: Path) -> str:
+    text = str(gt_jsonl).lower()
+    name = gt_jsonl.name.lower()
+    if "val" in name or "/val" in text:
+        return "val"
+    return "train"
+
+
+def _default_lvis_annotations_json(gt_jsonl: Path) -> Path:
+    split = _infer_lvis_split(gt_jsonl)
+    return Path("public_data/lvis/raw/annotations") / f"lvis_v1_{split}.json"
+
+
+class _LvisLegacyMetadataIndex:
+    def __init__(self, annotations_json: Path) -> None:
+        if not annotations_json.is_file():
+            raise FileNotFoundError(
+                "LVIS eval metadata backfill requires the raw annotations JSON at "
+                f"{annotations_json}"
+            )
+        payload = json.loads(annotations_json.read_text(encoding="utf-8"))
+        categories_raw = payload.get("categories")
+        images_raw = payload.get("images")
+        if not isinstance(categories_raw, list) or not isinstance(images_raw, list):
+            raise ValueError(f"Malformed LVIS annotations JSON: {annotations_json}")
+
+        self.categories_by_norm_name: Dict[str, Dict[str, Any]] = {}
+        self.categories_by_id: Dict[int, Dict[str, Any]] = {}
+        for category in categories_raw:
+            if not isinstance(category, Mapping):
+                continue
+            try:
+                category_id = int(category.get("id"))
+            except (TypeError, ValueError):
+                continue
+            name = str(category.get("name") or "").strip()
+            if not name:
+                continue
+            entry = {
+                "category_id": int(category_id),
+                "name": name,
+                "frequency": str(category.get("frequency") or "unknown"),
+            }
+            self.categories_by_id[int(category_id)] = dict(entry)
+            norm_name = normalize_desc(name)
+            if norm_name and norm_name not in self.categories_by_norm_name:
+                self.categories_by_norm_name[norm_name] = dict(entry)
+
+        self.images_by_key: Dict[str, Dict[str, Any]] = {}
+        for image in images_raw:
+            if not isinstance(image, Mapping):
+                continue
+            try:
+                image_id = int(image.get("id"))
+            except (TypeError, ValueError):
+                continue
+            coco_url = str(image.get("coco_url") or "").strip()
+            key_variants = _image_key_variants(coco_url) if coco_url else []
+            image_meta = {
+                "image_id": int(image_id),
+                "neg_category_ids": [
+                    int(cat_id) for cat_id in list(image.get("neg_category_ids") or [])
+                ],
+                "not_exhaustive_category_ids": [
+                    int(cat_id)
+                    for cat_id in list(image.get("not_exhaustive_category_ids") or [])
+                ],
+            }
+            for key in key_variants:
+                self.images_by_key.setdefault(key, dict(image_meta))
+
+    def image_meta_for(self, image_value: str) -> Optional[Dict[str, Any]]:
+        for key in _image_key_variants(image_value):
+            image_meta = self.images_by_key.get(key)
+            if image_meta is not None:
+                return dict(image_meta)
+        return None
+
+    def category_entry_for_desc(self, desc: str) -> Optional[Dict[str, Any]]:
+        norm_desc = normalize_desc(str(desc or ""))
+        if not norm_desc:
+            return None
+        entry = self.categories_by_norm_name.get(norm_desc)
+        return dict(entry) if entry is not None else None
+
+    def category_entries_from_ids(
+        self, category_ids: Iterable[int]
+    ) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen: set[int] = set()
+        for category_id in category_ids:
+            cat_id = int(category_id)
+            if cat_id in seen:
+                continue
+            seen.add(cat_id)
+            entry = self.categories_by_id.get(cat_id)
+            if entry is not None:
+                out.append(dict(entry))
+        return out
+
+
+def _resolve_gt_jsonl_for_eval_artifact(pred_path: Path) -> Optional[Path]:
+    from src.infer.pipeline import _find_resolved_config_for_jsonl
+
+    resolved_cfg = _find_resolved_config_for_jsonl(pred_path)
+    if not isinstance(resolved_cfg, Mapping):
+        return None
+
+    cfg = resolved_cfg.get("cfg")
+    if not isinstance(cfg, Mapping):
+        return None
+    infer_cfg = cfg.get("infer")
+    if not isinstance(infer_cfg, Mapping):
+        return None
+
+    gt_jsonl = infer_cfg.get("gt_jsonl")
+    if not isinstance(gt_jsonl, str) or not gt_jsonl.strip():
+        return None
+    return Path(str(gt_jsonl))
+
+
+def _maybe_backfill_lvis_metadata_for_eval(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    pred_path: Path,
+    options: "EvalOptions",
+) -> List[Dict[str, Any]]:
+    metrics_mode = str(options.metrics or "f1ish").strip().lower()
+    if metrics_mode not in {"lvis", "both"}:
+        return [dict(record) for record in records]
+
+    rows = [dict(record) for record in records]
+    if rows and all(
+        isinstance(row.get("metadata"), Mapping)
+        and str(row["metadata"].get("dataset_policy") or "").strip().lower()
+        == "lvis_federated"
+        for row in rows
+    ):
+        return rows
+
+    gt_jsonl = _resolve_gt_jsonl_for_eval_artifact(pred_path)
+    if gt_jsonl is None:
+        if metrics_mode == "lvis":
+            raise ValueError(
+                "LVIS evaluation requires federated LVIS metadata on the artifact, "
+                "or a recoverable infer.gt_jsonl via resolved_config.path so the "
+                "offline evaluator can backfill metadata."
+            )
+        return rows
+
+    annotations_path = _default_lvis_annotations_json(gt_jsonl)
+    index = _LvisLegacyMetadataIndex(annotations_path)
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        metadata = row.get("metadata")
+        if (
+            isinstance(metadata, Mapping)
+            and str(metadata.get("dataset_policy") or "").strip().lower()
+            == "lvis_federated"
+        ):
+            out.append(dict(row))
+            continue
+
+        image_value = str(row.get("image") or "").strip()
+        image_meta = index.image_meta_for(image_value)
+        if image_meta is None:
+            raise ValueError(
+                "Unable to backfill LVIS metadata for image "
+                f"{image_value!r} from {annotations_path}"
+            )
+
+        gt_objects_raw = row.get("gt")
+        if not isinstance(gt_objects_raw, list):
+            raise ValueError(
+                "LVIS eval metadata backfill requires canonical `gt` objects in "
+                f"gt_vs_pred rows for image {image_value!r}"
+            )
+
+        gt_categories: List[Dict[str, Any]] = []
+        positive_category_ids: List[int] = []
+        for obj in gt_objects_raw:
+            if not isinstance(obj, Mapping):
+                continue
+            category_entry = index.category_entry_for_desc(str(obj.get("desc") or ""))
+            if category_entry is None:
+                raise ValueError(
+                    "Unable to map GT desc to an LVIS category while backfilling "
+                    f"metadata for image {image_value!r}: desc={obj.get('desc')!r}"
+                )
+            gt_categories.append(dict(category_entry))
+            positive_category_ids.append(int(category_entry["category_id"]))
+
+        enriched = dict(row)
+        enriched["image_id"] = int(image_meta["image_id"])
+        enriched["metadata"] = {
+            "dataset": "lvis",
+            "dataset_policy": "lvis_federated",
+            "image_id": int(image_meta["image_id"]),
+            "split": _infer_lvis_split(gt_jsonl),
+            "lvis": {
+                "gt_objects": list(gt_categories),
+                "positive_categories": index.category_entries_from_ids(
+                    positive_category_ids
+                ),
+                "neg_categories": index.category_entries_from_ids(
+                    image_meta["neg_category_ids"]
+                ),
+                "not_exhaustive_categories": index.category_entries_from_ids(
+                    image_meta["not_exhaustive_category_ids"]
+                ),
+            },
+        }
+        out.append(enriched)
     return out
 
 
@@ -1865,6 +2100,11 @@ def evaluate_and_save(
     want_f1ish = metrics_mode in {"f1ish", "both"}
 
     pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
+    pred_records = _maybe_backfill_lvis_metadata_for_eval(
+        pred_records,
+        pred_path=pred_path,
+        options=options,
+    )
     (
         gt_samples,
         pred_samples,
