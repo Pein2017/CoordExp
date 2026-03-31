@@ -110,6 +110,20 @@ Execution semantics:
 - **THEN** Channel-A uses `anchor_text_only` and `anchor_only`
 - **AND** the pipeline does not rely on self-context-era final-pass presets.
 
+#### Scenario: Adding an objective module updates validation from one source of truth
+- **WHEN** a new objective module is added to the canonical objective catalog
+- **THEN** strict config validation and allowed application preset validation
+  update from that same definition
+- **AND** the codebase does not require parallel handwritten allowlist updates
+  in multiple unrelated tables.
+
+#### Scenario: Authored order preserves state handoff
+- **WHEN** an objective pipeline declares `bbox_geo` before `bbox_size_aux`
+  and `coord_reg`
+- **THEN** later objective modules observe state emitted by `bbox_geo` within
+  the same pipeline pass
+- **AND** catalog-driven validation does not reorder execution.
+
 ### Requirement: Module registry is strict and validated before training starts
 The strict teacher-forcing module registry SHALL include `loss_duplicate_burst_unlikelihood` as an objective module and fail fast when its prerequisites are unavailable.
 
@@ -128,6 +142,18 @@ Normative behavior:
 - **AND** the runtime context lacks canonical duplicate-ul supervision metadata
 - **THEN** the training step raises with actionable diagnostics
 - **AND** training does not proceed with a silently altered objective.
+
+#### Scenario: Runtime objective registry drift fails fast
+- **WHEN** the runtime objective registry and the canonical objective-module
+  catalog disagree
+- **THEN** trainer initialization fails fast
+- **AND** the error identifies the missing and unexpected registry entries.
+
+#### Scenario: Runtime diagnostics registry drift fails fast
+- **WHEN** the runtime diagnostics registry and the companion
+  diagnostic-module catalog disagree
+- **THEN** trainer initialization fails fast
+- **AND** the error identifies the missing and unexpected registry entries.
 
 ### Requirement: Objective modules are fail-fast and diagnostics modules are best-effort
 The system SHALL separate objective-changing modules from diagnostics-only modules.

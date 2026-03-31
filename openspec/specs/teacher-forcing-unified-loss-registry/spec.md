@@ -121,6 +121,42 @@ Normative behavior:
 - **THEN** Channel-A uses `gt`
 - **AND** the naming contract does not rely on `self_context` aliases.
 
+#### Scenario: Module taxonomy is reused across validation and projection
+- **WHEN** the codebase reasons about a teacher-forcing module
+- **THEN** config validation, runtime registry coverage, and Stage-2
+  objective-atom projection reuse the same canonical taxonomy layer for the
+  relevant module kind
+- **AND** module identity is not re-authored independently in each surface.
+
+### Requirement: Stage-2 objective-atom projection is module-owned and deterministic
+The unified loss registry SHALL keep Stage-2 objective-atom projection
+explicit, module-owned, and deterministic.
+
+Normative behavior:
+- every objective module that participates in Stage-2 objective-atom emission
+  MUST declare a module-level `emission_group`,
+- within a single emission provenance group, projected emitted atom keys MUST
+  be unique across objective modules,
+- missing projected atoms with `required_state=true` MUST fail fast when
+  additive projection is enforced,
+- projected atoms with `required_state=false` MAY be absent without violating
+  additive projection,
+- explicit optionality MUST be declared in the projected atom definition rather
+  than inferred from missing state at runtime,
+- diagnostics MUST NOT emit Stage-2 objective atoms in this change.
+
+#### Scenario: Optional projected atom absence preserves additivity
+- **WHEN** an objective module declares a projected atom with
+  `required_state=false`
+- **AND** the backing state tensor is absent during additive projection
+- **THEN** projection may omit that atom without failing additivity.
+
+#### Scenario: Projected atom-key collision fails fast
+- **WHEN** two objective modules attempt to project the same emitted atom key
+- **AND** both belong to one emission provenance group
+- **THEN** projection fails fast instead of silently overwriting one
+  contribution.
+
 ### Requirement: Canonical loss scalars are mean-like (scale-invariant)
 To make runs comparable across packing, batch sizing, and grad-accum settings, the system SHALL treat all canonical
 `loss/<component>` scalars as **mean-like** values (not raw sums).
@@ -278,6 +314,11 @@ Normative behavior:
 - **THEN** `geo` aggregates over identity-aligned GT objects
 - **AND** no final-pass self-context object set is consulted.
 
+#### Scenario: CIoU remains categorized as bbox geometry
+- **WHEN** the system classifies the `bbox_ciou` objective atom
+- **THEN** it is owned by the bbox geometry role under the shared bbox family
+- **AND** it is not categorized as a coord-regularization term.
+
 ### Requirement: Coord regularizer loss (`coord_reg`) is explicit and strictly configured
 The system SHALL treat coord regularization (`coord_reg`) as an optional component computed directly from logits and/or
 coord-subspace probabilities, and its configuration MUST be explicit and strict (no silent enablement via ad-hoc trainer
@@ -360,3 +401,121 @@ Normative behavior:
 - **WHEN** `bbox_size_aux` is enabled
 - **THEN** the public bbox expression remains `bbox_2d: [x1, y1, x2, y2]`
 - **AND** internal canonicalization does not redefine the serialized slot order.
+
+### Requirement: Canonical loss component names and contexts are canonical and shared
+The unified loss registry SHALL define a canonical taxonomy layer for
+teacher-forcing modules that separates family classification from semantic role
+while keeping the current public module names stable.
+
+Normative behavior:
+- in addition to canonical public module names and canonical loss component
+  names, every objective and diagnostic module MUST have:
+  - a family classification,
+  - and a semantic role,
+- `semantic_role` MUST be a stable lowercase snake_case internal identifier
+  drawn from a registry-owned vocabulary,
+- the objective-module catalog MUST additionally own:
+  - optional config keys,
+  - allowed application presets,
+  - module-level `emission_group` when the module participates in Stage-2 atom
+    emission,
+  - and projected atom definitions,
+- each projected atom definition MUST include:
+  - `atom_name`
+  - `state_key`
+  - `required_state`,
+- the same taxonomy layer MUST be reused across:
+  - strict config validation,
+  - runtime objective/diagnostic registry coverage validation,
+  - and Stage-2 objective-atom projection for objective modules,
+- companion diagnostic modules MUST reuse the same core taxonomy fields
+  (`family`, `semantic_role`, `config_keys`) but MUST NOT participate in
+  Stage-2 objective-atom projection unless a future change explicitly adds
+  diagnostic emission semantics,
+- duplicated hardcoded module-identity tables across those surfaces are not
+  part of the intended architecture,
+- public objective module names and emitted atom names remain unchanged in this
+  first refactor slice.
+
+### Requirement: Channel-B rollout context is FP-neutral and EOS-enforced
+For Stage-2 Channel-B (`context=rollout`), the rollout-context contract SHALL
+be defined over the anchor-edited clean sequence rather than the raw rollout
+prefix.
+
+Normative rollout object subsets:
+- `matched_clean`: anchor clean objects matched to GT.
+- `pseudo_positive`: selected unmatched anchor objects promoted for
+  coord-positive supervision while remaining desc-neutral.
+- `shielded_anchor`: unmatched anchor objects kept as coord-neutral context.
+- `dead_anchor`: unmatched anchor objects removed from the positive prefix.
+- `fn`: GT objects injected into the same top-level `objects[]` container for
+  supervision.
+- `recovered_fn`: injected FN objects that were missed in anchor and hit in at
+  least one explorer view.
+
+Normative behavior:
+- `dead_anchor` objects MUST NOT appear in the positive teacher-forced prefix,
+- retained prefix objects MAY receive global rollout-prefix structure
+  supervision as defined by the Channel-B contract,
+- `matched_clean` objects receive positive geometry/coord supervision as
+  defined by the Channel-B contract,
+- `pseudo_positive` objects MUST remain in the edited anchor prefix and MUST be
+  exempt from blanket FP-neutral handling only for positive coord-side
+  supervision,
+- `pseudo_positive` objects MUST use their own retained anchor coordinates as
+  the target source for bbox/coord supervision,
+- `pseudo_positive` objects MUST NOT create desc CE,
+- `shielded_anchor` objects MAY remain in the clean prefix as context but MUST
+  remain outside coord supervision and desc supervision,
+- `fn` and `recovered_fn` objects remain positively supervised through the FN
+  tail,
+- closure / EOS remain supervised.
+
+#### Scenario: Pseudo-positive object uses anchor geometry and no new desc CE
+- **WHEN** an unmatched anchor object is selected as `pseudo_positive`
+- **THEN** it remains in the edited anchor prefix
+- **AND** its bbox/coord supervision target is derived from that anchor
+  object's own canonical coordinates
+- **AND** it contributes no desc CE
+- **AND** it may still participate in global rollout-prefix structure CE.
+
+#### Scenario: Enabled pseudo-positive expands the rollout geometry-supervised set only on the coord side
+- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
+- **THEN** Channel-B rollout `geo` includes `pseudo_positive` objects
+  alongside `matched_clean` and `fn`
+- **AND** shielded or dead unmatched anchors remain outside rollout `geo`
+  supervision.
+
+### Requirement: Gate terms respect context-specific masking and pseudo-positive coord-positive participation
+The unified loss registry SHALL keep pseudo-positive spans coord-positive,
+desc-neutral, and aligned with the shared global rollout-prefix structure CE
+surface when coord regularization gate terms are enabled.
+
+Normative behavior:
+- in `context=rollout`, selected `pseudo_positive` anchors MUST contribute to
+  coord-side `coord_reg` sub-terms only through the same positive
+  coord-supervised bbox-group surface used by `matched_clean` and `fn`,
+- selected `pseudo_positive` anchors MAY contribute to `coord_gate` where that
+  sub-term is defined on coord-supervised positions,
+- selected `pseudo_positive` anchors MUST NOT contribute to `text_gate` or
+  desc-side supervision,
+- shielded and dead unmatched anchors MUST remain outside both `coord_gate` and
+  `text_gate`.
+
+#### Scenario: Pseudo-positive spans are coord-positive and desc-neutral under coord regularization
+- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
+- **AND** coord-regularization gate terms are enabled for Channel-B rollout
+  context
+- **THEN** selected pseudo-positive anchors may contribute to coord-side gate
+  terms
+- **AND** they do not contribute to `text_gate` or desc-side supervision
+  beyond the shared global rollout-prefix structure CE surface.
+
+#### Scenario: Shielded and pseudo-positive unmatched anchors diverge cleanly
+- **WHEN** a rollout-context sample contains both `shielded_anchor` and
+  `pseudo_positive` unmatched anchor objects
+- **THEN** the shielded subset remains context-only
+- **AND** only the pseudo-positive subset enters positive bbox/coord
+  supervision
+- **AND** both retained subsets may still share the global rollout-prefix
+  structure CE surface.

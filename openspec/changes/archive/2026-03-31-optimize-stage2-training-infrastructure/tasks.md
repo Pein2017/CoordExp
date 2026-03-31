@@ -1,6 +1,6 @@
 ## Workstream 0. Baseline Evidence And Contract Freeze
 
-- [ ] 0.1 Record the current optimization baseline for the active Stage-2 path, including:
+- [x] 0.1 Record the current optimization baseline for the active Stage-2 path, including:
   - first-batch latency
   - step wall time
   - `rollout/gen_tokens_per_s`
@@ -72,7 +72,7 @@
   - or fall back to serial/process-isolated precompute when dataset state is mutable
 - [x] 2.6 Add an explicit cache-residency bound for encoded-sample shards under persistent workers.
 - [x] 2.7 Upgrade training JSONL ingestion to line-aware diagnostics with path and snippet context.
-- [ ] 2.8 Validate throughput and memory changes with:
+- [x] 2.8 Validate throughput and memory changes with:
   - first-batch latency comparison
   - rank-0 static-pack plan-build wall time
   - tokens/sec
@@ -99,7 +99,7 @@
   - repo-owned future-affecting Stage-2 runtime state sidecars
   - and restart-sensitive callback state or a recompute-safe equivalent
 - [x] 3.6 Add operator-facing resume preflight rules so incomplete or incompatible restartable checkpoints fail early and clearly.
-- [ ] 3.7 Validate with:
+- [x] 3.7 Validate with:
   - artifact parity tests
   - a kill-and-resume drill from a non-empty post-rollout state
   - a hard-failure test when `restartable` mode is used on an incomplete checkpoint
@@ -116,7 +116,7 @@
   - keep `eval/detection/mAP` parity
   - and do not broaden this workstream into offline evaluator artifact parity
 - [x] 4.3 Emit persistent health signals when best-effort diagnostics disable themselves, instead of only warning once in logs.
-- [ ] 4.4 Validate with:
+- [x] 4.4 Validate with:
   - DDP eval smoke checks
   - unchanged train-time summary metric parity
   - and health-signal assertions
@@ -150,11 +150,11 @@
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_output_parity.py`
   - `conda run -n ms python -m pytest -q tests/test_trainer_metrics_payload_contract.py`
 - Result on current worktree head: `455 passed, 2 skipped`.
-- [ ] 5.2 Run a short representative training smoke with artifact inspection for:
+- [x] 5.2 Run a short representative training smoke with artifact inspection for:
   - DDP phase traces
   - executed-runtime artifacts
   - and snapshot metric readability
-- Note: deferred in the current session because no GPUs are available for a representative Stage-2 smoke run.
+- Note: post-change repo evidence now includes representative DDP trace artifacts under `output/stage2_ab/prod/*/monitor_dumps/ddp_phase_trace/`, but this task remains open until the smoke evidence is tied back to this change with executed-runtime artifacts and snapshot-readability verification in one explicit audit trail.
 - [x] 5.3 Confirm that any stable contract change discovered during implementation is captured by a follow-on OpenSpec delta before landing that slice.
 - Note: the stable contract changes uncovered during implementation were folded
   back into this active OpenSpec change before landing, so no extra follow-on
