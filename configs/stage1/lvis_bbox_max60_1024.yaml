@@ -7,10 +7,10 @@ model:
   model: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
 
 training:
-  artifact_subdir: stage1/lvis_bbox_max60_1024_adjacent_repulsion
+  artifact_subdir: stage1/lvis_bbox_max60_1024_adjacent_repulsion_global
   num_train_epochs: 2
   effective_batch_size: 128
-  run_name: epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep0p05
+  run_name: epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global0p01
 
 custom:
   coord_soft_ce_w1:
@@ -19,8 +19,8 @@ custom:
     soft_ce_weight: 1.0
     w1_weight: 1.0
     gate_weight: 5.0
-    adjacent_repulsion_weight: 0.05
-    adjacent_repulsion_filter_mode: same_desc
+    adjacent_repulsion_weight: 0.01
+    adjacent_repulsion_filter_mode: global
     adjacent_repulsion_margin_ratio: 0.05
     adjacent_repulsion_copy_margin: 0.8
     temperature: 0.9
