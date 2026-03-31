@@ -11,7 +11,7 @@
 
 run:
   name: val_200_ckpt232_-continued-merged
-  output_dir: output/lvis_offline_200
+  output_dir: output/lvis_vllm_test
 
 stages:
   infer: true
@@ -27,7 +27,7 @@ infer:
   mode: auto
   pred_coord_mode: auto
   backend:
-    type: hf
+    type: vllm
   generation:
     temperature: 0.0
     top_p: 0.9
