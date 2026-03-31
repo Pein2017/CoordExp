@@ -8,6 +8,7 @@ import yaml
 
 from src.callbacks import DatasetEpochCallback
 from src.config.loader import ConfigLoader
+from src.datasets.wrappers.packed_caption import _fingerprint_diff_keys
 import src.sft as sft_module
 from src.sft import (
     PackingRuntimeConfig,
@@ -407,6 +408,51 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
     assert fingerprint_b["custom_offline_max_pixels"] == 2097152
     assert fingerprint_b["coord_tokens"] == {"enabled": False}
     assert fingerprint_a != fingerprint_b
+
+
+def test_static_packing_fingerprint_preserves_legacy_null_fusion_keys() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    fingerprint = _build_static_packing_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+            training={"train_dataloader_shuffle": True},
+        ),
+        custom_config=SimpleNamespace(
+            user_prompt="prompt",
+            emit_norm="none",
+            json_format="standard",
+            object_ordering="none",
+            object_field_order="geometry_first",
+            use_summary=False,
+            system_prompt_dense=None,
+            system_prompt_summary=None,
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert "custom_fusion_config" in fingerprint
+    assert fingerprint["custom_fusion_config"] is None
+    assert "dataset_source_fusion_config" in fingerprint
+    assert fingerprint["dataset_source_fusion_config"] is None
+
+
+def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:
+    differing = _fingerprint_diff_keys(
+        {"custom_fusion_config": None},
+        {},
+    )
+
+    assert differing == ["custom_fusion_config"]
 
 
 def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(

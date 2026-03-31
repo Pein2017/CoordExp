@@ -713,13 +713,14 @@ def _persist_plan_cache(
 def _fingerprint_diff_keys(
     expected: Mapping[str, Any], observed: Mapping[str, Any]
 ) -> list[str]:
+    missing = object()
     differing = [
         str(key)
         for key in sorted(
             set(expected.keys()) | set(observed.keys()),
             key=lambda item: str(item),
         )
-        if expected.get(key) != observed.get(key)
+        if expected.get(key, missing) != observed.get(key, missing)
     ]
     return differing
 

@@ -684,6 +684,9 @@ def _build_static_packing_fingerprint(
         else None,
         "custom_user_prompt": getattr(custom_config, "user_prompt", None),
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
+        # Preserve the legacy null-valued fusion keys so older static-packing
+        # caches remain addressable after fusion was disabled in the schema.
+        "custom_fusion_config": getattr(custom_config, "fusion_config", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
@@ -692,6 +695,9 @@ def _build_static_packing_fingerprint(
         "coord_tokens": coord_tokens_payload,
         "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
+        "dataset_source_fusion_config": _build_source_path_identity(
+            getattr(custom_config, "fusion_config", None)
+        ),
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "eval_sample_limit": int(eval_sample_limit)
