@@ -8,6 +8,8 @@ import torch.nn.functional as F
 
 from src.config.schema import BBoxSizeAuxConfig, CoordSoftCEW1Config
 from src.metrics.dataset_metrics import BBoxSizeAuxLossMixin, CoordSoftCEW1LossMixin
+from src.trainers.losses.coord_soft_ce_w1 import compute_coord_soft_ce_w1_loss
+from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
 
 
 class DummyTokenizer:
@@ -30,13 +32,13 @@ class DummyTokenizer:
         clean_up_tokenization_spaces: bool = False,
     ):
         mapping = {
-            0: '{"objects":[{"desc":"x","bbox_2d":[',
-            5: "text",
-            6: "fmt",
-            103: "<|coord_3|>",
-            104: "<|coord_4|>",
-            107: "<|coord_7|>",
-            108: "<|coord_8|>",
+            0: "",
+            5: '{"objects":[{"desc":"x","bbox_2d":[',
+            6: ",",
+            103: "<|coord_3|>,",
+            104: "<|coord_4|>,",
+            107: "<|coord_7|>,",
+            108: "<|coord_8|>]}]}",
         }
         return "".join(mapping.get(int(t), f"<tok_{int(t)}>") for t in token_ids)
 
@@ -44,6 +46,30 @@ class DummyTokenizer:
 class DummyTemplate:
     def __init__(self):
         self.tokenizer = DummyTokenizer()
+
+
+class PieceTokenizer:
+    def __init__(self, pieces_by_id: dict[int, str]):
+        self._pieces_by_id = {int(k): str(v) for k, v in pieces_by_id.items()}
+
+    def decode(
+        self,
+        token_ids,
+        *,
+        skip_special_tokens: bool = False,
+        clean_up_tokenization_spaces: bool = False,
+    ):
+        return "".join(
+            self._pieces_by_id.get(
+                int(t),
+                (
+                    f"<|coord_{int(t) - 100}|>"
+                    if int(t) >= 100
+                    else f"<tok_{int(t)}>"
+                ),
+            )
+            for t in token_ids
+        )
 
 
 class DummyBaseTrainer:
@@ -92,6 +118,24 @@ class DummyBBoxTrainer(BBoxSizeAuxLossMixin, DummyBaseTrainer):
         self.model = None
         self.args = SimpleNamespace(average_tokens_across_devices=False)
         self.model_accepts_loss_kwargs = False
+
+
+def _build_coord_id_map(vocab: int, coord_token_ids: list[int]) -> torch.Tensor:
+    coord_id_map = torch.full((vocab,), -1, dtype=torch.long)
+    for coord_bin, token_id in enumerate(coord_token_ids):
+        coord_id_map[int(token_id)] = int(coord_bin)
+    return coord_id_map
+
+
+def _perfect_next_token_logits(labels: torch.Tensor, *, vocab: int) -> torch.Tensor:
+    seq_len = max(int(labels.shape[1]) - 1, 0)
+    logits = torch.full((int(labels.shape[0]), seq_len, vocab), -20.0)
+    for batch_idx in range(int(labels.shape[0])):
+        for pos in range(seq_len):
+            target_id = int(labels[batch_idx, pos + 1].item())
+            if target_id >= 0:
+                logits[batch_idx, pos, target_id] = 20.0
+    return logits
 
 
 def test_stage1_softce_w1_masks_coord_tokens_from_base_ce_and_applies_gate_penalty():
@@ -318,3 +362,210 @@ def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches()
     assert float(loss_mismatch_enabled.detach().item()) > float(
         loss_mismatch_disabled.detach().item()
     )
+
+
+def test_stage1_adjacent_repulsion_penalizes_geometry_first_same_desc_copy() -> None:
+    vocab = 256
+    coord_token_ids = [100, 101, 102, 103]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+    tokenizer = PieceTokenizer(
+        {
+            10: '{"objects":[{"bbox_2d":[',
+            11: ",",
+            12: '],"desc":"cat"},{"bbox_2d":[',
+            13: '],"desc":"cat"}]}',
+        }
+    )
+    labels = torch.tensor(
+        [
+            [
+                0,
+                10,
+                100,
+                11,
+                101,
+                11,
+                102,
+                11,
+                103,
+                12,
+                100,
+                11,
+                101,
+                11,
+                102,
+                11,
+                103,
+                13,
+            ]
+        ],
+        dtype=torch.long,
+    )
+    logits = _perfect_next_token_logits(labels, vocab=vocab)
+    cfg = CoordSoftCEW1Config.from_mapping(
+        {
+            "enabled": True,
+            "ce_weight": 0.0,
+            "soft_ce_weight": 0.0,
+            "w1_weight": 0.0,
+            "gate_weight": 0.0,
+            "adjacent_repulsion_weight": 1.0,
+            "adjacent_repulsion_filter_mode": "same_desc",
+            "adjacent_repulsion_margin_ratio": 0.1,
+            "adjacent_repulsion_copy_margin": 0.8,
+        }
+    )
+
+    result = compute_coord_soft_ce_w1_loss(
+        logits=logits,
+        labels=labels,
+        masked_labels=labels.clone(),
+        coord_token_ids=coord_token_ids,
+        coord_id_map=coord_id_map,
+        tokenizer=tokenizer,
+        cfg=cfg,
+        average_tokens_across_devices=False,
+        model_accepts_loss_kwargs=False,
+        accelerator_num_processes=None,
+        object_field_order="geometry_first",
+    )
+
+    assert result is not None
+    assert result.adjacent_repulsion_pair_count == 1
+    assert result.adjacent_repulsion_applied_count == 1
+    assert result.adjacent_repulsion_copy_score_mean is not None
+    assert float(result.adjacent_repulsion_copy_score_mean.detach().item()) > 0.95
+    assert float(result.adjacent_repulsion_contrib.detach().item()) > 0.0
+
+
+def test_stage1_adjacent_repulsion_resets_at_packed_container_boundaries() -> None:
+    vocab = 256
+    coord_token_ids = [100, 101, 102, 103, 104, 105, 106, 107]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+    tokenizer = PieceTokenizer(
+        {
+            10: '{"objects":[{"desc":"cat","bbox_2d":[',
+            11: ",",
+            12: ']}]}',
+        }
+    )
+    labels = torch.tensor(
+        [
+            [
+                0,
+                10,
+                100,
+                11,
+                101,
+                11,
+                102,
+                11,
+                103,
+                12,
+                10,
+                104,
+                11,
+                105,
+                11,
+                106,
+                11,
+                107,
+                12,
+            ]
+        ],
+        dtype=torch.long,
+    )
+    logits = _perfect_next_token_logits(labels, vocab=vocab)
+
+    quartets = extract_stage1_bbox_quartets(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=coord_token_ids,
+        coord_id_map=coord_id_map,
+        tokenizer=tokenizer,
+        include_adjacent_metadata=True,
+        require_desc_keys=True,
+        object_field_order="desc_first",
+    )
+
+    assert quartets is not None
+    assert quartets.bbox_groups == 2
+    assert quartets.adjacent_has_prev_mask is not None
+    assert quartets.adjacent_same_desc_prev_mask is not None
+    assert quartets.adjacent_has_prev_mask.detach().cpu().tolist() == [False, False]
+    assert quartets.adjacent_same_desc_prev_mask.detach().cpu().tolist() == [
+        False,
+        False,
+    ]
+
+
+def test_stage1_adjacent_repulsion_same_desc_requires_tokenizer() -> None:
+    vocab = 128
+    coord_token_ids = [100, 101, 102, 103]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+    labels = torch.tensor([[0, 100, 101, 102, 103]], dtype=torch.long)
+    logits = _perfect_next_token_logits(labels, vocab=vocab)
+
+    with pytest.raises(ValueError, match="requires a tokenizer"):
+        extract_stage1_bbox_quartets(
+            logits=logits,
+            labels=labels,
+            coord_token_ids=coord_token_ids,
+            coord_id_map=coord_id_map,
+            tokenizer=None,
+            include_adjacent_metadata=True,
+            require_desc_keys=True,
+            object_field_order="desc_first",
+        )
+
+
+def test_stage1_adjacent_repulsion_fails_fast_when_desc_grouping_is_ambiguous() -> None:
+    vocab = 256
+    coord_token_ids = [100, 101, 102, 103, 104, 105, 106, 107]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+    tokenizer = PieceTokenizer(
+        {
+            10: '{"objects":[{"desc":"cat","bbox_2d":[',
+            11: ",",
+            12: ']},{"bbox_2d":[',
+            13: ']}]}',
+        }
+    )
+    labels = torch.tensor(
+        [
+            [
+                0,
+                10,
+                100,
+                11,
+                101,
+                11,
+                102,
+                11,
+                103,
+                12,
+                104,
+                11,
+                105,
+                11,
+                106,
+                11,
+                107,
+                13,
+            ]
+        ],
+        dtype=torch.long,
+    )
+    logits = _perfect_next_token_logits(labels, vocab=vocab)
+
+    with pytest.raises(ValueError, match="coord supervision aligned to bbox_2d quartets"):
+        extract_stage1_bbox_quartets(
+            logits=logits,
+            labels=labels,
+            coord_token_ids=coord_token_ids,
+            coord_id_map=coord_id_map,
+            tokenizer=tokenizer,
+            include_adjacent_metadata=True,
+            require_desc_keys=True,
+            object_field_order="desc_first",
+        )

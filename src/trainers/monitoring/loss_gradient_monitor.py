@@ -43,6 +43,7 @@ _COORD_TERM_STATE_KEYS = {
     "coord_token_ce": "coord_token_ce_contrib",
     "coord_soft_ce": "coord_soft_ce_contrib",
     "coord_w1": "coord_w1_contrib",
+    "adjacent_repulsion": "adjacent_repulsion_contrib",
     "coord_el1": "coord_el1_contrib",
     "coord_ehuber": "coord_ehuber_contrib",
     "coord_entropy": "coord_entropy_contrib",
@@ -101,6 +102,11 @@ def build_stage1_coord_monitor_terms(
         ("S1/coord_soft_ce", "softce_contrib", "soft_ce_weight"),
         ("S1/coord_w1", "w1_contrib", "w1_weight"),
         ("S1/coord_ce", "ce_contrib", "ce_weight"),
+        (
+            "S1/adjacent_repulsion",
+            "adjacent_repulsion_contrib",
+            "adjacent_repulsion_weight",
+        ),
         ("S1/coord_gate", "gate_contrib", "gate_weight"),
     )
     for name, attr_name, weight_key in candidates:

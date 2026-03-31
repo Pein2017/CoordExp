@@ -92,6 +92,10 @@ def _canonical_stage2_pipeline(
             "temperature": 1.0,
             "target_sigma": 2.0,
             "target_truncate": None,
+            "adjacent_repulsion_weight": 0.0,
+            "adjacent_repulsion_filter_mode": "same_desc",
+            "adjacent_repulsion_margin_ratio": 0.05,
+            "adjacent_repulsion_copy_margin": 0.8,
         }
     return {
         "objective": [
@@ -741,6 +745,10 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
+        "adjacent_repulsion_weight": 0.0,
+        "adjacent_repulsion_filter_mode": "same_desc",
+        "adjacent_repulsion_margin_ratio": 0.05,
+        "adjacent_repulsion_copy_margin": 0.8,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -772,6 +780,98 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     with pytest.raises(
         ValueError,
         match=r"Unknown stage2_ab\.pipeline\.objective\[4\]\.config keys.*unknown_weight",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_pipeline_accepts_optional_adjacent_repulsion_coord_reg_keys() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                coord_reg_cfg={
+                    "coord_ce_weight": 0.0,
+                    "coord_gate_weight": 0.0,
+                    "text_gate_weight": 0.0,
+                    "soft_ce_weight": 0.0,
+                    "w1_weight": 0.0,
+                    "temperature": 1.0,
+                    "target_sigma": 2.0,
+                    "target_truncate": None,
+                    "adjacent_repulsion_weight": 0.05,
+                    "adjacent_repulsion_filter_mode": "same_desc",
+                    "adjacent_repulsion_margin_ratio": 0.05,
+                    "adjacent_repulsion_copy_margin": 0.8,
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+    coord_reg_cfg = cfg.stage2_ab.pipeline.objective[4].config
+    assert coord_reg_cfg["adjacent_repulsion_weight"] == pytest.approx(0.05)
+    assert coord_reg_cfg["adjacent_repulsion_filter_mode"] == "same_desc"
+
+
+def test_stage2_pipeline_rejects_invalid_adjacent_repulsion_filter_mode() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                coord_reg_cfg={
+                    "coord_ce_weight": 0.0,
+                    "coord_gate_weight": 0.0,
+                    "text_gate_weight": 0.0,
+                    "soft_ce_weight": 0.0,
+                    "w1_weight": 0.0,
+                    "temperature": 1.0,
+                    "target_sigma": 2.0,
+                    "target_truncate": None,
+                    "adjacent_repulsion_filter_mode": "unsupported",
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[4\]\.config\.adjacent_repulsion_filter_mode",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -986,6 +1086,10 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
+        "adjacent_repulsion_weight": 0.0,
+        "adjacent_repulsion_filter_mode": "same_desc",
+        "adjacent_repulsion_margin_ratio": 0.05,
+        "adjacent_repulsion_copy_margin": 0.8,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -1415,6 +1519,10 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
         "temperature": 0.9,
         "target_sigma": 1.7,
         "target_truncate": 8,
+        "adjacent_repulsion_weight": 0.0,
+        "adjacent_repulsion_filter_mode": "same_desc",
+        "adjacent_repulsion_margin_ratio": 0.05,
+        "adjacent_repulsion_copy_margin": 0.8,
     }
 
     with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):

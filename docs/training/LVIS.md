@@ -241,8 +241,8 @@ Key overrides in that config:
 - extends the canonical 4B Stage-1 coord-token recipe (`profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml`)
 - extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
 - extends the shared prompt facet `configs/_shared/prompts/lvis_stage1_federated.yaml`
-- authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024`
-- `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0 }`
+- authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024_adjacent_repulsion`
+- `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0, adjacent_repulsion_weight: 0.05, adjacent_repulsion_filter_mode: same_desc, adjacent_repulsion_margin_ratio: 0.05, adjacent_repulsion_copy_margin: 0.8 }`
 - `custom.bbox_geo: { enabled: true, smoothl1_weight: 0.01, ciou_weight: 1.0 }`
 - `custom.bbox_size_aux.enabled: true`
 - `custom.eval_detection: { enabled: true, metrics: lvis, lvis_annotations_json: public_data/lvis/raw/annotations/lvis_v1_val.json }`

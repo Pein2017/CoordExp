@@ -41,7 +41,8 @@ CoordExp can supervise coordinate tokens with **distribution-based losses** (rec
 custom:
   coord_soft_ce_w1:
     enabled: true
-    # total_loss += ce_weight * CE + soft_ce_weight * softCE + w1_weight * W1 + gate_weight * gate
+    # total_loss += ce_weight * CE + soft_ce_weight * softCE + w1_weight * W1
+    #             + gate_weight * gate + adjacent_repulsion_weight * adjacent_repulsion
     ce_weight: 0.0
     soft_ce_weight: 1.0
     w1_weight: 1.0
@@ -49,12 +50,18 @@ custom:
     temperature: 1.0
     target_sigma: 2.0
     target_truncate: 16
+    adjacent_repulsion_weight: 0.0
+    adjacent_repulsion_filter_mode: same_desc
+    adjacent_repulsion_margin_ratio: 0.05
+    adjacent_repulsion_copy_margin: 0.8
 ```
 
 **Notes**:
 - Coord-token positions are identified from **labels** (teacher forcing), never from model predictions.
 - No decoded coordinates (argmax/expectation/median) are computed for training or metrics.
-- Logged losses (train/eval parity, eval uses `eval_` prefix): `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`.
+- Logged losses (train/eval parity, eval uses `eval_` prefix):
+  - Stage-1 coord-family loss keys include `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, and `coord_softce_w1/adjacent_repulsion`
+  - Stage-1 coord diagnostics include `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, `coord_diag/adjacent_repulsion`, `coord_diag/adjacent_repulsion_pair_count`, `coord_diag/adjacent_repulsion_applied_count`, `coord_diag/adjacent_repulsion_copy_score_mean`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`
 - Stage-2 note:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.

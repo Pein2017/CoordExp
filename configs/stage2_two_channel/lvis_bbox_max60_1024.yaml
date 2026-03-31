@@ -67,6 +67,10 @@ stage2_ab:
           temperature: 0.9
           target_sigma: 1.5
           target_truncate: 8
+          adjacent_repulsion_weight: 0.0
+          adjacent_repulsion_filter_mode: same_desc
+          adjacent_repulsion_margin_ratio: 0.05
+          adjacent_repulsion_copy_margin: 0.8
 
 rollout_matching:
   eval_detection:

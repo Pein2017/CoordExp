@@ -45,6 +45,7 @@ def test_coord_soft_ce_w1_allreduces_even_when_no_coord_tokens(monkeypatch):
         masked_labels=masked_labels,
         coord_token_ids=coord_token_ids,
         coord_id_map=coord_id_map,
+        tokenizer=None,
         cfg=Cfg(),
         average_tokens_across_devices=True,
         model_accepts_loss_kwargs=True,

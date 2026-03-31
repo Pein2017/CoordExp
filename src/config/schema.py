@@ -30,6 +30,7 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     normalize_token_ce_stop_signal_damping_config,
+    validate_adjacent_repulsion_config_values,
 )
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
@@ -265,6 +266,10 @@ class CoordSoftCEW1Config:
     temperature: float = 1.0
     target_sigma: float = 2.0
     target_truncate: Optional[int] = None
+    adjacent_repulsion_weight: float = 0.0
+    adjacent_repulsion_filter_mode: str = "same_desc"
+    adjacent_repulsion_margin_ratio: float = 0.05
+    adjacent_repulsion_copy_margin: float = 0.8
 
     @classmethod
     def from_mapping(
@@ -274,6 +279,26 @@ class CoordSoftCEW1Config:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError("coord_soft_ce_w1 section must be a mapping when provided")
+
+        allowed_keys = {
+            "enabled",
+            "ce_weight",
+            "soft_ce_weight",
+            "w1_weight",
+            "gate_weight",
+            "temperature",
+            "target_sigma",
+            "target_truncate",
+            "adjacent_repulsion_weight",
+            "adjacent_repulsion_filter_mode",
+            "adjacent_repulsion_margin_ratio",
+            "adjacent_repulsion_copy_margin",
+        }
+        unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed_keys)
+        if unknown:
+            raise ValueError(
+                f"Unknown coord_soft_ce_w1 keys: {[f'coord_soft_ce_w1.{key}' for key in unknown]}"
+            )
 
         enabled = bool(payload.get("enabled", False))
 
@@ -290,6 +315,22 @@ class CoordSoftCEW1Config:
         gate_weight = _parse_float("gate_weight", cls.gate_weight)
         temperature = _parse_float("temperature", cls.temperature)
         target_sigma = _parse_float("target_sigma", cls.target_sigma)
+        adjacent_repulsion_weight = _parse_float(
+            "adjacent_repulsion_weight", cls.adjacent_repulsion_weight
+        )
+        adjacent_repulsion_margin_ratio = _parse_float(
+            "adjacent_repulsion_margin_ratio", cls.adjacent_repulsion_margin_ratio
+        )
+        adjacent_repulsion_copy_margin = _parse_float(
+            "adjacent_repulsion_copy_margin", cls.adjacent_repulsion_copy_margin
+        )
+        adjacent_repulsion_filter_mode = str(
+            payload.get(
+                "adjacent_repulsion_filter_mode",
+                cls.adjacent_repulsion_filter_mode,
+            )
+            or cls.adjacent_repulsion_filter_mode
+        ).strip().lower()
 
         target_truncate_raw = payload.get("target_truncate", cls.target_truncate)
         target_truncate: Optional[int]
@@ -311,15 +352,32 @@ class CoordSoftCEW1Config:
             raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
         if gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
+        if adjacent_repulsion_weight < 0:
+            raise ValueError(
+                "coord_soft_ce_w1.adjacent_repulsion_weight must be >= 0"
+            )
+        if adjacent_repulsion_margin_ratio < 0:
+            raise ValueError(
+                "coord_soft_ce_w1.adjacent_repulsion_margin_ratio must be >= 0"
+            )
+        if not 0.0 <= adjacent_repulsion_copy_margin <= 1.0:
+            raise ValueError(
+                "coord_soft_ce_w1.adjacent_repulsion_copy_margin must be within [0, 1]"
+            )
+        if adjacent_repulsion_filter_mode not in {"same_desc", "global"}:
+            raise ValueError(
+                "coord_soft_ce_w1.adjacent_repulsion_filter_mode must be one of ['global', 'same_desc']"
+            )
         if (
             enabled
             and ce_weight == 0
             and soft_ce_weight == 0
             and w1_weight == 0
             and gate_weight == 0
+            and adjacent_repulsion_weight == 0
         ):
             raise ValueError(
-                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, and gate_weight are all 0"
+                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, and adjacent_repulsion_weight are all 0"
             )
         if temperature <= 0:
             raise ValueError("coord_soft_ce_w1.temperature must be > 0")
@@ -337,6 +395,10 @@ class CoordSoftCEW1Config:
             temperature=temperature,
             target_sigma=target_sigma,
             target_truncate=target_truncate,
+            adjacent_repulsion_weight=adjacent_repulsion_weight,
+            adjacent_repulsion_filter_mode=adjacent_repulsion_filter_mode,
+            adjacent_repulsion_margin_ratio=adjacent_repulsion_margin_ratio,
+            adjacent_repulsion_copy_margin=adjacent_repulsion_copy_margin,
         )
 
 
@@ -2087,6 +2149,11 @@ class Stage2PipelineConfig:
                     "Missing required stage2_ab.pipeline.objective"
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
+                )
+            if str(spec.name) == "coord_reg":
+                validate_adjacent_repulsion_config_values(
+                    spec.config,
+                    path=f"stage2_ab.pipeline.objective[{idx}].config",
                 )
 
         for idx, spec in enumerate(diagnostics_specs):

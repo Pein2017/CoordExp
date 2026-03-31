@@ -76,6 +76,11 @@ Current internal ownership seams:
   - `bbox_geo.application.preset: anchor_only`
   - `bbox_size_aux.application.preset: anchor_only`
   - `coord_reg.application.preset: anchor_only`
+- optional `coord_reg.config` adjacent anti-copy knobs:
+  - `adjacent_repulsion_weight`
+  - `adjacent_repulsion_filter_mode`
+  - `adjacent_repulsion_margin_ratio`
+  - `adjacent_repulsion_copy_margin`
 - Pseudo-positive mode keeps the one-forward contract:
   - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
   - `matched_clean` -> coord + global prefix structure CE
