@@ -242,6 +242,19 @@ def test_custom_bbox_geo_requires_explicit_keys() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_custom_coord_soft_ce_w1_unknown_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "unknown_flag": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "coord_soft_ce_w1.unknown_flag" in str(exc.value)
+
+
 def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
     payload = _base_training_payload()
     payload["training"] = {
@@ -862,6 +875,10 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
+        "adjacent_repulsion_weight": 0.0,
+        "adjacent_repulsion_filter_mode": "same_desc",
+        "adjacent_repulsion_margin_ratio": 0.05,
+        "adjacent_repulsion_copy_margin": 0.8,
     }
     if isinstance(config, dict):
         coord_reg_cfg.update(dict(config))

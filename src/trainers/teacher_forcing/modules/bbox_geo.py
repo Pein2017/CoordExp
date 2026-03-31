@@ -23,6 +23,11 @@ class _DecodedGroups:
     coord_logits: torch.Tensor
     target_bins: torch.Tensor
     coord_slot_weights: torch.Tensor
+    coord_logits_groups: torch.Tensor
+    target_bins_groups: torch.Tensor
+    adjacent_prev_target_bins: torch.Tensor
+    adjacent_has_prev_mask: torch.Tensor
+    adjacent_same_desc_prev_mask: torch.Tensor
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -37,11 +42,22 @@ def _flatten_groups(
     key: str,
     input_ids: torch.Tensor,
     meta: Sequence[Mapping[str, Any]],
-) -> tuple[list[int], list[int], list[int], list[float]]:
+) -> tuple[
+    list[int],
+    list[int],
+    list[int],
+    list[float],
+    list[list[int]],
+    list[bool],
+    list[bool],
+]:
     b_list: List[int] = []
     pos_list: List[int] = []
     bins_list: List[int] = []
     weight_list: List[float] = []
+    adjacent_prev_bins_list: List[list[int]] = []
+    adjacent_has_prev_list: List[bool] = []
+    adjacent_same_desc_list: List[bool] = []
 
     for b, seg_start, _seg_end, seg in iter_segment_views(input_ids=input_ids, meta=meta):
         groups = seg.get(key) or []
@@ -59,13 +75,38 @@ def _flatten_groups(
                 group_weight = float(weight_raw)
             except (TypeError, ValueError):
                 continue
+            prev_bins_raw = g.get("adjacent_prev_gt_bins")
+            if isinstance(prev_bins_raw, Sequence) and len(prev_bins_raw) == 4:
+                try:
+                    prev_bins = [int(v) for v in prev_bins_raw]
+                except (TypeError, ValueError):
+                    prev_bins = [0, 0, 0, 0]
+                    has_prev = False
+                else:
+                    has_prev = True
+            else:
+                prev_bins = [0, 0, 0, 0]
+                has_prev = False
+            adjacent_prev_bins_list.append(prev_bins)
+            adjacent_has_prev_list.append(bool(has_prev))
+            adjacent_same_desc_list.append(
+                bool(g.get("adjacent_same_desc_with_prev", False))
+            )
             for p, tbin in zip(pos, gb):
                 b_list.append(int(b))
                 pos_list.append(int(seg_start + int(p)) if len(meta) != int(input_ids.shape[0]) else int(p))
                 bins_list.append(int(tbin))
                 weight_list.append(float(group_weight))
 
-    return b_list, pos_list, bins_list, weight_list
+    return (
+        b_list,
+        pos_list,
+        bins_list,
+        weight_list,
+        adjacent_prev_bins_list,
+        adjacent_has_prev_list,
+        adjacent_same_desc_list,
+    )
 
 
 def _decode_groups(
@@ -78,7 +119,15 @@ def _decode_groups(
     logits = context.logits
     meta = context.meta
 
-    b_list, pos_list, bins_list, weight_list = _flatten_groups(
+    (
+        b_list,
+        pos_list,
+        bins_list,
+        weight_list,
+        adjacent_prev_bins_list,
+        adjacent_has_prev_list,
+        adjacent_same_desc_list,
+    ) = _flatten_groups(
         key=key,
         input_ids=input_ids,
         meta=meta,
@@ -101,6 +150,11 @@ def _decode_groups(
             coord_logits=empty_coord,
             target_bins=empty_bins,
             coord_slot_weights=empty_weights,
+            coord_logits_groups=logits.new_zeros((0, 4, coord_ids_t.numel())),
+            target_bins_groups=logits.new_zeros((0, 4), dtype=torch.long),
+            adjacent_prev_target_bins=logits.new_zeros((0, 4), dtype=torch.long),
+            adjacent_has_prev_mask=logits.new_zeros((0,), dtype=torch.bool),
+            adjacent_same_desc_prev_mask=logits.new_zeros((0,), dtype=torch.bool),
         )
 
     if len(pos_list) % 4 != 0:
@@ -143,6 +197,11 @@ def _decode_groups(
             coord_logits=empty_coord,
             target_bins=empty_bins,
             coord_slot_weights=empty_weights,
+            coord_logits_groups=logits.new_zeros((0, 4, coord_ids_t.numel())),
+            target_bins_groups=logits.new_zeros((0, 4), dtype=torch.long),
+            adjacent_prev_target_bins=logits.new_zeros((0, 4), dtype=torch.long),
+            adjacent_has_prev_mask=logits.new_zeros((0,), dtype=torch.bool),
+            adjacent_same_desc_prev_mask=logits.new_zeros((0,), dtype=torch.bool),
         )
 
     b_t = b_g.reshape(-1)
@@ -154,6 +213,21 @@ def _decode_groups(
         dtype=torch.float32,
     )
     group_weights = weight_t.reshape(-1, 4)[:, 0]
+    adjacent_prev_target_bins = torch.tensor(
+        adjacent_prev_bins_list,
+        device=logits.device,
+        dtype=torch.long,
+    ).clamp(min=0, max=999)
+    adjacent_has_prev_mask = torch.tensor(
+        adjacent_has_prev_list,
+        device=logits.device,
+        dtype=torch.bool,
+    )
+    adjacent_same_desc_prev_mask = torch.tensor(
+        adjacent_same_desc_list,
+        device=logits.device,
+        dtype=torch.bool,
+    )
 
     logits_prev = logits[b_t, pos_t - 1]
     coord_logits = logits_prev.index_select(dim=-1, index=coord_ids_t)
@@ -192,6 +266,11 @@ def _decode_groups(
         coord_logits=coord_logits,
         target_bins=bin_t,
         coord_slot_weights=weight_t,
+        coord_logits_groups=coord_logits.reshape(-1, 4, coord_logits.shape[-1]),
+        target_bins_groups=bin_g,
+        adjacent_prev_target_bins=adjacent_prev_target_bins,
+        adjacent_has_prev_mask=adjacent_has_prev_mask,
+        adjacent_same_desc_prev_mask=adjacent_same_desc_prev_mask,
     )
 
 
@@ -272,6 +351,26 @@ def run_bbox_geo_module(
         [dec_prefix.coord_slot_weights, dec_fn.coord_slot_weights],
         dim=0,
     )
+    coord_logits_groups = torch.cat(
+        [dec_prefix.coord_logits_groups, dec_fn.coord_logits_groups],
+        dim=0,
+    )
+    target_bins_groups = torch.cat(
+        [dec_prefix.target_bins_groups, dec_fn.target_bins_groups],
+        dim=0,
+    )
+    adjacent_prev_target_bins = torch.cat(
+        [dec_prefix.adjacent_prev_target_bins, dec_fn.adjacent_prev_target_bins],
+        dim=0,
+    )
+    adjacent_has_prev_mask = torch.cat(
+        [dec_prefix.adjacent_has_prev_mask, dec_fn.adjacent_has_prev_mask],
+        dim=0,
+    )
+    adjacent_same_desc_prev_mask = torch.cat(
+        [dec_prefix.adjacent_same_desc_prev_mask, dec_fn.adjacent_same_desc_prev_mask],
+        dim=0,
+    )
 
     state = {
         "bbox_geo": loss,
@@ -293,6 +392,11 @@ def run_bbox_geo_module(
         "coord_target_bins": target_bins,
         "coord_slot_weights": coord_slot_weights,
         "coord_slots_total": int(dec_prefix.n_slots + dec_fn.n_slots),
+        "coord_logits_groups": coord_logits_groups,
+        "coord_target_bins_groups": target_bins_groups,
+        "adjacent_prev_target_bins": adjacent_prev_target_bins,
+        "adjacent_has_prev_mask": adjacent_has_prev_mask,
+        "adjacent_same_desc_prev_mask": adjacent_same_desc_prev_mask,
     }
 
     return ModuleResult(loss=loss, metrics=metrics, state=state)

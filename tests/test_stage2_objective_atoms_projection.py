@@ -154,6 +154,37 @@ def test_project_stage2_objective_atoms_emits_duplicate_burst_unlikelihood_text_
     assert atoms["loss/B_rollout_text/loss_duplicate_burst_unlikelihood"] == pytest.approx(0.3)
 
 
+def test_project_stage2_objective_atoms_emits_adjacent_repulsion_coord_atom() -> None:
+    objective_specs = [
+        {
+            "name": "coord_reg",
+            "enabled": True,
+            "weight": 2.0,
+            "channels": ["B"],
+            "config": {},
+        },
+    ]
+
+    pipeline_result = PipelineResult(
+        total_loss=_t(0.1),
+        module_losses={"coord_reg": _t(0.1)},
+        metrics={},
+        state={"adjacent_repulsion_contrib": _t(0.05)},
+    )
+
+    atoms = project_stage2_objective_atoms(
+        pipeline_result=pipeline_result,
+        objective_specs=objective_specs,
+        text_provenance=None,
+        coord_provenance="B_coord",
+        emit_text=False,
+        emit_coord=True,
+        require_additive=False,
+    )
+
+    assert atoms == {"loss/B_coord/adjacent_repulsion": pytest.approx(0.1)}
+
+
 def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> None:
     objective_specs = [
         {

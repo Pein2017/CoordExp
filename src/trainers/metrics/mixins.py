@@ -594,10 +594,14 @@ class CoordSoftCEW1LossMixin:
             masked_labels=masked_labels,
             coord_token_ids=coord_token_ids,
             coord_id_map=coord_id_map,
+            tokenizer=getattr(getattr(self, "template", None), "tokenizer", None),
             cfg=cfg,
             average_tokens_across_devices=avg_tokens,
             model_accepts_loss_kwargs=model_accepts,
             accelerator_num_processes=acc_num_proc,
+            object_field_order=str(
+                getattr(self, "object_field_order", "desc_first") or "desc_first"
+            ),
         )
 
         if result is None:
@@ -660,6 +664,12 @@ class CoordSoftCEW1LossMixin:
             reporter.update("coord_softce_w1/ce", float(loss_ce.detach().cpu().item()))
         if isinstance(loss_gate, torch.Tensor):
             reporter.update("coord_softce_w1/gate", float(loss_gate.detach().cpu().item()))
+        loss_adjacent = getattr(result, "adjacent_repulsion_contrib", None)
+        if isinstance(loss_adjacent, torch.Tensor):
+            reporter.update(
+                "coord_softce_w1/adjacent_repulsion",
+                float(loss_adjacent.detach().cpu().item()),
+            )
 
         coord_tokens = int(getattr(result, "coord_tokens", 0) or 0)
 
@@ -674,7 +684,26 @@ class CoordSoftCEW1LossMixin:
             reporter.update("coord_diag/ce", float(loss_ce.detach().cpu().item()))
         if isinstance(loss_gate, torch.Tensor):
             reporter.update("coord_diag/gate", float(loss_gate.detach().cpu().item()))
+        if isinstance(loss_adjacent, torch.Tensor):
+            reporter.update(
+                "coord_diag/adjacent_repulsion",
+                float(loss_adjacent.detach().cpu().item()),
+            )
         reporter.update("coord_diag/coord_tokens", float(coord_tokens))
+        reporter.update(
+            "coord_diag/adjacent_repulsion_pair_count",
+            float(int(getattr(result, "adjacent_repulsion_pair_count", 0) or 0)),
+        )
+        reporter.update(
+            "coord_diag/adjacent_repulsion_applied_count",
+            float(int(getattr(result, "adjacent_repulsion_applied_count", 0) or 0)),
+        )
+        copy_score_mean = getattr(result, "adjacent_repulsion_copy_score_mean", None)
+        if isinstance(copy_score_mean, torch.Tensor):
+            reporter.update(
+                "coord_diag/adjacent_repulsion_copy_score_mean",
+                float(copy_score_mean.detach().cpu().item()),
+            )
 
         gate_mass_mean = getattr(result, "gate_mass_mean", None)
         if isinstance(gate_mass_mean, torch.Tensor):
@@ -892,6 +921,9 @@ class BBoxGeoLossMixin:
             cfg=cfg,
             decode_temperature=float(max(1e-6, decode_temperature)),
             decode_mode="exp",
+            object_field_order=str(
+                getattr(self, "object_field_order", "desc_first") or "desc_first"
+            ),
         )
         if result is None:
             return (loss, outputs) if return_outputs else loss
@@ -1100,6 +1132,9 @@ class BBoxSizeAuxLossMixin:
             cfg=cfg,
             decode_temperature=float(max(1e-6, decode_temperature)),
             decode_mode="exp",
+            object_field_order=str(
+                getattr(self, "object_field_order", "desc_first") or "desc_first"
+            ),
         )
         if result is None:
             return (loss, outputs) if return_outputs else loss

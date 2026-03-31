@@ -111,8 +111,43 @@ def _shift_bbox_groups_with_weights(
                 "stage2-ab bbox group pos exceeds encoded_len after prompt shift "
                 f"(possible truncation/misalignment). pos={pos_i} encoded_len={int(encoded_len)}"
             )
-        out.append({"pos": pos_i, "gt_bins": gb_i, "weight": float(weight_i)})
+        shifted: Dict[str, Any] = {
+            "pos": pos_i,
+            "gt_bins": gb_i,
+            "weight": float(weight_i),
+        }
+        prev_bins = g.get("adjacent_prev_gt_bins")
+        if isinstance(prev_bins, Sequence) and len(prev_bins) == 4:
+            try:
+                shifted["adjacent_prev_gt_bins"] = [int(v) for v in prev_bins]
+            except (TypeError, ValueError):
+                pass
+        same_desc = g.get("adjacent_same_desc_with_prev", None)
+        if same_desc is not None:
+            shifted["adjacent_same_desc_with_prev"] = bool(same_desc)
+        out.append(shifted)
     return out
+
+
+def _adjacent_repulsion_meta_for_objects(
+    objects: Sequence[GTObject],
+) -> Tuple[List[Optional[List[int]]], List[bool]]:
+    prev_bins_by_index: List[Optional[List[int]]] = []
+    same_desc_prev_by_index: List[bool] = []
+    norm_descs = [normalize_desc(str(obj.desc)) for obj in objects]
+
+    for obj_idx, obj in enumerate(objects):
+        if int(obj_idx) <= 0:
+            prev_bins_by_index.append(None)
+            same_desc_prev_by_index.append(False)
+            continue
+        prev_obj = objects[int(obj_idx) - 1]
+        prev_bins_by_index.append([int(v) for v in prev_obj.points_norm1000])
+        same_desc_prev_by_index.append(
+            bool(norm_descs[int(obj_idx)] == norm_descs[int(obj_idx) - 1])
+        )
+
+    return prev_bins_by_index, same_desc_prev_by_index
 
 
 def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float:
@@ -541,6 +576,9 @@ def _build_channel_b_supervision_targets(
         object_field_order=object_field_order,
     )
     prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
+    prefix_adjacent_prev_bins_by_index, prefix_adjacent_same_desc_by_index = (
+        _adjacent_repulsion_meta_for_objects(list(triage.kept_anchor_objects))
+    )
 
     prefix_coord_positions_all = [
         int(i)
@@ -581,6 +619,18 @@ def _build_channel_b_supervision_targets(
             {
                 "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                 "gt_bins": gt_bins,
+                **(
+                    {
+                        "adjacent_prev_gt_bins": list(
+                            prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
+                        ),
+                        "adjacent_same_desc_with_prev": bool(
+                            prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
+                        ),
+                    }
+                    if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
+                    else {}
+                ),
             }
         )
         for local_idx, tbin in zip(coord_group, gt_bins):
@@ -604,6 +654,18 @@ def _build_channel_b_supervision_targets(
                 "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                 "gt_bins": gt_bins,
                 "weight": float(pseudo_positive_coord_weight),
+                **(
+                    {
+                        "adjacent_prev_gt_bins": list(
+                            prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
+                        ),
+                        "adjacent_same_desc_with_prev": bool(
+                            prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
+                        ),
+                    }
+                    if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
+                    else {}
+                ),
             }
         )
         for local_idx, tbin in zip(coord_group, gt_bins):
@@ -633,6 +695,18 @@ def _build_channel_b_supervision_targets(
                     "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                     "gt_bins": gt_bins,
                     "weight": float(partial_weight),
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
+                            ),
+                        }
+                        if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
+                        else {}
+                    ),
                 }
             )
             for local_idx, tbin in zip(coord_group, gt_bins):
@@ -662,6 +736,11 @@ def _build_channel_b_supervision_targets(
         for gt_i in fn_gt_indices_final
     ]
     fn_count_for_meta = int(len(fn_objs))
+    full_adjacent_prev_bins_by_index, full_adjacent_same_desc_by_index = (
+        _adjacent_repulsion_meta_for_objects(
+            list(triage.kept_anchor_objects) + list(fn_objs)
+        )
+    )
 
     append_text = serialize_append_fragment_fn(
         fn_objects=fn_objs,
@@ -698,7 +777,11 @@ def _build_channel_b_supervision_targets(
     rel_groups = bbox_groups_from_token_ids_fn(
         token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
     )
-    for obj, rel_pos, obj_weight in zip(fn_objs, rel_groups, fn_object_weights):
+    prefix_object_count = int(len(triage.kept_anchor_objects))
+    for fn_idx, (obj, rel_pos, obj_weight) in enumerate(
+        zip(fn_objs, rel_groups, fn_object_weights)
+    ):
+        full_idx = int(prefix_object_count + fn_idx)
         fn_bbox_groups.append(
             {
                 "pos": [
@@ -707,6 +790,18 @@ def _build_channel_b_supervision_targets(
                 ],
                 "gt_bins": list(obj.points_norm1000),
                 "weight": float(obj_weight),
+                **(
+                    {
+                        "adjacent_prev_gt_bins": list(
+                            full_adjacent_prev_bins_by_index[int(full_idx)] or []
+                        ),
+                        "adjacent_same_desc_with_prev": bool(
+                            full_adjacent_same_desc_by_index[int(full_idx)]
+                        ),
+                    }
+                    if full_adjacent_prev_bins_by_index[int(full_idx)] is not None
+                    else {}
+                ),
             }
         )
 

@@ -42,6 +42,7 @@ def compute_stage1_bbox_geo_loss(
     cfg: Any,
     decode_temperature: float,
     decode_mode: str = "exp",
+    object_field_order: str = "desc_first",
 ) -> BBoxGeoResult | None:
     quartets = extract_stage1_bbox_quartets(
         logits=logits,
@@ -49,6 +50,7 @@ def compute_stage1_bbox_geo_loss(
         coord_token_ids=coord_token_ids,
         coord_id_map=coord_id_map,
         tokenizer=tokenizer,
+        object_field_order=object_field_order,
     )
     if quartets is None:
         return None

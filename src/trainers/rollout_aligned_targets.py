@@ -5,6 +5,8 @@ from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
+from src.common.semantic_desc import normalize_desc
+
 
 @dataclass(frozen=True)
 class RolloutAlignedSampleTargets:
@@ -24,6 +26,29 @@ class RolloutAlignedSampleTargets:
     y_train_ids: List[int]
     semantic_stop_meta: Mapping[str, Any]
     excluded_from_supervision: int
+
+
+def _adjacent_repulsion_meta_for_objects(
+    objects: Sequence[Any],
+) -> tuple[list[Optional[list[int]]], list[bool]]:
+    prev_bins_by_index: list[Optional[list[int]]] = []
+    same_desc_prev_by_index: list[bool] = []
+    norm_descs = [normalize_desc(str(getattr(obj, "desc", ""))) for obj in objects]
+
+    for obj_idx, obj in enumerate(objects):
+        if int(obj_idx) <= 0:
+            prev_bins_by_index.append(None)
+            same_desc_prev_by_index.append(False)
+            continue
+        prev_obj = objects[int(obj_idx) - 1]
+        prev_bins_by_index.append(
+            [int(v) for v in getattr(prev_obj, "points_norm1000", [])]
+        )
+        same_desc_prev_by_index.append(
+            bool(norm_descs[int(obj_idx)] == norm_descs[int(obj_idx) - 1])
+        )
+
+    return prev_bins_by_index, same_desc_prev_by_index
 
 
 def build_labels_and_coord_targets_for_sample(
@@ -305,6 +330,9 @@ def build_rollout_aligned_sample_targets(
     prefix_coord_target_bins: List[int] = []
     bbox_groups_prefix: List[dict[str, Any]] = []
     excluded_from_supervision = 0
+    prefix_adjacent_prev_bins_by_index, prefix_adjacent_same_desc_by_index = (
+        _adjacent_repulsion_meta_for_objects(list(preds))
+    )
 
     matched_gt_for_supervision: set[int] = set()
     matched_pred_for_supervision: set[int] = set()
@@ -351,6 +379,18 @@ def build_rollout_aligned_sample_targets(
                         for local_idx in pobj.coord_token_indices
                     ],
                     "gt_bins": [int(x) for x in gt_obj.points_norm1000],
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                prefix_adjacent_prev_bins_by_index[int(pred_i)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                prefix_adjacent_same_desc_by_index[int(pred_i)]
+                            ),
+                        }
+                        if prefix_adjacent_prev_bins_by_index[int(pred_i)] is not None
+                        else {}
+                    ),
                 }
             )
 
@@ -373,6 +413,9 @@ def build_rollout_aligned_sample_targets(
         int(i) for i in range(len(gts)) if int(i) not in matched_gt_for_supervision
     ]
     fn_objs = [gts[i] for i in fn_gt_indices]
+    full_adjacent_prev_bins_by_index, full_adjacent_same_desc_by_index = (
+        _adjacent_repulsion_meta_for_objects(list(preds) + list(fn_objs))
+    )
 
     append_text = str(
         serialize_append_fragment_fn(
@@ -400,7 +443,9 @@ def build_rollout_aligned_sample_targets(
             coord_id_set=coord_id_set,
             gt_objs=bbox_fn_objs,
         )
-        for obj, rel_pos in zip(bbox_fn_objs, rel_groups):
+        prefix_object_count = int(len(preds))
+        for fn_idx, (obj, rel_pos) in enumerate(zip(bbox_fn_objs, rel_groups)):
+            full_idx = int(prefix_object_count + fn_idx)
             bbox_groups_fn.append(
                 {
                     "pos": [
@@ -408,6 +453,18 @@ def build_rollout_aligned_sample_targets(
                         for p in rel_pos
                     ],
                     "gt_bins": [int(x) for x in obj.points_norm1000],
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                full_adjacent_prev_bins_by_index[int(full_idx)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                full_adjacent_same_desc_by_index[int(full_idx)]
+                            ),
+                        }
+                        if full_adjacent_prev_bins_by_index[int(full_idx)] is not None
+                        else {}
+                    ),
                 }
             )
 

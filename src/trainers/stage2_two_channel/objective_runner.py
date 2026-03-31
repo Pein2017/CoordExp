@@ -168,6 +168,7 @@ def build_stage2_core_loss_logs(
     coord_ce_w: float,
     coord_soft_ce_w: float,
     coord_w1_w: float,
+    adjacent_repulsion_w: float,
     coord_gate_w: float,
     text_gate_w: float,
 ) -> Dict[str, float]:
@@ -324,6 +325,11 @@ def build_stage2_core_loss_logs(
             _emit_b("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
             _emit_b("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
             _emit_b("coord_w1", coord_w1_w, "loss/coord_w1")
+            _emit_b(
+                "adjacent_repulsion",
+                adjacent_repulsion_w,
+                "loss/adjacent_repulsion",
+            )
             _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
             _emit_b("text_gate", text_gate_w, "loss/text_gate")
 

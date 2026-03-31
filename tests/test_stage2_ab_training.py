@@ -554,6 +554,13 @@ def _make_stage2_pipeline_manifest(
                     "w1_weight": float(coord_w1_weight),
                     "coord_gate_weight": float(coord_gate_weight),
                     "text_gate_weight": float(text_gate_weight),
+                    "temperature": 1.0,
+                    "target_sigma": 2.0,
+                    "target_truncate": 8,
+                    "adjacent_repulsion_weight": 0.0,
+                    "adjacent_repulsion_filter_mode": "same_desc",
+                    "adjacent_repulsion_margin_ratio": 0.05,
+                    "adjacent_repulsion_copy_margin": 0.8,
                 },
             },
         ],
@@ -3095,6 +3102,132 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
     assert sorted(triage.duplicate_bursts_by_boundary.keys()) == [0]
     assert targets.duplicate_burst_unlikelihood_targets
     assert targets.duplicate_burst_unlikelihood_boundary_count == 1
+
+
+def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="alpha",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 110, 130, 140],
+            desc="beta",
+        ),
+        GTObject(
+            index=2,
+            geom_type="bbox_2d",
+            points_norm1000=[200, 210, 230, 240],
+            desc="beta",
+        ),
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[100, 110, 130, 140],
+                desc="beta",
+            ),
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[200, 210, 230, 240],
+                desc="beta",
+            ),
+        ],
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[200, 210, 230, 240],
+                desc="beta",
+            )
+        ],
+        [],
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={0: 0},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+    )
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="alpha",
+            )
+        ],
+        match=types.SimpleNamespace(matched_pairs=[(0, 0)]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=True,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+
+    assert triage.pseudo_positive_anchor_indices == [2]
+    assert triage.shielded_anchor_indices == [1]
+    assert [obj.points_norm1000 for obj in triage.kept_anchor_objects] == [
+        [10, 20, 30, 40],
+        [100, 110, 130, 140],
+        [200, 210, 230, 240],
+    ]
+
+    # Supervision append order is matched -> pseudo-positive -> partial pseudo,
+    # but adjacent metadata must still point to the previous object in clean order.
+    assert [group["gt_bins"] for group in targets.prefix_bbox_groups] == [
+        [10, 20, 30, 40],
+        [200, 210, 230, 240],
+        [100, 110, 130, 140],
+    ]
+    assert targets.prefix_bbox_groups[1]["adjacent_prev_gt_bins"] == [100, 110, 130, 140]
+    assert targets.prefix_bbox_groups[1]["adjacent_same_desc_with_prev"] is True
+    assert targets.prefix_bbox_groups[2]["adjacent_prev_gt_bins"] == [10, 20, 30, 40]
+    assert targets.prefix_bbox_groups[2]["adjacent_same_desc_with_prev"] is False
+    assert targets.prefix_bbox_groups[1]["weight"] == pytest.approx(0.4)
+    assert targets.prefix_bbox_groups[2]["weight"] == pytest.approx(0.4 * (1.0 / 3.0))
+
 
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,

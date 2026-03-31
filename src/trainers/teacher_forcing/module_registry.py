@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, Mapping
 
 LossEmissionGroup = Literal["text", "coord"]
 
@@ -125,6 +125,10 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
                 "temperature",
                 "target_sigma",
                 "target_truncate",
+                "adjacent_repulsion_weight",
+                "adjacent_repulsion_filter_mode",
+                "adjacent_repulsion_margin_ratio",
+                "adjacent_repulsion_copy_margin",
             }
         ),
         application_presets=frozenset({"anchor_only"}),
@@ -140,6 +144,11 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
             ObjectiveLossAtomDefinition(
                 atom_name="coord_w1",
                 state_key="coord_w1_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="adjacent_repulsion",
+                state_key="adjacent_repulsion_contrib",
+                required_state=False,
             ),
             ObjectiveLossAtomDefinition(
                 atom_name="coord_el1",
@@ -164,6 +173,14 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
                 atom_name="text_gate",
                 state_key="text_gate_contrib",
             ),
+        ),
+        optional_config_keys=frozenset(
+            {
+                "adjacent_repulsion_weight",
+                "adjacent_repulsion_filter_mode",
+                "adjacent_repulsion_margin_ratio",
+                "adjacent_repulsion_copy_margin",
+            }
         ),
         emission_group="coord",
     ),
@@ -221,3 +238,46 @@ def normalize_token_ce_stop_signal_damping_config(
         "the adaptive stop-signal-damping experiment was dropped because it is toxic for "
         "rollout and causes duplicate-heavy dense-scene proposals."
     )
+
+
+def validate_adjacent_repulsion_config_values(
+    config: Mapping[str, Any],
+    *,
+    path: str,
+) -> None:
+    if "adjacent_repulsion_weight" in config:
+        try:
+            weight = float(config.get("adjacent_repulsion_weight"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path}.adjacent_repulsion_weight must be numeric") from exc
+        if weight < 0.0:
+            raise ValueError(f"{path}.adjacent_repulsion_weight must be >= 0")
+
+    if "adjacent_repulsion_margin_ratio" in config:
+        try:
+            margin_ratio = float(config.get("adjacent_repulsion_margin_ratio"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{path}.adjacent_repulsion_margin_ratio must be numeric"
+            ) from exc
+        if margin_ratio < 0.0:
+            raise ValueError(f"{path}.adjacent_repulsion_margin_ratio must be >= 0")
+
+    if "adjacent_repulsion_copy_margin" in config:
+        try:
+            copy_margin = float(config.get("adjacent_repulsion_copy_margin"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{path}.adjacent_repulsion_copy_margin must be numeric"
+            ) from exc
+        if copy_margin < 0.0 or copy_margin > 1.0:
+            raise ValueError(
+                f"{path}.adjacent_repulsion_copy_margin must be within [0, 1]"
+            )
+
+    if "adjacent_repulsion_filter_mode" in config:
+        mode = str(config.get("adjacent_repulsion_filter_mode") or "").strip().lower()
+        if mode not in {"same_desc", "global"}:
+            raise ValueError(
+                f"{path}.adjacent_repulsion_filter_mode must be one of ['global', 'same_desc']"
+            )

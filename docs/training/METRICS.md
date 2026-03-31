@@ -40,6 +40,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_softce_w1/soft_ce`
   - `coord_softce_w1/w1`
   - `coord_softce_w1/gate`
+  - `coord_softce_w1/adjacent_repulsion`
 - coord diagnostics:
   - `coord_diag/enabled`
   - `coord_diag/loss`
@@ -48,9 +49,13 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/soft_ce`
   - `coord_diag/w1`
   - `coord_diag/gate`
+  - `coord_diag/adjacent_repulsion`
   - `coord_diag/coord_tokens`
   - `coord_diag/coord_tokens_per_sample`
   - `coord_diag/coord_vocab_mass`
+  - `coord_diag/adjacent_repulsion_pair_count`
+  - `coord_diag/adjacent_repulsion_applied_count`
+  - `coord_diag/adjacent_repulsion_copy_score_mean`
   - `coord_diag/acc_top5`
   - `coord_diag/p_gt_mean`
   - `coord_diag/margin_mean`
@@ -168,6 +173,7 @@ Channel-B keeps rollout-specific provenance:
   - `loss/B_coord/coord_token_ce`
   - `loss/B_coord/coord_soft_ce`
   - `loss/B_coord/coord_w1`
+  - `loss/B_coord/adjacent_repulsion`
   - `loss/B_coord/coord_gate`
   - `loss/B_coord/text_gate`
 - coord diagnostics:

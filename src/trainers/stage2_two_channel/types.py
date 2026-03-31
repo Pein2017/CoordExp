@@ -5,6 +5,8 @@ class Stage2BBoxGroup(TypedDict):
     pos: List[int]
     gt_bins: List[int]
     weight: NotRequired[float]
+    adjacent_prev_gt_bins: NotRequired[List[int]]
+    adjacent_same_desc_with_prev: NotRequired[bool]
 
 
 class Stage2DuplicateBurstUnlikelihoodTarget(TypedDict):

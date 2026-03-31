@@ -3547,6 +3547,12 @@ class Stage2ABTrainingTrainer(
             default=0.0,
             min_value=0.0,
         )
+        adjacent_repulsion_w = _cfg_float(
+            coord_cfg,
+            keys=("adjacent_repulsion_weight",),
+            default=0.0,
+            min_value=0.0,
+        )
         run_a_text = _token_ce_targets(token_preset)
         run_a_bbox_geo = _coord_targets(bbox_geo_preset)
         run_a_bbox_size_aux = _coord_targets(bbox_size_aux_preset)
@@ -3725,6 +3731,7 @@ class Stage2ABTrainingTrainer(
                 coord_ce_w=float(coord_ce_w),
                 coord_soft_ce_w=float(coord_soft_ce_w),
                 coord_w1_w=float(coord_w1_w),
+                adjacent_repulsion_w=float(adjacent_repulsion_w),
                 coord_gate_w=float(coord_gate_w),
                 text_gate_w=float(text_gate_w),
             )

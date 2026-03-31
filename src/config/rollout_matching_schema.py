@@ -25,6 +25,7 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     normalize_token_ce_stop_signal_damping_config,
+    validate_adjacent_repulsion_config_values,
 )
 
 
@@ -574,6 +575,11 @@ class RolloutMatchingConfig:
                         raise ValueError(
                             f"Missing required {path}[{idx}].config keys for module {name!r}: "
                             f"{sorted(str(k) for k in missing_cfg)}"
+                        )
+                    if name == "coord_reg":
+                        validate_adjacent_repulsion_config_values(
+                            spec.config,
+                            path=f"{path}[{idx}].config",
                         )
 
             _validate_specs(
