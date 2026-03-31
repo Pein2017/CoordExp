@@ -10,7 +10,7 @@
 # - summary.json
 
 run:
-  name: val_200_ckpt232_merged
+  name: val_200_ckpt232_-continued-merged
   output_dir: output/lvis_offline_200
 
 stages:
@@ -20,7 +20,7 @@ stages:
 
 infer:
   gt_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
-  model_checkpoint: output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged
+  model_checkpoint: output/stage1/lvis_bbox_max60_1024_adjacent_repulsion/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-continued-merged
   prompt_variant: lvis_stage2_federated
   object_field_order: desc_first
   object_ordering: sorted
@@ -29,7 +29,7 @@ infer:
   backend:
     type: hf
   generation:
-    temperature: 0.1
+    temperature: 0.0
     top_p: 0.9
     max_new_tokens: 3084
     repetition_penalty: 1.05
