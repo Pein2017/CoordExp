@@ -971,6 +971,7 @@ def _draw_panel(
     objects: Sequence[Mapping[str, Any]],
     box_color_for_index: Mapping[int, str],
     label_prefix_for_index: Mapping[int, str],
+    show_desc_for_all: bool = False,
 ) -> Image.Image:
     out = img.copy().convert("RGB")
     draw = ImageDraw.Draw(out)
@@ -983,10 +984,13 @@ def _draw_panel(
         color = str(box_color_for_index.get(obj_index) or _COLOR_UNMATCHED)
         draw.rectangle(bbox, outline=color, width=DEFAULT_BBOX_OUTLINE_WIDTH)
         prefix = label_prefix_for_index.get(obj_index)
-        if not prefix:
-            continue
         desc = _normalize_desc(obj.get("desc"))
-        label_text = prefix if not desc else f"{prefix}: {desc}"
+        if prefix:
+            label_text = prefix if not desc else f"{prefix}: {desc}"
+        elif show_desc_for_all and desc:
+            label_text = desc
+        else:
+            continue
         placed = _place_label(
             draw=draw,
             font=font,
@@ -1091,6 +1095,7 @@ def render_gt_vs_pred_review(
             objects=pred_objects,
             box_color_for_index=pred_colors,
             label_prefix_for_index=pred_labels,
+            show_desc_for_all=True,
         )
 
         width = int(record["width"])
