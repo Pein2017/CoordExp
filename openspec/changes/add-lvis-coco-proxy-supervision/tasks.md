@@ -74,7 +74,7 @@
 
 ## 4. Teacher-Forcing Context And Span Carriers
 
-- [ ] 4.1 Extend the Stage-2 target-building path to derive object-local proxy
+- [ ] 4.1 Extend the teacher-forcing paths to derive object-local proxy
   supervision carriers from metadata.
 - [ ] 4.2 Provide derived object-local views for:
   - mapping class by object
@@ -90,6 +90,10 @@
   - `"desc"` / `"bbox_2d"` field names remaining structure tokens
   - desc-value spans following object-local weights
   - bbox groups following object-local coord weights
+- [ ] 4.6 Add Stage-1 collator-emitted carriers:
+  - `proxy_desc_token_weights`
+  - `proxy_coord_token_weights`
+  aligned 1:1 with `labels`
 
 ## 5. Stage-2 Module Integration
 
@@ -141,10 +145,14 @@
   - proxy metadata aligns with the final object order
   - plausible objects lower desc/coord effective supervision without lowering
     structure supervision
+- [ ] 7.5 Add a Stage-1 smoke run that trains from an augmented COCO JSONL and
+  verifies:
+  - `real/strict/plausible` desc-weight behavior
+  - `plausible` coord-weight suppression
+  - unchanged structure-token CE behavior
 
 ## 8. Deferred Follow-Up
 
-- [ ] 8.1 Evaluate Stage-1 support for the same proxy-metadata contract.
-- [ ] 8.2 Evaluate finer-grained plausible subtypes beyond one shared tier.
-- [ ] 8.3 Evaluate learned or tuned per-mapping proxy weights after the first
+- [ ] 8.1 Evaluate finer-grained plausible subtypes beyond one shared tier.
+- [ ] 8.2 Evaluate learned or tuned per-mapping proxy weights after the first
   strict vs plausible ablations.

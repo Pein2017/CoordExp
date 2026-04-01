@@ -12,6 +12,8 @@ DATASET_SEGMENTS_KEY = "dataset_segments"
 PACK_NUM_SAMPLES_KEY = "pack_num_samples"
 TOKEN_TYPES_KEY = "token_types"
 INSTABILITY_META_JSON_KEY = "instability_meta_json"
+PROXY_DESC_TOKEN_WEIGHTS_KEY = "proxy_desc_token_weights"
+PROXY_COORD_TOKEN_WEIGHTS_KEY = "proxy_coord_token_weights"
 
 BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     DATASET_LABELS_KEY,
@@ -19,6 +21,8 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     PACK_NUM_SAMPLES_KEY,
     TOKEN_TYPES_KEY,
     INSTABILITY_META_JSON_KEY,
+    PROXY_DESC_TOKEN_WEIGHTS_KEY,
+    PROXY_COORD_TOKEN_WEIGHTS_KEY,
 )
 
 
@@ -26,8 +30,9 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
 class BatchExtras:
     """Auxiliary batch fields produced by collators.
 
-    These are debug/diagnostic-only fields. Trainer mixins should pop them from the
-    input dict before calling model(**inputs), but keep them available for logging.
+    These are auxiliary batch fields. Trainer mixins should pop them from the
+    input dict before calling model(**inputs), but keep them available for
+    logging and objective weighting.
     """
 
     dataset_labels: Any = None
@@ -35,6 +40,8 @@ class BatchExtras:
     pack_num_samples: Any = None
     token_types: Any = None
     instability_meta_json: Any = None
+    proxy_desc_token_weights: Any = None
+    proxy_coord_token_weights: Any = None
 
 
 _STASH_ATTR = "_coordexp_batch_extras"
@@ -49,6 +56,8 @@ def pop_batch_extras(inputs: MutableMapping[str, Any]) -> BatchExtras:
         pack_num_samples=inputs.pop(PACK_NUM_SAMPLES_KEY, None),
         token_types=inputs.pop(TOKEN_TYPES_KEY, None),
         instability_meta_json=inputs.pop(INSTABILITY_META_JSON_KEY, None),
+        proxy_desc_token_weights=inputs.pop(PROXY_DESC_TOKEN_WEIGHTS_KEY, None),
+        proxy_coord_token_weights=inputs.pop(PROXY_COORD_TOKEN_WEIGHTS_KEY, None),
     )
 
 

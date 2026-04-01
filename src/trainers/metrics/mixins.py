@@ -2,6 +2,7 @@ from typing import Any, Mapping
 
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType
@@ -366,8 +367,9 @@ class CoordSoftCEW1LossMixin:
         from src.metrics.reporter import warn_once
         from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 
+        extras = None
         try:
-            maybe_pop_and_stash_batch_extras(self, inputs)
+            extras = maybe_pop_and_stash_batch_extras(self, inputs)
         except Exception:
             warn_once(
                 self,
@@ -427,10 +429,27 @@ class CoordSoftCEW1LossMixin:
             model, inputs, return_outputs=True, num_items_in_batch=passed_num_items
         )
 
+        weighted_base_loss = None
+        weighted_noncoord_sum = None
         try:
             from src.metrics.reporter import SwiftMetricReporter, best_effort
 
             reporter = SwiftMetricReporter(self)
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            best_effort(
+                self,
+                name="proxy_weighted_base_ce",
+                fn=lambda: self._maybe_compute_weighted_base_ce(
+                    outputs=outputs,
+                    masked_labels=masked_labels,
+                    extras=extras,
+                ),
+            )
+            weighted = getattr(self, "_coordexp_last_weighted_base_ce", None)
+            if isinstance(weighted, tuple) and len(weighted) == 2:
+                weighted_base_loss, weighted_noncoord_sum = weighted
+            if isinstance(weighted_base_loss, torch.Tensor):
+                loss = weighted_base_loss
             best_effort(
                 self,
                 name="base_ce_metrics",
@@ -438,6 +457,7 @@ class CoordSoftCEW1LossMixin:
                     reporter=reporter,
                     loss_base=loss,
                     masked_labels=masked_labels,
+                    weighted_noncoord_sum=weighted_noncoord_sum,
                 ),
             )
 
@@ -448,6 +468,7 @@ class CoordSoftCEW1LossMixin:
                 outputs=outputs,
                 labels=labels_orig,
                 masked_labels=masked_labels,
+                extras=extras,
                 coord_token_ids=coord_token_ids,
                 num_items_in_batch=passed_num_items,
             )
@@ -484,6 +505,88 @@ class CoordSoftCEW1LossMixin:
 
         return (loss, outputs) if return_outputs else loss
 
+    def _maybe_compute_weighted_base_ce(
+        self,
+        *,
+        outputs: Any,
+        masked_labels: torch.Tensor,
+        extras: Any,
+    ) -> None:
+        logits = getattr(outputs, "logits", None)
+        token_types = getattr(extras, "token_types", None) if extras is not None else None
+        desc_weights = (
+            getattr(extras, "proxy_desc_token_weights", None)
+            if extras is not None
+            else None
+        )
+        if (
+            not isinstance(logits, torch.Tensor)
+            or not isinstance(token_types, torch.Tensor)
+            or not isinstance(desc_weights, torch.Tensor)
+        ):
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            return
+        if tuple(token_types.shape) != tuple(masked_labels.shape):
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            return
+        if tuple(desc_weights.shape) != tuple(masked_labels.shape):
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            return
+
+        seq_len = min(int(logits.shape[1]), max(int(masked_labels.shape[1]) - 1, 0))
+        if seq_len <= 0:
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            return
+
+        logits_next = logits[:, :seq_len, :]
+        labels_next = masked_labels[:, 1 : seq_len + 1]
+        token_types_next = token_types[:, 1 : seq_len + 1]
+        desc_weights_next = desc_weights[:, 1 : seq_len + 1].to(dtype=torch.float32)
+
+        supervised = labels_next != -100
+        base_weights = supervised.to(dtype=torch.float32)
+        desc_mask = supervised & (token_types_next == TokenType.DESC)
+        base_weights[desc_mask] = desc_weights_next[desc_mask]
+
+        flat_logits = logits_next.reshape(-1, int(logits_next.shape[-1]))
+        flat_labels = labels_next.reshape(-1)
+        flat_weights = base_weights.reshape(-1)
+        rows_per_chunk = 4096
+        n_rows = int(flat_labels.numel())
+        ce_num = None
+        for start in range(0, n_rows, rows_per_chunk):
+            end = min(start + rows_per_chunk, n_rows)
+            ce_chunk = F.cross_entropy(
+                flat_logits[start:end].float(),
+                flat_labels[start:end],
+                ignore_index=-100,
+                reduction="none",
+            )
+            if ce_num is None:
+                ce_num = ce_chunk.new_tensor(0.0)
+            ce_num = ce_num + (
+                ce_chunk * flat_weights[start:end].to(dtype=ce_chunk.dtype)
+            ).sum()
+        if ce_num is None:
+            setattr(self, "_coordexp_last_weighted_base_ce", None)
+            return
+
+        denom = flat_weights.sum().to(dtype=ce_num.dtype).clamp(min=1e-6)
+        weighted_loss = torch.nan_to_num(
+            ce_num / denom,
+            nan=0.0,
+            posinf=1e4,
+            neginf=0.0,
+        )
+        setattr(
+            self,
+            "_coordexp_last_weighted_base_ce",
+            (
+                weighted_loss,
+                float(flat_weights.sum().detach().cpu().item()),
+            ),
+        )
+
     def _compute_acc(self, outputs, labels, cu_seqlens=None) -> None:
         """Force ms-swift token_acc to use unmasked labels (incl. coord tokens).
 
@@ -504,7 +607,12 @@ class CoordSoftCEW1LossMixin:
         return super()._compute_acc(outputs, labels)
 
     def _log_base_ce_metrics(
-        self, *, reporter: Any, loss_base: torch.Tensor, masked_labels: torch.Tensor
+        self,
+        *,
+        reporter: Any,
+        loss_base: torch.Tensor,
+        masked_labels: torch.Tensor,
+        weighted_noncoord_sum: float | None = None,
     ) -> None:
         """Log the base CE (non-coord) component, so train/eval loss parts line up."""
 
@@ -512,6 +620,8 @@ class CoordSoftCEW1LossMixin:
 
         noncoord_tokens = int((masked_labels[:, 1:] != -100).sum().detach().item())
         reporter.update("base_ce/noncoord_tokens", float(noncoord_tokens))
+        if weighted_noncoord_sum is not None:
+            reporter.update("base_ce/noncoord_weight_sum", float(weighted_noncoord_sum))
 
         # Per-sample normalization for packed runs: interpret a "unit" as a pack of N samples.
         # This is a logging-only helper (does not affect optimization).
@@ -555,6 +665,7 @@ class CoordSoftCEW1LossMixin:
         outputs: Any,
         labels: torch.Tensor,
         masked_labels: torch.Tensor,
+        extras: Any,
         coord_token_ids: list[int],
         num_items_in_batch: Any,
     ) -> torch.Tensor:
@@ -592,6 +703,7 @@ class CoordSoftCEW1LossMixin:
             logits=logits,
             labels=labels,
             masked_labels=masked_labels,
+            coord_token_weights=getattr(extras, "proxy_coord_token_weights", None),
             coord_token_ids=coord_token_ids,
             coord_id_map=coord_id_map,
             tokenizer=getattr(getattr(self, "template", None), "tokenizer", None),

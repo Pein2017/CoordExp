@@ -3,12 +3,15 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
+
+from src.coord_tokens.codec import int_to_token
 
 DEFAULT_COCO_ANNOTATION_PATHS: tuple[Path, ...] = (
     Path("public_data/coco/raw/annotations/instances_train2017.json"),
@@ -315,6 +318,22 @@ class ProjectionAnalysisResult:
     recovered_per_image_rows: list[dict[str, Any]]
     recovered_per_category_rows: list[dict[str, Any]]
     report_markdown: str
+
+
+@dataclass(frozen=True)
+class ProxyAugmentConfig:
+    include_plausible: bool = True
+    metadata_namespace: str = "coordexp_proxy_supervision"
+    strict_desc_ce_weight: float = 1.0
+    strict_coord_weight: float = 1.0
+    plausible_desc_ce_weight: float = 0.25
+    plausible_coord_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class AugmentedCocoExportResult:
+    summary: dict[str, Any]
+    output_jsonl_path: str
 
 
 def _normalize_category_name(text: str) -> str:
@@ -1106,6 +1125,220 @@ def _write_csv(
         writer.writeheader()
         for row in rows:
             writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            payload = json.loads(text)
+            if not isinstance(payload, dict):
+                raise ValueError(
+                    f"Expected JSON object in {path} line {line_number}, got {type(payload).__name__}"
+                )
+            rows.append(dict(payload))
+    return rows
+
+
+def _resolve_record_image_paths(
+    record: Mapping[str, Any], *, base_dir: Path, output_dir: Path
+) -> list[str] | None:
+    images = record.get("images")
+    if not isinstance(images, Sequence) or isinstance(images, (str, bytes)):
+        return None
+    resolved: list[str] = []
+    for image_path in images:
+        if not isinstance(image_path, str):
+            return None
+        path_obj = Path(image_path)
+        if not path_obj.is_absolute():
+            path_obj = (base_dir / path_obj).resolve()
+        resolved.append(os.path.relpath(path_obj, output_dir))
+    return resolved
+
+
+def _coord_value_as_int(value: Any) -> int:
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("<|coord_") and text.endswith("|>"):
+            return int(text[len("<|coord_") : -2])
+    return int(round(float(value)))
+
+
+def _object_anchor_xy(obj: Mapping[str, Any]) -> tuple[int, int]:
+    bbox = obj.get("bbox_2d")
+    if isinstance(bbox, Sequence) and len(bbox) >= 2:
+        return (_coord_value_as_int(bbox[0]), _coord_value_as_int(bbox[1]))
+    poly = obj.get("poly")
+    if isinstance(poly, Sequence) and len(poly) >= 2:
+        return (_coord_value_as_int(poly[0]), _coord_value_as_int(poly[1]))
+    return (10**9, 10**9)
+
+
+def _normalize_bbox_xyxy_to_coord_tokens(
+    box_xyxy: Sequence[float],
+    *,
+    width: float,
+    height: float,
+) -> list[str]:
+    if len(box_xyxy) != 4:
+        raise ValueError(f"Expected box_xyxy with 4 values, got {box_xyxy!r}")
+    x1, y1, x2, y2 = [float(value) for value in box_xyxy]
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f"Invalid raw width/height for coord normalization: {width}, {height}"
+        )
+    denom_x = max(1.0, float(width) - 1.0)
+    denom_y = max(1.0, float(height) - 1.0)
+    nx1 = max(0, min(999, int(math.floor(x1 / denom_x * 999.0))))
+    ny1 = max(0, min(999, int(math.floor(y1 / denom_y * 999.0))))
+    nx2 = max(0, min(999, int(math.ceil(x2 / denom_x * 999.0))))
+    ny2 = max(0, min(999, int(math.ceil(y2 / denom_y * 999.0))))
+    if nx2 <= nx1:
+        if nx1 < 999:
+            nx2 = nx1 + 1
+        else:
+            nx1 = max(0, nx1 - 1)
+            nx2 = 999
+    if ny2 <= ny1:
+        if ny1 < 999:
+            ny2 = ny1 + 1
+        else:
+            ny1 = max(0, ny1 - 1)
+            ny2 = 999
+    return [int_to_token(value) for value in (nx1, ny1, nx2, ny2)]
+
+
+def _load_raw_coco_images_by_id(
+    annotation_paths: Sequence[Path],
+) -> dict[int, dict[str, Any]]:
+    images_by_id: dict[int, dict[str, Any]] = {}
+    for path in annotation_paths:
+        payload = _load_json(path)
+        for image_info in payload.get("images", []) or []:
+            if not isinstance(image_info, Mapping):
+                continue
+            image_id = image_info.get("id")
+            if image_id is None:
+                continue
+            images_by_id[int(image_id)] = dict(image_info)
+    return images_by_id
+
+
+def _load_determined_semantic_mapping_rows(
+    path: Path,
+) -> dict[int, dict[str, Any]]:
+    rows_by_lvis_id: dict[int, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            lvis_category_id = int(row["lvis_category_id"])
+            determination_tier = str(row.get("determination_tier") or "").strip()
+            if determination_tier not in {"strict", "plausible", "reject"}:
+                raise ValueError(
+                    f"Unsupported determination_tier={determination_tier!r} for LVIS category {lvis_category_id}"
+                )
+            if lvis_category_id in rows_by_lvis_id:
+                raise ValueError(
+                    f"Duplicate LVIS category {lvis_category_id} in determined mapping CSV {path}"
+                )
+            parsed = dict(row)
+            parsed["lvis_category_id"] = lvis_category_id
+            parsed["mapped_coco_category_id"] = int(row["mapped_coco_category_id"])
+            parsed["n_match"] = int(row["n_match"])
+            parsed["n_images"] = int(row["n_images"])
+            for key in (
+                "precision_like",
+                "coverage_like",
+                "mean_iou",
+                "median_iou",
+                "iou_ge_05_rate",
+                "iou_ge_075_rate",
+                "support_score",
+                "geometry_score",
+                "proxy_score",
+            ):
+                parsed[key] = float(row[key])
+            rows_by_lvis_id[lvis_category_id] = parsed
+    return rows_by_lvis_id
+
+
+def _dedupe_recovered_projection_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    by_key: dict[tuple[int, int], dict[str, Any]] = {}
+    for raw_row in rows:
+        row = dict(raw_row)
+        key = (int(row["image_id"]), int(row["lvis_ann_id"]))
+        current = by_key.get(key)
+        if current is None:
+            by_key[key] = row
+            continue
+        current_view = str(current.get("recovery_view") or "")
+        next_view = str(row.get("recovery_view") or "")
+        if current_view != "strict_plus_usable" and next_view == "strict_plus_usable":
+            by_key[key] = row
+    return list(by_key.values())
+
+
+def _proxy_payload_for_recovered_row(
+    row: Mapping[str, Any],
+    *,
+    semantic_mapping_by_lvis_id: Mapping[int, Mapping[str, Any]],
+    config: ProxyAugmentConfig,
+) -> dict[str, Any] | None:
+    mapping_kind = str(row.get("mapping_kind") or "")
+    mapped_coco_category_id = int(row["mapped_coco_category_id"])
+    lvis_category_id = int(row["lvis_category_id"])
+
+    if mapping_kind == "exact_canonical":
+        mapping_tier = str(row.get("mapping_tier") or "")
+        if mapping_tier == "strict":
+            return {
+                "proxy_tier": "strict",
+                "mapping_class": "same_extent_proxy",
+                "desc_ce_weight": float(config.strict_desc_ce_weight),
+                "coord_weight": float(config.strict_coord_weight),
+            }
+        if mapping_tier == "usable" and config.include_plausible:
+            return {
+                "proxy_tier": "plausible",
+                "mapping_class": "cue_only_proxy",
+                "desc_ce_weight": float(config.plausible_desc_ce_weight),
+                "coord_weight": float(config.plausible_coord_weight),
+            }
+        return None
+
+    if mapping_kind != "semantic_evidence":
+        return None
+
+    semantic_row = semantic_mapping_by_lvis_id.get(lvis_category_id)
+    if semantic_row is None:
+        return None
+    if int(semantic_row["mapped_coco_category_id"]) != mapped_coco_category_id:
+        raise ValueError(
+            "Recovered semantic mapping does not match determined mapping CSV for "
+            f"LVIS category {lvis_category_id}"
+        )
+    determination_tier = str(semantic_row["determination_tier"])
+    if determination_tier == "strict":
+        return {
+            "proxy_tier": "strict",
+            "mapping_class": "same_extent_proxy",
+            "desc_ce_weight": float(config.strict_desc_ce_weight),
+            "coord_weight": float(config.strict_coord_weight),
+        }
+    if determination_tier == "plausible" and config.include_plausible:
+        return {
+            "proxy_tier": "plausible",
+            "mapping_class": "cue_only_proxy",
+            "desc_ce_weight": float(config.plausible_desc_ce_weight),
+            "coord_weight": float(config.plausible_coord_weight),
+        }
+    return None
 
 
 def write_analysis_outputs(result: AnalysisResult, *, output_dir: Path) -> dict[str, str]:
@@ -2344,6 +2577,184 @@ def write_projection_outputs(
         "per_category_csv": str(per_category_path),
         "report_md": str(report_path),
     }
+
+
+def export_augmented_coco_with_lvis_proxies(
+    *,
+    base_jsonl_path: Path,
+    projection_dir: Path,
+    determined_mapping_csv_path: Path,
+    output_jsonl_path: Path,
+    raw_coco_annotation_paths: Sequence[Path] = DEFAULT_COCO_ANNOTATION_PATHS,
+    config: ProxyAugmentConfig | None = None,
+) -> AugmentedCocoExportResult:
+    cfg = config or ProxyAugmentConfig()
+    base_records = _read_jsonl(base_jsonl_path)
+    raw_images_by_id = _load_raw_coco_images_by_id(tuple(raw_coco_annotation_paths))
+    semantic_mapping_by_lvis_id = _load_determined_semantic_mapping_rows(
+        determined_mapping_csv_path
+    )
+    recovered_rows = _dedupe_recovered_projection_rows(
+        _read_jsonl(projection_dir / "recovered_coco80_instances.jsonl")
+    )
+
+    proxy_rows_by_image_id: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    skipped_counts: Counter[str] = Counter()
+    accepted_counts: Counter[str] = Counter()
+
+    for row in recovered_rows:
+        image_id = int(row["image_id"])
+        proxy_payload = _proxy_payload_for_recovered_row(
+            row,
+            semantic_mapping_by_lvis_id=semantic_mapping_by_lvis_id,
+            config=cfg,
+        )
+        if proxy_payload is None:
+            skipped_counts["unselected_mapping"] += 1
+            continue
+        raw_image_info = raw_images_by_id.get(image_id)
+        if raw_image_info is None:
+            skipped_counts["missing_raw_image_dims"] += 1
+            continue
+        bbox_xyxy = row.get("bbox_xyxy")
+        if not isinstance(bbox_xyxy, Sequence) or len(bbox_xyxy) != 4:
+            skipped_counts["invalid_bbox"] += 1
+            continue
+        coord_tokens = _normalize_bbox_xyxy_to_coord_tokens(
+            bbox_xyxy,
+            width=float(raw_image_info["width"]),
+            height=float(raw_image_info["height"]),
+        )
+        object_entry = {
+            "bbox_2d": coord_tokens,
+            "desc": str(row["mapped_coco_category_name"]),
+            "category_id": int(row["mapped_coco_category_id"]),
+            "category_name": str(row["mapped_coco_category_name"]),
+            "lvis_ann_id": int(row["lvis_ann_id"]),
+            "lvis_category_id": int(row["lvis_category_id"]),
+            "lvis_category_name": str(row["lvis_category_name"]),
+            "proxy_source": "lvis",
+        }
+        supervision_entry = {
+            "source": "lvis",
+            "proxy_tier": str(proxy_payload["proxy_tier"]),
+            "mapping_class": str(proxy_payload["mapping_class"]),
+            "desc_ce_weight": float(proxy_payload["desc_ce_weight"]),
+            "coord_weight": float(proxy_payload["coord_weight"]),
+            "mapping_kind": str(row["mapping_kind"]),
+            "mapped_coco_category_id": int(row["mapped_coco_category_id"]),
+            "mapped_coco_category_name": str(row["mapped_coco_category_name"]),
+            "lvis_ann_id": int(row["lvis_ann_id"]),
+            "lvis_category_id": int(row["lvis_category_id"]),
+            "lvis_category_name": str(row["lvis_category_name"]),
+            "why_recovered": str(row.get("why_recovered") or ""),
+        }
+        proxy_rows_by_image_id[image_id].append(
+            {"object": object_entry, "supervision": supervision_entry}
+        )
+        accepted_counts[str(proxy_payload["proxy_tier"])] += 1
+
+    augmented_rows: list[dict[str, Any]] = []
+    per_image_rows: list[dict[str, Any]] = []
+    record_count_with_added = 0
+    for record in base_records:
+        image_id = int(record["image_id"])
+        objects = [dict(obj) for obj in (record.get("objects") or [])]
+        if not isinstance(objects, list):
+            raise ValueError(
+                f"Record image_id={image_id} has non-list objects field in {base_jsonl_path}"
+            )
+        supervision = [
+            {
+                "source": "coco",
+                "proxy_tier": "real",
+                "mapping_class": "real",
+                "desc_ce_weight": 1.0,
+                "coord_weight": 1.0,
+            }
+            for _ in objects
+        ]
+        for proxy_row in proxy_rows_by_image_id.get(image_id, []):
+            objects.append(dict(proxy_row["object"]))
+            supervision.append(dict(proxy_row["supervision"]))
+
+        zipped = list(zip(objects, supervision, strict=True))
+        zipped.sort(key=lambda pair: (_object_anchor_xy(pair[0])[1], _object_anchor_xy(pair[0])[0]))
+        sorted_objects = [pair[0] for pair in zipped]
+        sorted_supervision = [pair[1] for pair in zipped]
+        if len(sorted_objects) != len(sorted_supervision):
+            raise ValueError(
+                f"Metadata/object count mismatch for image_id={image_id}: "
+                f"{len(sorted_objects)} vs {len(sorted_supervision)}"
+            )
+        metadata = dict(record.get("metadata") or {})
+        proxy_namespace = {
+            "object_supervision": sorted_supervision,
+            "summary": {
+                "real_count": sum(
+                    1 for entry in sorted_supervision if entry["proxy_tier"] == "real"
+                ),
+                "strict_count": sum(
+                    1 for entry in sorted_supervision if entry["proxy_tier"] == "strict"
+                ),
+                "plausible_count": sum(
+                    1
+                    for entry in sorted_supervision
+                    if entry["proxy_tier"] == "plausible"
+                ),
+                "include_plausible": bool(cfg.include_plausible),
+            },
+        }
+        metadata[str(cfg.metadata_namespace)] = proxy_namespace
+        augmented_record = dict(record)
+        resolved_images = _resolve_record_image_paths(
+            record,
+            base_dir=base_jsonl_path.parent,
+            output_dir=output_jsonl_path.parent,
+        )
+        if resolved_images is not None:
+            augmented_record["images"] = resolved_images
+        augmented_record["objects"] = sorted_objects
+        augmented_record["metadata"] = metadata
+        augmented_rows.append(augmented_record)
+        added_count = len(sorted_objects) - len(record.get("objects") or [])
+        if added_count > 0:
+            record_count_with_added += 1
+        per_image_rows.append(
+            {
+                "image_id": image_id,
+                "base_object_count": len(record.get("objects") or []),
+                "added_proxy_count": added_count,
+                "strict_proxy_count": proxy_namespace["summary"]["strict_count"],
+                "plausible_proxy_count": proxy_namespace["summary"]["plausible_count"],
+            }
+        )
+
+    output_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(output_jsonl_path, augmented_rows)
+    summary = {
+        "base_jsonl_path": str(base_jsonl_path),
+        "projection_dir": str(projection_dir),
+        "determined_mapping_csv_path": str(determined_mapping_csv_path),
+        "output_jsonl_path": str(output_jsonl_path),
+        "metadata_namespace": str(cfg.metadata_namespace),
+        "include_plausible": bool(cfg.include_plausible),
+        "record_count": len(augmented_rows),
+        "record_count_with_added_proxies": record_count_with_added,
+        "accepted_proxy_counts": dict(sorted(accepted_counts.items())),
+        "skipped_proxy_counts": dict(sorted(skipped_counts.items())),
+        "per_image": per_image_rows,
+        "weight_policy": {
+            "strict_desc_ce_weight": float(cfg.strict_desc_ce_weight),
+            "strict_coord_weight": float(cfg.strict_coord_weight),
+            "plausible_desc_ce_weight": float(cfg.plausible_desc_ce_weight),
+            "plausible_coord_weight": float(cfg.plausible_coord_weight),
+        },
+    }
+    return AugmentedCocoExportResult(
+        summary=summary,
+        output_jsonl_path=str(output_jsonl_path),
+    )
 
 
 def run_coco_lvis_projection_analysis(

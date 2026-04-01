@@ -18,6 +18,7 @@ from src.config.schema import TokenTypeMetricsConfig
 from src.data_collators.enrichers import (
     DatasetMetaEnricher,
     InstabilityMetaEnricher,
+    ProxySupervisionEnricher,
     TokenTypesEnricher,
 )
 
@@ -27,6 +28,7 @@ def build_batch_extras_collator(
     base_collator: Callable[[List[Dict[str, Any]]], Dict[str, Any]] | None = None,
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
+    proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     """Wrap the template collator to attach debug/diagnostics batch extras.
 
@@ -51,6 +53,15 @@ def build_batch_extras_collator(
     if token_type_cfg is not None and bool(getattr(token_type_cfg, "enabled", False)):
         token_type_enricher = TokenTypesEnricher(template=template, cfg=token_type_cfg)
 
+    proxy_supervision_enricher = None
+    if isinstance(proxy_supervision_cfg, Mapping) and bool(
+        proxy_supervision_cfg.get("enabled", False)
+    ):
+        proxy_supervision_enricher = ProxySupervisionEnricher(
+            template=template,
+            cfg=proxy_supervision_cfg,
+        )
+
     instab_enricher = None
     if instab_enabled:
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
@@ -71,6 +82,13 @@ def build_batch_extras_collator(
                 packed=meta.packed,
             )
 
+        if proxy_supervision_enricher is not None:
+            proxy_supervision_enricher(
+                collated=collated,
+                raw_batch=batch,
+                packed=meta.packed,
+            )
+
         return collated
 
     return _collate
@@ -83,12 +101,14 @@ def build_dataset_metrics_collator(
     base_collator: Callable[[List[Dict[str, Any]]], Dict[str, Any]] | None = None,
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
+    proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     return build_batch_extras_collator(
         template,
         base_collator=base_collator,
         token_type_cfg=token_type_cfg,
         instability_monitor_cfg=instability_monitor_cfg,
+        proxy_supervision_cfg=proxy_supervision_cfg,
     )
 
 

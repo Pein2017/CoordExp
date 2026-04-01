@@ -2345,6 +2345,7 @@ def main():
     bbox_size_aux_cfg = getattr(custom_config, "bbox_size_aux", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
+    proxy_supervision_cfg = None
     extra_cfg = getattr(custom_config, "extra", None)
     if isinstance(extra_cfg, Mapping):
         raw_instab = extra_cfg.get("instability_monitor")
@@ -2353,6 +2354,9 @@ def main():
         raw_gradmon = extra_cfg.get("loss_gradient_monitor")
         if isinstance(raw_gradmon, Mapping):
             loss_gradient_monitor_cfg = dict(raw_gradmon)
+        raw_proxy = extra_cfg.get("proxy_supervision")
+        if isinstance(raw_proxy, Mapping):
+            proxy_supervision_cfg = dict(raw_proxy)
     if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
@@ -2362,6 +2366,7 @@ def main():
             base_collator,
             token_type_cfg=token_type_cfg,
             instability_monitor_cfg=instability_monitor_cfg,
+            proxy_supervision_cfg=proxy_supervision_cfg,
         )
 
     heartbeat_writer = None

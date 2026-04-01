@@ -8,7 +8,9 @@ from typing import Any, Optional
 import torch
 
 from src.config.schema import TokenTypeMetricsConfig
+from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
+from src.trainers.rollout_matching.parsing import find_desc_value_token_positions_by_span
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -343,3 +345,229 @@ class TokenTypesEnricher:
 
         if token_type_list:
             collated[self.out_field] = torch.stack(token_type_list, dim=0)
+
+
+@dataclass
+class ProxyWeightTensors:
+    desc: torch.Tensor
+    coord: torch.Tensor
+
+
+def _proxy_entries_for_payload(
+    payload: Any,
+    metadata: Mapping[str, Any] | None,
+    *,
+    namespace: str,
+) -> list[dict[str, float]]:
+    object_count = 0
+    if isinstance(payload, Mapping):
+        objects = payload.get("objects")
+        if isinstance(objects, list):
+            object_count = len(objects)
+    if object_count <= 0:
+        return []
+
+    ns_meta = metadata.get(namespace) if isinstance(metadata, Mapping) else None
+    object_supervision = (
+        ns_meta.get("object_supervision") if isinstance(ns_meta, Mapping) else None
+    )
+    if isinstance(object_supervision, list) and len(object_supervision) == object_count:
+        entries: list[dict[str, float]] = []
+        for item in object_supervision:
+            if not isinstance(item, Mapping):
+                entries.append({"desc_ce_weight": 1.0, "coord_weight": 1.0})
+                continue
+            try:
+                desc_w = float(item.get("desc_ce_weight", 1.0))
+            except (TypeError, ValueError):
+                desc_w = 1.0
+            try:
+                coord_w = float(item.get("coord_weight", 1.0))
+            except (TypeError, ValueError):
+                coord_w = 1.0
+            entries.append(
+                {
+                    "desc_ce_weight": float(max(0.0, desc_w)),
+                    "coord_weight": float(max(0.0, coord_w)),
+                }
+            )
+        return entries
+
+    return [{"desc_ce_weight": 1.0, "coord_weight": 1.0} for _ in range(object_count)]
+
+
+def _build_proxy_weight_tensors_for_sample(
+    *,
+    tokenizer: Any,
+    payload: Any,
+    labels: torch.Tensor,
+    metadata: Mapping[str, Any] | None,
+    namespace: str,
+) -> ProxyWeightTensors:
+    desc = torch.zeros(labels.shape, dtype=torch.float32, device=labels.device)
+    coord = torch.zeros(labels.shape, dtype=torch.float32, device=labels.device)
+
+    supervised_mask = labels != -100
+    if not bool(supervised_mask.any().item()):
+        return ProxyWeightTensors(desc=desc, coord=coord)
+
+    entries = _proxy_entries_for_payload(payload, metadata, namespace=namespace)
+    if not entries:
+        return ProxyWeightTensors(desc=desc, coord=coord)
+
+    supervised_positions = supervised_mask.nonzero(as_tuple=False).view(-1)
+    supervised_ids = [int(t) for t in labels[supervised_mask].detach().cpu().tolist()]
+    desc_spans = find_desc_value_token_positions_by_span(
+        tokenizer=tokenizer,
+        token_ids=supervised_ids,
+    )
+    coord_token_ids = set(int(t) for t in get_coord_token_ids(tokenizer, validate=True))
+    coord_positions = [i for i, tok_id in enumerate(supervised_ids) if int(tok_id) in coord_token_ids]
+
+    if len(desc_spans) != len(entries):
+        logger.debug(
+            "Proxy desc alignment mismatch: spans=%s entries=%s",
+            len(desc_spans),
+            len(entries),
+        )
+        desc_spans = []
+    if len(coord_positions) != (4 * len(entries)):
+        logger.debug(
+            "Proxy coord alignment mismatch: coord_positions=%s entries=%s",
+            len(coord_positions),
+            len(entries),
+        )
+        coord_positions = []
+
+    if desc_spans:
+        for span_positions, entry in zip(desc_spans, entries):
+            weight = float(entry["desc_ce_weight"])
+            for token_idx in span_positions:
+                if 0 <= int(token_idx) < int(supervised_positions.numel()):
+                    desc[int(supervised_positions[int(token_idx)].item())] = float(weight)
+
+    if coord_positions:
+        for obj_idx, entry in enumerate(entries):
+            weight = float(entry["coord_weight"])
+            start = int(obj_idx) * 4
+            for token_idx in coord_positions[start : start + 4]:
+                if 0 <= int(token_idx) < int(supervised_positions.numel()):
+                    coord[int(supervised_positions[int(token_idx)].item())] = float(weight)
+
+    return ProxyWeightTensors(desc=desc, coord=coord)
+
+
+class ProxySupervisionEnricher:
+    """Attach per-token proxy supervision weights aligned to labels."""
+
+    desc_field = "proxy_desc_token_weights"
+    coord_field = "proxy_coord_token_weights"
+
+    def __init__(self, *, template: Any, cfg: Mapping[str, Any]):
+        self._template = template
+        self._cfg = dict(cfg)
+
+    def __call__(self, *, collated: dict[str, Any], raw_batch: Sequence[Any], packed: bool) -> None:
+        if not bool(self._cfg.get("enabled", False)):
+            return
+
+        labels_tensor = collated.get("labels")
+        if labels_tensor is None or not isinstance(labels_tensor, torch.Tensor):
+            return
+
+        tokenizer = getattr(self._template, "tokenizer", None)
+        if tokenizer is None:
+            return
+
+        namespace = str(
+            self._cfg.get("namespace", "coordexp_proxy_supervision")
+            or "coordexp_proxy_supervision"
+        )
+
+        if packed:
+            desc_rows: list[torch.Tensor] = []
+            coord_rows: list[torch.Tensor] = []
+            for pack, labels_row in zip(raw_batch, labels_tensor):
+                pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+                desc_parts: list[torch.Tensor] = []
+                coord_parts: list[torch.Tensor] = []
+                for sample in pack_seq:
+                    if not isinstance(sample, Mapping):
+                        continue
+                    payload = sample.get("assistant_payload")
+                    sample_labels = sample.get("labels")
+                    if payload is None or sample_labels is None:
+                        continue
+                    sample_labels_t = (
+                        sample_labels
+                        if isinstance(sample_labels, torch.Tensor)
+                        else torch.tensor(
+                            sample_labels,
+                            dtype=torch.long,
+                            device=labels_tensor.device,
+                        )
+                    )
+                    weights = _build_proxy_weight_tensors_for_sample(
+                        tokenizer=tokenizer,
+                        payload=payload,
+                        labels=sample_labels_t,
+                        metadata=sample.get("metadata")
+                        if isinstance(sample.get("metadata"), Mapping)
+                        else None,
+                        namespace=namespace,
+                    )
+                    desc_parts.append(weights.desc.to(device=labels_tensor.device))
+                    coord_parts.append(weights.coord.to(device=labels_tensor.device))
+
+                if not desc_parts:
+                    desc_rows.append(torch.zeros_like(labels_row, dtype=torch.float32))
+                    coord_rows.append(torch.zeros_like(labels_row, dtype=torch.float32))
+                    continue
+
+                desc_cat = torch.cat(desc_parts, dim=0)
+                coord_cat = torch.cat(coord_parts, dim=0)
+                target_len = int(labels_row.shape[0])
+                if int(desc_cat.shape[0]) != target_len or int(coord_cat.shape[0]) != target_len:
+                    logger.debug(
+                        "Packed proxy-weight length mismatch: desc=%s coord=%s target=%s",
+                        desc_cat.shape[0],
+                        coord_cat.shape[0],
+                        target_len,
+                    )
+                    desc_cat = torch.zeros((target_len,), dtype=torch.float32, device=labels_tensor.device)
+                    coord_cat = torch.zeros((target_len,), dtype=torch.float32, device=labels_tensor.device)
+                desc_rows.append(desc_cat)
+                coord_rows.append(coord_cat)
+
+            if desc_rows:
+                collated[self.desc_field] = torch.stack(desc_rows, dim=0)
+                collated[self.coord_field] = torch.stack(coord_rows, dim=0)
+            return
+
+        desc_rows = []
+        coord_rows = []
+        for idx, raw in enumerate(raw_batch):
+            if not isinstance(raw, Mapping):
+                desc_rows.append(torch.zeros_like(labels_tensor[idx], dtype=torch.float32))
+                coord_rows.append(torch.zeros_like(labels_tensor[idx], dtype=torch.float32))
+                continue
+            payload = raw.get("assistant_payload")
+            if payload is None:
+                desc_rows.append(torch.zeros_like(labels_tensor[idx], dtype=torch.float32))
+                coord_rows.append(torch.zeros_like(labels_tensor[idx], dtype=torch.float32))
+                continue
+            weights = _build_proxy_weight_tensors_for_sample(
+                tokenizer=tokenizer,
+                payload=payload,
+                labels=labels_tensor[idx],
+                metadata=raw.get("metadata")
+                if isinstance(raw.get("metadata"), Mapping)
+                else None,
+                namespace=namespace,
+            )
+            desc_rows.append(weights.desc)
+            coord_rows.append(weights.coord)
+
+        if desc_rows:
+            collated[self.desc_field] = torch.stack(desc_rows, dim=0)
+            collated[self.coord_field] = torch.stack(coord_rows, dim=0)

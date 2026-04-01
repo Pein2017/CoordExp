@@ -131,6 +131,7 @@ def compute_coord_soft_ce_w1_loss(
     logits: torch.Tensor,
     labels: torch.Tensor,
     masked_labels: torch.Tensor,
+    coord_token_weights: torch.Tensor | None,
     coord_token_ids: list[int],
     coord_id_map: torch.Tensor,
     tokenizer: Any | None,
@@ -174,11 +175,24 @@ def compute_coord_soft_ce_w1_loss(
 
     target_bins_all = coord_id_map[labels_safe].to(dtype=torch.long)
     coord_positions_mask = (target_bins_all >= 0) & (labels_next != -100)
+    coord_position_weights = None
+    if isinstance(coord_token_weights, torch.Tensor):
+        if tuple(coord_token_weights.shape) != tuple(labels.shape):
+            raise ValueError(
+                "coord_token_weights must match labels shape when provided"
+            )
+        coord_weights_next = coord_token_weights[:, 1 : seq_len + 1]
+        coord_position_weights = coord_weights_next[coord_positions_mask].to(
+            dtype=torch.float32
+        )
 
     # Token-averaging across devices uses distributed collectives. Even when there are
     # no coord-token positions locally, we still participate in the denom reduction so
     # callers never deadlock due to conditional collectives.
-    denom_local = coord_positions_mask.sum().to(dtype=torch.float32)
+    if coord_position_weights is None:
+        denom_local = coord_positions_mask.sum().to(dtype=torch.float32)
+    else:
+        denom_local = coord_position_weights.sum().to(dtype=torch.float32)
     denom = denom_local
     if average_tokens_across_devices and model_accepts_loss_kwargs and dist.is_available() and dist.is_initialized():
         denom_global = denom_local.detach().clone()
@@ -190,6 +204,14 @@ def compute_coord_soft_ce_w1_loss(
 
     flat_logits_full = logits_next[coord_positions_mask]
     flat_target_bins = target_bins_all[coord_positions_mask]
+    if coord_position_weights is None:
+        coord_position_weights = torch.ones(
+            (int(flat_target_bins.numel()),),
+            dtype=torch.float32,
+            device=flat_target_bins.device,
+        )
+    else:
+        coord_position_weights = coord_position_weights.to(device=flat_target_bins.device)
 
     idx = torch.tensor(coord_token_ids, device=flat_logits_full.device, dtype=torch.long)
     flat_logits = flat_logits_full.index_select(-1, idx)
@@ -254,13 +276,14 @@ def compute_coord_soft_ce_w1_loss(
         coord_margin_mean = (max_logit - gt_logit).mean()
 
     # Loss terms (token-summed before normalization).
-    softce_sum = out.soft_ce_per_token.sum()
-    w1_sum = out.w1_per_token.sum()
+    token_weights = coord_position_weights.to(dtype=out.soft_ce_per_token.dtype)
+    softce_sum = (out.soft_ce_per_token * token_weights).sum()
+    w1_sum = (out.w1_per_token * token_weights).sum()
     ce_sum = softce_sum.new_tensor(0.0)
     if ce_weight != 0.0:
         ce_per_token = F.cross_entropy(flat_logits.float(), flat_target_bins, reduction="none")
         ce_per_token = torch.nan_to_num(ce_per_token, nan=0.0, posinf=1e4, neginf=0.0)
-        ce_sum = ce_per_token.sum()
+        ce_sum = (ce_per_token * token_weights.to(dtype=ce_per_token.dtype)).sum()
 
     gate_sum = softce_sum.new_tensor(0.0)
     gate_mass_mean = None
@@ -268,7 +291,7 @@ def compute_coord_soft_ce_w1_loss(
         gate_per_token, gate_mass_mean = coord_vocab_gate_loss(
             flat_logits_full, flat_logits, temperature=float(temperature) if float(temperature) > 0 else 1.0
         )
-        gate_sum = gate_per_token.sum()
+        gate_sum = (gate_per_token * token_weights.to(dtype=gate_per_token.dtype)).sum()
 
     denom = torch.where(denom > 0, denom, denom.new_tensor(1.0))
 

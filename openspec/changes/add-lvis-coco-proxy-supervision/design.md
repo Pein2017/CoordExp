@@ -76,14 +76,14 @@ design is:
   - bbox geometry
   - coord-regularization
 - Keep structure CE global and unaffected by proxy confidence.
-- Land the first implementation in Stage-2 where the existing weighted
-  supervision carriers already exist.
+- Land the first implementation with a shared metadata contract that supports:
+  - Stage-1 via collator-emitted aligned token-weight tensors
+  - Stage-2 via existing weighted supervision carriers
 
 **Non-Goals**
 
 - No change to the visible object entry syntax for this first version.
 - No new CLI flags.
-- No requirement to support Stage-1 in the same change.
 - No requirement to inject proxy provenance into the model prompt text.
 - No polygon-specific proxy supervision in the first version.
 
@@ -188,10 +188,28 @@ Recommended initial weights:
   - `coord_weight = 1.0`
 - `plausible`:
   - `desc_ce_weight = 0.25`
-  - `coord_weight = 0.10`
+  - `coord_weight = 0.0`
 
 These values should be encoded in the exported artifact so that the training
 run is fully reproducible from the data artifact alone.
+
+### 3a) Stage-1 uses batch extras as the proxy-weight carrier
+
+Stage-1 does not have the Stage-2 target-builder pipeline, so the same metadata
+contract should be projected into collator-emitted batch extras:
+
+- `proxy_desc_token_weights`
+- `proxy_coord_token_weights`
+
+These tensors are aligned 1:1 with `labels` and MUST:
+
+- assign structure tokens no proxy-specific downweighting,
+- assign desc-value tokens according to per-object `desc_ce_weight`,
+- assign coord tokens according to per-object `coord_weight`,
+- preserve pack concatenation order exactly.
+
+This keeps the rendered target unchanged while letting Stage-1 consume the same
+offline augmented dataset contract as Stage-2.
 
 Tier assignment must not be guessed directly from semantic evidence, though.
 It should flow from the proxy-mapping strategy:
