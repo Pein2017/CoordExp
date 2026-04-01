@@ -1,0 +1,125 @@
+{
+  "decision_rule_version": "v1_semantic_proxy_rank_2026-04-01",
+  "source_artifacts": {
+    "mapping_evidence_csv": "/data/CoordExp/temp/coco_lvis_projection_val2017/mapping_evidence.csv",
+    "learned_mapping_json": "/data/CoordExp/temp/coco_lvis_projection_val2017/learned_mapping.json"
+  },
+  "semantic_mappings_considered": 53,
+  "strict_count": 8,
+  "plausible_count": 13,
+  "reject_count": 32,
+  "thresholds": {
+    "strict": {
+      "n_match_min": 18,
+      "n_images_min": 8,
+      "precision_like_min": 0.92,
+      "coverage_like_min": 0.6,
+      "mean_iou_min": 0.84,
+      "median_iou_min": 0.88,
+      "iou_ge_075_rate_min": 0.8
+    },
+    "plausible": {
+      "n_match_min": 15,
+      "n_images_min": 5,
+      "precision_like_min": 0.9,
+      "coverage_like_min": 0.35,
+      "mean_iou_min": 0.78,
+      "median_iou_min": 0.8,
+      "iou_ge_075_rate_min": 0.6
+    }
+  },
+  "top_strict": [
+    {
+      "lvis_category_name": "bus_(vehicle)",
+      "mapped_coco_category_name": "bus",
+      "proxy_score": 0.9252
+    },
+    {
+      "lvis_category_name": "soccer_ball",
+      "mapped_coco_category_name": "sports ball",
+      "proxy_score": 0.9224
+    },
+    {
+      "lvis_category_name": "train_(railroad_vehicle)",
+      "mapped_coco_category_name": "train",
+      "proxy_score": 0.9165
+    },
+    {
+      "lvis_category_name": "mug",
+      "mapped_coco_category_name": "cup",
+      "proxy_score": 0.9136
+    },
+    {
+      "lvis_category_name": "urinal",
+      "mapped_coco_category_name": "toilet",
+      "proxy_score": 0.9103
+    },
+    {
+      "lvis_category_name": "wine_bottle",
+      "mapped_coco_category_name": "bottle",
+      "proxy_score": 0.9084
+    },
+    {
+      "lvis_category_name": "water_bottle",
+      "mapped_coco_category_name": "bottle",
+      "proxy_score": 0.9039
+    },
+    {
+      "lvis_category_name": "beer_bottle",
+      "mapped_coco_category_name": "bottle",
+      "proxy_score": 0.8685
+    }
+  ],
+  "top_plausible": [
+    {
+      "lvis_category_name": "tennis_ball",
+      "mapped_coco_category_name": "sports ball",
+      "proxy_score": 0.8988
+    },
+    {
+      "lvis_category_name": "baseball",
+      "mapped_coco_category_name": "sports ball",
+      "proxy_score": 0.8836
+    },
+    {
+      "lvis_category_name": "birthday_cake",
+      "mapped_coco_category_name": "cake",
+      "proxy_score": 0.8555
+    },
+    {
+      "lvis_category_name": "ball",
+      "mapped_coco_category_name": "sports ball",
+      "proxy_score": 0.8536
+    },
+    {
+      "lvis_category_name": "control",
+      "mapped_coco_category_name": "remote",
+      "proxy_score": 0.8474
+    },
+    {
+      "lvis_category_name": "cab_(taxi)",
+      "mapped_coco_category_name": "car",
+      "proxy_score": 0.8374
+    },
+    {
+      "lvis_category_name": "soap",
+      "mapped_coco_category_name": "bottle",
+      "proxy_score": 0.8371
+    },
+    {
+      "lvis_category_name": "stove",
+      "mapped_coco_category_name": "oven",
+      "proxy_score": 0.8329
+    },
+    {
+      "lvis_category_name": "deck_chair",
+      "mapped_coco_category_name": "chair",
+      "proxy_score": 0.8217
+    },
+    {
+      "lvis_category_name": "motor_scooter",
+      "mapped_coco_category_name": "motorcycle",
+      "proxy_score": 0.813
+    }
+  ]
+}
