@@ -67,6 +67,9 @@ DEBUG="${debug:-${DEBUG:-false}}"
 
 # GPU configuration
 GPU_DEVICES="${gpus:-${GPU_DEVICES:-0}}"
+if [[ "${GPU_DEVICES,,}" == "all" ]]; then
+  GPU_DEVICES="0,1,2,3,4,5,6,7"
+fi
 CUDA_VISIBLE_DEVICES="${GPU_DEVICES}"
 
 # Derive number of GPUs (ignore empty/whitespace tokens)

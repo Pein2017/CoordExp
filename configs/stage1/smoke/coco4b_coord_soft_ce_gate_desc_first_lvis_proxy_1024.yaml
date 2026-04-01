@@ -1,0 +1,13 @@
+extends:
+  - ../profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml
+  - ./common_prodlike.yaml
+
+training:
+  run_name: smoke_2steps-stage1-coco4b-softce_gate-desc_first-lvis_proxy-1024
+  artifact_subdir: stage1/smoke/coco4b_coord_soft_ce_gate_desc_first_lvis_proxy_1024
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_coco4b_softce_gate_desc_first_lvis_proxy_1024
+
+custom:
+  train_jsonl: temp/coco_lvis_projection_val2017/val.augmented.strict_plausible.coord.jsonl
+  val_jsonl: temp/coco_lvis_projection_val2017/val.augmented.strict_plausible.coord.jsonl
