@@ -3,6 +3,6 @@ template:
 
 custom:
   offline_max_pixels: 1048576
-  train_jsonl: temp/coco_lvis_projection_train2017/train.augmented.strict_plausible.coord.jsonl
-  val_jsonl: temp/coco_lvis_projection_val2017/val.augmented.strict_plausible.coord.jsonl
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
   object_ordering: sorted

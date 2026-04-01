@@ -27,7 +27,7 @@ infer:
   mode: auto
   pred_coord_mode: auto
   backend:
-    type: vllm
+    type: hf
     mode: server
     base_url: http://127.0.0.1:8000
     auto_launch: true
