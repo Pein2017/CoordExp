@@ -205,7 +205,9 @@ def resolve_artifacts(
 
     gt_vs_pred_scored = _get_str(art_cfg, "gt_vs_pred_scored_jsonl")
     gt_vs_pred_scored_jsonl = (
-        Path(gt_vs_pred_scored) if gt_vs_pred_scored else None
+        Path(gt_vs_pred_scored)
+        if gt_vs_pred_scored
+        else run_dir / "gt_vs_pred_scored.jsonl"
     )
 
     summary_json = Path(_get_str(art_cfg, "summary_json") or (run_dir / "summary.json"))
@@ -527,6 +529,8 @@ def run_pipeline(
     else:
         _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 
+    _maybe_run_confidence_postop(cfg, artifacts)
+
     if stages.eval:
         _run_eval_stage(cfg, artifacts)
 
@@ -650,6 +654,68 @@ def _run_infer_stage(
     engine.infer()
 
 
+def _maybe_run_confidence_postop(
+    cfg: Mapping[str, Any],
+    artifacts: ResolvedArtifacts,
+) -> None:
+    from src.eval.confidence_postop import (
+        options_from_config,
+        paths_from_config,
+        run_confidence_postop,
+    )
+
+    base_path = artifacts.gt_vs_pred_jsonl
+    trace_path = artifacts.pred_token_trace_jsonl
+    scored_path = artifacts.gt_vs_pred_scored_jsonl
+    if scored_path is None:
+        return
+    if not base_path.is_file():
+        return
+    if not trace_path.is_file():
+        logger.info(
+            "Skipping confidence post-op: token trace artifact is missing at %s",
+            trace_path,
+        )
+        return
+
+    pred_confidence_jsonl = artifacts.run_dir / "pred_confidence.jsonl"
+    confidence_postop_summary_json = artifacts.run_dir / "confidence_postop_summary.json"
+    newest_input_mtime = max(base_path.stat().st_mtime, trace_path.stat().st_mtime)
+    if (
+        scored_path.is_file()
+        and pred_confidence_jsonl.is_file()
+        and confidence_postop_summary_json.is_file()
+        and min(
+            scored_path.stat().st_mtime,
+            pred_confidence_jsonl.stat().st_mtime,
+            confidence_postop_summary_json.stat().st_mtime,
+        )
+        >= newest_input_mtime
+    ):
+        return
+
+    confidence_cfg = _get_map(cfg, "confidence")
+    postop_cfg = {
+        "confidence": dict(confidence_cfg) if confidence_cfg else {},
+        "artifacts": {
+            "run_dir": str(artifacts.run_dir),
+            "gt_vs_pred_jsonl": str(base_path),
+            "pred_token_trace_jsonl": str(trace_path),
+            "pred_confidence_jsonl": str(pred_confidence_jsonl),
+            "gt_vs_pred_scored_jsonl": str(scored_path),
+            "confidence_postop_summary_json": str(confidence_postop_summary_json),
+        },
+    }
+    logger.info(
+        "Running confidence post-op to materialize scored detections at %s",
+        scored_path,
+    )
+    run_confidence_postop(
+        paths_from_config(postop_cfg),
+        options=options_from_config(postop_cfg),
+    )
+
+
 def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> None:
     from src.eval.detection import EvalOptions, evaluate_and_save
 
@@ -684,7 +750,14 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
                 "Official detection evaluation requires artifacts.gt_vs_pred_scored_jsonl. "
                 "Run the confidence post-op first and configure this path."
             )
-        pred_path = _load_or_raise_artifact(scored_path)
+        if not scored_path.is_file():
+            raise ValueError(
+                "Official detection evaluation requires a scored artifact, but "
+                f"{scored_path} does not exist. Auto confidence post-op requires "
+                "artifacts.pred_token_trace_jsonl to be present; otherwise provide "
+                "artifacts.gt_vs_pred_scored_jsonl explicitly."
+            )
+        pred_path = scored_path
     else:
         pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
 

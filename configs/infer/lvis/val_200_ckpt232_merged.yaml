@@ -10,7 +10,7 @@
 # - summary.json
 
 run:
-  name: val_200_ckpt232_-continued-merged
+  name: val_200_2b
   output_dir: output/lvis_vllm_test
 
 stages:
@@ -20,7 +20,7 @@ stages:
 
 infer:
   gt_jsonl: public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl
-  model_checkpoint: output/stage1/lvis_bbox_max60_1024_adjacent_repulsion/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-continued-merged
+  model_checkpoint: output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global/epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b-merged
   prompt_variant: lvis_stage2_federated
   object_field_order: desc_first
   object_ordering: sorted
@@ -28,6 +28,21 @@ infer:
   pred_coord_mode: auto
   backend:
     type: vllm
+    mode: server
+    base_url: http://127.0.0.1:8000
+    auto_launch: true
+    timeout_s: 180.0
+    client_concurrency: 4
+    server_options:
+      max_batch_size: 32
+      batch_timeout_ms: 20
+      max_num_batched_tokens: 65536
+      vllm_tensor_parallel_size: 1
+      vllm_data_parallel_size: 1
+      vllm_max_num_seqs: 1
+      vllm_gpu_memory_utilization: 0.7
+      vllm_max_model_len: 12000
+      vllm_enable_prefix_caching: true
   generation:
     temperature: 0.0
     top_p: 0.9

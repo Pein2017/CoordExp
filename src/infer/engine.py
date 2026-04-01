@@ -766,6 +766,8 @@ class InferenceEngine:
             "top_p": float(self.gen_cfg.top_p),
             "max_tokens": int(self.gen_cfg.max_new_tokens),
             "stream": False,
+            "skip_special_tokens": False,
+            "spaces_between_special_tokens": False,
         }
         if self.gen_cfg.repetition_penalty is not None:
             payload["repetition_penalty"] = float(self.gen_cfg.repetition_penalty)

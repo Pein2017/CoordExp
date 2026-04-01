@@ -1,4 +1,6 @@
 import json
+import sys
+import types
 from pathlib import Path
 
 from PIL import Image
@@ -536,3 +538,68 @@ def test_infer_build_messages_respects_random_ordering() -> None:
 
     assert "any ordering is acceptable" in system_text
     assert "any ordering is acceptable" in user_text
+
+
+def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"objects":[{"desc":"obj","bbox_2d":[<|coord_1|>,<|coord_2|>,<|coord_3|>,<|coord_4|>]}]}'
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(url, json=None, headers=None, timeout=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return _FakeResponse()
+
+    fake_requests = types.SimpleNamespace(post=_fake_post)
+    monkeypatch.setitem(sys.modules, "requests", fake_requests)
+
+    engine = InferenceEngine(
+        InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={"base_url": "http://127.0.0.1:8000", "timeout_s": 12.5},
+            detect_samples=1,
+        ),
+        GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+        ),
+    )
+
+    text = engine._generate_vllm_server(Image.new("RGB", (8, 8), color=(0, 0, 0)))
+
+    assert "<|coord_1|>" in text
+    assert captured["url"] == "http://127.0.0.1:8000/v1/chat/completions"
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert payload["skip_special_tokens"] is False
+    assert payload["spaces_between_special_tokens"] is False
+    assert payload["stream"] is False

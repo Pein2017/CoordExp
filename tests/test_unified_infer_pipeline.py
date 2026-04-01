@@ -154,7 +154,7 @@ def test_pipeline_resolve_artifacts_defaults(tmp_path: Path) -> None:
     assert artifacts.run_dir == tmp_path / "out" / "demo"
     assert artifacts.gt_vs_pred_jsonl == artifacts.run_dir / "gt_vs_pred.jsonl"
     assert artifacts.pred_token_trace_jsonl == artifacts.run_dir / "pred_token_trace.jsonl"
-    assert artifacts.gt_vs_pred_scored_jsonl is None
+    assert artifacts.gt_vs_pred_scored_jsonl == artifacts.run_dir / "gt_vs_pred_scored.jsonl"
     assert artifacts.summary_json == artifacts.run_dir / "summary.json"
     assert artifacts.eval_dir == artifacts.run_dir / "eval"
     assert artifacts.vis_dir == artifacts.run_dir / "vis"
@@ -261,6 +261,97 @@ def test_run_pipeline_writes_manifest_pointer_for_non_default_artifact_layout(
     assert pointer_path.exists()
     pointed = Path(pointer_path.read_text(encoding="utf-8").strip())
     assert pointed == (artifacts.run_dir / "resolved_config.json").resolve()
+
+
+def test_run_pipeline_auto_materializes_scored_artifact_from_token_trace(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {"gt_jsonl": str(gt_jsonl)},
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        artifacts.gt_vs_pred_jsonl,
+        [
+            {
+                "image": "img.png",
+                "width": 1000,
+                "height": 1000,
+                "mode": "coord",
+                "coord_mode": "pixel",
+                "gt": [],
+                "pred": [
+                    {
+                        "type": "bbox_2d",
+                        "points": [100, 200, 300, 400],
+                        "desc": "box",
+                    }
+                ],
+                "raw_output_json": {
+                    "objects": [
+                        {
+                            "bbox_2d": [
+                                "<|coord_100|>",
+                                "<|coord_200|>",
+                                "<|coord_300|>",
+                                "<|coord_400|>",
+                            ],
+                            "desc": "box",
+                        }
+                    ]
+                },
+                "raw_special_tokens": [],
+                "raw_ends_with_im_end": True,
+                "errors": [],
+            }
+        ],
+    )
+    _write_jsonl(
+        artifacts.pred_token_trace_jsonl,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": [
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_300|>",
+                    "<|coord_400|>",
+                    "<|im_end|>",
+                ],
+                "token_logprobs": [-1.0, -1.0, -1.0, -1.0, -0.1],
+            }
+        ],
+    )
+
+    run_pipeline(config_path=config_path)
+
+    assert artifacts.gt_vs_pred_scored_jsonl is not None
+    assert artifacts.gt_vs_pred_scored_jsonl.exists()
+    scored = [
+        json.loads(line)
+        for line in artifacts.gt_vs_pred_scored_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+    assert scored[0]["pred_score_source"] == "confidence_postop"
+    assert scored[0]["pred_score_version"] == 2
+    assert scored[0]["pred"][0]["score"] > 0.0
 
 
 def test_resolve_root_image_dir_for_jsonl_uses_manifest_pointer(tmp_path: Path, monkeypatch) -> None:
@@ -403,7 +494,7 @@ def test_pipeline_eval_stage_requires_scored_artifact_for_coco(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="artifacts.gt_vs_pred_scored_jsonl"):
+    with pytest.raises(ValueError, match="scored artifact"):
         run_pipeline(config_path=config_path)
 
 
