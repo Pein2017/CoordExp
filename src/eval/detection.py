@@ -10,8 +10,10 @@ Features:
 from __future__ import annotations
 
 import copy
+import datetime
 import json
 import math
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -56,6 +58,17 @@ def _normalize_desc(desc: str) -> str:
 
 def _fmt_iou_thr(iou_thr: float) -> str:
     return f"{float(iou_thr):.2f}"
+
+
+def _normalize_lvis_frequency_label(value: Any) -> str:
+    freq = str(value or "").strip().lower()
+    if freq in {"r", "rare"}:
+        return "r"
+    if freq in {"c", "common"}:
+        return "c"
+    if freq in {"f", "frequent"}:
+        return "f"
+    return "unknown"
 
 
 def _matches_by_record_idx(rows: Sequence[Mapping[str, Any]]) -> Dict[int, Dict[str, Any]]:
@@ -1447,7 +1460,6 @@ def _prepare_lvis_artifacts(
     results = _limit_dets_per_image(results, max_dets=int(options.lvis_max_dets))
     coco_gt_dict = _to_lvis_gt(
         gt_samples=list(gt_samples),
-        results=results,
         category_catalog=category_catalog,
         add_box_segmentation=bool(options.use_segm),
     )
@@ -1463,19 +1475,9 @@ def _prepare_lvis_artifacts(
 def _to_lvis_gt(
     *,
     gt_samples: List[Sample],
-    results: Sequence[Mapping[str, Any]],
     category_catalog: Mapping[int, LvisCategory],
     add_box_segmentation: bool = False,
 ) -> Dict[str, Any]:
-    pred_cat_ids_by_image: Dict[int, set[int]] = {}
-    for row in results:
-        try:
-            image_id = int(row.get("image_id"))
-            category_id = int(row.get("category_id"))
-        except (AttributeError, TypeError, ValueError):
-            continue
-        pred_cat_ids_by_image.setdefault(image_id, set()).add(category_id)
-
     categories_by_norm_name = {
         str(item.norm_name): item for item in category_catalog.values()
     }
@@ -1491,24 +1493,23 @@ def _to_lvis_gt(
                 f"sample image_id={sample.image_id} is missing it."
             )
 
+        negative_ids = sorted(
+            int(item.category_id) for item in list(policy.neg_categories)
+        )
+        not_exhaustive_ids = sorted(
+            int(item.category_id) for item in list(policy.not_exhaustive_categories)
+        )
+
         images.append(
             {
                 "id": int(sample.image_id),
                 "file_name": sample.file_name,
                 "width": int(sample.width),
                 "height": int(sample.height),
+                "neg_category_ids": negative_ids,
+                "not_exhaustive_category_ids": not_exhaustive_ids,
             }
         )
-
-        positive_ids = {
-            int(item.category_id) for item in list(policy.positive_categories)
-        }
-        negative_ids = {
-            int(item.category_id) for item in list(policy.neg_categories)
-        }
-        not_exhaustive_ids = {
-            int(item.category_id) for item in list(policy.not_exhaustive_categories)
-        }
 
         for obj in sample.objects:
             category_id_raw = obj.get("category_id")
@@ -1543,47 +1544,11 @@ def _to_lvis_gt(
             annotations.append(ann)
             ann_id += 1
 
-        ignore_ids: set[int] = set()
-        for category_id in pred_cat_ids_by_image.get(int(sample.image_id), set()):
-            if int(category_id) in negative_ids:
-                continue
-            if int(category_id) in not_exhaustive_ids:
-                ignore_ids.add(int(category_id))
-                continue
-            if int(category_id) not in positive_ids:
-                ignore_ids.add(int(category_id))
-
-        for category_id in sorted(ignore_ids):
-            ann = {
-                "id": int(ann_id),
-                "image_id": int(sample.image_id),
-                "category_id": int(category_id),
-                "bbox": [0.0, 0.0, float(sample.width), float(sample.height)],
-                "area": float(max(sample.width, 0) * max(sample.height, 0)),
-                "iscrowd": 1,
-                "ignore": 1,
-            }
-            if add_box_segmentation:
-                ann["segmentation"] = [
-                    [
-                        0.0,
-                        0.0,
-                        float(sample.width),
-                        0.0,
-                        float(sample.width),
-                        float(sample.height),
-                        0.0,
-                        float(sample.height),
-                    ]
-                ]
-            annotations.append(ann)
-            ann_id += 1
-
     categories_list = [
         {
             "id": int(item.category_id),
             "name": str(item.name),
-            "frequency": str(item.frequency),
+            "frequency": _normalize_lvis_frequency_label(item.frequency),
         }
         for item in sorted(category_catalog.values(), key=lambda cat: int(cat.category_id))
     ]
@@ -1677,11 +1642,505 @@ def _accumulate_lvis_prediction_diagnostics(
                     counters.lvis_ignored_not_exhaustive += int(unmatched_count)
                 continue
 
+            # Keep the legacy diagnostic split: predictions for categories that
+            # are explicitly marked not-exhaustive are reported as such, even
+            # when the official LVIS scorer filters them before accumulation.
             if int(category_id) in not_exhaustive_ids:
                 counters.lvis_ignored_not_exhaustive += int(unmatched_count)
                 continue
 
             counters.lvis_ignored_unevaluable += int(len(pred_rows_sorted))
+
+
+class _OfficialLvisParams:
+    def __init__(
+        self,
+        iou_type: str,
+        *,
+        iou_thrs: Optional[Sequence[float]],
+        max_dets: int,
+    ) -> None:
+        self.img_ids: List[int] = []
+        self.cat_ids: List[int] = []
+        if iou_thrs:
+            self.iou_thrs = np.array([float(v) for v in iou_thrs], dtype=float)
+        else:
+            self.iou_thrs = np.linspace(
+                0.5,
+                0.95,
+                int(np.round((0.95 - 0.5) / 0.05)) + 1,
+                endpoint=True,
+            )
+        self.rec_thrs = np.linspace(
+            0.0,
+            1.00,
+            int(np.round((1.00 - 0.0) / 0.01)) + 1,
+            endpoint=True,
+        )
+        self.max_dets = int(max_dets)
+        self.area_rng = [
+            [0**2, 1e5**2],
+            [0**2, 32**2],
+            [32**2, 96**2],
+            [96**2, 1e5**2],
+        ]
+        self.area_rng_lbl = ["all", "small", "medium", "large"]
+        self.use_cats = 1
+        self.img_count_lbl = ["r", "c", "f"]
+        self.iou_type = iou_type
+
+
+def _lvis_ann_to_rle(ann: Mapping[str, Any], *, height: int, width: int) -> Any:
+    segmentation = ann.get("segmentation")
+    if isinstance(segmentation, Mapping):
+        return dict(segmentation)
+    if isinstance(segmentation, list) and segmentation:
+        rle = maskUtils.frPyObjects(segmentation, height, width)
+        return maskUtils.merge(rle) if isinstance(rle, list) else rle
+
+    bbox_raw = ann.get("bbox")
+    if isinstance(bbox_raw, Sequence) and len(bbox_raw) == 4:
+        x, y, w, h = [float(v) for v in bbox_raw]
+        quad = [[x, y, x + w, y, x + w, y + h, x, y + h]]
+        rle = maskUtils.frPyObjects(quad, height, width)
+        return maskUtils.merge(rle) if isinstance(rle, list) else rle
+
+    raise ValueError(f"Unable to build LVIS segmentation payload from ann: {ann!r}")
+
+
+class _OfficialLikeLvisEval:
+    """In-repo LVIS evaluator aligned to the official lvis_eval.py flow."""
+
+    def __init__(
+        self,
+        *,
+        gt_dataset: Mapping[str, Any],
+        detections: Sequence[Mapping[str, Any]],
+        iou_type: str,
+        iou_thrs: Optional[Sequence[float]],
+        max_dets: int,
+    ) -> None:
+        if iou_type not in {"bbox", "segm"}:
+            raise ValueError(f"Unsupported LVIS iou_type: {iou_type}")
+
+        self.logger = logger
+        self.gt_dataset = copy.deepcopy(dict(gt_dataset))
+        self.images = {
+            int(image["id"]): dict(image)
+            for image in self.gt_dataset.get("images", [])
+            if isinstance(image, Mapping) and image.get("id") is not None
+        }
+        self.categories = {
+            int(cat["id"]): dict(cat)
+            for cat in self.gt_dataset.get("categories", [])
+            if isinstance(cat, Mapping) and cat.get("id") is not None
+        }
+        self.gt_annotations = [
+            dict(ann)
+            for ann in self.gt_dataset.get("annotations", [])
+            if isinstance(ann, Mapping)
+        ]
+        for ann in self.gt_annotations:
+            if ann.get("area") is None and isinstance(ann.get("bbox"), Sequence):
+                _, _, w, h = [float(v) for v in ann["bbox"]]
+                ann["area"] = float(max(w, 0.0) * max(h, 0.0))
+        self.dt_annotations = []
+        for idx, det in enumerate(detections, start=1):
+            row = dict(det)
+            row.setdefault("id", int(idx))
+            if row.get("area") is None and isinstance(row.get("bbox"), Sequence):
+                _, _, w, h = [float(v) for v in row["bbox"]]
+                row["area"] = float(max(w, 0.0) * max(h, 0.0))
+            self.dt_annotations.append(row)
+
+        self.eval_imgs: List[Optional[Dict[str, Any]]] = []
+        self.eval: Dict[str, Any] = {}
+        self._gts: Dict[Tuple[int, int], List[Dict[str, Any]]] = defaultdict(list)
+        self._dts: Dict[Tuple[int, int], List[Dict[str, Any]]] = defaultdict(list)
+        self.params = _OfficialLvisParams(
+            iou_type,
+            iou_thrs=iou_thrs,
+            max_dets=max_dets,
+        )
+        self.results: OrderedDict[str, float] = OrderedDict()
+        self.ious: Dict[Tuple[int, int], Any] = {}
+
+        self.params.img_ids = sorted(self.images.keys())
+        self.params.cat_ids = sorted(self.categories.keys())
+        self.img_nel: Dict[int, List[int]] = {}
+        self.freq_groups: List[List[int]] = []
+
+    def _prepare_freq_group(self) -> List[List[int]]:
+        freq_groups = [[] for _ in self.params.img_count_lbl]
+        for idx, cat_id in enumerate(self.params.cat_ids):
+            cat = self.categories.get(int(cat_id), {})
+            frequency = _normalize_lvis_frequency_label(cat.get("frequency"))
+            if frequency in self.params.img_count_lbl:
+                freq_groups[self.params.img_count_lbl.index(frequency)].append(idx)
+        return freq_groups
+
+    def _prepare(self) -> None:
+        for gt in self.gt_annotations:
+            gt = dict(gt)
+            if "ignore" not in gt:
+                gt["ignore"] = 0
+            self._gts[int(gt["image_id"]), int(gt["category_id"])].append(gt)
+
+        img_nl = {
+            int(image_id): [
+                int(cat_id)
+                for cat_id in self.images.get(int(image_id), {}).get("neg_category_ids", [])
+            ]
+            for image_id in self.params.img_ids
+        }
+        img_pl: Dict[int, set[int]] = defaultdict(set)
+        for ann in self.gt_annotations:
+            img_pl[int(ann["image_id"])].add(int(ann["category_id"]))
+        self.img_nel = {
+            int(image_id): [
+                int(cat_id)
+                for cat_id in self.images.get(int(image_id), {}).get(
+                    "not_exhaustive_category_ids", []
+                )
+            ]
+            for image_id in self.params.img_ids
+        }
+
+        for dt in self.dt_annotations:
+            img_id = int(dt["image_id"])
+            cat_id = int(dt["category_id"])
+            if cat_id not in img_nl.get(img_id, []) and cat_id not in img_pl.get(img_id, set()):
+                continue
+            self._dts[img_id, cat_id].append(dict(dt))
+
+        self.freq_groups = self._prepare_freq_group()
+
+    def _get_gt_dt(self, img_id: int, cat_id: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        if self.params.use_cats:
+            gt = self._gts[img_id, cat_id]
+            dt = self._dts[img_id, cat_id]
+        else:
+            gt = [
+                ann
+                for local_cat_id in self.params.cat_ids
+                for ann in self._gts[img_id, int(local_cat_id)]
+            ]
+            dt = [
+                ann
+                for local_cat_id in self.params.cat_ids
+                for ann in self._dts[img_id, int(local_cat_id)]
+            ]
+        return gt, dt
+
+    def compute_iou(self, img_id: int, cat_id: int) -> Any:
+        gt, dt = self._get_gt_dt(img_id, cat_id)
+
+        if len(gt) == 0 and len(dt) == 0:
+            return []
+
+        dt_order = np.argsort([-float(d["score"]) for d in dt], kind="mergesort")
+        dt = [dt[int(i)] for i in dt_order]
+        iscrowd = [int(False)] * len(gt)
+
+        if self.params.iou_type == "bbox":
+            gt_payload = [g["bbox"] for g in gt]
+            dt_payload = [d["bbox"] for d in dt]
+        else:
+            image = self.images.get(int(img_id), {})
+            height = int(image.get("height", 0) or 0)
+            width = int(image.get("width", 0) or 0)
+            gt_payload = [
+                _lvis_ann_to_rle(g, height=height, width=width) for g in gt
+            ]
+            dt_payload = [
+                _lvis_ann_to_rle(d, height=height, width=width) for d in dt
+            ]
+
+        return maskUtils.iou(dt_payload, gt_payload, iscrowd)
+
+    def evaluate(self) -> None:
+        self.logger.info("Running official-style LVIS evaluation (%s).", self.params.iou_type)
+
+        self.params.img_ids = list(np.unique(self.params.img_ids))
+        cat_ids = self.params.cat_ids if self.params.use_cats else [-1]
+
+        self._prepare()
+        self.ious = {
+            (int(img_id), int(cat_id)): self.compute_iou(int(img_id), int(cat_id))
+            for img_id in self.params.img_ids
+            for cat_id in cat_ids
+        }
+        self.eval_imgs = [
+            self.evaluate_img(int(img_id), int(cat_id), area_rng)
+            for cat_id in cat_ids
+            for area_rng in self.params.area_rng
+            for img_id in self.params.img_ids
+        ]
+
+    def evaluate_img(
+        self,
+        img_id: int,
+        cat_id: int,
+        area_rng: Sequence[float],
+    ) -> Optional[Dict[str, Any]]:
+        gt, dt = self._get_gt_dt(img_id, cat_id)
+        if len(gt) == 0 and len(dt) == 0:
+            return None
+
+        gt = [dict(g) for g in gt]
+        dt = [dict(d) for d in dt]
+
+        for gt_ann in gt:
+            if gt_ann["ignore"] or (
+                float(gt_ann["area"]) < float(area_rng[0])
+                or float(gt_ann["area"]) > float(area_rng[1])
+            ):
+                gt_ann["_ignore"] = 1
+            else:
+                gt_ann["_ignore"] = 0
+
+        gt_idx = np.argsort([g["_ignore"] for g in gt], kind="mergesort")
+        gt = [gt[int(i)] for i in gt_idx]
+
+        dt_idx = np.argsort([-float(d["score"]) for d in dt], kind="mergesort")
+        dt = [dt[int(i)] for i in dt_idx]
+
+        ious = (
+            self.ious[img_id, cat_id][:, gt_idx]
+            if len(self.ious[img_id, cat_id]) > 0
+            else self.ious[img_id, cat_id]
+        )
+
+        num_thrs = len(self.params.iou_thrs)
+        num_gt = len(gt)
+        num_dt = len(dt)
+
+        gt_m = np.zeros((num_thrs, num_gt))
+        dt_m = np.zeros((num_thrs, num_dt))
+        gt_ig = np.array([g["_ignore"] for g in gt])
+        dt_ig = np.zeros((num_thrs, num_dt))
+
+        for iou_thr_idx, iou_thr in enumerate(self.params.iou_thrs):
+            if len(ious) == 0:
+                break
+
+            for dt_local_idx, _dt in enumerate(dt):
+                iou = min([float(iou_thr), 1 - 1e-10])
+                match_idx = -1
+                for gt_local_idx, _gt in enumerate(gt):
+                    if gt_m[iou_thr_idx, gt_local_idx] > 0:
+                        continue
+                    if (
+                        match_idx > -1
+                        and gt_ig[match_idx] == 0
+                        and gt_ig[gt_local_idx] == 1
+                    ):
+                        break
+                    if ious[dt_local_idx, gt_local_idx] < iou:
+                        continue
+                    iou = ious[dt_local_idx, gt_local_idx]
+                    match_idx = gt_local_idx
+
+                if match_idx == -1:
+                    continue
+
+                dt_ig[iou_thr_idx, dt_local_idx] = gt_ig[match_idx]
+                dt_m[iou_thr_idx, dt_local_idx] = gt[match_idx]["id"]
+                gt_m[iou_thr_idx, match_idx] = _dt["id"]
+
+        dt_ig_mask = [
+            float(d["area"]) < float(area_rng[0])
+            or float(d["area"]) > float(area_rng[1])
+            or int(d["category_id"]) in self.img_nel.get(int(d["image_id"]), [])
+            for d in dt
+        ]
+        dt_ig_mask = np.array(dt_ig_mask).reshape((1, num_dt))
+        dt_ig_mask = np.repeat(dt_ig_mask, num_thrs, 0)
+        dt_ig = np.logical_or(dt_ig, np.logical_and(dt_m == 0, dt_ig_mask))
+
+        return {
+            "image_id": int(img_id),
+            "category_id": int(cat_id),
+            "area_rng": area_rng,
+            "dt_ids": [int(d["id"]) for d in dt],
+            "gt_ids": [int(g["id"]) for g in gt],
+            "dt_matches": dt_m,
+            "gt_matches": gt_m,
+            "dt_scores": [float(d["score"]) for d in dt],
+            "gt_ignore": gt_ig,
+            "dt_ignore": dt_ig,
+        }
+
+    def accumulate(self) -> None:
+        if not self.eval_imgs:
+            self.logger.warning("No LVIS eval images found; run evaluate() first.")
+
+        cat_ids = self.params.cat_ids if self.params.use_cats else [-1]
+        num_thrs = len(self.params.iou_thrs)
+        num_recalls = len(self.params.rec_thrs)
+        num_cats = len(cat_ids)
+        num_area_rngs = len(self.params.area_rng)
+        num_imgs = len(self.params.img_ids)
+
+        precision = -np.ones((num_thrs, num_recalls, num_cats, num_area_rngs))
+        recall = -np.ones((num_thrs, num_cats, num_area_rngs))
+        dt_pointers: Dict[int, Dict[int, Dict[str, Any]]] = {}
+
+        for cat_idx in range(num_cats):
+            dt_pointers[cat_idx] = {}
+            for area_idx in range(num_area_rngs):
+                dt_pointers[cat_idx][area_idx] = {}
+
+        for cat_idx in range(num_cats):
+            nk = cat_idx * num_area_rngs * num_imgs
+            for area_idx in range(num_area_rngs):
+                na = area_idx * num_imgs
+                entries = [
+                    self.eval_imgs[nk + na + img_idx]
+                    for img_idx in range(num_imgs)
+                ]
+                entries = [entry for entry in entries if entry is not None]
+                if not entries:
+                    continue
+
+                dt_scores = np.concatenate([entry["dt_scores"] for entry in entries], axis=0)
+                dt_ids = np.concatenate([entry["dt_ids"] for entry in entries], axis=0)
+                dt_idx = np.argsort(-dt_scores, kind="mergesort")
+                dt_scores = dt_scores[dt_idx]
+                dt_ids = dt_ids[dt_idx]
+
+                dt_m = np.concatenate([entry["dt_matches"] for entry in entries], axis=1)[
+                    :, dt_idx
+                ]
+                dt_ig = np.concatenate([entry["dt_ignore"] for entry in entries], axis=1)[
+                    :, dt_idx
+                ]
+                gt_ig = np.concatenate([entry["gt_ignore"] for entry in entries])
+                num_gt = np.count_nonzero(gt_ig == 0)
+                if num_gt == 0:
+                    continue
+
+                tps = np.logical_and(dt_m, np.logical_not(dt_ig))
+                fps = np.logical_and(np.logical_not(dt_m), np.logical_not(dt_ig))
+                tp_sum = np.cumsum(tps, axis=1).astype(dtype=float)
+                fp_sum = np.cumsum(fps, axis=1).astype(dtype=float)
+
+                dt_pointers[cat_idx][area_idx] = {
+                    "dt_ids": dt_ids,
+                    "tps": tps,
+                    "fps": fps,
+                }
+
+                for iou_thr_idx, (tp, fp) in enumerate(zip(tp_sum, fp_sum)):
+                    tp = np.array(tp)
+                    fp = np.array(fp)
+                    num_tp = len(tp)
+                    rc = tp / num_gt
+                    if num_tp:
+                        recall[iou_thr_idx, cat_idx, area_idx] = rc[-1]
+                    else:
+                        recall[iou_thr_idx, cat_idx, area_idx] = 0
+
+                    pr = tp / (fp + tp + np.spacing(1))
+                    pr_list = pr.tolist()
+                    for precision_idx in range(num_tp - 1, 0, -1):
+                        if pr_list[precision_idx] > pr_list[precision_idx - 1]:
+                            pr_list[precision_idx - 1] = pr_list[precision_idx]
+
+                    rec_insert_idx = np.searchsorted(
+                        rc,
+                        self.params.rec_thrs,
+                        side="left",
+                    )
+                    pr_at_recall = [0.0] * num_recalls
+                    try:
+                        for recall_idx, precision_idx in enumerate(rec_insert_idx):
+                            pr_at_recall[recall_idx] = pr_list[int(precision_idx)]
+                    except Exception:
+                        pass
+                    precision[iou_thr_idx, :, cat_idx, area_idx] = np.array(pr_at_recall)
+
+        self.eval = {
+            "params": self.params,
+            "counts": [num_thrs, num_recalls, num_cats, num_area_rngs],
+            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "precision": precision,
+            "recall": recall,
+            "dt_pointers": dt_pointers,
+        }
+
+    def _summarize(
+        self,
+        summary_type: str,
+        iou_thr: Optional[float] = None,
+        area_rng: str = "all",
+        freq_group_idx: Optional[int] = None,
+    ) -> float:
+        aidx = [
+            idx
+            for idx, label in enumerate(self.params.area_rng_lbl)
+            if label == area_rng
+        ]
+
+        if summary_type == "ap":
+            scores = self.eval["precision"]
+            if iou_thr is not None:
+                tidx = np.where(iou_thr == self.params.iou_thrs)[0]
+                scores = scores[tidx]
+            if freq_group_idx is not None:
+                scores = scores[:, :, self.freq_groups[freq_group_idx], aidx]
+            else:
+                scores = scores[:, :, :, aidx]
+        else:
+            scores = self.eval["recall"]
+            if iou_thr is not None:
+                tidx = np.where(iou_thr == self.params.iou_thrs)[0]
+                scores = scores[tidx]
+            scores = scores[:, :, aidx]
+
+        valid_scores = scores[scores > -1]
+        if len(valid_scores) == 0:
+            return -1.0
+        return float(np.mean(valid_scores))
+
+    def summarize(self) -> None:
+        if not self.eval:
+            raise RuntimeError("Please run accumulate() before summarize().")
+
+        max_dets = int(self.params.max_dets)
+        self.results["AP"] = self._summarize("ap")
+        self.results["AP50"] = self._summarize("ap", iou_thr=0.50)
+        self.results["AP75"] = self._summarize("ap", iou_thr=0.75)
+        self.results["APs"] = self._summarize("ap", area_rng="small")
+        self.results["APm"] = self._summarize("ap", area_rng="medium")
+        self.results["APl"] = self._summarize("ap", area_rng="large")
+        self.results["APr"] = self._summarize("ap", freq_group_idx=0)
+        self.results["APc"] = self._summarize("ap", freq_group_idx=1)
+        self.results["APf"] = self._summarize("ap", freq_group_idx=2)
+        self.results[f"AR@{max_dets}"] = self._summarize("ar")
+        for area_rng in ["small", "medium", "large"]:
+            self.results[f"AR{area_rng[0]}@{max_dets}"] = self._summarize(
+                "ar",
+                area_rng=area_rng,
+            )
+
+    def per_class_ap(self) -> Dict[int, float]:
+        if not self.eval:
+            return {}
+        aidx = [
+            idx
+            for idx, label in enumerate(self.params.area_rng_lbl)
+            if label == "all"
+        ]
+        precision = self.eval["precision"]
+        out: Dict[int, float] = {}
+        for cat_idx, cat_id in enumerate(self.params.cat_ids):
+            scores = precision[:, :, cat_idx, aidx]
+            valid_scores = scores[scores > -1]
+            out[int(cat_id)] = (
+                float(np.mean(valid_scores)) if len(valid_scores) else float("nan")
+            )
+        return out
 
 
 def _run_lvis_eval(
@@ -1692,101 +2151,51 @@ def _run_lvis_eval(
     run_segm: bool,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     max_dets = int(options.lvis_max_dets)
-    metric_suffixes = (
-        "AP",
-        "AP50",
-        "AP75",
-        "APs",
-        "APm",
-        "APl",
-        "APr",
-        "APc",
-        "APf",
-        "AR1",
-        "AR10",
-        f"AR{max_dets}",
-        "ARs",
-        "ARm",
-        "ARl",
-        f"ARs{max_dets}",
-        f"ARm{max_dets}",
-        f"ARl{max_dets}",
-    )
     metrics: Dict[str, float] = {}
     per_class: Dict[str, float] = {}
     iou_types = ["bbox"]
     if run_segm:
         iou_types.append("segm")
 
-    if not results:
-        for iou_type in iou_types:
-            for suffix in metric_suffixes:
-                metrics[f"{iou_type}_{suffix}"] = 0.0
-        return metrics, per_class
-
-    coco_dt = coco_gt.loadRes(copy.deepcopy(results))
-    cat_info = {
-        str(cat.get("name", "")): str(cat.get("frequency", "unknown")).strip().lower()
-        for cat in coco_gt.dataset.get("categories", [])
-        if isinstance(cat, dict)
-    }
-
     for iou_type in iou_types:
-        coco_eval = COCOeval(coco_gt, coco_dt, iouType=iou_type)
-        if options.iou_thrs:
-            coco_eval.params.iouThrs = np.array(options.iou_thrs)
-        coco_eval.params.maxDets = [1, 10, int(max_dets)]
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
-
+        official_eval = _OfficialLikeLvisEval(
+            gt_dataset=cast(Mapping[str, Any], coco_gt.dataset),
+            detections=results,
+            iou_type=iou_type,
+            iou_thrs=options.iou_thrs,
+            max_dets=max_dets,
+        )
+        official_eval.evaluate()
+        official_eval.accumulate()
+        official_eval.summarize()
         prefix = f"{iou_type}_"
-        metrics.update(
-            {
-                f"{prefix}AP": float(coco_eval.stats[0]),
-                f"{prefix}AP50": float(coco_eval.stats[1]),
-                f"{prefix}AP75": float(coco_eval.stats[2]),
-                f"{prefix}APs": float(coco_eval.stats[3]),
-                f"{prefix}APm": float(coco_eval.stats[4]),
-                f"{prefix}APl": float(coco_eval.stats[5]),
-                f"{prefix}AR1": float(coco_eval.stats[6]),
-                f"{prefix}AR10": float(coco_eval.stats[7]),
-                f"{prefix}ARs": float(coco_eval.stats[9]),
-                f"{prefix}ARm": float(coco_eval.stats[10]),
-                f"{prefix}ARl": float(coco_eval.stats[11]),
-                f"{prefix}AR{max_dets}": float(coco_eval.stats[8]),
-                f"{prefix}ARs{max_dets}": float(coco_eval.stats[9]),
-                f"{prefix}ARm{max_dets}": float(coco_eval.stats[10]),
-                f"{prefix}ARl{max_dets}": float(coco_eval.stats[11]),
-            }
+        for metric_name, value in official_eval.results.items():
+            metrics[f"{prefix}{metric_name}"] = float(value)
+
+        # Backward-compatible aliases for downstream tooling that still expects
+        # the legacy key style without "@".
+        metrics[f"{prefix}AR{max_dets}"] = float(official_eval.results[f"AR@{max_dets}"])
+        metrics[f"{prefix}ARs{max_dets}"] = float(
+            official_eval.results[f"ARs@{max_dets}"]
+        )
+        metrics[f"{prefix}ARm{max_dets}"] = float(
+            official_eval.results[f"ARm@{max_dets}"]
+        )
+        metrics[f"{prefix}ARl{max_dets}"] = float(
+            official_eval.results[f"ARl@{max_dets}"]
         )
 
-        per_class_iou: Dict[str, float] = {}
-        if coco_eval.eval is not None:
-            precisions = coco_eval.eval["precision"]
-            cat_ids = coco_gt.getCatIds()
-            for idx, cat_id in enumerate(cat_ids):
-                precision = precisions[:, :, idx, 0, -1]
-                precision = precision[precision > -1]
-                ap = float(np.mean(precision)) if precision.size else float("nan")
-                cat_name = coco_gt.loadCats(cat_id)[0]["name"]
-                per_class_iou[cat_name] = ap
-            if iou_type == "bbox":
-                per_class = dict(per_class_iou)
-
-        for metric_name, frequency in (
-            ("APr", "rare"),
-            ("APc", "common"),
-            ("APf", "frequent"),
-        ):
-            values = [
-                float(ap)
-                for cat_name, ap in per_class_iou.items()
-                if cat_info.get(str(cat_name)) == frequency and math.isfinite(float(ap))
-            ]
-            metrics[f"{prefix}{metric_name}"] = (
-                float(sum(values) / len(values)) if values else 0.0
-            )
+        if iou_type == "bbox":
+            cat_names = {
+                int(cat.get("id")): str(cat.get("name", ""))
+                for cat in coco_gt.dataset.get("categories", [])
+                if isinstance(cat, Mapping) and cat.get("id") is not None
+            }
+            per_class = {
+                cat_names[int(cat_id)]: float(ap)
+                for cat_id, ap in official_eval.per_class_ap().items()
+                if cat_names.get(int(cat_id))
+            }
 
     return metrics, per_class
 
