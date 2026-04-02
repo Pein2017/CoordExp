@@ -84,6 +84,7 @@ def main():
 
     coord_ids, embed_offset, head_offset = load_offsets(args.adapter_dir)
     adapter_tie_head = head_offset is None
+    merged_tie_head = is_tied_embeddings(args.merged_dir)
     if adapter_tie_head:
         # Single/shared lookup table: the same offset should be applied to both embedding lookup
         # and output projection (tie-head semantics).
@@ -118,8 +119,15 @@ def main():
             f"lm_head.weight not found; will materialize {head_key} into {os.path.basename(embed_shard)}"
         )
     elif head_key is None and adapter_tie_head:
+        if not merged_tie_head:
+            raise RuntimeError(
+                "lm_head.weight not found, adapter uses tie_head=True, but merged config does "
+                "not advertise tie_word_embeddings=True. Refusing to continue because loading "
+                "this checkpoint may initialize an untied lm_head and drop coord updates. "
+                "Re-export with tied embeddings or materialize lm_head.weight before merging."
+            )
         print(
-            "lm_head.weight not found; adapter uses tie_head=True, so only embed_tokens.weight will be patched."
+            "lm_head.weight not found; merged config confirms tie_head=True, so only embed_tokens.weight will be patched."
         )
 
     # Patch embedding shard

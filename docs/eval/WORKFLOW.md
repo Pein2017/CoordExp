@@ -92,6 +92,54 @@ After evaluation:
 - `vis_resources/gt_vs_pred.jsonl` when the shared GT-vs-Pred reviewer is
   materialized for `scripts/run_vis.sh` or evaluator overlays
 
+## COCO + LVIS Proxy Evaluation
+
+For COCO runs trained with LVIS proxy supervision, keep the benchmark headline
+explicit:
+
+- report standard COCO metrics on the original COCO GT objects only
+- treat LVIS proxy-expanded GT as additive analysis, not as the replacement
+  headline benchmark
+
+Recommended flow:
+
+```text
+gt_vs_pred_scored.jsonl
+  -> materialize proxy GT views
+  -> coco_real / coco_real_strict / coco_real_strict_plausible JSONLs
+  -> run the standard evaluator on each view separately
+```
+
+Use `scripts/materialize_proxy_eval_views.py` on the scored artifact to create:
+
+- `coco_real`
+  - original COCO GT only (`proxy_tier = real`)
+- `coco_real_strict`
+  - COCO GT plus strict LVIS proxies (`same_extent_proxy`)
+- `coco_real_strict_plausible`
+  - COCO GT plus strict and plausible LVIS proxies
+
+For a one-inference / one-scored-artifact workflow, use
+`scripts/evaluate_proxy_detection_bundle.py` to:
+
+- reuse one `gt_vs_pred_scored.jsonl`
+- materialize the proxy GT views under the same run directory
+- run the standard evaluator once per view
+- write side-by-side outputs such as:
+  - `eval_coco_real/`
+  - `eval_coco_real_strict/`
+  - `eval_coco_real_strict_plausible/`
+  - `proxy_eval_bundle_summary.json`
+
+Interpretation guidance:
+
+- `coco_real` is the benchmark-aligned number to compare against standard COCO
+  baselines
+- `coco_real_strict` estimates recoverable misses where LVIS adds same-extent
+  annotations
+- `coco_real_strict_plausible` is the broadest supervision view and is useful
+  for recall analysis, but it is the least comparable to standard COCO
+
 After Oracle-K analysis:
 
 - `summary.json`

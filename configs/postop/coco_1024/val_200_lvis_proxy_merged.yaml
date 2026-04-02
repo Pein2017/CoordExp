@@ -1,0 +1,16 @@
+# Confidence post-op for the 200-sample COCO 1024 LVIS-proxy inference run.
+#
+# Run:
+#   PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
+#     --config configs/postop/coco_1024/val_200_lvis_proxy_merged.yaml
+
+artifacts:
+  run_dir: output/infer/coco1024_val200_lvis_proxy_merged
+
+confidence:
+  fusion:
+    w_geom: 0.7
+    w_desc: 0.3
+  desc_span_policy: best_effort
+  empty_desc_policy: geom_only
+

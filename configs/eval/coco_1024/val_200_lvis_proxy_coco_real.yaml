@@ -1,0 +1,26 @@
+# Benchmark-aligned COCO headline:
+# evaluate only the original COCO GT objects (`proxy_tier = real`).
+#
+# Prerequisite:
+#   scripts/materialize_proxy_eval_views.py must have written the filtered artifact.
+
+pred_jsonl: output/infer/coco1024_val200_lvis_proxy_merged/proxy_eval_views/gt_vs_pred_scored.coco_real.jsonl
+out_dir: output/infer/coco1024_val200_lvis_proxy_merged/eval_coco_real
+
+metrics: both
+use_segm: false
+strict_parse: false
+lvis_max_dets: 300
+
+overlay: false
+overlay_k: 12
+num_workers: 8
+
+semantic_model: model_cache/all-MiniLM-L6-v2-local
+semantic_threshold: 0.5
+semantic_device: cuda:0
+semantic_batch_size: 64
+
+f1ish_iou_thrs: [0.3, 0.5]
+f1ish_pred_scope: annotated
+

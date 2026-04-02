@@ -646,7 +646,7 @@ def check_adapter_coord_offsets(
                 elif "head_offset" in key:
                     head_offset_key = key
 
-        if embed_offset_key is None or head_offset_key is None:
+        if embed_offset_key is None:
             print("[ERROR] Could not find coord_offset_adapter weights in adapter")
             coord_keys = [
                 k for k in keys if "coord" in k.lower() or "offset" in k.lower()
@@ -656,10 +656,14 @@ def check_adapter_coord_offsets(
             return False
 
         print(f"[Found] {embed_offset_key}")
-        print(f"[Found] {head_offset_key}")
+        adapter_tie_head = head_offset_key is None
+        if adapter_tie_head:
+            print("[Found] No head_offset tensor; adapter uses tie_head=True")
+        else:
+            print(f"[Found] {head_offset_key}")
 
         embed_offset = f.get_tensor(embed_offset_key)
-        head_offset = f.get_tensor(head_offset_key)
+        head_offset = embed_offset if adapter_tie_head else f.get_tensor(head_offset_key)
 
         print(
             f"\n[Embed Offset] shape={embed_offset.shape}, dtype={embed_offset.dtype}"
@@ -676,18 +680,33 @@ def check_adapter_coord_offsets(
             f"  Non-zero elements (> {threshold}): {embed_nonzero}/{embed_offset.numel()}"
         )
 
-        print(f"\n[Head Offset] shape={head_offset.shape}, dtype={head_offset.dtype}")
-        head_max = head_offset.abs().max().item()
-        head_mean = head_offset.abs().mean().item()
-        head_std = head_offset.std().item()
-        head_nonzero = (head_offset.abs() > threshold).sum().item()
+        if adapter_tie_head:
+            print(
+                "\n[Head Offset] tie_head=True, so logits reuse the shared embed_offset tensor."
+            )
+            head_max = embed_max
+            head_mean = embed_mean
+            head_std = embed_std
+            head_nonzero = embed_nonzero
+            print(f"  Max abs value: {head_max:.6f}")
+            print(f"  Mean abs value: {head_mean:.6f}")
+            print(f"  Std: {head_std:.6f}")
+            print(
+                f"  Non-zero elements (> {threshold}): {head_nonzero}/{head_offset.numel()}"
+            )
+        else:
+            print(f"\n[Head Offset] shape={head_offset.shape}, dtype={head_offset.dtype}")
+            head_max = head_offset.abs().max().item()
+            head_mean = head_offset.abs().mean().item()
+            head_std = head_offset.std().item()
+            head_nonzero = (head_offset.abs() > threshold).sum().item()
 
-        print(f"  Max abs value: {head_max:.6f}")
-        print(f"  Mean abs value: {head_mean:.6f}")
-        print(f"  Std: {head_std:.6f}")
-        print(
-            f"  Non-zero elements (> {threshold}): {head_nonzero}/{head_offset.numel()}"
-        )
+            print(f"  Max abs value: {head_max:.6f}")
+            print(f"  Mean abs value: {head_mean:.6f}")
+            print(f"  Std: {head_std:.6f}")
+            print(
+                f"  Non-zero elements (> {threshold}): {head_nonzero}/{head_offset.numel()}"
+            )
 
         # Check if offsets were trained
         embed_trained = embed_max > threshold
@@ -699,9 +718,14 @@ def check_adapter_coord_offsets(
             print(
                 f"    - Embed offset: {embed_nonzero}/{embed_offset.numel()} elements non-zero"
             )
-            print(
-                f"    - Head offset: {head_nonzero}/{head_offset.numel()} elements non-zero"
-            )
+            if adapter_tie_head:
+                print(
+                    "    - Head offset: shared with embed_offset via tie_head=True"
+                )
+            else:
+                print(
+                    f"    - Head offset: {head_nonzero}/{head_offset.numel()} elements non-zero"
+                )
             return True
         else:
             print(
@@ -709,7 +733,7 @@ def check_adapter_coord_offsets(
             )
             if not embed_trained:
                 print("    - Embed offset is all zeros")
-            if not head_trained:
+            if not head_trained and not adapter_tie_head:
                 print("    - Head offset is all zeros")
             return False
 
