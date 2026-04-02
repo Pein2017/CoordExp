@@ -7,5 +7,13 @@ model:
 
 training:
   num_train_epochs: 2
-  artifact_subdir: stage1/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy
-  run_name: epoch_2-continue-from-4b
+  artifact_subdir: stage1/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-ce_ciou
+  run_name: epoch_2-ce_ciou-from-softce_w1_4b
+
+custom:
+  coord_soft_ce_w1:
+    enabled: false
+  bbox_geo:
+    enabled: true
+    smoothl1_weight: 0.0
+    ciou_weight: 1.0
