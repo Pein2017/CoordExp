@@ -69,6 +69,14 @@ def build_infer_resolved_meta(
             "summary_json": str(summary_path),
         },
     }
+    if bool(getattr(owner.cfg, "distributed_enabled", False)):
+        resolved_meta["distributed"] = {
+            "enabled": True,
+            "rank": int(getattr(owner.cfg, "rank", 0) or 0),
+            "local_rank": int(getattr(owner.cfg, "local_rank", 0) or 0),
+            "world_size": max(int(getattr(owner.cfg, "world_size", 1) or 1), 1),
+            "merge_strategy": "ordinal_restore",
+        }
     if backend == "vllm":
         public_fields = {
             "mode",
@@ -119,6 +127,15 @@ def build_infer_summary_payload(
             "limit": owner.cfg.limit,
         },
     }
+    if bool(getattr(owner.cfg, "distributed_enabled", False)):
+        summary_payload["distributed"] = {
+            "enabled": True,
+            "rank": int(getattr(owner.cfg, "rank", 0) or 0),
+            "local_rank": int(getattr(owner.cfg, "local_rank", 0) or 0),
+            "world_size": max(int(getattr(owner.cfg, "world_size", 1) or 1), 1),
+            "merge_strategy": "ordinal_restore",
+        }
+
     if owner.requested_mode == "auto":
         summary_payload["mode_resolution_reason"] = owner.mode_reason
 

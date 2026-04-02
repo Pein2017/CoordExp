@@ -603,3 +603,200 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
     assert payload["skip_special_tokens"] is False
     assert payload["spaces_between_special_tokens"] is False
     assert payload["stream"] is False
+
+
+def test_infer_distributed_merge_preserves_order_and_trace(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    for i in range(4):
+        _write_img(tmp_path / f"img_{i}.png")
+
+    gt_path = tmp_path / "gt.jsonl"
+    with gt_path.open("w", encoding="utf-8") as f:
+        for i in range(4):
+            rec = {
+                "images": [f"img_{i}.png"],
+                "width": 32,
+                "height": 32,
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": f"obj-{i}"}],
+                "image_id": i,
+                "metadata": {"sample_index": i},
+            }
+            f.write(json.dumps(rec, ensure_ascii=True) + "\n")
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    def _build_engine(rank: int) -> InferenceEngine:
+        inf_cfg = InferenceConfig(
+            gt_jsonl=str(gt_path),
+            model_checkpoint="dummy",
+            mode="text",
+            pred_coord_mode="auto",
+            out_path=str(out_path),
+            pred_token_trace_path=str(trace_path),
+            summary_path=str(summary_path),
+            device="cpu",
+            limit=3,
+            backend_type="hf",
+            backend={},
+            detect_samples=1,
+            rank=rank,
+            local_rank=rank,
+            world_size=2,
+            distributed_enabled=True,
+        )
+        gen_cfg = GenerationConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_new_tokens=16,
+            repetition_penalty=1.0,
+            batch_size=2,
+            seed=123,
+        )
+        engine = InferenceEngine(inf_cfg, gen_cfg)
+        monkeypatch.setattr(engine, "load_model", lambda: None)
+
+        def _fake_generate_batch(images):
+            text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
+            return [
+                GenerationResult(
+                    text=text,
+                    generated_token_text=[f"rank-{rank}", "tok"],
+                    token_logprobs=[-0.1, -0.2],
+                    error=None,
+                )
+                for _ in images
+            ]
+
+        monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+        return engine
+
+    rank1_engine = _build_engine(rank=1)
+    rank1_engine.infer()
+    assert not out_path.exists()
+
+    rank0_engine = _build_engine(rank=0)
+    got_out, got_summary = rank0_engine.infer()
+
+    assert got_out == out_path
+    assert got_summary == summary_path
+
+    rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [row["image"] for row in rows] == ["img_0.png", "img_1.png", "img_2.png"]
+    assert [row["image_id"] for row in rows] == [0, 1, 2]
+    assert all("metadata" in row for row in rows)
+    assert all("_coordexp_source_index" not in row for row in rows)
+
+    traces = [
+        json.loads(line)
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [trace["line_idx"] for trace in traces] == [0, 1, 2]
+    assert all("_coordexp_source_index" not in trace for trace in traces)
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["total_emitted"] == 3
+    assert summary["distributed"]["enabled"] is True
+    assert summary["distributed"]["world_size"] == 2
+
+
+def test_infer_distributed_tqdm_uses_global_progress_on_rank_zero(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    for i in range(4):
+        _write_img(tmp_path / f"img_{i}.png")
+
+    gt_path = tmp_path / "gt.jsonl"
+    with gt_path.open("w", encoding="utf-8") as f:
+        for i in range(4):
+            rec = {
+                "images": [f"img_{i}.png"],
+                "width": 32,
+                "height": 32,
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": f"obj-{i}"}],
+            }
+            f.write(json.dumps(rec, ensure_ascii=True) + "\n")
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    tqdm_events: list[dict[str, object]] = []
+
+    class _FakeTqdm:
+        def __init__(self, *args, **kwargs):
+            self.disable = bool(kwargs.get("disable", False))
+            self.total = kwargs.get("total")
+            self.updates: list[int] = []
+            tqdm_events.append(
+                {
+                    "disable": self.disable,
+                    "total": self.total,
+                    "updates": self.updates,
+                }
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, n=1):
+            self.updates.append(int(n))
+
+    monkeypatch.setattr(infer_engine, "tqdm", _FakeTqdm)
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint="dummy",
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=3,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+        rank=0,
+        local_rank=0,
+        world_size=2,
+        distributed_enabled=True,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=2,
+        seed=123,
+    )
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    monkeypatch.setattr(engine, "load_model", lambda: None)
+    monkeypatch.setattr(
+        engine,
+        "_wait_for_distributed_manifests",
+        lambda *, base_out_path: [out_path.parent / "shards" / "rank_00000" / "manifest.json"],
+    )
+    monkeypatch.setattr(
+        engine,
+        "_merge_distributed_outputs",
+        lambda **kwargs: infer_engine.RunCounters(),
+    )
+
+    def _fake_generate_batch(images):
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
+        return [GenerationResult(text=text, error=None) for _ in images]
+
+    monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+
+    engine.infer()
+
+    assert len(tqdm_events) == 1
+    assert tqdm_events[0]["disable"] is False
+    assert tqdm_events[0]["total"] == 3
+    assert sum(tqdm_events[0]["updates"]) == 3

@@ -99,6 +99,62 @@ def _get_int(cfg: Mapping[str, Any], key: str, default: int) -> int:
         raise ValueError(f"{key} must be an int") from exc
 
 
+def _get_limit(cfg: Mapping[str, Any], key: str, default: int = 0) -> int:
+    if key not in cfg:
+        return int(default)
+    val = cfg.get(key)
+    if val is None:
+        return int(default)
+    try:
+        limit = int(val)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an int or null") from exc
+    if limit < 0:
+        raise ValueError(f"{key} must be >= 0")
+    return limit
+
+
+def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
+    rank = 0
+    local_rank = 0
+    world_size = 1
+
+    try:
+        import torch
+
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            rank = int(torch.distributed.get_rank())
+            world_size = max(int(torch.distributed.get_world_size()), 1)
+            local_rank = int(os.environ.get("LOCAL_RANK", rank) or rank)
+            return rank, local_rank, world_size, world_size > 1
+    except (ImportError, RuntimeError, TypeError, ValueError):
+        pass
+
+    rank_raw = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+    local_rank_raw = os.environ.get("LOCAL_RANK") or os.environ.get("SLURM_LOCALID")
+    world_size_raw = os.environ.get("WORLD_SIZE") or os.environ.get("SLURM_NTASKS")
+
+    try:
+        if rank_raw is not None:
+            rank = int(rank_raw)
+    except (TypeError, ValueError):
+        rank = 0
+    try:
+        if local_rank_raw is not None:
+            local_rank = int(local_rank_raw)
+        else:
+            local_rank = rank
+    except (TypeError, ValueError):
+        local_rank = rank
+    try:
+        if world_size_raw is not None:
+            world_size = max(int(world_size_raw), 1)
+    except (TypeError, ValueError):
+        world_size = 1
+
+    return rank, local_rank, world_size, world_size > 1
+
+
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
 ) -> Tuple[str, ObjectFieldOrder, ObjectOrdering]:
@@ -631,6 +687,8 @@ def _run_infer_stage(
         seed=seed,
     )
 
+    rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
+
     inf_cfg = InferenceConfig(
         gt_jsonl=gt_jsonl,
         model_checkpoint=model_checkpoint,
@@ -644,10 +702,14 @@ def _run_infer_stage(
         summary_path=str(artifacts.summary_json),
         root_image_dir=str(root_image_dir) if root_image_dir else None,
         device=str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0"),
-        limit=_get_int(infer_cfg, "limit", 0),
+        limit=_get_limit(infer_cfg, "limit", 0),
         backend_type=backend_type,
         backend=dict(backend_cfg) if backend_cfg else {},
         detect_samples=_get_int(infer_cfg, "detect_samples", 128),
+        rank=rank,
+        local_rank=local_rank,
+        world_size=world_size,
+        distributed_enabled=distributed_enabled,
     )
 
     engine = InferenceEngine(inf_cfg, gen_cfg)

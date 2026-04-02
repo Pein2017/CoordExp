@@ -33,6 +33,8 @@ import yaml
 
 from src.infer.pipeline import run_pipeline
 
+_RELAUNCH_ENV = "COORDEXP_INFER_ALREADY_DISTRIBUTED"
+
 
 def _add_legacy_infer_flags(ap: argparse.ArgumentParser, *, required: bool) -> None:
     ap.add_argument("--gt_jsonl", required=required, help="Path to ground-truth JSONL")
@@ -182,6 +184,46 @@ def _run_legacy_infer(args: argparse.Namespace) -> None:
     print(f"Wrote predictions to {out_path} and summary to {summary_path}")
 
 
+def _strip_gpus_args(argv: list[str]) -> list[str]:
+    stripped: list[str] = []
+    skip_next = False
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--gpus":
+            skip_next = True
+            continue
+        if token.startswith("--gpus="):
+            continue
+        stripped.append(token)
+    return stripped
+
+
+def _maybe_relaunch_with_gpus(args: argparse.Namespace) -> bool:
+    gpus_raw = getattr(args, "gpus", None)
+    if gpus_raw is None:
+        return False
+    gpus = int(gpus_raw)
+    if gpus <= 1:
+        return False
+    if os.environ.get(_RELAUNCH_ENV) == "1":
+        return False
+
+    script_path = Path(__file__).resolve()
+    child_env = dict(os.environ)
+    child_env[_RELAUNCH_ENV] = "1"
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        f"--nproc_per_node={gpus}",
+        str(script_path),
+        *_strip_gpus_args(sys.argv[1:]),
+    ]
+    raise SystemExit(subprocess.run(cmd, env=child_env, check=False).returncode)
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Unified inference pipeline runner")
     ap.add_argument(
@@ -190,11 +232,19 @@ def main() -> None:
         default=None,
         help="YAML pipeline config (YAML-first).",
     )
+    ap.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="Launch distributed inference with this many local GPUs.",
+    )
 
     # If --config is provided, legacy flags become optional overrides.
     _add_legacy_infer_flags(ap, required=False)
 
     args = ap.parse_args()
+    if _maybe_relaunch_with_gpus(args):
+        return
 
     if args.config is not None:
         overrides = _yaml_overrides_from_args(args)
@@ -205,8 +255,16 @@ def main() -> None:
 
     # Legacy flag-only mode: require the classic inputs.
     ap2 = argparse.ArgumentParser(description="Legacy inference (no YAML)")
+    ap2.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="Launch distributed inference with this many local GPUs.",
+    )
     _add_legacy_infer_flags(ap2, required=True)
     args2 = ap2.parse_args()
+    if _maybe_relaunch_with_gpus(args2):
+        return
     _run_legacy_infer(args2)
 
 

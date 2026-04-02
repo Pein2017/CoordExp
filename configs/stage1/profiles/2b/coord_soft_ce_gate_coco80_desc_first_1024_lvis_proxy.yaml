@@ -1,0 +1,11 @@
+extends:
+  - ./coord_soft_ce_gate_coco80_desc_first.yaml
+  - ../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
+
+model:
+  model: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
+
+training:
+  num_train_epochs: 2
+  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy
+  run_name: epoch_2-continue-from-2b

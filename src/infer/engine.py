@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,6 +86,9 @@ from src.config.prompts import (
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.common.paths import resolve_image_path_strict
 from src.utils import get_logger
+
+_DISTRIBUTED_SOURCE_INDEX_KEY = "_coordexp_source_index"
+_DISTRIBUTED_MANIFEST_TIMEOUT_S = 1800.0
 
 # Map fine-grained error tags to canonical counter buckets.
 ERROR_CANONICAL = {
@@ -146,6 +150,10 @@ class InferenceConfig:
 
     device: str = "cuda:0"
     limit: int = 0
+    rank: int = 0
+    local_rank: int = 0
+    world_size: int = 1
+    distributed_enabled: bool = False
 
     backend_type: Literal["hf", "vllm"] = "hf"
     backend: Dict[str, Any] = field(default_factory=dict)
@@ -265,6 +273,36 @@ class RunCounters:
         self.counts[code] = self.counts.get(code, 0) + 1
         self.error_codes.add(code)
 
+    def merge_summary(self, summary: Mapping[str, Any]) -> None:
+        errors_by_code = summary.get("errors_by_code")
+        if not isinstance(errors_by_code, Mapping):
+            errors_by_code = summary.get("counters")
+        if isinstance(errors_by_code, Mapping):
+            for raw_code, raw_count in errors_by_code.items():
+                try:
+                    count_i = int(raw_count)
+                except (TypeError, ValueError):
+                    continue
+                if count_i <= 0:
+                    continue
+                code = str(raw_code)
+                self.counts[code] = self.counts.get(code, 0) + count_i
+                self.error_codes.add(code)
+
+        for raw_code in summary.get("error_codes", []):
+            if raw_code is None:
+                continue
+            self.error_codes.add(str(raw_code))
+
+        try:
+            self.total_read += int(summary.get("total_read", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            self.total_emitted += int(summary.get("total_emitted", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+
     def to_summary(self) -> Dict[str, Any]:
         errors_by_code = dict(self.counts)
         errors_total = int(sum(int(v) for v in errors_by_code.values()))
@@ -290,6 +328,17 @@ class InferenceEngine:
         self.cfg = cfg
         self.gen_cfg = gen_cfg
         self.logger = logger or get_logger(__name__)
+
+        self.cfg.rank = int(getattr(cfg, "rank", 0) or 0)
+        self.cfg.local_rank = int(getattr(cfg, "local_rank", self.cfg.rank) or self.cfg.rank)
+        self.cfg.world_size = max(int(getattr(cfg, "world_size", 1) or 1), 1)
+        self.cfg.distributed_enabled = bool(
+            getattr(cfg, "distributed_enabled", False) or self.cfg.world_size > 1
+        )
+        device = str(cfg.device or "cuda:0").strip() or "cuda:0"
+        if self.cfg.distributed_enabled and device.startswith("cuda"):
+            device = f"cuda:{self.cfg.local_rank}"
+        self.cfg.device = device
 
         self.prompt_variant = resolve_dense_prompt_variant_key(cfg.prompt_variant)
         self.cfg.prompt_variant = self.prompt_variant
@@ -948,6 +997,182 @@ class InferenceEngine:
             return img_path, None
         return img_path, image
 
+    def _distributed_paths(
+        self,
+        *,
+        out_path: Path,
+        summary_path: Path,
+        trace_path: Optional[Path],
+    ) -> tuple[Path, Path, Optional[Path], Optional[Path]]:
+        if not self.cfg.distributed_enabled:
+            return out_path, summary_path, trace_path, None
+
+        shard_dir = out_path.parent / "shards" / f"rank_{int(self.cfg.rank):05d}"
+        worker_out_path = shard_dir / out_path.name
+        worker_summary_path = shard_dir / summary_path.name
+        worker_trace_path = shard_dir / trace_path.name if trace_path is not None else None
+        manifest_path = shard_dir / "manifest.json"
+        return worker_out_path, worker_summary_path, worker_trace_path, manifest_path
+
+    def _write_distributed_manifest(
+        self,
+        *,
+        manifest_path: Path,
+        out_path: Path,
+        summary_path: Path,
+        trace_path: Optional[Path],
+    ) -> None:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": "complete",
+            "rank": int(self.cfg.rank),
+            "local_rank": int(self.cfg.local_rank),
+            "world_size": int(self.cfg.world_size),
+            "artifacts": {
+                "gt_vs_pred_jsonl": str(out_path),
+                "summary_json": str(summary_path),
+                "pred_token_trace_jsonl": (
+                    str(trace_path) if trace_path is not None else None
+                ),
+            },
+        }
+        manifest_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _wait_for_distributed_manifests(self, *, base_out_path: Path) -> list[Path]:
+        shard_root = base_out_path.parent / "shards"
+        manifest_paths = [
+            shard_root / f"rank_{rank:05d}" / "manifest.json"
+            for rank in range(int(self.cfg.world_size))
+        ]
+        deadline = time.monotonic() + _DISTRIBUTED_MANIFEST_TIMEOUT_S
+        while True:
+            missing = [path for path in manifest_paths if not path.exists()]
+            if not missing:
+                return manifest_paths
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    "Timed out waiting for distributed inference shards: "
+                    + ", ".join(str(path) for path in missing[:3])
+                )
+            time.sleep(1.0)
+
+    def _merge_distributed_outputs(
+        self,
+        *,
+        manifest_paths: List[Path],
+        final_out_path: Path,
+        final_summary_path: Path,
+        final_trace_path: Optional[Path],
+    ) -> RunCounters:
+        merged_counters = RunCounters()
+        merged_rows: list[tuple[int, Dict[str, Any]]] = []
+        merged_trace_rows: list[tuple[int, Dict[str, Any]]] = []
+        seen_row_indices: set[int] = set()
+        seen_trace_indices: set[int] = set()
+
+        for manifest_path in manifest_paths:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if str(manifest.get("status") or "") != "complete":
+                raise RuntimeError(
+                    f"Distributed inference manifest is incomplete: {manifest_path}"
+                )
+            artifacts = manifest.get("artifacts") or {}
+            if not isinstance(artifacts, Mapping):
+                raise RuntimeError(
+                    f"Distributed inference manifest is malformed: {manifest_path}"
+                )
+
+            shard_out_path = Path(str(artifacts.get("gt_vs_pred_jsonl") or "").strip())
+            shard_summary_path = Path(str(artifacts.get("summary_json") or "").strip())
+            trace_raw = artifacts.get("pred_token_trace_jsonl")
+            shard_trace_path = (
+                Path(str(trace_raw).strip())
+                if isinstance(trace_raw, str) and str(trace_raw).strip()
+                else None
+            )
+
+            shard_summary = json.loads(shard_summary_path.read_text(encoding="utf-8"))
+            merged_counters.merge_summary(shard_summary)
+
+            with shard_out_path.open("r", encoding="utf-8") as fin:
+                for line_no, raw_line in enumerate(fin, start=1):
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise RuntimeError(
+                            f"Distributed shard row must be an object: {shard_out_path}:{line_no}"
+                        )
+                    source_index_raw = record.pop(_DISTRIBUTED_SOURCE_INDEX_KEY, None)
+                    try:
+                        source_index = int(source_index_raw)
+                    except (TypeError, ValueError) as exc:
+                        raise RuntimeError(
+                            f"Distributed shard row is missing {_DISTRIBUTED_SOURCE_INDEX_KEY}: {shard_out_path}:{line_no}"
+                        ) from exc
+                    if source_index in seen_row_indices:
+                        raise RuntimeError(
+                            f"Duplicate distributed row index {source_index} in {shard_out_path}"
+                        )
+                    seen_row_indices.add(source_index)
+                    merged_rows.append((source_index, record))
+
+            if shard_trace_path is not None and shard_trace_path.exists():
+                with shard_trace_path.open("r", encoding="utf-8") as fin:
+                    for line_no, raw_line in enumerate(fin, start=1):
+                        line = raw_line.strip()
+                        if not line:
+                            continue
+                        record = json.loads(line)
+                        if not isinstance(record, dict):
+                            raise RuntimeError(
+                                "Distributed trace row must be an object: "
+                                f"{shard_trace_path}:{line_no}"
+                            )
+                        source_index_raw = record.pop(_DISTRIBUTED_SOURCE_INDEX_KEY, None)
+                        try:
+                            source_index = int(source_index_raw)
+                        except (TypeError, ValueError) as exc:
+                            raise RuntimeError(
+                                f"Distributed trace row is missing {_DISTRIBUTED_SOURCE_INDEX_KEY}: {shard_trace_path}:{line_no}"
+                            ) from exc
+                        if source_index in seen_trace_indices:
+                            raise RuntimeError(
+                                f"Duplicate distributed trace index {source_index} in {shard_trace_path}"
+                            )
+                        seen_trace_indices.add(source_index)
+                        merged_trace_rows.append((source_index, record))
+
+        merged_rows.sort(key=lambda item: item[0])
+        if len(merged_rows) != int(merged_counters.total_emitted):
+            raise RuntimeError(
+                "Distributed inference merge row-count mismatch: "
+                f"rows={len(merged_rows)} total_emitted={merged_counters.total_emitted}"
+            )
+
+        final_out_path.parent.mkdir(parents=True, exist_ok=True)
+        with final_out_path.open("w", encoding="utf-8") as fout:
+            for _, record in merged_rows:
+                fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        if final_trace_path is not None:
+            final_trace_path.parent.mkdir(parents=True, exist_ok=True)
+            trace_by_source = {source_index: record for source_index, record in merged_trace_rows}
+            with final_trace_path.open("w", encoding="utf-8") as fout:
+                for final_idx, (source_index, record) in enumerate(merged_rows):
+                    trace_record = trace_by_source.get(source_index)
+                    if trace_record is None:
+                        continue
+                    trace_record = dict(trace_record)
+                    trace_record["line_idx"] = final_idx
+                    fout.write(json.dumps(trace_record, ensure_ascii=False) + "\n")
+
+        return merged_counters
+
     def _preflight_inputs(self, jsonl_path: Path) -> None:
         """Validate operator-controlled inputs before any generation/eval work.
 
@@ -1094,6 +1319,13 @@ class InferenceEngine:
             cfg=self.cfg,
             backend=backend,
         )
+        worker_out_path, worker_summary_path, worker_trace_path, manifest_path = (
+            self._distributed_paths(
+                out_path=out_path,
+                summary_path=summary_path,
+                trace_path=trace_path,
+            )
+        )
 
         determinism = "strict" if backend == "hf" else "best_effort"
 
@@ -1111,17 +1343,17 @@ class InferenceEngine:
         self.load_model()
 
         ensure_infer_artifact_dirs(
-            out_path=out_path,
-            summary_path=summary_path,
-            trace_path=trace_path,
+            out_path=worker_out_path,
+            summary_path=worker_summary_path,
+            trace_path=worker_trace_path,
         )
         resolved_meta = build_infer_resolved_meta(
             owner=self,
             backend=backend,
             batch_size=batch_size,
-            out_path=out_path,
-            summary_path=summary_path,
-            trace_path=trace_path,
+            out_path=worker_out_path,
+            summary_path=worker_summary_path,
+            trace_path=worker_trace_path,
         )
 
         self.logger.info("Inference resolved config: %s", json.dumps(resolved_meta))
@@ -1158,7 +1390,6 @@ class InferenceEngine:
             if not pending:
                 return
 
-            # Safety: avoid exceeding limit by flushing only the remainder.
             if self.cfg.limit and self.cfg.limit > 0:
                 remaining = int(self.cfg.limit) - int(counters.total_emitted)
                 if remaining <= 0:
@@ -1205,22 +1436,21 @@ class InferenceEngine:
                     "width": p["width"],
                     "height": p["height"],
                     "mode": self.resolved_mode,
-                    # Points are emitted in pixel space; hint downstream to skip re-denorm.
                     "coord_mode": "pixel",
                     "gt": p["gt"],
                     "pred": pred,
                     "raw_output_json": raw_output_json,
                     "raw_special_tokens": raw_special_tokens,
                     "raw_ends_with_im_end": raw_ends_with_im_end,
-                    # Back-compat: list of canonical error codes.
                     "errors": error_codes,
-                    # Structured per-sample errors (minimal contract).
                     "error_entries": error_entries,
                 }
                 if p.get("image_id") is not None:
                     output["image_id"] = p.get("image_id")
                 if isinstance(p.get("metadata"), Mapping):
                     output["metadata"] = dict(p["metadata"])
+                if self.cfg.distributed_enabled:
+                    output[_DISTRIBUTED_SOURCE_INDEX_KEY] = int(p["source_index"])
                 if (
                     ftrace is not None
                     and res.generated_token_text is not None
@@ -1231,20 +1461,30 @@ class InferenceEngine:
                         "generated_token_text": list(res.generated_token_text),
                         "token_logprobs": list(res.token_logprobs),
                     }
+                    if self.cfg.distributed_enabled:
+                        trace_record[_DISTRIBUTED_SOURCE_INDEX_KEY] = int(
+                            p["source_index"]
+                        )
                     ftrace.write(json.dumps(trace_record, ensure_ascii=False) + "\n")
                 _emit(output, error_codes)
 
-        pbar_total = self.cfg.limit if self.cfg.limit > 0 else None
+        pbar_enabled = (not self.cfg.distributed_enabled) or int(self.cfg.rank) == 0
+        pbar_total: Optional[int]
+        if self.cfg.limit and self.cfg.limit > 0:
+            pbar_total = int(self.cfg.limit)
+        else:
+            pbar_total = None
         pending: List[Dict[str, Any]] = []
+        selected_index = 0
 
         trace_cm = (
-            trace_path.open("w", encoding="utf-8")
-            if trace_path is not None
+            worker_trace_path.open("w", encoding="utf-8")
+            if worker_trace_path is not None
             else nullcontext(None)
         )
         with (
             jsonl_path.open("r", encoding="utf-8") as fin,
-            out_path.open("w", encoding="utf-8") as fout,
+            worker_out_path.open("w", encoding="utf-8") as fout,
             trace_cm as ftrace,
             tqdm(
                 total=pbar_total,
@@ -1254,19 +1494,17 @@ class InferenceEngine:
                 smoothing=0.1,
                 mininterval=1.0,
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+                disable=not pbar_enabled,
             ) as pbar,
         ):
             for line_no, raw_line in enumerate(fin, start=1):
-                if self.cfg.limit and counters.total_emitted >= self.cfg.limit:
-                    break
-
                 line = raw_line.strip()
                 if not line:
                     continue
 
-                # We update on non-empty lines for a smoother display.
-                pbar.update(1)
-                counters.total_read += 1
+                if not self.cfg.distributed_enabled:
+                    pbar.update(1)
+                    counters.total_read += 1
 
                 try:
                     record = json.loads(line)
@@ -1306,6 +1544,22 @@ class InferenceEngine:
                         f"Invalid image field in `images[0]` at {jsonl_path}:{line_no}: {image_key!r}"
                     )
 
+                source_index = int(selected_index)
+                if self.cfg.limit and source_index >= int(self.cfg.limit):
+                    break
+                selected_index += 1
+
+                if self.cfg.distributed_enabled and int(self.cfg.rank) == 0:
+                    pbar.update(1)
+
+                if self.cfg.distributed_enabled and (
+                    source_index % int(self.cfg.world_size)
+                ) != int(self.cfg.rank):
+                    continue
+
+                if self.cfg.distributed_enabled:
+                    counters.total_read += 1
+
                 gt_errors: List[str] = []
                 gt = self._process_gt(
                     record, width=width, height=height, errors=gt_errors
@@ -1331,10 +1585,10 @@ class InferenceEngine:
                             if isinstance(record.get("metadata"), Mapping)
                             else None
                         ),
+                        "source_index": source_index,
                     }
                 )
 
-                # Flush when we have a full micro-batch, but never overshoot the limit.
                 target = batch_size
                 if self.cfg.limit and self.cfg.limit > 0:
                     remaining = int(self.cfg.limit) - int(counters.total_emitted)
@@ -1344,7 +1598,6 @@ class InferenceEngine:
                     _flush_pending(pending)
                     pending = []
 
-            # Flush any final partial batch.
             _flush_pending(pending)
 
         summary_payload = build_infer_summary_payload(
@@ -1354,12 +1607,57 @@ class InferenceEngine:
             determinism=determinism,
             batch_size=batch_size,
         )
-        write_infer_summary(summary_path=summary_path, summary_payload=summary_payload)
-        self.logger.info(
-            "Inference finished: %s samples emitted, summary=%s",
-            counters.total_emitted,
-            summary_path,
+        write_infer_summary(
+            summary_path=worker_summary_path,
+            summary_payload=summary_payload,
         )
+
+        if manifest_path is not None:
+            self._write_distributed_manifest(
+                manifest_path=manifest_path,
+                out_path=worker_out_path,
+                summary_path=worker_summary_path,
+                trace_path=worker_trace_path,
+            )
+            if int(self.cfg.rank) == 0:
+                manifest_paths = self._wait_for_distributed_manifests(
+                    base_out_path=out_path,
+                )
+                merged_counters = self._merge_distributed_outputs(
+                    manifest_paths=manifest_paths,
+                    final_out_path=out_path,
+                    final_summary_path=summary_path,
+                    final_trace_path=trace_path,
+                )
+                final_summary_payload = build_infer_summary_payload(
+                    owner=self,
+                    counters=merged_counters,
+                    backend=backend,
+                    determinism=determinism,
+                    batch_size=batch_size,
+                )
+                write_infer_summary(
+                    summary_path=summary_path,
+                    summary_payload=final_summary_payload,
+                )
+                self.logger.info(
+                    "Distributed inference finished: %s samples emitted, summary=%s",
+                    merged_counters.total_emitted,
+                    summary_path,
+                )
+            else:
+                self.logger.info(
+                    "Distributed inference shard finished: rank=%s emitted=%s summary=%s",
+                    self.cfg.rank,
+                    counters.total_emitted,
+                    worker_summary_path,
+                )
+        else:
+            self.logger.info(
+                "Inference finished: %s samples emitted, summary=%s",
+                counters.total_emitted,
+                summary_path,
+            )
         return out_path, summary_path
 
 

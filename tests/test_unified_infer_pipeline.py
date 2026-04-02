@@ -883,3 +883,69 @@ def test_vis_only_renders_without_model(tmp_path: Path, monkeypatch) -> None:
     render_vis_from_jsonl(artifact, out_dir=out_dir, limit=1)
 
     assert (out_dir / "vis_0000.png").exists()
+
+
+def test_run_pipeline_passes_distributed_runtime_and_null_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "4")
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "dummy",
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "device": "cuda:0",
+            "limit": None,
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "hf"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    import src.infer.engine as infer_engine
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(self):
+        captured["limit"] = self.cfg.limit
+        captured["rank"] = self.cfg.rank
+        captured["local_rank"] = self.cfg.local_rank
+        captured["world_size"] = self.cfg.world_size
+        captured["distributed_enabled"] = self.cfg.distributed_enabled
+        captured["device"] = self.cfg.device
+        Path(self.cfg.out_path).write_text("", encoding="utf-8")
+        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
+        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+
+    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+
+    run_pipeline(config_path=config_path)
+
+    assert captured["limit"] == 0
+    assert captured["rank"] == 1
+    assert captured["local_rank"] == 1
+    assert captured["world_size"] == 4
+    assert captured["distributed_enabled"] is True
+    assert captured["device"] == "cuda:1"
