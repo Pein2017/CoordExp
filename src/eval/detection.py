@@ -235,15 +235,26 @@ def _maybe_backfill_lvis_metadata_for_eval(
         return [dict(record) for record in records]
 
     rows = [dict(record) for record in records]
-    if rows and all(
+    rows_advertise_lvis = bool(rows) and all(
         isinstance(row.get("metadata"), Mapping)
         and str(row["metadata"].get("dataset_policy") or "").strip().lower()
         == "lvis_federated"
         for row in rows
-    ):
+    )
+    if rows_advertise_lvis:
         return rows
 
     gt_jsonl = _resolve_gt_jsonl_for_eval_artifact(pred_path)
+    gt_jsonl_lower = str(gt_jsonl).lower() if gt_jsonl is not None else ""
+    gt_jsonl_is_lvis = "/public_data/lvis/" in f"/{gt_jsonl_lower.lstrip('/')}"
+
+    # `metrics=both` means "official dataset metric + f1-ish".
+    # On COCO-like artifacts this should stay COCO + f1-ish, so we must not
+    # attempt LVIS metadata backfill unless the artifact or recovered GT path
+    # clearly points to LVIS federated evaluation.
+    if metrics_mode == "both" and not rows_advertise_lvis and not gt_jsonl_is_lvis:
+        return rows
+
     if gt_jsonl is None:
         if metrics_mode == "lvis":
             raise ValueError(

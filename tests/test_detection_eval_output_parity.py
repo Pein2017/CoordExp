@@ -191,6 +191,56 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(
     assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
 
 
+def test_evaluate_and_save_both_does_not_force_lvis_backfill_for_coco_proxy_artifact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    row = _one_record(image="img.png")
+    row["metadata"] = {
+        "coordexp_proxy_supervision": {
+            "object_supervision": [
+                {"proxy_tier": "real", "source": "coco"},
+                {"proxy_tier": "strict", "source": "lvis"},
+            ],
+            "summary": {
+                "real_count": 1,
+                "strict_count": 1,
+                "plausible_count": 0,
+                "include_plausible": False,
+            },
+        },
+        "source": "coco2017",
+        "split": "val",
+    }
+    _write_jsonl(pred_path, [row])
+
+    class _StubEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            import numpy as np
+
+            return {str(t): np.array([1.0, 0.0], dtype=np.float32) for t in texts}
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _StubEncoder)
+
+    out_dir = tmp_path / "eval"
+    options = EvalOptions(
+        metrics="both",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=out_dir,
+        overlay=False,
+        num_workers=0,
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+    )
+
+    summary = evaluate_and_save(pred_path, options=options)
+    assert summary["metrics"]["bbox_AP50"] > 0.9
+    assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
+
+
 def test_evaluate_and_save_lvis_respects_federated_ignore_semantics(
     tmp_path: Path,
 ) -> None:
