@@ -1,0 +1,7 @@
+interface:
+  display_name: "Self-Improving"
+  short_description: "Conservative local memory for reusable corrections and workflow lessons"
+  default_prompt: "Use $self-improving to keep reusable corrections, preferences, and workflow lessons in this Codex workspace."
+
+policy:
+  allow_implicit_invocation: true

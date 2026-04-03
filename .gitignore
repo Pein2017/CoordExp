@@ -41,6 +41,10 @@
 !.serena/memories/
 !.serena/memories/**
 
+# Shared self-improving memory for this workspace
+!.self-improving/
+!.self-improving/**
+
 # Codex skills (track these, keep other .codex_config/* ignored)
 !.codex_config/
 !.codex_config/pein/
