@@ -10,6 +10,7 @@ from src.trainers.teacher_forcing.contracts import TeacherForcingContext
 from src.trainers.teacher_forcing.geometry import (
     compute_bbox_log_size_loss,
     compute_bbox_oversize_penalty,
+    compute_bbox_regression_loss,
 )
 from src.trainers.teacher_forcing.objective_atoms import project_stage2_objective_atoms
 from src.trainers.teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
@@ -82,6 +83,51 @@ def test_bbox_log_size_loss_empty_mask_returns_zero() -> None:
     assert result.stats.valid_count == 0
 
 
+def test_bbox_regression_center_size_can_ignore_size_only_mismatch() -> None:
+    pred = torch.tensor([[0.1, 0.1, 0.9, 0.9]], dtype=torch.float32)
+    target = torch.tensor([[0.2, 0.2, 0.8, 0.8]], dtype=torch.float32)
+
+    xyxy = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="xyxy",
+    )
+    center_only = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.0,
+    )
+
+    assert float(xyxy.loss.detach().cpu().item()) > 0.0
+    assert float(center_only.center.detach().cpu().item()) == pytest.approx(
+        0.0, abs=1e-6
+    )
+    assert float(center_only.size.detach().cpu().item()) > 0.0
+    assert float(center_only.loss.detach().cpu().item()) == pytest.approx(
+        0.0, abs=1e-6
+    )
+
+
+def test_bbox_regression_center_size_eps_guard_keeps_zero_extent_finite() -> None:
+    pred = torch.tensor([[0.5, 0.5, 0.5, 0.5]], dtype=torch.float32)
+    target = torch.tensor([[0.5, 0.5, 0.7, 0.9]], dtype=torch.float32)
+
+    result = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=1.0,
+        eps=1.0e-6,
+    )
+
+    assert torch.isfinite(result.loss).item()
+    assert torch.isfinite(result.size).item()
+    assert float(result.size.detach().cpu().item()) > 0.0
+
+
 def test_bbox_oversize_penalty_thresholds_are_zero_below_and_positive_above() -> None:
     small = torch.tensor([[0.1, 0.2, 0.3, 0.4]], dtype=torch.float32)
     large = torch.tensor([[0.1, 0.2, 0.95, 0.98]], dtype=torch.float32)
@@ -99,6 +145,79 @@ def test_bbox_oversize_penalty_thresholds_are_zero_below_and_positive_above() ->
 
     assert float(penalty_small.detach().cpu().item()) == pytest.approx(0.0)
     assert float(penalty_large.detach().cpu().item()) > 0.0
+
+
+def test_bbox_regression_loss_center_size_can_ignore_pure_size_error() -> None:
+    pred = torch.tensor([[0.25, 0.25, 0.35, 0.35]], dtype=torch.float32)
+    target = torch.tensor([[0.20, 0.20, 0.40, 0.40]], dtype=torch.float32)
+
+    xyxy = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="xyxy",
+    )
+    center_only = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.0,
+    )
+
+    assert float(xyxy.loss.detach().cpu().item()) > 0.0
+    assert float(center_only.center.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
+    assert float(center_only.size.detach().cpu().item()) > 0.0
+    assert float(center_only.loss.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
+
+
+def test_bbox_regression_loss_center_size_clamps_tiny_boxes_before_log() -> None:
+    pred = torch.tensor([[0.50, 0.50, 0.50, 0.50]], dtype=torch.float32)
+    target = torch.tensor([[0.40, 0.40, 0.60, 0.60]], dtype=torch.float32)
+
+    result = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="center_size",
+        center_weight=0.0,
+        size_weight=1.0,
+        eps=1.0e-6,
+    )
+
+    assert torch.isfinite(result.loss)
+    assert torch.isfinite(result.size)
+    assert float(result.size.detach().cpu().item()) > 0.0
+
+
+def test_bbox_regression_loss_canonicalizes_equivalent_boxes_for_center_size() -> None:
+    pred = torch.tensor([[0.25, 0.25, 0.35, 0.35]], dtype=torch.float32)
+    target = torch.tensor([[0.20, 0.20, 0.40, 0.40]], dtype=torch.float32)
+    pred_reversed = torch.tensor([[0.35, 0.35, 0.25, 0.25]], dtype=torch.float32)
+    target_reversed = torch.tensor([[0.40, 0.40, 0.20, 0.20]], dtype=torch.float32)
+
+    canonical = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred,
+        target_boxes_xyxy=target,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.25,
+    )
+    reversed_result = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred_reversed,
+        target_boxes_xyxy=target_reversed,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.25,
+    )
+
+    assert float(reversed_result.loss.detach().cpu().item()) == pytest.approx(
+        float(canonical.loss.detach().cpu().item())
+    )
+    assert float(reversed_result.center.detach().cpu().item()) == pytest.approx(
+        float(canonical.center.detach().cpu().item())
+    )
+    assert float(reversed_result.size.detach().cpu().item()) == pytest.approx(
+        float(canonical.size.detach().cpu().item())
+    )
 
 
 def test_stage1_bbox_size_aux_loss_exact_match_is_near_zero() -> None:
@@ -247,6 +366,65 @@ def test_stage1_bbox_geo_loss_is_positive_when_predicted_box_misses_target() -> 
     assert float(result.total_loss.detach().cpu().item()) > 0.0
 
 
+def test_stage1_bbox_geo_center_size_can_downweight_size_only_mismatch() -> None:
+    vocab = 1200
+    labels = torch.tensor([[0, 5, 103, 104, 107, 108]], dtype=torch.long)
+    logits = torch.full((1, labels.shape[1], vocab), -20.0, dtype=torch.float32)
+    logits[0, 0, 5] = 20.0
+    logits[0, 1, 102] = 20.0
+    logits[0, 2, 103] = 20.0
+    logits[0, 3, 108] = 20.0
+    logits[0, 4, 109] = 20.0
+
+    coord_id_map = torch.full((vocab,), -1, dtype=torch.long)
+    for bin_id in range(1000):
+        coord_id_map[100 + bin_id] = bin_id
+
+    cfg_xyxy = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": True,
+            "smoothl1_weight": 1.0,
+            "ciou_weight": 0.0,
+        }
+    )
+    cfg_center = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": True,
+            "smoothl1_weight": 1.0,
+            "ciou_weight": 0.0,
+            "parameterization": "center_size",
+            "center_weight": 1.0,
+            "size_weight": 0.0,
+        }
+    )
+
+    result_xyxy = compute_stage1_bbox_geo_loss(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=[100 + i for i in range(1000)],
+        coord_id_map=coord_id_map,
+        tokenizer=_DummyTokenizer(),
+        cfg=cfg_xyxy,
+        decode_temperature=1.0,
+    )
+    result_center = compute_stage1_bbox_geo_loss(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=[100 + i for i in range(1000)],
+        coord_id_map=coord_id_map,
+        tokenizer=_DummyTokenizer(),
+        cfg=cfg_center,
+        decode_temperature=1.0,
+    )
+
+    assert result_xyxy is not None
+    assert result_center is not None
+    assert float(result_xyxy.smoothl1_loss.detach().cpu().item()) > 0.0
+    assert float(result_center.smoothl1_loss.detach().cpu().item()) == pytest.approx(
+        0.0, abs=1e-6
+    )
+
+
 def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
     vocab = 1200
     coord_token_ids = [100 + i for i in range(1000)]
@@ -322,3 +500,218 @@ def test_rollout_teacher_forcing_pipeline_emits_bbox_size_aux_atom() -> None:
 
     assert float(pipeline_result.metrics["loss/bbox_log_wh"]) > 0.0
     assert float(atoms["loss/B_coord/bbox_log_wh"]) > 0.0
+
+
+def test_rollout_teacher_forcing_bbox_geo_center_size_keeps_atom_keys_stable() -> None:
+    vocab = 1200
+    coord_token_ids = [100 + i for i in range(1000)]
+    logits = torch.full((1, 5, vocab), -20.0, dtype=torch.float32)
+    logits[0, 0, 250] = 20.0
+    logits[0, 1, 350] = 20.0
+    logits[0, 2, 350] = 20.0
+    logits[0, 3, 450] = 20.0
+    input_ids = torch.tensor([[0, 100, 101, 102, 103]], dtype=torch.long)
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": 5,
+            "encoded_len": 5,
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [
+                {"pos": [1, 2, 3, 4], "gt_bins": [100, 200, 300, 400]}
+            ],
+        }
+    ]
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=meta,
+        coord_token_ids=coord_token_ids,
+        temperature=1.0,
+    )
+
+    objective_xyxy = [
+        {
+            "name": "bbox_geo",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "anchor_only"},
+            "config": {
+                "smoothl1_weight": 1.0,
+                "ciou_weight": 0.5,
+            },
+        }
+    ]
+    objective_center = [
+        {
+            "name": "bbox_geo",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "anchor_only"},
+            "config": {
+                "smoothl1_weight": 1.0,
+                "ciou_weight": 0.5,
+                "parameterization": "center_size",
+                "center_weight": 1.0,
+                "size_weight": 0.0,
+            },
+        }
+    ]
+
+    xyxy_result = run_teacher_forcing_pipeline(
+        context=context,
+        objective_specs=objective_xyxy,
+        diagnostics_specs=[],
+    )
+    center_result = run_teacher_forcing_pipeline(
+        context=context,
+        objective_specs=objective_center,
+        diagnostics_specs=[],
+    )
+    xyxy_atoms = project_stage2_objective_atoms(
+        pipeline_result=xyxy_result,
+        objective_specs=objective_xyxy,
+        text_provenance="B_rollout_text",
+        coord_provenance="B_coord",
+        emit_text=False,
+        emit_coord=True,
+        require_additive=True,
+    )
+    center_atoms = project_stage2_objective_atoms(
+        pipeline_result=center_result,
+        objective_specs=objective_center,
+        text_provenance="B_rollout_text",
+        coord_provenance="B_coord",
+        emit_text=False,
+        emit_coord=True,
+        require_additive=True,
+    )
+
+    assert set(xyxy_atoms.keys()) == {"loss/B_coord/bbox_smoothl1", "loss/B_coord/bbox_ciou"}
+    assert set(center_atoms.keys()) == {"loss/B_coord/bbox_ciou"}
+    assert float(xyxy_result.metrics["loss/bbox_smoothl1"]) > 0.0
+    assert float(center_result.metrics["loss/bbox_smoothl1"]) == pytest.approx(0.0, abs=1e-6)
+    assert center_result.state["bbox_pred_boxes_xyxy"].shape == (1, 4)
+    assert center_result.state["bbox_target_boxes_xyxy"].shape == (1, 4)
+    assert "bbox_smoothl1_contrib" in center_result.state
+    assert float(center_result.state["bbox_smoothl1_contrib"]) == pytest.approx(0.0, abs=1e-6)
+    assert float(xyxy_atoms["loss/B_coord/bbox_smoothl1"]) > 0.0
+
+
+def test_rollout_teacher_forcing_bbox_geo_center_size_blended_loss_matches_group_aggregation() -> None:
+    vocab = 1200
+    coord_token_ids = [100 + i for i in range(1000)]
+    logits = torch.full((1, 9, vocab), -20.0, dtype=torch.float32)
+
+    # Group 1 keeps the center fixed while shrinking the box.
+    logits[0, 0, 250] = 20.0
+    logits[0, 1, 350] = 20.0
+    logits[0, 2, 350] = 20.0
+    logits[0, 3, 450] = 20.0
+
+    # Group 2 shifts the center and shrinks the width/height.
+    logits[0, 4, 360] = 20.0
+    logits[0, 5, 480] = 20.0
+    logits[0, 6, 560] = 20.0
+    logits[0, 7, 700] = 20.0
+
+    input_ids = torch.tensor([[0, 100, 101, 102, 103, 104, 105, 106, 107]], dtype=torch.long)
+    meta = [
+        {
+            "prompt_len": 0,
+            "prefix_len": 0,
+            "train_len": 9,
+            "encoded_len": 9,
+            "bbox_groups_prefix": [],
+            "bbox_groups_fn": [
+                {"pos": [1, 2, 3, 4], "gt_bins": [100, 200, 300, 400], "weight": 1.0},
+                {"pos": [5, 6, 7, 8], "gt_bins": [200, 300, 700, 900], "weight": 3.0},
+            ],
+        }
+    ]
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=meta,
+        coord_token_ids=coord_token_ids,
+        temperature=1.0,
+    )
+    objective_center = [
+        {
+            "name": "bbox_geo",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "anchor_only"},
+            "config": {
+                "smoothl1_weight": 2.0,
+                "ciou_weight": 0.0,
+                "parameterization": "center_size",
+                "center_weight": 1.0,
+                "size_weight": 0.25,
+            },
+        }
+    ]
+
+    pipeline_result = run_teacher_forcing_pipeline(
+        context=context,
+        objective_specs=objective_center,
+        diagnostics_specs=[],
+    )
+
+    pred_boxes = pipeline_result.state["bbox_pred_boxes_xyxy"]
+    target_boxes = pipeline_result.state["bbox_target_boxes_xyxy"]
+    group_weights = pipeline_result.state["bbox_group_weights"]
+
+    weighted = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred_boxes,
+        target_boxes_xyxy=target_boxes,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.25,
+        weights=group_weights,
+    )
+    unweighted = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred_boxes,
+        target_boxes_xyxy=target_boxes,
+        parameterization="center_size",
+        center_weight=1.0,
+        size_weight=0.25,
+    )
+
+    expected_smoothl1 = float(weighted.loss.detach().cpu().item())
+    expected_contrib = 2.0 * expected_smoothl1
+
+    assert pred_boxes.shape == (2, 4)
+    assert target_boxes.shape == (2, 4)
+    assert group_weights.detach().cpu().tolist() == pytest.approx([1.0, 3.0])
+    assert float(unweighted.loss.detach().cpu().item()) != pytest.approx(expected_smoothl1)
+    assert float(pipeline_result.metrics["loss/bbox_smoothl1"]) == pytest.approx(
+        expected_smoothl1,
+        rel=1e-6,
+        abs=1e-6,
+    )
+    assert float(pipeline_result.state["smoothl1"].detach().cpu().item()) == pytest.approx(
+        expected_smoothl1,
+        rel=1e-6,
+        abs=1e-6,
+    )
+    assert float(pipeline_result.state["bbox_smoothl1_contrib"]) == pytest.approx(
+        expected_contrib,
+        rel=1e-6,
+        abs=1e-6,
+    )
+    assert float(pipeline_result.metrics["loss/geo"]) == pytest.approx(
+        expected_contrib,
+        rel=1e-6,
+        abs=1e-6,
+    )

@@ -524,7 +524,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["optimizer"] == "multimodal_coord_offset"
     assert (
         cfg.training["run_name"]
-        == "epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size"
+        == "epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b"
     )
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -544,11 +544,14 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.bbox_geo.enabled is True
     assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.01)
     assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.parameterization == "xyxy"
+    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_size_aux.enabled is True
     assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
-    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024"
-    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024"
-    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024"
+    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
@@ -567,17 +570,20 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_geo.enabled is True
     assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.parameterization == "xyxy"
+    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_size_aux.enabled is True
     assert cfg.training["max_steps"] == 2
     assert cfg.custom.train_sample_limit == 32
     assert cfg.custom.val_sample_limit == 8
     assert (
         cfg.training["run_name"]
-        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global0p01"
     )
-    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024"
-    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024"
-    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024"
+    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
 
 
 def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> None:
@@ -588,27 +594,45 @@ def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> Non
 
     assert (
         cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+        == "output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged"
     )
-    assert (
-        cfg.training["run_name"]
-        == "epoch_2-stage2-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
-    )
+    assert cfg.training["run_name"] == "continued_to_ckpt_232"
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.object_field_order == "desc_first"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
     assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024"
-    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024"
-    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
+    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
+    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
     objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
     assert objective["bbox_geo"].config["smoothl1_weight"] == pytest.approx(0.0)
     assert objective["bbox_geo"].config["ciou_weight"] == pytest.approx(1.0)
+    assert objective["bbox_geo"].config.get("parameterization", "xyxy") == "xyxy"
+    assert objective["bbox_geo"].config["parameterization"] == "xyxy"
+    assert objective["bbox_geo"].config["center_weight"] == pytest.approx(1.0)
+    assert objective["bbox_geo"].config["size_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["coord_ce_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["soft_ce_weight"] == pytest.approx(1.0)
     assert objective["coord_reg"].config["w1_weight"] == pytest.approx(1.0)
+
+
+def test_stage2_center_size_smoke_config_resolves_bbox_geo_parameterization() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml"
+        )
+    )
+
+    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
+    assert cfg.training["run_name"] == "smoke_2steps-stage2-a_only-center_size_bbox_geo"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/smoke/a_only_center_size_2steps"
+    assert objective["bbox_geo"].config["parameterization"] == "center_size"
+    assert objective["bbox_geo"].config["center_weight"] == pytest.approx(1.0)
+    assert objective["bbox_geo"].config["size_weight"] == pytest.approx(0.25)
 
 
 def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:

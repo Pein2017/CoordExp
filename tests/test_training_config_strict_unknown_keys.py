@@ -242,6 +242,55 @@ def test_custom_bbox_geo_requires_explicit_keys() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_custom_bbox_geo_accepts_center_size_keys() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "smoothl1_weight": 0.5,
+        "ciou_weight": 0.25,
+        "parameterization": "center_size",
+        "center_weight": 1.0,
+        "size_weight": 0.25,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert cfg.custom.bbox_geo.parameterization == "center_size"
+    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.size_weight == pytest.approx(0.25)
+
+
+def test_custom_bbox_geo_legacy_surface_defaults_to_xyxy_parameterization() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "smoothl1_weight": 0.0,
+        "ciou_weight": 1.0,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert cfg.custom.bbox_geo.parameterization == "xyxy"
+    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
+    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
+
+
+def test_custom_bbox_geo_center_size_requires_nonzero_center_or_size_weight() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_geo"] = {
+        "enabled": True,
+        "smoothl1_weight": 0.5,
+        "ciou_weight": 0.25,
+        "parameterization": "center_size",
+        "center_weight": 0.0,
+        "size_weight": 0.0,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"bbox_geo\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_custom_coord_soft_ce_w1_unknown_key_fails_fast() -> None:
     payload = _base_training_payload()
     payload["custom"]["coord_soft_ce_w1"] = {
@@ -970,6 +1019,52 @@ def test_stage2_pipeline_disallows_custom_bbox_geo_knobs() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_stage2_pipeline_bbox_geo_unknown_alias_fails_fast() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": [
+            _pipeline_token_ce_spec(),
+            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
+            _pipeline_bbox_geo_spec(config={"center_wt": 1.0}),
+            _pipeline_bbox_size_aux_spec(),
+            _pipeline_coord_reg_spec(),
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown stage2_ab\.pipeline\.objective\[2\]\.config keys.*center_wt",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_stage2_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": [
+            _pipeline_token_ce_spec(),
+            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
+            _pipeline_bbox_geo_spec(
+                config={
+                    "smoothl1_weight": 0.5,
+                    "ciou_weight": 0.25,
+                    "parameterization": "center_size",
+                    "center_weight": 0.0,
+                    "size_weight": 0.0,
+                }
+            ),
+            _pipeline_bbox_size_aux_spec(),
+            _pipeline_coord_reg_spec(),
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[2\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_stage2_pipeline_disallows_custom_bbox_size_aux_knobs() -> None:
     payload = _base_stage2_two_channel_payload()
     payload["custom"]["bbox_size_aux"] = {
@@ -1048,6 +1143,30 @@ def test_guardrail_rollout_aligned_rejects_stage2_pipeline():
     }
 
     with pytest.raises(ValueError, match=r"stage2_ab\.pipeline is not allowed"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_rollout_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None:
+    payload = _base_stage2_rollout_aligned_payload()
+    payload["rollout_matching"]["pipeline"] = {
+        "objective": [
+            _pipeline_bbox_geo_spec(
+                config={
+                    "smoothl1_weight": 0.5,
+                    "ciou_weight": 0.25,
+                    "parameterization": "center_size",
+                    "center_weight": 0.0,
+                    "size_weight": 0.0,
+                }
+            )
+        ],
+        "diagnostics": [],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matching\.pipeline\.objective\[0\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
+    ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 

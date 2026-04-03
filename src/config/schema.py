@@ -29,6 +29,7 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
+    validate_bbox_geo_config_values,
     normalize_token_ce_stop_signal_damping_config,
     validate_adjacent_repulsion_config_values,
 )
@@ -407,6 +408,9 @@ class BBoxGeoConfig:
     enabled: bool = False
     smoothl1_weight: float = 0.0
     ciou_weight: float = 1.0
+    parameterization: str = "xyxy"
+    center_weight: float = 1.0
+    size_weight: float = 1.0
 
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "BBoxGeoConfig":
@@ -421,7 +425,13 @@ class BBoxGeoConfig:
             "smoothl1_weight",
             "ciou_weight",
         }
-        unknown = sorted(str(k) for k in data.keys() if k not in required)
+        optional = {
+            "parameterization",
+            "center_weight",
+            "size_weight",
+        }
+        allowed = required | optional
+        unknown = sorted(str(k) for k in data.keys() if k not in allowed)
         if unknown:
             raise ValueError(
                 f"Unknown bbox_geo keys: {[f'bbox_geo.{k}' for k in unknown]}"
@@ -435,7 +445,7 @@ class BBoxGeoConfig:
         enabled = bool(data.pop("enabled"))
 
         def _parse_float(key: str, default: float) -> float:
-            raw = data.pop(key)
+            raw = data.pop(key, default)
             try:
                 return float(raw)
             except (TypeError, ValueError) as exc:
@@ -443,11 +453,26 @@ class BBoxGeoConfig:
 
         smoothl1_weight = _parse_float("smoothl1_weight", cls.smoothl1_weight)
         ciou_weight = _parse_float("ciou_weight", cls.ciou_weight)
+        parameterization = (
+            str(data.pop("parameterization", cls.parameterization) or cls.parameterization)
+            .strip()
+            .lower()
+        )
+        center_weight = _parse_float("center_weight", cls.center_weight)
+        size_weight = _parse_float("size_weight", cls.size_weight)
 
         if smoothl1_weight < 0:
             raise ValueError("bbox_geo.smoothl1_weight must be >= 0")
         if ciou_weight < 0:
             raise ValueError("bbox_geo.ciou_weight must be >= 0")
+        validate_bbox_geo_config_values(
+            {
+                "parameterization": parameterization,
+                "center_weight": center_weight,
+                "size_weight": size_weight,
+            },
+            path="bbox_geo",
+        )
         if enabled and smoothl1_weight == 0 and ciou_weight == 0:
             raise ValueError(
                 "bbox_geo is enabled but smoothl1_weight and ciou_weight are both 0"
@@ -457,6 +482,9 @@ class BBoxGeoConfig:
             enabled=enabled,
             smoothl1_weight=smoothl1_weight,
             ciou_weight=ciou_weight,
+            parameterization=parameterization,
+            center_weight=center_weight,
+            size_weight=size_weight,
         )
 
 
@@ -2150,6 +2178,15 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
                 )
+            if str(spec.name) == "bbox_geo":
+                validate_bbox_geo_config_values(
+                    spec.config,
+                    path=f"stage2_ab.pipeline.objective[{idx}].config",
+                )
+                if isinstance(spec.config, dict):
+                    spec.config.setdefault("parameterization", "xyxy")
+                    spec.config.setdefault("center_weight", 1.0)
+                    spec.config.setdefault("size_weight", 1.0)
             if str(spec.name) == "coord_reg":
                 validate_adjacent_repulsion_config_values(
                     spec.config,

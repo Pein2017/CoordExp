@@ -72,7 +72,18 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
     "bbox_geo": ObjectiveModuleDefinition(
         family="bbox",
         semantic_role="geometry",
-        config_keys=frozenset({"smoothl1_weight", "ciou_weight"}),
+        config_keys=frozenset(
+            {
+                "smoothl1_weight",
+                "ciou_weight",
+                "parameterization",
+                "center_weight",
+                "size_weight",
+            }
+        ),
+        optional_config_keys=frozenset(
+            {"parameterization", "center_weight", "size_weight"}
+        ),
         application_presets=frozenset({"anchor_only"}),
         projected_atoms=(
             ObjectiveLossAtomDefinition(
@@ -238,6 +249,41 @@ def normalize_token_ce_stop_signal_damping_config(
         "the adaptive stop-signal-damping experiment was dropped because it is toxic for "
         "rollout and causes duplicate-heavy dense-scene proposals."
     )
+
+
+def validate_bbox_geo_config_values(
+    config: Mapping[str, Any],
+    *,
+    path: str,
+) -> None:
+    parameterization = str(config.get("parameterization", "xyxy") or "xyxy").strip().lower()
+    if parameterization not in {"xyxy", "center_size"}:
+        raise ValueError(
+            f"{path}.parameterization must be one of ['center_size', 'xyxy']"
+        )
+
+    center_weight = 1.0
+    if "center_weight" in config:
+        try:
+            center_weight = float(config.get("center_weight"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path}.center_weight must be numeric") from exc
+        if center_weight < 0.0:
+            raise ValueError(f"{path}.center_weight must be >= 0")
+
+    size_weight = 1.0
+    if "size_weight" in config:
+        try:
+            size_weight = float(config.get("size_weight"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path}.size_weight must be numeric") from exc
+        if size_weight < 0.0:
+            raise ValueError(f"{path}.size_weight must be >= 0")
+
+    if parameterization == "center_size" and center_weight == 0.0 and size_weight == 0.0:
+        raise ValueError(
+            f"{path}.parameterization=center_size requires center_weight > 0 or size_weight > 0"
+        )
 
 
 def validate_adjacent_repulsion_config_values(

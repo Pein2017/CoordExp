@@ -73,6 +73,17 @@ Stage-1 training families that parity tests expect to stay user-visible.
 - `bbox_geo/groups_per_sample`
 - `bbox_geo/coord_slots_total`
 
+Interpretation note:
+
+- `loss/geo/bbox_smoothl1` is the stable key for the configured bbox regression
+  term
+- with `parameterization: xyxy`, it is the canonical decoded-box regression term
+- with `parameterization: center_size`, it is the internal center-strong plus
+  soft `log_w` / `log_h` regression term derived from canonical `xyxy`
+- `loss/geo/bbox_ciou` remains CIoU on canonical `xyxy` across both modes
+- compare `bbox_smoothl1` across runs only after joining against
+  `resolved_config.json`
+
 ### BBox Size Aux
 
 - `loss/geo/bbox_size_aux`
@@ -156,6 +167,14 @@ Channel-A uses the normal single-pass GT-anchor groups only:
 - `coord_diag/*`
 - `gradmon/*/coord/*` when gradient monitoring is enabled
 
+Interpretation note:
+
+- `loss/coord/bbox_smoothl1` keeps the same public key even when
+  `bbox_geo.config.parameterization: center_size` is enabled
+- the key means “the configured bbox regression term” and therefore must be
+  interpreted together with `resolved_config.json`
+- `loss/coord/bbox_ciou` remains canonical `xyxy` CIoU
+
 ## Stage-2 Channel-B Objective Families
 
 Channel-B keeps rollout-specific provenance:
@@ -166,8 +185,8 @@ Channel-B keeps rollout-specific provenance:
 - duplicate suppression:
   - `train/optimization/loss_duplicate_burst_unlikelihood`
 - rollout-context coord atoms:
-  - `loss/B_coord/bbox_smoothl1`
-  - `loss/B_coord/bbox_ciou`
+- `loss/B_coord/bbox_smoothl1`
+- `loss/B_coord/bbox_ciou`
   - `loss/B_coord/bbox_log_wh`
   - `loss/B_coord/bbox_oversize`
   - `loss/B_coord/coord_token_ce`
@@ -179,7 +198,13 @@ Channel-B keeps rollout-specific provenance:
 - coord diagnostics:
   - `coord_diag/B/*`
 - gradient monitors:
-  - `gradmon/*/B_coord/*` when enabled
+- `gradmon/*/B_coord/*` when enabled
+
+Interpretation note:
+
+- `loss/B_coord/bbox_smoothl1` follows the same configured regression semantics
+  as Channel-A
+- `loss/B_coord/bbox_ciou` remains canonical `xyxy` CIoU
 
 ## Channel-B Pseudo-Positive And Arbitrary-K Notes
 

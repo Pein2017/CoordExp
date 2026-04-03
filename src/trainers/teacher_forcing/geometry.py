@@ -14,6 +14,16 @@ class BBoxLossResult:
 
 
 @dataclass(frozen=True)
+class BBoxRegressionLossResult:
+    loss: torch.Tensor
+    center: torch.Tensor
+    size: torch.Tensor
+    per_box: torch.Tensor
+    center_per_box: torch.Tensor
+    size_per_box: torch.Tensor
+
+
+@dataclass(frozen=True)
 class BBoxSizeStats:
     mean_width: torch.Tensor
     mean_height: torch.Tensor
@@ -96,6 +106,103 @@ def _reduce_weighted_mean(
         out = (values_f * weights_f).sum() / denom
 
     return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).to(dtype=values.dtype)
+
+
+def compute_bbox_regression_loss(
+    *,
+    pred_boxes_xyxy: torch.Tensor,
+    target_boxes_xyxy: torch.Tensor,
+    parameterization: str = "xyxy",
+    center_weight: float = 1.0,
+    size_weight: float = 1.0,
+    mask: torch.Tensor | None = None,
+    weights: torch.Tensor | None = None,
+    eps: float = 1e-6,
+    reduction: str = "mean",
+) -> BBoxRegressionLossResult:
+    if reduction != "mean":
+        raise ValueError("compute_bbox_regression_loss only supports reduction='mean'")
+    if pred_boxes_xyxy.ndim != 2 or int(pred_boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("pred_boxes_xyxy must have shape [N, 4]")
+    if target_boxes_xyxy.ndim != 2 or int(target_boxes_xyxy.shape[-1]) != 4:
+        raise ValueError("target_boxes_xyxy must have shape [N, 4]")
+    if int(pred_boxes_xyxy.shape[0]) != int(target_boxes_xyxy.shape[0]):
+        raise ValueError("pred_boxes_xyxy and target_boxes_xyxy must align")
+
+    parameterization_s = str(parameterization or "xyxy").strip().lower()
+    if parameterization_s not in {"xyxy", "center_size"}:
+        raise ValueError(
+            "bbox regression parameterization must be one of {'xyxy', 'center_size'}"
+        )
+
+    pred_raw = pred_boxes_xyxy.float()
+    target_raw = target_boxes_xyxy.float()
+    pred = canonicalize_bbox_xyxy(pred_raw)
+    target = canonicalize_bbox_xyxy(target_raw)
+    eff_weights = _coerce_box_weights(
+        boxes_xyxy=pred_raw,
+        mask=mask,
+        weights=weights,
+        require_target=target_raw,
+    )
+
+    if parameterization_s == "xyxy":
+        per_box = F.smooth_l1_loss(pred, target, reduction="none").mean(dim=-1)
+        zeros = per_box.new_zeros(per_box.shape)
+        loss = _reduce_weighted_mean(per_box, weights=eff_weights).to(
+            dtype=pred_boxes_xyxy.dtype
+        )
+        z = pred_boxes_xyxy.new_tensor(0.0)
+        return BBoxRegressionLossResult(
+            loss=loss,
+            center=z,
+            size=z,
+            per_box=torch.nan_to_num(per_box, nan=0.0, posinf=0.0, neginf=0.0).to(
+                dtype=pred_boxes_xyxy.dtype
+            ),
+            center_per_box=zeros.to(dtype=pred_boxes_xyxy.dtype),
+            size_per_box=zeros.to(dtype=pred_boxes_xyxy.dtype),
+        )
+
+    pred_cx = (pred[:, 0] + pred[:, 2]) * 0.5
+    pred_cy = (pred[:, 1] + pred[:, 3]) * 0.5
+    target_cx = (target[:, 0] + target[:, 2]) * 0.5
+    target_cy = (target[:, 1] + target[:, 3]) * 0.5
+    center_per_box = (
+        F.smooth_l1_loss(pred_cx, target_cx, reduction="none")
+        + F.smooth_l1_loss(pred_cy, target_cy, reduction="none")
+    ) * 0.5
+
+    pred_w = (pred[:, 2] - pred[:, 0]).clamp(min=float(eps))
+    pred_h = (pred[:, 3] - pred[:, 1]).clamp(min=float(eps))
+    target_w = (target[:, 2] - target[:, 0]).clamp(min=float(eps))
+    target_h = (target[:, 3] - target[:, 1]).clamp(min=float(eps))
+    size_per_box = (
+        F.smooth_l1_loss(torch.log(pred_w), torch.log(target_w), reduction="none")
+        + F.smooth_l1_loss(torch.log(pred_h), torch.log(target_h), reduction="none")
+    ) * 0.5
+
+    per_box = float(center_weight) * center_per_box + float(size_weight) * size_per_box
+    return BBoxRegressionLossResult(
+        loss=_reduce_weighted_mean(per_box, weights=eff_weights).to(
+            dtype=pred_boxes_xyxy.dtype
+        ),
+        center=_reduce_weighted_mean(center_per_box, weights=eff_weights).to(
+            dtype=pred_boxes_xyxy.dtype
+        ),
+        size=_reduce_weighted_mean(size_per_box, weights=eff_weights).to(
+            dtype=pred_boxes_xyxy.dtype
+        ),
+        per_box=torch.nan_to_num(per_box, nan=0.0, posinf=0.0, neginf=0.0).to(
+            dtype=pred_boxes_xyxy.dtype
+        ),
+        center_per_box=torch.nan_to_num(
+            center_per_box, nan=0.0, posinf=0.0, neginf=0.0
+        ).to(dtype=pred_boxes_xyxy.dtype),
+        size_per_box=torch.nan_to_num(
+            size_per_box, nan=0.0, posinf=0.0, neginf=0.0
+        ).to(dtype=pred_boxes_xyxy.dtype),
+    )
 
 
 def _coerce_box_weights(

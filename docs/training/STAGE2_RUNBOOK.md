@@ -81,6 +81,12 @@ Current internal ownership seams:
   - `adjacent_repulsion_filter_mode`
   - `adjacent_repulsion_margin_ratio`
   - `adjacent_repulsion_copy_margin`
+- optional `bbox_geo.config` center-size knobs:
+  - `parameterization: xyxy | center_size`
+  - `center_weight`
+  - `size_weight`
+  - `parameterization: center_size` keeps outward `bbox_2d` / `xyxy`
+    contracts canonical and only changes the internal regression loss-space
 - Pseudo-positive mode keeps the one-forward contract:
   - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
   - `matched_clean` -> coord + global prefix structure CE
@@ -114,6 +120,7 @@ Current internal ownership seams:
 - Mixed A/B baseline: `configs/stage2_two_channel/prod/ab_mixed.yaml`
 - Pseudo-positive `K=4` production profile: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml`
 - A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
+- A-only center-size smoke: `configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml`
 - Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`
 - Pseudo-positive smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml`
 - Enabled `K=2` pseudo-positive control smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_k2_4steps.yaml`
@@ -127,9 +134,20 @@ Use this when you do not need the dedicated server-mode launcher split.
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only.yaml
+PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml
 ```
+
+Center-size experiment note:
+
+- `bbox_geo.config.parameterization: center_size` keeps Channel-A / Channel-B
+  decoded boxes and downstream artifacts canonical `xyxy`
+- the experimental mode only changes the internal bbox regression term:
+  stronger center supervision, softer `log_w` / `log_h`, CIoU still on
+  canonical `xyxy`
+- verify the intended mode from `resolved_config.json`; `run_metadata.json`
+  remains provenance-only and does not redefine loss semantics
 
 ## First Pseudo-Positive Checks
 
@@ -176,6 +194,9 @@ What to expect:
 - A-only runs finish without Channel-B rollout metric families such as `rollout/*`
 - mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`
+- center-size bbox experiments keep the same run-artifact contract; the proof
+  that a run used `parameterization: center_size` lives in `resolved_config.json`
+  rather than a new artifact family
 
 Checkpoint-mode note:
 
