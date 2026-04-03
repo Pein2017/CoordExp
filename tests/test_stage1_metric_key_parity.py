@@ -269,3 +269,48 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     )
     emitted_eval = set(trainer.custom_metrics["eval"].keys())
     assert emitted_eval == emitted_train
+
+
+def test_stage1_center_size_bbox_geo_keeps_metric_keys_stable() -> None:
+    doc_keys = _load_doc_keys()
+    trainer = _DummyTrainer(
+        CoordSoftCEW1Config.from_mapping({"enabled": False}),
+        BBoxGeoConfig.from_mapping(
+            {
+                "enabled": True,
+                "smoothl1_weight": 1.0,
+                "ciou_weight": 1.0,
+                "parameterization": "center_size",
+                "center_weight": 1.0,
+                "size_weight": 0.25,
+            }
+        ),
+        BBoxSizeAuxConfig.from_mapping(
+            {
+                "enabled": False,
+                "log_wh_weight": 0.05,
+                "oversize_penalty_weight": 0.0,
+                "oversize_area_frac_threshold": None,
+                "oversize_log_w_threshold": None,
+                "oversize_log_h_threshold": None,
+                "eps": 1e-6,
+            }
+        ),
+    )
+
+    _ = trainer.compute_loss(
+        model=None,
+        inputs=_make_toy_batch(
+            bsz=1,
+            with_token_types=False,
+            pack_num_samples=torch.tensor([1]),
+        ),
+        return_outputs=False,
+        num_items_in_batch=1,
+    )
+
+    emitted = set(trainer.custom_metrics["train"].keys())
+    missing = sorted(k for k in emitted if k not in doc_keys)
+    assert not missing
+    assert "loss/geo/bbox_smoothl1" in emitted
+    assert "loss/geo/bbox_ciou" in emitted

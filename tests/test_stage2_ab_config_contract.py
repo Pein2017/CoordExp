@@ -784,6 +784,89 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
+def test_stage2_pipeline_accepts_bbox_geo_center_size_keys() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                bbox_geo_cfg={
+                    "smoothl1_weight": 0.5,
+                    "ciou_weight": 0.25,
+                    "parameterization": "center_size",
+                    "center_weight": 1.0,
+                    "size_weight": 0.25,
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+    bbox_geo_cfg = cfg.stage2_ab.pipeline.objective[2].config
+    assert bbox_geo_cfg["parameterization"] == "center_size"
+    assert float(bbox_geo_cfg["center_weight"]) == pytest.approx(1.0)
+    assert float(bbox_geo_cfg["size_weight"]) == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("parameterization", ["center", "cxcywh"])
+def test_stage2_pipeline_rejects_bbox_geo_invalid_parameterization(
+    parameterization: str,
+) -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_two_channel",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(
+                bbox_geo_cfg={
+                    "smoothl1_weight": 0.5,
+                    "ciou_weight": 0.25,
+                    "parameterization": parameterization,
+                }
+            ),
+            "channel_b": {},
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[2\]\.config\.parameterization must be one of \['center_size', 'xyxy'\]",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
 def test_stage2_pipeline_accepts_optional_adjacent_repulsion_coord_reg_keys() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -1143,6 +1226,53 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
         match=r"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
     ):
         TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_rollout_pipeline_accepts_bbox_geo_center_size_keys() -> None:
+    raw = {
+        "template": {"template": "qwen3_vl"},
+        "custom": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+            "user_prompt": "{bbox}",
+            "emit_norm": "none",
+            "json_format": "standard",
+            "object_field_order": "desc_first",
+            "trainer_variant": "stage2_rollout_aligned",
+        },
+        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "channel_b_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+            "pipeline": {
+                "objective": [
+                    {
+                        "name": "bbox_geo",
+                        "enabled": True,
+                        "weight": 0.0,
+                        "channels": ["A", "B"],
+                        "application": {"preset": "anchor_only"},
+                        "config": {
+                            "smoothl1_weight": 0.5,
+                            "ciou_weight": 0.25,
+                            "parameterization": "center_size",
+                            "center_weight": 1.0,
+                            "size_weight": 0.25,
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        },
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+    bbox_geo_cfg = cfg.rollout_matching.pipeline.objective[0].config
+    assert bbox_geo_cfg["parameterization"] == "center_size"
+    assert float(bbox_geo_cfg["center_weight"]) == pytest.approx(1.0)
+    assert float(bbox_geo_cfg["size_weight"]) == pytest.approx(0.25)
 
 
 @pytest.mark.parametrize(
@@ -1639,6 +1769,16 @@ def test_stage2_leaf_contract_accepts_live_smoke_profile() -> None:
         str(
             repo_root
             / "configs/stage2_two_channel/smoke/a_only_iter1-res_1024_random_order.yaml"
+        )
+    )
+
+
+def test_stage2_leaf_contract_accepts_center_size_smoke_profile() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    ConfigLoader._validate_stage2_leaf_contract(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml"
         )
     )
 

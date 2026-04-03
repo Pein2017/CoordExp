@@ -6,7 +6,12 @@ from typing import Any, List, Mapping, Sequence
 import torch
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
-from ..geometry import bbox_smoothl1_ciou_loss, canonicalize_bbox_xyxy, expectation_decode_coords
+from ..geometry import (
+    bbox_smoothl1_ciou_loss,
+    canonicalize_bbox_xyxy,
+    compute_bbox_regression_loss,
+    expectation_decode_coords,
+)
 from ..token_types import iter_segment_views
 
 
@@ -114,6 +119,9 @@ def _decode_groups(
     key: str,
     context: TeacherForcingContext,
     coord_ids_t: torch.Tensor,
+    parameterization: str,
+    center_weight: float,
+    size_weight: float,
 ) -> _DecodedGroups:
     input_ids = context.input_ids
     logits = context.logits
@@ -241,17 +249,22 @@ def _decode_groups(
 
     pred_boxes = canonicalize_bbox_xyxy(pred.reshape(-1, 4))
     gt_boxes = canonicalize_bbox_xyxy(gt.reshape(-1, 4))
-    smoothl1_terms: list[torch.Tensor] = []
+    regression = compute_bbox_regression_loss(
+        pred_boxes_xyxy=pred_boxes,
+        target_boxes_xyxy=gt_boxes,
+        parameterization=parameterization,
+        center_weight=center_weight,
+        size_weight=size_weight,
+    )
     ciou_terms: list[torch.Tensor] = []
     for pred_box, gt_box in zip(pred_boxes, gt_boxes):
         bbox = bbox_smoothl1_ciou_loss(
             pred_xyxy=pred_box.unsqueeze(0),
             gt_xyxy=gt_box.unsqueeze(0),
         )
-        smoothl1_terms.append(bbox.smoothl1)
         ciou_terms.append(bbox.ciou)
 
-    smoothl1_per_group = torch.stack(smoothl1_terms) if smoothl1_terms else logits.new_zeros((0,), dtype=torch.float32)
+    smoothl1_per_group = regression.per_box
     ciou_per_group = torch.stack(ciou_terms) if ciou_terms else logits.new_zeros((0,), dtype=torch.float32)
 
     return _DecodedGroups(
@@ -295,6 +308,9 @@ def run_bbox_geo_module(
             1.0,
         ),
     )
+    parameterization = str(cfg.get("parameterization", "xyxy") or "xyxy").strip().lower()
+    center_weight = max(0.0, _coerce_float(cfg.get("center_weight", 1.0), 1.0))
+    size_weight = max(0.0, _coerce_float(cfg.get("size_weight", 1.0), 1.0))
 
     coord_ids_t = torch.tensor(
         [int(i) for i in context.coord_token_ids],
@@ -302,8 +318,22 @@ def run_bbox_geo_module(
         dtype=torch.long,
     )
 
-    dec_prefix = _decode_groups(key="bbox_groups_prefix", context=context, coord_ids_t=coord_ids_t)
-    dec_fn = _decode_groups(key="bbox_groups_fn", context=context, coord_ids_t=coord_ids_t)
+    dec_prefix = _decode_groups(
+        key="bbox_groups_prefix",
+        context=context,
+        coord_ids_t=coord_ids_t,
+        parameterization=parameterization,
+        center_weight=center_weight,
+        size_weight=size_weight,
+    )
+    dec_fn = _decode_groups(
+        key="bbox_groups_fn",
+        context=context,
+        coord_ids_t=coord_ids_t,
+        parameterization=parameterization,
+        center_weight=center_weight,
+        size_weight=size_weight,
+    )
 
     all_group_weights = torch.cat(
         [dec_prefix.group_weights, dec_fn.group_weights],

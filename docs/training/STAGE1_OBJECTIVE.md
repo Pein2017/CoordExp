@@ -75,8 +75,11 @@ teacher-forced coord logits, without switching to a Stage-2 trainer variant.
 custom:
   bbox_geo:
     enabled: true
+    parameterization: xyxy
     smoothl1_weight: 0.0
     ciou_weight: 1.0
+    center_weight: 1.0
+    size_weight: 0.25
 ```
 
 Semantics:
@@ -85,10 +88,22 @@ Semantics:
 - coord-token positions are still supervised from labels
 - decoded bbox coordinates are produced by the same expectation decode used by
   the existing bbox-size auxiliary path
+- outward `bbox_2d` supervision remains canonical `xyxy`; `parameterization:
+  center_size` changes only the internal regression loss-space
 - `smoothl1_weight` and `ciou_weight` gate the two decoded-box geometry atoms
+- `parameterization: center_size` derives `(cx, cy, log_w, log_h)` from the
+  canonical decoded box, applies stronger center supervision plus softer
+  size supervision, and still keeps CIoU on canonical `xyxy`
+- `center_weight` and `size_weight` only affect the internal regression term
+  when `parameterization: center_size`; legacy configs that only specify
+  `enabled`, `smoothl1_weight`, and `ciou_weight` continue to resolve to
+  `parameterization: xyxy`
 - this Stage-1 surface is intentionally config-first and narrow; Stage-2
   pipeline-declared configs should continue to express geometry through the
   `bbox_geo` objective module instead of `custom.bbox_geo`
+- `loss/geo/bbox_smoothl1` stays the stable metric key for the configured bbox
+  regression term, so compare it across runs only after joining against
+  `resolved_config.json`
 
 This is the intended way to run a pure-SFT Stage-1 recipe with
 hard CE + soft CE + W1 + CIoU + bbox-size aux enabled together.
@@ -102,8 +117,11 @@ the same forward logits used for coord-token teacher forcing.
 custom:
   bbox_geo:
     enabled: true
-    smoothl1_weight: 0.0
+    parameterization: center_size
+    smoothl1_weight: 0.01
     ciou_weight: 1.0
+    center_weight: 1.0
+    size_weight: 0.25
 ```
 
 Semantics:
@@ -114,6 +132,10 @@ Semantics:
   coord-token stream forms explicit `bbox_2d` quartets
 - expectation decoding is used for the Stage-1 geometry probe, matching the
   active teacher-forcing geometry baseline elsewhere in the repo
+- canonical external `bbox_2d` / `xyxy` serialization, parsing, inference, and
+  evaluation contracts do not change under `parameterization: center_size`
+- keep `smoothl1_weight > 0` when you want the center/size regression branch to
+  be active; `center_weight` and `size_weight` do not affect a CIoU-only setup
 
 Metric handles:
 
@@ -123,6 +145,26 @@ Metric handles:
 - `bbox_geo/loss_per_sample`
 - `bbox_geo/groups_total`
 - `bbox_geo/coord_slots_total`
+
+Cheaper debug loop:
+
+```bash
+PYTHONPATH=. conda run -n ms python -m src.sft \
+  --config configs/stage1/smoke/lvis_bbox_max60_1024.yaml
+```
+
+For a center-size experiment, override the same `custom.bbox_geo` block with:
+
+```yaml
+custom:
+  bbox_geo:
+    enabled: true
+    parameterization: center_size
+    smoothl1_weight: 0.01
+    ciou_weight: 1.0
+    center_weight: 1.0
+    size_weight: 0.25
+```
 
 ## Coord-offset adapter (tie-head / single shared table)
 

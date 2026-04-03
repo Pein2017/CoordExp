@@ -77,6 +77,12 @@ After inference:
 - if the checkpoint was trained with non-default dense prompt controls, keep
   those infer-time values aligned with training so evaluation does not measure
   prompt drift instead of model behavior
+- training-only bbox regression parameterizations such as
+  `bbox_geo.parameterization: center_size` do not change this infer/eval
+  artifact split: base predictions still write `gt_vs_pred.jsonl`, scored
+  predictions still write `gt_vs_pred_scored.jsonl`, and downstream jobs should
+  continue using `resolved_config.path` to recover the authoritative
+  `resolved_config.json`
 
 After confidence post-op:
 
