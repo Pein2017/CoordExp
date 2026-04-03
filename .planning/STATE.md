@@ -28,7 +28,7 @@ best-`K` ablation milestone.
 | Init | Dead-anchor negatives stay narrow and duplicate-like only | Preserves conservative supervision under incomplete GT |
 | Phase 1 | Legacy `rollout/explorer/*` metrics become mean-over-valid-explorer-view summaries under arbitrary `K` | Preserves operator continuity while extending runtime evidence width |
 | Phase 1 | Enabled malformed anchors are dropped, while malformed explorers abort the step | Keeps multi-explorer support denominators honest without broadening fallback semantics |
-| Phase 2-4 | These phases are already implemented and documented, so their GSD directories are recorded as retroactive summaries rather than forward plans | Keeps GSD aligned with the landed code instead of duplicating work |
+| Phase 2-4 | These phases are already implemented and documented, so they are recorded as retroactive summaries rather than forward plans | Keeps execution artifacts aligned with landed code instead of duplicating work |
 | Phase 5 | Runtime validation is complete once both the default enabled `K=4` path and the enabled `K=2` no-promotion control finish through the combined launcher | This is the narrowest evidence needed to close the implementation milestone without widening semantics |
 
 ## Blockers

@@ -64,4 +64,4 @@ This project should treat the authored OpenSpec as the source of truth, use the 
 | Preserve legacy explorer metrics as mean-over-valid-explorer-view summaries | Makes arbitrary-`K` observability interpretable without breaking current surfaces | — Pending |
 
 ---
-*Last updated: 2026-03-22 after GSD initialization*
+*Last updated: 2026-03-22 after planning initialization*
