@@ -86,7 +86,7 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2_two_channel|stage2_rollout_aligned|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server|loss_duplicate_burst_unlikelihood" docs openspec src scripts configs
+rg -n "stage2_two_channel|stage2_ab|stage2_coordination|stage2_rollout_aligned|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server|loss_duplicate_burst_unlikelihood" docs openspec src scripts configs
 rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets
 rg -n "infer|engine|backends|artifacts|orchestration|confidence|metrics" docs/eval docs/training src scripts

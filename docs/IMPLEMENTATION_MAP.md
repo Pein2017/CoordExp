@@ -99,6 +99,7 @@ Open these code files first:
 - `src/sft.py`
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/trainer_setup.py`
+- `src/trainers/stage2_coordination.py`
 - `src/trainers/stage2_two_channel.py`
 - `src/trainers/stage2_two_channel/scheduler.py`
 - `src/trainers/stage2_two_channel/target_builder.py`
@@ -107,6 +108,7 @@ Open these code files first:
 - `src/trainers/stage2_two_channel/rollout_views.py`
 - `src/trainers/stage2_two_channel/coordination.py`
 - `src/trainers/stage2_two_channel/executors.py`
+- `src/trainers/stage2_ab/`
 - `src/trainers/stage2_rollout_aligned.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`

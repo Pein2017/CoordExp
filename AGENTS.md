@@ -32,7 +32,12 @@
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 
 ## Model
-- Subagents must use `gpt-5.4` (not mini) by default and use `xhigh` thinking efforts for important and challenging/brainstorming tasks.
+- Allocate subagent model capacity by subtask type instead of using one fixed default.
+- Use `gpt-5.4-mini` for pure information collection only: repo scans, file discovery, fact extraction, or status gathering with little synthesis or judgment.
+- Use `gpt-5.4` with `medium` reasoning for bounded implementation, mechanical refactors, straightforward test updates, or execution tasks with clear acceptance criteria.
+- Use `gpt-5.4` with `high` reasoning for the default frontier tier: debugging, code review, audit, nontrivial planning, cross-file reasoning, tradeoff analysis, and ambiguous implementation work.
+- Use `gpt-5.4` with `xhigh` reasoning only for the hardest or highest-stakes work: deep audits, architecture/spec design, difficult root-cause analysis, research brainstorming, or any task where `high` is proving insufficient.
+- When uncertain, prefer `gpt-5.4` with `high` rather than under-allocating; downgrade to `mini` only when the task is collection-only, and upgrade to `xhigh` only when extra depth is likely to change the answer.
 
 ## Environment
 - Repo root: `.`

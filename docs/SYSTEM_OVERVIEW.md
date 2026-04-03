@@ -117,11 +117,13 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
   - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Main code handles:
   - `src/trainers/stage2_two_channel.py`
+  - `src/trainers/stage2_coordination.py`
   - `src/trainers/stage2_two_channel/scheduler.py`
   - `src/trainers/stage2_two_channel/target_builder.py`
   - `src/trainers/stage2_two_channel/objective_runner.py`
   - `src/trainers/stage2_two_channel/coordination.py`
   - `src/trainers/stage2_two_channel/executors.py`
+  - `src/trainers/stage2_ab/`
   - `src/trainers/stage2_rollout_aligned.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
@@ -134,8 +136,8 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
 
 Compatibility note:
 - `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
+- `src/trainers/stage2_two_channel.py` remains the public two-channel trainer surface, with shared Stage-2 coordination in `src/trainers/stage2_coordination.py` and helper modules under `src/trainers/stage2_ab/` and `src/trainers/stage2_two_channel/`.
 - `src/trainers/stage2_rollout_aligned.py` remains the rollout-matching compatibility trainer surface and now imports `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, and `src/trainers/rollout_runtime/`.
-- The active two-channel implementation lives in `src/trainers/stage2_two_channel.py`.
 - [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md) is historical context only; use the runbook and specs for current behavior.
 
 ## 4. Inference, Confidence, And Evaluation
