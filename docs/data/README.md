@@ -6,7 +6,7 @@ status: canonical
 domain: data
 summary: Router for dataset contracts, offline preparation, packing, and dataset-specific notes.
 tags: [data, datasets, jsonl]
-updated: 2026-03-30
+updated: 2026-04-03
 ---
 
 # Data & Datasets
@@ -28,7 +28,7 @@ Open this folder when you need the current dataset contract or the offline prepa
 - [PREPARATION.md](PREPARATION.md)
   - offline conversion, resizing, validation, and data-building flow
 - [PACKING.md](PACKING.md)
-  - sequence-packing policy and runtime tradeoffs
+  - Stage-1 static-packing policy, hard-cap behavior, and runtime tradeoffs
 - [FUSION.md](FUSION.md)
   - dormant legacy fusion surface kept in-tree for future reactivation
 - [VISUAL_GENOME.md](VISUAL_GENOME.md)
@@ -39,6 +39,7 @@ Open this folder when you need the current dataset contract or the offline prepa
 - "What shape must the JSONL have?"
 - "How are images resized and validated?"
 - "What are the current packing defaults?"
+- "What happens if a raw JSONL sample exceeds `global_max_length`?"
 - "How should I handle multi-dataset mixing while runtime fusion is temporarily disabled?"
 
 ## Primary Code Handles

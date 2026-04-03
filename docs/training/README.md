@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-03-29
+updated: 2026-04-03
 ---
 
 # Training Docs
@@ -17,18 +17,21 @@ or metric interpretation.
 ## Read Order
 
 1. [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior
-2. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows and launcher patterns
-3. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
-4. [METRICS.md](METRICS.md) for loss-key and logging interpretation
-5. [STAGE2_DESIGN.md](STAGE2_DESIGN.md) for historical design context and deprecation rationale
-6. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` semantics matter
-7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
-8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
+2. [../data/PACKING.md](../data/PACKING.md) for the current Stage-1 static-packing contract and defaults
+3. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows and launcher patterns
+4. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
+5. [METRICS.md](METRICS.md) for loss-key and logging interpretation
+6. [STAGE2_DESIGN.md](STAGE2_DESIGN.md) for historical design context and deprecation rationale
+7. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` semantics matter
+8. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
+9. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
 
 ## Page Roles
 
 - [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md)
   - Stage-1 objective surfaces and coord-token training details
+- [../data/PACKING.md](../data/PACKING.md)
+  - Stage-1 static packing contract, hard length cap, and fail-fast behavior for overlength atomic samples
 - [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md)
   - YAML-first runbook, smoke workflow, and server-mode launcher entrypoints for the active `stage2_two_channel` path
 - [LVIS.md](LVIS.md)
@@ -43,6 +46,7 @@ or metric interpretation.
 - "How does current Stage-2 work?"
 - "Which page is runbook vs metrics vs historical design?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
+- "What is the current Stage-1 packing and `global_max_length` contract?"
 
 ## Code Handles
 

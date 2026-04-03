@@ -134,7 +134,6 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_min_fill_ratio",
     "packing_drop_last",
     "packing_allow_single_long",
-    "packing_bucket_lengths",
     "eval_packing",
     "packing_avg_samples",
     "packing_wait_timeout_s",

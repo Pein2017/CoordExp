@@ -46,38 +46,6 @@ class _FakeDataset:
         return {"thread_safe": True}
 
 
-class _BucketAwareDataset:
-    def __init__(self, lengths, template):
-        self.lengths = [int(length) for length in lengths]
-        self.template = template
-
-    def __len__(self):
-        return len(self.lengths)
-
-    def __getitem__(self, idx):
-        length = int(self.lengths[int(idx)])
-        if int(getattr(self.template, "max_length", 0) or 0) < length:
-            raise RuntimeError(
-                f"template.max_length={getattr(self.template, 'max_length', None)!r} "
-                f"is smaller than required sample length={length}"
-            )
-        return {
-            "idx": int(idx),
-            "input_ids": [0] * length,
-            "labels": [0] * length,
-            "length": length,
-            "used_max_length": int(getattr(self.template, "max_length", 0) or 0),
-            "pixel_values": torch.zeros(1),
-            "image_grid_thw": torch.tensor([1, 1, 1]),
-        }
-
-    def _static_packing_length(self, idx):
-        return int(self.lengths[int(idx)])
-
-    def _static_packing_precompute_info(self) -> dict[str, object]:
-        return {"thread_safe": True}
-
-
 class _OrderSensitiveDataset:
     def __init__(self, size: int = 8):
         self.size = int(size)
@@ -276,72 +244,20 @@ def test_static_packing_keeps_exact_max_length_sample_and_skips_overlength_sampl
 ):
     dataset = _FakeDataset([80, 81, 20, 20, 20, 20])
     template = _FakeTemplate(max_length=80)
-    wrapped = build_static_packed_dataset(
-        dataset,
-        template=template,
-        packing_length=80,
-        min_fill_ratio=0.5,
-        packing_drop_last=False,
-        dataloader_drop_last=False,
-        allow_single_long=True,
-        cache_dir=tmp_path / "static_cache",
-        fingerprint=_static_fingerprint("exact_max_skip_overlength"),
-        world_size=1,
-        train_dataloader_shuffle=False,
-    )
-
-    pack_indices = wrapped.pack_plan
-
-    assert [0] in pack_indices
-    assert all(1 not in pack for pack in pack_indices)
-    assert all(sum(dataset.lengths[i] for i in pack) <= 80 for pack in pack_indices)
-
-
-def test_static_packing_moves_intact_long_sample_into_next_bucket(tmp_path: Path):
-    template = _FakeTemplate(max_length=120)
-    dataset = _BucketAwareDataset([81, 39, 39], template=template)
-    wrapped = build_static_packed_dataset(
-        dataset,
-        template=template,
-        packing_length=80,
-        packing_lengths=(80, 120),
-        min_fill_ratio=0.5,
-        packing_drop_last=False,
-        dataloader_drop_last=False,
-        allow_single_long=True,
-        cache_dir=tmp_path / "static_cache",
-        fingerprint=_static_fingerprint("bucket_long_sample"),
-        world_size=1,
-        train_dataloader_shuffle=False,
-    )
-
-    assert wrapped.pack_plan == [[1, 2], [0]]
-    assert wrapped.pack_lengths == [80, 120]
-
-    short_pack = wrapped[0]
-    long_pack = wrapped[1]
-
-    assert [item["used_max_length"] for item in short_pack] == [80, 80]
-    assert [item["used_max_length"] for item in long_pack] == [120]
-    assert [item["idx"] for item in long_pack] == [0]
-
-
-def test_static_packing_fails_fast_when_sample_exceeds_largest_bucket(tmp_path: Path):
-    template = _FakeTemplate(max_length=140)
-    dataset = _BucketAwareDataset([141], template=template)
-
-    with pytest.raises(ValueError, match="largest configured packing bucket"):
+    with pytest.raises(
+        ValueError,
+        match="full encoded length exceeds packing_length/global_max_length",
+    ):
         build_static_packed_dataset(
             dataset,
             template=template,
             packing_length=80,
-            packing_lengths=(80, 120, 140),
             min_fill_ratio=0.5,
             packing_drop_last=False,
             dataloader_drop_last=False,
             allow_single_long=True,
             cache_dir=tmp_path / "static_cache",
-            fingerprint=_static_fingerprint("bucket_overflow"),
+            fingerprint=_static_fingerprint("exact_max_skip_overlength"),
             world_size=1,
             train_dataloader_shuffle=False,
         )
