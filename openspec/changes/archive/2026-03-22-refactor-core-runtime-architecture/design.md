@@ -64,10 +64,10 @@ Constraints and invariants:
 
 ## Decisions
 
-### Decision 1: OpenSpec stays normative; GSD stays execution-oriented
+### Decision 1: OpenSpec stays normative; execution layer stays implementation-oriented
 
 OpenSpec remains the authoritative layer for scope, stable contracts, and behavior changes.
-GSD planning artifacts are execution-oriented derivatives of that authority:
+Planning artifacts are execution-oriented derivatives of that authority:
 
 - `.planning/PROJECT.md` mirrors the program mission and guardrails,
 - `.planning/REQUIREMENTS.md` traces execution requirements back to the refactor change,
@@ -83,7 +83,7 @@ Why:
 
 Alternative considered:
 
-- Let GSD planning define scope first and backfill OpenSpec later.
+- Let execution planning define scope first and backfill OpenSpec later.
   Rejected because it increases drift risk for contract-heavy refactor work.
 
 ### Decision 2: Use a seam-first, contract-freeze refactor strategy
