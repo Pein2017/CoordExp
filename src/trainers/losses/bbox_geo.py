@@ -23,6 +23,8 @@ class BBoxGeoResult:
     ciou_contrib: torch.Tensor
     bbox_groups: int
     coord_slots: int
+    skipped_incomplete_rows: int = 0
+    skipped_incomplete_coord_slots: int = 0
 
 
 def _cfg_float(cfg: Any, key: str, default: float) -> float:
@@ -60,6 +62,19 @@ def compute_stage1_bbox_geo_loss(
     )
     if quartets is None:
         return None
+    if int(quartets.bbox_groups) <= 0 or int(quartets.coord_slots) <= 0:
+        zero = logits.new_zeros(())
+        return BBoxGeoResult(
+            total_loss=zero,
+            smoothl1_loss=zero,
+            ciou_loss=zero,
+            smoothl1_contrib=zero,
+            ciou_contrib=zero,
+            bbox_groups=0,
+            coord_slots=0,
+            skipped_incomplete_rows=int(quartets.skipped_incomplete_rows),
+            skipped_incomplete_coord_slots=int(quartets.skipped_incomplete_coord_slots),
+        )
 
     pred = expectation_decode_coords(
         coord_logits=quartets.coord_logits,
@@ -102,4 +117,6 @@ def compute_stage1_bbox_geo_loss(
         ciou_contrib=torch.nan_to_num(ciou_contrib, nan=0.0, posinf=0.0, neginf=0.0),
         bbox_groups=int(quartets.bbox_groups),
         coord_slots=int(quartets.coord_slots),
+        skipped_incomplete_rows=int(quartets.skipped_incomplete_rows),
+        skipped_incomplete_coord_slots=int(quartets.skipped_incomplete_coord_slots),
     )

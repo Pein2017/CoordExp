@@ -1,6 +1,6 @@
 ## 1. OpenSpec And Contract Completion
 
-- [ ] 1.1 Update the existing change-local delta specs for
+- [x] 1.1 Update the existing change-local delta specs for
       [stage2-ab-training/spec.md](/data/home/xiaoyan/AIteam/data/CoordExp/openspec/changes/channel-b-cluster-aware-duplicate-targeting/specs/stage2-ab-training/spec.md),
       [teacher-forcing-objective-pipeline/spec.md](/data/home/xiaoyan/AIteam/data/CoordExp/openspec/changes/channel-b-cluster-aware-duplicate-targeting/specs/teacher-forcing-objective-pipeline/spec.md),
       and

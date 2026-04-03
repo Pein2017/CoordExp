@@ -11,9 +11,10 @@ Normative behavior:
 - `loss_duplicate_burst_unlikelihood` MUST continue to declare `channels: [B]`,
 - `loss_duplicate_burst_unlikelihood.config` MUST remain `{}` in v1,
 - the runtime metadata consumed by
-  `loss_duplicate_burst_unlikelihood` MUST encode canonical pre-triage
-  cluster-aware duplicate-continuation first-divergence targets projected onto
-  the post-triage clean prefix,
+  `loss_duplicate_burst_unlikelihood` MUST encode canonical duplicate-control
+  non-survivor first-divergence targets projected onto the final clean prefix
+  after the pre-match duplicate-control step and existing Channel-B matching /
+  triage flow,
 - the runtime metadata producer MUST preserve deterministic target ordering for
   identical rollout inputs,
 - the runtime metadata producer MUST NOT require a second teacher-forced

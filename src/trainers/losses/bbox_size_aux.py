@@ -25,6 +25,8 @@ class BBoxSizeAuxResult:
     stats: BBoxSizeStats
     bbox_groups: int
     coord_slots: int
+    skipped_incomplete_rows: int = 0
+    skipped_incomplete_coord_slots: int = 0
 
 
 def _cfg_float(cfg: Any, key: str, default: float) -> float:
@@ -124,6 +126,30 @@ def compute_stage1_bbox_size_aux_loss(
     )
     if quartets is None:
         return None
+    if int(quartets.bbox_groups) <= 0 or int(quartets.coord_slots) <= 0:
+        zero = logits.new_zeros(())
+        return BBoxSizeAuxResult(
+            total_loss=zero,
+            log_wh_loss=zero,
+            oversize_loss=zero,
+            log_wh_contrib=zero,
+            oversize_contrib=zero,
+            stats=compute_bbox_size_aux_from_boxes(
+                pred_boxes_xyxy=logits.new_zeros((0, 4)),
+                target_boxes_xyxy=logits.new_zeros((0, 4)),
+                box_weights=None,
+                log_wh_weight=0.0,
+                oversize_penalty_weight=0.0,
+                oversize_area_frac_threshold=None,
+                oversize_log_w_threshold=None,
+                oversize_log_h_threshold=None,
+                eps=max(1e-9, _cfg_float(cfg, "eps", 1e-6)),
+            ).stats,
+            bbox_groups=0,
+            coord_slots=0,
+            skipped_incomplete_rows=int(quartets.skipped_incomplete_rows),
+            skipped_incomplete_coord_slots=int(quartets.skipped_incomplete_coord_slots),
+        )
 
     pred = expectation_decode_coords(
         coord_logits=quartets.coord_logits,
@@ -153,4 +179,6 @@ def compute_stage1_bbox_size_aux_loss(
         stats=result.stats,
         bbox_groups=int(quartets.bbox_groups),
         coord_slots=int(quartets.coord_slots),
+        skipped_incomplete_rows=int(quartets.skipped_incomplete_rows),
+        skipped_incomplete_coord_slots=int(quartets.skipped_incomplete_coord_slots),
     )

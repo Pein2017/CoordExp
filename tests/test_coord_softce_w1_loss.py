@@ -6,8 +6,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from src.config.schema import BBoxSizeAuxConfig, CoordSoftCEW1Config
+from src.config.schema import BBoxGeoConfig, BBoxSizeAuxConfig, CoordSoftCEW1Config
 from src.metrics.dataset_metrics import BBoxSizeAuxLossMixin, CoordSoftCEW1LossMixin
+from src.trainers.losses.bbox_geo import compute_stage1_bbox_geo_loss
 from src.trainers.losses.coord_soft_ce_w1 import compute_coord_soft_ce_w1_loss
 from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
 
@@ -362,6 +363,48 @@ def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches()
     assert float(loss_mismatch_enabled.detach().item()) > float(
         loss_mismatch_disabled.detach().item()
     )
+
+
+def test_stage1_bbox_geo_skips_incomplete_quartet_rows_instead_of_failing():
+    vocab = 1200
+    coord_token_ids = [103, 104, 107, 108]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+
+    labels = torch.tensor(
+        [
+            [0, 5, 103, 104, 107, 108],
+            [0, 5, 103, 104, 107, -100],
+        ],
+        dtype=torch.long,
+    )
+    logits = _perfect_next_token_logits(labels.clamp(min=0), vocab=vocab)
+
+    cfg = BBoxGeoConfig.from_mapping(
+        {
+            "enabled": True,
+            "parameterization": "xyxy",
+            "smoothl1_weight": 0.0,
+            "ciou_weight": 1.0,
+            "center_weight": 1.0,
+            "size_weight": 1.0,
+        }
+    )
+    result = compute_stage1_bbox_geo_loss(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=coord_token_ids,
+        coord_id_map=coord_id_map,
+        tokenizer=None,
+        cfg=cfg,
+        decode_temperature=1.0,
+    )
+
+    assert result is not None
+    assert result.bbox_groups == 1
+    assert result.coord_slots == 4
+    assert result.skipped_incomplete_rows == 1
+    assert result.skipped_incomplete_coord_slots == 3
+    assert float(result.total_loss.detach().item()) == pytest.approx(0.0, abs=1e-5)
 
 
 def test_stage1_adjacent_repulsion_penalizes_geometry_first_same_desc_copy() -> None:
