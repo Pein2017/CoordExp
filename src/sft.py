@@ -119,6 +119,7 @@ class PackingRuntimeConfig:
     enabled: bool = False
     mode: Literal["dynamic", "static"] = "static"
     packing_length: int = 0
+    bucket_lengths: tuple[int, ...] = ()
     buffer_size: int = 512
     min_fill_ratio: float = 0.65
     drop_last: bool = True
@@ -172,6 +173,60 @@ def _parse_packing_config(
     if packing_length <= 0:
         raise ValueError(
             "packing is enabled but no valid packing_length/template.max_length is set"
+        )
+
+    bucket_lengths_raw = cfg.get("packing_bucket_lengths")
+    bucket_lengths: tuple[int, ...]
+    if bucket_lengths_raw is None:
+        bucket_lengths = (int(packing_length),)
+    else:
+        if not isinstance(bucket_lengths_raw, (list, tuple)):
+            raise ValueError(
+                "training.packing_bucket_lengths must be a list of positive integers when set"
+            )
+        parsed_bucket_lengths: list[int] = []
+        for raw in bucket_lengths_raw:
+            try:
+                bucket_length = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "training.packing_bucket_lengths must contain only positive integers"
+                ) from exc
+            if bucket_length <= 0:
+                raise ValueError(
+                    "training.packing_bucket_lengths must contain only positive integers"
+                )
+            parsed_bucket_lengths.append(bucket_length)
+        if not parsed_bucket_lengths:
+            raise ValueError(
+                "training.packing_bucket_lengths must not be empty when provided"
+            )
+        bucket_lengths = tuple(sorted(set(parsed_bucket_lengths)))
+        packing_length = int(bucket_lengths[0])
+
+    max_bucket_length = int(bucket_lengths[-1])
+    template_max_length = getattr(template, "max_length", None)
+    train_args_max_model_len = getattr(train_args, "max_model_len", None)
+    template_capacity = int(template_max_length or 0)
+    train_args_capacity = int(train_args_max_model_len or 0)
+    if max_bucket_length > max(template_capacity, train_args_capacity):
+        raise ValueError(
+            "training.packing_bucket_lengths requires template.max_length / "
+            "model.max_model_len to be at least the largest bucket length. "
+            f"Got largest_bucket={max_bucket_length} template.max_length={template_max_length!r} "
+            f"train_args.max_model_len={train_args_max_model_len!r}."
+        )
+    if template_capacity > 0 and template_capacity < max_bucket_length:
+        raise ValueError(
+            "training.packing_bucket_lengths requires template.max_length to be at least "
+            f"the largest bucket length. Got largest_bucket={max_bucket_length} "
+            f"template.max_length={template_max_length!r}."
+        )
+    if train_args_capacity > 0 and train_args_capacity < max_bucket_length:
+        raise ValueError(
+            "training.packing_bucket_lengths requires model.max_model_len to be at least "
+            f"the largest bucket length. Got largest_bucket={max_bucket_length} "
+            f"train_args.max_model_len={train_args_max_model_len!r}."
         )
 
     buffer_size = int(cfg.get("packing_buffer", 512) or 512)
@@ -229,6 +284,7 @@ def _parse_packing_config(
         enabled=True,
         mode=mode,
         packing_length=packing_length,
+        bucket_lengths=bucket_lengths,
         buffer_size=buffer_size,
         min_fill_ratio=min_fill_ratio,
         drop_last=drop_last,
@@ -673,6 +729,7 @@ def _build_static_packing_fingerprint(
         "dataset_split": split,
         "packing_mode": packing_cfg.mode,
         "packing_length": int(packing_cfg.packing_length),
+        "packing_bucket_lengths": [int(v) for v in packing_cfg.bucket_lengths],
         "global_max_length": getattr(training_config, "global_max_length", None),
         "template_max_length": getattr(template, "max_length", None),
         "train_args_max_model_len": getattr(train_args, "max_model_len", None),
@@ -870,13 +927,20 @@ def _resolve_static_packing_cache_dir(
         base_root = Path(str(output_dir_raw)).resolve() / "static_packing_auto"
         source = "output_dir"
 
-    global_max_length_raw = getattr(training_config, "global_max_length", None)
-    try:
-        global_max_length = int(global_max_length_raw)
-    except (TypeError, ValueError):
-        global_max_length = int(packing_cfg.packing_length)
-    if global_max_length <= 0:
-        global_max_length = int(packing_cfg.packing_length)
+    bucket_lengths = tuple(int(v) for v in packing_cfg.bucket_lengths) or (
+        int(packing_cfg.packing_length),
+    )
+    if len(bucket_lengths) == 1:
+        global_max_length_raw = getattr(training_config, "global_max_length", None)
+        try:
+            global_max_length = int(global_max_length_raw)
+        except (TypeError, ValueError):
+            global_max_length = int(packing_cfg.packing_length)
+        if global_max_length <= 0:
+            global_max_length = int(packing_cfg.packing_length)
+        bucket_dirname = f"global_max_length_{global_max_length}"
+    else:
+        bucket_dirname = "packing_buckets_" + "-".join(str(v) for v in bucket_lengths)
 
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
@@ -886,7 +950,7 @@ def _resolve_static_packing_cache_dir(
 
     cache_dir = (
         base_root
-        / f"global_max_length_{global_max_length}"
+        / bucket_dirname
         / ("train" if split == "train" else "eval")
     )
     logger.info(
@@ -1700,6 +1764,7 @@ def main():
             dataset,
             template=sft.template,
             packing_length=packing_cfg.packing_length,
+            packing_lengths=packing_cfg.bucket_lengths,
             min_fill_ratio=packing_cfg.min_fill_ratio,
             packing_drop_last=packing_cfg.drop_last,
             dataloader_drop_last=bool(
@@ -1717,8 +1782,9 @@ def main():
         base_dataset_len = len(dataset)
 
         logger.info(
-            "Packing enabled (static): length=%s min_fill=%.2f packing_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
+            "Packing enabled (static): length=%s buckets=%s min_fill=%.2f packing_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
             packing_cfg.packing_length,
+            list(packing_cfg.bucket_lengths),
             packing_cfg.min_fill_ratio,
             packing_cfg.drop_last,
             packing_cfg.allow_single_long,
@@ -2251,6 +2317,7 @@ def main():
             eval_dataset,
             template=sft.template,
             packing_length=packing_cfg.packing_length,
+            packing_lengths=packing_cfg.bucket_lengths,
             min_fill_ratio=packing_cfg.min_fill_ratio,
             packing_drop_last=False,
             dataloader_drop_last=False,
@@ -2264,8 +2331,9 @@ def main():
             length_precompute_workers=packing_cfg.length_precompute_workers,
         )
         logger.info(
-            "Packing enabled for eval (static): length=%s min_fill=%.2f packing_drop_last=%s dataloader_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
+            "Packing enabled for eval (static): length=%s buckets=%s min_fill=%.2f packing_drop_last=%s dataloader_drop_last=%s allow_single_long=%s wait_timeout_s=%s length_cache_persist_every=%s length_precompute_workers=%s",
             packing_cfg.packing_length,
+            list(packing_cfg.bucket_lengths),
             packing_cfg.min_fill_ratio,
             False,
             False,

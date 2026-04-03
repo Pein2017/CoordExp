@@ -173,7 +173,7 @@ def test_encoded_sample_cache_rejects_ineligible_random_ordering_by_default(
         )
 
 
-def test_static_packing_can_consume_cache_backed_dataset_without_reencoding(
+def test_static_packing_reuses_cache_backed_dataset_after_full_length_probe(
     tmp_path,
 ) -> None:
     template = _CountingTemplate()
@@ -191,9 +191,11 @@ def test_static_packing_can_consume_cache_backed_dataset_without_reencoding(
     )
 
     assert len(packed) > 0
+    plan_encode_calls = template.encode_calls
+    assert plan_encode_calls > 2
     first_pack = packed[0]
     assert isinstance(first_pack, list)
-    assert template.encode_calls == 2
+    assert template.encode_calls == plan_encode_calls
 
 
 def test_static_packing_prefers_cache_backed_length_helper_over_dataset_getitem(

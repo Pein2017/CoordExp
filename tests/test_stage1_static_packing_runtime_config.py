@@ -63,6 +63,7 @@ def test_parse_packing_config_defaults_to_static_mode() -> None:
     assert cfg.enabled is True
     assert cfg.mode == "static"
     assert cfg.packing_length == 256
+    assert cfg.bucket_lengths == (256,)
     assert cfg.eval_packing is True
     assert cfg.wait_timeout_s == pytest.approx(7200.0)
     assert cfg.length_cache_persist_every is None
@@ -78,6 +79,35 @@ def test_parse_packing_config_accepts_static_mode() -> None:
 
     assert cfg.mode == "static"
     assert cfg.packing_length == 128
+    assert cfg.bucket_lengths == (128,)
+
+
+def test_parse_packing_config_accepts_multiple_bucket_lengths() -> None:
+    cfg = _parse_packing_config(
+        training_cfg={
+            "packing": True,
+            "packing_mode": "static",
+            "packing_bucket_lengths": [12000, 16000, 16000],
+        },
+        template=_Template(max_length=16000),
+        train_args=SimpleNamespace(max_model_len=16000),
+    )
+
+    assert cfg.packing_length == 12000
+    assert cfg.bucket_lengths == (12000, 16000)
+
+
+def test_parse_packing_config_rejects_buckets_above_template_capacity() -> None:
+    with pytest.raises(ValueError, match="largest bucket length"):
+        _parse_packing_config(
+            training_cfg={
+                "packing": True,
+                "packing_mode": "static",
+                "packing_bucket_lengths": [12000, 16000],
+            },
+            template=_Template(max_length=12000),
+            train_args=SimpleNamespace(max_model_len=12000),
+        )
 
 
 def test_parse_packing_config_allows_disabling_eval_packing() -> None:
@@ -183,6 +213,27 @@ def test_parse_static_packing_cache_config_accepts_explicit_root_dir(
     )
 
     assert cfg.root_dir == str((tmp_path / "cache_root").resolve())
+
+
+def test_resolve_static_packing_cache_dir_uses_bucket_signature_for_multi_bucket_runs(
+    tmp_path: Path,
+) -> None:
+    path = _resolve_static_packing_cache_dir(
+        runtime_cfg=StaticPackingCacheRuntimeConfig(root_dir=str(tmp_path / "cache_root")),
+        training_config=SimpleNamespace(global_max_length=12000),
+        train_args=SimpleNamespace(output_dir=str(tmp_path / "output")),
+        dataset_jsonl=None,
+        fusion_config_path=None,
+        dataset_split="train",
+        packing_cfg=PackingRuntimeConfig(
+            enabled=True,
+            mode="static",
+            packing_length=12000,
+            bucket_lengths=(12000, 16000),
+        ),
+    )
+
+    assert path == (tmp_path / "cache_root" / "packing_buckets_12000-16000" / "train")
 
 
 def test_parse_packing_config_rejects_unknown_mode() -> None:

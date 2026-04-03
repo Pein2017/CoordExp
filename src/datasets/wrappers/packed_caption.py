@@ -7,6 +7,7 @@ Static packing precomputes a deterministic, countable plan of pack indices.
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import hashlib
 import json
 import math
@@ -24,7 +25,7 @@ from ...utils.logger import get_logger
 logger = get_logger(__name__)
 
 _LENGTH_CACHE_VERSION = 1
-_PLAN_CACHE_VERSION = 1
+_PLAN_CACHE_VERSION = 2
 _SETUP_INDEX_VERSION = 1
 _DEFAULT_LENGTH_CACHE_PERSIST_EVERY = 4096
 _DEFAULT_LENGTH_CACHE_MAX_FLUSHES = 64
@@ -62,6 +63,50 @@ def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
         return len(input_ids)
     except TypeError:
         return None
+
+
+def _normalize_packing_lengths(
+    *,
+    packing_length: int,
+    packing_lengths: Sequence[int] | None = None,
+) -> tuple[int, ...]:
+    if packing_length <= 0:
+        raise ValueError("packing_length must be positive")
+    if packing_lengths is None:
+        return (int(packing_length),)
+
+    normalized = sorted({int(length) for length in packing_lengths})
+    if not normalized:
+        raise ValueError("packing_lengths must not be empty when provided")
+    if normalized[0] != int(packing_length):
+        raise ValueError(
+            "packing_lengths must include packing_length as the smallest bucket. "
+            f"Got packing_length={packing_length} buckets={normalized}."
+        )
+    if any(length <= 0 for length in normalized):
+        raise ValueError("packing_lengths must contain only positive integers")
+    return tuple(normalized)
+
+
+def _canonicalize_plan(
+    plan: Sequence[Sequence[int]],
+    *,
+    pack_lengths: Sequence[int] | None = None,
+) -> list[Any]:
+    canonical_packs = [[int(i) for i in pack] for pack in plan]
+    if pack_lengths is None:
+        return canonical_packs
+    if len(canonical_packs) != len(pack_lengths):
+        raise ValueError(
+            "pack_lengths must match plan length when computing plan checksums"
+        )
+    return [
+        {
+            "indices": pack,
+            "packing_length": int(pack_lengths[idx]),
+        }
+        for idx, pack in enumerate(canonical_packs)
+    ]
 
 
 def _dataset_static_packing_precompute_info(dataset: Any) -> dict[str, Any]:
@@ -129,8 +174,12 @@ def _fingerprint_digest(fingerprint: Mapping[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _stable_plan_checksum(plan: Sequence[Sequence[int]]) -> str:
-    canonical = [[int(i) for i in pack] for pack in plan]
+def _stable_plan_checksum(
+    plan: Sequence[Sequence[int]],
+    *,
+    pack_lengths: Sequence[int] | None = None,
+) -> str:
+    canonical = _canonicalize_plan(plan, pack_lengths=pack_lengths)
     payload = json.dumps(canonical, ensure_ascii=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -543,10 +592,11 @@ def _build_raw_pack_plan(
     *,
     lengths: Sequence[int],
     packing_length: int,
+    packing_lengths: Sequence[int] | None,
     min_fill_ratio: float,
     drop_last: bool,
     allow_single_long: bool,
-) -> tuple[list[list[int]], int, int, float]:
+) -> tuple[list[list[int]], list[int], int, int, float]:
     try:
         import binpacking
     except ImportError as exc:  # pragma: no cover - environment guard
@@ -554,64 +604,99 @@ def _build_raw_pack_plan(
             "binpacking is required for packing; install with `pip install binpacking`"
         ) from exc
 
-    short_items: list[tuple[int, int]] = []
-    singleton_long_packs: list[list[int]] = []
+    bucket_lengths = _normalize_packing_lengths(
+        packing_length=packing_length,
+        packing_lengths=packing_lengths,
+    )
+    bucket_items: dict[int, list[tuple[int, int]]] = {
+        int(bucket_length): [] for bucket_length in bucket_lengths
+    }
     single_long = 0
     skipped_long = 0
+    overflow_samples: list[tuple[int, int]] = []
 
     for index, length in enumerate(lengths):
         token_length = int(length)
-        if token_length > packing_length:
+        bucket_length = next(
+            (int(bucket) for bucket in bucket_lengths if token_length <= int(bucket)),
+            None,
+        )
+        if bucket_length is None:
+            if len(bucket_lengths) > 1:
+                overflow_samples.append((int(index), token_length))
+                continue
             # Stage-1 full-sequence supervision forbids truncation, so samples that
             # exceed packing_length must be skipped rather than emitted as singleton packs.
             skipped_long += 1
             continue
-        short_items.append((int(index), token_length))
+        bucket_items[int(bucket_length)].append((int(index), token_length))
 
-    packed_groups = binpacking.to_constant_volume(
-        short_items,
-        packing_length,
-        weight_pos=1,
-    )
+    if overflow_samples:
+        preview = ", ".join(
+            f"idx={index} len={length}" for index, length in overflow_samples[:5]
+        )
+        raise ValueError(
+            "Static packing encountered samples longer than the largest configured "
+            "packing bucket. Increase training.packing_bucket_lengths and the effective "
+            "template/model max length so these samples can remain intact. "
+            f"largest_bucket={bucket_lengths[-1]} overflow_count={len(overflow_samples)} "
+            f"examples=[{preview}]"
+        )
 
     packs: list[list[int]] = []
+    pack_lengths: list[int] = []
     fill_sum = 0.0
-    fill_floor = packing_length * float(min_fill_ratio)
-
-    for group in packed_groups:
-        pack_indices = sorted(int(item[0]) for item in group)
-        if not pack_indices:
+    for bucket_length in bucket_lengths:
+        bucket_length_i = int(bucket_length)
+        items = list(bucket_items[bucket_length_i])
+        if not items:
             continue
-        total_len = sum(int(lengths[i]) for i in pack_indices)
-        if len(pack_indices) >= 2 and total_len > packing_length:
-            raise RuntimeError(
-                "Static packing produced an invalid multi-sample pack with total length "
-                f"{total_len} > packing_length={packing_length}."
-            )
-        if total_len < fill_floor and drop_last:
-            continue
-        packs.append(pack_indices)
-        fill_sum += float(total_len) / float(packing_length)
+        packed_groups = binpacking.to_constant_volume(
+            items,
+            bucket_length_i,
+            weight_pos=1,
+        )
+        fill_floor = bucket_length_i * float(min_fill_ratio)
 
-    for pack in singleton_long_packs:
-        packs.append(pack)
-        total_len = int(lengths[pack[0]])
-        fill_sum += float(total_len) / float(packing_length)
+        for group in packed_groups:
+            pack_indices = sorted(int(item[0]) for item in group)
+            if not pack_indices:
+                continue
+            total_len = sum(int(lengths[i]) for i in pack_indices)
+            if len(pack_indices) >= 2 and total_len > bucket_length_i:
+                raise RuntimeError(
+                    "Static packing produced an invalid multi-sample pack with total length "
+                    f"{total_len} > packing_length={bucket_length_i}."
+                )
+            if total_len < fill_floor and drop_last:
+                continue
+            packs.append(pack_indices)
+            pack_lengths.append(bucket_length_i)
+            fill_sum += float(total_len) / float(bucket_length_i)
 
-    packs.sort(key=lambda seq: (min(seq), tuple(seq)))
+    paired_packs = sorted(
+        zip(packs, pack_lengths, strict=True),
+        key=lambda item: (int(item[1]), min(item[0]), tuple(item[0])),
+    )
+    packs = [list(indices) for indices, _ in paired_packs]
+    pack_lengths = [int(bucket_length) for _, bucket_length in paired_packs]
     avg_fill = float(fill_sum / len(packs)) if packs else 0.0
-    return packs, single_long, skipped_long, avg_fill
+    return packs, pack_lengths, single_long, skipped_long, avg_fill
 
 
 def _align_pack_plan_for_ddp(
     *,
     raw_plan: Sequence[Sequence[int]],
+    raw_pack_lengths: Sequence[int],
     world_size: int,
     dataloader_drop_last: bool,
-) -> tuple[list[list[int]], int, list[int]]:
+) -> tuple[list[list[int]], list[int], int, list[int]]:
     plan = [[int(i) for i in pack] for pack in raw_plan]
+    pack_lengths = [int(length) for length in raw_pack_lengths]
+    if len(plan) != len(pack_lengths):
+        raise ValueError("raw_pack_lengths must match raw_plan length for DDP alignment")
     if world_size <= 1:
-        return plan, 0, []
+        return plan, pack_lengths, 0, []
 
     num_packs = len(plan)
     if num_packs <= 0:
@@ -623,15 +708,16 @@ def _align_pack_plan_for_ddp(
     remainder = num_packs % int(world_size)
     if dataloader_drop_last:
         kept = num_packs - remainder
-        return plan[:kept], 0, []
+        return plan[:kept], pack_lengths[:kept], 0, []
 
     pad_needed = (int(world_size) - remainder) % int(world_size)
     if pad_needed <= 0:
-        return plan, 0, []
+        return plan, pack_lengths, 0, []
 
     repeats = list(range(pad_needed))
     aligned = list(plan) + [list(plan[i]) for i in repeats]
-    return aligned, int(pad_needed), repeats
+    aligned_pack_lengths = list(pack_lengths) + [int(pack_lengths[i]) for i in repeats]
+    return aligned, aligned_pack_lengths, int(pad_needed), repeats
 
 
 def _read_plan_cache(
@@ -681,7 +767,9 @@ def _persist_plan_cache(
     path: Path,
     fingerprint: Mapping[str, Any],
     raw_plan: Sequence[Sequence[int]],
+    raw_pack_lengths: Sequence[int],
     aligned_plan: Sequence[Sequence[int]],
+    aligned_pack_lengths: Sequence[int],
     world_size: int,
     dataloader_drop_last: bool,
     pad_needed: int,
@@ -696,9 +784,17 @@ def _persist_plan_cache(
         "world_size": int(world_size),
         "dataloader_drop_last": bool(dataloader_drop_last),
         "raw_plan": [[int(i) for i in pack] for pack in raw_plan],
+        "raw_pack_lengths": [int(length) for length in raw_pack_lengths],
         "aligned_plan": [[int(i) for i in pack] for pack in aligned_plan],
-        "raw_plan_checksum": _stable_plan_checksum(raw_plan),
-        "aligned_plan_checksum": _stable_plan_checksum(aligned_plan),
+        "aligned_pack_lengths": [int(length) for length in aligned_pack_lengths],
+        "raw_plan_checksum": _stable_plan_checksum(
+            raw_plan,
+            pack_lengths=raw_pack_lengths,
+        ),
+        "aligned_plan_checksum": _stable_plan_checksum(
+            aligned_plan,
+            pack_lengths=aligned_pack_lengths,
+        ),
         "pad_needed": int(pad_needed),
         "repeated_pack_indices": [int(i) for i in repeated_pack_indices],
         "single_long": int(single_long),
@@ -1059,7 +1155,9 @@ class StaticPackedCaptionDataset(Dataset):
         template: Any,
         packing_length: int,
         raw_plan: Sequence[Sequence[int]],
+        raw_pack_lengths: Sequence[int],
         aligned_plan: Sequence[Sequence[int]],
+        aligned_pack_lengths: Sequence[int],
         lengths: Sequence[int],
         world_size: int,
         dataloader_drop_last: bool,
@@ -1076,7 +1174,9 @@ class StaticPackedCaptionDataset(Dataset):
         self.template = template
         self.packing_length = int(packing_length)
         self.raw_plan = [[int(i) for i in pack] for pack in raw_plan]
+        self.raw_pack_lengths = [int(length) for length in raw_pack_lengths]
         self.pack_plan = [[int(i) for i in pack] for pack in aligned_plan]
+        self.pack_lengths = [int(length) for length in aligned_pack_lengths]
         self.lengths = [int(v) for v in lengths]
         self.world_size = int(world_size)
         self.dataloader_drop_last = bool(dataloader_drop_last)
@@ -1099,13 +1199,78 @@ class StaticPackedCaptionDataset(Dataset):
 
         if len(self.pack_plan) <= 0:
             raise ValueError("StaticPackedCaptionDataset requires at least one packed sequence")
+        if len(self.raw_plan) != len(self.raw_pack_lengths):
+            raise ValueError("raw_pack_lengths must match raw_plan length")
+        if len(self.pack_plan) != len(self.pack_lengths):
+            raise ValueError("aligned_pack_lengths must match aligned_plan length")
 
     def __len__(self) -> int:
         return len(self.pack_plan)
 
+    @contextlib.contextmanager
+    def _temporary_pack_length(self, pack_length: int) -> Iterable[None]:
+        targets: list[Any] = []
+        seen: set[int] = set()
+        for candidate in (self.template, getattr(self.dataset, "template", None)):
+            if candidate is None:
+                continue
+            candidate_id = id(candidate)
+            if candidate_id in seen:
+                continue
+            seen.add(candidate_id)
+            targets.append(candidate)
+
+        states: list[tuple[Any, bool, Any, bool, Any]] = []
+        for target in targets:
+            had_max_length = hasattr(target, "max_length")
+            original_max_length = getattr(target, "max_length", None)
+            had_truncation = hasattr(target, "truncation_strategy")
+            original_truncation = getattr(target, "truncation_strategy", None)
+            states.append(
+                (
+                    target,
+                    had_max_length,
+                    original_max_length,
+                    had_truncation,
+                    original_truncation,
+                )
+            )
+            setattr(target, "max_length", int(pack_length))
+            try:
+                setattr(target, "truncation_strategy", "raise")
+            except (AttributeError, TypeError):
+                pass
+
+        try:
+            yield
+        finally:
+            for (
+                target,
+                had_max_length,
+                original_max_length,
+                had_truncation,
+                original_truncation,
+            ) in reversed(states):
+                try:
+                    if had_max_length:
+                        setattr(target, "max_length", original_max_length)
+                    elif hasattr(target, "max_length"):
+                        delattr(target, "max_length")
+                except (AttributeError, TypeError):
+                    pass
+                try:
+                    if had_truncation:
+                        setattr(target, "truncation_strategy", original_truncation)
+                    elif hasattr(target, "truncation_strategy"):
+                        delattr(target, "truncation_strategy")
+                except (AttributeError, TypeError):
+                    pass
+
     def __getitem__(self, index: int) -> list[dict]:
         pack_indices = self.pack_plan[int(index)]
-        return [self.dataset[int(raw_index)] for raw_index in pack_indices]
+        pack_length = int(self.pack_lengths[int(index)])
+        with self._temporary_pack_length(pack_length):
+            return [self.dataset[int(raw_index)] for raw_index in pack_indices]
 
     def set_epoch(self, epoch: int) -> None:
         self._epoch = int(epoch)
@@ -1139,6 +1304,7 @@ def build_static_packed_dataset(
     template: Any,
     *,
     packing_length: int,
+    packing_lengths: Sequence[int] | None = None,
     min_fill_ratio: float = 0.65,
     packing_drop_last: bool = True,
     dataloader_drop_last: bool = False,
@@ -1158,6 +1324,10 @@ def build_static_packed_dataset(
     """
     if packing_length <= 0:
         raise ValueError("packing_length must be positive")
+    normalized_packing_lengths = _normalize_packing_lengths(
+        packing_length=packing_length,
+        packing_lengths=packing_lengths,
+    )
     if not (0 < float(min_fill_ratio) <= 1):
         raise ValueError("packing_min_fill_ratio must be in (0,1]")
 
@@ -1193,6 +1363,15 @@ def build_static_packed_dataset(
             "Static packing does not support fusion/mixing datasets because their sample schedule "
             "is order-sensitive. Use training.packing_mode=dynamic for fusion runs."
         )
+    if len(normalized_packing_lengths) > 1:
+        get_cache_info = getattr(dataset, "get_encoded_sample_cache_info", None)
+        cache_info = get_cache_info() if callable(get_cache_info) else None
+        if cache_info is not None:
+            raise ValueError(
+                "Static packing with multiple packing buckets does not support "
+                "encoded_sample_cache because each pack may require a different full-sequence "
+                "encode length. Disable training.encoded_sample_cache or use a single bucket."
+            )
 
     rank, discovered_world_size = _resolve_rank_world(world_size_hint=world_size)
     world_size = max(int(world_size or discovered_world_size), 1)
@@ -1202,6 +1381,9 @@ def build_static_packed_dataset(
     canonical_fingerprint["dataset_module"] = type(dataset).__module__
     canonical_fingerprint["dataset_len"] = int(num_samples)
     canonical_fingerprint["packing_length"] = int(packing_length)
+    canonical_fingerprint["packing_lengths"] = [
+        int(length) for length in normalized_packing_lengths
+    ]
     canonical_fingerprint["packing_min_fill_ratio"] = float(min_fill_ratio)
     canonical_fingerprint["packing_allow_single_long"] = bool(allow_single_long)
     canonical_fingerprint["packing_drop_last"] = bool(packing_drop_last)
@@ -1268,15 +1450,17 @@ def build_static_packed_dataset(
             persist_every=length_cache_persist_every,
             precompute_workers=length_precompute_workers,
         )
-        raw_plan, single_long, skipped_long, avg_fill = _build_raw_pack_plan(
+        raw_plan, raw_pack_lengths, single_long, skipped_long, avg_fill = _build_raw_pack_plan(
             lengths=lengths,
             packing_length=packing_length,
+            packing_lengths=normalized_packing_lengths,
             min_fill_ratio=min_fill_ratio,
             drop_last=packing_drop_last,
             allow_single_long=allow_single_long,
         )
-        aligned_plan, pad_needed, repeated_pack_indices = _align_pack_plan_for_ddp(
+        aligned_plan, aligned_pack_lengths, pad_needed, repeated_pack_indices = _align_pack_plan_for_ddp(
             raw_plan=raw_plan,
+            raw_pack_lengths=raw_pack_lengths,
             world_size=world_size,
             dataloader_drop_last=bool(dataloader_drop_last),
         )
@@ -1284,7 +1468,9 @@ def build_static_packed_dataset(
             path=plan_cache_path,
             fingerprint=canonical_fingerprint,
             raw_plan=raw_plan,
+            raw_pack_lengths=raw_pack_lengths,
             aligned_plan=aligned_plan,
+            aligned_pack_lengths=aligned_pack_lengths,
             world_size=world_size,
             dataloader_drop_last=bool(dataloader_drop_last),
             pad_needed=pad_needed,
@@ -1323,8 +1509,15 @@ def build_static_packed_dataset(
         dataloader_drop_last=bool(dataloader_drop_last),
     )
     raw_plan = plan_payload.get("raw_plan")
+    raw_pack_lengths = plan_payload.get("raw_pack_lengths")
     aligned_plan = plan_payload.get("aligned_plan")
-    if not isinstance(raw_plan, list) or not isinstance(aligned_plan, list):
+    aligned_pack_lengths = plan_payload.get("aligned_pack_lengths")
+    if (
+        not isinstance(raw_plan, list)
+        or not isinstance(raw_pack_lengths, list)
+        or not isinstance(aligned_plan, list)
+        or not isinstance(aligned_pack_lengths, list)
+    ):
         raise TypeError(
             f"Static plan cache contains invalid plan payload in {plan_cache_path}"
         )
@@ -1332,9 +1525,15 @@ def build_static_packed_dataset(
     raw_plan_checksum = str(plan_payload.get("raw_plan_checksum") or "")
     aligned_plan_checksum = str(plan_payload.get("aligned_plan_checksum") or "")
     if not raw_plan_checksum:
-        raw_plan_checksum = _stable_plan_checksum(raw_plan)
+        raw_plan_checksum = _stable_plan_checksum(
+            raw_plan,
+            pack_lengths=[int(length) for length in raw_pack_lengths],
+        )
     if not aligned_plan_checksum:
-        aligned_plan_checksum = _stable_plan_checksum(aligned_plan)
+        aligned_plan_checksum = _stable_plan_checksum(
+            aligned_plan,
+            pack_lengths=[int(length) for length in aligned_pack_lengths],
+        )
 
     pad_needed = int(plan_payload.get("pad_needed") or 0)
     repeated_pack_indices = plan_payload.get("repeated_pack_indices") or []
@@ -1352,7 +1551,9 @@ def build_static_packed_dataset(
         template=template,
         packing_length=packing_length,
         raw_plan=raw_plan,
+        raw_pack_lengths=[int(length) for length in raw_pack_lengths],
         aligned_plan=aligned_plan,
+        aligned_pack_lengths=[int(length) for length in aligned_pack_lengths],
         lengths=lengths,
         world_size=world_size,
         dataloader_drop_last=bool(dataloader_drop_last),
