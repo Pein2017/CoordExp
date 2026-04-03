@@ -1,27 +1,32 @@
-# Runtime Footguns (Memory)
+# Runtime Footguns
 
-Role separation:
-- Memory role: quick recall for runtime and config mistakes that are easy to miss during implementation.
-- Canonical docs: `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, `docs/data/CONTRACT.md`, `docs/training/STAGE1_OBJECTIVE.md`, `docs/training/STAGE2_RUNBOOK.md`, `docs/training/METRICS.md`, `docs/eval/WORKFLOW.md`, `openspec/specs/runtime-architecture-refactor-program/spec.md`.
-- Update trigger: when config contracts, trainer variants, packing behavior, or infer/eval entrypoints change.
+Role: quick recall for durable config/runtime traps and compatibility boundaries.
 
-High-signal reminders:
-- Training is YAML-first; `template` and `custom` are required, and unknown keys fail fast in `src/config/schema.py`.
-- Keep `data.dataset: ["dummy"]` as the ms-swift placeholder; dataset source comes from `custom.train_jsonl` or legacy `custom.fusion_config`.
-- Default posture is single-dataset training; `custom.fusion_config` is legacy or experimental.
-- Offline-prepared JSONL is the contract: keep `custom.emit_norm: none`, pre-normalize coords to norm1000 or coord tokens, and keep image paths relative.
-- When `custom.offline_max_pixels` is authored, launcher/dataset prechecks use it as the offline image-budget contract rather than `template.max_pixels`.
-- Coord-token enablement and coord distribution loss are independent; changing one does not automatically enable the other.
-- `training.packing_length` is unsupported; use `global_max_length` or `template.max_length`.
-- For `custom.trainer_variant: stage2_two_channel`, `training.effective_batch_size` is required and must divide learner world size.
-- `custom.trainer_variant: stage2_ab_training` is removed; use `stage2_two_channel`.
-- `custom.trainer_variant: rollout_matching_sft` is removed; use `stage2_rollout_aligned`.
-- `custom.trainer_variant: stage2_rollout_aligned` must author `rollout_matching.pipeline.*`; `stage2_ab.pipeline.*` is invalid there.
-- Removed self-context-era knobs such as `stage2_ab.n_softctx_iter`, `stage2_ab.coord_ctx_embed_mode`, `stage2_ab.coord_decode_mode`, and `rollout_matching.coord_decode_mode` should fail fast rather than be silently ignored.
-- Stage-2 Channel-B uses the clean-prefix contract; the raw rollout prefix is diagnostic-only, not the positive teacher-forced source.
-- Put rollout settings under top-level `rollout_matching.*`; never under `custom.extra.rollout_matching.*`.
-- Server-mode Stage-2 launches go through `scripts/train_stage2.sh` and `src.launchers.stage2_vllm_server`; GPU topology is split by `server_gpus` vs `train_gpus`, not by new CLI flags.
-- Refactored runtime ownership is now split across `src/bootstrap/`, `src/infer/{engine,artifacts,backends}.py`, `src/eval/{detection,artifacts,orchestration}.py`, and `src/trainers/rollout_runtime/`.
-- `custom.trainer_variant: stage2_rollout_aligned` is still supported, but rollout-target/eval ownership now routes through `src/trainers/rollout_aligned_targets.py` and `src/trainers/rollout_aligned_evaluator.py` rather than staying fully inline.
-- The YAML infer pipeline writes `resolved_config.path` next to `gt_vs_pred.jsonl`; use it to recover authoritative run metadata when artifacts are consumed outside `run_dir`.
-- Offline evaluator callback metrics log under `eval_det_*`; trainer-native Stage-2 rollout eval logs under `eval/detection/*`, `eval/parsing/*`, `eval/description/*`, `eval/config/*`, and `eval/runtime/*`.
+Canonical pointers:
+- `docs/SYSTEM_OVERVIEW.md`
+- `docs/ARTIFACTS.md`
+- `docs/training/STAGE2_RUNBOOK.md`
+- `docs/training/METRICS.md`
+- `docs/eval/WORKFLOW.md`
+- `openspec/specs/runtime-architecture-refactor-program/spec.md`
+- `openspec/specs/stage2-ab-training/spec.md`
+- `openspec/specs/rollout-matching-sft/spec.md`
+
+High-signal traps:
+- YAML-first config validation is strict; unknown keys fail fast. Route config debugging through `src/config/loader.py` first, then `src/config/schema.py` and rollout-specific schema helpers.
+- Single-dataset training is the default posture; fusion-config training is legacy or experimental.
+- Offline-prepared JSONL is the contract: preserve geometry alignment, keep runtime resize disabled, and use `src/datasets/geometry.py` for coordinate semantics.
+- Treat Stage-2 surfaces separately: `stage2_two_channel` is the current operator-facing path, while `stage2_rollout_aligned` is the supported compatibility variant with its own config family and specs.
+- Do not cross-wire Stage-2 config families: author `stage2_ab.pipeline.*` for `stage2_two_channel` and `rollout_matching.pipeline.*` for `stage2_rollout_aligned`.
+- Route training entry, provenance, and trainer assembly through `src/sft.py` and `src/bootstrap/{pipeline_manifest,trainer_setup,run_metadata}.py` before diving into trainer internals.
+- Inference and evaluation are separate seams: `src/infer/{pipeline,engine,backends,artifacts}.py` vs `src/eval/{detection,orchestration,artifacts}.py`.
+- Offline evaluator metrics and trainer-native Stage-2 rollout metrics use different key families; do not compare them as if they were the same surface.
+- Artifact/provenance behavior is centralized in `docs/ARTIFACTS.md`; route there instead of relying on memory for file-level artifact details.
+
+Routing hints:
+- config contract changes -> `src/config/loader.py`, `src/config/schema.py`
+- data contract/rendering -> `src/datasets/geometry.py`, `src/datasets/builders/jsonlines.py`, `src/datasets/dense_caption.py`
+- bootstrap/provenance -> `src/bootstrap/`
+- Stage-2 two-channel behavior -> `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_coordination.py`
+- rollout-aligned behavior -> `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`
+- inference/eval runtime seams -> `src/infer/`, `src/eval/`
