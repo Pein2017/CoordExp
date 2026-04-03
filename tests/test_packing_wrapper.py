@@ -218,7 +218,54 @@ def test_drop_last_underfilled_group():
     assert packs == []
 
 
-def test_allow_single_long():
+def test_packing_keeps_exact_max_length_sample_and_skips_overlength_sample():
+    dataset = _FakeDataset([80, 81, 20, 20, 20, 20])
+    template = _FakeTemplate(max_length=80)
+    wrapped = build_packed_dataset(
+        dataset,
+        template=template,
+        packing_length=80,
+        buffer_size=6,
+        min_fill_ratio=0.5,
+        drop_last=False,
+        allow_single_long=True,
+    )
+
+    packs = list(wrapped)
+    pack_indices = [[item["idx"] for item in pack] for pack in packs]
+
+    assert [0] in pack_indices
+    assert all(1 not in pack for pack in pack_indices)
+    assert all(sum(item["length"] for item in pack) <= 80 for pack in packs)
+
+
+def test_static_packing_keeps_exact_max_length_sample_and_skips_overlength_sample(
+    tmp_path: Path,
+):
+    dataset = _FakeDataset([80, 81, 20, 20, 20, 20])
+    template = _FakeTemplate(max_length=80)
+    wrapped = build_static_packed_dataset(
+        dataset,
+        template=template,
+        packing_length=80,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / "static_cache",
+        fingerprint=_static_fingerprint("exact_max_skip_overlength"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+    )
+
+    pack_indices = wrapped.pack_plan
+
+    assert [0] in pack_indices
+    assert all(1 not in pack for pack in pack_indices)
+    assert all(sum(dataset.lengths[i] for i in pack) <= 80 for pack in pack_indices)
+
+
+def test_skip_overlength_even_when_allow_single_long_is_enabled():
     dataset = _FakeDataset([90])
     template = _FakeTemplate(max_length=80)
     wrapped = build_packed_dataset(
@@ -231,8 +278,7 @@ def test_allow_single_long():
         allow_single_long=True,
     )
     packs = list(wrapped)
-    assert len(packs) == 1
-    assert _collect_pack_lengths(packs)[0] == 90
+    assert packs == []
 
 
 def test_skip_single_long_when_disallowed(caplog):

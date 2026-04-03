@@ -6,6 +6,7 @@ import random
 from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
 from torch.utils.data import Dataset
+from swift.llm import MaxLengthError
 
 from src.common.object_field_order import (
     ObjectFieldOrder,
@@ -461,6 +462,31 @@ class BaseCaptionDataset(Dataset):
             )
         return encoded
 
+    def _probe_full_sample_length(
+        self,
+        *,
+        rendered: Mapping[str, Any],
+        system_prompt: Optional[str],
+    ) -> int | None:
+        truncation_strategy = getattr(self.template, "truncation_strategy", None)
+        max_length = getattr(self.template, "max_length", None)
+        try:
+            setattr(self.template, "truncation_strategy", "raise")
+            encoded = self._encode_rendered_record(
+                rendered=rendered,
+                system_prompt=system_prompt,
+            )
+        except MaxLengthError:
+            if isinstance(max_length, int) and max_length > 0:
+                return int(max_length) + 1
+            return None
+        finally:
+            try:
+                setattr(self.template, "truncation_strategy", truncation_strategy)
+            except (AttributeError, TypeError):
+                pass
+        return _extract_sample_length(encoded)
+
     def _finalize_encoded_example(
         self,
         *,
@@ -526,11 +552,16 @@ class BaseCaptionDataset(Dataset):
         return record
 
     def _static_packing_length(self, base_idx: int) -> int | None:
-        if self._encoded_sample_cache is not None:
-            return _extract_sample_length(self._encoded_sample_cache.load_sample(int(base_idx)))
-
-        encoded = self._encode_base_record_for_cache(int(base_idx))
-        return _extract_sample_length(encoded)
+        record = self._prepare_record_for_cache(base_idx=int(base_idx))
+        rendered, _ = self._render_prepared_record(
+            record=record,
+            builder=self._create_builder(self.mode),
+            system_prompt=self._current_system_prompt(),
+        )
+        return self._probe_full_sample_length(
+            rendered=rendered,
+            system_prompt=self._current_system_prompt(),
+        )
 
     def _static_packing_thread_safe(self) -> bool:
         return bool(
@@ -552,6 +583,7 @@ class BaseCaptionDataset(Dataset):
                 "coord_tokens_enabled": bool(self.coord_tokens.enabled),
                 "offline_max_pixels": self.offline_max_pixels,
                 "system_prompt": self._current_system_prompt(),
+                "full_sample_packing_probe": "raise_overlength_v1",
                 "epoch_sensitive": bool(self.object_ordering == "random"),
                 "has_fetch_preprocessor": bool(self.preprocessor is not None),
             },
