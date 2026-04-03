@@ -74,7 +74,9 @@ stage2_ab:
           adjacent_repulsion_margin_ratio: 0.05
           adjacent_repulsion_copy_margin: 0.8
   channel_b:
-    duplicate_iou_threshold: 0.95
+    duplicate_control:
+      iou_threshold: 0.95
+      center_radius_scale: 0.8
     invalid_rollout_policy: dump_and_continue
     pseudo_positive:
       enabled: true

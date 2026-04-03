@@ -62,6 +62,13 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     fn_object_weights: List[float]
     anchor_decode_mode: str
     explorer_decode_mode: str
+    duplicate_clusters_total: int
+    duplicate_clusters_exempt: int
+    duplicate_clusters_suppressed: int
+    duplicate_objects_suppressed: int
+    duplicate_survivor_anchor_indices: List[int]
+    duplicate_exempt_anchor_indices: List[int]
+    duplicate_suppressed_anchor_indices: List[int]
     anchor_gt_backed_indices: List[int]
     anchor_support_counts: List[int]
     anchor_support_rates: List[float]

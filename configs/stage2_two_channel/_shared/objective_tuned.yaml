@@ -1,6 +1,8 @@
 stage2_ab:
   channel_b:
-    duplicate_iou_threshold: 0.95
+    duplicate_control:
+      iou_threshold: 0.95
+      center_radius_scale: 0.8
     ddp_phase_timeout_s: 120.0
   pipeline:
     objective:

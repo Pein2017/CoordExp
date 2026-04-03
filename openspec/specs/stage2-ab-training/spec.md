@@ -1250,12 +1250,15 @@ Normative behavior:
 - `loss_duplicate_burst_unlikelihood.config` MUST be an empty mapping in v1.
 - `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
 - `stage2_ab.channel_b` MUST accept only:
-  - `duplicate_iou_threshold`
+  - `duplicate_control`
   - `triage_posterior`
   - `producer_wait_timeout_s`
   - `ddp_phase_timeout_s`
   - `invalid_rollout_policy`
   - `pseudo_positive`
+- `stage2_ab.channel_b.duplicate_control` MUST be a typed mapping and MUST accept only:
+  - `iou_threshold`
+  - `center_radius_scale`
 - `stage2_ab.channel_b.pseudo_positive` MUST be a typed mapping and MUST accept only:
   - `enabled`
   - `coord_weight`
@@ -1268,6 +1271,9 @@ Normative behavior:
   - `recovered_ground_truth_weight_multiplier`
 - when `stage2_ab.channel_b.pseudo_positive.enabled=false`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `2`
 - when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `>= 2`
+- legacy flat leaves `stage2_ab.channel_b.duplicate_iou_threshold` and
+  `stage2_ab.channel_b.center_radius_scale` MUST fail fast with actionable
+  migration guidance to `stage2_ab.channel_b.duplicate_control.*`
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
 #### Scenario: Non-empty loss_duplicate_burst_unlikelihood.config fails fast

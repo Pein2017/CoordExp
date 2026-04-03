@@ -81,7 +81,11 @@ CLI overrides without adding new CLI flags for duplicate-control.
 
 Normative behavior:
 - duplicate-control enablement is configured through YAML only,
-- a minimal typed evaluator surface is permitted for this change:
+- the standalone evaluator config accepted by
+  `scripts/evaluate_detection.py` permits the minimal typed surface:
+  - `duplicate_control.enabled`
+- when evaluation is launched through the unified infer pipeline, the pipeline
+  may expose a parallel wrapper surface under:
   - `eval.duplicate_control.enabled`
 - duplicate-control configuration MUST fail fast on unknown keys,
 - guarded artifact-path keys are resolved outputs for this change rather than
@@ -91,7 +95,7 @@ Normative behavior:
   paths as part of the resolved configuration.
 
 #### Scenario: Duplicate-control is enabled through YAML without new CLI flags
-- **GIVEN** an evaluator config with `eval.duplicate_control.enabled=true`
+- **GIVEN** a standalone evaluator config with `duplicate_control.enabled=true`
 - **WHEN** the evaluator runs through the normal CLI entrypoint
 - **THEN** duplicate-control is enabled
 - **AND** the evaluator requires no new CLI flags to produce raw and guarded
@@ -99,7 +103,7 @@ Normative behavior:
 
 #### Scenario: Standalone evaluator writes guarded companions under out_dir
 - **GIVEN** a direct evaluator run with `--pred_jsonl` and `--out_dir`
-- **AND** `eval.duplicate_control.enabled=true`
+- **AND** `duplicate_control.enabled=true`
 - **WHEN** evaluation completes
 - **THEN** guarded companion artifacts are written under `out_dir`
 - **AND** their names follow the same deterministic `_guarded` suffix contract

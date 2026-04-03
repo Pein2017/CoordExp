@@ -18,6 +18,7 @@ from src.trainers.stage2_rollout_aligned import (
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
+    _apply_channel_b_duplicate_control,
     _bbox_groups_from_token_ids,
     _build_canonical_prefix_text_data,
     _build_channel_b_supervision_targets,
@@ -30,9 +31,24 @@ from src.trainers.stage2_two_channel import (
     _expectation_decode_coords,
     _extract_gt_bboxonly,
     _matched_prefix_structure_positions,
-    _sequential_dedup_bbox_objects,
     _stage2_ab_tail_closure_positions,
 )
+
+
+def _apply_test_duplicate_control(
+    parsed_bbox_objects_raw: Sequence[GTObject], *, duplicate_iou_threshold: float
+):
+    result = _apply_channel_b_duplicate_control(
+        anchor_objects_raw=parsed_bbox_objects_raw,
+        explorer_objects_raw_by_view=[],
+        duplicate_iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=0.0,
+        unlabeled_consistent_iou_threshold=0.0,
+    )
+    return (
+        list(result.kept_anchor_objects),
+        dict(result.suppressed_duplicate_objects_by_boundary),
+    )
 
 
 class _DummyOut:
@@ -1212,7 +1228,9 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = (
-        lambda key, default=None: 0.0 if key == "duplicate_iou_threshold" else default
+        lambda key, default=None: 0.0
+        if key == "duplicate_control.iou_threshold"
+        else default
     )
 
     tok = _DummyTokenizer()
@@ -1260,13 +1278,13 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
     class _StopAfterDedup(RuntimeError):
         pass
 
-    def _fake_dedup(*, parsed_bbox_objects_raw, duplicate_iou_threshold):
+    def _fake_duplicate_control(*, duplicate_iou_threshold, **kwargs):
         captured["threshold"] = float(duplicate_iou_threshold)
         raise _StopAfterDedup("stop after dedup threshold capture")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._sequential_dedup_bbox_objects",
-        _fake_dedup,
+        "src.trainers.stage2_two_channel._apply_channel_b_duplicate_control",
+        _fake_duplicate_control,
     )
 
     sample = {
@@ -1438,7 +1456,12 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
 
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
     assert len(segments) == 1
-    assert batch_metrics["stage2_ab/channel_b/dup/N_duplicates"] == pytest.approx(1.0)
+    assert batch_metrics["stage2_ab/channel_b/dup/N_objects_suppressed"] == pytest.approx(
+        0.0
+    )
+    assert batch_metrics["stage2_ab/channel_b/dup/N_clusters_exempt"] == pytest.approx(
+        1.0
+    )
     assert len(t._stage2_train_monitor_candidates) == 1
 
     captured = {}
@@ -1457,8 +1480,9 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         {"desc": "person", "bbox_2d": [10, 10, 20, 20]},
         {"desc": "book", "bbox_2d": [40, 40, 60, 60]},
     ]
-    assert dumped["duplication"]["duplicates"] == 1
-    assert dumped["duplication"]["clean_accepted"] == 2
+    assert dumped["duplication"]["objects_suppressed"] == 0
+    assert dumped["duplication"]["clusters_exempt"] == 1
+    assert dumped["duplication"]["clean_accepted"] == 3
     assert dumped["match"]["fp_pred_indices"] == [1]
     assert dumped["rollout_text"] == full_rollout_text
     assert "...<truncated>" not in dumped["rollout_text"]
@@ -1813,7 +1837,8 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
     )
     expected_pos = [int(meta["prompt_len"] + meta["prefix_len"] + p) for p in rel_groups[0]]
 
-    assert len(fake_parse.prefix_token_ids) > int(meta["prefix_len"])
+    assert int(meta["prefix_len"]) > 0
+    assert int(meta["prefix_len"]) != int(len(fake_parse.prefix_token_ids))
     assert meta["bbox_groups_fn"][0]["pos"] == expected_pos
 
 
@@ -2538,14 +2563,14 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
         ]
     ]
 
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -2616,14 +2641,14 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
         ],
     ]
 
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -2670,14 +2695,14 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
     ]
     explorer_objects_by_view = [list(anchor_objects)]
 
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}],
         anchor_policy_statuses=[
@@ -2745,14 +2770,14 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
         ],
         [],
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -2770,7 +2795,6 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.4,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2825,14 +2849,14 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
         [],
         [],
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -2850,7 +2874,6 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.6,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2912,14 +2935,14 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
         [],
         [],
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -2937,7 +2960,6 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.4,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2994,14 +3016,14 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_du
         [],
         [],
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -3019,7 +3041,6 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_du
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.4,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -3064,14 +3085,14 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
             desc="dup",
         ),
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=raw_anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=[[], [], []],
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=[[], [], []],
         anchor_match_by_pred={},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -3089,7 +3110,6 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.4,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -3099,7 +3119,7 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
     assert [obj.index for obj in accepted_clean] == [0]
     assert triage.dead_anchor_indices == [0]
     assert triage.kept_anchor_objects == []
-    assert sorted(triage.duplicate_bursts_by_boundary.keys()) == [0]
+    assert sorted(triage.suppressed_duplicate_objects_by_boundary.keys()) == [0]
     assert targets.duplicate_burst_unlikelihood_targets
     assert targets.duplicate_burst_unlikelihood_boundary_count == 1
 
@@ -3167,14 +3187,14 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
         ],
         [],
     ]
-    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
-        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-        explorer_accepted_objects_clean_by_view=explorer_objects_by_view,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
         anchor_match_by_pred={0: 0},
         explorer_match_by_pred_by_view=[{}, {}, {}],
         unlabeled_consistent_iou_threshold=0.9,
@@ -3199,7 +3219,6 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
         recovered_ground_truth_weight_multiplier=2.0,
         pseudo_positive_enabled=True,
         pseudo_positive_coord_weight=0.4,
-        duplicate_iou_threshold=0.9,
         object_field_order="desc_first",
         bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -3246,10 +3265,26 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
 
-    training_cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage2_two_channel/base.yaml"
-    )
-    t.stage2_ab_cfg = asdict(training_cfg.stage2_ab)
+    t.stage2_ab_cfg = {
+        "channel_b": {
+            "duplicate_control": {
+                "iou_threshold": 0.90,
+                "center_radius_scale": 0.8,
+            },
+            "pseudo_positive": {
+                "enabled": False,
+                "coord_weight": 0.5,
+            },
+            "triage_posterior": {
+                "num_rollouts": 2,
+                "explorer_temperature": 0.7,
+                "explorer_top_p": 1.0,
+                "explorer_top_k": -1,
+                "unlabeled_consistent_iou_threshold": 0.85,
+                "recovered_ground_truth_weight_multiplier": 2.0,
+            },
+        }
+    }
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_temperature"] = 0.55
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_p"] = 0.91
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_k"] = 7
@@ -5566,7 +5601,7 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
         GTObject(index=3, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
     ]
 
-    accepted, bursts = _sequential_dedup_bbox_objects(
+    accepted, bursts = _apply_test_duplicate_control(
         parsed_bbox_objects_raw=raw,
         duplicate_iou_threshold=0.90,
     )
@@ -5577,10 +5612,26 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
     assert [obj.index for obj in bursts[2]] == [3]
 
     diag = _compute_duplicate_diagnostics(raw)
-    assert diag["dup/max_desc_count"] == pytest.approx(3.0)
-    assert diag["dup/near_iou90_pairs_same_desc_count"] == pytest.approx(3.0)
-    assert diag["dup/near_iou90_pairs_any_desc_count"] == pytest.approx(3.0)
-    assert diag["dup/saturation_rate"] == pytest.approx(0.0)
+    assert diag["dup/raw/max_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/raw/near_iou90_pairs_same_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/raw/near_iou90_pairs_any_desc_count"] == pytest.approx(3.0)
+    assert diag["dup/raw/saturation_rate"] == pytest.approx(0.0)
+
+
+def test_channel_b_sequential_dedup_with_zero_center_radius_still_suppresses_iou_duplicates() -> None:
+    raw = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[100, 100, 200, 200], desc="cat"),
+        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[110, 110, 210, 210], desc="cat"),
+    ]
+
+    accepted, bursts = _apply_test_duplicate_control(
+        parsed_bbox_objects_raw=raw,
+        duplicate_iou_threshold=0.50,
+    )
+
+    assert [obj.index for obj in accepted] == [0]
+    assert sorted(bursts.keys()) == [1]
+    assert [obj.index for obj in bursts[1]] == [1]
 
 
 def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
@@ -5608,7 +5659,7 @@ def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_sa
         clean_target_text=clean_prefix.prefix_text + "]}",
         accepted_objects_clean=accepted_clean,
         fn_objects=[],
-        duplicate_bursts_by_boundary=duplicate_bursts,
+        suppressed_duplicate_objects_by_boundary=duplicate_bursts,
         boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
         object_field_order="desc_first",
     )
@@ -5646,7 +5697,7 @@ def test_duplicate_burst_unlikelihood_targets_skip_when_no_safe_divergence_exist
         clean_target_text=clean_prefix.prefix_text + "]}",
         accepted_objects_clean=accepted_clean,
         fn_objects=[],
-        duplicate_bursts_by_boundary=duplicate_bursts,
+        suppressed_duplicate_objects_by_boundary=duplicate_bursts,
         boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
         object_field_order="desc_first",
     )
@@ -5689,7 +5740,7 @@ def test_duplicate_burst_unlikelihood_targets_resolve_boundary_crossing_tokeniza
         clean_target_text=clean_prefix.prefix_text + "]}",
         accepted_objects_clean=accepted_clean,
         fn_objects=[],
-        duplicate_bursts_by_boundary=duplicate_bursts,
+        suppressed_duplicate_objects_by_boundary=duplicate_bursts,
         boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
         object_field_order="desc_first",
     )

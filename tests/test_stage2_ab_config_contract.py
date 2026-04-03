@@ -9,6 +9,7 @@ import pytest
 from src.config.loader import ConfigLoader
 from src.config.schema import (
     Stage2ABChannelBConfig,
+    Stage2ABChannelBDuplicateControlConfig,
     Stage2ABChannelBPseudoPositiveConfig,
     Stage2ABChannelBTriagePosteriorConfig,
     TrainingConfig,
@@ -177,12 +178,18 @@ def test_stage2_ab_channel_b_removed_keys_fail_fast(payload: dict, expected_msg:
 def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
         {
-            "duplicate_iou_threshold": 0.9,
+            "duplicate_control": {
+                "iou_threshold": 0.9,
+                "center_radius_scale": 0.7,
+            },
             "producer_wait_timeout_s": 0,
             "ddp_phase_timeout_s": 600,
         }
     )
-    assert cfg.duplicate_iou_threshold == pytest.approx(0.9)
+    assert cfg.duplicate_control == Stage2ABChannelBDuplicateControlConfig(
+        iou_threshold=0.9,
+        center_radius_scale=0.7,
+    )
     assert cfg.producer_wait_timeout_s == pytest.approx(0.0)
     assert cfg.ddp_phase_timeout_s == pytest.approx(600.0)
     assert cfg.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
@@ -367,21 +374,57 @@ def test_stage2_ab_channel_b_timeout_keys_invalid_values_fail_fast() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be a float/int",
+        match=r"stage2_ab\.channel_b\.duplicate_control\.iou_threshold must be a float/int",
     ):
-        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": "oops"})
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"iou_threshold": "oops"}}
+        )
 
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be in \[0, 1\]",
+        match=r"stage2_ab\.channel_b\.duplicate_control\.iou_threshold must be in \[0, 1\]",
     ):
-        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": -0.1})
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"iou_threshold": -0.1}}
+        )
 
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold must be in \[0, 1\]",
+        match=r"stage2_ab\.channel_b\.duplicate_control\.iou_threshold must be in \[0, 1\]",
     ):
-        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": 1.1})
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"iou_threshold": 1.1}}
+        )
+
+    with pytest.raises(
+        TypeError,
+        match=r"stage2_ab\.channel_b\.duplicate_control\.center_radius_scale must be a float/int",
+    ):
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"center_radius_scale": "oops"}}
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.duplicate_control\.center_radius_scale must be >= 0",
+    ):
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"center_radius_scale": -0.1}}
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.duplicate_iou_threshold has been removed",
+    ):
+        Stage2ABChannelBConfig.from_mapping({"duplicate_iou_threshold": 0.9})
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown stage2_ab\.channel_b\.duplicate_control keys",
+    ):
+        Stage2ABChannelBConfig.from_mapping(
+            {"duplicate_control": {"unexpected": 1}}
+        )
 
 
 def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
@@ -415,7 +458,10 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
             "schedule": {"b_ratio": 1.0},
             "pipeline": _canonical_stage2_pipeline(),
             "channel_b": {
-                "duplicate_iou_threshold": 0.85,
+                "duplicate_control": {
+                    "iou_threshold": 0.85,
+                    "center_radius_scale": 0.65,
+                },
                 "producer_wait_timeout_s": 120.0,
                 "ddp_phase_timeout_s": 900.0,
                 "triage_posterior": {
@@ -431,7 +477,12 @@ def test_stage2_ab_channel_b_timeout_keys_parse_in_training_config() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     parsed = TrainingConfig.from_mapping(raw, prompts)
     assert parsed.stage2_ab is not None
-    assert parsed.stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.85)
+    assert parsed.stage2_ab.channel_b.duplicate_control == (
+        Stage2ABChannelBDuplicateControlConfig(
+            iou_threshold=0.85,
+            center_radius_scale=0.65,
+        )
+    )
     assert parsed.stage2_ab.channel_b.producer_wait_timeout_s == pytest.approx(120.0)
     assert parsed.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(900.0)
     assert parsed.stage2_ab.channel_b.triage_posterior.explorer_temperature == pytest.approx(0.5)

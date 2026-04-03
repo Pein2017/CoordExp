@@ -1,0 +1,35 @@
+extends: ../prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+stage2_ab:
+  schedule:
+    b_ratio: 1.0
+  channel_b:
+    triage_posterior:
+      num_rollouts: 2
+
+training:
+  run_name: smoke_tiny_1step-k4-pseudo_positive
+  artifact_subdir: stage2_ab/smoke/b_majority_coco1024_pseudo_positive_tiny_1step
+  max_steps: 1
+  eval_strategy: "no"
+  save_strategy: "no"
+  effective_batch_size: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  logging_steps: 1
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 4
+  val_sample_limit: 2
+
+rollout_matching:
+  rollout_backend: hf
+  eval_rollout_backend: hf
+  channel_b_decode_batch_size: 1
+  eval_decode_batch_size: 1
+  max_new_tokens: 256

@@ -5,7 +5,7 @@ doc_type: design-note
 status: historical
 domain: training
 summary: Historical design note for the active single-pass Channel-A plus clean-prefix Channel-B Stage-2 contract.
-updated: 2026-03-22
+updated: 2026-04-03
 ---
 
 # Stage-2 Design History
@@ -18,7 +18,7 @@ one stable design frame:
 - Channel-A: one GT-anchored teacher-forced forward
 - Channel-B: rollout-aligned clean-prefix supervision
 - Canonical Channel-A families: `loss/text/*`, `loss/coord/*`, `coord_diag/*`
-- Canonical Channel-B families: `loss/B_rollout_text/*`, `loss/B_coord/*`, `coord_diag/B/*`, `dup/*`, and `stage2_ab/channel_b/dup/N_*`
+- Canonical Channel-B families: `loss/B_rollout_text/*`, `loss/B_coord/*`, `coord_diag/B/*`, `dup/raw/*`, and `stage2_ab/channel_b/dup/N_*`
 
 ## Current Runtime Ownership
 

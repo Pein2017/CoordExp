@@ -21,6 +21,7 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.config.prompts import resolve_dense_prompt_variant_key
+from src.infer.artifacts import build_eval_artifact_paths
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -112,6 +113,22 @@ def _get_limit(cfg: Mapping[str, Any], key: str, default: int = 0) -> int:
     if limit < 0:
         raise ValueError(f"{key} must be >= 0")
     return limit
+
+
+def _resolve_eval_duplicate_control_enabled(eval_cfg: Mapping[str, Any]) -> bool:
+    raw = eval_cfg.get("duplicate_control", {})
+    if raw is None:
+        return False
+    if not isinstance(raw, Mapping):
+        raise ValueError("eval.duplicate_control must be a mapping")
+    unknown_keys = sorted(str(key) for key in raw.keys() if str(key) != "enabled")
+    if unknown_keys:
+        rendered = ", ".join(f"eval.duplicate_control.{key}" for key in unknown_keys)
+        raise ValueError(
+            f"Unknown duplicate-control keys are unsupported: {rendered}. "
+            "Only eval.duplicate_control.enabled is allowed."
+        )
+    return _get_bool(raw, "enabled", False)
 
 
 def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
@@ -210,6 +227,10 @@ class ResolvedArtifacts:
     summary_json: Path
     eval_dir: Path
     vis_dir: Path
+    gt_vs_pred_guarded_jsonl: Path | None = None
+    gt_vs_pred_scored_guarded_jsonl: Path | None = None
+    metrics_guarded_json: Path | None = None
+    duplicate_guard_report_json: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -273,6 +294,7 @@ def resolve_artifacts(
 
     eval_dir = Path(_get_str(eval_cfg, "output_dir") or (run_dir / "eval"))
     vis_dir = Path(_get_str(vis_cfg, "output_dir") or (run_dir / "vis"))
+    eval_artifact_paths = build_eval_artifact_paths(run_dir=run_dir, eval_dir=eval_dir)
 
     return (
         ResolvedArtifacts(
@@ -280,7 +302,15 @@ def resolve_artifacts(
             gt_vs_pred_jsonl=gt_vs_pred_jsonl,
             pred_token_trace_jsonl=pred_token_trace_jsonl,
             gt_vs_pred_scored_jsonl=gt_vs_pred_scored_jsonl,
+            gt_vs_pred_guarded_jsonl=eval_artifact_paths["gt_vs_pred_guarded_jsonl"],
+            gt_vs_pred_scored_guarded_jsonl=eval_artifact_paths[
+                "gt_vs_pred_scored_guarded_jsonl"
+            ],
             summary_json=summary_json,
+            metrics_guarded_json=eval_artifact_paths["metrics_guarded_json"],
+            duplicate_guard_report_json=eval_artifact_paths[
+                "duplicate_guard_report_json"
+            ],
             eval_dir=eval_dir,
             vis_dir=vis_dir,
         ),
@@ -531,6 +561,8 @@ def run_pipeline(
     artifacts.vis_dir.mkdir(parents=True, exist_ok=True)
 
     root_image_dir, root_image_dir_source = _resolve_root_image_dir(cfg)
+    eval_cfg = _get_map(cfg, "eval")
+    duplicate_control_enabled = _resolve_eval_duplicate_control_enabled(eval_cfg)
 
     # Log resolved config (stdout logger + artifact).
     cfg_redacted = redact_config(cfg)
@@ -554,14 +586,39 @@ def run_pipeline(
                 if artifacts.gt_vs_pred_scored_jsonl is not None
                 else None
             ),
+            "gt_vs_pred_guarded_jsonl": (
+                str(artifacts.gt_vs_pred_guarded_jsonl)
+                if artifacts.gt_vs_pred_guarded_jsonl is not None
+                else None
+            ),
+            "gt_vs_pred_scored_guarded_jsonl": (
+                str(artifacts.gt_vs_pred_scored_guarded_jsonl)
+                if artifacts.gt_vs_pred_scored_guarded_jsonl is not None
+                else None
+            ),
             "summary_json": str(artifacts.summary_json),
             "eval_dir": str(artifacts.eval_dir),
+            "metrics_guarded_json": (
+                str(artifacts.metrics_guarded_json)
+                if artifacts.metrics_guarded_json is not None
+                else None
+            ),
+            "duplicate_guard_report_json": (
+                str(artifacts.duplicate_guard_report_json)
+                if artifacts.duplicate_guard_report_json is not None
+                else None
+            ),
             "vis_dir": str(artifacts.vis_dir),
         },
         "infer": {
             "prompt_variant": resolved_prompt_variant,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
+        },
+        "eval": {
+            "duplicate_control": {
+                "enabled": duplicate_control_enabled,
+            }
         },
         # Persist a redacted view of the config (avoid leaking secrets into artifacts).
         "cfg": cfg_redacted,
@@ -782,6 +839,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
     from src.eval.detection import EvalOptions, evaluate_and_save
 
     eval_cfg = _get_map(cfg, "eval")
+    duplicate_control_enabled = _resolve_eval_duplicate_control_enabled(eval_cfg)
 
     deprecated_keys = [
         k for k in ("unknown_policy", "semantic_fallback") if k in eval_cfg
@@ -820,8 +878,30 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
                 "artifacts.gt_vs_pred_scored_jsonl explicitly."
             )
         pred_path = scored_path
+        guarded_pred_path = artifacts.gt_vs_pred_scored_guarded_jsonl
+        active_input_family = "scored"
     else:
         pred_path = _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
+        guarded_pred_path = artifacts.gt_vs_pred_guarded_jsonl
+        active_input_family = "raw"
+
+    if duplicate_control_enabled and guarded_pred_path is None:
+        raise ValueError(
+            "Duplicate-control evaluation requires a resolved guarded prediction artifact path."
+        )
+
+    logger.info(
+        "Resolved eval duplicate-control: enabled=%s input_family=%s guarded_pred_path=%s metrics_guarded_json=%s duplicate_guard_report_json=%s",
+        duplicate_control_enabled,
+        active_input_family,
+        str(guarded_pred_path) if guarded_pred_path is not None else None,
+        str(artifacts.metrics_guarded_json)
+        if artifacts.metrics_guarded_json is not None
+        else None,
+        str(artifacts.duplicate_guard_report_json)
+        if artifacts.duplicate_guard_report_json is not None
+        else None,
+    )
 
     options = EvalOptions(
         metrics=str(eval_cfg.get("metrics", "both")),
@@ -843,6 +923,9 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
         semantic_device=str(eval_cfg.get("semantic_device", "auto")),
         semantic_batch_size=int(eval_cfg.get("semantic_batch_size", 64)),
         lvis_max_dets=int(eval_cfg.get("lvis_max_dets", 300)),
+        duplicate_control_enabled=duplicate_control_enabled,
+        guarded_pred_path=guarded_pred_path,
+        duplicate_guard_report_path=artifacts.duplicate_guard_report_json,
     )
 
     # evaluate_and_save() owns eval/* outputs (including metrics.json with counters).

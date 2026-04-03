@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-03-29
+updated: 2026-04-03
 ---
 
 # Artifacts & Provenance
@@ -40,6 +40,12 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `gt_vs_pred_scored.jsonl`
   - Score-provenanced artifact consumed by COCO evaluation and official
     submission export.
+- `gt_vs_pred_guarded.jsonl`
+  - Optional offline duplicate-control guarded companion for raw evaluation
+    inputs.
+- `gt_vs_pred_scored_guarded.jsonl`
+  - Optional offline duplicate-control guarded companion for score-aware COCO
+    evaluation inputs.
 - `confidence_postop_summary.json`
   - Post-op summary describing score materialization and drop counts.
 - `vis_resources/gt_vs_pred.jsonl`
@@ -59,9 +65,15 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
     even when they start from an artifact path outside the original `run_dir`.
 - `metrics.json`
   - Offline evaluator metrics and diagnostic counters.
+- `metrics_guarded.json`
+  - Guarded companion metrics emitted when offline duplicate control is
+    enabled.
 - `per_image.json`
   - Per-image evaluator diagnostics for the standard single-artifact evaluation
     flow.
+- `per_image_guarded.json`
+  - Guarded companion per-image diagnostics emitted when offline duplicate
+    control is enabled.
 - `per_class.csv`
   - Per-class COCO export summary when classed evaluation is enabled.
 - `coco_gt.json`
@@ -74,6 +86,21 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `matches@<thr>.jsonl`
   - Additional F1-ish match diagnostics when multiple IoU thresholds are
     requested.
+- `matches_guarded.jsonl` / `matches@<thr>_guarded.jsonl`
+  - Guarded companions emitted when duplicate control is enabled together with
+    match export.
+- `duplicate_guard_report.json`
+  - Deterministic report describing how many predictions and records changed
+    under the offline duplicate-control guard.
+
+Raw plus guarded rule:
+
+- the raw artifact remains authoritative for model-output inspection and
+  research debugging
+- guarded artifacts are additive post-op views for safety and deployment-style
+  evaluation
+- score-aware jobs keep using the scored artifact family and therefore emit
+  guarded scored companions rather than switching back to raw inputs
 
 These standard artifacts remain unchanged when Oracle-K is enabled elsewhere;
 Oracle-K is an additive workflow rather than a replacement for the current
@@ -257,9 +284,9 @@ Common ones you may see in logs or artifacts:
 Stage-2 trainers also emit rollout-specific metrics directly
 (see `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS.md`).
 
-- `stage2_two_channel` includes clean-prefix Channel-B duplicate-collapse
+- `stage2_two_channel` includes clean-prefix Channel-B duplicate-control
   diagnostics under:
-  - `dup/*`
+  - `dup/raw/*`
   - `stage2_ab/channel_b/dup/N_*`
   - `train/optimization/loss_duplicate_burst_unlikelihood`
   - `stage2_ab/channel_b/closure_supervision/N_drop` for the

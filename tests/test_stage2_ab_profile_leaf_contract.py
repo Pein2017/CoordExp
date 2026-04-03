@@ -66,7 +66,8 @@ def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() 
     assert stage2_ab.channel_b.pseudo_positive.enabled is True
     assert stage2_ab.channel_b.pseudo_positive.coord_weight == pytest.approx(0.3)
     assert stage2_ab.channel_b.triage_posterior.num_rollouts == 4
-    assert stage2_ab.channel_b.duplicate_iou_threshold == pytest.approx(0.95)
+    assert stage2_ab.channel_b.duplicate_control.iou_threshold == pytest.approx(0.95)
+    assert stage2_ab.channel_b.duplicate_control.center_radius_scale == pytest.approx(0.8)
     assert stage2_ab.schedule.b_ratio == pytest.approx(0.85)
     assert (
         stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier
@@ -86,7 +87,7 @@ def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_co
 
     assert (
         cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged"
+        == "output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged"
     )
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -94,9 +95,18 @@ def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_co
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
     assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024"
-    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024"
-    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024"
+    assert (
+        cfg.training["artifact_subdir"]
+        == "stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
+    )
+    assert (
+        cfg.training["output_dir"]
+        == "./output/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
+    )
+    assert (
+        cfg.training["logging_dir"]
+        == "./tb/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
+    )
 
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(

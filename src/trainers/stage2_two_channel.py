@@ -54,8 +54,8 @@ from .stage2_two_channel.target_builder import (
     _build_channel_b_triage,
     _build_channel_b_supervision_targets,
     _bbox_iou_norm1000_xyxy,
+    _apply_channel_b_duplicate_control,
     _compute_duplicate_diagnostics,
-    _sequential_dedup_bbox_objects,
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
 )
@@ -86,6 +86,32 @@ from .teacher_forcing.token_types import build_token_type_masks
 
 
 logger = logging.getLogger(__name__)
+
+
+def _stage2_batch_timing_enabled() -> bool:
+    raw = str(os.environ.get("COORDEXP_STAGE2_BATCH_TIMING", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _stage2_batch_timing_min_ms() -> float:
+    raw = str(os.environ.get("COORDEXP_STAGE2_BATCH_TIMING_MIN_MS", "")).strip()
+    if not raw:
+        return 250.0
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        return 250.0
+
+
+def _append_stage2_timing_line(line: str) -> None:
+    path = str(os.environ.get("COORDEXP_TIMING_LOG", "")).strip()
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line.rstrip() + "\n")
+    except OSError:
+        return
 
 
 def _stage2_debug_text_value(text: Any) -> str:
@@ -972,9 +998,9 @@ class Stage2ABTrainingTrainer(
         if not isinstance(stats, Mapping):
             stats = {}
         return (
-            int(duplication.get("duplicates", 0) or 0),
+            int(duplication.get("objects_suppressed", 0) or 0),
             int(duplication.get("near_iou90_pairs_same_desc_count", 0) or 0),
-            int(duplication.get("duplicate_bursts", 0) or 0),
+            int(duplication.get("clusters_suppressed", 0) or 0),
             int(duplication.get("near_iou90_pairs_any_desc_count", 0) or 0),
             float(duplication.get("saturation_rate", 0.0) or 0.0),
             float(duplication.get("max_desc_count", 0.0) or 0.0),
@@ -1784,6 +1810,8 @@ class Stage2ABTrainingTrainer(
     def _prepare_batch_inputs_b(
         self, inputs: List[Mapping[str, Any]], *, _segments_only: bool
     ) -> Any:
+        timing_enabled = _stage2_batch_timing_enabled()
+        t0 = time.perf_counter() if timing_enabled else 0.0
         template = self.template
         tok = template.tokenizer
 
@@ -1800,11 +1828,18 @@ class Stage2ABTrainingTrainer(
 
         # Stage-2 AB contract: FN append is always enabled in Channel-B.
         duplicate_iou_threshold_raw = self._ab_channel_b_get(
-            "duplicate_iou_threshold",
+            "duplicate_control.iou_threshold",
             0.90,
         )
         duplicate_iou_threshold = float(
             0.90 if duplicate_iou_threshold_raw is None else duplicate_iou_threshold_raw
+        )
+        center_radius_scale_raw = self._ab_channel_b_get(
+            "duplicate_control.center_radius_scale",
+            0.8,
+        )
+        center_radius_scale = float(
+            0.8 if center_radius_scale_raw is None else center_radius_scale_raw
         )
         unlabeled_consistent_iou_threshold = float(
             self._ab_channel_b_get("triage_posterior.unlabeled_consistent_iou_threshold", 0.85)
@@ -1886,10 +1921,126 @@ class Stage2ABTrainingTrainer(
         repetition_penalty = float(anchor_decode_request.repetition_penalty)
         do_sample = bool(float(explorer_decode_request.temperature) > 0.0)
 
+        try:
+            return self._prepare_batch_inputs_b_impl(
+                inputs=inputs,
+                _segments_only=_segments_only,
+                template=template,
+                tok=tok,
+                coord_token_ids=coord_token_ids,
+                coord_id_set=coord_id_set,
+                coord_id_to_bin=coord_id_to_bin,
+                gate_thr=gate_thr,
+                match_top_k=match_top_k,
+                mask_res=mask_res,
+                fp_cost=fp_cost,
+                fn_cost=fn_cost,
+                duplicate_iou_threshold=duplicate_iou_threshold,
+                center_radius_scale=center_radius_scale,
+                unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
+                recovered_ground_truth_weight_multiplier=recovered_ground_truth_weight_multiplier,
+                explorer_temperature=explorer_temperature,
+                explorer_top_p=explorer_top_p,
+                explorer_top_k=explorer_top_k,
+                pseudo_positive_enabled=pseudo_positive_enabled,
+                invalid_rollout_policy=invalid_rollout_policy,
+                num_rollouts=num_rollouts,
+                explorer_view_count=explorer_view_count,
+                packing_enabled=packing_enabled,
+                gs=gs,
+                monitor_step=monitor_step,
+                object_field_order=object_field_order,
+                track_monitor_candidates=track_monitor_candidates,
+                seed_base=seed_base,
+                backend=backend,
+                anchor_decode_request=anchor_decode_request,
+                explorer_decode_request=explorer_decode_request,
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                repetition_penalty=repetition_penalty,
+                do_sample=do_sample,
+            )
+        finally:
+            if timing_enabled:
+                total_ms = (time.perf_counter() - t0) * 1000.0
+                if total_ms >= _stage2_batch_timing_min_ms():
+                    logger.info(
+                        "stage2_batch_timing: total_ms=%.1f channel=B global_step=%s "
+                        "inputs=%s segments_only=%s num_rollouts=%s max_new_tokens=%s backend=%s",
+                        total_ms,
+                        int(gs),
+                        len(inputs),
+                        bool(_segments_only),
+                        int(num_rollouts),
+                        int(max_new_tokens),
+                        backend,
+                    )
+                    _append_stage2_timing_line(
+                        "stage2_batch_timing "
+                        f"total_ms={total_ms:.1f} channel=B global_step={int(gs)} "
+                        f"inputs={len(inputs)} segments_only={bool(_segments_only)} "
+                        f"num_rollouts={int(num_rollouts)} max_new_tokens={int(max_new_tokens)} "
+                        f"backend={backend}"
+                    )
+
+    def _prepare_batch_inputs_b_impl(
+        self,
+        *,
+        inputs: List[Mapping[str, Any]],
+        _segments_only: bool,
+        template: Any,
+        tok: Any,
+        coord_token_ids: Sequence[int],
+        coord_id_set: set[int],
+        coord_id_to_bin: Mapping[int, int],
+        gate_thr: float,
+        match_top_k: int,
+        mask_res: int,
+        fp_cost: float,
+        fn_cost: float,
+        duplicate_iou_threshold: float,
+        center_radius_scale: float,
+        unlabeled_consistent_iou_threshold: float,
+        recovered_ground_truth_weight_multiplier: float,
+        explorer_temperature: float,
+        explorer_top_p: float,
+        explorer_top_k: int,
+        pseudo_positive_enabled: bool,
+        invalid_rollout_policy: str,
+        num_rollouts: int,
+        explorer_view_count: int,
+        packing_enabled: bool,
+        gs: int,
+        monitor_step: int,
+        object_field_order: str,
+        track_monitor_candidates: bool,
+        seed_base: int,
+        backend: str,
+        anchor_decode_request: Any,
+        explorer_decode_request: Any,
+        max_new_tokens: int,
+        num_beams: int,
+        repetition_penalty: float,
+        do_sample: bool,
+    ) -> Any:
+        timing_enabled = _stage2_batch_timing_enabled()
+        if timing_enabled:
+            _append_stage2_timing_line(
+                "stage2_batch_milestone "
+                f"event=enter_prepare_batch_inputs_b global_step={int(gs)} "
+                f"inputs={len(inputs)} segments_only={bool(_segments_only)}"
+            )
+
         inputs_for_rollout = self._prepare_samples_for_rollout(
             inputs,
             rollout_backend=backend,
         )
+        if timing_enabled:
+            _append_stage2_timing_line(
+                "stage2_batch_milestone "
+                f"event=prepared_samples_for_rollout global_step={int(gs)} "
+                f"inputs_for_rollout={len(inputs_for_rollout)} backend={backend}"
+            )
 
         def _rollout_many_with_decode_override(
             chunk: Sequence[Mapping[str, Any]],
@@ -1925,6 +2076,14 @@ class Stage2ABTrainingTrainer(
             hf_seeded_global = float(1.0 if seeded else 0.0)
 
             t_gen0 = time.perf_counter()
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=before_rollout_many global_step={int(gs)} "
+                    f"inputs_for_rollout={len(inputs_for_rollout)} "
+                    f"explorer_view_count={int(explorer_view_count)} "
+                    f"rollout_infer_bs_pre={int(self._rollout_decode_batch_size_per_rank())}"
+                )
 
             # Derived rollout request chunk size per learner rank.
             #
@@ -1947,6 +2106,12 @@ class Stage2ABTrainingTrainer(
                 chunk = inputs_for_rollout[int(off) : int(off + rollout_infer_bs)]
                 if not chunk:
                     continue
+                if timing_enabled:
+                    _append_stage2_timing_line(
+                        "stage2_batch_milestone "
+                        f"event=before_anchor_chunk global_step={int(gs)} "
+                        f"off={int(off)} chunk_size={len(chunk)}"
+                    )
 
                 anchor_chunk_results = _rollout_many_with_decode_override(
                     chunk,
@@ -1959,7 +2124,20 @@ class Stage2ABTrainingTrainer(
                     request_index_offset=int(off),
                 )
                 anchor_rollout_results.extend(anchor_chunk_results)
+                if timing_enabled:
+                    _append_stage2_timing_line(
+                        "stage2_batch_milestone "
+                        f"event=after_anchor_chunk global_step={int(gs)} "
+                        f"off={int(off)} returned={len(anchor_chunk_results)}"
+                    )
                 for explorer_ordinal in range(int(explorer_view_count)):
+                    if timing_enabled:
+                        _append_stage2_timing_line(
+                            "stage2_batch_milestone "
+                            f"event=before_explorer_chunk global_step={int(gs)} "
+                            f"off={int(off)} explorer_ordinal={int(explorer_ordinal)} "
+                            f"chunk_size={len(chunk)}"
+                        )
                     explorer_chunk_results = _rollout_many_with_decode_override(
                         chunk,
                         decode_override={
@@ -1975,6 +2153,13 @@ class Stage2ABTrainingTrainer(
                     explorer_rollout_results_by_view[int(explorer_ordinal)].extend(
                         explorer_chunk_results
                     )
+                    if timing_enabled:
+                        _append_stage2_timing_line(
+                            "stage2_batch_milestone "
+                            f"event=after_explorer_chunk global_step={int(gs)} "
+                            f"off={int(off)} explorer_ordinal={int(explorer_ordinal)} "
+                            f"returned={len(explorer_chunk_results)}"
+                        )
 
             if len(anchor_rollout_results) != len(inputs_for_rollout):
                 raise RuntimeError(
@@ -1989,6 +2174,12 @@ class Stage2ABTrainingTrainer(
                         f"for explorer ordinal {int(explorer_ordinal)}"
                     )
             t_gen_s = time.perf_counter() - t_gen0
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_rollout_many global_step={int(gs)} "
+                    f"t_gen_ms={t_gen_s * 1000.0:.1f}"
+                )
 
         encoded_batch: List[Dict[str, Any]] = []
         meta_unpacked: List[Stage2RolloutMeta] = []
@@ -2010,12 +2201,16 @@ class Stage2ABTrainingTrainer(
         strict_drop_by_reason_total: Dict[str, int] = {}
         dup_max_desc_count_sum = 0.0
         dup_saturation_rate_sum = 0.0
+        dup_max_cluster_size_sum = 0.0
+        dup_desc_entropy_sum = 0.0
         dup_near_same_desc_pairs_total = 0
         dup_near_any_desc_pairs_total = 0
         dup_raw_bbox_valid_total = 0
         dup_clean_accepted_total = 0
-        dup_duplicates_total = 0
-        dup_duplicate_bursts_total = 0
+        dup_cluster_total = 0
+        dup_cluster_exempt_total = 0
+        dup_cluster_suppressed_total = 0
+        dup_objects_suppressed_total = 0
         dup_ul_boundaries_total = 0
         dup_duplicate_burst_unlikelihood_skipped_no_divergence_total = 0
         dup_metric_samples = 0
@@ -2072,19 +2267,13 @@ class Stage2ABTrainingTrainer(
                 object_field_order=object_field_order,
                 coord_id_to_bin=coord_id_to_bin,
                 duplicate_iou_threshold=duplicate_iou_threshold,
-                match_top_k=match_top_k,
-                gate_thr=gate_thr,
-                mask_res=mask_res,
-                fp_cost=fp_cost,
-                fn_cost=fn_cost,
+                center_radius_scale=center_radius_scale,
                 max_new_tokens=max_new_tokens,
-                gts=gts,
                 rollout_result=anchor_rollout,
+                source_label="anchor",
                 parse_rollout_for_matching_fn=parse_rollout_for_matching,
                 points_from_coord_tokens_fn=points_from_coord_tokens,
-                sequential_dedup_fn=_sequential_dedup_bbox_objects,
                 duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
-                hungarian_match_maskiou_fn=hungarian_match_maskiou,
             )
             explorer_rollouts = [
                 explorer_rollout_results[int(sample_index)]
@@ -2096,27 +2285,17 @@ class Stage2ABTrainingTrainer(
                     object_field_order=object_field_order,
                     coord_id_to_bin=coord_id_to_bin,
                     duplicate_iou_threshold=duplicate_iou_threshold,
-                    match_top_k=match_top_k,
-                    gate_thr=gate_thr,
-                    mask_res=mask_res,
-                    fp_cost=fp_cost,
-                    fn_cost=fn_cost,
+                    center_radius_scale=center_radius_scale,
                     max_new_tokens=max_new_tokens,
-                    gts=gts,
                     rollout_result=explorer_rollout,
+                    source_label="explorer",
                     parse_rollout_for_matching_fn=parse_rollout_for_matching,
                     points_from_coord_tokens_fn=points_from_coord_tokens,
-                    sequential_dedup_fn=_sequential_dedup_bbox_objects,
                     duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
-                    hungarian_match_maskiou_fn=hungarian_match_maskiou,
                 )
                 for explorer_rollout in explorer_rollouts
             ]
             explorer_view = explorer_views[0]
-            explorer_match = explorer_view["match"]
-            explorer_accepted_objects_clean = list(
-                explorer_view["accepted_objects_clean"]
-            )
 
             parse = anchor_view["parse"]
             invalid_rollout = int(anchor_view["invalid_rollout"])
@@ -2140,7 +2319,7 @@ class Stage2ABTrainingTrainer(
                 )
                 for explorer_ordinal in invalid_explorer_ordinals
             )
-            if invalid_rollout_views:
+            if invalid_rollout_views and bool(pseudo_positive_enabled):
                 rank, world_size, _ = self._dist_info()
                 invalid_rollout_details = [
                     _build_channel_b_invalid_explorer_detail(
@@ -2249,32 +2428,85 @@ class Stage2ABTrainingTrainer(
             parsed_bbox_objects_raw = list(anchor_view["parsed_bbox_objects_raw"])
             n_valid_pred = int(anchor_view["n_valid_pred"])
             n_drop_invalid = int(anchor_view["n_drop_invalid"])
-            accepted_objects_clean = list(anchor_view["accepted_objects_clean"])
-            duplicate_bursts_by_boundary = {
-                int(boundary): list(burst)
-                for boundary, burst in dict(
-                    anchor_view["duplicate_bursts_by_boundary"]
-                ).items()
-            }
             duplicate_metrics = dict(anchor_view["duplicate_metrics"])
-            duplicate_count = int(anchor_view["duplicate_count"])
-            duplicate_burst_count = int(anchor_view["duplicate_burst_count"])
-            match = anchor_view["match"]
             prompt_ids = list(anchor_view["prompt_ids"])
             decode_mode = str(anchor_view["decode_mode"])
 
+            duplicate_control = _apply_channel_b_duplicate_control(
+                anchor_objects_raw=parsed_bbox_objects_raw,
+                explorer_objects_raw_by_view=[
+                    list(explorer_view_item["parsed_bbox_objects_raw"])
+                    for explorer_view_item in explorer_views
+                ],
+                duplicate_iou_threshold=float(duplicate_iou_threshold),
+                center_radius_scale=float(center_radius_scale),
+                unlabeled_consistent_iou_threshold=float(
+                    unlabeled_consistent_iou_threshold
+                ),
+            )
+            accepted_objects_clean = list(duplicate_control.kept_anchor_objects)
+            suppressed_duplicate_objects_by_boundary = {
+                int(boundary): list(duplicates)
+                for boundary, duplicates in duplicate_control.suppressed_duplicate_objects_by_boundary.items()
+            }
+            duplicate_counter_metrics = dict(duplicate_control.counter_metrics)
+            dup_clusters_total_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_ab/channel_b/dup/N_clusters_total", 0.0
+                )
+                or 0.0
+            )
+            dup_clusters_exempt_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_ab/channel_b/dup/N_clusters_exempt", 0.0
+                )
+                or 0.0
+            )
+            dup_clusters_suppressed_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_ab/channel_b/dup/N_clusters_suppressed", 0.0
+                )
+                or 0.0
+            )
+            dup_objects_suppressed_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_ab/channel_b/dup/N_objects_suppressed", 0.0
+                )
+                or 0.0
+            )
+            match = hungarian_match_maskiou(
+                preds=accepted_objects_clean,
+                gts=gts,
+                top_k=match_top_k,
+                gate_threshold=gate_thr,
+                mask_resolution=mask_res,
+                fp_cost=fp_cost,
+                fn_cost=fn_cost,
+            )
+
             dup_max_desc_count = float(
-                duplicate_metrics.get("dup/max_desc_count", 0.0) or 0.0
+                duplicate_metrics.get("dup/raw/max_desc_count", 0.0) or 0.0
             )
             dup_saturation_rate = float(
-                duplicate_metrics.get("dup/saturation_rate", 0.0) or 0.0
+                duplicate_metrics.get("dup/raw/saturation_rate", 0.0) or 0.0
+            )
+            dup_max_cluster_size = float(
+                duplicate_metrics.get(
+                    "dup/raw/duplicate_like_max_cluster_size", 0.0
+                )
+                or 0.0
+            )
+            dup_desc_entropy = float(
+                duplicate_metrics.get("dup/raw/desc_entropy", 0.0) or 0.0
             )
             dup_near_same_desc_pairs = int(
-                duplicate_metrics.get("dup/near_iou90_pairs_same_desc_count", 0.0)
+                duplicate_metrics.get(
+                    "dup/raw/near_iou90_pairs_same_desc_count", 0.0
+                )
                 or 0.0
             )
             dup_near_any_desc_pairs = int(
-                duplicate_metrics.get("dup/near_iou90_pairs_any_desc_count", 0.0)
+                duplicate_metrics.get("dup/raw/near_iou90_pairs_any_desc_count", 0.0)
                 or 0.0
             )
 
@@ -2297,12 +2529,16 @@ class Stage2ABTrainingTrainer(
 
             dup_max_desc_count_sum += float(dup_max_desc_count)
             dup_saturation_rate_sum += float(dup_saturation_rate)
+            dup_max_cluster_size_sum += float(dup_max_cluster_size)
+            dup_desc_entropy_sum += float(dup_desc_entropy)
             dup_near_same_desc_pairs_total += int(dup_near_same_desc_pairs)
             dup_near_any_desc_pairs_total += int(dup_near_any_desc_pairs)
             dup_raw_bbox_valid_total += int(len(parsed_bbox_objects_raw))
             dup_clean_accepted_total += int(len(accepted_objects_clean))
-            dup_duplicates_total += int(duplicate_count)
-            dup_duplicate_bursts_total += int(duplicate_burst_count)
+            dup_cluster_total += int(dup_clusters_total_local)
+            dup_cluster_exempt_total += int(dup_clusters_exempt_local)
+            dup_cluster_suppressed_total += int(dup_clusters_suppressed_local)
+            dup_objects_suppressed_total += int(dup_objects_suppressed_local)
             dup_metric_samples += 1
 
             anchor_match_by_pred = {
@@ -2311,35 +2547,42 @@ class Stage2ABTrainingTrainer(
                 if 0 <= int(pred_i) < len(accepted_objects_clean)
                 and 0 <= int(gt_i) < len(gts)
             }
-            explorer_accepted_objects_clean_by_view = [
-                list(explorer_view_item["accepted_objects_clean"])
+            explorer_objects_raw_by_view = [
+                list(explorer_view_item["parsed_bbox_objects_raw"])
                 for explorer_view_item in explorer_views
             ]
-            explorer_match_by_pred_by_view = [
-                {
-                    int(pred_i): int(gt_i)
-                    for pred_i, gt_i in explorer_view_item["match"].matched_pairs
-                    if 0 <= int(pred_i) < len(explorer_accepted_objects_clean)
-                    and 0 <= int(gt_i) < len(gts)
-                }
-                for explorer_view_item, explorer_accepted_objects_clean in zip(
-                    explorer_views,
-                    explorer_accepted_objects_clean_by_view,
+            explorer_match_by_pred_by_view = []
+            for explorer_objects_raw in explorer_objects_raw_by_view:
+                explorer_match = hungarian_match_maskiou(
+                    preds=explorer_objects_raw,
+                    gts=gts,
+                    top_k=match_top_k,
+                    gate_threshold=gate_thr,
+                    mask_resolution=mask_res,
+                    fp_cost=fp_cost,
+                    fn_cost=fn_cost,
                 )
-            ]
+                explorer_match_by_pred_by_view.append(
+                    {
+                        int(pred_i): int(gt_i)
+                        for pred_i, gt_i in explorer_match.matched_pairs
+                        if 0 <= int(pred_i) < len(explorer_objects_raw)
+                        and 0 <= int(gt_i) < len(gts)
+                    }
+                )
             anchor_pred_objects_total += int(anchor_view["pred_objects"])
             anchor_valid_pred_objects_total += int(anchor_view["n_valid_pred"])
             anchor_parse_truncated_total += int(anchor_view["parse_truncated"])
             anchor_gen_new_token_lens.append(int(anchor_view["gen_new_tokens"]))
             anchor_near_same_desc_pairs_total += int(
                 anchor_view["duplicate_metrics"].get(
-                    "dup/near_iou90_pairs_same_desc_count", 0.0
+                    "dup/raw/near_iou90_pairs_same_desc_count", 0.0
                 )
                 or 0.0
             )
             anchor_near_any_desc_pairs_total += int(
                 anchor_view["duplicate_metrics"].get(
-                    "dup/near_iou90_pairs_any_desc_count", 0.0
+                    "dup/raw/near_iou90_pairs_any_desc_count", 0.0
                 )
                 or 0.0
             )
@@ -2364,7 +2607,7 @@ class Stage2ABTrainingTrainer(
             explorer_near_same_desc_pairs_total += sum(
                 int(
                     explorer_view_item["duplicate_metrics"].get(
-                        "dup/near_iou90_pairs_same_desc_count", 0.0
+                        "dup/raw/near_iou90_pairs_same_desc_count", 0.0
                     )
                     or 0.0
                 )
@@ -2373,7 +2616,7 @@ class Stage2ABTrainingTrainer(
             explorer_near_any_desc_pairs_total += sum(
                 int(
                     explorer_view_item["duplicate_metrics"].get(
-                        "dup/near_iou90_pairs_any_desc_count", 0.0
+                        "dup/raw/near_iou90_pairs_any_desc_count", 0.0
                     )
                     or 0.0
                 )
@@ -2386,8 +2629,10 @@ class Stage2ABTrainingTrainer(
             )
             triage = _build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
-                duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
-                explorer_accepted_objects_clean_by_view=explorer_accepted_objects_clean_by_view,
+                suppressed_duplicate_objects_by_boundary=(
+                    suppressed_duplicate_objects_by_boundary
+                ),
+                explorer_objects_raw_by_view=explorer_objects_raw_by_view,
                 anchor_match_by_pred=anchor_match_by_pred,
                 explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
                 anchor_policy_statuses=anchor_policy_statuses,
@@ -2490,14 +2735,16 @@ class Stage2ABTrainingTrainer(
             triage_dead_anchor_den_total += int(len(accepted_objects_clean))
             triage_dead_explorer_den_total += int(
                 sum(
-                    len(explorer_accepted_objects_clean)
-                    for explorer_accepted_objects_clean in explorer_accepted_objects_clean_by_view
+                    len(explorer_objects_raw)
+                    for explorer_objects_raw in explorer_objects_raw_by_view
                 )
             )
 
             kept_anchor_objects = list(triage.kept_anchor_objects)
             kept_anchor_new_index_by_old = dict(triage.kept_anchor_new_index_by_old)
-            duplicate_bursts_by_boundary = dict(triage.duplicate_bursts_by_boundary)
+            suppressed_duplicate_objects_by_boundary = dict(
+                triage.suppressed_duplicate_objects_by_boundary
+            )
             supervision_targets = _build_channel_b_supervision_targets(
                 tokenizer=tok,
                 prompt_ids=prompt_ids,
@@ -2512,7 +2759,6 @@ class Stage2ABTrainingTrainer(
                 pseudo_positive_coord_weight=float(
                     self._ab_channel_b_get("pseudo_positive.coord_weight", 0.5)
                 ),
-                duplicate_iou_threshold=float(duplicate_iou_threshold),
                 object_field_order=object_field_order,
                 bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
                 matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2552,7 +2798,8 @@ class Stage2ABTrainingTrainer(
             )
 
             if track_monitor_candidates and (
-                duplicate_count > 0
+                dup_objects_suppressed_local > 0
+                or dup_clusters_suppressed_local > 0
                 or dup_near_same_desc_pairs > 0
                 or dup_near_any_desc_pairs > 0
                 or dead_anchor_indices
@@ -2560,11 +2807,13 @@ class Stage2ABTrainingTrainer(
                 or shielded_anchor_indices
                 or pseudo_positive_anchor_indices
             ):
-                duplicate_bursts_dump = {
+                suppressed_duplicates_dump = {
                     str(boundary): [
                         _serialize_monitor_object(obj) for obj in burst
                     ]
-                    for boundary, burst in sorted(duplicate_bursts_by_boundary.items())
+                    for boundary, burst in sorted(
+                        suppressed_duplicate_objects_by_boundary.items()
+                    )
                 }
                 match_details: List[Dict[str, Any]] = []
                 for pred_i, gt_i in match.matched_pairs:
@@ -2654,8 +2903,10 @@ class Stage2ABTrainingTrainer(
                         "duplication": {
                             "raw_bbox_valid": int(len(parsed_bbox_objects_raw)),
                             "clean_accepted": int(len(accepted_objects_clean)),
-                            "duplicates": int(duplicate_count),
-                            "duplicate_bursts": int(duplicate_burst_count),
+                            "clusters_total": int(dup_clusters_total_local),
+                            "clusters_exempt": int(dup_clusters_exempt_local),
+                            "clusters_suppressed": int(dup_clusters_suppressed_local),
+                            "objects_suppressed": int(dup_objects_suppressed_local),
                             "near_iou90_pairs_same_desc_count": int(
                                 dup_near_same_desc_pairs
                             ),
@@ -2664,26 +2915,73 @@ class Stage2ABTrainingTrainer(
                             ),
                             "max_desc_count": float(dup_max_desc_count),
                             "saturation_rate": float(dup_saturation_rate),
+                            "duplicate_like_max_cluster_size": float(
+                                dup_max_cluster_size
+                            ),
+                            "desc_entropy": float(dup_desc_entropy),
+                            "survivor_anchor_indices": [
+                                int(index)
+                                for index in duplicate_control.survivor_anchor_indices
+                            ],
+                            "exempt_anchor_indices": [
+                                int(index)
+                                for index in duplicate_control.exempt_anchor_indices
+                            ],
+                            "suppressed_anchor_indices": [
+                                int(index)
+                                for index in duplicate_control.suppressed_anchor_indices
+                            ],
                             "clean_accepted_objects": [
                                 _serialize_monitor_object(obj)
                                 for obj in accepted_objects_clean
                             ],
-                            "duplicate_bursts_by_boundary": duplicate_bursts_dump,
+                            "suppressed_duplicate_objects_by_boundary": (
+                                suppressed_duplicates_dump
+                            ),
                         },
                         "explorer": {
                             "clean_accepted_objects": [
                                 _serialize_monitor_object(obj)
-                                for obj in explorer_accepted_objects_clean
+                                for obj in (
+                                    explorer_objects_raw_by_view[0]
+                                    if explorer_objects_raw_by_view
+                                    else []
+                                )
                             ],
                             "matched_pairs": [
                                 [int(pred_i), int(gt_i)]
-                                for pred_i, gt_i in explorer_match.matched_pairs
+                                for pred_i, gt_i in sorted(
+                                    (
+                                        explorer_match_by_pred_by_view[0].items()
+                                        if explorer_match_by_pred_by_view
+                                        else []
+                                    ),
+                                    key=lambda item: int(item[0]),
+                                )
                             ],
                             "fn_gt_indices": [
-                                int(idx) for idx in explorer_match.fn_gt_indices
+                                int(gt_i)
+                                for gt_i in range(len(gts))
+                                if int(gt_i)
+                                not in set(
+                                    explorer_match_by_pred_by_view[0].values()
+                                    if explorer_match_by_pred_by_view
+                                    else []
+                                )
                             ],
                             "fp_pred_indices": [
-                                int(idx) for idx in explorer_match.fp_pred_indices
+                                int(pred_i)
+                                for pred_i in range(
+                                    len(explorer_objects_raw_by_view[0])
+                                    if explorer_objects_raw_by_view
+                                    else 0
+                                )
+                                if int(pred_i)
+                                not in set(
+                                    explorer_match_by_pred_by_view[0].keys()
+                                    if explorer_match_by_pred_by_view
+                                    else []
+                                )
                             ],
                         },
                         "triage": {
@@ -2925,6 +3223,17 @@ class Stage2ABTrainingTrainer(
                 anchor_decode_mode=str(anchor_view["decode_mode"]),
                 explorer_decode_mode=str(explorer_view["decode_mode"]),
                 valid_explorer_count=int(valid_explorer_count),
+                duplicate_clusters_total=int(dup_clusters_total_local),
+                duplicate_clusters_exempt=int(dup_clusters_exempt_local),
+                duplicate_clusters_suppressed=int(dup_clusters_suppressed_local),
+                duplicate_objects_suppressed=int(dup_objects_suppressed_local),
+                duplicate_survivor_anchor_indices=(
+                    duplicate_control.survivor_anchor_indices
+                ),
+                duplicate_exempt_anchor_indices=duplicate_control.exempt_anchor_indices,
+                duplicate_suppressed_anchor_indices=(
+                    duplicate_control.suppressed_anchor_indices
+                ),
                 anchor_gt_backed_indices=anchor_gt_backed_indices,
                 anchor_support_counts=anchor_support_counts,
                 anchor_support_rates=anchor_support_rates,
@@ -3084,29 +3393,45 @@ class Stage2ABTrainingTrainer(
             "rollout/_parse_truncated_den": float(
                 len(anchor_rollout_results) + explorer_view_count_total
             ),
-            "dup/max_desc_count": float(
+            "dup/raw/max_desc_count": float(
                 dup_max_desc_count_sum / float(dup_metric_samples)
                 if dup_metric_samples > 0
                 else 0.0
             ),
-            "dup/saturation_rate": float(
+            "dup/raw/saturation_rate": float(
                 dup_saturation_rate_sum / float(dup_metric_samples)
                 if dup_metric_samples > 0
                 else 0.0
             ),
-            "dup/near_iou90_pairs_same_desc_count": float(
+            "dup/raw/duplicate_like_max_cluster_size": float(
+                dup_max_cluster_size_sum / float(dup_metric_samples)
+                if dup_metric_samples > 0
+                else 0.0
+            ),
+            "dup/raw/desc_entropy": float(
+                dup_desc_entropy_sum / float(dup_metric_samples)
+                if dup_metric_samples > 0
+                else 0.0
+            ),
+            "dup/raw/near_iou90_pairs_same_desc_count": float(
                 dup_near_same_desc_pairs_total
             ),
-            "dup/near_iou90_pairs_any_desc_count": float(
+            "dup/raw/near_iou90_pairs_any_desc_count": float(
                 dup_near_any_desc_pairs_total
             ),
             "stage2_ab/channel_b/dup/N_raw_bbox_valid": float(dup_raw_bbox_valid_total),
             "stage2_ab/channel_b/dup/N_clean_accepted": float(
                 dup_clean_accepted_total
             ),
-            "stage2_ab/channel_b/dup/N_duplicates": float(dup_duplicates_total),
-            "stage2_ab/channel_b/dup/N_duplicate_bursts": float(
-                dup_duplicate_bursts_total
+            "stage2_ab/channel_b/dup/N_clusters_total": float(dup_cluster_total),
+            "stage2_ab/channel_b/dup/N_clusters_exempt": float(
+                dup_cluster_exempt_total
+            ),
+            "stage2_ab/channel_b/dup/N_clusters_suppressed": float(
+                dup_cluster_suppressed_total
+            ),
+            "stage2_ab/channel_b/dup/N_objects_suppressed": float(
+                dup_objects_suppressed_total
             ),
             "stage2_ab/channel_b/dup/N_ul_boundaries": float(
                 dup_ul_boundaries_total

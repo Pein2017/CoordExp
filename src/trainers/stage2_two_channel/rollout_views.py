@@ -1,12 +1,9 @@
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
+from src.common.duplicate_control import duplicate_control_object_from_bbox
+
 from ..rollout_matching.contracts import GTObject
-from ..rollout_matching.matching import hungarian_match_maskiou
 from ..rollout_matching.parsing import parse_rollout_for_matching, points_from_coord_tokens
-from .target_builder import (
-    _compute_duplicate_diagnostics,
-    _sequential_dedup_bbox_objects,
-)
 
 
 def build_channel_b_rollout_view(
@@ -15,19 +12,13 @@ def build_channel_b_rollout_view(
     object_field_order: str,
     coord_id_to_bin: Mapping[int, int],
     duplicate_iou_threshold: float,
-    match_top_k: int,
-    gate_thr: float,
-    mask_res: int,
-    fp_cost: float,
-    fn_cost: float,
+    center_radius_scale: float,
     max_new_tokens: int,
-    gts: Sequence[GTObject],
     rollout_result: Tuple[List[int], str, str, List[int]],
+    source_label: str,
     parse_rollout_for_matching_fn: Any,
     points_from_coord_tokens_fn: Any,
-    sequential_dedup_fn: Any,
     duplicate_diagnostics_fn: Any,
-    hungarian_match_maskiou_fn: Any,
 ) -> Dict[str, Any]:
     resp_ids, _resp_text, rollout_decode_mode, prompt_ids = rollout_result
     resp_ids_local = [int(t) for t in resp_ids]
@@ -116,21 +107,19 @@ def build_channel_b_rollout_view(
         + int(drop_bbox_invalid)
     )
 
-    accepted_objects_clean, duplicate_bursts_by_boundary = (
-        sequential_dedup_fn(
-            parsed_bbox_objects_raw=parsed_bbox_objects_raw,
-            duplicate_iou_threshold=duplicate_iou_threshold,
+    duplicate_control_objects_raw = [
+        duplicate_control_object_from_bbox(
+            index=int(index),
+            desc=str(obj.desc),
+            bbox_norm1000=obj.points_norm1000,
+            source=str(source_label),
         )
-    )
-    duplicate_metrics = duplicate_diagnostics_fn(parsed_bbox_objects_raw)
-    match = hungarian_match_maskiou_fn(
-        preds=accepted_objects_clean,
-        gts=gts,
-        top_k=match_top_k,
-        gate_threshold=gate_thr,
-        mask_resolution=mask_res,
-        fp_cost=fp_cost,
-        fn_cost=fn_cost,
+        for index, obj in enumerate(parsed_bbox_objects_raw)
+    ]
+    duplicate_metrics = duplicate_diagnostics_fn(
+        parsed_bbox_objects_raw,
+        duplicate_iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=float(center_radius_scale),
     )
 
     return {
@@ -146,16 +135,10 @@ def build_channel_b_rollout_view(
         "drop_unknown": int(drop_unknown),
         "drop_bbox_invalid": int(drop_bbox_invalid),
         "parsed_bbox_objects_raw": parsed_bbox_objects_raw,
+        "duplicate_control_objects_raw": duplicate_control_objects_raw,
         "n_valid_pred": int(n_valid_pred),
         "n_drop_invalid": int(n_drop_invalid),
-        "accepted_objects_clean": accepted_objects_clean,
-        "duplicate_bursts_by_boundary": duplicate_bursts_by_boundary,
         "duplicate_metrics": duplicate_metrics,
-        "duplicate_count": int(
-            sum(len(burst) for burst in duplicate_bursts_by_boundary.values())
-        ),
-        "duplicate_burst_count": int(len(duplicate_bursts_by_boundary)),
-        "match": match,
     }
 
 
