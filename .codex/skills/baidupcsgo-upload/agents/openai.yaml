@@ -1,0 +1,4 @@
+interface:
+  display_name: "BaiduPCS-Go Upload"
+  short_description: "Upload large folders to Baidu Netdisk on Ubuntu"
+  default_prompt: "Use $baidupcsgo-upload to upload a local directory to Baidu Netdisk with BaiduPCS-Go."

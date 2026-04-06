@@ -45,13 +45,12 @@
 !.self-improving/
 !.self-improving/**
 
-# Codex skills (track these, keep other .codex_config/* ignored)
-!.codex_config/
-!.codex_config/pein/
-!.codex_config/pein/skills/
-!.codex_config/pein/skills/**
+# Codex skills (track these, keep other .codex/* ignored)
+!.codex/
+!.codex/skills/
+!.codex/skills/**
 # Ignore downloaded/installed skill system runtime artifacts
-.codex_config/pein/skills/.system/
+.codex/skills/.system/
 
 # Ignore common Python cache folders
 **/__pycache__/**
