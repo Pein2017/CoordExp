@@ -1,0 +1,21 @@
+extends:
+  - ./coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml
+
+model:
+  model: output/stage1_2b/coco_bbox_max60-hard_soft_ce-2b-merged
+
+training:
+  artifact_subdir: stage1_2b/coco_bbox_max60-1024-lvis_proxy-center_parameterization
+  run_name: epoch_2-center_parameterization-from-hard_soft_ce_2b_merged
+
+custom:
+  coord_soft_ce_w1:
+    enabled: false
+    temperature: 0.9
+  bbox_geo:
+    enabled: true
+    parameterization: center_size
+    smoothl1_weight: 0.01
+    ciou_weight: 1.0
+    center_weight: 2.0
+    size_weight: 0.25
