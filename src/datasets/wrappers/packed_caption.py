@@ -561,12 +561,10 @@ def _build_raw_pack_plan(
 
     for index, length in enumerate(lengths):
         token_length = int(length)
-        if token_length >= packing_length:
-            if allow_single_long:
-                singleton_long_packs.append([int(index)])
-                single_long += 1
-            else:
-                skipped_long += 1
+        if token_length > packing_length:
+            # Stage-1 full-sequence supervision forbids truncation, so samples that
+            # exceed packing_length must be skipped rather than emitted as singleton packs.
+            skipped_long += 1
             continue
         short_items.append((int(index), token_length))
 
@@ -793,6 +791,15 @@ def _validate_or_initialize_setup_index(
         differing_keys = _fingerprint_diff_keys(
             canonical_fingerprint, observed_fingerprint
         )
+        auto_upgrade_keys = {"full_sample_packing_probe"}
+        if create_if_missing and set(differing_keys).issubset(auto_upgrade_keys):
+            logger.info(
+                "Static packing setup INDEX upgrade: replacing %s for keys=%s",
+                index_path,
+                differing_keys,
+            )
+            _persist_setup_index(index_path, canonical_fingerprint)
+            return
         raise ValueError(
             "Static packing setup guard violation at "
             f"{index_path}. current_sha256={_fingerprint_digest(canonical_fingerprint)} "
@@ -924,20 +931,13 @@ class PackedCaptionDataset(IterableDataset):
                     logger.warning("Sample missing length; skipping sample")
                     continue
 
-                if length >= self.packing_length:
-                    if self.allow_single_long:
-                        single_long += 1
-                        emit_count, fill_sum = self._log_fill_stats(
-                            emit_count, fill_sum, length
-                        )
-                        yield [sample]
-                    else:
-                        skipped_long += 1
-                        logger.warning(
-                            "Dropping sample with length %s >= packing_length=%s",
-                            length,
-                            self.packing_length,
-                        )
+                if length > self.packing_length:
+                    skipped_long += 1
+                    logger.warning(
+                        "Dropping sample with length %s > packing_length=%s",
+                        length,
+                        self.packing_length,
+                    )
                     continue
 
                 buffer.append((sample, length))

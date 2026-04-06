@@ -50,7 +50,7 @@ The program should preserve these guardrails throughout:
   - `src.eval.detection` as consumed by `src/infer/pipeline.py`, `src/callbacks/detection_eval.py`, and `scripts/evaluate_detection.py`
 - Require all `.planning/` artifacts to cite the source OpenSpec change path and relevant workstream/task ranges so the planning layer stays derivative and refreshable.
 - Add explicit verification gates after each phase so architectural progress does not outpace behavioral parity.
-- Add a brownfield planning layer in `.planning/` where GSD phases and context files derive from the validated OpenSpec change instead of redefining scope in parallel.
+- Add a brownfield planning layer in `.planning/` where phase execution steps and context files derive from the validated OpenSpec change instead of redefining scope in parallel.
 - Treat any stable contract change discovered during the refactor as out-of-scope for silent implementation and require a follow-on OpenSpec delta before landing that slice.
 
 ## Capabilities

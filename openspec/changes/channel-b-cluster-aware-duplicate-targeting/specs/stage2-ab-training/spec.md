@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with legacy K=2 compatibility and default K=4 pseudo-positive evidence
+### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with pre-match duplicate-control
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B
 contract SHALL build its clean teacher-forced target from rollout evidence
 rooted in the anchor clean sequence.
@@ -19,15 +19,20 @@ Normative behavior:
     profile configured under `stage2_ab.channel_b.triage_posterior`,
   - repo-authored default pseudo-positive profiles SHOULD set `num_rollouts`
     to `4`,
-- each rollout MUST independently reuse the existing bounded salvage + strict
-  record acceptance + bbox-valid filtering + duplicate-like grouping +
-  Hungarian matching path,
+- after anchor and explorer rollouts complete bounded salvage, strict record
+  acceptance, and bbox-valid filtering, Channel-B preparation MUST assemble one
+  duplicate-control evidence surface across:
+  - anchor objects that may survive or be suppressed,
+  - explorer evidence that may trigger conservative crowd-safe exemptions,
+- duplicate-control MUST run once on that assembled evidence surface before any
+  GT Hungarian matching occurs,
 - duplicate-like grouping MUST be deterministic and MUST operate on parsed
-  bbox objects before triage,
+  bbox objects before GT matching,
 - duplicate-like grouping MUST be able to merge local same-description repeats
   that are not strictly sequential neighbors in emission order,
-- GT-backed semantics MUST inherit the existing Channel-B accepted-clean
-  Hungarian + gating contract,
+- GT-backed semantics apply only after duplicate-control has already reduced the
+  anchor survivor set and MUST inherit the existing Channel-B accepted-clean
+  Hungarian + gating contract on that post-policy survivor set,
 - the final positive target MUST be built by editing the anchor clean sequence
   rather than rebuilding a union order,
 - explorer-only non-GT-backed objects MUST be treated as dead by default,
@@ -42,6 +47,15 @@ Normative behavior:
 - the enabled pseudo-positive contract MUST NOT use the canonical empty-prefix
   fallback for malformed anchor preparation.
 
+Typed duplicate-control config contract:
+- `stage2_ab.channel_b.duplicate_control` is the canonical authored mapping for
+  this feature,
+- the mapping MUST permit exactly:
+  - `iou_threshold`
+  - `center_radius_scale`
+- no other authored duplicate-control knobs are allowed in the first landing,
+- unknown keys under `stage2_ab.channel_b.duplicate_control` MUST fail fast.
+
 #### Scenario: Enabled pseudo-positive drops malformed anchor samples
 - **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
 - **AND** the anchor rollout does not complete accepted-clean preparation for a
@@ -50,11 +64,13 @@ Normative behavior:
 - **AND** the trainer does not fall back to the empty-prefix FN-only path for
   that sample.
 
-#### Scenario: Local same-description duplicate cluster is collapsed before triage
+#### Scenario: Local same-description duplicate cluster is collapsed before GT matching
 - **WHEN** an anchor rollout emits multiple same-description bbox objects that
   form one deterministic local duplicate-like cluster
+- **AND** the assembled anchor plus explorer evidence does not trigger a
+  crowd-safe exemption
 - **THEN** the Channel-B preparation keeps one deterministic survivor on the
-  clean anchor surface
+  anchor surface before GT matching
 - **AND** the remaining members are carried as duplicate-candidate
   continuations rather than additional kept anchor objects.
 

@@ -146,7 +146,7 @@ Phases with standard patterns:
 
 ### Gaps To Address
 
-- The exact plan/task decomposition inside each phase still needs to be authored in GSD phase plans.
+- The exact plan/task decomposition inside each phase still needs to be authored in phase plans.
 - A small number of runtime details, such as the minimal YAML profile choice and the exact smoke config, should be finalized during phase planning rather than here.
 
 ---

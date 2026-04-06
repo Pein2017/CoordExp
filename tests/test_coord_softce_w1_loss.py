@@ -364,6 +364,34 @@ def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches()
     )
 
 
+def test_stage1_bbox_quartets_skip_incomplete_rows_instead_of_failing():
+    vocab = 1200
+    coord_token_ids = [103, 104, 107, 108]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+
+    labels = torch.tensor(
+        [
+            [0, 5, 103, 104, 107, 108],
+            [0, 5, 103, 104, 107, -100],
+        ],
+        dtype=torch.long,
+    )
+    logits = _perfect_next_token_logits(labels.clamp(min=0), vocab=vocab)
+
+    quartets = extract_stage1_bbox_quartets(
+        logits=logits,
+        labels=labels,
+        coord_token_ids=coord_token_ids,
+        coord_id_map=coord_id_map,
+        tokenizer=None,
+    )
+    assert quartets is not None
+    assert quartets.bbox_groups == 1
+    assert quartets.coord_slots == 4
+    assert quartets.skipped_incomplete_rows == 1
+    assert quartets.skipped_incomplete_coord_slots == 3
+
+
 def test_stage1_adjacent_repulsion_penalizes_geometry_first_same_desc_copy() -> None:
     vocab = 256
     coord_token_ids = [100, 101, 102, 103]
@@ -422,6 +450,7 @@ def test_stage1_adjacent_repulsion_penalizes_geometry_first_same_desc_copy() -> 
         masked_labels=labels.clone(),
         coord_token_ids=coord_token_ids,
         coord_id_map=coord_id_map,
+        coord_token_weights=None,
         tokenizer=tokenizer,
         cfg=cfg,
         average_tokens_across_devices=False,

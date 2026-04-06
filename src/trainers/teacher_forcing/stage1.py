@@ -34,6 +34,8 @@ class Stage1BBoxQuartets:
     target_boxes_xyxy: torch.Tensor
     coord_slots: int
     bbox_groups: int
+    skipped_incomplete_rows: int = 0
+    skipped_incomplete_coord_slots: int = 0
     adjacent_prev_target_bins: torch.Tensor | None = None
     adjacent_has_prev_mask: torch.Tensor | None = None
     adjacent_same_desc_prev_mask: torch.Tensor | None = None
@@ -177,13 +179,14 @@ def extract_stage1_bbox_quartets(
 
     coord_counts = coord_mask.sum(dim=1)
     bad_rows = (coord_counts > 0) & ((coord_counts % 4) != 0)
-    if bool(bad_rows.any().item()):
-        bad_row = int(bad_rows.nonzero(as_tuple=False)[0].item())
-        bad_count = int(coord_counts[bad_row].detach().item())
-        raise ValueError(
-            "bbox_size_aux requires bbox-only Stage-1 coord supervision with coord-token "
-            f"counts divisible by 4; row={bad_row} count={bad_count}"
-        )
+    skipped_incomplete_rows = int(bad_rows.sum().detach().item())
+    skipped_incomplete_coord_slots = (
+        int(coord_counts[bad_rows].sum().detach().item())
+        if skipped_incomplete_rows > 0
+        else 0
+    )
+    if skipped_incomplete_rows > 0:
+        coord_mask = coord_mask & (~bad_rows).unsqueeze(1)
     if include_adjacent_metadata and tokenizer is None:
         raise ValueError(
             "Stage-1 adjacent repulsion requires a tokenizer to recover packed sample boundaries"
@@ -193,7 +196,7 @@ def extract_stage1_bbox_quartets(
     if tokenizer is not None:
         for row_idx in range(int(labels.shape[0])):
             coord_count = int(coord_counts[row_idx].detach().item())
-            if coord_count <= 0:
+            if coord_count <= 0 or bool(bad_rows[row_idx].detach().item()):
                 continue
             supervised = labels[row_idx][labels[row_idx] != -100]
             token_ids = [int(t) for t in supervised.detach().cpu().tolist() if int(t) >= 0]
@@ -213,6 +216,25 @@ def extract_stage1_bbox_quartets(
                     expected_bbox_count=int(coord_count // 4),
                     row_idx=row_idx,
                 )
+
+    if not bool(coord_mask.any().item()):
+        empty_coord_logits = logits_next.new_zeros((0, len(coord_token_ids)))
+        empty_target_bins = target_bins_all.new_zeros((0,), dtype=torch.long)
+        empty_boxes = logits_next.new_zeros((0, 4))
+        empty_prev = logits_next.new_zeros((0, 4), dtype=torch.long)
+        empty_mask = target_bins_all.new_zeros((0,), dtype=torch.bool)
+        return Stage1BBoxQuartets(
+            coord_logits=empty_coord_logits,
+            target_bins=empty_target_bins,
+            target_boxes_xyxy=empty_boxes,
+            coord_slots=0,
+            bbox_groups=0,
+            skipped_incomplete_rows=skipped_incomplete_rows,
+            skipped_incomplete_coord_slots=skipped_incomplete_coord_slots,
+            adjacent_prev_target_bins=empty_prev if include_adjacent_metadata else None,
+            adjacent_has_prev_mask=empty_mask if include_adjacent_metadata else None,
+            adjacent_same_desc_prev_mask=empty_mask if include_adjacent_metadata else None,
+        )
 
     coord_ids = torch.tensor(coord_token_ids, device=logits.device, dtype=torch.long)
     flat_logits_full = logits_next[coord_mask]
@@ -299,6 +321,8 @@ def extract_stage1_bbox_quartets(
         target_boxes_xyxy=target_boxes,
         coord_slots=int(flat_target_bins.numel()),
         bbox_groups=int(target_boxes.shape[0]),
+        skipped_incomplete_rows=skipped_incomplete_rows,
+        skipped_incomplete_coord_slots=skipped_incomplete_coord_slots,
         adjacent_prev_target_bins=adjacent_prev_target_bins,
         adjacent_has_prev_mask=adjacent_has_prev_mask,
         adjacent_same_desc_prev_mask=adjacent_same_desc_prev_mask,

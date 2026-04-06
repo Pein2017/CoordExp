@@ -7,7 +7,7 @@
   - infer/eval artifact contracts,
   - reproducibility artifact files.
 - [x] 0.2 Add or tighten explicit interface snapshots for the runtime payloads that move between batch prep and loss execution in the Stage-2 trainers.
-- [x] 0.3 Bootstrap the brownfield GSD planning layer from the validated OpenSpec change so execution phases, context files, and later plans trace back to the same contract source. Every `.planning/` artifact must cite:
+- [x] 0.3 Bootstrap the brownfield execution-planning layer from the validated OpenSpec change so execution phases, context files, and later plans trace back to the same contract source. Every `.planning/` artifact must cite:
   - source change path,
   - source workstream/task ranges,
   - and its local execution purpose.

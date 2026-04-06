@@ -1079,6 +1079,10 @@ class BBoxGeoLossMixin:
         ciou = getattr(result, "ciou_contrib", None)
         bbox_groups = int(getattr(result, "bbox_groups", 0) or 0)
         coord_slots = int(getattr(result, "coord_slots", 0) or 0)
+        skipped_rows = int(getattr(result, "skipped_incomplete_rows", 0) or 0)
+        skipped_coord_slots = int(
+            getattr(result, "skipped_incomplete_coord_slots", 0) or 0
+        )
 
         reporter.update("loss/geo/bbox_geo", float(total_loss.detach().cpu().item()))
         if isinstance(smoothl1, torch.Tensor):
@@ -1088,6 +1092,10 @@ class BBoxGeoLossMixin:
 
         reporter.update("bbox_geo/groups_total", float(bbox_groups))
         reporter.update("bbox_geo/coord_slots_total", float(coord_slots))
+        reporter.update("bbox_geo/skipped_incomplete_rows", float(skipped_rows))
+        reporter.update(
+            "bbox_geo/skipped_incomplete_coord_slots", float(skipped_coord_slots)
+        )
 
         total_samples = None
         pack_n = getattr(self, "_coordexp_pack_num_samples", None)
@@ -1291,6 +1299,10 @@ class BBoxSizeAuxLossMixin:
         stats = getattr(result, "stats", None)
         bbox_groups = int(getattr(result, "bbox_groups", 0) or 0)
         coord_slots = int(getattr(result, "coord_slots", 0) or 0)
+        skipped_rows = int(getattr(result, "skipped_incomplete_rows", 0) or 0)
+        skipped_coord_slots = int(
+            getattr(result, "skipped_incomplete_coord_slots", 0) or 0
+        )
 
         reporter.update("loss/geo/bbox_size_aux", float(total_loss.detach().cpu().item()))
         if isinstance(log_wh, torch.Tensor):
@@ -1300,6 +1312,13 @@ class BBoxSizeAuxLossMixin:
 
         reporter.update("bbox_size_aux/groups_total", float(bbox_groups))
         reporter.update("bbox_size_aux/coord_slots_total", float(coord_slots))
+        reporter.update(
+            "bbox_size_aux/skipped_incomplete_rows", float(skipped_rows)
+        )
+        reporter.update(
+            "bbox_size_aux/skipped_incomplete_coord_slots",
+            float(skipped_coord_slots),
+        )
         if stats is not None:
             reporter.update(
                 "bbox_size_aux/mean_width",
