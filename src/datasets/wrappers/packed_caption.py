@@ -683,6 +683,22 @@ def _read_plan_cache(
     return payload
 
 
+def _invalidate_cache_files(*paths: Path, reason: str) -> None:
+    removed_paths: list[str] = []
+    for path in paths:
+        try:
+            if path.exists():
+                path.unlink()
+                removed_paths.append(str(path))
+        except FileNotFoundError:
+            continue
+    logger.warning(
+        "Static packing cache invalidated: reason=%s removed=%s",
+        reason,
+        removed_paths if removed_paths else "<none>",
+    )
+
+
 def _persist_plan_cache(
     *,
     path: Path,
@@ -754,7 +770,7 @@ def _persist_setup_index(path: Path, fingerprint: Mapping[str, Any]) -> None:
     canonical_fingerprint = json.loads(_json_canonical_dumps(dict(fingerprint)))
     payload: dict[str, Any] = {
         "version": _SETUP_INDEX_VERSION,
-        "guard_policy": "one_setup_per_base_root",
+        "guard_policy": "latest_setup_wins",
         "setup_fingerprint": canonical_fingerprint,
         "setup_fingerprint_sha256": _fingerprint_digest(canonical_fingerprint),
         "cache_layout": "fingerprinted_v1",
@@ -771,8 +787,12 @@ def _validate_or_initialize_setup_index(
     index_path = cache_root_base / "INDEX.json"
     canonical_fingerprint = json.loads(_json_canonical_dumps(dict(fingerprint)))
 
-    observed_fingerprint: dict[str, Any] | None = None
-    if index_path.exists():
+    if not index_path.exists():
+        if create_if_missing:
+            _persist_setup_index(index_path, canonical_fingerprint)
+        return
+
+    try:
         payload = _read_json(index_path)
         version = payload.get("version")
         if int(version or -1) != _SETUP_INDEX_VERSION:
@@ -785,36 +805,27 @@ def _validate_or_initialize_setup_index(
                 f"Static packing setup INDEX fingerprint must be a mapping: {index_path}"
             )
         observed_fingerprint = json.loads(_json_canonical_dumps(dict(observed)))
-    else:
-        observed_fingerprint = _load_legacy_setup_fingerprint(cache_root_base)
-        if observed_fingerprint is None:
-            if create_if_missing:
-                _persist_setup_index(index_path, canonical_fingerprint)
-            return
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning(
+            "Static packing setup INDEX invalid; regenerating %s reason=%s",
+            index_path,
+            exc,
+        )
         if create_if_missing:
-            _persist_setup_index(index_path, observed_fingerprint)
+            _persist_setup_index(index_path, canonical_fingerprint)
+        return
 
     if observed_fingerprint != canonical_fingerprint:
         differing_keys = _fingerprint_diff_keys(
             canonical_fingerprint, observed_fingerprint
         )
-        auto_upgrade_keys = {"full_sample_packing_probe"}
-        if create_if_missing and set(differing_keys).issubset(auto_upgrade_keys):
-            logger.info(
-                "Static packing setup INDEX upgrade: replacing %s for keys=%s",
-                index_path,
-                differing_keys,
-            )
-            _persist_setup_index(index_path, canonical_fingerprint)
-            return
-        raise ValueError(
-            "Static packing setup guard violation at "
-            f"{index_path}. current_sha256={_fingerprint_digest(canonical_fingerprint)} "
-            f"indexed_sha256={_fingerprint_digest(observed_fingerprint)} "
-            f"differing_keys={differing_keys}. This cache base root is reserved for one "
-            "stable setup per length bucket. Use a different cache root or remove the "
-            "bucket INDEX.json only if you intentionally want to replace the standard setup."
+        logger.warning(
+            "Static packing setup INDEX changed; regenerating %s differing_keys=%s",
+            index_path,
+            differing_keys,
         )
+        if create_if_missing:
+            _persist_setup_index(index_path, canonical_fingerprint)
 
 
 def _adopt_legacy_static_cache(
@@ -1241,31 +1252,45 @@ def build_static_packed_dataset(
     )
 
     if rank == 0:
-        _adopt_legacy_static_cache(
-            legacy_cache_root=cache_root_base,
-            cache_root=cache_root,
-            fingerprint=canonical_fingerprint,
-            num_samples=num_samples,
-            world_size=world_size,
-            dataloader_drop_last=bool(dataloader_drop_last),
-        )
         cache_root.mkdir(parents=True, exist_ok=True)
         _probe_order_invariant_lengths(dataset, probe_size=order_probe_size)
-        lengths_state = _load_length_cache(
-            path=lengths_cache_path,
-            fingerprint=canonical_fingerprint,
-            num_samples=num_samples,
-        )
+        try:
+            lengths_state = _load_length_cache(
+                path=lengths_cache_path,
+                fingerprint=canonical_fingerprint,
+                num_samples=num_samples,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            _invalidate_cache_files(
+                lengths_cache_path,
+                plan_cache_path,
+                reason=f"length_cache_invalid:{exc}",
+            )
+            lengths_state = [None] * num_samples
         missing_lengths = sum(1 for value in lengths_state if value is None)
-        plan_cache_exists = plan_cache_path.exists()
-        if missing_lengths > 0 or not plan_cache_exists:
+        rebuild_plan = missing_lengths > 0 or not plan_cache_path.exists()
+        if not rebuild_plan and plan_cache_path.exists():
+            try:
+                _read_plan_cache(
+                    path=plan_cache_path,
+                    fingerprint=canonical_fingerprint,
+                    world_size=world_size,
+                    dataloader_drop_last=bool(dataloader_drop_last),
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                _invalidate_cache_files(
+                    plan_cache_path,
+                    reason=f"plan_cache_invalid:{exc}",
+                )
+                rebuild_plan = True
+        if missing_lengths > 0 or rebuild_plan:
             logger.warning(
-                "Static packing build starting: rank=%s cache_root=%s missing_lengths=%s plan_cache_exists=%s. "
+                "Static packing build starting: rank=%s cache_root=%s missing_lengths=%s plan_rebuild=%s. "
                 "First-time sequence packing can take a while; cache artifacts will be written here.",
                 rank,
                 cache_root,
                 missing_lengths,
-                plan_cache_exists,
+                rebuild_plan,
             )
         lengths = _compute_missing_lengths(
             dataset=dataset,
@@ -1275,31 +1300,32 @@ def build_static_packed_dataset(
             persist_every=length_cache_persist_every,
             precompute_workers=length_precompute_workers,
         )
-        raw_plan, single_long, skipped_long, avg_fill = _build_raw_pack_plan(
-            lengths=lengths,
-            packing_length=packing_length,
-            min_fill_ratio=min_fill_ratio,
-            drop_last=packing_drop_last,
-            allow_single_long=allow_single_long,
-        )
-        aligned_plan, pad_needed, repeated_pack_indices = _align_pack_plan_for_ddp(
-            raw_plan=raw_plan,
-            world_size=world_size,
-            dataloader_drop_last=bool(dataloader_drop_last),
-        )
-        _persist_plan_cache(
-            path=plan_cache_path,
-            fingerprint=canonical_fingerprint,
-            raw_plan=raw_plan,
-            aligned_plan=aligned_plan,
-            world_size=world_size,
-            dataloader_drop_last=bool(dataloader_drop_last),
-            pad_needed=pad_needed,
-            repeated_pack_indices=repeated_pack_indices,
-            single_long=single_long,
-            skipped_long=skipped_long,
-            avg_fill=avg_fill,
-        )
+        if rebuild_plan:
+            raw_plan, single_long, skipped_long, avg_fill = _build_raw_pack_plan(
+                lengths=lengths,
+                packing_length=packing_length,
+                min_fill_ratio=min_fill_ratio,
+                drop_last=packing_drop_last,
+                allow_single_long=allow_single_long,
+            )
+            aligned_plan, pad_needed, repeated_pack_indices = _align_pack_plan_for_ddp(
+                raw_plan=raw_plan,
+                world_size=world_size,
+                dataloader_drop_last=bool(dataloader_drop_last),
+            )
+            _persist_plan_cache(
+                path=plan_cache_path,
+                fingerprint=canonical_fingerprint,
+                raw_plan=raw_plan,
+                aligned_plan=aligned_plan,
+                world_size=world_size,
+                dataloader_drop_last=bool(dataloader_drop_last),
+                pad_needed=pad_needed,
+                repeated_pack_indices=repeated_pack_indices,
+                single_long=single_long,
+                skipped_long=skipped_long,
+                avg_fill=avg_fill,
+            )
     else:
         if wait_timeout_s <= 0:
             logger.info(
