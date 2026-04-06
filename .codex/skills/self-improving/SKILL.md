@@ -7,7 +7,7 @@ description: Learn conservative reusable preferences, corrections, and workflow 
 
 This is a Codex-native adaptation of the OpenClaw `self-improving` skill.
 
-Keep the skill itself portable under `.codex_config/pein/skills/self-improving/`.
+Keep the skill itself portable under `.codex/skills/self-improving/`.
 Store mutable memory outside the skill directory in a workspace-local folder.
 
 Default local memory root:
