@@ -1,0 +1,14 @@
+extends: ./ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+model:
+  model: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
+
+training:
+  run_name: epoch_1-k4-eff_size_96-b_ratio_0.85-lvis_proxy-2b-dup_targeting
+  artifact_subdir: stage2_ab/prod/2b_lvis_proxy_pseudo_positive_dup_targeting
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  object_ordering: sorted
