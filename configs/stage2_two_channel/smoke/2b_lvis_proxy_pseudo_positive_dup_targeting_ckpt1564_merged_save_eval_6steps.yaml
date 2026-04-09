@@ -1,0 +1,21 @@
+extends: ../prod/2b-ab_mixed_coco1024_lvis_proxy_channel_b_pseudo_positive_dup_targeting-from_ckpt1564_merged.yaml
+
+training:
+  run_name: smoke_6steps-2b-lvis_proxy-pseudo_positive-dup_targeting-ckpt1564_merged-save_eval
+  artifact_subdir: stage2_ab/smoke/2b_lvis_proxy_pseudo_positive_dup_targeting_ckpt1564_merged_save_eval_6steps
+  max_steps: 6
+  logging_steps: 1
+  save_delay_steps: 0
+  eval_strategy: "steps"
+  eval_steps: 2
+  save_strategy: "steps"
+  save_steps: 2
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 192
+  val_sample_limit: 8

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 import os
 import weakref
@@ -10,10 +11,20 @@ from typing import TYPE_CHECKING, Any, Dict, Mapping, Type, cast
 
 import torch
 from transformers.trainer import TRAINER_STATE_NAME
-from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
+from transformers.trainer_callback import (
+    ExportableState,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+)
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, SaveStrategy
 
 from src.metrics.reporter import _DISABLED_DIAGNOSTICS_ATTR
+from src.utils.ddp_fail_fast import (
+    ddp_any_rank_fail_fast,
+    ddp_rank0_coordinated_fail_fast,
+    maybe_ddp_context,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from transformers import Trainer as _TrainerBase
@@ -23,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 COORDEXP_CHECKPOINT_STATE_NAME = "coordexp_checkpoint_state.pt"
 _COORDEXP_CHECKPOINT_SCHEMA_VERSION = 1
+_DEFAULT_CHECKPOINT_DDP_TIMEOUT_S = 300.0
 
 
 def _callback_state_key(callback: Any) -> str:
@@ -289,6 +301,7 @@ class FinalCheckpointMixin:
     _final_checkpoint_callback_attr = "_final_checkpoint_callback"
     _final_checkpoint_wrapper_cache: Dict[Type, Type] = {}
     _pending_best_checkpoint_step_attr = "_pending_best_checkpoint_step"
+    _checkpoint_monitor_group_attr = "_coordexp_checkpoint_monitor_group"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)  # type: ignore[misc]
@@ -327,9 +340,12 @@ class FinalCheckpointMixin:
     def _save_checkpoint(self, model, trial, *args, **kwargs):
         """Preserve best-checkpoint pointers for best-only save cadence."""
 
-        super()._save_checkpoint(model, trial, *args, **kwargs)
-
-        checkpoint_dir = self._get_current_checkpoint_dir(trial=trial)
+        checkpoint_dir: str | None
+        if self._should_use_bounded_ddp_checkpoint_save(model):
+            checkpoint_dir = self._save_checkpoint_with_bounded_ddp(model, trial)
+        else:
+            super()._save_checkpoint(model, trial, *args, **kwargs)
+            checkpoint_dir = self._get_current_checkpoint_dir(trial=trial)
         if checkpoint_dir is None:
             setattr(self, self._pending_best_checkpoint_step_attr, None)
             return
@@ -340,6 +356,167 @@ class FinalCheckpointMixin:
 
         if getattr(self.args, "should_save", False):
             _write_coordexp_checkpoint_state(checkpoint_dir, self)
+
+    def _should_use_bounded_ddp_checkpoint_save(self, model: Any) -> bool:
+        """Return True when the save path is plain DDP and safe to harden locally."""
+
+        ctx = maybe_ddp_context(model=model)
+        if ctx is None:
+            return False
+
+        trainer = cast("_TrainerBase", self)
+        if bool(getattr(trainer.args, "use_flash_ckpt", False)):
+            return False
+        if bool(getattr(trainer, "is_deepspeed_enabled", False)):
+            return False
+        if bool(getattr(trainer, "is_fsdp_enabled", False)):
+            return False
+        if getattr(getattr(trainer, "accelerator", None), "parallelism_config", None) is not None:
+            return False
+
+        tp_size = getattr(getattr(trainer, "model", None), "_tp_size", 0)
+        if tp_size is not None and int(tp_size) > 1:
+            return False
+        return True
+
+    def _checkpoint_ddp_timeout_s(self) -> float:
+        """Return the bounded timeout for checkpoint save coordination barriers."""
+
+        raw_timeout = getattr(getattr(self, "args", None), "ddp_timeout", None)
+        if raw_timeout is None:
+            return float(_DEFAULT_CHECKPOINT_DDP_TIMEOUT_S)
+        try:
+            timeout_s = float(raw_timeout)
+        except (TypeError, ValueError):
+            return float(_DEFAULT_CHECKPOINT_DDP_TIMEOUT_S)
+        if timeout_s <= 0:
+            return float(_DEFAULT_CHECKPOINT_DDP_TIMEOUT_S)
+        return float(timeout_s)
+
+    def _checkpoint_ddp_barrier(self, *, model: Any, phase: str) -> None:
+        """Run a bounded barrier for checkpoint save coordination under plain DDP."""
+
+        ctx = maybe_ddp_context(model=model)
+        if ctx is None:
+            return
+
+        dist = ctx.dist
+        if not hasattr(dist, "monitored_barrier"):
+            raise RuntimeError(
+                "transformers checkpoint saving under DDP requires "
+                "torch.distributed.monitored_barrier for bounded coordination; "
+                f"phase={str(phase)} rank={int(ctx.rank)}/{int(ctx.world_size)}."
+            )
+
+        timeout_s = float(self._checkpoint_ddp_timeout_s())
+        group = getattr(self, self._checkpoint_monitor_group_attr, None)
+        if group is None:
+            monitor_group_timeout_s = max(float(timeout_s) * 2.0, float(timeout_s) + 30.0)
+            try:
+                group = dist.new_group(
+                    backend="gloo",
+                    timeout=timedelta(seconds=float(monitor_group_timeout_s)),
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "transformers checkpoint save monitored barrier requested but gloo "
+                    "group init failed; "
+                    f"phase={str(phase)} rank={int(ctx.rank)}/{int(ctx.world_size)} "
+                    f"timeout_s={float(timeout_s):.1f}."
+                ) from exc
+            setattr(self, self._checkpoint_monitor_group_attr, group)
+
+        try:
+            try:
+                dist.monitored_barrier(
+                    group=group,
+                    timeout=timedelta(seconds=float(timeout_s)),
+                    wait_all_ranks=True,
+                )
+            except TypeError:
+                dist.monitored_barrier(
+                    group=group,
+                    timeout=timedelta(seconds=float(timeout_s)),
+                )
+        except Exception as exc:
+            raise RuntimeError(
+                "bounded DDP checkpoint barrier failed; "
+                f"phase={str(phase)} rank={int(ctx.rank)}/{int(ctx.world_size)} "
+                f"timeout_s={float(timeout_s):.1f}. "
+                "One rank likely failed before or during checkpoint save."
+            ) from exc
+
+    def _save_checkpoint_with_bounded_ddp(self, model: Any, trial: Any) -> str:
+        """Mirror the plain-DDP HF save path without the unbounded raw barrier."""
+
+        trainer = cast("_TrainerBase", self)
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{trainer.state.global_step}"
+
+        if trainer.hp_search_backend is None and trial is None:
+            trainer.store_flos()
+
+        run_dir = trainer._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+        trainer.state.last_model_checkpoint = output_dir
+
+        fix_zero3 = getattr(trainer, "_fix_zero3_gather_all_parameters", None)
+        if callable(fix_zero3):
+            fix_zero3()
+
+        ddp_rank0_coordinated_fail_fast(
+            where="checkpoint/save_model",
+            fn_rank0_only=lambda: trainer.save_model(output_dir, _internal_call=True),
+            model=model,
+            barrier=lambda: self._checkpoint_ddp_barrier(
+                model=model,
+                phase=f"checkpoint_save:{trainer.state.global_step}",
+            ),
+        )
+
+        if (
+            trainer.args.save_strategy in [SaveStrategy.STEPS, SaveStrategy.EPOCH]
+            and trainer.state.best_global_step
+        ):
+            best_checkpoint_folder = (
+                f"{PREFIX_CHECKPOINT_DIR}-{trainer.state.best_global_step}"
+            )
+            best_checkpoint_dir = os.path.join(run_dir, best_checkpoint_folder)
+            trainer.state.best_model_checkpoint = best_checkpoint_dir
+
+        def _save_remaining_checkpoint_state() -> None:
+            if not trainer.args.save_only_model:
+                trainer._save_optimizer_and_scheduler(output_dir)
+                trainer._save_scaler(output_dir)
+                trainer._save_rng_state(output_dir)
+
+            if getattr(trainer.args, "should_save", False):
+                for cb in [
+                    cb
+                    for cb in trainer.callback_handler.callbacks + [trainer.control]
+                    if isinstance(cb, ExportableState)
+                ]:
+                    cb_name = cb.__class__.__name__
+                    cb_state = cb.state()
+                    if isinstance(trainer.state.stateful_callbacks[cb_name], list):
+                        trainer.state.stateful_callbacks[cb_name].append(cb_state)
+                    else:
+                        trainer.state.stateful_callbacks[cb_name] = cb_state
+                trainer.state.save_to_json(
+                    os.path.join(output_dir, TRAINER_STATE_NAME)
+                )
+
+            if trainer.args.push_to_hub:
+                trainer._push_from_checkpoint(output_dir)
+
+            if getattr(trainer.args, "should_save", False):
+                trainer._rotate_checkpoints(use_mtime=True, output_dir=run_dir)
+
+        ddp_any_rank_fail_fast(
+            where="checkpoint/post_save_state",
+            fn=_save_remaining_checkpoint_state,
+            model=model,
+        )
+        return output_dir
 
     # ------------------------------------------------------------------
     # Final checkpoint helpers

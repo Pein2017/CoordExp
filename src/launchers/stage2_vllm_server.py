@@ -176,6 +176,147 @@ def _assert_port_free(host: str, port: int) -> None:
         sock.close()
 
 
+def _run_text_command(cmd: list[str]) -> str:
+    return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+
+
+def _read_proc_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _read_pid_identity(pid: int) -> str:
+    proc_dir = Path("/proc") / str(int(pid))
+    cmdline_raw = _read_proc_text(proc_dir / "cmdline").replace("\x00", " ").strip()
+    if cmdline_raw:
+        return cmdline_raw
+    return _read_proc_text(proc_dir / "comm").strip()
+
+
+def _looks_like_local_vllm_process(identity: str, process_name: str) -> bool:
+    haystack = f"{identity}\n{process_name}".strip().lower()
+    if not haystack:
+        return False
+    needles = (
+        "vllm",
+        "swift/cli/rollout.py",
+        "swift rollout",
+        "enginecore",
+        "openai.api_server",
+        "api_server",
+    )
+    return any(needle in haystack for needle in needles)
+
+
+def _parse_csv_line(raw: str, *, expected_fields: int) -> list[str] | None:
+    parts = [part.strip() for part in str(raw).split(",")]
+    if len(parts) < expected_fields:
+        return None
+    return parts[:expected_fields]
+
+
+def _find_local_vllm_processes_on_gpus(server_gpus: list[str]) -> list[dict[str, Any]]:
+    try:
+        gpu_lines = _run_text_command(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,gpu_uuid",
+                "--format=csv,noheader",
+            ]
+        ).splitlines()
+        app_lines = _run_text_command(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,gpu_uuid,used_gpu_memory,process_name",
+                "--format=csv,noheader",
+            ]
+        ).splitlines()
+    except Exception:
+        return []
+
+    index_to_uuid: dict[str, str] = {}
+    for line in gpu_lines:
+        parsed = _parse_csv_line(line, expected_fields=2)
+        if parsed is None:
+            continue
+        index_to_uuid[str(parsed[0])] = str(parsed[1])
+
+    target_uuids = {
+        index_to_uuid[gpu_idx]
+        for gpu_idx in server_gpus
+        if gpu_idx in index_to_uuid and index_to_uuid[gpu_idx]
+    }
+    if not target_uuids:
+        return []
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for line in app_lines:
+        parsed = _parse_csv_line(line, expected_fields=4)
+        if parsed is None:
+            continue
+        pid_raw, gpu_uuid, used_mem_raw, process_name = parsed
+        if gpu_uuid not in target_uuids:
+            continue
+        try:
+            pid = int(pid_raw)
+        except (TypeError, ValueError):
+            continue
+        identity = _read_pid_identity(pid)
+        if not _looks_like_local_vllm_process(identity, process_name):
+            continue
+        key = (pid, gpu_uuid)
+        if key in seen:
+            continue
+        seen.add(key)
+        gpu_index = next(
+            (idx for idx, uuid in index_to_uuid.items() if uuid == gpu_uuid),
+            None,
+        )
+        out.append(
+            {
+                "pid": pid,
+                "gpu_index": gpu_index,
+                "gpu_uuid": gpu_uuid,
+                "used_gpu_memory": used_mem_raw,
+                "process_name": process_name,
+                "identity": identity,
+            }
+        )
+    return sorted(out, key=lambda item: (str(item.get("gpu_index")), int(item["pid"])))
+
+
+def _assert_no_stale_local_vllm_processes(
+    *, server_gpus: list[str], base_url: _BaseUrl
+) -> None:
+    matches = _find_local_vllm_processes_on_gpus(server_gpus)
+    if not matches:
+        return
+
+    details = []
+    pids = []
+    for item in matches:
+        pid = int(item["pid"])
+        pids.append(str(pid))
+        gpu_index = item.get("gpu_index")
+        used_mem = str(item.get("used_gpu_memory") or "?").strip()
+        identity = str(item.get("identity") or item.get("process_name") or "").strip()
+        details.append(
+            f"gpu={gpu_index} pid={pid} mem={used_mem} cmd={identity}"
+        )
+
+    detail_block = "\n".join(details)
+    raise RuntimeError(
+        "Refusing to launch vLLM server because stale local vLLM-related compute processes "
+        f"are still attached to the requested rollout GPUs {server_gpus} for {base_url.base_url}.\n"
+        f"Detected PID(s): {', '.join(pids)}\n"
+        f"{detail_block}\n"
+        "Clean up the stale rollout server first, then retry."
+    )
+
+
 def _merge_no_proxy(existing_raw: str, *, hosts: list[str]) -> str:
     tokens = [tok.strip() for tok in existing_raw.split(",") if tok.strip()]
     for host in hosts:
@@ -589,6 +730,10 @@ def main() -> int:
             server_gpus_raw=server_gpus_raw,
             train_gpus_raw=train_gpus_raw,
             server_tp=server_tp,
+        )
+        _assert_no_stale_local_vllm_processes(
+            server_gpus=server_gpus,
+            base_url=base_url,
         )
 
         server_torch_dtype = (

@@ -231,6 +231,72 @@ def test_wait_for_server_health_bounds_probe_timeout_by_remaining_budget(
     assert max(probe_timeouts) < 5.0
 
 
+def test_find_local_vllm_processes_on_gpus_filters_to_requested_gpu_and_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run_text_command(cmd: list[str]) -> str:
+        joined = " ".join(cmd)
+        if "--query-gpu=index,gpu_uuid" in joined:
+            return "0, GPU-AAA\n1, GPU-BBB\n"
+        if "--query-compute-apps=pid,gpu_uuid,used_gpu_memory,process_name" in joined:
+            return "\n".join(
+                [
+                    "123, GPU-AAA, 70924 MiB, [Not Found]",
+                    "456, GPU-BBB, 123 MiB, python",
+                ]
+            )
+        raise AssertionError(joined)
+
+    def fake_read_pid_identity(pid: int) -> str:
+        if pid == 123:
+            return "VLLM::EngineCore_DP0"
+        if pid == 456:
+            return "/usr/bin/python worker.py"
+        raise AssertionError(pid)
+
+    monkeypatch.setattr(launcher, "_run_text_command", fake_run_text_command)
+    monkeypatch.setattr(launcher, "_read_pid_identity", fake_read_pid_identity)
+
+    out = launcher._find_local_vllm_processes_on_gpus(["0"])
+
+    assert len(out) == 1
+    assert out[0]["pid"] == 123
+    assert out[0]["gpu_index"] == "0"
+    assert "EngineCore" in str(out[0]["identity"])
+
+
+def test_assert_no_stale_local_vllm_processes_raises_with_actionable_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher,
+        "_find_local_vllm_processes_on_gpus",
+        lambda _server_gpus: [
+            {
+                "pid": 123,
+                "gpu_index": "0",
+                "gpu_uuid": "GPU-AAA",
+                "used_gpu_memory": "70924 MiB",
+                "process_name": "[Not Found]",
+                "identity": "VLLM::EngineCore_DP0",
+            }
+        ],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"stale local vLLM-related compute processes",
+    ) as exc_info:
+        launcher._assert_no_stale_local_vllm_processes(
+            server_gpus=["0", "1"],
+            base_url=launcher.parse_base_url("http://127.0.0.1:8000"),
+        )
+
+    message = str(exc_info.value)
+    assert "gpu=0 pid=123" in message
+    assert "127.0.0.1:8000" in message
+
+
 def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -327,3 +393,64 @@ def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
 
     assert rc == 0
     assert captured["expected_world_size"] == 2
+
+
+def test_main_fails_fast_on_stale_local_vllm_processes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = tmp_path / "configs" / "stage2.yaml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("x: 1\n", encoding="utf-8")
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    monkeypatch.setenv("CONFIG", str(cfg))
+    monkeypatch.setenv("SERVER_GPUS", "0,1,2,3")
+    monkeypatch.setenv("TRAIN_GPUS", "4")
+    monkeypatch.setattr(launcher.sys, "argv", ["stage2_vllm_server"])
+    monkeypatch.setattr(launcher.signal, "signal", lambda *_args, **_kwargs: None)
+
+    monkeypatch.setattr(launcher, "resolve_config_path", lambda *_args, **_kwargs: cfg)
+    monkeypatch.setattr(
+        launcher,
+        "resolve_stage2_launcher_preflight",
+        lambda _path: {
+            "rollout_backend": "vllm",
+            "vllm_mode": "server",
+            "server_base_urls": ["http://127.0.0.1:8000"],
+            "server_group_ports": [51216],
+            "server_model": str(model_dir),
+            "root_image_dir_resolved": str(tmp_path),
+            "train_jsonl_resolved": str(tmp_path / "train.jsonl"),
+            "val_jsonl_resolved": str(tmp_path / "val.jsonl"),
+            "offline_max_pixels": 786432,
+            "template_max_pixels": 786432,
+            "vllm_tensor_parallel_size": 2,
+            "server_torch_dtype": "bfloat16",
+            "vllm_enforce_eager": True,
+            "vllm_max_model_len": 4096,
+            "vllm_enable_lora": False,
+            "vllm_gpu_memory_utilization": 0.8,
+            "server_template": "qwen3_vl",
+            "server_max_length": 2048,
+            "server_truncation_strategy": "delete",
+            "vllm_engine_kwargs": {},
+        },
+    )
+    monkeypatch.setattr(
+        launcher,
+        "validate_gpu_split",
+        lambda **_kwargs: (["0", "1", "2", "3"], ["4"], 2),
+    )
+    monkeypatch.setattr(launcher, "_assert_port_free", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        launcher,
+        "_assert_no_stale_local_vllm_processes",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("stale local vLLM-related compute processes")
+        ),
+    )
+
+    with pytest.raises(SystemExit, match=r"1"):
+        launcher.main()

@@ -2,15 +2,21 @@ from __future__ import annotations
 
 from datetime import timedelta
 import multiprocessing as mp
+from pathlib import Path
 from queue import Empty
 import socket
+import tempfile
 import types
 from typing import Callable
 
 import pytest
 import torch
 import torch.distributed as dist
+import torch.nn as nn
+import torch.nn.functional as F
+from transformers import Trainer, TrainingArguments
 
+from src.trainers import with_final_checkpoint
 from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
 from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 from src.utils.ddp_fail_fast import ddp_rank0_coordinated_fail_fast
@@ -20,6 +26,29 @@ _WORLD_SIZE = 2
 _JOIN_TIMEOUT_S = 25.0
 _PG_TIMEOUT_S = 5.0
 _FAIL_EXIT_CODE = 17
+
+
+class _TinyCheckpointDataset(torch.utils.data.Dataset):
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, idx: int):
+        x = torch.tensor([float(idx), 1.0, 2.0, 3.0], dtype=torch.float32)
+        y = torch.tensor(int(idx) % 2, dtype=torch.long)
+        return {"x": x, "labels": y}
+
+
+class _TinyCheckpointModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.proj = nn.Linear(4, 2)
+
+    def forward(self, x=None, labels=None):  # type: ignore[override]
+        logits = self.proj(x)
+        loss = None
+        if labels is not None:
+            loss = F.cross_entropy(logits.view(-1, 2), labels.view(-1))
+        return {"loss": loss, "logits": logits}
 
 
 def _have_gloo() -> bool:
@@ -180,6 +209,64 @@ def _worker_rank0_side_effect_failure(
         _destroy_pg_best_effort()
 
 
+def _worker_checkpoint_save_rank0_failure(
+    rank: int,
+    port: int,
+    out_q: mp.Queue,
+) -> None:
+    _init_cpu_pg(rank=int(rank), port=int(port))
+    try:
+        trainer_cls = with_final_checkpoint(Trainer)
+        output_dir = (
+            Path(tempfile.gettempdir()) / f"coordexp-checkpoint-ddp-fail-fast-{int(port)}"
+        )
+        args = TrainingArguments(
+            output_dir=str(output_dir),
+            per_device_train_batch_size=2,
+            save_strategy="steps",
+            save_steps=1,
+            logging_steps=1,
+            report_to=[],
+            save_only_model=True,
+            save_safetensors=True,
+            use_cpu=True,
+            remove_unused_columns=False,
+            ddp_timeout=int(_PG_TIMEOUT_S),
+        )
+        trainer = trainer_cls(
+            model=_TinyCheckpointModel(),
+            args=args,
+            train_dataset=_TinyCheckpointDataset(),
+        )
+        try:
+            trainer.callback_handler.callbacks = []
+        except Exception:
+            pass
+        trainer.state.global_step = 1
+
+        original_save_model = trainer.save_model
+
+        def _patched_save_model(output_dir=None, _internal_call=False):
+            if int(rank) == 0:
+                raise RuntimeError("synthetic-rank0-save-model-failure")
+            return original_save_model(output_dir, _internal_call)
+
+        trainer.save_model = _patched_save_model  # type: ignore[method-assign]
+
+        try:
+            trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+        except TypeError:
+            trainer._save_checkpoint(  # type: ignore[misc,call-arg]
+                trainer.model, trial=None, metrics=None
+            )
+        out_q.put((int(rank), "unexpected-success"))
+    except Exception as exc:
+        out_q.put((int(rank), f"{exc.__class__.__name__}: {exc}"))
+        raise SystemExit(int(_FAIL_EXIT_CODE))
+    finally:
+        _destroy_pg_best_effort()
+
+
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
 def test_cpu_ddp_stage2_metric_aggregation_nonrank0_failure_exits_all_ranks() -> None:
     exit_codes, messages = _run_two_rank_workers(_worker_stage2_metric_nonrank0_failure)
@@ -217,3 +304,16 @@ def test_cpu_ddp_rank0_side_effect_failure_terminates_all_ranks() -> None:
     assert "DDP fail-fast abort (rank0 side effect)" in messages[1]
     assert "where=test/rank0-side-effect" in messages[0]
     assert "where=test/rank0-side-effect" in messages[1]
+
+
+@pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
+def test_cpu_ddp_checkpoint_save_rank0_failure_terminates_all_ranks() -> None:
+    exit_codes, messages = _run_two_rank_workers(_worker_checkpoint_save_rank0_failure)
+
+    assert len(messages) == _WORLD_SIZE, messages
+    assert all(code == int(_FAIL_EXIT_CODE) for code in exit_codes), exit_codes
+
+    assert "DDP fail-fast abort (rank0 side effect)" in messages[0]
+    assert "DDP fail-fast abort (rank0 side effect)" in messages[1]
+    assert "where=checkpoint/save_model" in messages[0]
+    assert "where=checkpoint/save_model" in messages[1]
