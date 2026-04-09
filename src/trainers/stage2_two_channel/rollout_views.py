@@ -72,7 +72,9 @@ def build_channel_b_rollout_view(
         except (TypeError, ValueError):
             drop_bbox_invalid += 1
             continue
-        if x2 < x1 or y2 < y1:
+        # Keep the rollout view contract aligned with duplicate-control:
+        # zero-width / zero-height boxes are invalid and should be dropped.
+        if x2 <= x1 or y2 <= y1:
             drop_bbox_invalid += 1
             continue
 

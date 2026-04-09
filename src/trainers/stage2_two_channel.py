@@ -469,7 +469,7 @@ def _coerce_bbox_bins(values: Any) -> Optional[List[int]]:
             return None
         out.append(int(k))
     x1, y1, x2, y2 = out
-    if x2 < x1 or y2 < y1:
+    if x2 <= x1 or y2 <= y1:
         return None
     return out
 
