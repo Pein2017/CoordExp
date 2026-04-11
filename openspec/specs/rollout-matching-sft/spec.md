@@ -208,6 +208,58 @@ Backend selection MUST be YAML-driven under `rollout_matching`:
 - `rollout_backend` MUST default to `"hf"`.
 - `eval_rollout_backend` MUST be `"vllm"` for this stack (eval-step backend is fixed).
 
+### Requirement: Eval-step rollout artifacts are persisted in offline-compatible form
+When rollout-aligned Stage-2 evaluation runs with eval detection enabled, the
+trainer SHALL persist per-eval-step artifacts under:
+- `training.output_dir/eval_detection/step_<global_step>/`
+
+Artifact requirements:
+- The trainer SHALL write offline-compatible `gt_vs_pred.jsonl` and
+  `gt_vs_pred_scored.jsonl` files so downstream tooling can reuse the same
+  inference/evaluation readers used for standalone offline runs.
+- The trainer SHALL write `infer_summary.json` plus the standard evaluator
+  outputs generated from the scored artifact, including `metrics.json` and
+  `per_image.json`.
+- The trainer SHALL additionally persist a raw rollout sidecar
+  `raw_rollouts.jsonl` containing, per eval sample:
+  - decoded rollout text,
+  - response/prompt token IDs,
+  - prediction records before and after score materialization,
+  - parsing diagnostics,
+  - matching diagnostics,
+  - auxiliary scoring metadata produced during rollout evaluation.
+- When traced generation metadata is available, the trainer SHALL also write
+  `pred_token_trace.jsonl` with the same line ordering used by the scored
+  artifact.
+
+Compatibility requirements:
+- The persisted `gt_vs_pred*.jsonl` artifacts SHALL match the offline infer/eval
+  record contract closely enough that the standard detection evaluator and
+  visualization tooling can consume them without a Stage-2-specific adapter.
+- The eval-step artifact dump control SHALL live under
+  `rollout_matching.eval_detection.materialize_artifacts`.
+- `rollout_matching.eval_detection.materialize_artifacts` SHALL default to
+  `true`; it MUST NOT require a new CLI flag.
+
+#### Scenario: Stage-2 eval emits reusable artifacts each eval window
+- **GIVEN** rollout-aligned Stage-2 training with eval detection enabled
+- **AND** `rollout_matching.eval_detection.materialize_artifacts: true`
+- **WHEN** an eval step completes at global step `N`
+- **THEN** the run directory contains `eval_detection/step_<N>/gt_vs_pred.jsonl`
+- **AND** the same directory contains `gt_vs_pred_scored.jsonl`,
+  `infer_summary.json`, `metrics.json`, `per_image.json`, and
+  `raw_rollouts.jsonl`
+- **AND** the canonical scored artifact can be consumed by the standard offline
+  detection evaluator without a Stage-2-specific conversion step.
+
+#### Scenario: Stage-2 eval can skip artifact materialization
+- **GIVEN** rollout-aligned Stage-2 training with eval detection enabled
+- **AND** `rollout_matching.eval_detection.materialize_artifacts: false`
+- **WHEN** an eval step completes
+- **THEN** eval metrics still compute for that window
+- **AND** the trainer does not write `eval_detection/step_<global_step>/`
+  artifacts for that window.
+
 Length-coherence guardrails (fail-fast):
 - If the effective rollout backend is `vllm` (training or eval), the system MUST enforce:
   - `rollout_matching.max_new_tokens < rollout_matching.vllm.max_model_len` (to avoid truncation/overflow), and

@@ -135,6 +135,8 @@ rollout_matching:
   eval_detection:
     # Run COCO mAP during trainer eval_step on the same eval cadence as rollout/f1.
     enabled: true
+    # Persist offline-compatible eval artifacts for each eval window by default.
+    materialize_artifacts: true
     metrics: coco
     use_segm: false
     strict_parse: true

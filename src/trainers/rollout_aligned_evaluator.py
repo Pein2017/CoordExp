@@ -1,9 +1,183 @@
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
 import torch
+
+from src.eval.detection import EvalOptions, evaluate_and_save
+
+
+def _write_jsonl(path: Path, rows: List[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
+
+
+def _stage2_eval_output_dir(*, owner: Any, global_step: int) -> Path:
+    output_root = Path(str(getattr(getattr(owner, "args", None), "output_dir", ".")))
+    return output_root / "eval_detection" / f"step_{int(global_step):07d}"
+
+
+def _build_stage2_eval_infer_summary(
+    *,
+    owner: Any,
+    eval_prompt_variant: str | None,
+    eval_rollout_backend: str,
+    eval_vllm_mode: str,
+    eval_detection_score_mode: str,
+    eval_detection_cfg: Mapping[str, Any],
+    sample_count: int,
+    trace_count: int,
+) -> Dict[str, Any]:
+    return {
+        "mode": "stage2_eval_rollout",
+        "backend": {
+            "type": str(eval_rollout_backend),
+            "vllm_mode": str(eval_vllm_mode),
+        },
+        "generation": {
+            "decode_mode": str(owner._cfg("decode_mode", "greedy")),
+            "max_new_tokens": int(owner._cfg("max_new_tokens", 0) or 0),
+        },
+        "infer": {
+            "prompt_variant": str(eval_prompt_variant or ""),
+            "object_field_order": str(owner._object_field_order()),
+            "object_ordering": str(owner._object_ordering()),
+            "limit": int(sample_count),
+        },
+        "eval_detection": {
+            "score_mode": str(eval_detection_score_mode),
+            "metrics": str(eval_detection_cfg.get("metrics", "coco") or "coco"),
+            "trace_count": int(trace_count),
+        },
+        "counters": {
+            "records": int(sample_count),
+            "trace_records": int(trace_count),
+        },
+    }
+
+
+def _build_eval_options(eval_cfg: Mapping[str, Any], *, output_dir: Path) -> EvalOptions:
+    def _coerce_optional_float_list(raw: Any) -> list[float] | None:
+        if raw is None:
+            return None
+        if isinstance(raw, (list, tuple)):
+            out: list[float] = []
+            for value in raw:
+                out.append(float(value))
+            return out
+        return [float(raw)]
+
+    iou_thrs = _coerce_optional_float_list(eval_cfg.get("iou_thrs", None))
+    f1ish_iou_thrs = _coerce_optional_float_list(
+        eval_cfg.get("f1ish_iou_thrs", [0.3, 0.5])
+    )
+    if f1ish_iou_thrs is None:
+        f1ish_iou_thrs = [0.3, 0.5]
+    return EvalOptions(
+        metrics=str(eval_cfg.get("metrics", "coco") or "coco"),
+        strict_parse=bool(eval_cfg.get("strict_parse", True)),
+        use_segm=bool(eval_cfg.get("use_segm", False)),
+        iou_thrs=iou_thrs,
+        f1ish_iou_thrs=[float(x) for x in f1ish_iou_thrs],
+        f1ish_pred_scope=str(eval_cfg.get("f1ish_pred_scope", "annotated") or "annotated"),
+        output_dir=output_dir,
+        overlay=False,
+        overlay_k=0,
+        num_workers=0,
+        semantic_model=str(
+            eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+            or "sentence-transformers/all-MiniLM-L6-v2"
+        ),
+        semantic_threshold=float(eval_cfg.get("semantic_threshold", 0.6) or 0.6),
+        semantic_device=str(eval_cfg.get("semantic_device", "auto") or "auto"),
+        semantic_batch_size=int(eval_cfg.get("semantic_batch_size", 64) or 64),
+        lvis_max_dets=int(eval_cfg.get("lvis_max_dets", 300) or 300),
+    )
+
+
+def _materialize_stage2_eval_artifacts(
+    *,
+    owner: Any,
+    global_step: int,
+    eval_rollout_artifacts_all: List[Dict[str, Any]],
+    eval_prompt_variant: str | None,
+    eval_rollout_backend: str,
+    eval_vllm_mode: str,
+    eval_detection_score_mode: str,
+    eval_detection_cfg: Mapping[str, Any],
+) -> Dict[str, Any]:
+    eval_dir = _stage2_eval_output_dir(owner=owner, global_step=global_step)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+
+    base_rows: List[Dict[str, Any]] = []
+    scored_rows: List[Dict[str, Any]] = []
+    raw_rows: List[Dict[str, Any]] = []
+    trace_rows: List[Dict[str, Any]] = []
+    for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
+        base_record = dict(artifact.get("base_record", {}))
+        scored_record = dict(artifact.get("scored_record", {}))
+        base_record["index"] = int(record_idx)
+        scored_record["index"] = int(record_idx)
+        base_rows.append(base_record)
+        scored_rows.append(scored_record)
+
+        rollout = artifact.get("rollout", {})
+        if isinstance(rollout, Mapping):
+            generated_token_text = rollout.get("generated_token_text")
+            token_logprobs = rollout.get("token_logprobs")
+            if isinstance(generated_token_text, list) and isinstance(token_logprobs, list):
+                trace_rows.append(
+                    {
+                        "line_idx": int(record_idx),
+                        "generated_token_text": list(generated_token_text),
+                        "token_logprobs": [float(x) for x in token_logprobs],
+                    }
+                )
+
+        artifact_row = dict(artifact)
+        artifact_row["index"] = int(record_idx)
+        artifact_row["base_record"] = base_record
+        artifact_row["scored_record"] = scored_record
+        raw_rows.append(artifact_row)
+
+    _write_jsonl(eval_dir / "gt_vs_pred.jsonl", base_rows)
+    _write_jsonl(eval_dir / "gt_vs_pred_scored.jsonl", scored_rows)
+    _write_jsonl(eval_dir / "raw_rollouts.jsonl", raw_rows)
+    if trace_rows:
+        _write_jsonl(eval_dir / "pred_token_trace.jsonl", trace_rows)
+
+    resolved_config_path = (
+        Path(str(getattr(getattr(owner, "args", None), "output_dir", "")))
+        / "resolved_config.json"
+    )
+    if resolved_config_path.is_file():
+        (eval_dir / "resolved_config.path").write_text(
+            str(resolved_config_path.resolve()),
+            encoding="utf-8",
+        )
+
+    infer_summary = _build_stage2_eval_infer_summary(
+        owner=owner,
+        eval_prompt_variant=eval_prompt_variant,
+        eval_rollout_backend=eval_rollout_backend,
+        eval_vllm_mode=eval_vllm_mode,
+        eval_detection_score_mode=eval_detection_score_mode,
+        eval_detection_cfg=eval_detection_cfg,
+        sample_count=len(base_rows),
+        trace_count=len(trace_rows),
+    )
+    (eval_dir / "infer_summary.json").write_text(
+        json.dumps(infer_summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    options = _build_eval_options(eval_detection_cfg, output_dir=eval_dir)
+    return evaluate_and_save(eval_dir / "gt_vs_pred_scored.jsonl", options=options)
 
 
 def finalize_rollout_aligned_evaluation(
@@ -45,6 +219,7 @@ def finalize_rollout_aligned_evaluation(
     trace_fallback_window_active: bool,
     runtime_local_s: float,
     eval_detection_records_local: List[Dict[str, Any]],
+    eval_rollout_artifacts_local: List[Dict[str, Any]],
     do_dump: bool,
     dump_fail_samples: List[Dict[str, Any]],
     dump_other_samples: List[Dict[str, Any]],
@@ -268,11 +443,18 @@ def finalize_rollout_aligned_evaluation(
         eval_records_all: List[Dict[str, Any]] = [
             dict(record) for record in eval_detection_records_local
         ]
+        eval_rollout_artifacts_all: List[Dict[str, Any]] = [
+            dict(record) for record in eval_rollout_artifacts_local
+        ]
         if dist is not None and dist.is_available() and dist.is_initialized():
             eval_records_all = []
+            eval_rollout_artifacts_all = []
             gather_object = getattr(dist, "gather_object", None)
             if callable(gather_object):
                 gathered_records = (
+                    [None for _ in range(int(world_size))] if int(rank) == 0 else None
+                )
+                gathered_rollout_artifacts = (
                     [None for _ in range(int(world_size))] if int(rank) == 0 else None
                 )
                 try:
@@ -287,6 +469,18 @@ def finalize_rollout_aligned_evaluation(
                         gathered_records,
                         0,
                     )
+                try:
+                    gather_object(
+                        list(eval_rollout_artifacts_local),
+                        object_gather_list=gathered_rollout_artifacts,
+                        dst=0,
+                    )
+                except TypeError:
+                    gather_object(
+                        list(eval_rollout_artifacts_local),
+                        gathered_rollout_artifacts,
+                        0,
+                    )
                 if int(rank) == 0 and isinstance(gathered_records, list):
                     for src_rank, part in enumerate(gathered_records):
                         if not isinstance(part, list):
@@ -297,10 +491,25 @@ def finalize_rollout_aligned_evaluation(
                         for rec in part:
                             if isinstance(rec, Mapping):
                                 eval_records_all.append(dict(rec))
+                if int(rank) == 0 and isinstance(gathered_rollout_artifacts, list):
+                    for src_rank, part in enumerate(gathered_rollout_artifacts):
+                        if not isinstance(part, list):
+                            raise TypeError(
+                                "eval_rollout_artifacts gather_object returned non-list part: "
+                                f"src_rank={int(src_rank)} type={type(part).__name__}"
+                            )
+                        for rec in part:
+                            if isinstance(rec, Mapping):
+                                eval_rollout_artifacts_all.append(dict(rec))
             else:
                 gathered_records = [None for _ in range(int(world_size))]
+                gathered_rollout_artifacts = [None for _ in range(int(world_size))]
                 dist.all_gather_object(
                     gathered_records, list(eval_detection_records_local)
+                )
+                dist.all_gather_object(
+                    gathered_rollout_artifacts,
+                    list(eval_rollout_artifacts_local),
                 )
                 for src_rank, part in enumerate(gathered_records):
                     if not isinstance(part, list):
@@ -311,6 +520,15 @@ def finalize_rollout_aligned_evaluation(
                     for rec in part:
                         if isinstance(rec, Mapping):
                             eval_records_all.append(dict(rec))
+                for src_rank, part in enumerate(gathered_rollout_artifacts):
+                    if not isinstance(part, list):
+                        raise TypeError(
+                            "eval_rollout_artifacts all_gather_object returned non-list part: "
+                            f"src_rank={int(src_rank)} type={type(part).__name__}"
+                        )
+                    for rec in part:
+                        if isinstance(rec, Mapping):
+                            eval_rollout_artifacts_all.append(dict(rec))
 
         for record_idx, record in enumerate(eval_records_all):
             record["index"] = int(record_idx)
@@ -326,10 +544,30 @@ def finalize_rollout_aligned_evaluation(
         if int(rank) == 0:
             t_coco0 = time.perf_counter()
             try:
-                coco_metrics, coco_counters = compute_eval_detection_coco_metrics_fn(
-                    pred_records=eval_records_all,
-                    eval_cfg=eval_detection_cfg,
+                output_dir_raw = str(
+                    getattr(getattr(owner, "args", None), "output_dir", "") or ""
+                ).strip()
+                should_materialize_artifacts = bool(
+                    eval_detection_cfg.get("materialize_artifacts", True)
                 )
+                if output_dir_raw and should_materialize_artifacts:
+                    eval_summary = _materialize_stage2_eval_artifacts(
+                        owner=owner,
+                        global_step=int(gs),
+                        eval_rollout_artifacts_all=eval_rollout_artifacts_all,
+                        eval_prompt_variant=eval_prompt_variant,
+                        eval_rollout_backend=eval_rollout_backend,
+                        eval_vllm_mode=eval_vllm_mode,
+                        eval_detection_score_mode=eval_detection_score_mode,
+                        eval_detection_cfg=eval_detection_cfg,
+                    )
+                    coco_metrics = eval_summary.get("metrics", {})
+                    coco_counters = eval_summary.get("counters", {})
+                else:
+                    coco_metrics, coco_counters = compute_eval_detection_coco_metrics_fn(
+                        pred_records=eval_records_all,
+                        eval_cfg=eval_detection_cfg,
+                    )
                 eval_det_payload["ok"] = 1.0
                 eval_det_payload["metrics"] = {
                     str(k): float(v) for k, v in coco_metrics.items()

@@ -198,6 +198,15 @@ What to expect:
 - A-only runs finish without Channel-B rollout metric families such as `rollout/*`
 - mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`
+- eval-enabled runs also materialize offline-compatible eval artifacts under
+  `eval_detection/step_<global_step>/` when
+  `rollout_matching.eval_detection.materialize_artifacts: true`
+  this is the default authored behavior in the base Stage-2 config
+  - expect `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
+    `metrics.json`, `per_image.json`, and evaluator sidecars for that window
+  - Stage-2 additionally writes `raw_rollouts.jsonl` so rollout text, token
+    traces, parsing diagnostics, scores, and matching metadata remain available
+    after training finishes
 - center-size bbox experiments keep the same run-artifact contract; the proof
   that a run used `parameterization: center_size` lives in `resolved_config.json`
   rather than a new artifact family

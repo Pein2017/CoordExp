@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import builtins
+import json
 import re
 import sys
 import threading
 import types
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 import torch
@@ -167,6 +169,7 @@ def test_finalize_eval_uses_rank0_only_gather_path_for_detection_payloads(
         trace_fallback_window_active=False,
         runtime_local_s=0.25,
         eval_detection_records_local=[{"pred": [], "gt": []}],
+        eval_rollout_artifacts_local=[],
         do_dump=False,
         dump_fail_samples=[],
         dump_other_samples=[],
@@ -185,7 +188,7 @@ def test_finalize_eval_uses_rank0_only_gather_path_for_detection_payloads(
         stage2_eval_metric_key_fn=stage2_eval_metric_key,
     )
 
-    assert gather_calls == [None]
+    assert gather_calls == [None, None]
     assert metrics["eval/detection/mAP"] == pytest.approx(0.25)
     assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
 
@@ -1803,6 +1806,7 @@ def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
 
 def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
@@ -1820,7 +1824,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -1830,6 +1834,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         "object_ordering": "sorted",
         "eval_detection": {
             "enabled": True,
+            "materialize_artifacts": True,
             "metrics": "coco",
             "score_mode": "constant",
             "constant_score": 1.0,
@@ -1914,6 +1919,26 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
             {"empty_pred": 0},
         ),
     )
+    materialized_pred_rows: list[dict[str, object]] = []
+
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        rows = [
+            json.loads(line)
+            for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        materialized_pred_rows[:] = rows
+        assert options.output_dir == (
+            tmp_path / "eval_detection" / "step_0000011"
+        )
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.123}}
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
+    )
 
     logged_metrics: dict[str, float] = {}
     trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
@@ -1930,8 +1955,39 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert all(not k.startswith("eval/detection/bbox_") for k in metrics)
     assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
+    eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    base_rows = [
+        json.loads(line)
+        for line in (eval_dir / "gt_vs_pred.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    raw_rows = [
+        json.loads(line)
+        for line in (eval_dir / "raw_rollouts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    infer_summary = json.loads(
+        (eval_dir / "infer_summary.json").read_text(encoding="utf-8")
+    )
+    assert materialized_pred_rows[0]["pred"][0]["score"] == pytest.approx(1.0)
+    assert base_rows[0]["image"] == "img.jpg"
+    assert base_rows[0]["mode"] == "text"
+    assert base_rows[0]["coord_mode"] == "pixel"
+    assert base_rows[0]["raw_output_json"]["objects"][0]["bbox_2d"] == [0, 0, 10, 10]
+    assert base_rows[0]["raw_output_json"]["objects"][0]["desc"] == "cat"
+    assert base_rows[0]["raw_special_tokens"] == []
+    assert base_rows[0]["raw_ends_with_im_end"] is False
+    assert base_rows[0]["errors"] == []
+    assert raw_rows[0]["rollout"]["response_token_ids"] == [100]
+    assert raw_rows[0]["parse"]["valid_objects"][0]["points_norm1000"] == [0, 0, 10, 10]
+    assert infer_summary["backend"]["type"] == "hf"
+    assert infer_summary["infer"]["prompt_variant"] == "coco_80"
 
-def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> None:
+
+def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
 
     class _DummyEvalModel:
@@ -1948,7 +2004,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -1958,6 +2014,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
         "object_ordering": "sorted",
         "eval_detection": {
             "enabled": True,
+            "materialize_artifacts": True,
             "metrics": "coco",
             "score_mode": "confidence_postop",
             # These should be overridden by confidence_postop provenance.
@@ -2067,6 +2124,21 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
         "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
         _fake_coco,
     )
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        rows = [
+            json.loads(line)
+            for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert rows[0]["pred_score_source"] == "confidence_postop"
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.123}}
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
+    )
 
     logged_metrics: dict[str, float] = {}
     trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
@@ -2080,6 +2152,163 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(monkeypatch) -> 
     assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
     assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
     assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    trace_rows = [
+        json.loads(line)
+        for line in (eval_dir / "pred_token_trace.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    raw_rows = [
+        json.loads(line)
+        for line in (eval_dir / "raw_rollouts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert trace_rows[0]["line_idx"] == 0
+    assert trace_rows[0]["generated_token_text"] == ["tok"]
+    assert trace_rows[0]["token_logprobs"] == [0.0]
+    assert raw_rows[0]["confidence_objects"][0]["score"] == pytest.approx(0.9)
+
+
+def test_evaluate_skips_eval_artifact_materialization_when_disabled(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "materialize_artifacts": False,
+            "metrics": "coco",
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._effective_rollout_backend = lambda context="train": "hf"
+
+    sample = {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    )
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    materialize_called = {"value": False}
+
+    def _fail_if_materialized(*args, **kwargs):
+        materialize_called["value"] = True
+        raise AssertionError("evaluate_and_save should not run when materialize_artifacts=false")
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fail_if_materialized,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        lambda **_kwargs: (
+            {"bbox_AP": 0.123, "bbox_AP50": 0.456},
+            {"empty_pred": 0},
+        ),
+    )
+
+    logged_metrics: dict[str, float] = {}
+    trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    metrics = trainer.evaluate()
+
+    assert materialize_called["value"] is False
+    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(

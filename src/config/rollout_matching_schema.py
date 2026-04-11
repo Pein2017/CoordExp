@@ -122,6 +122,9 @@ class RolloutEvalConfidencePostOpConfig:
 class RolloutEvalDetectionConfig:
     # Enable official detection AP during trainer eval_step.
     enabled: bool = True
+    # Persist offline-compatible eval-step artifacts under
+    # training.output_dir/eval_detection/step_<global_step>/.
+    materialize_artifacts: bool = True
     metrics: str = (
         "coco"  # coco | lvis | both (both includes evaluator f1-ish in addition to official AP)
     )

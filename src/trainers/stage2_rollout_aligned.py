@@ -51,6 +51,10 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.common.geometry import bbox_from_points, flatten_points
+from src.common.prediction_parsing import (
+    extract_special_tokens,
+    load_prediction_dict,
+)
 from src.config.prompts import (
     build_dense_system_prompt,
     build_dense_user_prompt,
@@ -507,81 +511,33 @@ def _build_eval_detection_record(
     pred_score_version: int,
     score_mode: str,
     constant_score: float,
+    raw_text: str | None,
+    error_codes: Sequence[str],
+    error_entries: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
-    images_raw = sample.get("images")
-    images: List[str] = []
-    if isinstance(images_raw, list):
-        for v in images_raw:
-            if isinstance(v, str) and v.strip():
-                images = [str(v)]
-                break
-    if not images:
-        image_one = sample.get("image")
-        if isinstance(image_one, str) and image_one.strip():
-            images = [str(image_one)]
-    if not images:
-        images = [f"image_{int(record_index)}.jpg"]
+    out = _build_eval_detection_record_confidence_postop_input(
+        sample=sample,
+        gts=gts,
+        preds=preds,
+        pred_meta=pred_meta,
+        object_field_order=object_field_order,
+        record_index=record_index,
+        raw_text=raw_text,
+        error_codes=error_codes,
+        error_entries=error_entries,
+    )
 
-    width = sample.get("width")
-    height = sample.get("height")
-    try:
-        width = int(width) if width is not None else None
-    except (TypeError, ValueError):
-        width = None
-    try:
-        height = int(height) if height is not None else None
-    except (TypeError, ValueError):
-        height = None
-    if width is None:
-        width = 1000
-    if height is None:
-        height = 1000
-
-    def _normalize_geometry_key(value: Any) -> str:
-        key = str(value or "").strip().lower()
-        if key == "bbox":
-            return "bbox_2d"
-        return key
-
-    gt_payload: List[Dict[str, Any]] = []
-    for obj in gts:
-        gt_payload.append(
-            build_object_payload(
-                desc=str(getattr(obj, "desc", "") or ""),
-                geometry_key=_normalize_geometry_key(getattr(obj, "geom_type", "")),
-                geometry_value=[int(x) for x in obj.points_norm1000],
-                object_field_order=object_field_order,
-            )
-        )
-
-    pred_payload: List[Dict[str, Any]] = []
     score_mode_norm = str(score_mode or "constant").strip().lower()
     score_const = float(constant_score)
-    for idx, pobj in enumerate(preds):
-        desc = ""
-        if idx < len(pred_meta):
-            desc = str(getattr(pred_meta[idx], "desc", "") or "").strip()
-        payload = build_object_payload(
-            desc=desc,
-            geometry_key=_normalize_geometry_key(getattr(pobj, "geom_type", "")),
-            geometry_value=[int(x) for x in pobj.points_norm1000],
-            object_field_order=object_field_order,
-        )
+    pred_payload: List[Dict[str, Any]] = []
+    for payload in list(out.get("pred", [])):
+        payload = dict(payload)
         if score_mode_norm == "constant":
             payload["score"] = float(score_const)
         pred_payload.append(payload)
-
-    out: Dict[str, Any] = {
-        "index": int(record_index),
-        "coord_mode": "norm1000",
-        "images": images,
-        "gt": gt_payload,
-        "pred": pred_payload,
-        "pred_score_source": str(pred_score_source),
-        "pred_score_version": int(pred_score_version),
-        "width": int(width),
-        "height": int(height),
-    }
+    out["pred"] = pred_payload
+    out["pred_score_source"] = str(pred_score_source)
+    out["pred_score_version"] = int(pred_score_version)
     return out
 
 
@@ -593,8 +549,11 @@ def _build_eval_detection_record_confidence_postop_input(
     pred_meta: Sequence[ParsedPredObject],
     object_field_order: Literal["desc_first", "geometry_first"],
     record_index: int,
+    raw_text: str | None,
+    error_codes: Sequence[str],
+    error_entries: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
-    """Build an eval-step record compatible with confidence_postop.
+    """Build an eval-step record compatible with confidence_postop and offline infer.
 
     The confidence scorer expects:
       - record["pred"][*] in canonical {type, points, desc} pixel-space shape
@@ -602,7 +561,7 @@ def _build_eval_detection_record_confidence_postop_input(
         so we can recover the exact coordinate token sequence.
 
     This mirrors the offline `gt_vs_pred.jsonl` contract closely enough for
-    in-eval scoring without writing intermediate artifacts.
+    in-eval scoring and persisted eval-step artifacts.
     """
 
     from src.common.geometry import denorm_and_clamp
@@ -695,8 +654,28 @@ def _build_eval_detection_record_confidence_postop_input(
         except Exception:
             raw_objects.append({"type": gtype, "points": pts_norm, "desc": desc})
 
+    raw_text_value = str(raw_text or "")
+    raw_output_json = load_prediction_dict(raw_text_value)
+    if raw_output_json is None:
+        raw_output_json = {"objects": raw_objects}
+
+    errors_payload = [str(code) for code in list(error_codes)]
+    error_entries_payload: List[Dict[str, Any]] = []
+    for entry in error_entries:
+        if not isinstance(entry, Mapping):
+            continue
+        error_entries_payload.append(
+            {
+                "code": str(entry.get("code", "") or ""),
+                "message": str(entry.get("message", "") or ""),
+                "stage": str(entry.get("stage", "") or ""),
+            }
+        )
+
+    image_value = images[0] if images else f"image_{int(record_index)}.jpg"
     out: Dict[str, Any] = {
         "index": int(record_index),
+        "image": image_value,
         "mode": "text",
         "coord_mode": "pixel",
         "images": images,
@@ -704,8 +683,14 @@ def _build_eval_detection_record_confidence_postop_input(
         "pred": pred_payload,
         "width": int(width),
         "height": int(height),
-        "raw_output_json": {"objects": raw_objects},
-        "errors": [],
+        "raw_output_json": raw_output_json,
+        "raw_special_tokens": extract_special_tokens(
+            raw_text_value,
+            preserve_duplicates=True,
+        ),
+        "raw_ends_with_im_end": raw_text_value.endswith(_IM_END),
+        "errors": errors_payload,
+        "error_entries": error_entries_payload,
     }
     if sample.get("image_id") is not None:
         out["image_id"] = sample.get("image_id")
@@ -7123,6 +7108,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         n_steps = 0.0
         eval_detection_records_local: List[Dict[str, Any]] = []
+        eval_rollout_artifacts_local: List[Dict[str, Any]] = []
         eval_record_counter_local = 0
         trace_fallback_count_local = 0.0
         vllm_decode_error_count_local = 0.0
@@ -7280,14 +7266,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if has_token_trace:
                         (
                             resp_ids,
-                            _resp_text,
+                            raw_resp_text,
                             _decode_mode,
                             _prompt_ids,
                             token_logprobs,
                             generated_token_text,
                         ) = rollout
                     else:
-                        resp_ids, _resp_text, _decode_mode, _prompt_ids = rollout
+                        resp_ids, raw_resp_text, _decode_mode, _prompt_ids = rollout
                         token_logprobs = None
                         generated_token_text = None
                     n_samples += 1.0
@@ -7335,6 +7321,50 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         )
 
                     gts = _extract_gt_objects(sample)
+                    eval_error_codes: List[str] = []
+                    eval_error_entries: List[Dict[str, str]] = []
+                    if bool(getattr(parse, "invalid_rollout", False)):
+                        eval_error_codes.append("invalid_rollout")
+                        eval_error_entries.append(
+                            {
+                                "code": "invalid_rollout",
+                                "message": "Rollout parsing marked this sample invalid.",
+                                "stage": "eval_rollout_parse",
+                            }
+                        )
+                    if int(getattr(parse, "dropped_invalid", 0) or 0) > 0:
+                        eval_error_codes.append("dropped_invalid_objects")
+                        eval_error_entries.append(
+                            {
+                                "code": "dropped_invalid_objects",
+                                "message": (
+                                    "One or more predicted objects were dropped as invalid "
+                                    "during rollout parsing."
+                                ),
+                                "stage": "eval_rollout_parse",
+                            }
+                        )
+                    if int(getattr(parse, "dropped_ambiguous", 0) or 0) > 0:
+                        eval_error_codes.append("dropped_ambiguous_objects")
+                        eval_error_entries.append(
+                            {
+                                "code": "dropped_ambiguous_objects",
+                                "message": (
+                                    "One or more predicted objects were dropped as ambiguous "
+                                    "during rollout parsing."
+                                ),
+                                "stage": "eval_rollout_parse",
+                            }
+                        )
+                    if bool(getattr(parse, "truncated", False)):
+                        eval_error_codes.append("truncated_rollout")
+                        eval_error_entries.append(
+                            {
+                                "code": "truncated_rollout",
+                                "message": "Rollout output was truncated before full completion.",
+                                "stage": "eval_rollout_parse",
+                            }
+                        )
                     gt_total += float(len(gts))
                     pred_total += float(len(preds))
                     if len(preds) > 0:
@@ -7363,11 +7393,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if eval_detection_enabled:
                         eval_record_index = int(eval_record_counter_local)
                         eval_record_counter_local += 1
+                        confidence_objects_payload: List[Dict[str, Any]] = []
+                        confidence_record_appended = False
+                        trace_invalid_reason: Optional[str] = None
+                        trace_fallback_counted_this_sample = False
+                        base_eval_record = _build_eval_detection_record_confidence_postop_input(
+                            sample=sample,
+                            gts=gts,
+                            preds=preds,
+                            pred_meta=pred_meta,
+                            object_field_order=object_field_order,
+                            record_index=eval_record_index,
+                            raw_text=raw_resp_text,
+                            error_codes=eval_error_codes,
+                            error_entries=eval_error_entries,
+                        )
+                        scored_eval_record: Dict[str, Any] | None = None
 
                         if eval_detection_use_confidence_postop:
                             trace_len = int(len(parse.response_token_ids))
-                            trace_invalid_reason: Optional[str] = None
-                            trace_fallback_counted_this_sample = False
                             if confidence_postop_opts is None:
                                 trace_invalid_reason = (
                                     "confidence_postop_opts missing for eval-step scoring"
@@ -7422,27 +7466,21 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                             float(x) for x in token_logprobs[:trace_len]
                                         ],
                                     )
-                                    record = _build_eval_detection_record_confidence_postop_input(
-                                        sample=sample,
-                                        gts=gts,
-                                        preds=preds,
-                                        pred_meta=pred_meta,
-                                        object_field_order=object_field_order,
-                                        record_index=eval_record_index,
-                                    )
                                     confidence_objects = _compute_sample_confidence_objects(
                                         line_idx=int(eval_record_index),
-                                        record=record,
+                                        record=base_eval_record,
                                         trace=trace,
                                         options=confidence_postop_opts,
                                     )
+                                    confidence_objects_payload = [
+                                        dict(obj) for obj in confidence_objects
+                                    ]
                                     scored_record = _build_scored_record(
-                                        record=record,
+                                        record=base_eval_record,
                                         confidence_objects=confidence_objects,
                                     )
-                                    # Shrink gather payload (scores are all we need for COCO eval).
-                                    scored_record.pop("raw_output_json", None)
-                                    eval_detection_records_local.append(scored_record)
+                                    scored_eval_record = dict(scored_record)
+                                    eval_detection_records_local.append(scored_eval_record)
                                     confidence_record_appended = True
                                 except Exception as exc:
                                     trace_fallback_window_active = True
@@ -7464,20 +7502,22 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                     and not trace_fallback_counted_this_sample
                                 ):
                                     trace_fallback_count_local += 1.0
-                                eval_detection_records_local.append(
-                                    _build_eval_detection_record(
-                                        sample=sample,
-                                        gts=gts,
-                                        preds=preds,
-                                        pred_meta=pred_meta,
-                                        object_field_order=object_field_order,
-                                        record_index=eval_record_index,
-                                        pred_score_source="eval_rollout_constant",
-                                        pred_score_version=2,
-                                        score_mode="constant",
-                                        constant_score=eval_detection_const_score,
-                                    )
+                                scored_eval_record = _build_eval_detection_record(
+                                    sample=sample,
+                                    gts=gts,
+                                    preds=preds,
+                                    pred_meta=pred_meta,
+                                    object_field_order=object_field_order,
+                                    record_index=eval_record_index,
+                                    pred_score_source="eval_rollout_constant",
+                                    pred_score_version=2,
+                                    score_mode="constant",
+                                    constant_score=eval_detection_const_score,
+                                    raw_text=raw_resp_text,
+                                    error_codes=eval_error_codes,
+                                    error_entries=eval_error_entries,
                                 )
+                                eval_detection_records_local.append(scored_eval_record)
                         else:
                             if eval_detection_score_mode != "constant":
                                 raise ValueError(
@@ -7485,19 +7525,114 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                                     "or 'confidence_postop'"
                                 )
 
-                            eval_detection_records_local.append(
-                                _build_eval_detection_record(
-                                    sample=sample,
-                                    gts=gts,
-                                    preds=preds,
-                                    pred_meta=pred_meta,
-                                    object_field_order=object_field_order,
-                                    record_index=eval_record_index,
-                                    pred_score_source=eval_detection_score_source,
-                                    pred_score_version=eval_detection_score_version,
-                                    score_mode=eval_detection_score_mode,
-                                    constant_score=eval_detection_const_score,
-                                )
+                            scored_eval_record = _build_eval_detection_record(
+                                sample=sample,
+                                gts=gts,
+                                preds=preds,
+                                pred_meta=pred_meta,
+                                object_field_order=object_field_order,
+                                record_index=eval_record_index,
+                                pred_score_source=eval_detection_score_source,
+                                pred_score_version=eval_detection_score_version,
+                                score_mode=eval_detection_score_mode,
+                                constant_score=eval_detection_const_score,
+                                raw_text=raw_resp_text,
+                                error_codes=eval_error_codes,
+                                error_entries=eval_error_entries,
+                            )
+                            eval_detection_records_local.append(scored_eval_record)
+
+                        if scored_eval_record is not None:
+                            eval_rollout_artifacts_local.append(
+                                {
+                                    "index": int(eval_record_index),
+                                    "sample_id": sample.get("sample_id"),
+                                    "base_idx": sample.get("base_idx"),
+                                    "image": base_eval_record.get("image"),
+                                    "images": list(base_eval_record.get("images", [])),
+                                    "width": base_eval_record.get("width"),
+                                    "height": base_eval_record.get("height"),
+                                    "image_id": sample.get("image_id"),
+                                    "metadata": (
+                                        dict(sample.get("metadata"))
+                                        if isinstance(sample.get("metadata"), Mapping)
+                                        else None
+                                    ),
+                                    "base_record": dict(base_eval_record),
+                                    "scored_record": dict(scored_eval_record),
+                                    "rollout": {
+                                        "decode_mode": str(_decode_mode),
+                                        "response_token_ids": [int(x) for x in list(resp_ids)],
+                                        "prompt_token_ids": [
+                                            int(x) for x in list(_prompt_ids)
+                                        ],
+                                        "response_text": str(raw_resp_text or ""),
+                                        "generated_token_text": (
+                                            list(generated_token_text)
+                                            if generated_token_text is not None
+                                            else None
+                                        ),
+                                        "token_logprobs": (
+                                            [float(x) for x in list(token_logprobs)]
+                                            if token_logprobs is not None
+                                            else None
+                                        ),
+                                        "trace_invalid_reason": trace_invalid_reason,
+                                    },
+                                    "parse": {
+                                        "invalid_rollout": bool(
+                                            getattr(parse, "invalid_rollout", False)
+                                        ),
+                                        "dropped_invalid": int(
+                                            getattr(parse, "dropped_invalid", 0) or 0
+                                        ),
+                                        "dropped_ambiguous": int(
+                                            getattr(parse, "dropped_ambiguous", 0) or 0
+                                        ),
+                                        "truncated": bool(
+                                            getattr(parse, "truncated", False)
+                                        ),
+                                        "response_token_ids": [
+                                            int(x)
+                                            for x in list(
+                                                getattr(parse, "response_token_ids", [])
+                                            )
+                                        ],
+                                        "response_text": str(
+                                            getattr(parse, "response_text", "") or ""
+                                        ),
+                                        "prefix_text": str(
+                                            getattr(parse, "prefix_text", "") or ""
+                                        ),
+                                        "valid_objects": list(pred_objs_dump),
+                                        "errors": list(eval_error_codes),
+                                        "error_entries": list(eval_error_entries),
+                                    },
+                                    "match": {
+                                        "matched_pairs": [
+                                            [int(a), int(b)]
+                                            for a, b in list(match.matched_pairs)
+                                        ],
+                                        "fp_pred_indices": [
+                                            int(x) for x in list(match.fp_pred_indices)
+                                        ],
+                                        "fn_gt_indices": [
+                                            int(x) for x in list(match.fn_gt_indices)
+                                        ],
+                                        "gating_rejections": int(
+                                            match.gating_rejections
+                                        ),
+                                        "matched_maskiou_sum": float(
+                                            getattr(match, "matched_maskiou_sum", 0.0)
+                                        ),
+                                        "matched_maskiou_count": int(
+                                            getattr(match, "matched_maskiou_count", 0)
+                                        ),
+                                    },
+                                    "confidence_objects": list(
+                                        confidence_objects_payload
+                                    ),
+                                }
                             )
 
                     if do_dump and (
@@ -7693,6 +7828,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             trace_fallback_window_active=bool(trace_fallback_window_active),
             runtime_local_s=float(time.perf_counter() - t0),
             eval_detection_records_local=list(eval_detection_records_local),
+            eval_rollout_artifacts_local=list(eval_rollout_artifacts_local),
             do_dump=bool(do_dump),
             dump_fail_samples=list(dump_fail_samples),
             dump_other_samples=list(dump_other_samples),

@@ -192,6 +192,26 @@ artifacts into `training.output_dir` before training starts:
   - Writes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
     `metrics.json`, `per_image.json`, and standard evaluator sidecars for that
     eval window.
+- `eval_detection/step_<global_step>/` during Stage-2 rollout-aware eval
+  - Stage-2 writes this directory when
+    `rollout_matching.eval_detection.materialize_artifacts: true`
+    (default).
+  - The intent is parity with the offline infer/eval pipeline so each eval
+    window can be inspected with the same artifact readers used for standalone
+    inference.
+  - Writes:
+    - `gt_vs_pred.jsonl`
+    - `gt_vs_pred_scored.jsonl`
+    - `infer_summary.json`
+    - `metrics.json`
+    - `per_image.json`
+    - standard evaluator sidecars such as `coco_gt.json`, `coco_preds.json`,
+      `per_class.csv`, `vis_resources/gt_vs_pred.jsonl`, and `matches*.jsonl`
+      when requested by the evaluator mode
+    - `raw_rollouts.jsonl` with per-sample rollout text, token IDs, scoring
+      metadata, parsing diagnostics, and match details
+    - `pred_token_trace.jsonl` when traced rollout outputs are available for the
+      eval window (for example confidence-postop-backed scoring)
 
 Notes:
 
