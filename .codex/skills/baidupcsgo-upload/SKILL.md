@@ -21,7 +21,7 @@ Prefer this over `bypy` when:
   `--norapid -p 1 -l 1 --retry 8`
 - Upload and download both support parallelism. Prefer raising concurrent file count first, then per-file threads.
 - For upload, `--norapid` is the safest default, but BaiduPCS-Go notes that disabling rapid upload effectively limits single-file threading to one thread.
-- For long uploads, run inside `tmux`.
+- For sync jobs by default, run inside `tmux` so transfers survive shell disconnects and can be reattached safely.
 
 ## 1. Install the binary
 
@@ -150,6 +150,8 @@ For downloads, the same pattern applies:
 tmux new -s baidupcs_download
 bash scripts/download_dir.sh /remote/dir /abs/local/parent /abs/path/to/BaiduPCS-Go
 ```
+
+Treat `tmux` as the default launch mode for any long-running transfer. If a command may take more than a few seconds or involve a multi-file sync, start it in a dedicated session rather than the foreground.
 
 Detach with `Ctrl-b d`.
 
