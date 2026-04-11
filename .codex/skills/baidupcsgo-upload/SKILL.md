@@ -126,6 +126,9 @@ The script:
 - sets `BaiduPCS-Go`'s save directory to the provided local parent directory
 - downloads with `--fullpath` so the remote folder structure is preserved
 - defaults to parallel download settings `--mode locate -p 4 -l 2 --retry 8 --ow --mtime`
+- may still create an account-prefixed staging directory such as `1592545883_Pien1722/output/...` under the chosen local parent before the final files are merged into the repo tree
+
+This account prefix is a BaiduPCS-Go download behavior, not a transfer failure. Treat it as the staging area for the current login session.
 
 Example with higher download parallelism:
 
@@ -178,6 +181,7 @@ For a large download, validate:
 - the expected top-level folder exists under the local parent directory
 - shard counts and file sizes match `ls` output from the remote side
 - loader-critical files such as tokenizer/config/index files are present
+- if an account-prefixed staging tree was used, confirm the contents were merged into the intended repo path under `output/`
 
 ## 8. Failure handling
 
