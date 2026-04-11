@@ -75,6 +75,62 @@ class _ChannelBSupervisionTargets:
     duplicate_burst_unlikelihood_skipped_no_divergence: int
 
 
+def _normalize_channel_b_insertion_order(insertion_order: str) -> str:
+    value = str(insertion_order or "tail_append").strip().lower()
+    if value not in {"tail_append", "sorted"}:
+        raise ValueError(
+            "stage2_ab.channel_b.insertion_order must be one of "
+            "{'tail_append', 'sorted'}"
+        )
+    return value
+
+
+def _gt_object_topleft_anchor(obj: GTObject) -> Tuple[int, int]:
+    points = [int(v) for v in obj.points_norm1000]
+    if str(obj.geom_type) == "bbox_2d" and len(points) >= 2:
+        return (int(points[1]), int(points[0]))
+
+    xs = points[0::2]
+    ys = points[1::2]
+    if not xs or not ys:
+        return (10**9, 10**9)
+    return (int(min(ys)), int(min(xs)))
+
+
+def _sort_gt_objects_by_topleft(objects: Sequence[GTObject]) -> List[GTObject]:
+    return sorted(list(objects), key=_gt_object_topleft_anchor)
+
+
+def _sorted_duplicate_bursts_by_boundary(
+    *,
+    sorted_objects: Sequence[GTObject],
+    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
+) -> Dict[int, List[GTObject]]:
+    remapped: Dict[int, List[GTObject]] = {}
+    sorted_base = list(sorted_objects)
+    for duplicates in duplicate_bursts_by_boundary.values():
+        for dup in duplicates:
+            annotated = [(obj, False) for obj in sorted_base] + [(dup, True)]
+            sorted_annotated = sorted(
+                annotated,
+                key=lambda item: _gt_object_topleft_anchor(item[0]),
+            )
+            boundary = next(
+                (
+                    int(idx)
+                    for idx, (_obj, is_dup) in enumerate(sorted_annotated)
+                    if bool(is_dup)
+                ),
+                None,
+            )
+            if boundary is None:
+                raise ValueError(
+                    "failed to place duplicate burst object into sorted Channel-B sequence"
+                )
+            remapped.setdefault(int(boundary), []).append(dup)
+    return remapped
+
+
 def _shift_bbox_groups_with_weights(
     *,
     groups: Sequence[Mapping[str, Any]],
@@ -558,7 +614,9 @@ def _build_channel_b_supervision_targets(
     bbox_groups_from_token_ids_fn: Any,
     matched_prefix_structure_positions_fn: Any,
     serialize_append_fragment_fn: Any,
+    insertion_order: str = "tail_append",
 ) -> _ChannelBSupervisionTargets:
+    insertion_order_resolved = _normalize_channel_b_insertion_order(insertion_order)
     prefix_bbox_groups: List[Dict[str, Any]] = []
     fn_bbox_groups: List[Dict[str, Any]] = []
     prefix_pos: List[int] = []
@@ -736,74 +794,329 @@ def _build_channel_b_supervision_targets(
         for gt_i in fn_gt_indices_final
     ]
     fn_count_for_meta = int(len(fn_objs))
-    full_adjacent_prev_bins_by_index, full_adjacent_same_desc_by_index = (
-        _adjacent_repulsion_meta_for_objects(
-            list(triage.kept_anchor_objects) + list(fn_objs)
+    if insertion_order_resolved == "sorted":
+        prefix_bbox_groups = []
+        fn_bbox_groups = []
+        prefix_pos = []
+        prefix_bins = []
+        sorted_entries: List[Dict[str, Any]] = []
+        for kept_idx, obj in enumerate(triage.kept_anchor_objects):
+            sorted_entries.append(
+                {
+                    "kind": "anchor",
+                    "index": int(kept_idx),
+                    "obj": obj,
+                }
+            )
+        for fn_idx, (obj, obj_weight) in enumerate(zip(fn_objs, fn_object_weights)):
+            sorted_entries.append(
+                {
+                    "kind": "fn",
+                    "index": int(fn_idx),
+                    "obj": obj,
+                    "weight": float(obj_weight),
+                }
+            )
+        sorted_entries = sorted(
+            sorted_entries,
+            key=lambda entry: _gt_object_topleft_anchor(entry["obj"]),
         )
-    )
+        sorted_objects = [entry["obj"] for entry in sorted_entries]
+        clean_prefix = _build_canonical_prefix_data(
+            tokenizer=tokenizer,
+            objects=sorted_objects,
+            object_field_order=object_field_order,
+        )
+        prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
+        prefix_adjacent_prev_bins_by_index, prefix_adjacent_same_desc_by_index = (
+            _adjacent_repulsion_meta_for_objects(sorted_objects)
+        )
+        prefix_coord_positions_all = [
+            int(i)
+            for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
+            if int(tok_id) in coord_id_set
+        ]
+        expected_prefix_coord_slots = int(len(sorted_objects) * 4)
+        if len(prefix_coord_positions_all) != expected_prefix_coord_slots:
+            raise ValueError(
+                "sorted Channel-B canonical serialization produced an unexpected number "
+                "of coord tokens: "
+                f"got={len(prefix_coord_positions_all)} expected={expected_prefix_coord_slots}"
+            )
+        kept_idx_to_sorted_idx: Dict[int, int] = {}
+        fn_idx_to_sorted_idx: Dict[int, int] = {}
+        for sorted_idx, entry in enumerate(sorted_entries):
+            kind = str(entry["kind"])
+            if kind == "anchor":
+                kept_idx_to_sorted_idx[int(entry["index"])] = int(sorted_idx)
+                continue
+            if kind == "fn":
+                fn_idx_to_sorted_idx[int(entry["index"])] = int(sorted_idx)
 
-    append_text = serialize_append_fragment_fn(
-        fn_objects=fn_objs,
-        prefix_text=clean_prefix.prefix_text,
-        object_field_order=object_field_order,
-    )
-    append_ids = [
-        int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
-    ]
+        remapped_matched_sorted_indices: List[int] = []
+        for pred_i, gt_i in sorted(match.matched_pairs, key=lambda item: int(item[0])):
+            if pred_i < 0 or pred_i >= len(triage.kept_anchor_objects) + len(triage.dead_anchor_indices):
+                continue
+            if gt_i < 0 or gt_i >= len(gts):
+                continue
+            if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+                continue
 
-    tail_desc_pos, tail_desc_weights = _desc_tail_positions_and_weights(
-        tokenizer=tokenizer,
-        token_ids=append_ids,
-        object_weights=fn_object_weights,
-    )
+            matched_gt_for_supervision.add(int(gt_i))
+            kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+            sorted_idx = kept_idx_to_sorted_idx.get(int(kept_pred_i))
+            if sorted_idx is None:
+                continue
+            remapped_matched_sorted_indices.append(int(sorted_idx))
+            coord_group = prefix_coord_positions_all[
+                int(sorted_idx) * 4 : int(sorted_idx + 1) * 4
+            ]
+            if len(coord_group) != 4:
+                raise ValueError(
+                    "sorted Channel-B expected exactly four coord slots per bbox object"
+                )
+            gt_bins = list(gts[gt_i].points_norm1000)
+            prefix_bbox_groups.append(
+                {
+                    "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                    "gt_bins": gt_bins,
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
+                            ),
+                        }
+                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
+                        else {}
+                    ),
+                }
+            )
+            for local_idx, tbin in zip(coord_group, gt_bins):
+                prefix_pos.append(int(local_idx))
+                prefix_bins.append(int(tbin))
 
-    y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
-    clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
-    (
-        duplicate_burst_unlikelihood_targets,
-        duplicate_burst_unlikelihood_boundary_count,
-        duplicate_burst_unlikelihood_skipped_no_divergence,
-    ) = _build_duplicate_burst_unlikelihood_targets(
-        tokenizer=tokenizer,
-        y_train_ids=y_train_ids,
-        clean_target_text=clean_target_text,
-        accepted_objects_clean=triage.kept_anchor_objects,
-        fn_objects=fn_objs,
-        duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
-        boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
-        object_field_order=object_field_order,
-    )
+        for pred_i in triage.pseudo_positive_anchor_indices:
+            if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+                continue
+            kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+            sorted_idx = kept_idx_to_sorted_idx.get(int(kept_pred_i))
+            if sorted_idx is None:
+                continue
+            coord_group = prefix_coord_positions_all[
+                int(sorted_idx) * 4 : int(sorted_idx + 1) * 4
+            ]
+            if len(coord_group) != 4:
+                raise ValueError(
+                    "sorted Channel-B expected exactly four coord slots per bbox object"
+                )
+            gt_bins = list(triage.kept_anchor_objects[int(kept_pred_i)].points_norm1000)
+            prefix_bbox_groups.append(
+                {
+                    "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                    "gt_bins": gt_bins,
+                    "weight": float(pseudo_positive_coord_weight),
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
+                            ),
+                        }
+                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
+                        else {}
+                    ),
+                }
+            )
+            for local_idx, tbin in zip(coord_group, gt_bins):
+                prefix_pos.append(int(local_idx))
+                prefix_bins.append(int(tbin))
 
-    rel_groups = bbox_groups_from_token_ids_fn(
-        token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
-    )
-    prefix_object_count = int(len(triage.kept_anchor_objects))
-    for fn_idx, (obj, rel_pos, obj_weight) in enumerate(
-        zip(fn_objs, rel_groups, fn_object_weights)
-    ):
-        full_idx = int(prefix_object_count + fn_idx)
-        fn_bbox_groups.append(
-            {
-                "pos": [
-                    int(len(prompt_ids) + int(prefix_len_raw_local) + int(p))
-                    for p in rel_pos
-                ],
-                "gt_bins": list(obj.points_norm1000),
-                "weight": float(obj_weight),
-                **(
+        if pseudo_positive_enabled:
+            for pred_i in partial_pseudo_anchor_indices:
+                if int(pred_i) not in triage.kept_anchor_new_index_by_old:
+                    continue
+                kept_pred_i = int(triage.kept_anchor_new_index_by_old[int(pred_i)])
+                sorted_idx = kept_idx_to_sorted_idx.get(int(kept_pred_i))
+                if sorted_idx is None:
+                    continue
+                coord_group = prefix_coord_positions_all[
+                    int(sorted_idx) * 4 : int(sorted_idx + 1) * 4
+                ]
+                if len(coord_group) != 4:
+                    raise ValueError(
+                        "sorted Channel-B expected exactly four coord slots per bbox object"
+                    )
+                partial_weight = float(pseudo_positive_coord_weight) * float(
+                    triage.anchor_support_rates[int(pred_i)]
+                )
+                if partial_weight <= 0.0:
+                    continue
+                gt_bins = list(triage.kept_anchor_objects[int(kept_pred_i)].points_norm1000)
+                prefix_bbox_groups.append(
                     {
-                        "adjacent_prev_gt_bins": list(
-                            full_adjacent_prev_bins_by_index[int(full_idx)] or []
-                        ),
-                        "adjacent_same_desc_with_prev": bool(
-                            full_adjacent_same_desc_by_index[int(full_idx)]
+                        "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                        "gt_bins": gt_bins,
+                        "weight": float(partial_weight),
+                        **(
+                            {
+                                "adjacent_prev_gt_bins": list(
+                                    prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
+                                ),
+                                "adjacent_same_desc_with_prev": bool(
+                                    prefix_adjacent_same_desc_by_index[int(sorted_idx)]
+                                ),
+                            }
+                            if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
+                            else {}
                         ),
                     }
-                    if full_adjacent_prev_bins_by_index[int(full_idx)] is not None
-                    else {}
-                ),
-            }
+                )
+                for local_idx, tbin in zip(coord_group, gt_bins):
+                    prefix_pos.append(int(local_idx))
+                    prefix_bins.append(int(tbin))
+
+        for fn_idx, (obj, obj_weight) in enumerate(zip(fn_objs, fn_object_weights)):
+            sorted_idx = fn_idx_to_sorted_idx.get(int(fn_idx))
+            if sorted_idx is None:
+                continue
+            coord_group = prefix_coord_positions_all[
+                int(sorted_idx) * 4 : int(sorted_idx + 1) * 4
+            ]
+            if len(coord_group) != 4:
+                raise ValueError(
+                    "sorted Channel-B expected exactly four coord slots per bbox object"
+                )
+            prefix_bbox_groups.append(
+                {
+                    "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
+                    "gt_bins": list(obj.points_norm1000),
+                    "weight": float(obj_weight),
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
+                            ),
+                        }
+                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
+                        else {}
+                    ),
+                }
+            )
+
+        matched_prefix_objects = [
+            _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
+            for i in remapped_matched_sorted_indices
+            if 0 <= int(i) < len(clean_prefix.object_value_spans)
+        ]
+        prefix_struct_pos = matched_prefix_structure_positions_fn(
+            tokenizer=tokenizer,
+            prefix_token_ids=clean_prefix.prefix_token_ids,
+            prefix_text=clean_prefix.prefix_text,
+            matched_pred_objects=matched_prefix_objects,
         )
+        append_text = "]}"
+        append_ids = [
+            int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
+        ]
+        tail_desc_pos = []
+        tail_desc_weights = []
+        y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
+        clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+        sorted_duplicate_bursts = _sorted_duplicate_bursts_by_boundary(
+            sorted_objects=sorted_objects,
+            duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
+        )
+        (
+            duplicate_burst_unlikelihood_targets,
+            duplicate_burst_unlikelihood_boundary_count,
+            duplicate_burst_unlikelihood_skipped_no_divergence,
+        ) = _build_duplicate_burst_unlikelihood_targets(
+            tokenizer=tokenizer,
+            y_train_ids=y_train_ids,
+            clean_target_text=clean_target_text,
+            accepted_objects_clean=sorted_objects,
+            fn_objects=[],
+            duplicate_bursts_by_boundary=sorted_duplicate_bursts,
+            boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+            object_field_order=object_field_order,
+        )
+    else:
+        full_adjacent_prev_bins_by_index, full_adjacent_same_desc_by_index = (
+            _adjacent_repulsion_meta_for_objects(
+                list(triage.kept_anchor_objects) + list(fn_objs)
+            )
+        )
+
+        append_text = serialize_append_fragment_fn(
+            fn_objects=fn_objs,
+            prefix_text=clean_prefix.prefix_text,
+            object_field_order=object_field_order,
+        )
+        append_ids = [
+            int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
+        ]
+
+        tail_desc_pos, tail_desc_weights = _desc_tail_positions_and_weights(
+            tokenizer=tokenizer,
+            token_ids=append_ids,
+            object_weights=fn_object_weights,
+        )
+
+        y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
+        clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+        (
+            duplicate_burst_unlikelihood_targets,
+            duplicate_burst_unlikelihood_boundary_count,
+            duplicate_burst_unlikelihood_skipped_no_divergence,
+        ) = _build_duplicate_burst_unlikelihood_targets(
+            tokenizer=tokenizer,
+            y_train_ids=y_train_ids,
+            clean_target_text=clean_target_text,
+            accepted_objects_clean=triage.kept_anchor_objects,
+            fn_objects=fn_objs,
+            duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
+            boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+            object_field_order=object_field_order,
+        )
+
+        rel_groups = bbox_groups_from_token_ids_fn(
+            token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
+        )
+        prefix_object_count = int(len(triage.kept_anchor_objects))
+        for fn_idx, (obj, rel_pos, obj_weight) in enumerate(
+            zip(fn_objs, rel_groups, fn_object_weights)
+        ):
+            full_idx = int(prefix_object_count + fn_idx)
+            fn_bbox_groups.append(
+                {
+                    "pos": [
+                        int(len(prompt_ids) + int(prefix_len_raw_local) + int(p))
+                        for p in rel_pos
+                    ],
+                    "gt_bins": list(obj.points_norm1000),
+                    "weight": float(obj_weight),
+                    **(
+                        {
+                            "adjacent_prev_gt_bins": list(
+                                full_adjacent_prev_bins_by_index[int(full_idx)] or []
+                            ),
+                            "adjacent_same_desc_with_prev": bool(
+                                full_adjacent_same_desc_by_index[int(full_idx)]
+                            ),
+                        }
+                        if full_adjacent_prev_bins_by_index[int(full_idx)] is not None
+                        else {}
+                    ),
+                }
+            )
 
     return _ChannelBSupervisionTargets(
         clean_prefix=clean_prefix,

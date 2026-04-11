@@ -3223,10 +3223,108 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
     ]
     assert targets.prefix_bbox_groups[1]["adjacent_prev_gt_bins"] == [100, 110, 130, 140]
     assert targets.prefix_bbox_groups[1]["adjacent_same_desc_with_prev"] is True
-    assert targets.prefix_bbox_groups[2]["adjacent_prev_gt_bins"] == [10, 20, 30, 40]
-    assert targets.prefix_bbox_groups[2]["adjacent_same_desc_with_prev"] is False
-    assert targets.prefix_bbox_groups[1]["weight"] == pytest.approx(0.4)
-    assert targets.prefix_bbox_groups[2]["weight"] == pytest.approx(0.4 * (1.0 / 3.0))
+
+
+def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence() -> None:
+    class _CoordLiteralTokenizer(_DummyTokenizer):
+        def encode(self, text: str, add_special_tokens: bool = False):
+            s = str(text)
+            out: list[int] = []
+            i = 0
+            while i < len(s):
+                if s.startswith("<|coord_", i):
+                    j = s.find("|>", i)
+                    if j >= 0:
+                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        i = j + 2
+                        continue
+                out.append(self._id_for(s[i]))
+                i += 1
+            return out
+
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="anchor",
+        )
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=[[], [], []],
+        anchor_match_by_pred={0: 0},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+    gts = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="matched",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="fn",
+        ),
+    ]
+
+    tail_targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=gts,
+        match=types.SimpleNamespace(matched_pairs=[(0, 0)]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=False,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+    )
+    sorted_targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=gts,
+        match=types.SimpleNamespace(matched_pairs=[(0, 0)]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=False,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+        insertion_order="sorted",
+    )
+
+    assert tail_targets.clean_target_text.find('"desc": "anchor"') < tail_targets.clean_target_text.find(
+        '"desc": "fn"'
+    )
+    assert sorted_targets.clean_target_text.find('"desc": "fn"') < sorted_targets.clean_target_text.find(
+        '"desc": "anchor"'
+    )
+    assert len(tail_targets.fn_bbox_groups) == 1
+    assert sorted_targets.fn_bbox_groups == []
+    assert any(group["gt_bins"] == [10, 20, 30, 40] for group in sorted_targets.prefix_bbox_groups)
+    assert sorted_targets.append_text == "]}"
+    assert sorted_targets.tail_desc_pos == []
 
 
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(

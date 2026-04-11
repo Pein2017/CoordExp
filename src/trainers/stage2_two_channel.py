@@ -5,7 +5,7 @@ import os
 import time
 import logging
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, ClassVar, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import torch
@@ -56,13 +56,14 @@ from .stage2_two_channel.target_builder import (
     _bbox_iou_norm1000_xyxy,
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
+)
+from .stage2_two_channel.target_builder import (  # noqa: F401
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
 )
 from .stage2_two_channel.types import (
     Stage2BatchMetrics,
     Stage2ChannelAMeta,
-    Stage2ChannelBMeta,
     Stage2PreparedSegment,
     Stage2RolloutMeta,
 )
@@ -2495,9 +2496,6 @@ class Stage2ABTrainingTrainer(
                 )
             )
 
-            kept_anchor_objects = list(triage.kept_anchor_objects)
-            kept_anchor_new_index_by_old = dict(triage.kept_anchor_new_index_by_old)
-            duplicate_bursts_by_boundary = dict(triage.duplicate_bursts_by_boundary)
             supervision_targets = _build_channel_b_supervision_targets(
                 tokenizer=tok,
                 prompt_ids=prompt_ids,
@@ -2513,6 +2511,9 @@ class Stage2ABTrainingTrainer(
                     self._ab_channel_b_get("pseudo_positive.coord_weight", 0.5)
                 ),
                 duplicate_iou_threshold=float(duplicate_iou_threshold),
+                insertion_order=str(
+                    self._ab_channel_b_get("insertion_order", "tail_append")
+                ),
                 object_field_order=object_field_order,
                 bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
                 matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -2528,8 +2529,6 @@ class Stage2ABTrainingTrainer(
             matched_for_supervision_total += int(
                 len(supervision_targets.matched_gt_indices)
             )
-            fn_gt_indices_final = list(supervision_targets.fn_gt_indices_final)
-            fn_objs = list(supervision_targets.fn_objs)
             fn_object_weights = list(supervision_targets.fn_object_weights)
             fn_count_for_meta = int(supervision_targets.fn_count_for_meta)
             append_text = str(supervision_targets.append_text)

@@ -1002,6 +1002,33 @@ def test_stage2_pipeline_canonical_channels_scope_parses():
     assert cfg.stage2_ab.pipeline is not None
     assert cfg.stage2_ab.pipeline.objective[0].channels == ("A", "B")
     assert cfg.stage2_ab.pipeline.objective[1].channels == ("B",)
+    assert cfg.stage2_ab.channel_b.insertion_order == "tail_append"
+
+
+def test_stage2_channel_b_insertion_order_accepts_sorted() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["channel_b"] = {"insertion_order": "sorted"}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.channel_b.insertion_order == "sorted"
+
+
+def test_stage2_channel_b_insertion_order_rejects_unknown_value() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["channel_b"] = {"insertion_order": "middle"}
+    payload["stage2_ab"]["pipeline"] = {
+        "objective": _canonical_stage2_two_channel_objective()
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.channel_b\.insertion_order",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage2_pipeline_disallows_custom_bbox_geo_knobs() -> None:

@@ -62,6 +62,10 @@ Current internal ownership seams:
 - `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` are required for active Stage-2 configs
 - Channel-A runs a single GT-anchored teacher-forced forward.
 - Channel-B keeps the rollout-aligned clean-prefix path.
+- Channel-B final object sequencing is controlled by:
+  - `stage2_ab.channel_b.insertion_order: tail_append | sorted`
+  - default `tail_append` preserves the historical clean-prefix plus FN-tail path
+  - `sorted` applies a final top-left sort over the retained anchor objects plus FN objects before final teacher-forced serialization
 - Channel-B pseudo-positive mode is opt-in through:
   - `stage2_ab.channel_b.pseudo_positive.enabled`
   - `stage2_ab.channel_b.pseudo_positive.coord_weight`

@@ -19,6 +19,7 @@ Note:
   - rollout generation remains un-packed (padded batch),
   - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
   - for `stage2_two_channel` clean-prefix v2, that packed Channel-B segment is built from the canonical clean teacher-forced target derived from `accepted_objects_clean`, not from the raw rollout prefix token ids,
+  - `stage2_ab.channel_b.insertion_order` determines whether that final Channel-B target keeps the historical retained-anchor prefix plus FN tail (`tail_append`, default) or applies a final top-left sort over retained anchors plus FN objects (`sorted`),
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
   - `training.packing_drop_last: true` is required (no end-of-run flush steps; `stage2_rollout_aligned` uses a carry buffer).
   - `stage2_two_channel` (step-budgeted) uses a *pool-aware* selector that prioritizes minimizing the total number of packed

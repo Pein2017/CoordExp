@@ -69,6 +69,7 @@ stage2_ab:
   schedule:
     b_ratio: 0.05
   channel_b:
+    insertion_order: tail_append
     duplicate_iou_threshold: 0.90
     triage_posterior:
       num_rollouts: 2

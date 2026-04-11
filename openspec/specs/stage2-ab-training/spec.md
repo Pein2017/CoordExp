@@ -608,21 +608,30 @@ Normative behavior:
   feature insertion
 - **AND** it does not rely on iterative self-context forwards.
 
-### Requirement: Channel-B reuses rollout-matching infra (clean-prefix parse/match + mandatory FN append)
+### Requirement: Channel-B reuses rollout-matching infra with typed final insertion ordering
 Channel-B MUST reuse rollout generation and matching infrastructure, but its positive supervision contract is now clean-prefix based rather than raw-prefix based.
 
 Normative behavior:
 - Rollout generation MUST remain configured under `rollout_matching`.
 - Parsing MUST use bounded container salvage plus strict record acceptance.
 - Matching MUST be deterministic and MUST operate on `accepted_objects_clean`, not on the raw parsed bbox list.
-- The positive teacher-forced prefix MUST be canonical serialization of `accepted_objects_clean`.
-- FN append MUST remain mandatory so all GT objects are present in the final teacher-forced target.
+- `stage2_ab.channel_b.insertion_order` MUST be typed and accept exactly `tail_append` or `sorted`.
+- `stage2_ab.channel_b.insertion_order: tail_append` MUST remain the default and preserve the historical clean-prefix plus FN-tail target construction.
+- `stage2_ab.channel_b.insertion_order: sorted` MUST build the final teacher-forced object sequence by top-left sorting the retained accepted-clean objects together with FN objects using the same `(minY, minX)` ordering contract as stage-1 sorted ordering.
+- All modes MUST keep every GT object present in the final teacher-forced target.
 
 #### Scenario: Channel-B teacher-forced target uses the clean accepted prefix
 - **GIVEN** Channel-B is selected and rollout generation succeeds
 - **WHEN** the trainer builds the teacher-forced target
-- **THEN** the positive prefix is canonical serialization of `accepted_objects_clean`
+- **THEN** `tail_append` mode uses canonical serialization of `accepted_objects_clean` as the positive prefix
 - **AND** later correct objects are teacher-forced on that clean prefix rather than the raw rollout prefix.
+
+#### Scenario: Channel-B sorted insertion mode uses stage-1-style top-left ordering
+- **GIVEN** `stage2_ab.channel_b.insertion_order: sorted`
+- **AND** Channel-B has retained clean accepted objects and one or more FN objects
+- **WHEN** the trainer builds the final teacher-forced target
+- **THEN** the final serialized object sequence is top-left sorted across the retained accepted objects plus FN objects
+- **AND** the sorter uses the same `(minY, minX)` contract as stage-1 sorted ordering.
 
 ### Requirement: Stage-2 serialized object field order follows shared config
 Stage-2 AB serialization paths SHALL honor `custom.object_field_order` exactly as stage-1 serialization does.
@@ -664,7 +673,9 @@ Normative behavior:
 - For Channel-A, `custom.object_ordering: sorted` means canonical top-left ordering by `(minY, minX)`.
 - For Channel-A, `custom.object_ordering: random` means the trainer SHALL use the current epoch’s deterministic dataset order for that sample.
 - Channel-A object key numbering (`object_1`, `object_2`, ...`) SHALL follow the effective configured instance order.
-- Channel-B object sequence remains determined by existing pipeline semantics (parsed rollout appearance order, matching/index continuation logic, and FN append order).
+- Channel-B object sequence is controlled by `stage2_ab.channel_b.insertion_order`:
+  - `tail_append`: parsed rollout appearance order after triage, then FN append order
+  - `sorted`: final top-left ordering across retained accepted objects plus FN objects
 - Only intra-object field order is configurable through `custom.object_field_order`.
 
 #### Scenario: geometry-first does not change rollout appearance order handling

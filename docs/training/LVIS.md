@@ -110,6 +110,14 @@ explicit:
 
 The active Channel-B triage is now LVIS-aware.
 
+Final teacher-forced sequencing is also configurable through:
+
+- `stage2_ab.channel_b.insertion_order: tail_append | sorted`
+- `tail_append` remains the default and preserves the historical retained-anchor
+  clean prefix plus FN tail behavior
+- `sorted` applies a final top-left sort over the retained anchor objects plus
+  FN objects before teacher-forced serialization
+
 For unmatched anchor objects:
 
 - `verified_positive`: always dead

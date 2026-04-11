@@ -1,0 +1,81 @@
+extends: ./ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml
+
+model:
+  model: output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce/ckpt-1932_merged
+
+training:
+  run_name: epoch_1-k4-eff_size_96-b_ratio_0.85-lvis_proxy-4b-ce_ciou_only-dup_targeting-sorted
+  artifact_subdir: stage2_ab/prod/4b_lvis_proxy_pseudo_positive_dup_targeting_ce_ciou_only
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  object_ordering: sorted
+  extra:
+    loss_gradient_monitor:
+      enabled: false
+
+stage2_ab:
+  channel_b:
+    insertion_order: sorted
+  pipeline:
+    objective:
+      - name: token_ce
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_text_only
+        config:
+          desc_ce_weight: 1.0
+          rollout_fn_desc_weight: 1.5
+          rollout_global_prefix_struct_ce_weight: 1.0
+      - name: loss_duplicate_burst_unlikelihood
+        enabled: true
+        weight: 2.0
+        channels: [B]
+        application:
+          preset: rollout_only
+        config: {}
+      - name: bbox_geo
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          smoothl1_weight: 0.0
+          ciou_weight: 0.6
+      - name: bbox_size_aux
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          log_wh_weight: 0.0
+          oversize_penalty_weight: 0.0
+          oversize_area_frac_threshold: null
+          oversize_log_w_threshold: null
+          oversize_log_h_threshold: null
+          eps: 1.0e-6
+      - name: coord_reg
+        enabled: true
+        weight: 1.0
+        channels: [A, B]
+        application:
+          preset: anchor_only
+        config:
+          coord_ce_weight: 0.02
+          coord_gate_weight: 0.0
+          text_gate_weight: 0.0
+          soft_ce_weight: 0.0
+          w1_weight: 0.0
+          temperature: 1.0
+          target_sigma: 2.0
+          target_truncate: 8
+          adjacent_repulsion_weight: 0.0
+          adjacent_repulsion_filter_mode: same_desc
+          adjacent_repulsion_margin_ratio: 0.05
+          adjacent_repulsion_copy_margin: 0.8

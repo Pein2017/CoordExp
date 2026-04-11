@@ -1747,6 +1747,7 @@ class Stage2ABChannelBConfig:
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
     invalid_rollout_policy: str = "abort"
+    insertion_order: str = "tail_append"
     pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
         default_factory=Stage2ABChannelBPseudoPositiveConfig
     )
@@ -1859,6 +1860,17 @@ class Stage2ABChannelBConfig:
                 "{'abort', 'dump_and_continue'}"
             )
 
+        insertion_order_raw = data.pop(
+            "insertion_order",
+            cls.insertion_order,
+        )
+        insertion_order = str(insertion_order_raw).strip().lower()
+        if insertion_order not in {"tail_append", "sorted"}:
+            raise ValueError(
+                "stage2_ab.channel_b.insertion_order must be one of "
+                "{'tail_append', 'sorted'}"
+            )
+
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
         producer_wait_timeout_s: Optional[float] = None
         if producer_wait_timeout_s_raw is not None:
@@ -1921,6 +1933,7 @@ class Stage2ABChannelBConfig:
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
             invalid_rollout_policy=invalid_rollout_policy,
+            insertion_order=insertion_order,
             pseudo_positive=pseudo_positive,
             triage_posterior=triage_posterior,
         )
